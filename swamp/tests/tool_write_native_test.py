@@ -170,8 +170,8 @@ elif action=='candidate':
  else:print('{"version":"2.0.0"}')
 else:
  assert ('sudo' in args[-1]) == (manager=='apt')
- assert len(mutation_argv)==1
- if input.get('repository'):assert json.loads(mutation_argv[0])['version']=='2.0.0' and '2.0.0' not in body
+ assert len(mutation_argv)==2 and 'repository' not in input
+ if json.loads(mutation_argv[1]):assert json.loads(mutation_argv[0])['version']=='2.0.0' and '2.0.0' not in body
  if not Path(NO_EFFECT).exists():Path(STATE).write_text('2.0.0')
  if Path(LOST).exists():Path(LOST).unlink();raise SystemExit(1)
  print('{"ready":true}')

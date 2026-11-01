@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { AdoptInput, Facts, Observation, queryScript, repositoryError } from "./adopt.ts";
 import { homebrewRemovalBlock } from "./adopt_homebrew.ts";
-import { repositoryJson, safeVersion, ToolRefusal } from "./contract.ts";
+import { repositoryJson, safeVersion, sourceInput, ToolRefusal } from "./contract.ts";
 export const RemoveInput = AdoptInput.safeExtend({ intent_only: z.boolean() });
 type Input = z.infer<typeof RemoveInput>;
 const Public = z.record(z.string(), z.unknown());
@@ -63,7 +63,7 @@ export const behavior = {
                     if (args.action === "remove" && (!args.before?.ready || !args.before.present || !args.before.facts)) {
                         throw new ToolRefusal("tool.remove_failed");
                     }
-                    const input = { ...args.input, before: args.before?.facts };
+                    const input = { ...sourceInput(args.input), before: args.before?.facts };
                     if (args.input.manager !== "apt") source = await Deno.readTextFile(ctx.extensionFile("queries/support.py")) + "\n" + source.replace(/^from support import [^\n]*\n/gm, "");
                     const encoded = JSON.stringify(JSON.stringify(input));
                     script_body = args.input.manager === "apt"

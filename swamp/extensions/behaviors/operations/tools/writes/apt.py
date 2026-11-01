@@ -26,12 +26,13 @@ def install(package):
     )
 
 
-if INPUT.get("repository"):
-    # The chosen candidate arrives as argv JSON data, never as script source.
+# The candidate and repository intent arrive as argv JSON data, never as script source.
+REPOSITORY = json.loads(sys.argv[2]) if len(sys.argv) > 2 else None
+if REPOSITORY:
     version = json.loads(sys.argv[1])["version"]
     if not isinstance(version, str) or not version or any(c.isspace() for c in version):
         raise ValueError("Invalid apt repository candidate")
-    source = "/etc/apt/sources.list.d/orbit-" + INPUT["repository"]["name"] + ".sources"
+    source = "/etc/apt/sources.list.d/orbit-" + REPOSITORY["name"] + ".sources"
     with tempfile.TemporaryDirectory(prefix="orbit-apt-package-") as directory:
         subprocess.run(
             [

@@ -27,6 +27,11 @@ export const Input = z.object({
   materialize: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 export type ToolInput = z.infer<typeof Input>;
+/** Rewritten script source never carries repository intent; scripts receive it as argv JSON. */
+export function sourceInput<T extends { repository?: unknown; remove_repository?: unknown; repository_packages?: unknown }>(input: T): Omit<T, "repository" | "remove_repository" | "repository_packages"> {
+  const { repository: _repository, remove_repository: _remove, repository_packages: _packages, ...rest } = input;
+  return rest;
+}
 /** The repository script gets the shared definition plus the packages its apt preference admits. */
 export function repositoryJson(input: { repository: z.infer<typeof Repository> | null; repository_packages: string[] }): string {
   return JSON.stringify(input.repository ? { ...input.repository, packages: input.repository_packages } : null);

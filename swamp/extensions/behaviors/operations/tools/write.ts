@@ -2,7 +2,7 @@ import { z } from "npm:zod@4.4.3";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
 import { AdoptInput, Facts, Observation, queryScript, repositoryError } from "./adopt.ts";
 import { removalProbe } from "./remove.ts";
-import { allows, normalizeVersion, repositoryJson, safeVersion, ToolRefusal, verifyInstalled } from "./contract.ts";
+import { allows, normalizeVersion, repositoryJson, safeVersion, sourceInput, ToolRefusal, verifyInstalled } from "./contract.ts";
 import { homebrewBlock, homebrewCandidateVersion } from "./adopt_homebrew.ts";
 const WriteShape = AdoptInput.safeExtend({ package: z.string().max(255), kind: z.enum(["tool.install", "tool.update", "tool.manager_converge"]), setup: Setup.nullable().default(null) }).refine((v) => v.kind === "tool.manager_converge" ? v.package === "" : v.package.length > 0);
 export const WriteInput = z.preprocess((value) => {
@@ -97,7 +97,7 @@ export const behavior = {
         else {
           const manager = input.manager.startsWith("brew") ? "brew" : input.manager;
           const source = await Deno.readTextFile(ctx.extensionFile((args.action === "candidate" ? "candidates/" : "writes/") + manager + ".py"));
-          script_body = (await Deno.readTextFile(ctx.extensionFile("queries/support.py")) + "\n" + source.replace(/^from support import [^\n]*\n/gm, "")).replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(input)));
+          script_body = (await Deno.readTextFile(ctx.extensionFile("queries/support.py")) + "\n" + source.replace(/^from support import [^\n]*\n/gm, "")).replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(sourceInput(input))));
         }
         const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: repositoryJson(input), candidate_json: JSON.stringify(args.candidate ?? null) }; await ctx.writeResource("assets", "assets", result); return result;
       } },

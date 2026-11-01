@@ -61,11 +61,17 @@ Deno.test("manager-only capture omits package and receives the canonical empty s
   assertEquals(WriteInput.safeParse({ ...captured, kind: "tool.install" }).success, false);
 });
 
-Deno.test("the chosen candidate travels as argv JSON data, never inside the mutation source", async () => {
+Deno.test("the candidate and repository intent travel as argv JSON data, never inside rewritten source", async () => {
   const ctx = { extensionFile: (p: string) => new URL(p, import.meta.url).pathname, writeResource: () => Promise.resolve(null) };
-  const { input, facts } = fixture("tool.install", "apt");
+  const base = fixture("tool.install", "apt");
+  const repository = { name: "vendorsentinel", uris: ["https://packages.example.test/apt"], suites: ["preview"], components: ["main"], signing_key: { url: "https://packages.example.test/key.gpg", fingerprint: "A".repeat(40) } };
+  const input = { ...base.input, repository, repository_packages: [base.input.package] };
   const candidate = { ready: true, version: "9.9.9-candidate" };
-  const assets = await behavior.methods.assets.execute({ input, action: "mutate", before: { ...facts, scope: "present" }, candidate }, ctx);
-  assertEquals(assets.script_body.includes("9.9.9-candidate"), false);
-  assertEquals(JSON.parse(assets.candidate_json), candidate);
+  for (const action of ["query", "candidate", "mutate"] as const) {
+    const assets = await behavior.methods.assets.execute({ input, action, before: { ...base.facts, scope: "present" }, candidate, repository_observation: { stdout: JSON.stringify({ ready: true }), exitCode: 0 } }, ctx);
+    assertEquals(assets.script_body.includes("9.9.9-candidate"), false);
+    assertEquals(assets.script_body.includes("vendorsentinel"), false);
+    assertEquals(JSON.parse(assets.repository_json).name, "vendorsentinel");
+    assertEquals(JSON.parse(assets.candidate_json), candidate);
+  }
 });

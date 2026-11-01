@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { Input, repositoryJson, safeVersion, ToolRefusal, validateConstraint, verifyInstalled } from "./contract.ts";
+import { Input, repositoryJson, safeVersion, sourceInput, ToolRefusal, validateConstraint, verifyInstalled } from "./contract.ts";
 import { homebrewBlock } from "./adopt_homebrew.ts";
 
 export const AdoptInput = Input.omit({ materialize: true, intent_only: true }).extend({
@@ -38,7 +38,7 @@ export async function queryScript(input: z.infer<typeof AdoptInput>, ctx: Pick<C
     ));
     const script_body = sources.map((s) =>
         s.replace(/^from (?:support|brew_query) import [^\n]*\n/gm, "")
-    ).join("\n").replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(input)));
+    ).join("\n").replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(sourceInput(input))));
     return script_body;
 }
 export function adoptionResult(input: z.infer<typeof AdoptInput>, raw: unknown, repositoryObservation?: unknown) {
