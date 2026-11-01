@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -133,4 +134,56 @@ it('does not accept worker assertions through the retired failure callback', fun
     expect($this->operation->fresh()->status->value)->toBe('running')
         ->and($this->operation->fresh()->lock_key)->toBe('native-read-fixture')
         ->and($this->socket->sent)->toBe([]);
+});
+
+it('enriches a previously projected native failure once with the first worker error and no invented stderr', function (): void {
+    $error = "Timed out waiting for a worker matching target 'orbit-node-13' to become available";
+    $this->operation->update(['status' => 'failed', 'error_code' => 'operation.native_failed',
+        'finished_at' => now(), 'result' => ['error_code' => 'operation.native_failed']]);
+    $finished = $this->operation->fresh()->finished_at->toISOString();
+    $this->native['jobs'] = [
+        ['name' => 'admission', 'steps' => [['name' => 'intent', 'status' => 'failed', 'error' => $error,
+            'outputs' => ['stdout' => 'never-expose-private-stdout']]]],
+        ['name' => 'cleanup', 'steps' => [['name' => 'cleanup', 'status' => 'failed', 'error' => 'Later cleanup error.']]],
+    ];
+    $alerts = Activity::query()->where('command', 'instance:failure-alert')->count();
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.failed_step', 'intent')->assertJsonPath('data.error.detail', $error)
+        ->assertJsonPath('data.error.stderr_recorded', false);
+
+    expect($this->operation->fresh()->finished_at->toISOString())->toBe($finished);
+    expect($this->operation->fresh()->result)->toBe(['error_code' => 'operation.native_failed']);
+    expect(Activity::query()->where('command', 'instance:failure-alert')->count())->toBe($alerts);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.failed_step', 'intent');
+    expect($this->socket->sent)->toHaveCount(1);
+    expect(json_encode($this->operation->fresh()->state))->not->toContain('never-expose-private-stdout');
+});
+
+it('records checked but unavailable diagnostics without reading history on every terminal GET', function (): void {
+    $this->operation->update(['status' => 'failed', 'error_code' => 'operation.native_failed', 'finished_at' => now()]);
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.error', null);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.error', null);
+
+    expect($this->socket->sent)->toHaveCount(1);
+    expect(array_key_exists('native_failure', $this->operation->fresh()->state))->toBeTrue();
+});
+
+it('ignores malformed native completion timestamps without failing the Operation read', function (string $completed): void {
+    $this->native['completedAt'] = $completed;
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'failed');
+    expect($this->operation->fresh()->finished_at->diffInSeconds(now()))->toBeLessThan(2);
+})->with(['not a timestamp', 'tomorrow', '2026-99-99T99:99:99Z']);
+
+it('uses the verified native completion time when the failure is projected late', function (): void {
+    $completed = now()->subSeconds(4)->toIso8601String();
+    $this->native['completedAt'] = $completed;
+    $this->native['jobs'] = [['name' => 'source', 'steps' => [['name' => 'inspect', 'status' => 'failed', 'error' => 'Cannot inspect source.']]]];
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.finished_at', $completed)
+        ->assertJsonPath('data.failed_step', 'inspect');
+
+    expect($this->socket->sent)->toHaveCount(1);
 });

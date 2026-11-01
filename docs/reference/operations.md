@@ -43,6 +43,14 @@ For an unbound timed-out admission, the existing exact lookup by Operation ident
 
 This is the Gateway's budget result, not proof that the native run or its descendants stopped. Cancellation still requires the native operator path; shared run credentials gain no admin authority. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
 
+## Native failure detail and live steps
+
+The shared observer projects live step names from native run events without reading history. `current_step_started_at` is the native timestamp when the event supplies one; it stays null when the runtime omits it. `current_step_observed_at` records when the Gateway observed that event. Replayed progress cannot replace a newer event.
+
+A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
+
+The shared F1 script helper redacts the whole captured stderr before retaining its last 4 KiB, drops a truncated first line whose identifying prefix may be missing, and redacts the retained text again. Failed-command stdout is suppressed. The helper does not itself wire a family workflow or change native placement.
+
 ## Native public participants
 
 A direct Operation may admit immutable `input.participant_node_ids`. A foreign participant may use the existing direct-operation GET with the bound root run ID while the parent is unfinished. A projection implementing `DirectOperationPublicView` asserts its participant ownership and returns fresh public input for that authenticated Node. The response preserves the parent Node identity, omits the parent result and uses `Cache-Control: no-store`. Participation grants neither a result POST nor private-material access; those have their own shared authorization.

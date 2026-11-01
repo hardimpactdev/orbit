@@ -39,6 +39,10 @@ final readonly class OperationResponse
         public string $requestId,
         public ?int $callerNodeId = null,
         public ?string $callerNodeName = null,
+        /** @var array<string, mixed>|null */
+        public ?array $error = null,
+        public ?string $currentStepStartedAt = null,
+        public ?string $currentStepObservedAt = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -78,6 +82,9 @@ final readonly class OperationResponse
             requestId: $requestId,
             callerNodeId: is_int($data['caller_node_id'] ?? null) ? $data['caller_node_id'] : null,
             callerNodeName: is_string($data['caller_node_name'] ?? null) ? $data['caller_node_name'] : null,
+            error: self::map($data['error'] ?? null),
+            currentStepStartedAt: self::text($data, 'current_step_started_at'),
+            currentStepObservedAt: self::text($data, 'current_step_observed_at'),
         );
     }
 
@@ -103,8 +110,11 @@ final readonly class OperationResponse
             'status' => $this->status,
             'sequence' => $this->sequence,
             'current_step' => $this->currentStep,
+            'current_step_started_at' => $this->currentStepStartedAt,
+            'current_step_observed_at' => $this->currentStepObservedAt,
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
+            'error' => $this->error,
             'result' => $this->result,
             'cancel_requested' => $this->cancelRequested,
             'attempts' => $this->attempts,

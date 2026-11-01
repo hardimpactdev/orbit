@@ -15,7 +15,8 @@ final readonly class ReadNativeRunFailure
 {
     public function __construct(private WebSocketClient $socket) {}
 
-    public function status(Operation $operation, string $workflow, string $runId): ?OperationStatus
+    /** @return array{status:OperationStatus,failure:array{failed_step:string,detail:string,stderr_recorded:bool}|null,finished_at:?string}|null */
+    public function read(Operation $operation, string $workflow, string $runId): ?array
     {
         $token = config('swamp.read_token');
         $address = config('swamp.address');
@@ -44,11 +45,14 @@ final readonly class ReadNativeRunFailure
                         return null;
                     }
 
-                    return match ($run['status'] ?? null) {
+                    $status = match ($run['status'] ?? null) {
                         'failed' => OperationStatus::Failed,
                         'interrupted' => OperationStatus::Interrupted,
                         default => null,
                     };
+
+                    return $status === null ? null : ['status' => $status, 'failure' => app(NativeStepFailure::class)->fromRun($run),
+                        'finished_at' => $this->completionTime($run['completedAt'] ?? null)];
                 }
             }
         } catch (Throwable) {
@@ -58,5 +62,15 @@ final readonly class ReadNativeRunFailure
         }
 
         return null;
+    }
+
+    private function completionTime(mixed $value): ?string
+    {
+        if (! is_string($value) || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})\z/D', $value) !== 1) {
+            return null;
+        }
+        $parsed = date_parse($value);
+
+        return $parsed['error_count'] === 0 && $parsed['warning_count'] === 0 ? $value : null;
     }
 }
