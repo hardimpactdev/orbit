@@ -8,12 +8,6 @@ globalArguments:
   factories:
     - factory: orbit-groups
       preapprovalModel: orbit-driver-groups
-    - factory: dependency-routine
-      preapprovalModel: orbit-driver-routine
-    - factory: dependency-detect
-      preapprovalModel: orbit-driver-detect
-    - factory: dependency-package
-      preapprovalModel: orbit-driver-package
 methods: {}
 
 # Native execution history keeps errors; omit duplicate summary versions.

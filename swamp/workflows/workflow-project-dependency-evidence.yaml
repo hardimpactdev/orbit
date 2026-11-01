@@ -1,0 +1,105 @@
+id: 7d77e663-d6a1-4dfa-96ac-625b826ad094
+name: project-dependency-evidence
+description: One bounded native PR read per admitted URL, followed by native evidence
+  correlation.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  additionalProperties: false
+  required:
+  - operation_id
+  - project
+  - groups
+  - pr_urls
+  - previous_pr
+  - execution_secrets
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    project:
+      type: object
+    groups:
+      type: array
+      items:
+        type: object
+    pr_urls:
+      type: array
+      items:
+        type: string
+    previous_pr:
+      type: array
+      maxItems: 1
+      items:
+        type: object
+    execution_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^project-dependency-read-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      additionalProperties: false
+      required:
+      - github_token
+reports:
+  skip:
+  - '@swamp/workflow-summary'
+jobs:
+- name: read
+  target: orbit-node-209
+  steps:
+  - name: pr-${{ self._index }}
+    target: orbit-node-209
+    forEach:
+      item: pr
+      in: ${{ inputs.pr_urls }}
+    dependsOn: []
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "project-pr-" + run.id + "-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: 'gh pr view "$ORBIT_PR_URL" --json number,url,headRefOid,state
+
+          '
+        env:
+          ORBIT_PR_URL: ${{ self.pr }}
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key)
+            }}
+          GH_PROMPT_DISABLED: '1'
+          GH_CONFIG_DIR: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id
+            + "/gh-config" }}
+- name: evidence
+  target: orbit-node-209
+  dependsOn:
+  - job: read
+    condition:
+      type: always
+  steps:
+  - name: evidence
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-input'
+      behaviorName: ${{ "project-evidence-" + string(inputs.operation_id) }}
+      methodName: evidence
+      inputs:
+        project: ${{ inputs.project }}
+        groups: ${{ inputs.groups }}
+        urls: ${{ inputs.pr_urls }}
+        readings: ${{ steps }}
+        previous_pr: ${{ inputs.previous_pr }}

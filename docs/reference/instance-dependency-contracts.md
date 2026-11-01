@@ -16,6 +16,31 @@ Swamp publishes dependency evidence. The Gateway reads it with its workflow/data
 
 The producer is `orbit-gateway`. It publishes deterministic Project/ref indexes and immutable source reports with exact model/data/version pointers. The shared success, running/partial, first-failure, blocked, and PR-unknown fixtures pin the native RPC envelope and content fields. The published shape must cover both Composer and JavaScript projects through the existing shared behaviors and private project extensions.
 
+### Scheduled Project intent
+
+The Gateway publishes the complete public Project, group and active-operation snapshot through native `workflow.trigger.set` inputs for `maintenance-projects`. The native schedule selects daily detection, weekly routine work and bounded PR observations. Its steps read no Gateway state and post no admissions. The shared commit-feed subscriber delivers its terminal `maintenance/result` to the Projects family, which records replay identity and uses normal guarded admission for the selected Project operation.
+
+A schedule input producer declares `publishes_inputs: true` in its family `scheduled-results.php`. Only that exact workflow receives the native workflow-write scope needed by `workflow.trigger.set`, in addition to run/read. Context workflows and other Operations retain run/read. The source grant validator rejects missing producer write authority, write on other workflows, duplicates and admin authority.
+
+The matching manifest row also declares `publishes_inputs: true`; the source validator requires it to match the family declaration. The load-policy compiler permits run/read/write only on such a marked workflow and emits the exact declared scope. A load owner applies the manifest separately.
+
+Successful Project results bind the immutable routine or package batch to one external Task group, then use normal guarded Tasks provision admission. A capacity refusal keeps the captured Todo group pending. A later native schedule observation may request that same guarded admission; changed intent, assistance or an execution hold refuses it. The current Incus provision root supplies the one VM and source/setup. Its terminal receipt admits `tasks.maintenance`, which composes the shared `task-vm-workspace` child and runs every package action through official pinned SSH from Node209. There is no guest Swamp worker, package-admission dispatcher, maintenance factory or step-side Gateway client.
+
+The maintenance DAG exposes directory inspection, audit, target verification, manifest changes, dependency update and lock verification as separate steps. Exact package targets preserve declaration range style, refuse downgrades and stale advisory evidence, verify fixed security findings and check release age for every changed resolved package. JavaScript temporarily pins the exact solve, restores its declaration ranges and confirms lock synchronization changes no resolved version. Expo batches must match their selected SDK catalog. Repository package commands run only in the TaskVM.
+
+Terminal results admit the normal handoff check. A failed business check permits one bounded Pi repair turn, followed by the same deterministic maintenance and check. A second failure requests investigation and retains the workspace. A passed changed batch admits normal checked-candidate publication and review parking. A passed no-change result uses the native ending DAG to remove the workspace and VM before completion. Failures preserve ownership and records.
+
+PR and target links come from the captured maintenance intent and its exact native root, from Gateway inputs. Native PR observations authorize cleanup only after the admitted published PR has ended; an open PR keeps its parked VM and review custody.
+
+
+Committed Project, group or Project-operation changes invalidate the published snapshot. A failed publication remains unaccepted. A terminal selection from a changed or unaccepted snapshot admits no work. The Gateway records admission slots with the published revision so replay cannot start a second operation for the same selection.
+
+`project-detect` records a running scan attempt and revokes the previous plan before acquiring source. Checkout, authentication or manifest failure therefore cannot leave old findings eligible for new work. Readers can still inspect the previous immutable source reports and their original observation times. A late failure from an older run cannot replace a newer plan.
+
+`project-observe` receives the captured PR URLs and makes one bounded GitHub read per URL with the existing repository read credentials. It returns public PR identity, state and head evidence. The Gateway applies that evidence only while the captured group watch is still current. Missing or failed reads remain unknown evidence.
+
+The separate `dependency-upgrade` workflow takes its scratch checkout and branch as run inputs. Placed Git steps fetch the branch and capture its exact commit. Native scan reads that commit; native plan receives the scan output directly. Neither step uses the native-host dispatcher or selects an inventory through a mutable latest-resource read.
+
 ### Project index
 
 Publish one persistent JSON index per Orbit Project and source ref. It identifies immutable, versioned source reports and the open batch update PR. Publish reports before switching the index so one read cannot combine different generations.

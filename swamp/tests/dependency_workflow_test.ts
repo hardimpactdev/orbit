@@ -5,7 +5,9 @@ import { parse, stringify } from "jsr:@std/yaml@1.0.9";
 
 const repo = new URL("..", import.meta.url).pathname;
 Deno.test("official dependency workflow refuses registry faults before approval; no-change remains distinct", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "swamp-dependency-workflow-" });
+  const dir = await Deno.makeTempDir({
+    prefix: "swamp-dependency-workflow-",
+  });
   const proof = await Deno.makeTempDir({
     prefix: "swamp-dependency-policy-proof-",
   });
@@ -35,46 +37,58 @@ Deno.test("official dependency workflow refuses registry faults before approval;
           "workflows/workflow-dependency-upgrade.yaml",
         ],
         ["extensions/behaviors/orbit_deps.ts", "tests/orbit_deps.ts"],
-        ["extensions/behaviors/_lib/inventory.ts", "tests/_lib/inventory.ts"],
-        ["extensions/behaviors/_lib/versions.ts", "tests/_lib/versions.ts"],
+        [
+          "extensions/behaviors/_lib/inventory.ts",
+          "tests/_lib/inventory.ts",
+        ],
+        [
+          "extensions/behaviors/_lib/versions.ts",
+          "tests/_lib/versions.ts",
+        ],
       ]
     ) {
-      await Deno.mkdir(`${dir}/${to.slice(0, to.lastIndexOf("/")) || "."}`, {
-        recursive: true,
-      });
+      await Deno.mkdir(
+        `${dir}/${to.slice(0, to.lastIndexOf("/")) || "."}`,
+        {
+          recursive: true,
+        },
+      );
       await Deno.copyFile(
         from === "extensions/behaviors/orbit_deps.ts"
-          ? Deno.env.get("DEPENDENCY_WORKFLOW_TEST_SOURCE") ?? `${repo}/${from}`
+          ? Deno.env.get("DEPENDENCY_WORKFLOW_TEST_SOURCE") ??
+            `${repo}/${from}`
           : `${repo}/${from}`,
         `${dir}/${to}`,
       );
     }
-    // The production host dispatcher targets its worker-owned repository.
-    // Invoke the same scan/plan methods directly inside this isolated fixture.
     const workflowPath = `${dir}/workflows/workflow-dependency-upgrade.yaml`;
     const workflow = parse(await Deno.readTextFile(workflowPath)) as {
-      labels?: Record<string, string>;
-      jobs: { steps: { task: Record<string, unknown> }[] }[];
+      jobs: {
+        target?: string;
+        steps: {
+          name: string;
+          target?: string;
+          task: Record<string, unknown>;
+        }[];
+      }[];
     };
-    // This local policy fixture has no fleet worker. Verify shipped placement
-    // before removing it from the disposable copy; keep every DAG/assert edge.
-    assertEquals(workflow.labels, { pool: "migration", node: "209" });
-    delete workflow.labels;
-    let dispatches = 0;
+    let methods = 0;
     for (const job of workflow.jobs) {
+      assertEquals(job.target, "orbit-node-209");
+      delete job.target;
       for (const step of job.steps) {
-        const task = step.task;
-        if (task.modelType !== "@nckrtl/native-host-method") continue;
-        assert(
-          ["upgrade_scan", "upgrade_plan"].includes(String(task.methodName)),
-        );
-        task.modelType = "@fixture/dependency-policy";
-        task.modelName = "orbit-deps";
-        task.methodName = task.methodName === "upgrade_scan" ? "scan" : "plan";
-        dispatches++;
+        assertEquals(step.target, "orbit-node-209");
+        delete step.target;
+        if (step.name === "fetch") step.task.inputs = { run: "true" };
+        if (step.name === "head") {
+          step.task.inputs = {
+            run: `printf '%s\\n' '${"a".repeat(40)}'`,
+          };
+        }
+        if (step.task.modelIdOrName === "orbit-deps") methods++;
       }
     }
-    assertEquals(dispatches, 2);
+    assertEquals(methods, 2);
     await Deno.writeTextFile(workflowPath, stringify(workflow));
     await Deno.mkdir(`${dir}/extensions/behaviors`, { recursive: true });
     // Use the existing planner without adding injectable registry URLs or a
@@ -85,16 +99,22 @@ Deno.test("official dependency workflow refuses registry faults before approval;
 import { behavior as original } from "../../tests/orbit_deps.ts";
 export const behavior = { ...original, type: "@fixture/dependency-policy", methods: {
   scan: { ...original.methods.scan, execute: async (_args, ctx) => {
-    const fixture = JSON.parse(await Deno.readTextFile(ctx.globalArgs.checkoutDir + "/fixture.json"));
+    const fixture = JSON.parse(await Deno.readTextFile(${
+        JSON.stringify(dir)
+      } + "/fixture.json"));
     const handle = await ctx.writeResource("inventory", "inventory", fixture.inventory);
     return { dataHandles: [handle] };
   } },
   plan: { ...original.methods.plan, execute: async (args, ctx) => {
-    const fixture = JSON.parse(await Deno.readTextFile(ctx.globalArgs.checkoutDir + "/fixture.json"));
+    const fixture = JSON.parse(await Deno.readTextFile(${
+        JSON.stringify(dir)
+      } + "/fixture.json"));
     const saved = globalThis.fetch;
     globalThis.fetch = async (input) => {
       const url = String(input);
-      await Deno.writeTextFile(ctx.globalArgs.checkoutDir + "/requests.jsonl", JSON.stringify({url}) + "\\n", { append: true });
+      await Deno.writeTextFile(${
+        JSON.stringify(dir)
+      } + "/requests.jsonl", JSON.stringify({url}) + "\\n", { append: true });
       if (fixture.transportFailure) throw new Error("controlled registry unavailable");
       const row = fixture.responses[url];
       if (!row) throw new Error("unexpected registry request");
@@ -112,13 +132,11 @@ export const behavior = { ...original, type: "@fixture/dependency-policy", metho
     await Deno.writeTextFile(
       `${dir}/models/@fixture/dependency-policy/orbit-deps.yaml`,
       `type: '@fixture/dependency-policy'
-typeVersion: 2026.10.31.1
+typeVersion: 2026.11.01.1
 id: f9acccd1-c74f-4d87-a383-84c2924da698
 name: orbit-deps
 version: 1
-globalArguments:
-  checkoutDir: ${dir}
-  branch: main
+globalArguments: {}
 methods: {}
 `,
     );
@@ -181,7 +199,9 @@ methods: {}
         [
           "no-change",
           {
-            body: { packages: { "acme/one": [{ version: "1.0.0" }] } },
+            body: {
+              packages: { "acme/one": [{ version: "1.0.0" }] },
+            },
           },
           false,
           "composer",
@@ -191,7 +211,11 @@ methods: {}
         [
           "partial",
           {
-            body: { packages: { "acme/one": [{}, { version: "1.1.0" }] } },
+            body: {
+              packages: {
+                "acme/one": [{}, { version: "1.1.0" }],
+              },
+            },
           },
           false,
           "composer",
@@ -210,7 +234,9 @@ methods: {}
           {
             body: {
               packages: {
-                "acme/one": ["1.0", "1.0.0.9", "dev-main"].map((version) => ({
+                "acme/one": ["1.0", "1.0.0.9", "dev-main"].map((
+                  version,
+                ) => ({
                   version,
                 })),
               },
@@ -228,7 +254,13 @@ methods: {}
           "npm",
           true,
         ],
-        ["npm-four-part", { body: npm("1.0.0.9") }, false, "npm", false],
+        [
+          "npm-four-part",
+          { body: npm("1.0.0.9") },
+          false,
+          "npm",
+          false,
+        ],
         ["npm-shorthand", { body: npm("1.0") }, false, "npm", false],
         [
           "npm-mixed-dev",
@@ -268,7 +300,12 @@ methods: {}
         ],
         [
           "npm-invalid-latest",
-          { body: { ...npm("1.0.0"), "dist-tags": { latest: "1.0" } } },
+          {
+            body: {
+              ...npm("1.0.0"),
+              "dist-tags": { latest: "1.0" },
+            },
+          },
           false,
           "npm",
           false,
@@ -303,12 +340,21 @@ methods: {}
           transportFailure,
         }),
       );
-      await Deno.copyFile(`${dir}/fixture.json`, `${proof}/${name}-input.json`);
+      await Deno.copyFile(
+        `${dir}/fixture.json`,
+        `${proof}/${name}-input.json`,
+      );
       const started = performance.now();
+      await Deno.writeTextFile(
+        `${dir}/inputs.json`,
+        JSON.stringify({ checkoutDir: dir, branch: "main" }),
+      );
       const run = await invoke(
         "workflow",
         "run",
         "dependency-upgrade",
+        "--input-file",
+        `${dir}/inputs.json`,
         "--json",
       );
       await Deno.writeTextFile(
@@ -351,7 +397,8 @@ methods: {}
         success ? "succeeded" : "failed",
       );
       assertEquals(
-        planning.steps.find((s: { name: string }) => s.name === "plan").status,
+        planning.steps.find((s: { name: string }) => s.name === "plan")
+          .status,
         success ? "succeeded" : "failed",
       );
       assertEquals(
@@ -383,7 +430,8 @@ methods: {}
         mechanicalLlmCalls: 0,
       };
     }
-    const requests = (await Deno.readTextFile(`${dir}/requests.jsonl`)).trim()
+    const requests = (await Deno.readTextFile(`${dir}/requests.jsonl`))
+      .trim()
       .split("\n").map((s) => JSON.parse(s));
     assertEquals(requests.length, 15);
     assert(
@@ -393,7 +441,12 @@ methods: {}
     await Deno.writeTextFile(
       `${proof}/outcomes.json`,
       JSON.stringify(
-        { outcomes, requests, nativeTaskCalls: 0, packageManagerCalls: 0 },
+        {
+          outcomes,
+          requests,
+          nativeTaskCalls: 0,
+          packageManagerCalls: 0,
+        },
         null,
         2,
       ),

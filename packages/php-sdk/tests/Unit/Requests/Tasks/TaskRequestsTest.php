@@ -30,6 +30,7 @@ use Orbit\Sdk\Requests\Tasks\SubtaskInput;
 use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentSnapshotResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
@@ -57,7 +58,7 @@ describe('task transport', function (): void {
         'show' => [new ShowTaskGroupRequest(13), Method::GET, '/api/v1/task-groups/13'],
         'update' => [new UpdateTaskGroupRequest(13), Method::PATCH, '/api/v1/task-groups/13'],
         'publish' => [new PublishTaskGroupRequest(13, 17), Method::POST, '/api/v1/task-groups/13/publish'],
-        'cancel' => [new CancelTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/cancel'],
+        'cancel' => [new CancelTaskGroupRequest(13, 'cancel.13'), Method::POST, '/api/v1/task-groups/13/cancel'],
         'check' => [new CheckTaskGroupRequest(13, 21, 'baseline'), Method::POST, '/api/v1/task-groups/13/check'],
         'turn' => [new TurnTaskGroupRequest(13, 14, 'implementer', 'Prompt', 'new'), Method::POST, '/api/v1/task-groups/13/turn'],
         'park' => [new ParkTaskGroupRequest(13, 'park.13'), Method::POST, '/api/v1/task-groups/13/park'],
@@ -157,7 +158,7 @@ describe('task transport', function (): void {
         'group comment list' => [new ListTaskGroupCommentsRequest(13)],
         'status' => [new ShowTasksStatusRequest],
         'question list' => [new ListTaskQuestionsRequest],
-        'cancel' => [new CancelTaskGroupRequest(13)],
+        'cancel' => [new CancelTaskGroupRequest(13, 'cancel.13')],
         'complete' => [new CompleteTaskGroupRequest(13)],
         'destroy' => [new DestroySubtaskRequest(13, 57)],
         'subtask cancel' => [new CancelSubtaskRequest(13, 57)],
@@ -194,7 +195,6 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'create' => ['tasks-create/created', new CreateTaskGroupRequest(1, 'Add the tasks CLI', 'Brief'), TaskGroupResponse::class],
         'show' => ['tasks-show/default', new ShowTaskGroupRequest(1), TaskGroupResponse::class],
         'update' => ['tasks-update/updated', new UpdateTaskGroupRequest(1, 'Add the tasks command family'), TaskGroupResponse::class],
-        'cancel' => ['tasks-cancel/cancelled', new CancelTaskGroupRequest(1), TaskGroupResponse::class],
         'complete' => ['tasks-complete/completed', new CompleteTaskGroupRequest(2), TaskGroupResponse::class],
         'subtask create' => ['tasks-subtask-create/created', new CreateSubtaskRequest(1, 'Document the commands', 'Brief'), SubtaskResponse::class],
         'subtask update' => ['tasks-subtask-update/updated', new UpdateSubtaskRequest(1, 1, position: 2), SubtaskResponse::class],
@@ -747,4 +747,19 @@ it('preserves external board status inputs on partial updates', function (): voi
     expect(new UpdateTaskGroupRequest(13, status: 'reviewing')->body()->all())->toBe('{"status":"reviewing"}');
     expect(new UpdateSubtaskRequest(13, 57, status: 'completed')->body()->all())->toBe('{"status":"completed"}');
     expect(new UpdateSubtaskRequest(13, 57, status: '')->body()->all())->toBe('{"status":""}');
+});
+
+it('transports keyed native cancellation and parses the accepted Operation', function (): void {
+    $request = new CancelTaskGroupRequest(13, 'cancel.13');
+    $mock = new MockClient([CancelTaskGroupRequest::class => MockResponse::make(['data' => [
+        'id' => 42, 'kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => 13,
+        'status' => 'queued', 'sequence' => 1,
+    ]], 202)]);
+    $connector = new GatewayConnector('https://gateway.test');
+    $connector->withMockClient($mock);
+    $operation = $connector->send($request)->dto();
+    expect($operation)->toBeInstanceOf(OperationResponse::class)
+        ->and($operation->kind)->toBe('tasks.cancel')->and($operation->status)->toBe('queued')
+        ->and($request->headers()->get('Idempotency-Key'))->toBe('cancel.13')
+        ->and($request)->not->toBeInstanceOf(HasBody::class);
 });

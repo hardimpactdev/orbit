@@ -8,6 +8,9 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCancelProjection;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskReviewedCommitSource;
@@ -363,3 +366,26 @@ it('retains preservation and new foreign resource refusals at dispatch', functio
     expect(fn () => app(TaskVmDestroyIntent::class)->ownedForWorkspace($this->vm, $workspace, $captured, $parent->id))->toThrow(ResourceOperationException::class);
     expect($workspace->fresh())->not->toBeNull()->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
 })->with(['database', 'route', 'unpublished-work']);
+
+it('projects the complete Tasks ending parent without deleting records at admission', function (): void {
+    enable_operation_queue();
+    app(TaskExtensionState::class)->enable();
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $group = Task::topLevel()->findOrFail($this->vm->group_id);
+    $run = '8ba8f6c9-0a5e-44da-9710-4bde40935894';
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-cancel', 'runId' => $run]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $operation = app(TaskCancelIntent::class)->start($group, 'fixture', null);
+    expect($workspace->fresh())->not->toBeNull()->and($group->fresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and($operation->kind)->toBe('tasks.cancel')->and(Operation::query()->count())->toBe(1);
+    $vm = destroyCompleteResult($this->vm);
+    $data = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['group_id' => $group->id, 'instance_id' => $workspace->id, 'cleanup_complete' => true, 'vm' => [...$vm, 'cleanup_complete' => false]]];
+    expect(fn () => app(TaskCancelProjection::class)->apply($operation, $data))->toThrow(ResourceOperationException::class);
+    expect($workspace->fresh())->not->toBeNull()->and($group->fresh()->taskable_id)->toBe($workspace->id);
+    $data['result']['vm'] = $vm;
+    app(TaskCancelProjection::class)->apply($operation->fresh(), $data);
+    expect(Instance::query()->find($workspace->id))->toBeNull()->and($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($group->fresh()->taskable_id)->toBeNull()->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed);
+});

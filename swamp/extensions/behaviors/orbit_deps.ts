@@ -3,7 +3,7 @@
 // Packagist and the npm registry and records a typed upgrade plan.
 import { z } from "npm:zod@4";
 import semver from "npm:semver@7.7.2";
-import { buildInventory, git, type SubProjectInventory } from "./_lib/inventory.ts";
+import { buildInventory, type SubProjectInventory } from "./_lib/inventory.ts";
 import {
   type Ecosystem,
   gt,
@@ -15,11 +15,11 @@ import {
   toRange,
 } from "./_lib/versions.ts";
 
-const GlobalArgsSchema = z.object({
-  checkoutDir: z.string().describe("Scratch clone of the Orbit repository (read-only use)"),
-  branch: z.string().default("main"),
-});
-type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
+const ScanArgsSchema = z.object({
+  checkoutDir: z.string().startsWith("/"),
+  branch: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_./-]*$/),
+  commit: z.string().trim().regex(/^[a-f0-9]{40,64}$/),
+}).strict();
 
 const DirectDepSchema = z.object({
   name: z.string(),
@@ -191,8 +191,8 @@ function slug(s: string): string {
 
 export const behavior = {
   type: "@nckrtl/orbit-deps",
-  version: "2026.10.31.1",
-  globalArguments: GlobalArgsSchema,
+  version: "2026.11.01.1",
+  globalArguments: z.object({}).strict(),
   resources: {
     inventory: {
       description: "Direct dependencies per Orbit sub-project from committed manifests and lockfiles",
@@ -210,18 +210,16 @@ export const behavior = {
   methods: {
     scan: {
       description: "Read dependency manifests and lockfiles at the selected Git commit",
-      arguments: z.object({}),
+      arguments: ScanArgsSchema,
       execute: async (
-        _args: Record<string, never>,
+        args: z.input<typeof ScanArgsSchema>,
         context: {
-          globalArgs: GlobalArgs;
           writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
           logger: { info: (msg: string, props?: Record<string, unknown>) => void };
         },
       ) => {
-        const g = context.globalArgs;
-        await git(g.checkoutDir, ["fetch", "--quiet", "origin", g.branch]);
-        const commit = (await git(g.checkoutDir, ["rev-parse", `origin/${g.branch}`])).trim();
+        const g = ScanArgsSchema.parse(args);
+        const commit = g.commit;
 
         const subProjects: SubProjectInventory[] = await buildInventory(g.checkoutDir, commit);
         for (const sp of subProjects) {
@@ -246,17 +244,15 @@ export const behavior = {
 
     plan: {
       description: "dependency-planner: compare the inventory with Packagist and npm and record an upgrade plan",
-      arguments: z.object({}),
+      arguments: z.object({ inventory: InventorySchema }).strict(),
       execute: async (
-        _args: Record<string, never>,
+        args: { inventory: unknown },
         context: {
-          readResource: (name: string) => Promise<Record<string, unknown> | null>;
           writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
           logger: { info: (msg: string, props?: Record<string, unknown>) => void };
         },
       ) => {
-        const inv = (await context.readResource("inventory")) as z.infer<typeof InventorySchema> | null;
-        if (!inv) throw new Error("No inventory recorded yet; run scan first");
+        const inv = InventorySchema.parse(args.inventory);
 
         // One registry lookup per (ecosystem, package).
         const keys = new Map<string, { ecosystem: Ecosystem; name: string }>();

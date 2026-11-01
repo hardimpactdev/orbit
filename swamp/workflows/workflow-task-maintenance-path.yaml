@@ -1,0 +1,564 @@
+id: 85856d40-df44-408b-92dd-7769c6e6fed3
+name: task-maintenance-path
+description: One captured maintenance directory, with each SSH action visible in native
+  history.
+vaults: []
+inputs:
+  type: object
+  properties:
+    place:
+      type: object
+    place_json:
+      type: string
+    ssh_execution:
+      type: object
+    remote_assets:
+      type: string
+  required:
+  - place
+  - place_json
+  - ssh_execution
+  - remote_assets
+jobs:
+- name: inspect
+  target: orbit-node-209
+  steps:
+  - name: inspect-before
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "maintenance-ssh-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/workspace_files.py" }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+  - name: before
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: inspect
+      inputs:
+        place: ${{ inputs.place }}
+        stdout: ${{ steps["inspect-before"].outputs.stdout }}
+    dependsOn:
+    - step: inspect-before
+      condition:
+        type: succeeded
+  - name: audit-before
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/command.py" }}
+        - ${{ steps.before.outputs.audit_json }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: before
+      condition:
+        type: succeeded
+  - name: plan
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: plan
+      inputs:
+        place: ${{ inputs.place }}
+        snapshot: ${{ steps.before.outputs.snapshot }}
+        audit: ${{ steps["audit-before"].outputs.stdout }}
+    dependsOn:
+    - step: audit-before
+      condition:
+        type: succeeded
+- name: target_releases
+  target: orbit-node-209
+  steps:
+  - name: release-${{ self._index }}
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "tm-release-"+run.id+"-target-"+string(self._index)
+        }}
+      methodName: release
+      inputs:
+        manager: ${{ inputs.place.manager }}
+        name: ${{ self.item.name }}
+    forEach:
+      item: item
+      in: ${{ steps.plan.outputs.release_targets }}
+    concurrency: 1
+  dependsOn:
+  - job: inspect
+    condition:
+      type: succeeded
+- name: update
+  target: orbit-node-209
+  steps:
+  - name: target-age
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: age
+      inputs:
+        place: ${{ inputs.place }}
+        changed: ${{ steps.plan.outputs.release_targets }}
+        readings: ${{ steps }}
+  - target: orbit-node-209
+    guard: ${{ steps.plan.outputs.expo_url == null }}
+    name: expo-fetch
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "maintenance-expo-fetch-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'curl --fail --silent --show-error --location --output "$EXPO_ARCHIVE"
+          "$EXPO_URL"
+
+          '
+        env:
+          EXPO_ARCHIVE: ${{ "/tmp/orbit-expo-"+run.id+".tgz" }}
+          EXPO_URL: ${{ steps.plan.outputs.expo_url }}
+    dependsOn:
+    - step: target-age
+      condition:
+        type: succeeded
+  - target: orbit-node-209
+    guard: ${{ steps.plan.outputs.expo_url == null }}
+    name: expo-catalog
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "maintenance-expo-catalog-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'tar -xzOf "$EXPO_ARCHIVE" package/bundledNativeModules.json
+
+          '
+        env:
+          EXPO_ARCHIVE: ${{ "/tmp/orbit-expo-"+run.id+".tgz" }}
+    dependsOn:
+    - step: expo-fetch
+      condition:
+        type: succeeded
+  - target: orbit-node-209
+    guard: ${{ steps.plan.outputs.expo_url == null }}
+    name: expo-validate
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-expo-validate-"+run.id }}
+      methodName: expo
+      inputs:
+        place: ${{ inputs.place }}
+        snapshot: ${{ steps.before.outputs.snapshot }}
+        stdout: ${{ steps["expo-catalog"].outputs.stdout }}
+    dependsOn:
+    - step: expo-catalog
+      condition:
+        type: succeeded
+  - target: orbit-node-209
+    guard: ${{ steps.plan.outputs.expo_url == null }}
+    name: expo-cleanup
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "maintenance-expo-cleanup-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'rm -f -- "$EXPO_ARCHIVE"
+
+          '
+        env:
+          EXPO_ARCHIVE: ${{ "/tmp/orbit-expo-"+run.id+".tgz" }}
+    dependsOn:
+    - step: expo-validate
+      condition:
+        type: always
+    allowFailure: true
+  - name: prepare
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/command.py" }}
+        - ${{ steps.plan.outputs.prepare_json }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: expo-validate
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.plan.outputs.prepare == null }}
+  - name: manifest
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/manifest.py" }}
+        - ${{ steps.plan.outputs.patch_json }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: prepare
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ inputs.place.mode != "package" }}
+  - name: update
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/command.py" }}
+        - ${{ steps.plan.outputs.update_json }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: manifest
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: inspect-after
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/workspace_files.py" }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: update
+      condition:
+        type: succeeded
+  - name: after
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: inspect
+      inputs:
+        place: ${{ inputs.place }}
+        stdout: ${{ steps["inspect-after"].outputs.stdout }}
+    dependsOn:
+    - step: inspect-after
+      condition:
+        type: succeeded
+  - name: audit-after
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/command.py" }}
+        - ${{ steps.after.outputs.audit_json }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: after
+      condition:
+        type: succeeded
+  - name: verify
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: verify
+      inputs:
+        place: ${{ inputs.place }}
+        before: ${{ steps.before.outputs.snapshot }}
+        after: ${{ steps.after.outputs.snapshot }}
+        audit: ${{ steps["audit-after"].outputs.stdout }}
+    dependsOn:
+    - step: audit-after
+      condition:
+        type: succeeded
+  dependsOn:
+  - job: target_releases
+    condition:
+      type: succeeded
+- name: changed_releases
+  target: orbit-node-209
+  steps:
+  - name: release-changed-${{ self._index }}
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "tm-release-"+run.id+"-changed-"+string(self._index)
+        }}
+      methodName: release
+      inputs:
+        manager: ${{ inputs.place.manager }}
+        name: ${{ self.item.name }}
+    forEach:
+      item: item
+      in: ${{ steps.verify.outputs.changed }}
+    concurrency: 1
+  dependsOn:
+  - job: update
+    condition:
+      type: succeeded
+- name: finalize
+  target: orbit-node-209
+  steps:
+  - name: age-verified
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: age
+      inputs:
+        place: ${{ inputs.place }}
+        changed: ${{ steps.verify.outputs.changed }}
+        readings: ${{ steps }}
+        prefix: release-changed
+  - name: restore-plan
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: restore
+      inputs:
+        place: ${{ inputs.place }}
+        after: ${{ steps.after.outputs.snapshot }}
+        declarations: ${{ steps.plan.outputs.declarations }}
+    dependsOn:
+    - step: age-verified
+      condition:
+        type: succeeded
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+  - name: restore-ranges
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "maintenance-ssh-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets+"/scripts/manifest.py" }}
+        - ${{ steps["restore-plan"].outputs.patch_json }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: restore-plan
+      condition:
+        type: succeeded
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+  - name: synchronize-lock
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "maintenance-ssh-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets+"/scripts/command.py" }}
+        - ${{ steps["restore-plan"].outputs.sync_json }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: restore-ranges
+      condition:
+        type: succeeded
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+  - name: inspect-restored
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "maintenance-ssh-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ inputs.remote_assets + "/scripts/workspace_files.py" }}
+        stdin: ${{ inputs.place_json }}
+        timeoutSec: 3600
+    dependsOn:
+    - step: synchronize-lock
+      condition:
+        type: succeeded
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+  - name: restored
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: inspect
+      inputs:
+        place: ${{ inputs.place }}
+        stdout: ${{ steps["inspect-restored"].outputs.stdout }}
+    dependsOn:
+    - step: inspect-restored
+      condition:
+        type: succeeded
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+  - name: synchronized
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: ${{ "maintenance-input-"+run.id }}
+      methodName: synchronized
+      inputs:
+        place: ${{ inputs.place }}
+        solved: ${{ steps.after.outputs.snapshot }}
+        after: ${{ steps.restored.outputs.snapshot }}
+    dependsOn:
+    - step: restored
+      condition:
+        type: succeeded
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "maintenance-path-result-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' ''{"verified":true}''
+
+          '
+    dependsOn:
+    - step: synchronized
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  dependsOn:
+  - job: changed_releases
+    condition:
+      type: succeeded

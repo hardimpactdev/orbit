@@ -1,4 +1,4 @@
-import { type DependencyProject } from "./dependency_projects.ts";
+import { type DependencyProject } from "./dependency_project_schema.ts";
 import { canonical, sha256 } from "./repository_analysis.ts";
 import { type BatchPlan, type Candidate } from "./maintenance/batch.ts";
 import { type Findings, FindingsSchema } from "./project_schedule.ts";
@@ -24,7 +24,11 @@ export interface ResultStore {
   readIndex(name: string): Promise<Index | null>;
   readReport(name: string, version: number): Promise<Report>;
   writeIndex(name: string, value: Index): Promise<void>;
-  writeReport(name: string, value: Report, sourceRef: string): Promise<number>;
+  writeReport(
+    name: string,
+    value: Report,
+    sourceRef: string,
+  ): Promise<number>;
 }
 export interface ScanDependencies {
   store: ResultStore;
@@ -75,7 +79,8 @@ export function sources(project: DependencyProject): SourceIdentity[] {
     })),
   ].map((s) => SourceIdentitySchema.parse(s));
   if (
-    result.length > 64 || new Set(result.map(sourceKey)).size !== result.length
+    result.length > 64 ||
+    new Set(result.map(sourceKey)).size !== result.length
   ) throw new Error("source_configuration_limit");
   return result;
 }
@@ -105,7 +110,8 @@ function findings(
     ].sort();
     if (!versions.length) throw new Error("finding_resolution_missing");
     const target = plans.flatMap((p) => p.targets).find((t) =>
-      t.path === c.path && t.manager === c.manager && t.package === c.package
+      t.path === c.path && t.manager === c.manager &&
+      t.package === c.package
     );
     return c.reasons.map((reason) => {
       const blockedMajor = reason === "major" && target &&
@@ -160,12 +166,12 @@ function findings(
   });
 }
 
-/** Every refresh is a new attempt, even at the same SHA. Reports precede the index switch. */
-export async function scanProject(
+/** Publish a running attempt and revoke prior findings before any source acquisition. */
+export async function prepareProjectScan(
   project: DependencyProject,
   runId: string,
-  deps: ScanDependencies,
-): Promise<Index> {
+  deps: Pick<ScanDependencies, "store" | "now" | "pr" | "saveFindings">,
+) {
   const ref = `refs/heads/${project.defaultBranch}`,
     name = await indexName(project.projectId, ref),
     repository = repositoryIdentity(project.repository),
@@ -190,6 +196,16 @@ export async function scanProject(
   };
   // Revoke the previous plan even when configuration cannot fit a bounded index.
   await deps.saveFindings(FindingsSchema.parse(empty));
+  let configured: SourceIdentity[] = [];
+  const prepared = (index: Index) => ({
+    index,
+    ref,
+    name,
+    repository,
+    started,
+    empty,
+    configured,
+  });
   const configurationFailure = async (code: string) => {
     if (!prior) throw new Error(code);
     const finished = deps.now(),
@@ -200,16 +216,20 @@ export async function scanProject(
       generated_at: finished,
       source_commit: null,
       last_attempt: failure,
-      sources: prior.sources.map((s) => ({ ...s, last_attempt: failure })),
+      sources: prior.sources.map((s) => ({
+        ...s,
+        last_attempt: failure,
+      })),
     });
     await deps.store.writeIndex(name, value);
     return value;
   };
-  let configured: SourceIdentity[];
   try {
     configured = sources(project);
   } catch {
-    return await configurationFailure("source_configuration_limit");
+    return prepared(
+      await configurationFailure("source_configuration_limit"),
+    );
   }
   const running = attempt(runId, started, null, "running", null);
   const initial = IndexSchema.safeParse({
@@ -231,32 +251,103 @@ export async function scanProject(
     batch_pr: await deps.pr(project, prior?.batch_pr ?? null),
   });
   if (!initial.success) {
-    return await configurationFailure("index_publication_limit");
+    return prepared(await configurationFailure("index_publication_limit"));
   }
   let index = initial.data;
-  const failedSnapshot = (base: Index, error: string, finished: string) => {
-    const failure = attempt(runId, started, finished, "failed", error);
-    return {
-      ...base,
-      publication_id: crypto.randomUUID(),
-      generated_at: finished,
-      last_attempt: failure,
-      sources: base.sources.map((s) => ({ ...s, last_attempt: failure })),
-    };
-  };
   // A running publication must have room for its bounded failure form, including the head.
   if (
     !IndexSchema.safeParse(
-      failedSnapshot(
+      failedScanSnapshot(
         { ...index, source_commit: "0".repeat(64) },
+        runId,
+        started,
         "index_publication_limit",
         started,
       ),
     ).success
   ) {
-    return await configurationFailure("index_publication_limit");
+    return prepared(await configurationFailure("index_publication_limit"));
   }
   await deps.store.writeIndex(name, index);
+  return prepared(index);
+}
+
+function failedScanSnapshot(
+  base: Index,
+  runId: string,
+  started: string,
+  error: string,
+  finished: string,
+): Index {
+  const failure = attempt(runId, started, finished, "failed", error);
+  return {
+    ...base,
+    publication_id: crypto.randomUUID(),
+    generated_at: finished,
+    last_attempt: failure,
+    sources: base.sources.map((s) => ({ ...s, last_attempt: failure })),
+  };
+}
+
+/** Failed native acquisition/head verification must not leave an earlier plan actionable. */
+export async function failProjectScan(
+  project: DependencyProject,
+  runId: string,
+  deps: Pick<ScanDependencies, "store" | "now" | "saveFindings">,
+  code: string,
+): Promise<Index | null> {
+  const name = await indexName(
+    project.projectId,
+    `refs/heads/${project.defaultBranch}`,
+  );
+  const current = await deps.store.readIndex(name);
+  if (!current || current.last_attempt.run_id !== runId) return null;
+  await deps.saveFindings(
+    FindingsSchema.parse({
+      schema: 1,
+      key: `${project.projectId}-${runId}`,
+      projectId: project.projectId,
+      source: runId,
+      sourceRef: current.source_ref,
+      policyIdentity: await policyIdentity(project),
+      reports: [],
+      plans: [],
+      targets: [],
+      blocked: [],
+    }),
+  );
+  const failed = IndexSchema.parse(
+    failedScanSnapshot(
+      { ...current, source_commit: null },
+      runId,
+      current.last_attempt.started_at,
+      code,
+      deps.now(),
+    ),
+  );
+  await deps.store.writeIndex(name, failed);
+  return failed;
+}
+
+/** Reports precede the index switch; acquisition errors always revoke the plan. */
+export async function scanProject(
+  project: DependencyProject,
+  runId: string,
+  deps: ScanDependencies,
+): Promise<Index> {
+  const {
+    index: initial,
+    ref,
+    name,
+    repository,
+    started,
+    empty,
+    configured,
+  } = await prepareProjectScan(project, runId, deps);
+  if (initial.last_attempt.status !== "running") return initial;
+  let index = initial;
+  const failedSnapshot = (base: Index, error: string, finished: string) =>
+    failedScanSnapshot(base, runId, started, error, finished);
   let checkout: Awaited<ReturnType<ScanDependencies["acquire"]>> | null = null;
   const results = new Map<
     string,
@@ -341,7 +432,11 @@ export async function scanProject(
           ),
         });
         const dataName = await reportName(publication, source);
-        const version = await deps.store.writeReport(dataName, value, ref);
+        const version = await deps.store.writeReport(
+          dataName,
+          value,
+          ref,
+        );
         if (!Number.isSafeInteger(version) || version <= 0) {
           throw new Error("invalid_native_version");
         }
@@ -451,7 +546,10 @@ export async function refreshLifecycle(
   for (const source of next.sources) {
     if (!source.report) continue;
     const report = ReportSchema.parse(
-      await store.readReport(source.report.dataName, source.report.version),
+      await store.readReport(
+        source.report.dataName,
+        source.report.version,
+      ),
     );
     if (
       report.project_id !== index.project_id ||
@@ -501,8 +599,17 @@ export async function refreshLifecycle(
       published_at: now,
     });
     const dataName = await reportName(id, source),
-      version = await store.writeReport(dataName, value, index.source_ref);
-    source.report = { ...source.report, dataName, version, publication_id: id };
+      version = await store.writeReport(
+        dataName,
+        value,
+        index.source_ref,
+      );
+    source.report = {
+      ...source.report,
+      dataName,
+      version,
+      publication_id: id,
+    };
     changed = true;
   }
   if (!changed) return index;
@@ -518,9 +625,14 @@ export async function refreshLifecycle(
 /** Preserve producer times until evidence changes or its four-minute certainty expires. */
 export function coalescePr(previous: Pr, next: Pr): Pr {
   const meaning = (p: Pr) =>
-    canonical({ status: p.status, error_code: p.error_code, value: p.value });
+    canonical({
+      status: p.status,
+      error_code: p.error_code,
+      value: p.value,
+    });
   return meaning(previous) === meaning(next) &&
-      Date.parse(next.checked_at) - Date.parse(previous.checked_at) < 240000
+      Date.parse(next.checked_at) - Date.parse(previous.checked_at) <
+        240000
     ? previous
     : next;
 }

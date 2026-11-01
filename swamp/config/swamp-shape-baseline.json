@@ -82,14 +82,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/_lib/dependency_credentials.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "POST <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/dependency_inventory.ts",
       "rule": "custom-control",
       "count": 1,
@@ -130,16 +122,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/maintenance_worker.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "GET /api/v1/operations/{operation_id}",
-        "GET <unknown>",
-        "POST <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/maintenance/batch.ts",
       "rule": "custom-control",
       "count": 1,
@@ -154,54 +136,10 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/package_target.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/project_admission.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET /api/v1/task-groups",
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/project_schedule.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>",
-        "POST /api/v1/task-groups"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/repository_analysis.ts",
       "rule": "custom-control",
       "count": 2,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/_lib/review_capacity.ts",
-      "rule": "gateway-http",
-      "count": 6,
-      "evidence": [
-        "GET /api/v1/operations/{operation_id}",
-        "GET <unknown>",
-        "POST <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/service_detection.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/_lib/service_workspace.ts",
@@ -210,12 +148,6 @@
       "evidence": [
         "lock"
       ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/swamp_maintenance.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/automatic-deploy/development.ts",
@@ -246,12 +178,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/dependency_scanner.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/js-maintenance/_lib/batch.ts",
@@ -1861,14 +1787,6 @@
     },
     {
       "file": "extensions/behaviors/orbit_gateway.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/orbit_group_run.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
