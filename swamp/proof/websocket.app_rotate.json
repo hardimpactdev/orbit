@@ -1,0 +1,180 @@
+{
+  "kind": "websocket.app_rotate",
+  "workflow": "operation-websocket-registry",
+  "budget_seconds": 50,
+  "queue_timeout_seconds": 5,
+  "envelope": {
+    "registry_operation_id": "${match.uuid}",
+    "epoch": "${match.uuid}",
+    "revision": "${match.positive_int}",
+    "native_registry": {
+      "start_tag": "${match.uuid}",
+      "registry_operation_id": "${match.uuid}",
+      "epoch": "${match.uuid}",
+      "revision": "${match.positive_int}",
+      "change": "rotate",
+      "app_id": "${capture.subject_app_id}",
+      "credential_generation": 2,
+      "runtimes": [
+        {
+          "process_id": "${match.uuid}",
+          "node_id": "${topology.app-prod.node_id}",
+          "ssh": {
+            "control_node_id": 209,
+            "identity_file": "${match.nonempty_string}",
+            "public_key": "${match.nonempty_string}",
+            "target": {
+              "name": "target",
+              "host": "${topology.app-prod.wireguard_ip}",
+              "user": "${match.nonempty_string}",
+              "port": 22,
+              "host_keys": "${match.present}"
+            }
+          },
+          "port": 8790,
+          "credential_field": "${match.nonempty_string}"
+        }
+      ],
+      "missing_node_ids": []
+    },
+    "execution_secrets": "${match.present}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "stdout": "{\"outcome\":\"succeeded\",\"data\":{\"backend\":\"applied\"}}",
+        "accepted": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "resolve-assets",
+      "job": "assets",
+      "step": "assets",
+      "budget_seconds": 5
+    },
+    {
+      "name": "reconcile-confirm",
+      "job": "runtimes",
+      "step": "apply-0",
+      "budget_seconds": 12
+    },
+    {
+      "name": "terminal-result",
+      "job": "result",
+      "step": "result",
+      "budget_seconds": 5
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/websocket.sync/tests/parity.py",
+      "websocket.app_rotate",
+      "proof-rotate-${proof.run}",
+      "proof-rotate-other-${proof.run}",
+      "${capture.unrelated_key}",
+      "${capture.subject_key}",
+      "${topology.app-prod.node_id}",
+      "${topology.app-prod.wireguard_ip}"
+    ],
+    "cases": [
+      "native-terminal-result",
+      "unrelated-app-present",
+      "unrelated-app-handshake",
+      "app-id-and-key-preserved",
+      "exact-admitted-runtime",
+      "names-only-registry-copy",
+      "pre-existing-subject-socket-closes-4201",
+      "pre-existing-unrelated-socket-survives"
+    ]
+  },
+  "topology": [
+    "app-prod"
+  ],
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "node:role:add",
+        "${topology.app-prod.node_id}",
+        "websocket",
+        "--converge",
+        "--json"
+      ],
+      "capture": {
+        "role_operation_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:create",
+        "proof-rotate-other-${proof.run}",
+        "--operation-key=proof-rotate-other-${proof.run}",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:show",
+        "proof-rotate-other-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "unrelated_app_id": "$.app_id",
+        "unrelated_key": "$.key"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:create",
+        "proof-rotate-${proof.run}",
+        "--operation-key=proof-rotate-${proof.run}",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:show",
+        "proof-rotate-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "subject_app_id": "$.app_id",
+        "subject_key": "$.key"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "websocket:app:rotate",
+      "proof-rotate-${proof.run}",
+      "--operation-key=proof-rotate-${proof.run}",
+      "--force",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/websocket.app_rotate/tests/socket_observer.py",
+        "start",
+        "${capture.subject_key}",
+        "${capture.unrelated_key}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: "@nckrtl/websocket-native"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public assets and terminal projection for native Reverb registry confirmation.
+behaviors:
+  - operations/websocket-registry/metadata.ts
+additionalFiles:
+  - scripts/apply.py

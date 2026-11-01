@@ -34,7 +34,7 @@ Create an app for each Project that publishes realtime events.
 orbit websocket:app:create hauzer
 ```
 
-The name is a lowercase slug of at most 63 characters. `gateway` and a taken name are refused with `validation.failed`. The Gateway saves a new registry revision, then notifies each Reverb process. Each process pulls the full snapshot and adds the app without restarting. A starting process must fetch a fresh snapshot before accepting connections.
+The name is a lowercase slug of at most 63 characters. `gateway` and a taken name are refused with `validation.failed`. The Gateway saves a new registry revision. Its native workflow asks each admitted Reverb process to refresh the full snapshot and confirm the app without restarting. A starting process must fetch a fresh snapshot before accepting connections.
 
 `websocket:app:list` lists the apps by name. `websocket:app:show <name>` shows one app. Both return `id`, `name`, `app_id`, `key`, and `instance_ids`, the Instances that hold the app. Neither returns the secret.
 
@@ -52,7 +52,7 @@ The Gateway deletes the app and publishes a new registry revision. Each process 
 
 The CLI asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode. See [`websocket:app:destroy`](/cli/websocket#orbit-websocketappdestroy).
 
-A saved change stays pending until every serving process confirms it. The API records a normal Operation and returns HTTP 202 without waiting for process reports. Reverb applies the revision through its existing periodic reconciliation. The CLI follows the Operation without restarting Reverb.
+A saved change stays pending until every serving process confirms it. The API records a normal Operation and returns HTTP 202 without waiting for process reports. Swamp asks each admitted Reverb process to apply the revision. The CLI follows native completion without restarting Reverb.
 
 ## Add an app on an Instance
 
@@ -148,9 +148,9 @@ To withdraw public Reverb, remove the attachment, confirm the Caddy rebuild succ
 
 [orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) contains the integration with Orbit. It has no separately versioned manager package. It uses Reverb's application provider and stock Pusher protocol. The server's protected environment holds its registry address and restricted machine credentials. It holds no static app list.
 
-The Gateway owns the encrypted app secrets and a versioned registry. After commit, each process fetches the full snapshot through its existing 30-second reconciliation check. A process report confirms application. Swamp waits for fresh reports without restarting Reverb.
+The Gateway owns the encrypted app secrets and a versioned registry. After commit, each process fetches the full snapshot through its existing 30-second reconciliation check. Process reports remain available to status readers. Swamp confirms application directly through the current process without restarting Reverb.
 
-Each process registers a fresh boot identity before loading the registry. A report from an old boot cannot certify a replacement. Confirmation includes every serving process, including both ends of a role move. An absent or stale report keeps the operation pending. Each entry in operation `processes` includes the latest safe registry `error` code, or null after recovery or a new boot. The Gateway does not store connection measurements.
+Each process registers a fresh boot identity before loading the registry. A report from an old boot cannot certify a replacement. Confirmation includes every serving process, including both ends of a role move. An absent or stale report keeps the registry status read pending. Native Operation completion uses direct confirmation with the serving boot’s acknowledged ordinary report. Each entry in operation `processes` includes the latest safe registry `error` code, or null after recovery or a new boot. The Gateway does not store connection measurements.
 
 A running process keeps its last applied state when the Gateway is unavailable. This preserves other apps' connections, but removed credentials can remain usable until communication returns. A new process waits for a fresh snapshot before opening its listener.
 
@@ -192,7 +192,7 @@ Reverb already keeps apps apart by key and secret. One server per Project would 
 
 ### One durable registry with stock protocol handling
 
-The Gateway is the credential authority. A full snapshot gives cold starts and reconciliation the same path. Periodic reconciliation applies each saved revision without a second queue or registry store. Registry Operations can take one reconciliation interval before the process reports application.
+The Gateway is the credential authority. A full snapshot gives cold starts and reconciliation the same path. Periodic reconciliation applies each saved revision without a second queue or registry store. Native registry Operations request reconciliation directly; ordinary reports remain a separate observation.
 
 An SSH-delivered file would reuse existing transport but add per-Node secret copies and delivery state. A Redis snapshot would add a second durable credential authority. The integration uses Reverb's provider, route, and event extension points. It keeps stock Pusher behavior and makes no vendor patch.
 
@@ -207,13 +207,13 @@ An Instance gets an app the way it gets a [Database connection](/reference/datab
 
 ### Confirmation and recovery
 
-Operation status is `pending`, `applied`, or `superseded`. A later revision can confirm a change only if it preserves that change's app identity and, for rotation, its credential generation. Create followed by deletion therefore supersedes the create result.
+The registry status resource reports `pending`, `applied`, or `superseded`. A later revision can confirm a change only if it preserves that change's app identity and, for rotation, its credential generation. Create followed by deletion therefore supersedes the create result.
 
 The Gateway blocks Node deletion while a required Reverb process remains. A failed heartbeat does not withdraw required apply membership. After 60 seconds without a serving report, the Gateway excludes the endpoint from realtime config, auth, and broadcasting until a fresh serving report arrives. Verified shutdown of the default service withdraws only its own process slot.
 
 Package convergence builds a separate release before stopping the service. A preparation failure preserves the running release. An activation failure requires forward recovery with a compatible package; Orbit does not automatically restart a static registry containing potentially revoked credentials.
 
-The first release provisions one process per Node. Multiple workers on one Node need separate callback routes and service provisioning before production use. Two-process tests cover apply confirmation and stock Redis broadcasting.
+The managed service provisions the default process slot on each Node. Native registry admission refuses any required nondefault slot with `websocket.runtime_slot_unsupported` before copying credentials or starting a run. Additional slots need explicit service and listener-port provisioning before production use. Two-process tests cover apply confirmation and stock Redis broadcasting.
 
 ### Reverb shares the application domain
 
@@ -221,16 +221,22 @@ The public app Route already owns DNS, TLS, and firewall publication. Reserving 
 
 ## Operation execution
 
-Registry writes store their change and a normal Operation, then return HTTP 202. Release the Gateway, CLI and PHP SDK together: mutation responses put the Operation in `data` and have no top-level `operation` field. All four kinds use the direct workflow below to wait for fresh process reports on the control-plane worker. Reverb's existing 30-second registry reconciliation applies the saved revision; registry writes do not restart a process. Swamp checks the current boot reports before it reports success. The Gateway records that result without checking the reports again.
+Registry mutations commit their existing app state and a normal Operation before returning HTTP 202. The Gateway freezes the registry identity, expected app identity and generation, every required runtime, and pinned SSH targets in the Operation's public intent. Each runtime's existing registry credential is pushed through the shared execution-copy boundary; workflows receive only vault and key names. App secrets, including the reserved Gateway app secret, are not execution inputs.
 
-A missing, stale, or replaced process keeps the Operation pending. If a later registry change supersedes the result before completion, the Operation fails with `websocket.registry_superseded`. Cancelling stops observation and keeps the committed registry intent. The dedicated registry operation URL remains a read of the saved revision and current reports.
+The shared `operation-websocket-registry` workflow runs on Node 209. It requests one apply on each admitted Reverb runtime through official pinned SSH. Reverb uses its existing registry refresh and socket-close events to finish that request, returning the current boot, epoch, revision and preserved-change result. No step reads the Gateway Operation or report endpoint, posts a result, or polls. The shared terminal subscriber records native completion from one history read. Registry reports remain available to ordinary status readers.
 
-Sync observes the current revision under its own `websocket_sync` identity, so a pending mutation does not block it. Each request starts an independent Swamp confirmation without a Gateway target hold or PHP supersession.
+### Server readiness
 
-## Direct registry confirmation
+The pinned Reverb server must include the native apply interface before this workflow is published. Loading Gateway source alone does not prove server readiness. Runtime upgrades keep their separately coordinated reconnect window; registry changes never restart the service.
 
-`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate` start the shared `operation-websocket-registry` workflow directly. Their declarations select one workflow and a minimal result projection. It returns the same HTTP 202 Operation; the CLI and web follow that Operation. Credentials never enter workflow input or results. Reverb keeps its existing 30-second reconciliation; confirmation does not restart it or change applications.
+The legacy order remains commit, reconcile, confirm. Confirmation now comes directly from the serving Reverb boot instead of waiting for that boot's report to arrive at the Gateway. A failed refresh is returned immediately; an overlapping later request cannot turn it into success. The provider's normal background reconciliation continues independently. A later revision preserves create while its app exists, rotation while its credential generation remains current, and destroy while its app is absent. Other apps retain their sockets.
 
-The workflow runs on the existing Node 209 control-plane worker, with its matching Node label. The configured control-plane peer reads and projects the Gateway-owned Operation; it performs no Node-local action. It reads the recorded registry identity and waits for every current required Reverb boot to confirm it. The existing five-minute bound stays in Swamp. A superseded change fails with `websocket.registry_superseded`; a change still pending at the bound fails with `websocket.registry_pending`. Cancellation requests are recorded by the Gateway and honored in the read-only Swamp step. Separate sync requests do not supersede each other in PHP; native workflow concurrency owns their execution.
+Every required runtime captured at admission must confirm. Missing runtime membership, unavailable targets, unapplied revisions or lost responses fail the proof; none permits resubmission. Cancelling stops native observation and leaves committed registry intent in place. Preserve a bound failed or interrupted root; recovery uses an explicitly admitted fresh sync after its outcome is known. The existing registry operation URL remains a read of saved intent and current reports.
 
-The Gateway keeps authorization, registry state and bounded result projection. It records native completion even if runtime reports later change or registry history is removed. These kinds have no PHP wait, runtime revalidation, remote program or receipt proof. Each kind ships its workflow, direct writer and old executor removal together. After merge, verify the normal source load and Gateway release, then immediately run a disposable canary. Revert immediately if it fails. The previous Python confirmation program and its execution tests are removed; workflow tests cover the wait, cancellation and replay.
+### Execution budget
+
+The workflow declares its per-kind queue timeout. The source PR reports native-harness p95 and its sample, plus the run budget for the shared timeout-at-start rollout. Until that shared rollout is live, the budget declaration is not a claim that the Gateway enforces it. F1 error projection is also adopted through the shared rollout; the family adds no error wrapper or projector.
+
+The provisional run budget is `30 + 20 × admitted runtime count` seconds, The queue timeout is five seconds. Each SSH request has a limit of fifteen seconds. Samples from local native history measured p95 of 0.420 seconds for sync (four samples), 0.301 for create, 0.340 for destroy and 0.343 for rotate (three samples each). These fixture timings do not replace the required disposable task-VM proof.
+
+The Reverb apply phase runs under coreutils `timeout` for twelve seconds, with two seconds to force termination. SSH has a fifteen-second limit. A phase or HTTP expiry returns `websocket.registry_pending`; it does not certify socket closure or repeat the request.

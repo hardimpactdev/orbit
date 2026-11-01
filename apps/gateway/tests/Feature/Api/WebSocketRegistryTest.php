@@ -9,7 +9,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketRegistry;
-use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\WebSocketApp;
@@ -18,7 +17,6 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -31,15 +29,12 @@ beforeEach(function (): void {
     ]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     config(['swamp.run_token' => 'fixture.shared']);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-websocket-registry', 'runId' => (string) Str::uuid()]]];
-    app()->instance(WebSocketClient::class, $socket);
+    fake_websocket_registry_start();
 });
 
 it('commits once and reports pending until both current process boots confirm', function (): void {
     $response = $this->withHeader('Idempotency-Key', 'create-a')->postJson('/api/v1/websocket-apps', ['name' => 'alpha'])
-        ->assertStatus(202)->assertJsonPath('data.status', 'queued');
+        ->assertStatus(202)->assertJsonPath('data.status', 'running');
     $operationId = Operation::query()->findOrFail($response->json('data.id'))->input['registry_operation_id'];
     $this->postJson('/api/v1/websocket-apps', ['name' => 'alpha'])->assertStatus(202)->assertJsonPath('data.id', $response->json('data.id'));
     expect(WebSocketApp::query()->where('name', 'alpha')->count())->toBe(1);
@@ -70,7 +65,7 @@ it('keeps failed-DNS app creation recoverable without changing roles or Gateway 
     Http::fake(fn () => Http::failedConnection());
 
     $response = $this->withHeader('Idempotency-Key', 'hauzer-retry')->postJson('/api/v1/websocket-apps', ['name' => 'hauzer-prod'])
-        ->assertStatus(202)->assertJsonPath('data.status', 'queued');
+        ->assertStatus(202)->assertJsonPath('data.status', 'running');
     $operationId = $response->json('data.id');
     $operation = Operation::query()->findOrFail($operationId)->input['registry_operation_id'];
     $id = WebSocketApp::query()->where('name', 'hauzer-prod')->sole()->id;
@@ -129,7 +124,7 @@ it('replays a removal after its route model has been deleted without mutating tw
 
 function registryNode(string $name, string $address): Node
 {
-    return Node::query()->create(['name' => $name, 'public_ssh_host' => '192.0.2.90', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => $address, 'status' => LifecycleStatus::Active]);
+    return Node::query()->create(['name' => $name, 'public_ssh_host' => '192.0.2.90', 'user' => 'orbit', 'platform' => 'linux', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-pin', 'wireguard_ip' => $address, 'status' => LifecycleStatus::Active]);
 }
 
 it('refuses ordinary Node removal while a runtime still requires application', function (): void {
@@ -220,7 +215,7 @@ it('admits sync while a registry mutation still waits for a missing Reverb proce
         ->and($operation->target_type)->toBe('websocket_sync')
         ->and($operation->lock_key)->toBeNull()
         ->and($mutation->lock_key)->toBeNull()
-        ->and($mutation->refresh()->status)->toBe(OperationStatus::Queued);
+        ->and($mutation->refresh()->status)->toBe(OperationStatus::Running);
 });
 
 it('admits independent syncs on the same revision without Gateway supersession', function (): void {
@@ -229,9 +224,9 @@ it('admits independent syncs on the same revision without Gateway supersession',
     $second = $this->withHeader('Idempotency-Key', 'sync-second')->postJson('/api/v1/websocket-sync')->assertAccepted();
     expect($second->json('data.id'))->not->toBe($first->json('data.id'));
     $superseded = Operation::query()->findOrFail($first->json('data.id'));
-    expect($superseded->status)->toBe(OperationStatus::Queued)
+    expect($superseded->status)->toBe(OperationStatus::Running)
         ->and($superseded->error_code)->toBeNull()
         ->and($superseded->lock_key)->toBeNull()
-        ->and(Operation::query()->findOrFail($second->json('data.id'))->status)->toBe(OperationStatus::Queued)
-        ->and(Operation::query()->findOrFail($created->json('data.id'))->status)->toBe(OperationStatus::Queued);
+        ->and(Operation::query()->findOrFail($second->json('data.id'))->status)->toBe(OperationStatus::Running)
+        ->and(Operation::query()->findOrFail($created->json('data.id'))->status)->toBe(OperationStatus::Running);
 });

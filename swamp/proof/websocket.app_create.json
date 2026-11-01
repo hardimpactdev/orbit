@@ -1,0 +1,144 @@
+{
+  "kind": "websocket.app_create",
+  "workflow": "operation-websocket-registry",
+  "budget_seconds": 50,
+  "queue_timeout_seconds": 5,
+  "envelope": {
+    "registry_operation_id": "${match.uuid}",
+    "epoch": "${match.uuid}",
+    "revision": "${match.positive_int}",
+    "native_registry": {
+      "start_tag": "${match.uuid}",
+      "registry_operation_id": "${match.uuid}",
+      "epoch": "${match.uuid}",
+      "revision": "${match.positive_int}",
+      "change": "create",
+      "app_id": "${match.nonempty_string}",
+      "credential_generation": null,
+      "runtimes": [
+        {
+          "process_id": "${match.uuid}",
+          "node_id": "${topology.app-prod.node_id}",
+          "ssh": {
+            "control_node_id": 209,
+            "identity_file": "${match.nonempty_string}",
+            "public_key": "${match.nonempty_string}",
+            "target": {
+              "name": "target",
+              "host": "${topology.app-prod.wireguard_ip}",
+              "user": "${match.nonempty_string}",
+              "port": 22,
+              "host_keys": "${match.present}"
+            }
+          },
+          "port": 8790,
+          "credential_field": "${match.nonempty_string}"
+        }
+      ],
+      "missing_node_ids": []
+    },
+    "execution_secrets": "${match.present}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "stdout": "{\"outcome\":\"succeeded\",\"data\":{\"backend\":\"applied\"}}",
+        "accepted": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "resolve-assets",
+      "job": "assets",
+      "step": "assets",
+      "budget_seconds": 5
+    },
+    {
+      "name": "reconcile-confirm",
+      "job": "runtimes",
+      "step": "apply-0",
+      "budget_seconds": 12
+    },
+    {
+      "name": "terminal-result",
+      "job": "result",
+      "step": "result",
+      "budget_seconds": 5
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/websocket.sync/tests/parity.py",
+      "websocket.app_create",
+      "proof-create-${proof.run}",
+      "proof-create-other-${proof.run}",
+      "${capture.unrelated_key}",
+      "${capture.unrelated_key}",
+      "${topology.app-prod.node_id}",
+      "${topology.app-prod.wireguard_ip}"
+    ],
+    "cases": [
+      "native-terminal-result",
+      "unrelated-app-present",
+      "unrelated-app-handshake",
+      "created-app-handshake",
+      "exact-admitted-runtime",
+      "names-only-registry-copy"
+    ]
+  },
+  "topology": [
+    "app-prod"
+  ],
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "node:role:add",
+        "${topology.app-prod.node_id}",
+        "websocket",
+        "--converge",
+        "--json"
+      ],
+      "capture": {
+        "role_operation_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:create",
+        "proof-create-other-${proof.run}",
+        "--operation-key=proof-create-other-${proof.run}",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:show",
+        "proof-create-other-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "unrelated_app_id": "$.app_id",
+        "unrelated_key": "$.key"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "websocket:app:create",
+      "proof-create-${proof.run}",
+      "--operation-key=proof-create-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  }
+}

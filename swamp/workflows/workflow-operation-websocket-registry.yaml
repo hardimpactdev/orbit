@@ -1,29 +1,79 @@
 id: 52388dd6-34fb-43c3-b25b-936f56e96bec
 name: operation-websocket-registry
-description: Confirm an admitted WebSocket registry change through current Reverb reports.
-vaults: []
+description: Confirm the committed registry directly on every admitted Reverb runtime.
+vaults: [orbit-control-inputs]
+queueTimeout: 5
+target: orbit-node-209
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind:
-      type: string
-      enum: [websocket.sync, websocket.app_create, websocket.app_destroy, websocket.app_rotate]
-  required: [operation_id, node_id, kind]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [websocket.sync, websocket.app_create, websocket.app_destroy, websocket.app_rotate]}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^websocket-registry-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-  - name: registry
-    target: swamp209-migration-a
-    labels: { node: "209" }
+- name: assets
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/websocket-native'
+      behaviorName: '${{ "websocket-assets-" + run.id }}'
+      methodName: assets
+      inputs: {intent: '${{ inputs.intent }}'}
+- name: runtimes
+  dependsOn: [{job: assets, condition: {type: succeeded}}]
+  steps:
+  - name: apply
     writes: true
-    steps:
-      - name: confirm
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/websocket-registry"
-          behaviorName: '${{ "websocket-registry-node-" + string(inputs.node_id) }}'
-          methodName: confirm
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+    target: orbit-node-209
+    forEach: {item: runtime, in: '${{ inputs.intent.runtimes }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "ws-" + run.id + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ "ws-" + run.id + "-" + string(self._index) }}'
+        transport:
+          kind: ssh
+          user: '${{ self.runtime.ssh.target.user }}'
+          port: '${{ self.runtime.ssh.target.port }}'
+          identityFile: '${{ self.runtime.ssh.identity_file }}'
+        hosts:
+        - name: runtime
+          address: '${{ self.runtime.ssh.target.host }}'
+          transport: {hostKeys: '${{ self.runtime.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:runtime
+        argv: [/usr/bin/timeout, --kill-after=2s, 12s, /usr/bin/python3, -I, -c, '${{ steps.assets.outputs.script_body }}', '${{ steps.assets.outputs.requests[self.runtime.process_id] }}']
+        stdin: '${{ vault.get(inputs.execution_secrets[self.runtime.credential_field].vault, inputs.execution_secrets[self.runtime.credential_field].key) }}'
+        timeoutSec: 15
+        okExitCodes: [0, 1, 124, 137]
+- name: result
+  dependsOn: [{job: runtimes, condition: {type: always}}]
+  steps:
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/websocket-native'
+      behaviorName: '${{ "websocket-result-" + run.id }}'
+      methodName: result
+      inputs: {intent: '${{ inputs.intent }}', steps: '${{ steps }}'}
+  - name: accepted
+    target: orbit-node-209
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps.result.outputs.accepted', severity: high, message: All admitted Reverb runtimes must confirm.}
