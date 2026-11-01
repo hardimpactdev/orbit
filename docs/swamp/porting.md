@@ -23,7 +23,7 @@ A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` 
 
 Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
-Never use production serve or a 209 login for a port. A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even under a "retire" or "remove" title (#2257, #2259). So does a Gateway change to a kind's admission, intent or workflow inputs, vault pushes, token minting, signing or terminal projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and lane 26 review. Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so. Each kind keeps a [proof file](#test-layout).
+Never use production serve or a 209 login for a port. A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even under a "retire" or "remove" title (#2257, #2259). So does a Gateway change to a kind's admission, intent or workflow inputs, vault pushes, token minting, signing or terminal projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and lane 26 review. Deletion, docs and test PRs fix forward with a deletion-speed review: tests and docs, no receipt. An outage fix may skip the receipt if its PR says so.
 
 ### Translate a legacy command
 
@@ -34,7 +34,7 @@ Use these steps in step 4 of the loop.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Secrets become `{vault, key}` descriptors under `execution_secrets`.
 5. **Refuse first, then print the result.** The script checks preconditions before its first write. It prints one public JSON object and keeps a redacted stderr tail.
 6. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
-7. **Delete the old path in the same PR.** Remove the executor and everything only it used. An F9 rebuild deletes the earlier port's behaviors and tests (F15).
+7. **Delete the old path in the same PR.** Remove the executor and everything only it used. An F9 rebuild deletes the old behaviors and tests it replaces (F15).
 
 ## Fill the workflow
 
@@ -202,7 +202,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `target: orbit-node-209`, then `@swamp/ssh` |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |
 | A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body |
-| Swamp growth without a reason, or a new TypeScript behavior a script or official model could replace | `swamp/` grew +226k lines, so the migration total is +63k; it must trend down (F15) | A script file or official model; state the growth beside the Orbit net |
+| Swamp growth without a reason, or a new TypeScript behavior that native Swamp, an official extension or a shared helper could replace | `swamp/` grew +226,316 lines against Orbit −162,866; the migration total of +63,450 must turn negative (F15) | Use native Swamp, an official extension, a shared helper or a script file. A reason for growth says why none of them can do it. |
 | `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read `inputs`, literals or an earlier job's outputs, as [`database-destroy-actions`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-destroy-actions.yaml) does, or pass the list to a child, as [`database-clone-mysql`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-clone-mysql.yaml) does |
 | Reading failed or skipped outputs, all-pairs `always` edges, the whole `${{ steps }}` map in a result step, or an echo step after it | CEL fails with `No such key`; #2261 and #2253 grew dozens of edges | Read `"x" in steps && steps.x.status` for the steps you need; chain jobs on `succeeded` |
 | A step input that grows with history or fleet size: `data.query`, or `results: ${{ steps }}` over a fleet fan-out (#2334) | One dispatch frame can pass 64 MiB, and the worker loops (B7, #2310) | Read one stable record with `data.latest`; pass only the statuses you need |
@@ -219,9 +219,9 @@ Continue ports in the approved shape while live admission proof is pending. Use 
 - [ ] Follow the [translation steps](#translate-a-legacy-command) and avoid every [anti-pattern](#anti-patterns).
 - [ ] Keep the legacy phase order, or give a reason for each change. State the expanded step count of a typical run and the steps per legacy call.
 - [ ] Name the core feature and official extension checked. Use defaults, and record each deviation's measured reason and removal condition in PLAN.
-- [ ] Delete the old executor and everything only it used. Remove baseline rows in the last commit, after the last rebase.
-- [ ] State Swamp growth beside the Orbit net. Justify all growth and each new TypeScript behavior. Keep the diff under GitHub's 20,000-line limit.
-- [ ] Prove behavior with topology receipts and parity tests, not large mocked fixtures. Delete duplicate or mock-heavy tests (F15).
+- [ ] Delete the old executor and everything only it used. An F9 rebuild deletes the old behaviors and tests it replaces. Remove baseline rows in the last commit, after the last rebase.
+- [ ] **Growth (F15):** list `swamp/` growth per part (behaviors, workflows, scripts, tests and fixtures) next to the Orbit net. Give each growth a [reason](#anti-patterns).
+- [ ] Prove behavior with topology receipts and parity tests, not large mocked fixtures. Delete duplicate or mock-heavy tests. Keep the diff under GitHub's 20,000-line limit.
 - [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing kind carries its [topology receipt](#port-inside-the-topology-f13). Without them the review fails.
 - [ ] Every workflow, children included, sets an explicit `queueTimeout`.
 
@@ -241,7 +241,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2273, #2358, lane 9 | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. Forced removal beats `--rm`, so real-Docker cleanup passes `--volumes` (moby 29.1.3). |
 | Lane 17 on #2201, #2208, #2210, #2304, #2310 | No step receives a Gateway macro; #2304 expands it through `GatewaySetupSteps` after checking admitted digests. Read `data.latest`, and set `queueTimeout` everywhere. #2210 rewrote a script. |
-| PLAN F9–F15 | Port inside a versioned dev topology, built from Node roles, through `bin/swamp-proof`; the receipt names the topology version. State Swamp growth beside the Orbit net (F15). |
+| PLAN F9–F15 | Port inside a versioned dev topology, built from Node roles, through `bin/swamp-proof`; the receipt names the topology version. Split `swamp/` growth by part beside the Orbit net (F15). |
 | #2335 (B) | When the Gateway start contract changes, such as `StartSwampRun` marking an Operation `running` before its run starts (#1894), re-check every step-start status guard. A proof dates from everything the kind runs. |
 | #2304 (B), lane 17, A | Keep legacy exit-code and error-name cases or explain each change. Private stdout never enters native history; F1 output is a stderr tail, redacted before and after cutting. |
 | PLAN F8, F11, L17-PR-2324-01 (closed by #2348), OD1 | Every kind expires: measured budget, else 30 minutes, then the longest success times 1.5. No-run rows expire at 600 s but keep their lock until native lookup proves no run. |
