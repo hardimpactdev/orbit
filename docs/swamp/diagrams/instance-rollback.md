@@ -182,9 +182,11 @@ A draft in the frozen F13 request format (`swamp-proof-fixture-v0.md`). The topo
     "argv": ["orbit", "instance:rollback", "${capture.production_id}", "--release=${capture.release_a}", "--json"],
     "operation": "$.id"
   },
-  "expect": {"status": "succeeded", "result": {"selected_release": "${capture.release_a}"}}
+  "expect": {"status": "succeeded", "outputs": {"job": "rollback", "step": "rollback", "match": {"status": "succeeded"}}}
 }
 ```
+
+The parity check reads the Operation with `operation:show` and requires `result.selected_release` to equal `${capture.release_a}`.
 
 Gaps the fixture exposes:
 
