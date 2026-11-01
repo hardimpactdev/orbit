@@ -19,10 +19,16 @@ type Context = {
 type ActiveContext = Context & {
     readResource(name: string): Promise<Record<string, unknown> | null>;
 };
+const MAX_ACTIVE_CHECKS = 128, MAX_ACTIVE_BYTES = 8 * 1024 * 1024;
 const Active = z.object({
     schema: z.literal(1),
-    entries: z.array(ObjectValue).max(128),
+    entries: z.array(ObjectValue).max(MAX_ACTIVE_CHECKS),
 });
+function overCapacity(state: { entries: unknown[] }) {
+    return state.entries.length > MAX_ACTIVE_CHECKS ||
+        new TextEncoder().encode(JSON.stringify(state)).length >
+            MAX_ACTIVE_BYTES;
+}
 function activeRecord(value: unknown) {
     if (value === null) throw new Error("tasks.check_active_uninitialized");
     const state = Active.parse(value);
@@ -33,9 +39,7 @@ function activeRecord(value: unknown) {
     if (new Set(ids).size !== ids.length) {
         throw new Error("tasks.check_active_duplicate");
     }
-    if (
-        new TextEncoder().encode(JSON.stringify(state)).length > 8 * 1024 * 1024
-    ) {
+    if (overCapacity(state)) {
         throw new Error("tasks.check_active_capacity");
     }
     return state;
@@ -344,7 +348,9 @@ export const behavior = {
         initialize: {
             description:
                 "One-time load transition from freshly read native active handoffs",
-            arguments: z.object({ checks: z.array(ObjectValue).max(128) }),
+            arguments: z.object({
+                checks: z.array(ObjectValue).max(MAX_ACTIVE_CHECKS),
+            }),
             execute: async (
                 args: { checks: Record<string, unknown>[] },
                 ctx: ActiveContext,
@@ -486,17 +492,26 @@ export const behavior = {
                     if (!sameHandoff(prior, row)) {
                         throw new Error("tasks.check_handoff_changed");
                     }
-                    return output(ctx, { pending: true });
+                    return output(ctx, { admitted: true });
                 }
-                const current = activeRecord({
+                const candidate = {
                     schema: 1,
                     entries: [...state.entries, row],
-                });
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("active", "active", current),
-                    ],
                 };
+                if (overCapacity(candidate)) {
+                    return output(ctx, {
+                        admitted: false,
+                        error_code: "tasks.check_active_capacity",
+                    });
+                }
+                const current = activeRecord(candidate);
+                const active = await ctx.writeResource(
+                    "active",
+                    "active",
+                    current,
+                );
+                const accepted = await output(ctx, { admitted: true });
+                return { dataHandles: [active, ...accepted.dataHandles] };
             },
         },
         observed: {
@@ -552,7 +567,9 @@ export const behavior = {
         settle: {
             description:
                 "Merge observed handoffs into the latest current record and retain public terminal evidence",
-            arguments: z.object({ values: z.array(ObjectValue).max(128) }),
+            arguments: z.object({
+                values: z.array(ObjectValue).max(MAX_ACTIVE_CHECKS),
+            }),
             execute: async (
                 args: { values: Record<string, unknown>[] },
                 ctx: ActiveContext,

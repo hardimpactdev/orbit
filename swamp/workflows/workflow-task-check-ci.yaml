@@ -36,7 +36,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-ci-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: ${{ "task-check-ci-read-" + run.id + "-" + string(self._index) }}
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -75,10 +75,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self._index) }}
       methodName: exec
       globalArgs: &id002
-        name: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+        name: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ self.check.attributes.inputs.intent.ssh_execution.target.user }}
@@ -110,7 +110,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self._index) }}
       methodName: copy
       globalArgs: *id002
       inputs:
@@ -130,7 +130,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self._index) }}
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -170,7 +170,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self._index) }}
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -211,7 +211,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: ${{ "task-check-revoke-read-" + run.id + "-" + string(self._index) }}
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -241,6 +241,9 @@ jobs:
         env:
           ORBIT_RESULT: ${{ steps.settle.outputs.result_json }}
     dependsOn:
+    - step: settle
+      condition:
+        type: succeeded
     - step: revoke_read-${{ self.check.attributes.inputs.operation_id }}
       condition:
         type: always

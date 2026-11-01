@@ -318,15 +318,18 @@ Deno.test("an over-capacity admission leaves the current active record intact", 
             }),
         ),
     });
-    await assertRejects(
-        () =>
-            behavior.methods.pending.execute({
-                ...pending,
-                inputs: { ...pending.inputs, operation_id: 1000 },
-            }, current.context),
-        Error,
-    );
-    assertEquals(current.writes, []);
+    await behavior.methods.pending.execute({
+        ...pending,
+        inputs: { ...pending.inputs, operation_id: 1000 },
+    }, current.context);
+    assertEquals(current.writes, [{
+        spec: "public",
+        name: "output",
+        value: {
+            admitted: false,
+            error_code: "tasks.check_active_capacity",
+        },
+    }]);
 });
 
 Deno.test("an oversized active record refuses dispatch instead of building a large worker frame", async () => {
@@ -340,4 +343,20 @@ Deno.test("an oversized active record refuses dispatch instead of building a lar
         "tasks.check_active_capacity",
     );
     assertEquals(current.writes, []);
+});
+
+Deno.test("a byte-cap refusal returns its public code and preserves the active record", async () => {
+    const current = activeCheckContext({ schema: 1, entries: [] });
+    await behavior.methods.pending.execute({
+        ...pending,
+        output: "x".repeat(8 * 1024 * 1024),
+    }, current.context);
+    assertEquals(current.writes, [{
+        spec: "public",
+        name: "output",
+        value: {
+            admitted: false,
+            error_code: "tasks.check_active_capacity",
+        },
+    }]);
 });

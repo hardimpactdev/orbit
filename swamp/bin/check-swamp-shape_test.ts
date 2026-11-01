@@ -61,6 +61,7 @@ Deno.test("step inputs and fan-out read bounded sources, never a query or versio
   for (const fanout of [false, true]) assertEquals(
     rules(
       `\${{ [data.latest("observation-context-fleet", "context").?attributes.orValue(null)].filter(c, c != null) }}`,
+      fanout,
     ).includes("unbounded-data-input"),
     false,
   );

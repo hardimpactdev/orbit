@@ -1734,18 +1734,6 @@
       ]
     },
     {
-      "file": "workflows/workflow-operation-task-check.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 5,
-      "evidence": [
-        "check/base-${{ self._index }}",
-        "check/base_prepare-${{ self._index }}",
-        "check/base_ready-${{ self._index }}",
-        "check/deliverable-${{ self._index }}",
-        "check/setup-${{ self._index }}"
-      ]
-    },
-    {
       "file": "workflows/workflow-production-smoke.yaml",
       "rule": "unknown-behavior",
       "count": 4,
@@ -1762,15 +1750,6 @@
       "rule": "vault-placement",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "workflows/workflow-task-check-ci.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 2,
-      "evidence": [
-        "checks/ci-${{ self.check.attributes.inputs.operation_id }}",
-        "checks/observed-${{ self.check.attributes.inputs.operation_id }}"
-      ]
     }
   ]
 }

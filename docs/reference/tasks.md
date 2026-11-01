@@ -196,7 +196,17 @@ For Projects with a handoff check name, separate export, copy, import and push s
 
 The VM and repository commands receive none. The push token is revoked after use. The Checks token is revoked when CI settles or admission fails. No pull request opens on the handoff branch.
 
-The check run ends after local execution and CI admission. A native `trigger.schedule` runs about once a minute and performs one bounded status observation per pending check. One current native record holds the active handoffs, with at most 128 entries and 8 MiB of serialized data. The schedule snapshots that record in an earlier job; fan-out never enumerates historical records. Admission and aggregate settlement read and update the current record under the same native model-method lock. Settlement removes only the matching Operation, root run and commit, so an intervening admission stays active. Missing initialization or a capacity limit refuses the write. At the first load, the load owner initializes the record once from freshly read native handoff evidence and retains a receipt; a missing record never means an empty queue. It never waits or retries inside a step. Pending CI remains ineligible for reviewer and publication admission. A pending observation keeps the original Operation running. The family applies recorded cancellation intent on the next delivered valid observation; this does not claim that GitHub or the completed original native run was cancelled. Native pending records settle on a terminal result or 55 minutes after the push.
+The check run ends after local execution and CI admission. A native `trigger.schedule` runs about once a minute and performs one status observation per pending check. It snapshots one current record in an earlier job, then dispatches only those active handoffs.
+
+The index admits at most 128 active checks and 8 MiB of encoded data. The byte cap leaves eightfold headroom below the 64 MiB native frame; the entry cap bounds dispatch even for small records. A full index refuses admission with `tasks.check_active_capacity` and keeps existing handoffs.
+
+Admission, snapshot and aggregate settlement share the native `task-check-active-current` model lock. They read the record inside the locked method. Settlement removes only the matching Operation, Node, root run and commit, preserving intervening admissions. Each dispatched item uses its index in both its behavior name and official SSH name.
+
+The finite native lock wait is unchanged. A `lock_timeout` leaves an admission unrecorded or a settlement unchanged. Admission reports `tasks.check_active_unavailable`; a later explicit admission can try again. A failed settlement stays visible in native history and the next schedule tick observes the retained entries. There is no automatic retry.
+
+At the first load, the load owner initializes the record once from freshly read native handoff evidence and retains a receipt. Missing initialization refuses admission and dispatch. A missing record never means an empty queue.
+
+Pending CI remains ineligible for reviewer and publication admission. A pending observation keeps the original Operation running. The family applies recorded cancellation intent on the next delivered valid observation; this does not claim that GitHub or the completed original native run was cancelled. Active handoffs settle on a terminal result or 55 minutes after the push.
 
 If SSH preparation or asset delivery fails, native dependencies skip the checks and result steps that need the missing validation and setup outputs. The run keeps its original failure, and the shared terminal reader settles the Operation. Cleanup remains separate native work; no empty output is substituted for a missing predecessor.
 
