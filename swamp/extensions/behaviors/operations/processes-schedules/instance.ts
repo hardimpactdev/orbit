@@ -17,16 +17,13 @@ import {
   Globals,
 } from "../_lib/direct.ts";
 import { localProcessAction } from "./native-action.ts";
-import { scheduleSystem } from "./schedule-system.ts";
 import { Creation } from "./create.ts";
 import { installProcess } from "./process-installation.ts";
-import { installSchedule, ScheduleInstallation } from "./installation.ts";
 import { startActions, StartInput } from "./start.ts";
 
 export const InstanceKind = z.enum([
   "process.restart_instance",
   "process.install_instance_definitions",
-  "schedule.install_instance_definitions",
 ]);
 const Args = DirectArgs.extend({
   kind: InstanceKind,
@@ -87,7 +84,6 @@ const memberName = (run: string, id: number | string) =>
 export function instanceActions(
   invoke: typeof localProcessAction = localProcessAction,
   traffic = startActions(invoke),
-  schedule = scheduleSystem,
 ) {
   return {
     prepare: async (
@@ -96,7 +92,7 @@ export function instanceActions(
       signal?: AbortSignal,
     ) => {
       let vite = false;
-      if (kind !== "schedule.install_instance_definitions") {
+      {
         for (const member of members) {
           const control = kind === "process.restart_instance"
             ? StartInput.parse(member.input)
@@ -125,9 +121,7 @@ export function instanceActions(
     ): Promise<z.infer<typeof MemberResult>> => {
       const control = kind === "process.restart_instance"
         ? StartInput.parse(member.input)
-        : kind === "process.install_instance_definitions"
-        ? Creation.parse(member.input).control
-        : undefined;
+        : Creation.parse(member.input).control;
       if (
         control?.vite_plan !== undefined && publicationStatus !== "succeeded"
       ) {
@@ -139,18 +133,11 @@ export function instanceActions(
           signal,
           "process.restart",
         )
-        : kind === "process.install_instance_definitions"
-        ? await installProcess(
+        : await installProcess(
           Creation.parse(member.input).installation,
           privateMaterial,
           signal,
           invoke,
-        )
-        : await installSchedule(
-          ScheduleInstallation.parse(member.input),
-          privateMaterial,
-          signal,
-          schedule,
         );
       if (
         kind === "process.install_instance_definitions" &&
@@ -174,9 +161,8 @@ export function instanceMethods(
   makeHttp: (ctx: Context) => Http,
   invoke: typeof localProcessAction = localProcessAction,
   traffic = startActions(invoke),
-  schedule = scheduleSystem,
 ) {
-  const actions = instanceActions(invoke, traffic, schedule);
+  const actions = instanceActions(invoke, traffic);
   const read = async (args: z.infer<typeof Args>, ctx: Context) => {
     const gateway = new GatewayOperation(makeHttp(ctx), args);
     const parent = Parent.parse(await gateway.read(ctx.signal));
@@ -195,9 +181,6 @@ export function instanceMethods(
         if (input.control.process_id !== member.id) {
           throw new Error("Process member differs");
         }
-      } else {
-        const input = ScheduleInstallation.parse(member.input);
-        if (input.id !== member.id) throw new Error("Schedule member differs");
       }
     }
     return { gateway, parent };
@@ -348,14 +331,13 @@ export function instanceRuntime(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   invoke: typeof localProcessAction = localProcessAction,
-  schedule = scheduleSystem,
 ) {
   return {
     type: "@nckrtl/instance-runtime",
-    version: "2026.10.31.1",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     resources: instanceResources,
-    methods: instanceMethods(makeHttp, invoke, startActions(invoke), schedule),
+    methods: instanceMethods(makeHttp, invoke, startActions(invoke)),
   };
 }
 export const behavior = instanceRuntime();

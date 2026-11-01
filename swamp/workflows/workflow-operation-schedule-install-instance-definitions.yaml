@@ -1,108 +1,56 @@
 id: 73c78a4c-e148-4130-89e3-33104b28ae6e
 name: operation-schedule-install-instance-definitions
-description: One native Instance runtime parent with placed member steps.
+description: Converge captured Schedule definitions through native child workflows on 209.
 vaults: []
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      const: schedule.install_instance_definitions
-  required:
-    - operation_id
-    - node_id
-    - kind
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [schedule.install_instance_definitions]}
+    intent:
+      type: object
+      properties:
+        instance_id: {type: integer, minimum: 1}
+        members:
+          type: array
+          maxItems: 4096
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              intent: {type: object}
+            required: [id, intent]
+            additionalProperties: false
+      required: [instance_id, members]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-  - name: prepare
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    writes: true
+  - name: instance
+    target: orbit-node-209
     steps:
-      - name: prepare
+      - name: members
+        target: orbit-node-209
+        forEach: {item: member, in: '${{ inputs.intent.members }}'}
         task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-runtime"
-          behaviorName: ${{ "instance-runtime-node-" + string(inputs.node_id) }}
-          methodName: prepareInstance
+          type: workflow
+          workflowIdOrName: operation-schedule-create
           inputs:
             operation_id: ${{ inputs.operation_id }}
             node_id: ${{ inputs.node_id }}
-            kind: ${{ inputs.kind }}
-            run_id: ${{ run.id }}
-      - name: caddy
-        allowFailure: true
-        guard: ${{ !data.latest("instance-runtime-node-" + string(inputs.node_id), "instance-plan-" + run.id).attributes.vite
-          || !data.latest("instance-runtime-node-" + string(inputs.node_id), "instance-plan-" + run.id).attributes.proceed }}
-        dependsOn:
-          - step: prepare
-            condition:
-              type: succeeded
+            kind: schedule.create
+            intent: ${{ self.member.intent }}
+            execution_secrets: {}
+      - name: result
+        target: orbit-node-209
+        dependsOn: [{step: members, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task:
           type: behavior
-          behaviorType: "@nckrtl/route-publication"
-          behaviorName: ${{ "route-publication-node-" + string(inputs.node_id) }}
-          methodName: publishCaddy
+          behaviorType: command/shell
+          behaviorName: ${{ "schedule-def-result-" + run.id }}
+          methodName: execute
           inputs:
-            operation_id: ${{ inputs.operation_id }}
-            node_id: ${{ inputs.node_id }}
-            kind: ${{ inputs.kind }}
-            run_id: ${{ run.id }}
-  - name: members
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    writes: true
-    dependsOn:
-      - job: prepare
-        condition:
-          type: or
-          conditions:
-            - type: succeeded
-            - type: failed
-    steps:
-      - name: member-${{ string(self.member) }}
-        forEach:
-          item: member
-          in: ${{ data.latest("instance-runtime-node-" + string(inputs.node_id), "instance-plan-" + run.id).attributes.member_ids
-            }}
-        allowFailure: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-runtime"
-          behaviorName: ${{ "instance-runtime-node-" + string(inputs.node_id) }}
-          methodName: applyInstanceMember
-          inputs:
-            operation_id: ${{ inputs.operation_id }}
-            node_id: ${{ inputs.node_id }}
-            kind: ${{ inputs.kind }}
-            run_id: ${{ run.id }}
-            member_id: ${{ self.member }}
-            publication_status: '${{ has(steps.caddy) ? steps.caddy.status : "skipped" }}'
-  - name: finish
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    writes: true
-    dependsOn:
-      - job: members
-        condition:
-          type: or
-          conditions:
-            - type: succeeded
-            - type: failed
-            - type: skipped
-    steps:
-      - name: finish
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-runtime"
-          behaviorName: ${{ "instance-runtime-node-" + string(inputs.node_id) }}
-          methodName: finishInstance
-          inputs:
-            operation_id: ${{ inputs.operation_id }}
-            node_id: ${{ inputs.node_id }}
-            kind: ${{ inputs.kind }}
-            run_id: ${{ run.id }}
+            run: |
+              printf '%s\n' '{"ready":true}'

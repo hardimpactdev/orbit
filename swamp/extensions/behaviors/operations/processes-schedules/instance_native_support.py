@@ -37,7 +37,7 @@ class InstanceRuntimeCase(NativeTestCase):
         self.native_env = {'INSTANCE_RUNTIME_SECRET': self.secret}
         base = self.repo / 'extensions/behaviors/operations/processes-schedules'
         source = base / 'instance.ts'
-        source.write_text('import {http,invoke} from "./instance_native_fixture.ts";\n' + source.read_text().replace('export const behavior = instanceRuntime();', 'export const behavior = instanceRuntime(() => http, invoke, (name, input, signal) => invoke(name, input, "", signal));'))
+        source.write_text('import {http,invoke} from "./instance_native_fixture.ts";\n' + source.read_text().replace('export const behavior = instanceRuntime();', 'export const behavior = instanceRuntime(() => http, invoke);'))
         source = self.repo / 'extensions/behaviors/operations/routes/publication.ts'
         source.write_text('import {http,caddy} from "../processes-schedules/instance_native_fixture.ts";\n' + source.read_text().replace('export const behavior = publication();', 'export const behavior = publication(() => http, caddy);'))
         for source in (ROOT / 'workflows').glob('workflow-operation-*-instance*.yaml'):

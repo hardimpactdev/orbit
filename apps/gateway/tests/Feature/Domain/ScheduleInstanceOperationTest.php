@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\DirectOperationPrivateMaterial;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Schedules\ScheduleInstanceOperation;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,7 +16,7 @@ use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
     app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
-    $this->node = Node::query()->create(['name' => 'schedule-plan', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.19', 'wireguard_ip' => '10.44.0.19']);
+    $this->node = Node::query()->create(['name' => 'schedule-plan', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.19', 'wireguard_ip' => '10.44.0.19']);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Schedule runtime', 'slug' => 'schedule-runtime', 'repository_url' => 'https://example.test/runtime.git']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'proof',
@@ -37,21 +37,26 @@ it('captures only uninstalled owned definition copies and keeps timers disabled'
         ->and(Operation::query()->count())->toBe(0);
 });
 
-it('hydrates only captured command material and refuses its changed bytes', function (): void {
+it('supplies public native member intent without command material or callbacks', function (): void {
     $copy = scheduleInstanceCopy($this->instance, 'copy');
     $operation = scheduleInstanceParent($this->instance, $this->runtime->capture($this->instance));
-    $private = app(DirectOperationPrivateMaterial::class)->read($operation);
-    expect(json_encode($this->runtime->input($operation)))->not->toContain('schedule-private-fixture')
-        ->and($private['installations'][$copy->id]['command'])->toBe('/usr/bin/printf schedule-private-fixture');
-    $copy->update(['command' => '/usr/bin/true']);
-    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($operation))->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'operation.execution_forbidden');
+    $input = $this->runtime->input($operation);
+    expect($input['intent']['members'][0]['intent']['schedule']['id'])->toBe($copy->id)
+        ->and($input['intent']['members'][0]['intent']['schedule']['desired'])->toBe('disabled')
+        ->and($input['execution_secrets'])->toBe([])
+        ->and(json_encode($input))->not->toContain('schedule-private-fixture')
+        ->and($operation->input)->not->toHaveKey('installations');
+    $declaration = app(DirectOperation::class)->definition($operation->kind);
+    expect($declaration['workflow_inputs'])->toBeTrue()
+        ->and($declaration['terminal_result'])->toBe(['job' => 'instance', 'step' => 'result'])
+        ->and($declaration)->not->toHaveKey('private_material');
 });
 
 it('refuses a captured member moved to another owner', function (): void {
     $copy = scheduleInstanceCopy($this->instance, 'copy');
     $operation = scheduleInstanceParent($this->instance, $this->runtime->capture($this->instance));
     $copy->update(['target_type' => Node::class, 'target_id' => $this->node->id]);
-    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($operation))->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'operation.execution_forbidden');
+    expect(fn () => $this->runtime->input($operation))->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'operation.execution_forbidden');
 });
 
 it('projects member installation without enabling its timer or creating child Operations', function (): void {
@@ -59,7 +64,7 @@ it('projects member installation without enabling its timer or creating child Op
     $operation = scheduleInstanceParent($this->instance, $this->runtime->capture($this->instance));
     $result = ['ready' => true, 'members' => [['id' => $copy->id, 'ready' => true]]];
     $this->runtime->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [...$result, 'private_material' => 'private-extra', 'members' => [[...$result['members'][0], 'stdout' => 'private-extra']]]]);
-    expect($operation->refresh()->result)->toBe($result)
+    expect($operation->refresh()->result)->toBe(['ready' => true])
         ->and($copy->refresh()->status->value)->toBe('active')
         ->and($copy->desired_timer_state->value)->toBe('disabled')
         ->and(Operation::query()->count())->toBe(1);

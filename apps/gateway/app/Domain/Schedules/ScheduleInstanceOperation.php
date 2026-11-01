@@ -9,13 +9,13 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Record-only Schedule definition capture; native steps own installation. */
@@ -56,8 +56,7 @@ final readonly class ScheduleInstanceOperation implements DirectOperationProject
             $members[] = ['id' => $record->id, 'input' => $input];
         }
 
-        return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'members' => $members,
-            'installations' => ['$secret' => 'schedule.instance_installations', 'id' => $instance->id]];
+        return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'members' => $members];
     }
 
     /** @return list<array{id:string,input:array<string,mixed>}> */
@@ -88,9 +87,17 @@ final readonly class ScheduleInstanceOperation implements DirectOperationProject
 
     public function input(Operation $operation): array
     {
-        return ['instance_id' => $operation->target_id, 'members' => array_map(fn (array $member): array => [
-            'id' => $member['id'], 'input' => $this->schedules->input(self::member($operation, $member)),
-        ], self::members($operation))];
+        $members = [];
+        foreach (self::members($operation) as $member) {
+            $schedule = Schedule::query()->findOrFail($member['id']);
+            if (! Instance::isMorphType($schedule->target_type) || $schedule->target_id !== $operation->target_id
+                || $schedule->host_node_id !== $operation->node_id) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'The runtime member belongs to another owner.', 422);
+            }
+            $members[] = ['id' => $member['id'], 'intent' => $this->schedules->input(self::member($operation, $member))['intent']];
+        }
+
+        return ['intent' => ['instance_id' => $operation->target_id, 'members' => $members], 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -98,21 +105,20 @@ final readonly class ScheduleInstanceOperation implements DirectOperationProject
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
             $terminal = $operation->status->terminal();
-            $result = ValidatedData::object($data['result'] ?? []);
-            $result = Arr::only($result, ['ready', 'error_code', 'members']);
-            if (is_array($result['members'] ?? null)) {
-                $result['members'] = array_map(static fn (mixed $member): array => Arr::only(ValidatedData::object($member), ['id', 'ready', 'state', 'error_code']), $result['members']);
-            }
+            $status = OperationStatus::from(ValidatedData::string($data['status']));
+            $code = ValidatedData::nullableString($data['error_code'] ?? null);
+            $result = $status === OperationStatus::Succeeded ? ['ready' => true] : ($code === null ? [] : ['error_code' => $code]);
             $projected = $this->direct->project($operation, $data, $result);
-            if (! $terminal && $projected->status->terminal()) {
-                $known = array_column(self::members($operation), null, 'id');
-                foreach (is_array($result['members'] ?? null) ? $result['members'] : [] as $value) {
-                    $memberResult = ValidatedData::object($value);
-                    $member = $known[ValidatedData::string($memberResult['id'])] ?? null;
-                    if ($member !== null) {
-                        $outcome = isset($memberResult['error_code']) ? OperationOutcome::failed(ValidatedData::string($memberResult['error_code'])) : OperationOutcome::succeeded(['ready' => true]);
-                        $this->completion->complete(self::member($operation, $member), $outcome);
-                    }
+            if (! $terminal && $status->terminal()) {
+                $outcome = match ($status) {
+                    OperationStatus::Succeeded => OperationOutcome::succeeded($result),
+                    OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
+                    OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
+                    OperationStatus::Cancelled => OperationOutcome::cancelled(),
+                    default => throw new \LogicException('A terminal Schedule parent status is required.'),
+                };
+                foreach (self::members($operation) as $member) {
+                    $this->completion->complete(self::member($operation, $member), $outcome);
                 }
             }
 
