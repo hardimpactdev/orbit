@@ -237,6 +237,60 @@ Deno.test("native environment root projects only bounded outcome without childre
   ]);
 });
 
+Deno.test("a Gateway refusal of the environment material projects its public code", async () => {
+  const projected: unknown[] = [];
+  const args = {
+    operation_id: 17,
+    kind: "instance.sync_environment" as const,
+    node_id: 9,
+    run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+  };
+  const http: Http = async (method, path, body) => {
+    await Promise.resolve();
+    if (path.includes("/private-material")) {
+      return {
+        status: 409,
+        body: {
+          error: {
+            code: "env.reference_unavailable",
+            message: "The named operation refused this request.",
+          },
+        },
+      };
+    }
+    if (method === "POST") projected.push(body);
+    return {
+      status: 200,
+      body: {
+        data: {
+          id: 17,
+          kind: args.kind,
+          node_id: 9,
+          status: "queued",
+          cancel_requested: false,
+          input: { instance_id: 31, direct_environment: plan },
+          result: null,
+        },
+      },
+    };
+  };
+  await assertRejects(
+    () =>
+      environmentRoot(() => http).methods.apply.execute(args, {
+        globalArgs: {
+          gatewayUrl: "https://gateway.orbit",
+          caFile: "/test/ca.pem",
+        },
+      }),
+    Error,
+    "env.reference_unavailable",
+  );
+  assertEquals((projected[1] as Record<string, unknown>).result, {
+    error_code: "env.reference_unavailable",
+    failed_step: "material",
+  });
+});
+
 function production() {
   return {
     ...plan,

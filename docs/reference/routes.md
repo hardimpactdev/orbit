@@ -533,7 +533,7 @@ A failure after cutover keeps the replacement authoritative. A retry continues u
 
 `route.reconciliation_required` refuses these changes to an active Route: a generated domain change that an operator requests through ordinary `route:update`, and a single-target change. The Instance-owned [`instance:rename`](#change-an-instance-route-domain) path permits its generated Route's domain change, but not an incompatible reconciliation already in progress. A Router clear gets the same refusal.
 
-Deployment, rollback, clone finalization, Instance removal, environment changes, and domain changes of the same Instance share one operation owner. A competitor waits or returns `env.operation_busy`.
+Deployment, rollback, clone finalization, Instance removal, environment changes, and domain changes of the same Instance share one operation owner. A competing Operation returns `operation.target_busy`, except that a rollback supersedes a deploy that no worker has started, as [One operation per target](/reference/operations#one-operation-per-target) describes.
 
 ### Stored transitions
 
@@ -754,7 +754,7 @@ Web-root updates record the new root at an explicit phase. Their Instance childr
 
 Route Operations request `metrics.reconcile` with an empty input only when their planned change alters the sorted public, active hostname catalog grouped by serving Ingress Node, and one active Metrics assignment has an active serving Node. Private-only changes, unchanged publication, target associations and web-root changes leave that catalog unchanged and skip Metrics. FPM monitoring selects active production Instances independently of their Route associations. The Metrics family captures its reconciliation intent when that child is requested.
 
-Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, unrelated Instance environment changes refuse with `env.operation_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.
+Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, a competing Operation on the Instance, such as environment synchronization, refuses with `operation.target_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.
 
 ### Direct dispatch
 

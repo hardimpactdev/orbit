@@ -202,6 +202,41 @@ Deno.test("native sync refuses loss of unmanaged workload keys before writing", 
   });
 });
 
+Deno.test("native sync reports a refused preflight as env.sync_preflight_failed", async () => {
+  await fixture(async (base) => {
+    await Deno.writeTextFile(`${base}/elsewhere`, "TOKEN=kept\n");
+    await Deno.symlink(`${base}/elsewhere`, `${base}/.env`);
+    const refusal = await assertRejects(
+      () =>
+        synchronizeEnvironment({
+          instance_id: 31,
+          node_id: 9,
+          environment: "development",
+          base,
+          user: account,
+          maximum: 1048576,
+          required_capacity: 1048576,
+          preserve_workload_keys: true,
+          runtime: null,
+        }, (callback) =>
+          callback({
+            environment_material: {
+              content: "TOKEN=synthetic-secret\n",
+              keys: ["TOKEN"],
+              owned_keys: [],
+              testing: null,
+            },
+          })),
+      EnvironmentRefusal,
+    );
+    assertEquals(
+      [refusal.code, refusal.stage],
+      ["env.sync_preflight_failed", "preflight"],
+    );
+    assertEquals(await Deno.readTextFile(`${base}/elsewhere`), "TOKEN=kept\n");
+  });
+});
+
 Deno.test("SQLite transfer merges only DB keys into the archived private environment", async () => {
   await fixture(async (base) => {
     const privateLine = "TOKEN=retain-private-value\nUNRELATED=true\n";

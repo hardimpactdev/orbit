@@ -440,7 +440,7 @@ describe('environment synchronization', function (): void {
     })->with([
         ['config_cache_and_opcache_refreshed', [12, 14], 'config cache rebuilt; FPM opcache reset', '12, 14'],
         ['opcache_refreshed_config_uncached', [12], 'FPM opcache reset; config remains uncached', '12'],
-        ['skipped_unchanged', [], 'refresh skipped: environment file unchanged', 'none'],
+        ['skipped_development', [], 'refresh skipped: development Instance', 'none'],
         ['skipped_no_php_version', [], 'refresh skipped: no PHP version selected', 'none'],
         ['skipped_no_current_release', [], 'refresh skipped: no current release', 'none'],
     ]);
