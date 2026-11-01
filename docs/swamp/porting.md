@@ -134,7 +134,7 @@ A phase script may wait for external state, such as a VM started, an image ready
 | Item | Rule |
 | --- | --- |
 | Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live runs when they exist, otherwise native harness runs. State the sample size. |
-| Run budget | Every kind gets a Gateway expiry, and a measured p95 with headroom wins. Without one, use 30 minutes until the first success, then the longest successful run times 1.5. `instance.create` has a 60 s budget. |
+| Run budget | Every kind gets a Gateway expiry; a measured p95 with headroom wins. Otherwise use 30 minutes until the first success, then the longest successful run times 1.5. `instance.create` has 60 s. |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | Phase timeout | Each phase script runs under coreutils `timeout <phase budget>`, inside `run:` or as the first `@swamp/ssh` `argv` items. |
 | `queueTimeout` | Every step gets an explicit one (guide rule 6), never the serve's 600 s default. A workflow-level value reaches every step through the manual's resolution order. Keep it below the run budget. |
