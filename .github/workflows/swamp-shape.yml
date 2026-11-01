@@ -71,6 +71,9 @@ jobs:
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
           deno run --allow-env --allow-read --allow-write="$RUNNER_TEMP/shape.json" --allow-run bin/check-swamp-shape.ts --base "$base" --report "$RUNNER_TEMP/shape.json"
           python3 bin/check-swamp-base-policy.py --base "$base"
+      - name: Check frozen agent command references
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        run: '"$GITHUB_WORKSPACE/bin/check-frozen-agent-commands" --root "$GITHUB_WORKSPACE"'
       - name: Validate declared grants with pinned native regex safety
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
