@@ -8,10 +8,10 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Data\Tasks\TaskWorkerData;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
 use App\Models\Instance;
@@ -141,8 +141,8 @@ final readonly class TaskOperations
     /** @return Builder<Operation> */
     private function holders(Task $group): Builder
     {
-        return Operation::query()->where(fn (Builder $q) => $q->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))
-            ->orWhere(fn (Builder $q) => $q->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-                ->where('state->task_park_writer', 'direct')->whereNotIn('status', OperationStatus::terminalValues())));
+        return Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->whereIn('kind', array_keys(app(DirectOperation::class)->definitions()))
+            ->whereNotIn('status', OperationStatus::terminalValues());
     }
 }

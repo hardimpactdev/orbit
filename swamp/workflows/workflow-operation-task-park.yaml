@@ -1,27 +1,103 @@
 id: 9c42bead-f036-4bf8-a1ef-e883129af28f
 name: operation-task-park
-description: Park one admitted review VM and project confirmed stopped power in the same Task root.
+description: Task VM park from209; terminal stdout is projected by the shared subscriber.
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [tasks.park] }
-  required: [operation_id, node_id, kind]
-vaults: []
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tasks.park
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^task-vm-upcloud-token$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: park
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: park
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/task-park"
-          behaviorName: task-park
-          methodName: execute
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: park
+  target: orbit-node-209
+  steps:
+  - name: eligible
+    target: orbit-node-209
+    task:
+      type: assert
+      expr: inputs.intent.eligible == true
+      message: The captured VM is not eligible for this transition
+  - name: provider
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent.provider_input }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: stop
+    dependsOn:
+    - step: eligible
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-terminal-" + run.id }}
+      methodName: execute
+      inputs:
+        run: '/usr/bin/python3 -B - <<''PYTHON''
+
+          import json
+
+          import os
+
+
+          value={key:int(os.environ[''ORBIT_''+key.upper()]) for key in [''task_vm_id'',
+          ''group_id'', ''instance_id'', ''project_id'']}
+
+          value.update(parked=True,stop_confirmed=True)
+
+          print(json.dumps(value))
+
+          PYTHON
+
+          '
+        env:
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_GROUP_ID: ${{ string(inputs.intent.group_id) }}
+          ORBIT_INSTANCE_ID: ${{ string(inputs.intent.instance_id) }}
+          ORBIT_PROJECT_ID: ${{ string(inputs.intent.project_id) }}
+    dependsOn:
+    - step: provider
+      condition:
+        type: succeeded

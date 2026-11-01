@@ -1,100 +1,224 @@
 id: de1b2603-fc9c-4054-91ec-3f51474109bb
 name: operation-task-vm-resume
-description: Start one owned VM and confirm its guest and Pi in the same native root.
+description: Task VM resume from209; terminal stdout is projected by the shared subscriber.
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [task_vm.resume] }
-  required: [operation_id, node_id, kind]
-vaults: []
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.resume
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^task-vm-upcloud-token$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: admission
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: admit
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/task-vm-resume'
-          behaviorName: '${{ "task-vm-resume-" + run.id }}'
-          methodName: admit
-          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}' }
+- name: resume
+  target: orbit-node-209
+  steps:
+  - name: eligible
+    target: orbit-node-209
+    task:
+      type: assert
+      expr: inputs.intent.eligible == true
+      message: The captured VM is not eligible for this transition
   - name: provider
-    dependsOn: [{ job: admission, condition: { type: succeeded } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: provider
-        guard: '${{ !steps.admit.outputs.active }}'
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/task-vm-resume'
-          behaviorName: '${{ "task-vm-resume-" + run.id }}'
-          methodName: stage
-          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: provider }
-      - name: provider-ready
-        guard: '${{ !steps.admit.outputs.active }}'
-        dependsOn: [{ step: provider, condition: { type: succeeded } }]
-        task: { type: assert, expr: steps.provider.outputs.ok, message: The VM provider did not confirm started power, severity: high }
-  - name: guest
-    dependsOn: [{ job: provider, condition: { type: succeeded } }]
-    target: '${{ "orbit-node-" + string(steps.admit.outputs.input.guest_node_id) }}'
-    labels: { node: '${{ string(steps.admit.outputs.input.guest_node_id) }}' }
-    steps:
-      - name: guest
-        guard: '${{ !steps.admit.outputs.active }}'
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/task-vm-resume'
-          behaviorName: '${{ "task-vm-resume-" + run.id }}'
-          methodName: stage
-          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: guest }
-      - name: guest-ready
-        guard: '${{ !steps.admit.outputs.active }}'
-        dependsOn: [{ step: guest, condition: { type: succeeded } }]
-        task: { type: assert, expr: steps.guest.outputs.ok, message: The exact guest agent and Pi artifact are not ready, severity: high }
-  - name: pi
-    dependsOn: [{ job: guest, condition: { type: succeeded } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: pi
-        guard: '${{ !steps.admit.outputs.active }}'
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/task-vm-resume'
-          behaviorName: '${{ "task-vm-resume-" + run.id }}'
-          methodName: stage
-          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: pi }
-      - name: pi-ready
-        guard: '${{ !steps.admit.outputs.active }}'
-        dependsOn: [{ step: pi, condition: { type: succeeded } }]
-        task: { type: assert, expr: steps.pi.outputs.ok, message: The admitted Pi server did not answer with its private token, severity: high }
-  - name: projection
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent.provider_input }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: start
     dependsOn:
-      - { job: admission, condition: { type: always } }
-      - { job: provider, condition: { type: always } }
-      - { job: guest, condition: { type: always } }
-      - { job: pi, condition: { type: always } }
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: project
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/task-vm-resume'
-          behaviorName: '${{ "task-vm-resume-" + run.id }}'
-          methodName: project
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            kind: '${{ inputs.kind }}'
-            node_id: '${{ inputs.node_id }}'
-            run_id: '${{ run.id }}'
-            admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs : null }}'
-            outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.guest) && has(steps.guest.outputs) ? [steps.guest.outputs] : []) + (has(steps.pi) && has(steps.pi.outputs) ? [steps.pi.outputs] : []) }}'
+    - step: eligible
+      condition:
+        type: succeeded
+  - name: ssh
+    target: orbit-node-209
+    dependsOn:
+    - step: provider
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-ssh-prepare
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+  - name: artifact
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-resume-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "vm-resume-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ steps.ssh.outputs.result.ssh_execution.target.user }}
+          port: 22
+          identityFile: ${{ steps.ssh.outputs.result.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ steps.ssh.outputs.result.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ steps.ssh.outputs.result.ssh_execution.target.host_keys
+              }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - -c
+        - 'import hashlib
+
+          import json
+
+          import sys
+
+          from pathlib import Path
+
+          value=json.load(sys.stdin)
+
+          path=Path(''/home/orbit/.local/bin/pi-server'')
+
+          if hashlib.sha256(path.read_bytes()).hexdigest()!=value[''pi_sha256'']:raise
+          SystemExit(1)
+
+          print(json.dumps({''artifact_ready'':True}))
+
+          '
+        stdin: ${{ inputs.intent.runtime_json }}
+        timeoutSec: 30
+    dependsOn:
+    - step: ssh
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.mode == "converge" }}
+  - name: pi
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-resume-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - -c
+        - "import json\nimport sys\nimport urllib.request\nfrom pathlib import Path\n\
+          value=json.load(sys.stdin)\ntoken=Path('/home/orbit/.pi/agent/orbit-token').read_text().strip()\n\
+          request=urllib.request.Request('http://127.0.0.1:'+str(value['pi_port'])+'/capabilities',headers={'Authorization':'Bearer\
+          \ '+token})\ntry:\n    with urllib.request.urlopen(request,timeout=10) as\
+          \ response:\n        if response.status!=200:raise ValueError('not ready')\n\
+          except Exception:\n    print('task_vm.resume_failed',file=sys.stderr)\n\
+          \    raise SystemExit(1)\nprint(json.dumps({'pi_ready':True}))\n"
+        stdin: ${{ inputs.intent.runtime_json }}
+        timeoutSec: 30
+    dependsOn:
+    - step: artifact
+      condition:
+        type: always
+    guard: ${{ inputs.intent.mode == "converge" }}
+  - name: runtime-confirmed
+    target: orbit-node-209
+    dependsOn:
+    - step: ssh
+      condition:
+        type: succeeded
+    - step: artifact
+      condition:
+        type: always
+    - step: pi
+      condition:
+        type: always
+    task:
+      type: assert
+      expr: inputs.intent.mode == "converge" || (steps.artifact.outputs.exitCode ==
+        0 && steps.pi.outputs.exitCode == 0)
+      message: The resumed runtime is not ready
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-terminal-" + run.id }}
+      methodName: execute
+      inputs:
+        run: '/usr/bin/python3 -B - <<''PYTHON''
+
+          import json
+
+          import os
+
+
+          value={key:int(os.environ[''ORBIT_''+key.upper()]) for key in [''task_vm_id'',
+          ''guest_node_id'']}
+
+          value[''ssh_host_key'']={key:os.environ[''ORBIT_''+key.upper()] for key
+          in [''ssh_host_key_type'', ''ssh_host_key'', ''ssh_host_fingerprint'']}
+
+          value.update(ssh_ready=True)
+
+          if os.environ[''ORBIT_MODE'']==''resume'':value.update(resumed=True,ready=True)
+
+          else:value.update(converged=True)
+
+          print(json.dumps(value))
+
+          PYTHON
+
+          '
+        env:
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_GUEST_NODE_ID: ${{ string(inputs.intent.guest_node_id) }}
+          ORBIT_SSH_HOST_KEY_TYPE: ${{ steps.ssh.outputs.result.pin.ssh_host_key_type
+            }}
+          ORBIT_SSH_HOST_KEY: ${{ steps.ssh.outputs.result.pin.ssh_host_key }}
+          ORBIT_SSH_HOST_FINGERPRINT: ${{ steps.ssh.outputs.result.pin.ssh_host_fingerprint
+            }}
+          ORBIT_MODE: ${{ inputs.intent.mode }}
+    dependsOn:
+    - step: runtime-confirmed
+      condition:
+        type: succeeded

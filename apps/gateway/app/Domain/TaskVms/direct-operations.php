@@ -15,7 +15,9 @@ use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 return ['task_vm.resume' => [
     'workflow' => 'operation-task-vm-resume',
     'projection' => TaskVmResumeProjection::class,
-    'private_material' => ['pi_token' => 'task_vm.pi_token', 'upcloud_token' => 'upcloud.api'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'resume', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
 ], 'task_vm.provision' => [
     'workflow' => 'operation-task-vm-provision',
     'projection' => TaskVmProvisionProjection::class,

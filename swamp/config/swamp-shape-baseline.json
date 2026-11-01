@@ -2729,36 +2729,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "agent-action",
-      "count": 1,
-      "evidence": [
-        "incus.vm"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "agent-dynamic",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/pi_delivery.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -2815,54 +2785,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
-      "rule": "secret-output",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/task-vms/runtime.ts",
@@ -3177,17 +3099,121 @@
       "count": 1,
       "evidence": []
     },
-    {"file":"workflows/workflow-group-fanout.yaml","rule":"foreach-shared-identity","count":1,"evidence":["groups/conflict-${{ self.conflict.workItem }}"]},
-    {"file":"workflows/workflow-instance-route-workload.yaml","rule":"foreach-shared-identity","count":14,"evidence":["workload/dev-source","workload/dev-source-assets","workload/dev-source-command","workload/prod-source","workload/prod-source-assets","workload/prod-source-command","workload/runtime-identity","workload/runtime-pool","workload/runtime-pool-proof","workload/runtime-reload","workload/runtime-validate","workload/served","workload/served-assets","workload/served-command"]},
-    {"file":"workflows/workflow-operation-database-destroy-owned.yaml","rule":"foreach-shared-identity","count":1,"evidence":["effects/remove-${{ self.work.key }}"]},
-    {"file":"workflows/workflow-operation-database-server-destroy.yaml","rule":"foreach-shared-identity","count":1,"evidence":["inspect/inspect-${{ self.member.slot }}"]},
-    {"file":"workflows/workflow-operation-instance-destroy.yaml","rule":"foreach-shared-identity","count":2,"evidence":["cleanup/cleanup-${{ self.member.node_id }}","databases/database-${{ self.work.key }}"]},
-    {"file":"workflows/workflow-operation-instance-transfer.yaml","rule":"foreach-shared-identity","count":2,"evidence":["recover-leaves/remove-candidate-certificates","retirement/retire-artifacts"]},
-    {"file":"workflows/workflow-operation-process-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
-    {"file":"workflows/workflow-operation-process-restart-instance.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
-    {"file":"workflows/workflow-operation-schedule-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
-    {"file":"workflows/workflow-operation-task-check.yaml","rule":"foreach-shared-identity","count":5,"evidence":["check/base-${{ self._index }}","check/base_prepare-${{ self._index }}","check/base_ready-${{ self._index }}","check/deliverable-${{ self._index }}","check/setup-${{ self._index }}"]},
-    {"file":"workflows/workflow-operation-vault-sync.yaml","rule":"foreach-shared-identity","count":1,"evidence":["deletions/delete"]},
-    {"file":"workflows/workflow-task-check-ci.yaml","rule":"foreach-shared-identity","count":2,"evidence":["checks/ci-${{ self.check.attributes.inputs.operation_id }}","checks/observed-${{ self.check.attributes.inputs.operation_id }}"]}
+    {
+      "file": "workflows/workflow-group-fanout.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "groups/conflict-${{ self.conflict.workItem }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-instance-route-workload.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 14,
+      "evidence": [
+        "workload/dev-source",
+        "workload/dev-source-assets",
+        "workload/dev-source-command",
+        "workload/prod-source",
+        "workload/prod-source-assets",
+        "workload/prod-source-command",
+        "workload/runtime-identity",
+        "workload/runtime-pool",
+        "workload/runtime-pool-proof",
+        "workload/runtime-reload",
+        "workload/runtime-validate",
+        "workload/served",
+        "workload/served-assets",
+        "workload/served-command"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-database-destroy-owned.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "effects/remove-${{ self.work.key }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-database-server-destroy.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "inspect/inspect-${{ self.member.slot }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-instance-destroy.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 2,
+      "evidence": [
+        "cleanup/cleanup-${{ self.member.node_id }}",
+        "databases/database-${{ self.work.key }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-instance-transfer.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 2,
+      "evidence": [
+        "recover-leaves/remove-candidate-certificates",
+        "retirement/retire-artifacts"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-process-install-instance-definitions.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "members/member-${{ string(self.member) }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-process-restart-instance.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "members/member-${{ string(self.member) }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-schedule-install-instance-definitions.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "members/member-${{ string(self.member) }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-task-check.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 5,
+      "evidence": [
+        "check/base-${{ self._index }}",
+        "check/base_prepare-${{ self._index }}",
+        "check/base_ready-${{ self._index }}",
+        "check/deliverable-${{ self._index }}",
+        "check/setup-${{ self._index }}"
+      ]
+    },
+    {
+      "file": "workflows/workflow-operation-vault-sync.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "deletions/delete"
+      ]
+    },
+    {
+      "file": "workflows/workflow-task-check-ci.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 2,
+      "evidence": [
+        "checks/ci-${{ self.check.attributes.inputs.operation_id }}",
+        "checks/observed-${{ self.check.attributes.inputs.operation_id }}"
+      ]
+    }
   ]
 }

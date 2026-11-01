@@ -62,6 +62,8 @@ class ImageBuildNative(NativeTestCase):
         self.run_workflow()
         saved = self.read()
         self.assertTrue(saved['artifactDelivered'])
+        self.assertTrue(any(call['name']=='ssh.enable' for call in saved['guest']))
+        self.assertTrue(any(call['name']=='ssh.check' for call in saved['guest']))
         self.assertEqual(saved['operation']['status'], 'succeeded')
         self.assertTrue(all(call['uid'] == '1000' for call in saved['guest'] if call['name'] == 'image.owner'))
         self.assertTrue(any(call['name'] == 'image.owner' for call in saved['guest']))
@@ -148,6 +150,14 @@ class ImageBuildNative(NativeTestCase):
         self.assertEqual(saved['operation']['status'], 'failed')
         self.assertEqual(saved['operation']['result']['error_code'], 'task_vm.image_cleanup_failed')
         self.assertIn('tvm-image-7', saved['instances'])
+
+    def test_inactive_sshd_blocks_image_promotion(self):
+        self.state['failSsh']=True
+        self.save()
+        self.run_workflow(success=False)
+        saved=self.read()
+        self.assertNotIn('finish_seed',[call['input']['operation']['kind'] for call in saved['actions']])
+        self.assertFalse(any(call['input']['operation'].get('alias')=='orbit-task-base' and call['input']['operation']['kind']=='promote' for call in saved['actions']))
 
 
 if __name__ == '__main__':

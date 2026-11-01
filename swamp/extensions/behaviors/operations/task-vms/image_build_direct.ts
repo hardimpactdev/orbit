@@ -197,6 +197,7 @@ export async function imageStage(
       await builder.command("image.owner", {});
       await image({ kind: "prepare_metadata", name: input.name });
       await builder.command("image.boot", { lean: true });
+      await builder.enableSsh();
       break;
     case "clean":
       await builder.command("image.recipe-marker", {
@@ -213,7 +214,10 @@ export async function imageStage(
         kind: "publish",
         name: input.name,
         alias: `${input.candidate_alias}-attempt-${input.attempt}`,
-        properties: { "orbit.recipe": input.identity, "orbit.profile": "base" },
+        properties: {
+          "orbit.recipe": input.identity,
+          "orbit.profile": "base",
+        },
       });
       const candidate = fingerprint(result);
       await image({
@@ -228,7 +232,11 @@ export async function imageStage(
       await launch(true, fp());
       const smoke = guest(true);
       await smoke.bootstrap();
-      await smoke.command("image.check", { lean_boot: true, firewall: false });
+      await smoke.checkSsh();
+      await smoke.command("image.check", {
+        lean_boot: true,
+        firewall: false,
+      });
       await smoke.command("image.verify", input.recipe, 120);
       break;
     }
@@ -249,7 +257,9 @@ export async function imageStage(
         location: { project: input.project, pool: input.pool },
         operation: { kind: "finish_seed", fingerprint: fp() },
       });
-      z.object({ name: z.literal(`orbit-topology-seed-${fp().slice(0, 12)}`) })
+      z.object({
+        name: z.literal(`orbit-topology-seed-${fp().slice(0, 12)}`),
+      })
         .parse(result);
       break;
     }
@@ -304,7 +314,8 @@ export function imageBuildDirect(
     })
       .parse(await gateway(args, ctx).read(ctx.signal));
     if (
-      current.id !== args.operation_id || current.node_id !== args.node_id ||
+      current.id !== args.operation_id ||
+      current.node_id !== args.node_id ||
       current.input.host_node_id !== args.node_id
     ) throw new Error("Image host differs from admission");
     return current;
@@ -376,7 +387,9 @@ export function imageBuildDirect(
           "Execute one native image stage on its admitted build host",
         arguments: Args.extend({ stage: z.enum(stages) }),
         execute: async (
-          args: z.infer<typeof Args> & { stage: typeof stages[number] },
+          args: z.infer<typeof Args> & {
+            stage: typeof stages[number];
+          },
           ctx: Context,
         ) => {
           const current = await read(args, ctx);
@@ -384,7 +397,10 @@ export function imageBuildDirect(
           const input = current.input;
           const guard = async () => {
             const fresh = await read(args, ctx);
-            if (JSON.stringify(fresh.input) !== JSON.stringify(input)) {
+            if (
+              JSON.stringify(fresh.input) !==
+                JSON.stringify(input)
+            ) {
               throw new Error("task_vm.image_attempt_changed");
             }
           };
@@ -421,11 +437,15 @@ export function imageBuildDirect(
                     await guard();
                     await guest.bootstrap();
                   },
-                  async command(...args: Parameters<Guest["command"]>) {
+                  async command(
+                    ...args: Parameters<Guest["command"]>
+                  ) {
                     await guard();
                     return await guest.command(...args);
                   },
-                  async artifact(...args: Parameters<Guest["artifact"]>) {
+                  async artifact(
+                    ...args: Parameters<Guest["artifact"]>
+                  ) {
                     await guard();
                     return await guest.artifact(...args);
                   },
@@ -440,15 +460,24 @@ export function imageBuildDirect(
             );
             executing = false;
             if (args.stage === "boot") {
-              const output = z.object({ boot_id: z.string().uuid() }).parse(
+              const output = z.object({
+                boot_id: z.string().uuid(),
+              }).parse(
                 result,
               );
               return {
-                dataHandles: [await ctx.writeResource("boot", "boot", output)],
+                dataHandles: [
+                  await ctx.writeResource(
+                    "boot",
+                    "boot",
+                    output,
+                  ),
+                ],
               };
             }
             if (args.stage === "publish") {
-              const output = z.object({ fingerprint: hash }).parse(result);
+              const output = z.object({ fingerprint: hash })
+                .parse(result);
               await api.project({
                 status: "running",
                 started_at,
@@ -456,7 +485,11 @@ export function imageBuildDirect(
               });
               return {
                 dataHandles: [
-                  await ctx.writeResource("publication", "published", output),
+                  await ctx.writeResource(
+                    "publication",
+                    "published",
+                    output,
+                  ),
                 ],
               };
             }
@@ -464,7 +497,11 @@ export function imageBuildDirect(
             if (args.stage === "complete") {
               return {
                 dataHandles: [
-                  await ctx.writeResource("completion", "completion", result),
+                  await ctx.writeResource(
+                    "completion",
+                    "completion",
+                    result,
+                  ),
                 ],
               };
             }
@@ -477,10 +514,14 @@ export function imageBuildDirect(
           } catch (error) {
             if (!executing) throw error;
             const error_code = error instanceof Error &&
-                /^[a-z0-9_]+\.[a-z0-9_.-]{1,80}$/.test(error.message)
+                /^[a-z0-9_]+\.[a-z0-9_.-]{1,80}$/.test(
+                  error.message,
+                )
               ? error.message
               : "task_vm.image_build_failed";
-            await ctx.writeResource("failure", "failure", { error_code });
+            await ctx.writeResource("failure", "failure", {
+              error_code,
+            });
             throw new Error(error_code);
           }
         },
@@ -494,12 +535,19 @@ export function imageBuildDirect(
           if (current.status === "succeeded") return {};
           const guard = async () => {
             const fresh = await owned(args, ctx);
-            if (JSON.stringify(fresh.input) !== JSON.stringify(current.input)) {
+            if (
+              JSON.stringify(fresh.input) !==
+                JSON.stringify(current.input)
+            ) {
               // Recipe currency can change during cleanup, ownership cannot.
               const { current: _old, ...before } = current.input;
               const { current: _new, ...after } = fresh.input;
-              if (JSON.stringify(before) !== JSON.stringify(after)) {
-                throw new Error("task_vm.image_attempt_changed");
+              if (
+                JSON.stringify(before) !== JSON.stringify(after)
+              ) {
+                throw new Error(
+                  "task_vm.image_attempt_changed",
+                );
               }
             }
             if (fresh.status === "succeeded") {
@@ -521,7 +569,9 @@ export function imageBuildDirect(
           await guard();
           const fresh = await owned(args, ctx);
           if (["failed", "cancelled"].includes(fresh.status)) {
-            if (cleanupFailed) throw new Error("task_vm.image_cleanup_failed");
+            if (cleanupFailed) {
+              throw new Error("task_vm.image_cleanup_failed");
+            }
             return {};
           }
           const failure = await ctx.readResource("failure");
@@ -548,7 +598,9 @@ export function imageBuildDirect(
             result: succeeded ? completion : cancelled ? {} : { error_code },
             ...(!succeeded && !cancelled ? { error_code } : {}),
           });
-          if (cleanupFailed) throw new Error("task_vm.image_cleanup_failed");
+          if (cleanupFailed) {
+            throw new Error("task_vm.image_cleanup_failed");
+          }
           return {};
         },
       },

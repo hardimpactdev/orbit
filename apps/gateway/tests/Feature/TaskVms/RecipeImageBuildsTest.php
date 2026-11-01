@@ -13,6 +13,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -121,6 +122,7 @@ it('records one immutable Swamp image Operation and reuses unchanged intent', fu
     $operation = Operation::query()->where('kind', 'task_vm.image_build')->sole();
     expect($operation->target_id)->toBe($first->id)->and($operation->node_id)->toBe($host->id);
     expect($operation->input['recipe'])->toBeString();
+    expect($operation->input['gateway_public_key'])->toBe(app(SwampSshExecutionInput::class)->identity()['public_key']);
     expect($operation->state['swamp_run_id'])->toBe('878a384f-8b8a-4066-bd17-dcad8eac3e86');
     expect($operation->lock_key)->toBeNull();
     expect($operation->parent_operation_id)->toBeNull();

@@ -1,0 +1,247 @@
+id: 5343cf76-d595-4d65-a0db-c22ca1962b28
+name: task-vm-provider-power
+description: One provider power action and one postcondition;209 official SSH for
+  Incus, HTTPS for UpCloud.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^task-vm-upcloud-token$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+    action:
+      type: string
+      enum:
+      - start
+      - stop
+      - delete
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - action
+  additionalProperties: false
+jobs:
+- name: provider
+  target: orbit-node-209
+  steps:
+  - name: input
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-lifecycle-input'
+      behaviorName: ${{ "vm-lifecycle-" + run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+        action: ${{ inputs.action }}
+  - name: incus-before
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-provider-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "vm-provider-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.input.outputs.observe_argv }}
+        timeoutSec: 180
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.provider != "incus" }}
+  - name: cloud-before
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-cloud-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.provider != "upcloud" }}
+  - name: before
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-lifecycle-input'
+      behaviorName: ${{ "vm-lifecycle-" + run.id }}
+      methodName: observe
+      inputs:
+        intent: ${{ inputs.intent }}
+        action: ${{ inputs.action }}
+        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-before"].outputs.stdout
+          : steps["cloud-before"].outputs.stdout }}'
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    - step: incus-before
+      condition:
+        type: always
+    - step: cloud-before
+      condition:
+        type: always
+  - name: incus-action
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-provider-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.input.outputs.action_argv }}
+        timeoutSec: 180
+    dependsOn:
+    - step: before
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.provider != "incus" || !steps.before.outputs.change }}
+    allowFailure: true
+  - name: cloud-action
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-cloud-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" action
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+    dependsOn:
+    - step: before
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.provider != "upcloud" || !steps.before.outputs.change
+      }}
+    allowFailure: true
+  - name: incus-after
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-provider-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.input.outputs.observe_argv }}
+        timeoutSec: 180
+    guard: ${{ inputs.intent.provider != "incus" }}
+    dependsOn:
+    - step: before
+      condition:
+        type: succeeded
+    - step: incus-action
+      condition:
+        type: always
+    - step: cloud-action
+      condition:
+        type: always
+  - name: cloud-after
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-cloud-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+    guard: ${{ inputs.intent.provider != "upcloud" }}
+    dependsOn:
+    - step: before
+      condition:
+        type: succeeded
+    - step: incus-action
+      condition:
+        type: always
+    - step: cloud-action
+      condition:
+        type: always
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-lifecycle-input'
+      behaviorName: ${{ "vm-lifecycle-" + run.id }}
+      methodName: result
+      inputs:
+        intent: ${{ inputs.intent }}
+        action: ${{ inputs.action }}
+        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-after"].outputs.stdout
+          : steps["cloud-after"].outputs.stdout }}'
+    dependsOn:
+    - step: before
+      condition:
+        type: succeeded
+    - step: incus-after
+      condition:
+        type: always
+    - step: cloud-after
+      condition:
+        type: always
