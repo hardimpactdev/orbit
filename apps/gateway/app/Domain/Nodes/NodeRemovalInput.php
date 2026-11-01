@@ -30,14 +30,15 @@ final readonly class NodeRemovalInput
         $node = Node::query()->findOrFail(ValidatedData::integer($snapshot['node_id']));
         $ssh = app(SwampSshExecutionInput::class);
         $nativeRoles = app(NativeNodeRoleRemovalInput::class);
+        $machineDeleted = ($snapshot['machine_deleted'] ?? false) === true;
         $roles = $node->roles()->orderBy('id')->lockForUpdate()->get();
         $before = [];
         foreach ($roles as $role) {
-            if (in_array($role->status, [LifecycleStatus::Provisioning, LifecycleStatus::Removing], true)) {
+            if (! $machineDeleted && in_array($role->status, [LifecycleStatus::Provisioning, LifecycleStatus::Removing], true)) {
                 throw new ResourceOperationException('node.role_busy', 'Wait for the active role operation before removing this Node.', 409);
             }
             app(RouteRemovalGuard::class)->assertRoleRemovable($node, $role->role);
-            $before[$role->id] = $nativeRoles->publications($node, $role->role);
+            $before[$role->id] = $nativeRoles->publications($node, $role->role, $machineDeleted);
         }
         foreach ($roles as $role) {
             $role->claimRemoval();
@@ -45,10 +46,10 @@ final readonly class NodeRemovalInput
         $node->unsetRelation('roles');
         $roleIntents = [];
         foreach ($roles as $role) {
-            $roleIntents[] = $nativeRoles->capture($node, $role->refresh(), $before[$role->id]);
+            $roleIntents[] = $nativeRoles->capture($node, $role->refresh(), $before[$role->id], $machineDeleted);
         }
         $target = null;
-        if (! $snapshot['offline'] || $roles->isNotEmpty() || (is_string($node->ssh_host_key) && $node->ssh_host_key !== '')) {
+        if (! $machineDeleted && (! $snapshot['offline'] || $roles->isNotEmpty() || (is_string($node->ssh_host_key) && $node->ssh_host_key !== ''))) {
             $target = $ssh->forNode($node);
         }
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
@@ -124,7 +125,7 @@ final readonly class NodeRemovalInput
 
         return ['snapshot' => $snapshot, 'participant_node_ids' => array_values(array_unique($participants)),
             'intent' => ['schema_version' => 1, 'node_id' => $node->id, 'name' => $node->name,
-                'offline' => $snapshot['offline'], 'platform' => $node->platform,
+                'offline' => $snapshot['offline'], 'machine_deleted' => $machineDeleted, 'platform' => $node->platform,
                 'probe' => ['host' => $node->wireguard_ip, 'port' => 22], 'ssh' => $target,
                 'roles' => $roleIntents, 'dns' => $dns, 'peers' => $peers, 'hub' => $hub, 'router_rules' => $routerRules,
                 'public_ssh' => ['argv' => ['ufw', ...array_slice($publicSsh->arguments, 2)]],

@@ -22,3 +22,9 @@ Native failure and cancellation branches revoke any attempted model issuance, re
 The terminal projector records the public host pin through the same `RecordNodeSshHostKeyAction` used by `POST /api/v1/nodes/{node}/ssh-host-key`. A conflicting stored pin refuses publication. It then records the guest WireGuard key, observer identity, Process state and VM readiness from the terminal result. Failure retains the VM and its cleanup intent; provider absence alone never proves complete destruction.
 
 `AllocateTaskVmAction::capture(Task $group)` records placement inside the owning Task admission transaction without starting a second VM Operation. The caller captures the same provision intent once. Ordinary allocation starts the VM root in its own admission transaction. Neither path grants a Node access edge or creates a guest worker.
+
+## Incus destruction
+
+The native destruction root first observes provider presence and stops a running VM. It requires revocation of this VM's model key before provider deletion. After confirmed absence, it runs canonical Node removal under the same root identity. Cleanup for a deleted machine performs no guest probe or SSH action; external participants remain required. Only full native success removes Node and Process records, marks the VM Destroyed and clears its credentials. Failure retains cleanup intent and credentials.
+
+Owned workspaces, Routes and unpublished approved work retain their admission refusals. Their parent must complete removal before this VM can be destroyed. UpCloud provision and destroy stay unavailable for their follow-up.

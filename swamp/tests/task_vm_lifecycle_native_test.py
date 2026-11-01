@@ -8,7 +8,7 @@ import yaml
 from native_harness import NativeTestCase, ROOT
 
 
-class TaskVmLifecycleNative(NativeTestCase):
+class TaskVmLifecycleFixture(NativeTestCase):
     native_timeout = 120
 
     def setUp(self):
@@ -82,6 +82,9 @@ raise SystemExit(result.returncode)
         result = self.cli(*args, success=success)
         return json.loads(result.stdout)
 
+
+
+class TaskVmLifecycleNative(TaskVmLifecycleFixture):
     def test_power_start_stop_and_absent_delete_are_idempotent(self):
         self.cli("workflow", "validate", "task-vm-provider-power")
         for action in ("start", "start", "stop", "stop", "delete", "delete"):

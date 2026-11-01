@@ -13,8 +13,4 @@ final readonly class TaskVmRuntime
 {
     public const string PiProvider = 'orbit-task-vm';
 
-    public function prepare(TaskVm $vm): ?Operation
-    {
-        return app(StartTaskVmRuntimeOperationAction::class)->execute($vm->id);
-    }
 }

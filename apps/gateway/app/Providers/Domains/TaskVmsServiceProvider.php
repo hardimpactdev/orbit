@@ -20,13 +20,7 @@ final class TaskVmsServiceProvider extends ServiceProvider
     {
         $this->app->scoped(TaskVmModelAdmission::class);
         $this->app->tag(TaskVmImageArtifactSource::class, OperationSecretSource::class);
-        foreach (['installation', 'first_visit'] as $field) {
-            $name = 'task-vm.enrollment.'.$field;
-            $this->app->bind($name, static fn (): TaskVmEnrollmentMaterialSource => new TaskVmEnrollmentMaterialSource($field));
-            $this->app->tag($name, OperationSecretSource::class);
-        }
         $this->app->tag(TaskVmImageBootstrapStore::class, OperationSecretOutputStore::class);
-        $this->app->tag(TaskVmProviderBootstrapStore::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
         foreach (['upcloud.api', 'task_vm.model_router', 'task_vm.model_key', 'task_vm.pi_token', 'task_vm.package_cache_github', 'task_vm.image_bootstrap'] as $source) {
             $name = 'task-vm.secret.'.$source;
             $this->app->bind($name, static fn (): TaskVmSecretSource => new TaskVmSecretSource($source));

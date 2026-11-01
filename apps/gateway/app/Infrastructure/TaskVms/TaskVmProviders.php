@@ -17,11 +17,6 @@ final readonly class TaskVmProviders implements TaskVmProvider
         private UpCloudTaskVmProvider $upcloud,
     ) {}
 
-    public function create(TaskVm $vm, string $gatewayPublicKey): void
-    {
-        $this->for($vm)->create($vm, $gatewayPublicKey);
-    }
-
     public function observe(TaskVm $vm): ?VmObservation
     {
         return $this->for($vm)->observe($vm);
@@ -35,21 +30,6 @@ final readonly class TaskVmProviders implements TaskVmProvider
     public function bootstrapReady(TaskVm $vm): bool
     {
         return $this->for($vm)->bootstrapReady($vm);
-    }
-
-    public function start(TaskVm $vm): void
-    {
-        $this->for($vm)->start($vm);
-    }
-
-    public function stop(TaskVm $vm): void
-    {
-        $this->for($vm)->stop($vm);
-    }
-
-    public function destroy(TaskVm $vm): void
-    {
-        $this->for($vm)->destroy($vm);
     }
 
     private function for(TaskVm $vm): TaskVmProvider

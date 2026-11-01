@@ -35,7 +35,7 @@ export const ProviderInput = z.object({
         });
     }
 });
-export const Action = z.enum(["start", "stop", "delete"]);
+export const Action = z.enum(["start", "stop", "delete", "inspect"]);
 export type ProviderIntent = z.infer<typeof ProviderInput>;
 export type PowerAction = z.infer<typeof Action>;
 export const ProviderReceipt = z.object({
@@ -120,7 +120,7 @@ export function observation(
                 : "pending";
         }
     }
-    if (state === "absent" && action !== "delete") {
+    if (state === "absent" && action !== "delete" && action !== "inspect") {
         throw new Error("task_vm.vm_missing");
     }
     if (action === "delete" && state === "started") {
@@ -130,7 +130,9 @@ export function observation(
     return {
         state,
         disk,
-        change: action === "start"
+        change: action === "inspect"
+            ? false
+            : action === "start"
             ? state !== "started"
             : action === "stop"
             ? state !== "stopped"

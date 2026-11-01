@@ -19,19 +19,6 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         private GuestBootstrap $bootstrap,
     ) {}
 
-    public function create(TaskVm $vm, string $gatewayPublicKey): void
-    {
-        $host = $this->settings->host((int) $vm->host_node_id);
-        $resources = $vm->size->resources();
-        $this->incus->changeVm($host, $vm->incusHostNode(), $vm->name, [
-            'kind' => 'create', 'image' => $vm->image_fingerprint ?? $host->imageAlias,
-            'expected_fingerprint' => $vm->recipe_identity === null ? null : $vm->image_fingerprint,
-            'base_alias' => $host->imageAlias, 'gateway_public_key' => $gatewayPublicKey,
-            'cpus' => $resources->cpusOn($host), 'memory' => $resources->memoryOn($host), 'disk' => $resources->diskOn($host),
-            'network' => $host->network, 'pool' => $host->pool, 'topology' => $resources->testNodes > 0,
-        ]);
-    }
-
     /** @phpstan-impure */
     public function observe(TaskVm $vm): ?VmObservation
     {
@@ -46,27 +33,6 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
     public function bootstrapReady(TaskVm $vm): bool
     {
         return $this->bootstrap->ready($this->guest($vm), "task VM [{$vm->name}]");
-    }
-
-    public function start(TaskVm $vm): void
-    {
-        $this->change($vm, ['kind' => 'start']);
-    }
-
-    public function stop(TaskVm $vm): void
-    {
-        $this->change($vm, ['kind' => 'stop']);
-    }
-
-    public function destroy(TaskVm $vm): void
-    {
-        $this->change($vm, ['kind' => 'delete', 'pool' => $this->settings->host((int) $vm->host_node_id)->pool]);
-    }
-
-    /** @param array<string, mixed> $operation */
-    private function change(TaskVm $vm, array $operation): void
-    {
-        $this->incus->changeVm($this->settings->host((int) $vm->host_node_id), $vm->incusHostNode(), $vm->name, $operation);
     }
 
     private function guest(TaskVm $vm): AgentGuest

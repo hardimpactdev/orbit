@@ -1,0 +1,91 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\TaskVms\StartTaskVmDestroyAction;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmDestroyIntent;
+use App\Domain\TaskVms\TaskVmDestroyProjection;
+use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentView\WebSocketClient;
+use Tests\Support\FakeRoutePublicationSocket;
+use App\Models\Node;
+use App\Models\TaskVm;
+use Tests\Support\TaskVmSettingsBuilder;
+
+beforeEach(function (): void {
+    config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem', 'swamp.run_token' => 'fixture.fake']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    $this->host = Node::query()->create(['name' => 'destroy-host', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10', 'status' => LifecycleStatus::Active,
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)], 'devClusterId' => null]);
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 PUBLIC_FIXTURE');
+    app()->instance(SshKeyProvider::class, $keys);
+    $this->vm = TaskVm::query()->create(['name' => 'pending', 'provider' => 'incus', 'state' => TaskVmState::Failed,
+        'host_node_id' => $this->host->id, 'wireguard_ip' => '10.44.0.142', 'pi_token' => 'retained-pi']);
+    $this->vm->update(['name' => 'tvm-'.$this->vm->id]);
+    $node = Node::query()->create(['name' => $this->vm->name, 'user' => 'orbit', 'public_ssh_host' => '192.0.2.142', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => $this->vm->wireguard_ip, 'status' => LifecycleStatus::Failed]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Provisioning]);
+    $this->vm->update(['node_id' => $node->id]);
+});
+
+it('admits one full-input destroy root without requiring a guest pin or guest worker', function (): void {
+    $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
+    expect(app(StartTaskVmDestroyAction::class)->execute($this->vm->id)->id)->toBe($operation->id)
+        ->and($operation->input)->not->toHaveKeys(['child_intents', 'private_bindings'])
+        ->and($operation->input['removal']['machine_deleted'])->toBeTrue()
+        ->and($operation->input['removal']['ssh'])->toBeNull()
+        ->and($operation->input['removal']['roles'][0]['ssh'])->toBeNull()
+        ->and($operation->input['removal']['roles'][0]['publications'])->toBe([])
+        ->and($operation->input['execution_secrets'])->toBe([])
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroying)
+        ->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
+});
+
+it('clears Node records and credentials only after complete native success', function (string $status): void {
+    $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
+    $operation->update(['state' => ['swamp_run_id' => '3d8cf201-24cd-4ba5-b0ce-885530dcd327']]);
+    $result = ['task_vm_id' => $this->vm->id, 'guest_node_id' => $this->vm->node_id, 'destroyed' => true,
+        'cleanup_complete' => true, 'removal' => ['node_id' => $this->vm->node_id, 'removed' => true, 'offline' => true]];
+    app(TaskVmDestroyProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
+        'started_at' => '2026-11-01T05:00:00.000Z', 'finished_at' => '2026-11-01T05:00:01.000Z',
+        'error_code' => $status === 'succeeded' ? null : 'operation.native_failed', 'result' => $status === 'succeeded' ? $result : []]);
+    expect($operation->fresh()->status)->toBe(OperationStatus::from($status));
+    if ($status === 'succeeded') {
+        expect(Node::query()->find($this->vm->node_id))->toBeNull()
+            ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed)
+            ->and($this->vm->fresh()->pi_token)->toBeNull()
+            ->and($this->vm->fresh()->destroyed_at)->not->toBeNull();
+    } else {
+        expect(Node::query()->find($this->vm->node_id))->not->toBeNull()
+            ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroying)
+            ->and($this->vm->fresh()->pi_token)->toBe('retained-pi')
+            ->and($this->vm->fresh()->destroyed_at)->toBeNull();
+    }
+})->with(['succeeded', 'failed', 'cancelled']);
+
+it('refuses provider absence alone as a complete destroy result', function (): void {
+    $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
+    $operation->update(['state' => ['swamp_run_id' => '3d8cf201-24cd-4ba5-b0ce-885530dcd327']]);
+    expect(fn () => app(TaskVmDestroyProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'],
+        'status' => 'succeeded', 'started_at' => '2026-11-01T05:00:00.000Z', 'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['task_vm_id' => $this->vm->id, 'provider' => ['absent' => true]]]))->toThrow(ResourceOperationException::class);
+    expect($this->vm->fresh()->destroyed_at)->toBeNull()->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
+});
+
+it('refuses identity drift and unpublished UpCloud before effects', function (string $change): void {
+    if ($change === 'upcloud') {
+        $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null]);
+        expect(fn () => app(TaskVmDestroyIntent::class)->capture($this->vm->fresh()))->toThrow(ResourceOperationException::class, 'UpCloud destruction');
+    } else {
+        $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
+        $this->vm->update(['wireguard_ip' => '10.44.0.143']);
+        expect(fn () => app(TaskVmDestroyIntent::class)->owned($operation))->toThrow(ResourceOperationException::class);
+    }
+})->with(['upcloud', 'drift']);

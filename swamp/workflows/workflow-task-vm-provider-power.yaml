@@ -39,6 +39,7 @@ inputs:
       - start
       - stop
       - delete
+      - inspect
   required:
   - operation_id
   - node_id
