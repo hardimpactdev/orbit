@@ -5,11 +5,11 @@ description: "Diagrams of development Instance create before Swamp and on main, 
 
 # Instance create: legacy and Swamp flows
 
-The legacy Gateway created a development Instance inside one API request with about seven agent calls. The Swamp port runs the same work as 91 placed steps. In operation 6639 the steps did 4.6 s of remote work and took 957 s. These diagrams show where the steps came from and where the time and the failures went. They are the map for the F9 rebuild: one script step per legacy phase.
+The legacy Gateway created a development Instance inside one API request with about ten Node calls. The Swamp port runs the same work as 91 placed steps. In operation 6639 the steps did 4.6 s of remote work and took 957 s. These diagrams show where the steps came from and where the time and the failures went. They are the map for the F9 rebuild: one script step per legacy phase.
 
 Sources:
 
-- Legacy: `CreateInstanceAction` at [`4603475a4c`](https://github.com/hardimpactdev/orbit/tree/4603475a4c), the last commit before [#1616](https://github.com/hardimpactdev/orbit/pull/1616) (`3c897e768a`) replaced it with Swamp admission.
+- Legacy: `CreateInstanceAction` at [`4603475a4c`](https://github.com/hardimpactdev/orbit/tree/4603475a4c), the last commit before `3c897e768a` replaced it with Swamp admission. That squash of #1616 carries #1617, "Admit development creation and rename without PHP execution".
 - Swamp: [`workflow-operation-instance-create.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-create.yaml) on main at `137da60f1e`, last changed by #2266.
 - Times: lane 11's native step history of run `38b1ca91` (operation 6639).
 
@@ -27,9 +27,9 @@ flowchart TD
     A3["reserve: Vite and SSR ports,<br/>Route record pending (routed only)"]
     A4["Seed selection; GitHub App token<br/>(GitReadEnvironment, App key stays here)"]
     A5["→ checkout_prepared"]
+    A7["Optional CI cache transfer over SSH<br/>(inside resolve)"]
     A6["→ source_resolved: branch, starting_commit"]
-    A7["Optional CI cache transfer over SSH"]
-    A8["Route projection: render Caddyfile;<br/>dnsmasq records over plain SSH (routed only)"]
+    A8["Route projection (routed only): certificate,<br/>source access grant, PHP-FPM, render Caddyfile;<br/>Router certificate and LAN firewall; dnsmasq over SSH"]
     A9["One transaction: Route active, Instance active"]
     A10["Database clone or server database (when planned)"]
     A11["ProjectLifecycleRunner: setup list,<br/>150 s held back for rollback"]
@@ -47,8 +47,8 @@ flowchart TD
     N6["instance.run-lifecycle-step<br/>one command per setup step"]
   end
 
-  A1 --> A2 --> A3 --> A4 --> N1 --> A5 --> N2 --> N3 --> A6
-  A6 --> A7 --> N4 --> N5 --> A8 --> N7 --> A9 --> A10 --> A11 --> N6 --> A12
+  A1 --> A2 --> A3 --> A4 --> N1 --> A5 --> N2 --> N3 --> A7
+  A7 --> A6 --> N4 --> N5 --> A8 --> N7 --> A9 --> A10 --> A11 --> N6 --> A12
   N1 -. error .-> R
   N3 -. error .-> R
   N6 -. error .-> R
@@ -60,29 +60,30 @@ flowchart TD
 | Source | Mint the read token, prepare, inspect and resolve the source | Gateway mints; agent runs git | `Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php` (`prepare`, `inspectPrepared`, `resolve`), `apps/agent/src/commands/dev_source.rs` |
 | Environment | Profile, then `.env` from `.env.example` with `APP_URL` and a filled `APP_KEY`; database keys came later through environment sync | agent | `Infrastructure/Instances/RemoteDevelopmentInstanceConfigurator.php`, `apps/agent/src/commands/laravel.rs` |
 | Setup | Database first, then each setup command | Gateway + agent | `CreateInstanceAction::prepareDatabase`, `finishSetup` (`ProjectLifecycleRunner`) |
-| Route | Render Caddy, publish through the agent, republish dnsmasq over SSH | Gateway + agent | `Infrastructure/Instances/NativeDevelopmentRouteProjector.php`, `Infrastructure/Caddy/Build/NodeCaddyBuilder.php`, `Infrastructure/AppDev/DnsmasqPrivateDnsManager.php` |
+| Route | Issue the certificate, grant source access, converge PHP-FPM, render and publish Caddy; with a Router, its certificate and LAN firewall; republish dnsmasq over SSH | Gateway + agent | `Infrastructure/Instances/NativeDevelopmentRouteProjector.php`, `Infrastructure/Caddy/Build/NodeCaddyBuilder.php`, `Infrastructure/AppDev/DnsmasqPrivateDnsManager.php` |
 | Finish | Activate in one transaction; remove a failed new Instance | Gateway | `completeOwned` / `completeWithoutRoute`, `CreateInstanceAction::cleanupFailedCreate` |
 
 Gateway paths are under `apps/gateway/app/`. "Native" in the legacy class names means PHP that drives the agent, not Swamp. An unrouted Instance skipped the Route projection and the `.env` write. The Route and activation came before the database and setup.
 
-One create made about seven agent calls on the app-dev Node: prepare, inspect two or three times, resolve, profile, URL and two Caddy calls. Each setup step added one call. A Router added two calls, and dnsmasq took one plain SSH call. Each agent call was one SSH session. No measured duration is recorded; the request deadline bounded it.
+One create made at least eight or nine agent calls on the app-dev Node: prepare, inspect two or three times, resolve, profile, URL and two Caddy calls. The Route projection added certificate, access and PHP-FPM work. Each setup step added one call. A Router added its own Caddy, certificate and firewall work, and dnsmasq took one plain SSH call. Each agent call was one SSH session. No measured duration is recorded; the request deadline bounded it.
 
-Legacy tests for the parity port, all at `4603475a4c` under `apps/gateway/tests/Feature/`: `Api/InstancesTest.php` (76 tests, deleted in #1616), `Api/InstanceDatabaseCloneTest.php`, `Api/DevelopmentNodeExclusionTest.php`, `Api/InstanceEnvironmentTest.php`, `Domain/ProvisionDevelopmentInstanceTest.php`, `Infrastructure/Instances/NativeDevelopmentRouteProjectorTest.php`. Agent side: the tests in `apps/agent/src/commands/dev_source.rs` and `laravel.rs`.
+Legacy tests for the parity port, all at `4603475a4c` under `apps/gateway/tests/Feature/`: `Api/InstancesTest.php` (96 tests, deleted in `3c897e768a`), `Api/InstanceDatabaseCloneTest.php`, `Api/DevelopmentNodeExclusionTest.php`, `Api/InstanceEnvironmentTest.php`, `Domain/ProvisionDevelopmentInstanceTest.php`, `Infrastructure/Instances/NativeDevelopmentRouteProjectorTest.php`. Agent side: the tests in `apps/agent/src/commands/dev_source.rs` and `laravel.rs`.
 
-Later stages were already Swamp: #1616 (`3c897e768a`) admitted an Operation that ran the same agent commands through Kit; #1894 removed Kit; #1929 (`a0d725c290`) made one native root; #2246 (`6ce2d29267`) moved it to SSH from Node 209; #2252 deleted the leftover classes.
+Later stages were already Swamp: #1617 (in `3c897e768a`) admitted an Operation that ran the same agent commands through Kit; #1894 removed Kit; #1929 (`a0d725c290`) made one native root; #2246 (`6ce2d29267`) moved it to SSH from Node 209; #2252 deleted the leftover classes.
 
 ## Swamp flow on main
 
-The Gateway validates the request, reserves the Instance and records the intent in one transaction. It refuses a Route, a database and `gh_cli` source access before reservation, so the Swamp flow has no Route or database step. A Swamp run then executes one root on Node 209. Every step has `target: orbit-node-209`. Steps marked SSH run an official `@swamp/ssh` method from 209 against the app-dev Node as its managed user. The other steps run locally on 209: asserts, TypeScript behaviors that shape inputs and render scripts, and `command/shell`.
+The Gateway validates the request, reserves the Instance and records the intent in one transaction. After the commit, `StartSwampRun` writes the vault copies and starts the run. It refuses a Route, a database and `gh_cli` source access before reservation, so the Swamp flow has no Route or database step. A Swamp run then executes one root on Node 209. Every step has `target: orbit-node-209`. Steps marked SSH run an official `@swamp/ssh` method from 209 against the app-dev Node as its managed user. The other steps run locally on 209: asserts, TypeScript behaviors that shape inputs and render scripts, and `command/shell`.
 
 ```mermaid
 flowchart TD
   subgraph GW1["Gateway: admission (PHP, one transaction)"]
     A1["StartDevelopmentInstanceCreateAction<br/>validate placement, refuse Route / DB / gh_cli"]
     A2["create Instance: reserved<br/>select seed, record intent"]
-    A3["NativeDevelopmentInstanceInput<br/>vault copies: environment, setup_0..n, git_read"]
-    A1 --> A2 --> A3
+    A1 --> A2
   end
+  A3["After commit: StartSwampRun<br/>NativeDevelopmentInstanceInput writes vault copies:<br/>environment, setup_0..n, git_read"]
+  A2 --> A3
 
   subgraph PREP["job prepare: 37 steps"]
     P0["prepare-admitted assert<br/>create-local-directory<br/>2 steps, 209"]
@@ -127,12 +128,13 @@ flowchart TD
 
 Guards and skips:
 
-- `prepare-admitted`, `vp-capture-admitted`, `vp-install-admitted` and `create-admitted` are asserts guarded by `intent.already_active`. On a repeat create of an active Instance they skip and the jobs do nothing.
+- Four `*-admitted` asserts carry the guard `intent.already_active`. A repeat create of an active Instance skips them and the work steps.
+- `finish-result` and `accepted` still run on a repeat create, because `finish-result` depends on `always`.
 - From `source-worktrees` on, each source step has the guard `steps.exists(key, steps[key].status == "failed")`: after the first failure every later source step skips. Steps that read outputs depend on `succeeded or skipped`.
 
 Source steps skip by input:
 
-- `source-worktrees` runs only for a create with a seed repository and commit.
+- `source-worktrees` runs only for a create with a seed repository and commit and no retained source.
 - `source-init` and `source-worktree` choose between a fresh checkout and a seeded worktree.
 - `source-origin-configure` runs only when the origin is missing.
 - `source-fetch` skips without network, and `source-checkout` skips for a retained source.
@@ -170,7 +172,7 @@ Legacy phase to Swamp steps. "Steps" counts declared steps in the workflow on ma
 | Route | Caddy through `caddy.check-addresses` and `caddy.publish`; dnsmasq over SSH | Gateway + agent | none: native create refuses a Route | 0 | **dropped** |
 | Finish | Activate in one transaction; rollback removes a failed new Instance | Gateway PHP | `create-admitted`, `finish-result`, `accepted` + terminal projection | 3 | no rollback |
 
-Totals: legacy about seven agent calls plus one per setup command, inside one Gateway request. Swamp declares 91 steps: 58 SSH, 25 local on 209 and 8 asserts.
+Totals: legacy about ten Node calls plus one per setup command, inside one Gateway request. Swamp declares 91 steps: 58 SSH, 25 local on 209 and 8 asserts.
 
 ## Failures and time
 
@@ -180,7 +182,7 @@ Operation 6639 ran on Instance 780 (`firewall-allowlist`, Project 46, beast). Th
 flowchart TD
   P0["prepare + scratch<br/>2 steps, 6 s"]
   T["token<br/>2 steps, 35 s<br/>❌ op 6636: create-mint, token_format"]
-  BR["branch in use<br/>3 steps, 74 s<br/>❌ op 6635: master in use by default worktree<br/>(failed at source-checkout; now refused here)"]
+  BR["branch in use<br/>3 steps, 76 s<br/>❌ op 6635: master in use by default worktree<br/>(failed at source-checkout; now refused here)"]
   SP["source prepare<br/>5 steps, 150 s"]
   OR["origin<br/>4 steps, 48 s"]
   MK["marker<br/>3 steps, 92 s"]
@@ -209,7 +211,7 @@ Step times of operation 6639 by group:
 | --- | --- | --- | --- |
 | prepare + scratch | 2 | 6.4 s | 0.0 s |
 | token | 2 | 35.4 s | 3.7 s (`create-mint`, local) |
-| branch in use | 3 | 73.8 s | 0.6 s |
+| branch in use | 3 | 75.6 s | 0.6 s |
 | source prepare | 4 (1 skipped) | 149.6 s | 0.1 s |
 | origin | 3 (1 skipped) | 48.4 s | 0.0 s |
 | marker | 3 | 92.0 s | 0.1 s |
