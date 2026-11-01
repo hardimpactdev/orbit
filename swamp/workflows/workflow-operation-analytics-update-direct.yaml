@@ -1,5 +1,6 @@
 id: 04baf3d5-926d-4d03-8157-e1302a08360c
 name: operation-analytics-update-direct
+queueTimeout: 30
 description: Update Plausible through native initialization and shared Process workflows on209.
 vaults:
 - orbit-control-inputs

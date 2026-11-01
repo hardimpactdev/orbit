@@ -1,5 +1,6 @@
 id: 46c6bbed-b4ab-4bdc-9a5b-6251a1ddbe41
 name: operation-analytics-disable-direct
+queueTimeout: 30
 description: Withdraw captured tracking hosts through canonical Route workflows over official SSH from209.
 inputs:
   type: object
