@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Architecture",
+      "order": 34,
+      "pages": ["swamp/diagrams/instance-deploy"]
+    }
+  ]
+}
