@@ -116,6 +116,13 @@ class UpdateParityTest(unittest.TestCase):
         with patch.dict("os.environ", {}, clear=True), self.assertRaises(KeyError):
             parity.Topology()
 
+    def test_guest_timeout_is_explicit(self):
+        with patch.dict("os.environ", {"PROOF_EXEC": "bin/e2e-topology exec TASK-proof"}), \
+                patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "{}", "")) as call:
+            parity.Topology().cli("database:show", "proof")
+            self.assertIn("--timeout=1800", call.call_args.args[0])
+            self.assertEqual(call.call_args.kwargs["timeout"], 1830)
+
     def test_transport_failure_never_echoes_raw_private_diagnostics(self):
         with patch.dict("os.environ", {"PROOF_EXEC": "bin/e2e-topology exec TASK-proof"}), \
                 patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "private-value", "private-error")):
