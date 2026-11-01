@@ -2,7 +2,6 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{extensions/behaviors/operations/fleet-recipe/**,workflows/workflow-operation-fleet-recipe-direct.yaml}
   - apps/gateway/app/Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
