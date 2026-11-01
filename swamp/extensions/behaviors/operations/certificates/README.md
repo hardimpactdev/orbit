@@ -60,7 +60,7 @@ The RSA key stays on its effect Node. Only the CSR and signed public certificate
 Publication keeps
 `/etc/caddy/orbit-cert-current/{gateway.pem,gateway.key,root-ca.pem}`,
 `/etc/caddy/orbit-metrics-cert-current/{metrics.pem,metrics.key}`
-`/etc/caddy/orbit-websocket-cert-current/{websocket.pem,websocket.key}` and
+`/etc/caddy/orbit-websocket-cert-current/{reverb.pem,reverb.key}` and
 `/etc/caddy/orbit-analytics-cert-current/{analytics.pem,analytics.key}`. Each
 publication also keeps the public `root-ca.pem` for local renewal checks. An
 existing owned version link is accepted only within that role's fixed versions
@@ -89,3 +89,5 @@ Run every certificate action with `python3 -B`. This prevents privileged Python 
 `route-certificate-publish` receives one Node and its immutable `leaves` array. It stages the scripts once, requests the Node batch, copies the public CSR file back through official SSH and runs the existing Gateway signer. Separate native steps publish the signed public bundles through SSH stdin, install the shared trust anchor once and inspect every scope and version. The result lists every admitted leaf. Official ControlMaster uses the same root-and-Node fleet identity across those steps; each Node child owns one distinct SSH model for its serial actions. A native resume may reconnect through the official defaults. No connection supervisor or custom transport is added.
 
 Public batches stay out of shell arguments and large environment values. The Gateway CA and target private keys keep their existing custody. Successful inspection precedes cleanup; a failed child retains its staged assets and local candidate keys for native resume. The parent owns compensation from its immutable reverse publication plan.
+
+The native role child also supports the closed `role-swamp`/`swamp.orbit` pair contract. See `docs/reference/node-role-certificates.md` for target-local paths, permissions and the separate role-admission integration gate.

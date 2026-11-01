@@ -28,6 +28,7 @@ inputs:
   - leaf
   - ssh
   additionalProperties: false
+queueTimeout: 600
 jobs:
 - name: certificate
   steps:
@@ -236,7 +237,7 @@ jobs:
         argv:
         - /usr/bin/systemctl
         - try-reload-or-restart
-        - caddy
+        - '${{ inputs.leaf.scope == "role-swamp" ? "orbit-swamp-tls.service" : "caddy" }}'
         sudo: true
     dependsOn:
     - step: publish

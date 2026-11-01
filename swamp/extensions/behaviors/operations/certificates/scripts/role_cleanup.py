@@ -3,19 +3,19 @@
 import shutil
 
 from local import emit, valid_pair
-from role_paths import KEY_ROOT, role_paths
+from role_paths import role_paths, role_workspace
 
 
 def cleanup(leaf):
-    role, current, _ = role_paths(leaf)
+    certificate, key, root = role_paths(leaf)
     if not valid_pair(
-        current / (role + ".pem"),
-        current / (role + ".key"),
-        current / "root-ca.pem",
+        certificate,
+        key,
+        root,
         leaf,
     ):
         raise ValueError("certificate.role_pair_invalid")
-    workspace = KEY_ROOT / leaf["scope"] / leaf["version"]
+    workspace = role_workspace(leaf)
     if workspace.exists():
         shutil.rmtree(workspace)
     return {"applied": True}

@@ -112,3 +112,27 @@ Deno.test("role child factory retains full globals and the actual root signing i
     assertEquals(input.parent_run_id, "${{ run.id }}");
     assertEquals(step.guard, "${{ inputs.ready }}");
 });
+
+Deno.test("Swamp role leaf is closed to its reserved hostname and public descriptors", async () => {
+    const swamp = {
+        ...leaf,
+        scope: "role-swamp" as const,
+        domain: "swamp.orbit",
+    };
+    const result = await behavior.methods.read.execute(
+        { leaf: swamp } as never,
+        ctx,
+    );
+    assertEquals(JSON.parse(result.input_json), swamp);
+    for (
+        const rejected of [
+            { ...swamp, domain: "foreign.orbit" },
+            { ...swamp, path: "/tmp/another-key" },
+            { ...swamp, key: "private-key-bytes" },
+        ]
+    ) {
+        await assertRejects(() =>
+            behavior.methods.read.execute({ leaf: rejected } as never, ctx)
+        );
+    }
+});

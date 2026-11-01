@@ -164,7 +164,13 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
                     csr.write_bytes(base64.b64decode(request["request_base64"]))
                     extensions = owner.fixture / "extensions"
                     extensions.write_text(
-                        "subjectAltName=DNS:shop.test\nbasicConstraints=critical,CA:FALSE\n"
+                        "subjectAltName=DNS:"
+                        + (
+                            "swamp.orbit"
+                            if request["scope"] == "role-swamp"
+                            else "shop.test"
+                        )
+                        + "\nbasicConstraints=critical,CA:FALSE\n"
                     )
                     certificate = owner.openssl(
                         "x509",
@@ -182,14 +188,16 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
                         extensions,
                     )
                     signed.append(
-                        dict(
-                            node_id=request["node_id"],
-                            scope=request["scope"],
-                            certificate_base64=base64.b64encode(certificate).decode(),
-                            root_certificate_base64=base64.b64encode(
+                        {
+                            "node_id": request["node_id"],
+                            "scope": request["scope"],
+                            "certificate_base64": base64.b64encode(
+                                certificate
+                            ).decode(),
+                            "root_certificate_base64": base64.b64encode(
                                 owner.ca.read_bytes()
                             ).decode(),
-                        )
+                        }
                     )
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -221,15 +229,15 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
                 str(self.ca),
             )
         )
-        self.leaf = dict(
-            node_id=9,
-            user="orbit",
-            scope="route-7-router",
-            domain="shop.test",
-            version="0123456789abcdef",
-            root_hash=__import__("hashlib").sha256(self.ca.read_bytes()).hexdigest(),
-            agent_sha256="a" * 64,
-        )
+        self.leaf = {
+            "node_id": 9,
+            "user": "orbit",
+            "scope": "route-7-router",
+            "domain": "shop.test",
+            "version": "0123456789abcdef",
+            "root_hash": __import__("hashlib").sha256(self.ca.read_bytes()).hexdigest(),
+            "agent_sha256": "a" * 64,
+        }
 
     def openssl(self, *args):
         return subprocess.run(

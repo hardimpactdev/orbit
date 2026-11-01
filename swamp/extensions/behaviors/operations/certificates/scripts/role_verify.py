@@ -4,19 +4,19 @@ import json
 import os
 
 from local import emit, valid_pair, write_signature
-from role_paths import KEY_ROOT, role_paths
+from role_paths import role_paths, role_workspace
 
 
 def verify(leaf):
-    role, current, _ = role_paths(leaf)
+    certificate, key, root = role_paths(leaf)
     if valid_pair(
-        current / (role + ".pem"),
-        current / (role + ".key"),
-        current / "root-ca.pem",
+        certificate,
+        key,
+        root,
         leaf,
     ):
         return {"applied": True}
-    workspace = KEY_ROOT / leaf["scope"] / leaf["version"]
+    workspace = role_workspace(leaf)
     write_signature(
         workspace,
         leaf,
