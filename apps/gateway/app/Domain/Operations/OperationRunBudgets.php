@@ -35,6 +35,11 @@ final class OperationRunBudgets
      */
     private const array SecondsByKind = [
         'instance.create' => 'run_budget_seconds',
+        // No successful run yet. Basis: the observed work of op 6592 (root 42a546fd), 2,417 s (prepare 1m57s, forward
+        // 22m26s, restoration 15m45s) x 1.5 = 3,626 s, rounded up to five minutes. Replace with the 14-day p95 after the
+        // first success.
+        'cluster.router_set' => 3900,
+        'cluster.router_unset' => 3900,
         'node.converge' => 3900,
         'node.network_converge' => 1500,
         'node.prepare_php_packages' => 3600,

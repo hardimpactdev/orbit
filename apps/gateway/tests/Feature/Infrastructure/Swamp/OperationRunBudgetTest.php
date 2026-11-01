@@ -353,7 +353,7 @@ it('reads the measured budget of each long native kind', function (string $kind,
 })->with([
     ['node.converge', 3900],
     ['node.role_add', 2700], ['task_vm.destroy', 2700], ['task_vm.image_build', 2400], ['task_vm.sweep_host', 600],
-    ['tasks.provision', 3900],
+    ['tasks.provision', 3900], ['cluster.router_set', 3900], ['cluster.router_unset', 3900],
 ]);
 
 it('budgets only registered direct-operation kinds', function (): void {
@@ -498,4 +498,4 @@ it('uses own history or thirty minutes for kinds without an explicit measured bu
         'started_at' => now()->subSeconds(600), 'finished_at' => now()])->save();
 
     expect(OperationRunBudgets::seconds($operation))->toBe(900);
-})->with(['cluster.router_set', 'cluster.router_unset', 'node.role_converge', 'node.role_relocate']);
+})->with(['node.role_converge', 'node.role_relocate']);
