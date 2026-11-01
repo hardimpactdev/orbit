@@ -1,0 +1,98 @@
+{
+  "kind": "database.read",
+  "workflow": "operation-database-read",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 60,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-read-sqlite-${proof.run}",
+        "--driver=sqlite",
+        "--node=${topology.app-dev.node_id}",
+        "--path=/home/orbit/proof-database-inspection-${proof.run}/proof.sqlite",
+        "--json"
+      ],
+      "capture": {
+        "connection_id": "$.id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:query",
+      "proof-read-sqlite-${proof.run}",
+      "SELECT id,label FROM proof_rows ORDER BY id",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "connection_id": "${capture.connection_id}",
+    "driver": "sqlite",
+    "connection_node_id": "${topology.app-dev.node_id}",
+    "intent_id": "${match.positive_int}",
+    "mode": "query",
+    "table": null
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "read",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "inspect-query",
+      "job": "read",
+      "step": "sqlite",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-inspection/parity.py",
+      "read",
+      "sqlite",
+      "proof-read-sqlite-${proof.run}",
+      "--connection-id=${capture.connection_id}",
+      "--node-id=${topology.app-dev.node_id}",
+      "--path=/home/orbit/proof-database-inspection-${proof.run}/proof.sqlite"
+    ],
+    "cases": [
+      "exact-proof-identity-native-public-result",
+      "independent-cli-readback",
+      "unflagged-write-refused",
+      "stacked-sql-refused-with-data-intact",
+      "tables-schema-describe-agree",
+      "missing-table-refused",
+      "bounded-read-declares-truncation",
+      "independent-sqlite-file-readback"
+    ]
+  },
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/database-inspection/parity.py",
+        "initialize-read",
+        "sqlite",
+        "proof-read-sqlite-${proof.run}",
+        "--path=/home/orbit/proof-database-inspection-${proof.run}/proof.sqlite"
+      ],
+      "timeout_seconds": 60
+    }
+  ]
+}
