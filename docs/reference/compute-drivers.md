@@ -527,9 +527,9 @@ Then it removes the Node and marks the row `destroyed`, as above. It clears the 
 
 ### Place task VMs
 
-Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `AllocateTaskVmAction` selects the active host with the most free slots. Hosts with equal capacity use their configuration order.
+Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `AllocateTaskVmAction` first removes hosts in the group Project’s [excluded-Node list](/reference/development-node-exclusions), then selects the active host with the most free slots. Hosts with equal capacity use their configuration order. Excluded hosts do not block placement while their recipe images are unavailable.
 
-Every VM that is neither `destroyed` nor `failed` takes the slots of its size, including parked VMs. When no Incus host has room, eligible groups can use the [UpCloud overflow](#upcloud-overflow). Otherwise the group waits for capacity. Lowering `max_vms` removes no VM; the host receives no new VM until capacity is available.
+Every VM that is neither `destroyed` nor `failed` takes the slots of its size, including parked VMs. When no eligible Incus host has room, including when the Project excludes every host, eligible groups can use the [UpCloud overflow](#upcloud-overflow). Otherwise the group waits for capacity. Lowering `max_vms` removes no VM; the host receives no new VM until capacity is available.
 
 #### Size by declared topology
 

@@ -13,7 +13,7 @@ covers:
 
 # Development node exclusions
 
-An exclusion keeps a Project off one `app-dev` Node for development. One row records one Project and one Node. The Project commands and the Node commands read and write the same row. With no rows, a Project can use every eligible `app-dev` Node. The [task workspace routing setting](/reference/projects#task-workspace-routing) changes whether a new workspace gets a Route; it does not change placement or exclusions.
+An exclusion keeps new development Instances and task VMs for a Project off one `app-dev` Node. One row records one Project and one Node. The Project commands and the Node commands read and write the same row. With no rows, a Project can use every eligible `app-dev` Node. The [task workspace routing setting](/reference/projects#task-workspace-routing) changes whether a new workspace gets a Route; it does not change placement or exclusions.
 
 ## Record an exclusion
 
@@ -45,9 +45,8 @@ Removing the `app-dev` role from a Node deletes its rows. Adding the role again 
 
 Orbit checks the list for every new development placement:
 
-- The task scheduler skips excluded Nodes.
-- Among the other Nodes, it picks the one with the fewest active tasks.
-- When no Node remains, the task waits without a workspace.
+- Task VM placement skips excluded Incus hosts before ranking their free slots or checking their recipe images. Among eligible hosts it picks the one with the most free slots, keeping configuration order for ties.
+- If every Incus host is excluded or has no room, the existing [UpCloud overflow](/reference/compute-drivers#upcloud-overflow) rules apply. Otherwise the group waits for capacity. Existing task VMs stay where they are.
 - `instance:create`, `instance:register`, and `instance:transfer` to an excluded Node return `instance.node_excluded` before they change anything.
 
 Production placement ignores the list. A Node that also has `app-prod` can still host a production Instance of the Project.
