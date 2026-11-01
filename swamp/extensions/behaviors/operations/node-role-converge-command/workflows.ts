@@ -1,12 +1,4 @@
-import { roleFirewallSteps } from "./firewall_steps.ts";
-import {
-    roleActionSteps,
-    rolePackageSteps,
-} from "../node-role-command/steps.ts";
-import {
-    roleObserverInstallSteps,
-    roleObserverSteps,
-} from "./observer_steps.ts";
+import { roleConvergeSteps } from "./root_steps.ts";
 import { stringify } from "jsr:@std/yaml@1.0.12";
 type Fields = Record<string, unknown>;
 const ex = (s: string) => "${{ " + s + " }}";
@@ -21,37 +13,15 @@ const references = {
         type: "object",
         properties: {
             vault: { type: "string", enum: ["orbit-control-inputs"] },
-            key: { type: "string", pattern: "^node-role-[0-9]+-observer$" },
+            key: {
+                type: "string",
+                pattern: "^node-role-[0-9]+-(observer|runtime_material)$",
+            },
         },
         required: ["vault", "key"],
         additionalProperties: false,
     },
 };
-/** Empty/singleton actions bind optional data to self before expression evaluation. */
-function select(group: Fields[], item: string, list: string): Fields[] {
-    for (const step of group) {
-        step.forEach = { item, in: ex(list) };
-        let task = JSON.stringify(step.task);
-        for (const member of group) {
-            task = task.replaceAll(
-                String(member.name) + '\\"',
-                String(member.name) + '-0\\"',
-            );
-        }
-        step.task = JSON.parse(task);
-        const typed = step.task as Fields;
-        typed.behaviorName = ex(
-            '"' + step.name + '-"+run.id+"-"+string(self._index)',
-        );
-        if (typed.globalArgs) {
-            typed.globalArgs = {
-                ...typed.globalArgs as Fields,
-                name: typed.behaviorName,
-            };
-        }
-    }
-    return group;
-}
 export function roleWorkflow() {
     const ssh = "inputs.intent.ssh";
     const globals = {
@@ -68,183 +38,14 @@ export function roleWorkflow() {
             transport: { hostKeys: ex(ssh + ".target.host_keys") },
         }],
     };
-    const steps: Fields[] = [
-        ...roleActionSteps(
-            "account",
-            "account",
-            '{"user":inputs.intent.user}',
-            globals,
-        ),
-        ...roleObserverInstallSteps(
-            "observer_install",
-            '({"url":inputs.intent.footprint.payloads.agent.url,"sha256":inputs.intent.agent_sha256})',
-            globals,
-            "account",
-        ),
-        ...select(
-            roleActionSteps(
-                "caddy_package",
-                "caddy_package",
-                "self.caddy",
-                globals,
-                "observer_install",
-            ),
-            "caddy",
-            'inputs.intent.role == "ingress" ? [inputs.intent.caddy_package] : []',
-        ),
-        ...rolePackageSteps(
-            "packages",
-            "inputs.intent.prerequisites",
-            globals,
-            "observer_install",
-        ),
-    ];
-    const packageAsset = steps.find((step) => step.name === "packages_assets")!;
-    packageAsset.dependsOn = [
-        ...on("observer_install"),
-        ...on("caddy_package", "always"),
-    ];
-    packageAsset.guard = ex(
-        'steps.exists(k,k.startsWith("caddy_package") && steps[k].status != "succeeded")',
+    const steps = roleConvergeSteps(
+        "",
+        "inputs.intent",
+        globals,
+        undefined,
+        undefined,
+        { rootRunIdExpr: "inputs.parent_run_id" },
     );
-    const ingress = 'inputs.intent.role == "ingress" ? [inputs.intent] : []';
-    steps.push(
-        ...select(
-            [{
-                name: "caddy_service",
-                ...target,
-                writes: true,
-                dependsOn: on("packages"),
-                task: {
-                    type: "behavior",
-                    behaviorType: "@swamp/ssh",
-                    methodName: "exec",
-                    globalArgs: globals,
-                    inputs: {
-                        hosts: "name:target",
-                        sudo: true,
-                        argv: [
-                            "/usr/bin/systemctl",
-                            "enable",
-                            "--now",
-                            "caddy.service",
-                        ],
-                    },
-                },
-            }, {
-                name: "caddy",
-                ...target,
-                dependsOn: on("caddy_service"),
-                task: {
-                    type: "workflow",
-                    workflowIdOrName: "operation-route-caddy",
-                    inputs: {
-                        operation_id: ex("inputs.operation_id"),
-                        node_id: ex("inputs.node_id"),
-                        kind: "node.role_converge",
-                        execution_secrets: {},
-                        intent: { caddy_publication: ex("self.role.caddy") },
-                    },
-                },
-            }],
-            "role",
-            ingress,
-        ),
-        ...roleFirewallSteps("firewall", "inputs.intent", globals, "caddy"),
-    );
-    function action(
-        name: string,
-        methodName: string,
-        input: Fields,
-        dependency: string,
-        guard?: string,
-    ) {
-        steps.push({
-            name: name + "_assets",
-            ...target,
-            dependsOn: on(dependency),
-            ...(guard ? { guard: ex(guard) } : {}),
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/node-role-converge-command",
-                behaviorName: name + "-assets",
-                methodName,
-                inputs: input,
-            },
-        }, {
-            name: name + "_command",
-            ...target,
-            writes: true,
-            dependsOn: on(name + "_assets"),
-            task: {
-                type: "behavior",
-                behaviorType: "@swamp/ssh",
-                behaviorName: globals.name,
-                methodName: "script",
-                globalArgs: globals,
-                inputs: {
-                    hosts: "name:target",
-                    sudo: true,
-                    interpreter: "python3",
-                    script: ex(
-                        'steps["' + name + '_assets"].outputs.script_body',
-                    ),
-                },
-            },
-        }, {
-            name,
-            ...target,
-            dependsOn: on(name + "_command"),
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/node-role-converge-command",
-                behaviorName: name + "-result",
-                methodName: methodName === "cli" ? "cli_result" : "dns_result",
-                inputs: {
-                    stdout: ex('steps["' + name + '_command"].outputs.stdout'),
-                },
-            },
-        });
-    }
-    // DNS has a singleton native fan-out. Its only task data is self-bound, so an
-    // absent network does not resolve missing fields before the skip guard.
-    const start = steps.length;
-    action("peer_dns", "dns", {
-        dns_server: ex("self.dns.dns_server"),
-        public_key: ex("self.dns.public_key"),
-        domains: ex("self.dns.domains"),
-    }, "packages");
-    select(
-        steps.slice(start),
-        "dns",
-        "inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns]",
-    );
-    steps.push(
-        ...roleObserverSteps(
-            "observer",
-            "inputs.intent",
-            globals,
-            "account",
-            "vault.get(inputs.execution_secrets.observer.vault,inputs.execution_secrets.observer.key)",
-            "steps.observer_install.outputs.changed",
-            "packages",
-        ),
-    );
-    action(
-        "cli",
-        "cli",
-        {
-            user: ex("inputs.intent.cli.user"),
-            release: ex("inputs.intent.cli.release"),
-            profile: ex("inputs.intent.cli.profile"),
-        },
-        "packages",
-        "inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null",
-    );
-    for (const step of steps) {
-        delete step.labels;
-        step.allowFailure = true;
-    }
     return {
         id: "21b08662-58e5-4485-b42c-540dd9bd6004",
         name: "node-role-converge",
@@ -253,12 +54,14 @@ export function roleWorkflow() {
             type: "object",
             properties: {
                 intent: { type: "object" },
+                parent_run_id: { type: "string", minLength: 1 },
                 operation_id: { type: "integer", minimum: 1 },
                 node_id: { type: "integer", minimum: 1 },
                 execution_secrets: references,
             },
             required: [
                 "intent",
+                "parent_run_id",
                 "execution_secrets",
                 "operation_id",
                 "node_id",
@@ -322,6 +125,7 @@ export function dispatcherWorkflow() {
                     workflowIdOrName: "node-role-converge",
                     inputs: {
                         intent: ex("has(inputs.intent) ? inputs.intent : null"),
+                        parent_run_id: ex("run.id"),
                         operation_id: ex("inputs.operation_id"),
                         node_id: ex("inputs.node_id"),
                         execution_secrets: ex("inputs.execution_secrets"),

@@ -12,8 +12,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
@@ -173,4 +175,34 @@ it('captures complete pinned Ingress publication and firewall without a target w
         ->and($intent['caddy_package'])->toHaveKeys(['release', 'minimum_version', 'amd64_sha512']);
     $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     expect(NativeNodeRoleConvergeInput::supports($node, RoleName::Ingress))->toBeFalse();
+});
+
+it('admits existing WebSocket convergence with public publications and private existing runtime material', function (): void {
+    config(['swamp.run_token' => 'fake.token']);
+    $node = FleetFixtures::node('reverb-native', [RoleName::WebSocket]);
+    $node->forceFill(['agent_secret_hash' => str_repeat('d', 64)])->save();
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::WebSocket, true);
+    $input = app(DirectOperation::class)->workflowInputs($operation);
+    expect($input['intent']['role'])->toBe('websocket')
+        ->and($input['intent']['certificates']['leaves'][0]['scope'])->toBe('role-websocket')
+        ->and($input['intent']['publications'])->not->toBeEmpty()
+        ->and(array_keys($input['execution_secrets']))->toBe(['observer', 'runtime_material'])
+        ->and(count($socket->sent))->toBe(2)
+        ->and(json_decode($socket->sent[1]['payload']['value'], true, 512, JSON_THROW_ON_ERROR))->toHaveKey('websocket_environment')
+        ->and(json_encode($input, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('d', 64), 'REGISTRY_TOKEN=', 'APP_KEY=')
+        ->and(NodeRoleDirectInput::ownerId($operation))->toBeNull();
+    expect(app(WebSocketDnsTarget::class)->isServing($node->id))->toBeFalse();
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'native-websocket-run', 'swamp_workflow' => 'operation-node-role-converge-209', 'node_role_writer' => 'direct']])->save();
+    app(NodeRoleDirectProjection::class)->apply($operation, [
+        'run_id' => 'native-websocket-run', 'status' => 'succeeded', 'started_at' => '2026-11-01T06:00:00Z', 'finished_at' => '2026-11-01T06:00:01Z',
+        'result' => ['assignment_id' => $input['intent']['assignment_id'], 'created' => false, 'role_proven' => true,
+            'certificates_proven' => true, 'runtime_proven' => true, 'publication_proven' => true,
+            'footprint' => ['footprint_proven' => true, 'artifacts' => [['name' => 'agent', 'status' => 'applied']]],
+            'cli' => ['outcome' => 'skipped', 'reason' => 'release_unavailable'], 'follow_up' => null],
+    ]);
+    expect(app(WebSocketDnsTarget::class)->isServing($node->id))->toBeTrue()
+        ->and(app(CaddySiteCertificates::class)->published($node->id, 'websocket'))->toBeTrue();
 });

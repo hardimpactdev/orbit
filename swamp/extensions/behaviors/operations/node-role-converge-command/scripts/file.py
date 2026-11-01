@@ -15,6 +15,14 @@ ROLE_INPUT = None
 def apply(data):
     path = Path(data["path"])
     content = data["content"]
+    if content is None:
+        raw = sys.stdin.read()
+        if data["material_field"] == "text":
+            content = raw
+        elif data["material_field"] == "configuration":
+            content = json.loads(raw)["configuration"][str(path)]
+        else:
+            content = json.loads(raw)["websocket_environment"]
     if not isinstance(content, str):
         raise TypeError("Invalid role file content")
     content = content.encode()

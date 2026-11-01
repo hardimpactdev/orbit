@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Routes\NativeCaddyPublicationInput;
+use App\Domain\Routes\NativeNodeRolePublicationInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
@@ -20,7 +21,7 @@ final readonly class NativeNodeRoleConvergeInput
 
     public static function supports(Node $node, RoleName $role): bool
     {
-        return in_array($role, [RoleName::Database, RoleName::Ingress], true) && $node->roles()->where('role', $role)->exists() && ! $node->roles()->where('role', '!=', $role)->exists();
+        return in_array($role, [RoleName::Database, RoleName::Ingress, RoleName::WebSocket], true) && $node->roles()->where('role', $role)->exists() && ! $node->roles()->where('role', '!=', $role)->exists();
     }
 
     /** @param array<string,mixed> $snapshot
@@ -38,7 +39,7 @@ final readonly class NativeNodeRoleConvergeInput
         }
         foreach ($entries as $artifact) {
             $artifact = ValidatedData::object($artifact);
-            if ($artifact['required'] === true && ! in_array($artifact['name'], $assignment->role === RoleName::Ingress ? ['agent', 'peer-dns', 'caddy-package', 'caddy'] : ['agent', 'peer-dns'], true)) {
+            if ($artifact['required'] === true && ! in_array($artifact['name'], in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket], true) ? ['agent', 'peer-dns', 'caddy-package', 'caddy'] : ['agent', 'peer-dns'], true)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'An applicable role footprint has no native action.', 422);
             }
         }
@@ -47,10 +48,34 @@ final readonly class NativeNodeRoleConvergeInput
             'created' => false, 'role' => $assignment->role->value, 'user' => $node->user,
             'agent_sha256' => $snapshot['agent_sha256'], 'prerequisites' => $snapshot['prerequisites'],
             'ssh' => $ssh,
-            ...($assignment->role === RoleName::Ingress ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),
+            ...(in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket], true) ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),
                 'caddy_package' => AgentCaddyPackage::input(), 'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $assignment->role)] : []),
             'footprint' => $footprint, 'cli' => $snapshot['cli'], 'metrics_fleet' => null];
 
-        return ['intent' => $intent, 'participant_node_ids' => array_values(array_unique([209, $node->id]))];
+        $participants = [209, $node->id];
+        if ($assignment->role === RoleName::WebSocket) {
+            $runtime = ValidatedData::object($snapshot['runtime']);
+            if (($runtime['node_id'] ?? null) !== $node->id || ($runtime['assignment_id'] ?? null) !== $assignment->id
+                || ($runtime['user'] ?? null) !== $node->user || ! is_string($runtime['repository'] ?? null)
+                || preg_match('~\Ahttps://[^\s@]+\.git\z~D', $runtime['repository']) !== 1
+                || ! is_string($runtime['ref'] ?? null) || preg_match('/\A[a-f0-9]{40}\z/D', $runtime['ref']) !== 1
+                || ! is_int($runtime['port'] ?? null) || $runtime['port'] < 1 || $runtime['port'] > 65535
+                || ! is_string($runtime['install_path'] ?? null) || preg_match('~\A/(?:[A-Za-z0-9_.-]+/){2,}[A-Za-z0-9_.-]+\z~D', $runtime['install_path']) !== 1
+                || array_intersect(explode('/', $runtime['install_path']), ['.', '..']) !== []) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'WebSocket runtime intent is invalid.', 422);
+            }
+            $publication = app(NativeNodeRolePublicationInput::class)->capture($node, $assignment->role);
+            foreach ($publication['certificates']['leaves'] as $leaf) {
+                if ($leaf['node_id'] !== $node->id) {
+                    throw new ResourceOperationException('operation.kind_unavailable', 'WebSocket certificate publication requires its own target.', 422);
+                }
+            }
+            $intent['runtime'] = $runtime;
+            $intent['certificates'] = $publication['certificates'];
+            $intent['publications'] = $publication['publications'];
+            $participants = [...$participants, ...$publication['participant_node_ids']];
+        }
+
+        return ['intent' => $intent, 'participant_node_ids' => array_values(array_unique($participants))];
     }
 }
