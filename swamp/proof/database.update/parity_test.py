@@ -26,6 +26,7 @@ class PublicTopology:
         self.ignore_node = False
         self.keep_path = False
         self.scratch_absent = True
+        self.reads = 0
 
     def execute(self, node, argv):
         assert node == "app-dev"
@@ -36,7 +37,8 @@ class PublicTopology:
         if argv[0] == "operation:show":
             return 0, self.operation.copy()
         if argv[0] == "database:show":
-            return 0, self.record.copy()
+            self.reads += 1
+            return 0, {**self.record, "request_id": f"request-{self.reads}"}
         option = argv[2]
         if option == "--database=2147483647":
             if self.corrupt_refusal:
@@ -63,6 +65,11 @@ class UpdateParityTest(unittest.TestCase):
 
     def test_managed_contract_checks_success_and_both_refusals(self):
         self.assertEqual(len(self.run_parity(PublicTopology())), 4)
+
+    def test_independent_read_transport_ids_do_not_change_the_resource(self):
+        topology = PublicTopology()
+        self.run_parity(topology)
+        self.assertEqual(topology.reads, 4)
 
     def test_failed_index_cannot_leave_remote_scratch(self):
         topology = PublicTopology()

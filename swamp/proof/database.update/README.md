@@ -2,7 +2,7 @@
 
 These F13 variants drive the public CLI, normal Gateway admission, native execution and terminal projection. They do not admit a native workflow directly. The managed variant creates a disposable Valkey server and ACL connection through the CLI; the Gateway generates and supplies credentials. The record-only variant registers an existing SQLite path and changes the record without creating a database file. Neither fixture contains credentials.
 
-The topology uses the frozen F13 array grammar: `app-dev+database`. It needs the database extra role in the topology supplier. The parity command runs on the proof VM host and reaches the CLI through `PROOF_EXEC operator`; it never uses a production CLI profile. The proof runner destroys the entire disposable topology, including the Valkey volume and records.
+The topology uses the frozen F13 array grammar: `app-dev+database`. It needs the database extra role in the topology supplier. The parity command runs on the proof VM host and reaches the CLI through `PROOF_EXEC operator`; it never uses a production CLI profile. One-shot proof teardown destroys the disposable topology, including its Valkey volume and records; a persistent topology keeps those owned fixtures until `down`.
 
 ## Readiness
 

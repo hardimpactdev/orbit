@@ -46,7 +46,12 @@ def success(reply, kind=None):
 
 
 def managed_parity(topology, slug):
-    before = success(topology.cli("database:show", slug))
+    def connection():
+        value = success(topology.cli("database:show", slug))
+        # SDK transport metadata changes on each independent read.
+        return {key: item for key, item in value.items() if key != "request_id"}
+
+    before = connection()
     require(before.get("driver") == "redis", "Managed fixture is not Valkey")
     require(before.get("database") == "3", "Valid proposed index was not projected")
     require(bool(before.get("server")), "Fixture has no managed server")
@@ -56,7 +61,7 @@ def managed_parity(topology, slug):
     require(failed.get("kind") == "database.update", "Index check was not admitted")
     require(failed.get("status") == "failed", "Index refusal was not terminal")
     require(failed.get("error_code") == "database.index_invalid", "Wrong index refusal")
-    require(success(topology.cli("database:show", slug)) == before,
+    require(connection() == before,
             "Failed index validation changed the connection")
     failed_id = failed.get("id")
     require(type(failed_id) is int and failed_id > 0, "Failed update has no Operation id")
@@ -70,7 +75,7 @@ def managed_parity(topology, slug):
     require(code != 0, "Managed endpoint change was accepted")
     require(refused.get("error", {}).get("code") == "database.server_connection_managed",
             "Wrong managed-identity refusal")
-    require(success(topology.cli("database:show", slug)) == before,
+    require(connection() == before,
             "Rejected identity change changed the connection")
     return ["managed-index-projected", "out-of-range-keeps-record",
             "failed-index-scratch-removed", "managed-identity-refused"]
