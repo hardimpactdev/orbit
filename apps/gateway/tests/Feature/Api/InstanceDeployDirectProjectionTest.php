@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\ReadOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
@@ -105,6 +107,50 @@ it('projects only the bound native development terminal once and advances seed o
     ['succeeded', OperationStatus::Succeeded], ['failed', OperationStatus::Failed],
     ['interrupted', OperationStatus::Interrupted], ['cancelled', OperationStatus::Cancelled],
 ]);
+
+it('reconciles a lockless timed out deploy through its native receipt and records domain success once', function (): void {
+    $this->travelTo('2026-10-31T02:00:00Z');
+    [$instance, $operation, , , $payload] = native_deploy_projection_fixture($this);
+    $operation->update(['status' => OperationStatus::Running, 'started_at' => now()]);
+    $this->travel(1800)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($operation);
+    expect($expired->error_code)->toBe('operation.timed_out');
+    expect($expired->lock_key)->toBeNull();
+    expect(InstanceDeployment::query()->count())->toBe(0);
+
+    [$result, $socket] = project_development_terminal($expired, 'succeeded', $payload);
+
+    expect($result->status)->toBe(OperationStatus::Succeeded);
+    expect($result->error_code)->toBeNull();
+    expect($result->result['deployment_id'])->toBeInt();
+    expect($instance->fresh()->seed_commit)->toBe(str_repeat('a', 40));
+    expect(InstanceDeployment::query()->sole()->status)->toBe('succeeded');
+    expect($socket->sent)->toHaveCount(1);
+    app(ReadOperationAction::class)->execute($result);
+    expect(InstanceDeployment::query()->count())->toBe(1);
+    expect($socket->sent)->toHaveCount(1);
+});
+
+it('keeps expiry and domain history unchanged when reconciliation cannot project the native payload', function (): void {
+    $this->travelTo('2026-10-31T02:00:00Z');
+    [$instance, $operation, , , $payload] = native_deploy_projection_fixture($this);
+    $operation->update(['status' => OperationStatus::Running, 'started_at' => now()]);
+    $this->travel(1800)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($operation);
+    $sequence = $expired->sequence;
+    $seed = $instance->seed_commit;
+
+    expect(fn () => project_development_terminal($expired, 'succeeded', [...$payload, 'vp_environment' => []]))
+        ->toThrow(InvalidArgumentException::class);
+
+    $current = $operation->fresh();
+    expect($current->status)->toBe(OperationStatus::Failed);
+    expect($current->error_code)->toBe('operation.timed_out');
+    expect($current->sequence)->toBe($sequence);
+    expect($current->state['native_timeout'])->not->toHaveKey('native_terminal_observed_at');
+    expect(InstanceDeployment::query()->count())->toBe(0);
+    expect($instance->fresh()->seed_commit)->toBe($seed);
+});
 
 it('records only bounded public native facts and preserves terminal idempotency after owner changes', function (): void {
     [$instance, $operation, , , $payload] = native_deploy_projection_fixture($this);

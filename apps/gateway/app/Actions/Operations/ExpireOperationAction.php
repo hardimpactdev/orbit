@@ -55,7 +55,10 @@ final readonly class ExpireOperationAction
 
     public static function awaitsSettlement(Operation $operation): bool
     {
-        return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out' && $operation->lock_key !== null;
+        $timeout = $operation->state['native_timeout'] ?? null;
+
+        return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out'
+            && (! is_array($timeout) || (! isset($timeout['native_terminal_observed_at']) && ! isset($timeout['no_run_verified_at'])));
     }
 
     /** Called only after the shared reader verifies the exact terminal native root identity. */

@@ -103,6 +103,11 @@ final class OperationRunBudgets
 
     public static function deadline(Operation $operation): ?CarbonImmutable
     {
+        $timeout = $operation->state['native_timeout'] ?? null;
+        $recorded = is_array($timeout) ? ($timeout['deadline'] ?? null) : null;
+        if (is_string($recorded)) {
+            return CarbonImmutable::parse($recorded);
+        }
         $start = $operation->started_at ?? $operation->created_at;
 
         return $start === null ? null : CarbonImmutable::instance($start)->addSeconds(self::seconds($operation));

@@ -23,7 +23,7 @@ final readonly class ReadOperationAction
         $runId = $operation->state['swamp_run_id'] ?? null;
         $definition = $this->direct->definition($operation->kind);
         $deadline = OperationRunBudgets::deadline($operation);
-        if (! $operation->status->terminal() && $deadline !== null && ! $deadline->isFuture()
+        if ((! $operation->status->terminal() || ExpireOperationAction::awaitsSettlement($operation)) && $deadline !== null && ! $deadline->isFuture()
             && is_string($runId) && Str::isUuid($runId) && isset($definition['terminal_result'])) {
             try {
                 return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId], $definition['terminal_result'], atDeadline: true);

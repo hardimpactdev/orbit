@@ -145,7 +145,7 @@ final readonly class SwampCommandStep
         if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
             $operation = app(ExpireOperationAction::class)->execute($operation);
         }
-        if (ExpireOperationAction::awaitsSettlement($operation)) {
+        if (ExpireOperationAction::awaitsSettlement($operation) && ($completedAt === null || $deadline === null || $completedAt->greaterThan($deadline))) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
         $result = $this->terminalOutput($run, $selector);
@@ -154,13 +154,27 @@ final readonly class SwampCommandStep
             $result = ['error_code' => 'operation.native_failed'];
         }
 
-        return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result): Operation {
+        return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result, $completedAt): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $direct->assertRun($current, $runId);
-            if (ExpireOperationAction::awaitsSettlement($current)) {
-                return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+            if (isset($current->state['swamp_scheduled_result'])) {
+                return $current;
             }
-            if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
+            if (ExpireOperationAction::awaitsSettlement($current)) {
+                $deadline = OperationRunBudgets::deadline($current);
+                if ($completedAt === null || $deadline === null || $completedAt->greaterThan($deadline)) {
+                    return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+                }
+                // Family projectors re-read the row. Restore eligibility only inside their atomic projection.
+                $timeout = $current->state['native_timeout'] ?? [];
+                $current->forceFill(['status' => OperationStatus::Running, 'error_code' => null,
+                    'state' => [...($current->state ?? []), 'native_timeout' => [
+                        ...(is_array($timeout) ? $timeout : []), 'native_terminal_status' => $status,
+                        'native_terminal_observed_at' => now()->toISOString(), 'completed_within_budget' => true,
+                    ]],
+                ])->save();
+            }
+            if ($current->status->terminal()) {
                 return $current;
             }
 
