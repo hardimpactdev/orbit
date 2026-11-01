@@ -1,0 +1,54 @@
+{
+  "purpose": "Byte-for-byte import of existing tooling; no installed behavior change",
+  "captured_installed_receipt": "/home/nckrtl/swamp-execution/evidence/standard-load-grants-source-20261101/installed-sources.json",
+  "files": {
+    "behavior_versions_reader.ts": {
+      "source": "Node209:/usr/local/libexec/behavior_versions_reader.ts",
+      "sha256": "432358ee1f207b77813793daa83c794f747f07d27306553e2ca06d266f9fae81"
+    },
+    "load_events.py": {
+      "source": "Node209:/usr/local/libexec/load_events.py",
+      "sha256": "c19458b5661d2a4db9c9929b8109cc54e0626d77a9b31b64b960d64ab4a245b2"
+    },
+    "behavior_versions.py": {
+      "source": "Node209:/usr/local/libexec/behavior_versions.py",
+      "sha256": "59749978753067ab6628849b9c03880e073e66cb5e9d5c71dd27a8a2d3738b02"
+    },
+    "immediate_load_policy.py": {
+      "source": "Node209:/usr/local/libexec/immediate_load_policy.py",
+      "sha256": "e4533e86acd40fc72afe6a398e798f02939d08e7aa3027e8449cc35d2b17415d"
+    },
+    "orbit-swamp-main-load.py": {
+      "source": "Node209:/usr/local/libexec/orbit-swamp-main-load.py",
+      "sha256": "b7c8eb4b7a5300786b16ef75e355a83337001822e9e364dc12788e95b80ff839"
+    },
+    "guarded_registry_restart.py": {
+      "source": "Node209:/usr/local/libexec/guarded_registry_restart.py",
+      "sha256": "dd0d5a284cd66d47aed118416faf2f8f04f4bd20f28c8cd956fbe971b7a7b333"
+    },
+    "current_source_inventory.py": {
+      "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/current_source_inventory.py",
+      "sha256": "5802a09a4709944f7c50afe22a85049accd7f9a10a07cc6335e54ea02dcac762"
+    },
+    "publisher.py": {
+      "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/publisher.py",
+      "sha256": "a304f8c51003285871f847d1bd8b72c0e50b7b68411a2ac83a780b4a8a11a641"
+    },
+    "interlocked_load.py": {
+      "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/interlocked_load.py",
+      "sha256": "aca5a36eaca9c0a18dfa87bfa1ca2b071399e7b183a7d7960a5e1193a2c442a8"
+    },
+    "recover_registry.py": {
+      "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/recover_registry.py",
+      "sha256": "00f50ed0fb777fbbd5a14eda78d075a0abe5769dc4173435db83ddd0205af728"
+    },
+    "registry_recovery_notice.py": {
+      "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/registry_recovery_notice.py",
+      "sha256": "32a27deccf89471454ba6bb86cc7221d3c6fdbaceed15a0e4f92eb5d70503d5f"
+    },
+    "swamp_load_log.py": {
+      "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/swamp_load_log.py",
+      "sha256": "332b1508e010296bb67d538e10cbc99e5de14c035ad5edbb1c6e442081fe305d"
+    }
+  }
+}

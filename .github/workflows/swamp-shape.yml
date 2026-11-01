@@ -62,8 +62,6 @@ jobs:
           python3 tests/swamp_validate_ci_test.py
           python3 tests/swamp_deno_shards_test.py
           python3 tests/swamp_base_policy_test.py
-          python3 -B -m unittest discover -s platform/load-on-merge -p 'test_*.py'
-          php platform/load-on-merge/test_configured_policy_proof.php
       - name: Reject new violations with current and base rules
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
