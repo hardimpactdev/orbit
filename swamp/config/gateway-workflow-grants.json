@@ -32,7 +32,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-token-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-user-create-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-create-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^development-deploy-operation-[1-9][0-9]*-commands$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-update-operation-[1-9][0-9]*$", "actions": ["write", "read"]},

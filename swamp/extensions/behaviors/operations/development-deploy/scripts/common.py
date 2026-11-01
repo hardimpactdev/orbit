@@ -3,8 +3,11 @@ import json
 import pwd
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 
-from project_environment import load_project_environment
+if TYPE_CHECKING:
+    from project_environment import load_project_environment
+
 
 
 class Refused(Exception):

@@ -72,13 +72,13 @@ function project_development_terminal(Operation $operation, string $status, arra
     $history = ['id' => $runId, 'workflowName' => 'operation-instance-deploy-direct', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-10-31T02:00:00Z', 'completedAt' => '2026-10-31T02:00:01Z',
-        'jobs' => [['name' => 'development-result', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($payload, JSON_THROW_ON_ERROR)]]]]]];
+        'jobs' => [['name' => 'development', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($payload, JSON_THROW_ON_ERROR)]]]]]];
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.read_token' => 'synthetic-native-reader']);
     $step = app(SwampCommandStep::class);
-    $selector = ['job' => 'development-result', 'step' => 'result'];
+    $selector = ['job' => 'development', 'step' => 'result'];
     $result = $step->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
     $step->projectTerminal($result, ['id' => $runId, 'status' => $status], $selector);
 
@@ -100,6 +100,7 @@ it('projects only the bound native development terminal once and advances seed o
     [$result, $socket] = project_development_terminal($operation, $native, $payload);
     expect($result->status)->toBe($expected)->and($result->lock_key)->toBeNull()
         ->and($socket->sent)->toHaveCount(1)->and(InstanceDeployment::query()->count())->toBe(1)
+        ->and(InstanceDeployment::query()->sole()->status)->toBe($native === 'succeeded' ? 'succeeded' : 'failed')
         ->and($instance->fresh()->seed_commit)->toBe($native === 'succeeded' ? str_repeat('a', 40) : $seed);
 })->with([
     ['succeeded', OperationStatus::Succeeded], ['failed', OperationStatus::Failed],
@@ -122,6 +123,17 @@ it('records verified Vite pins from the development terminal against its admitte
         'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null, 'status' => 'active'];
     project_development_terminal($operation, 'succeeded', [...$payload, 'vp_environment' => $runtime]);
     expect($instance->fresh()->vp_environment)->toMatchArray([...$runtime, 'checkout_path' => $instance->checkout_path]);
+});
+
+it('keeps best-effort command failures in successful native deployment history', function (): void {
+    [, $operation, , , $payload] = native_deploy_projection_fixture($this);
+    project_development_terminal($operation, 'succeeded', [...$payload,
+        'warnings' => 1, 'output_tail' => 'Best-effort step failed (exit 42): warm']);
+
+    $deployment = InstanceDeployment::query()->sole();
+    expect($deployment->status)->toBe('succeeded');
+    expect(base64_decode($deployment->events[0]['value_base64'], strict: true))
+        ->toContain('Best-effort step failed (exit 42): warm');
 });
 
 it('leaves a production deploy held when the native root terminates before its callback', function (): void {
@@ -305,11 +317,29 @@ it('copies each exact admitted command privately and refuses changed Project com
     config(['swamp.run_token' => 'synthetic-gateway-run-token']);
     $input = app(DevelopmentDeployInput::class)->workflowInput($operation);
     expect($input['execution_secrets'])->toBe([
-        'step_0' => ['vault' => 'orbit-control-inputs', 'key' => 'development-deploy-operation-'.$operation->id.'-step-0'],
-        'step_1' => ['vault' => 'orbit-control-inputs', 'key' => 'development-deploy-operation-'.$operation->id.'-step-1'],
+        'commands' => ['vault' => 'orbit-control-inputs', 'key' => 'development-deploy-operation-'.$operation->id.'-commands'],
     ])->and(json_encode([$input, $operation->fresh()->toArray()]))->not->toContain('private-copy-sentinel');
-    expect($socket->sent)->toHaveCount(2)->and($socket->sent[0]['payload']['value'])->toBe('printf private-copy-sentinel');
+    expect($socket->sent)->toHaveCount(1)->and(json_decode($socket->sent[0]['payload']['value'], true))->toBe(['printf private-copy-sentinel', 'true']);
     ProjectDevelopmentDeployStep::query()->where('project_id', $instance->project_id)->where('name', 'second')->update(['required' => true]);
     expect(fn () => app(DevelopmentDeployInput::class)->workflowInput($operation->fresh()))->toThrow(ResourceOperationException::class);
-    expect($socket->sent)->toHaveCount(2);
+    expect($socket->sent)->toHaveCount(1);
+});
+
+it('expands a Gateway setup macro before capturing its digest and copying the phase bundle', function (): void {
+    [$instance, $operation] = native_deploy_projection_fixture($this);
+    dev935_steps($instance, [new DevelopmentDeployStep('cache', '@orbit/ci-caches', 30)]);
+    $operation->update(['input' => [...$operation->input, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)]]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+        'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-gateway-run-token']);
+    $input = app(DevelopmentDeployInput::class)->workflowInput($operation);
+    $programs = json_decode($socket->sent[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
+    expect($programs)->toHaveCount(1)
+        ->and($programs[0])->not->toBe('@orbit/ci-caches')
+        ->and($programs[0])->toContain('bin/ci-cache-ref')
+        ->and($input['intent']['deployment']['steps'][0]['command_digest'])->toBe(hash('sha256', $programs[0]))
+        ->and($operation->fresh()->input['deployment']['steps'][0]['command_digest'])->toBe(hash('sha256', $programs[0]))
+        ->and(json_encode($input))->not->toContain('bin/ci-cache-ref');
 });

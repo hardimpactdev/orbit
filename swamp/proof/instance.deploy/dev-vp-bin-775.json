@@ -1,0 +1,154 @@
+{
+    "kind": "instance.deploy",
+    "workflow": "operation-instance-deploy-direct",
+    "topology": "app-dev",
+    "budget_seconds": 1800,
+    "queue_timeout_seconds": 10,
+    "prepare": [
+        {
+            "argv": [
+                "orbit",
+                "project:create",
+                "proof-vp775-${proof.run}",
+                "laravel-package",
+                "${proof.repo.url}",
+                "--json"
+            ],
+            "capture": {
+                "project_id": "$.id"
+            }
+        },
+        {
+            "argv": [
+                "orbit",
+                "instance:create",
+                "${capture.project_id}",
+                "${topology.app-dev.node_id}",
+                "default",
+                "--json"
+            ],
+            "capture": {
+                "instance_id": "$.target_id"
+            }
+        },
+        {
+            "argv": [
+                "orbit",
+                "project:dev-deploy-step:create",
+                "proof-before",
+                "--project=${capture.project_id}",
+                "--command=id -un > .proof-deploy-user; printf 'before\\n' > .proof-deploy-phases",
+                "--timeout=30",
+                "--json"
+            ]
+        },
+        {
+            "argv": [
+                "orbit",
+                "project:dev-deploy-step:create",
+                "proof-vp-version",
+                "--project=${capture.project_id}",
+                "--command=vp --version > .proof-vp-version",
+                "--timeout=30",
+                "--after=proof-before",
+                "--json"
+            ]
+        },
+        {
+            "argv": [
+                "orbit",
+                "project:dev-deploy-step:create",
+                "proof-after",
+                "--project=${capture.project_id}",
+                "--command=printf 'after\\n' >> .proof-deploy-phases",
+                "--timeout=30",
+                "--after=proof-vp-version",
+                "--json"
+            ]
+        }
+    ],
+    "request": {
+        "argv": [
+            "orbit",
+            "instance:deploy",
+            "${capture.instance_id}",
+            "--json"
+        ],
+        "operation": "$.id"
+    },
+    "envelope": {
+        "instance_id": "${capture.instance_id}",
+        "node_id": "${topology.app-dev.node_id}",
+        "deployment": {
+            "variant": "development",
+            "project_id": "${capture.project_id}",
+            "home": "${match.nonempty_string}",
+            "branch": "${match.nonempty_string}",
+            "needs_vp": true
+        }
+    },
+    "expect": {
+        "status": "succeeded"
+    },
+    "phases": [
+        {
+            "name": "source_preparation",
+            "job": "development",
+            "step": "source",
+            "budget_seconds": 90
+        },
+        {
+            "name": "vp_project",
+            "job": "development",
+            "step": "dev_vp_project",
+            "budget_seconds": 30
+        },
+        {
+            "name": "vp_verify",
+            "job": "development",
+            "step": "dev_vp_verify",
+            "budget_seconds": 30
+        },
+        {
+            "name": "before_activation",
+            "job": "development",
+            "step": "commands",
+            "budget_seconds": 90
+        }
+    ],
+    "parity": {
+        "command": [
+            "python3",
+            "-I",
+            "swamp/proof/instance.deploy/parity.py",
+            "--variant",
+            "development",
+            "--node",
+            "app-dev",
+            "--instance",
+            "${capture.instance_id}",
+            "--vp-bin-775"
+        ],
+        "cases": [
+            "checkout-equals-recorded-seed",
+            "project-command-account",
+            "project-command-order",
+            "vp-command-succeeded",
+            "existing-vp-bin-remains-775"
+        ]
+    },
+    "before_request": [
+        {
+            "argv": [
+                "python3",
+                "-I",
+                "swamp/proof/instance.deploy/vp_bin_775.py",
+                "--node",
+                "app-dev",
+                "--instance",
+                "${capture.instance_id}"
+            ],
+            "timeout_seconds": 120
+        }
+    ]
+}

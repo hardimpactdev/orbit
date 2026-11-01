@@ -90,7 +90,7 @@ final readonly class InstanceDeploymentRecorder
             $events->output(new DeploymentEvent(ValidatedData::string($facts['failed_step'] ?? 'operation'), DeploymentOutputStream::Stderr, $facts['output_tail']));
         }
         $deployment->update(['release' => $facts['release'], 'selected_release' => $facts['selected_release'],
-            'commit' => $facts['commit'], 'status' => $status === 'cancelled' ? 'failed' : $status,
+            'commit' => $facts['commit'], 'status' => in_array($status, ['cancelled', 'interrupted'], true) ? 'failed' : $status,
             'failed_step' => $facts['failed_step'], 'error_code' => $status === 'cancelled' ? 'deployment.cancelled' : $code,
             'finished_at' => $finished, 'duration_seconds' => max(0, $finished->diffInSeconds($deployment->started_at)),
             'events' => $events->events()]);

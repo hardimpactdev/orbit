@@ -15,3 +15,42 @@ Deno.test("native SSH development actions preserve checkout refusals, locks and 
             new TextDecoder().decode(result.stderr),
     );
 });
+
+Deno.test("F9 deployment phases preserve source, warning, private-command and deadline parity", async () => {
+    const result = await new Deno.Command("python3", {
+        args: [
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "phases",
+            "-p",
+            "*_test.py",
+            "-q",
+        ],
+        cwd: fromFileUrl(new URL("../development-deploy/", import.meta.url)),
+        stdout: "piped",
+        stderr: "piped",
+    }).output();
+    assertEquals(
+        result.code,
+        0,
+        new TextDecoder().decode(result.stdout) +
+            new TextDecoder().decode(result.stderr),
+    );
+});
+
+Deno.test("development VP 775 fixture changes only the existing bin directory", async () => {
+    const result = await new Deno.Command("python3", {
+        args: ["-m", "unittest", "discover", "-s", ".", "-p", "vp_bin_775_test.py", "-q"],
+        cwd: fromFileUrl(new URL("../../../../proof/instance.deploy/", import.meta.url)),
+        stdout: "piped",
+        stderr: "piped",
+    }).output();
+    assertEquals(
+        result.code,
+        0,
+        new TextDecoder().decode(result.stdout) +
+            new TextDecoder().decode(result.stderr),
+    );
+});
