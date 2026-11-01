@@ -7,7 +7,7 @@ covers:
   - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager}.php
   - apps/gateway/app/{Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php,Infrastructure/Clusters/NativeClusterRouterOperationLock.php}
-  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
   - apps/gateway/app/Domain/Instances/DevelopmentSourceAccess.php
   - apps/gateway/database/migrations/*_instance_path_proxies_table.php
 ---
