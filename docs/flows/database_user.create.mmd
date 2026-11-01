@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS R3 (server key by name, no root password in intent), 5 (swamp role SSH identity), always-run cleanup.
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md#add-a-user.
   %% status: draft
+  %% command: database:user:create
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -9,28 +10,119 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as DB server Node<br/>reached over ssh
-  CLI->>GW: database:user:create<br/>{connection: shop, user: report}
-  Note over GW: Validate, check conflicts<br/>record task database_user.create
-  GW->>SW: Store user password<br/>database-user-create-intent-5123
+  participant N as Node 12<br/>beast-mysql server
+  CLI->>GW: database:user:create shop<br/>--username=reporting --read-only
+  %%> Command:
+  %%> - `printf '%s' "$PASSWORD" | orbit database:user:create shop --username=reporting --read-only`
+  %%> - syntax: `<slug> --username=USER [--read-only] [--replication] [--idempotency-key=KEY]`
+  %%> Input:
+  %%> - the connection slug of a database on a MySQL or PostgreSQL server
+  %%> - the username: a 1-32 character identifier
+  %%> - the password from piped standard input, or a hidden `Password` prompt on a terminal; never an argument
+  %%> Grants:
+  %%> - `--read-only`: `SELECT` on the database
+  %%> - none: all database privileges on MySQL, data-write grants on PostgreSQL
+  %%> - `--replication`: PostgreSQL only, `LOGIN REPLICATION` with read-only grants
+  Note over GW: Validate, check conflicts<br/>task #5123 · lock beast-mysql
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - connection `shop` has a Database server (`database.server_required`)
+  %%> - the server is MySQL or PostgreSQL (`database.driver_unsupported`); on Valkey each user is its own connection
+  %%> - `reporting` is not the user of a connection on the server (`database.name_conflict`)
+  %%> - no database removal runs on `beast-mysql`; the Gateway holds one lock per Database server
+  %%> Result:
+  %%> - task #5123 recorded with the database, owner, username and grant policy
+  %%> - the password stored encrypted; nothing has happened on the Node yet
+  GW->>SW: Store the user password<br/>database-user-create-intent-5123
+  %%> What it does:
+  %%> - puts the user's password, and on PostgreSQL a stable SCRAM salt, into the Swamp vault on Node 209 (R3)
+  %%> Not included:
+  %%> - the server's admin password; it is already in the vault under the server's own key `database-server-3-admin`
   GW->>SW: Start run, full intent<br/>operation-database-user-create
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the driver, database, owner, username, grant policy and replication flag
+  %%> - the vault key names `database-user-create-intent-5123` and `database-server-3-admin`
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5123
-  SW->>N: Copy action scripts<br/>@swamp/ssh · swamp role identity
-  opt PostgreSQL replication user
-    SW->>N: Check wal_level=logical<br/>user_wal.py
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5123
+  %%> How:
+  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
+  %%> What it does:
+  %%> - copies the shipped scripts into `/tmp/orbit-database-user-create-5123`
+  %%> - each later step reads both passwords with `vault.get` and passes them on standard input, never in argv
+  opt --replication on PostgreSQL
+    SW->>N: Check logical WAL<br/>SHOW wal_level
+    %%> What it does:
+    %%> - checks that the live server has `wal_level=logical`, before any change
+    %%> Refuses:
+    %%> - another level gives `database.wal_level_not_logical`; nothing changes
+    %%> Not included:
+    %%> - Orbit never changes the server configuration or creates publications
   end
-  SW->>N: Create or update login<br/>vault.get server key, user key
-  SW->>N: Replace database grants<br/>user_grant.py in container
-  Note over SW: Remove /tmp scripts<br/>always-run step, pass or fail
-  alt every action exits 0
-    N-->>SW: exit 0 per action
-    SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Record user, privileges<br/>DatabaseUser upsert
-  else an action fails
-    N--xSW: exit 1, step output
-    SW--xGW: Run failed<br/>…user_create_outcome_unknown
+  SW->>N: Create or update login<br/>CREATE or ALTER USER reporting
+  %%> What it does:
+  %%> - creates the login, or sets the password of a user Orbit recorded before
+  %%> - PostgreSQL: adds or removes the replication attribute
+  %%> Refuses:
+  %%> - an existing PostgreSQL role outside this connection (`database.name_conflict`)
+  SW->>N: Replace the grants<br/>exact grants on database shop
+  %%> What it does:
+  %%> - replaces the user's privileges with exactly the requested ones
+  %%> - MySQL: escapes underscores, so the grant covers only `shop`
+  %%> - PostgreSQL replication: also owner defaults for future public tables
+  SW->>N: Check the user<br/>login and grants match
+  %%> What it does:
+  %%> - reads the live role or user back and checks its login, attributes and grants
+  %%> Why:
+  %%> - the user only counts as created when the server shows it
+  SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5123
+  %%> When:
+  %%> - always, after the steps above, whether they passed or failed
+  %%> What it does:
+  %%> - removes `/tmp/orbit-database-user-create-5123`, so no scripts stay on Node 12
+  %%> If it fails:
+  %%> - the task result does not change; the directory holds no secrets
+  alt every step passes
+    N-->>SW: reporting matches
+    %%> Returns:
+    %%> - the check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the user<br/>read-only · task succeeded
+    %%> Result:
+    %%> - user `reporting` recorded for `shop`, with its privileges and encrypted password
+    %%> - `database:user:list shop` shows it; `vault:sync` can publish its password to Vaultwarden
+    %%> - task #5123 succeeds
+  else a step fails
+    N--xSW: conflict or exit ≠ 0
+    %%> When:
+    %%> - a name conflict, the wrong WAL level, failed SQL, or a lost SSH connection
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the records<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - the user records stay as before; a new user is not recorded
+    %%> - task #5123 fails
+    %%> On the Node:
+    %%> - a login created before the failure stays; there is no rollback
+    %%> - that is safe: a rerun sets the password and replaces the grants again
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5123
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
