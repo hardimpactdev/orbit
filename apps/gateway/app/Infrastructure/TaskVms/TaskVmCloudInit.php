@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 
 /**
  * The cloud-init user-data of task VMs: the `orbit` user with passwordless sudo and the Gateway's
@@ -109,7 +110,7 @@ final readonly class TaskVmCloudInit
             'lock_passwd' => true,
             'shell' => '/bin/bash',
             'sudo' => 'ALL=(ALL) NOPASSWD:ALL',
-            'ssh_authorized_keys' => [$gatewayPublicKey],
+            'ssh_authorized_keys' => array_values(array_unique([$gatewayPublicKey, (new SwampSshExecutionInput)->identity()['public_key']])),
         ];
     }
 

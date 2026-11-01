@@ -11,6 +11,7 @@ use App\Console\Commands\ListTaskVmImageBuildsCommand;
 use App\Console\Commands\PackageCacheUsageCommand;
 use App\Console\Commands\PrepareTaskVmHostCommand;
 use App\Console\Commands\PrepareTaskVmHubCommand;
+use App\Console\Commands\ResumeTaskVmCommand;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -44,6 +45,7 @@ final class TaskVmServiceProvider extends ServiceProvider
             PackageCacheUsageCommand::class,
             PrepareTaskVmHostCommand::class,
             PrepareTaskVmHubCommand::class,
+            ResumeTaskVmCommand::class,
         ]);
     }
 }

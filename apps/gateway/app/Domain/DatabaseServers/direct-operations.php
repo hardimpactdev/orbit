@@ -87,5 +87,7 @@ return ['database.update' => [
 ], 'database.destroy_owned' => [
     'workflow' => 'operation-database-destroy-owned',
     'projection' => DatabaseDestroyOwnedProjection::class,
-    'private_material' => ['payload' => 'database.intent'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*$']],
 ]];

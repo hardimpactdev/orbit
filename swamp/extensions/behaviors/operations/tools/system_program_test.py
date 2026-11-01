@@ -53,15 +53,13 @@ class NativeTools(unittest.TestCase):
         self.assertEqual(host.calls[0][0][2],'--showformat=${Package}\\t${Status}\\t${Version}\\n')
         with self.assertRaises(M.Refusal):M.apt(Host([(0,'jq\tbroken','')]),'inventory',{})
 
-    def test_apt_exact_plan_and_no_autoremove(self):
-        host=Host([(0,'Remv jq:amd64 [1.0]\nRemv shared [2]\n','')])
-        self.assertEqual(M.apt(host,'removal-plan',{'package':'jq'}),{'packages':['jq','shared']})
-        for verb in ('install','update','remove'):
+    def test_apt_install_and_update_preserve_dependencies(self):
+        for verb in ('install','update'):
             host=Host();self.assertEqual(M.apt(host,verb,{'package':'hello'}),{})
             argv, options=host.calls[0]
             self.assertEqual(argv[-2:],['--','hello']);self.assertTrue(options['root'])
             self.assertNotIn('autoremove',argv);self.assertNotIn('--purge',argv)
-            self.assertEqual('--no-install-recommends' in argv,verb!='remove')
+            self.assertIn('--no-install-recommends',argv)
 
     def test_composer_dryrun_tracks_only_the_exact_root(self):
         for raw in ('  - Locking psr/log (3.0.2)\n  - Installing psr/log (3.0.2)\n','  - Upgrading psr/log (3.0.1 => 3.0.2)\n'):
@@ -82,7 +80,7 @@ class NativeTools(unittest.TestCase):
 
     def test_vp_runtime_arguments_scope_and_incomplete_inventory(self):
         with patch.object(M,'vp_scope',lambda host:Path('/home/candidate/.vite-plus')):
-            for verb,argv in [('install',['install','-g','semver','--node','lts']),('update',['update','-g','semver','--reinstall-node-mismatch']),('remove',['remove','-g','semver']),('removal-plan',['remove','-g','--dry-run','semver'])]:
+            for verb,argv in [('install',['install','-g','semver','--node','lts']),('update',['update','-g','semver','--reinstall-node-mismatch'])]:
                 host=Host(manager='vp');M.vp(host,verb,{'package':'semver'})
                 self.assertEqual(host.calls[0][0],[str(Path('/home/candidate/.vite-plus/bin/vp')),*argv])
                 self.assertEqual(host.calls[0][1]['env'],{'VP_HOME':'/home/candidate/.vite-plus'})
@@ -125,10 +123,10 @@ class NativeTools(unittest.TestCase):
         sha='a'*64;formula={'name':'hello','full_name':'hello','tap':'homebrew/core','disabled':False,'versions':{'stable':'2.12.3','bottle':True},'bottle':{'stable':{'files':{'x86_64_linux':{'sha256':sha,'url':'https://ghcr.io/v2/homebrew/core/hello/blobs/sha256:'+sha}}}}}
         reply=json.dumps({'formulae':[formula],'casks':[]})
         with patch.object(M,'brew_scope',lambda host:Path('/home/linuxbrew/.linuxbrew')),patch.object(M,'brew_tag',lambda host:'x86_64_linux'):
-            for verb,expected in [('install','install'),('update','upgrade'),('remove','uninstall')]:
+            for verb,expected in [('install','install'),('update','upgrade')]:
                 host=Host([(0,reply,''),(0,'','')],manager='brew');M.brew(host,verb,{'package':'hello'})
                 argv=host.calls[-1][0];self.assertEqual(argv[1],expected);self.assertIn('--formula',argv)
-                if verb!='remove':self.assertIn('--force-bottle',argv)
+                self.assertIn('--force-bottle',argv)
                 self.assertNotIn('autoremove',argv);self.assertNotIn('services',argv)
                 self.assertEqual(host.calls[-1][1]['env']['HOMEBREW_NO_INSTALL_CLEANUP'],'1')
             for change in ({'tap':'private/tap'},{'disabled':True},{'bottle':{}},{'versions':{'stable':None,'bottle':True}}):
@@ -142,7 +140,7 @@ class NativeTools(unittest.TestCase):
             with self.subTest(artifacts=artifacts),self.assertRaises(M.Refusal):M.assess_cask({**safe,'artifacts':artifacts},'safe',Path('/opt/homebrew'),'/Users/candidate')
         for change in ({'tap':'thirdparty/tap'},{'sha256':'no_check'},{'version':'latest'},{'disabled':True}):
             with self.assertRaises(M.Refusal):M.assess_cask({**safe,**change},'safe',Path('/opt/homebrew'),'/Users/candidate')
-        M.artifacts_check([{'binary':['safe']},{'uninstall':[{'delete':'~/Library/safe'}]},{'zap':{'trash':'/outside/ignored'}}],Path('/opt/homebrew'),'/Users/candidate',True)
+        M.artifacts_check([{'binary':['safe']},{'uninstall':[{'delete':'~/Library/safe'}]},{'zap':{'trash':'/outside/ignored'}}],Path('/opt/homebrew'),'/Users/candidate')
 
     def test_scope_observations_refuse_foreign_ownership_and_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:

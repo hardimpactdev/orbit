@@ -3,20 +3,16 @@
 declare(strict_types=1);
 
 use App\Data\Metrics\MetricsCredentialsData;
-use App\Data\Metrics\MetricsMutationData;
 use App\Data\Metrics\MetricsStatusData;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsPublicationCleanup;
-use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\MetricsController;
-use App\Models\Activity;
 use App\Models\Node;
 use Illuminate\Routing\Route;
 
@@ -218,50 +214,6 @@ it('rejects access to only a Metrics or exporter node before reading status', fu
         ->assertJsonPath('error.code', 'node_access.required');
 });
 
-it('passes focused enable and purge mutations to the Metrics role manager', function (): void {
-    $gateway = Node::query()->create([
-        'name' => 'gateway',
-        'status' => LifecycleStatus::Active,
-        'public_ssh_host' => '192.0.2.1',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-    $target = Node::query()->create([
-        'name' => 'target',
-        'status' => LifecycleStatus::Active,
-        'public_ssh_host' => '192.0.2.2',
-        'wireguard_ip' => '10.44.0.2',
-    ]);
-    $this->markAsGateway($gateway);
-    $manager = Mockery::mock(MetricsRoleManager::class);
-    $manager
-        ->shouldReceive('enable')
-        ->once()
-        ->with($target->id)
-        ->andReturn(new MetricsMutationData($target->id, 'active'));
-    $manager
-        ->shouldReceive('remove')
-        ->once()
-        ->with(true, true)
-        ->andReturn(new MetricsMutationData($target->id, 'removed', MetricsPublicationCleanup::Uncleaned));
-    app()->instance(MetricsRoleManager::class, $manager);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/metrics', ['node_id' => $target->id])
-        ->assertCreated()
-        ->assertJsonPath('data.status', 'active');
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
-        ->assertOk()
-        ->assertJsonPath('data.status', 'removed')
-        ->assertJsonPath('data.publication', 'uncleaned');
-
-    expect(Activity::query()->orderBy('id')->pluck('command')->all())
-        ->toBe(['metrics:enable', 'metrics:disable']);
-});
-
 it('rejects unauthorized metrics requests before reading credentials', function (): void {
     $gateway = Node::query()->create([
         'name' => 'gateway',
@@ -384,11 +336,14 @@ it('refuses a second Metrics claim through the generic role route with a stable 
     ]);
     $held->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $other = Node::query()->create([
+        'platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_fingerprint' => 'SHA256:fixture',
         'name' => 'app-prod',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.3',
         'wireguard_ip' => '10.44.0.3',
     ]);
+
+    config(['swamp_workers.nodes' => [$other->id]]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])

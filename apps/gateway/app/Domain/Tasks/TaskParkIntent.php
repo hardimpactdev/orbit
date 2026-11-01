@@ -9,21 +9,19 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
-use Illuminate\Support\Arr;
 
 /** Immutable review parking ownership. No provider or guest execution. */
 final readonly class TaskParkIntent
 {
-    public function __construct(private TaskVmSettings $settings, private AgentDelivery $agents) {}
+    public function __construct(private TaskVmProviderWorkflowInput $provider) {}
 
     public static function requireEligible(Task $group): TaskVm
     {
@@ -50,14 +48,11 @@ final readonly class TaskParkIntent
         $vm = self::requireEligible($group);
         $node = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id)
             : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
-        $host = $vm->provider === TaskVmProviderKind::Incus ? $this->settings->host($node->id) : null;
 
         return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $group->taskable_id,
             'task_vm_id' => $vm->id, 'guest_node_id' => $vm->node_id, 'node_id' => $node->id, 'name' => $vm->name,
-            'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'agent_sha256' => $this->agents->pin($node),
-            'deadline_at' => now()->addSeconds(1500)->timestamp,
-            'vm' => $host === null ? null : ['project' => $host->project, 'name' => $vm->name, 'cidr' => $host->cidr],
-            ...($host === null ? ['upcloud_token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]] : [])];
+            'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
+            ...$this->provider->capture($vm)];
     }
 
     public function owned(Operation $operation): TaskVm
@@ -92,6 +87,6 @@ final readonly class TaskParkIntent
             $eligible = false;
         }
 
-        return [...Arr::except($operation->input, ['upcloud_token']), 'eligible' => $eligible];
+        return TaskVmProviderWorkflowInput::envelope([...$operation->input, 'eligible' => $eligible]);
     }
 }

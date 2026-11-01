@@ -11,7 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
-/** Persists intent and native results. Swamp owns locks, steps and execution. */
+/** Persists intent, optional admission holds and native results. */
 final readonly class OperationStore
 {
     public function __construct(private OperationBroadcaster $broadcaster, private OperationIdempotency $idempotency) {}
@@ -22,7 +22,7 @@ final readonly class OperationStore
     }
 
     /** @param array<string,mixed> $input */
-    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId): Operation
+    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null): Operation
     {
         if ($this->idempotency->key !== null && $this->idempotency->kind !== $kind) {
             throw new LogicException('The Operation kind must match the request idempotency key.');
@@ -36,10 +36,10 @@ final readonly class OperationStore
         $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         try {
-            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition): Operation {
+            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition, $lockKey): Operation {
                 $operation = Operation::query()->create([
                     'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
-                    'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId,
+                    'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId, 'lock_key' => $lockKey,
                     'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
                     'triggered_by' => $triggeredBy, 'request_id' => $requestId,
                 ]);
@@ -52,7 +52,14 @@ final readonly class OperationStore
                 return $operation;
             });
         } catch (UniqueConstraintViolationException $exception) {
-            return $this->idempotency->replay($kind) ?? throw $exception;
+            if (($existing = $this->idempotency->replay($kind)) !== null) {
+                return $existing;
+            }
+            if ($lockKey !== null) {
+                throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409);
+            }
+
+            throw $exception;
         }
         $this->broadcaster->created($operation);
 

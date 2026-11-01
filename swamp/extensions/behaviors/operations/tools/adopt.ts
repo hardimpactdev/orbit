@@ -9,8 +9,8 @@ export const AdoptInput = Input.omit({ materialize: true, intent_only: true }).e
     !(v.platform === "macos" && ["apt", "composer"].includes(v.manager)) &&
     !(v.platform === "linux" && v.manager === "brew-cask")
 );
-const Observation = z.object({ stdout: z.string().max(4 * 1024 * 1024), exitCode: z.literal(0) });
-const Facts = z.object({
+export const Observation = z.object({ stdout: z.string().max(4 * 1024 * 1024), exitCode: z.literal(0) });
+export const Facts = z.object({
     error_code: z.literal("tool.version_probe_failed").optional(),
     scope: z.enum(["present", "absent", "conflict"]).default("present"),
     manager_version: z.string().optional(),
@@ -22,6 +22,19 @@ type Context = {
     extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+export async function queryScript(input: z.infer<typeof AdoptInput>, ctx: Pick<Context, "extensionFile">) {
+    const files = [
+        "support", ...(input.manager.startsWith("brew") ? ["brew_query"] : []),
+        input.manager.replace("-", "_"),
+    ];
+    const sources = await Promise.all(files.map((name) =>
+        Deno.readTextFile(ctx.extensionFile(`queries/${name}.py`))
+    ));
+    const script_body = sources.map((s) =>
+        s.replace(/^from (?:support|brew_query) import [^\n]*\n/gm, "")
+    ).join("\n").replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(input)));
+    return script_body;
+}
 export function adoptionResult(input: z.infer<typeof AdoptInput>, raw: unknown) {
     let managerVersion: string | null = null;
     try {
@@ -69,16 +82,7 @@ export const behavior = {
             description: "Read the selected manager query and bind public intent",
             arguments: z.object({ input: AdoptInput }),
             execute: async ({ input }: { input: z.infer<typeof AdoptInput> }, ctx: Context) => {
-                const files = [
-                    "support", ...(input.manager.startsWith("brew") ? ["brew_query"] : []),
-                    input.manager.replace("-", "_"),
-                ];
-                const sources = await Promise.all(files.map((name) =>
-                    Deno.readTextFile(ctx.extensionFile(`queries/${name}.py`))
-                ));
-                const script_body = sources.map((s) =>
-                    s.replace(/^from (?:support|brew_query) import [^\n]*\n/gm, "")
-                ).join("\n").replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(input)));
+                const script_body = await queryScript(input, ctx);
                 const result = { script_body };
                 await ctx.writeResource("assets", "assets", result);
                 return result;

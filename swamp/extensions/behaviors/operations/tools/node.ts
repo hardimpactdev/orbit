@@ -64,12 +64,10 @@ function command(
         name: `${prefix}candidate`,
         input: manager === "composer" ? { ...pkg, operation: verb } : bottle,
       };
-    case "package-removal-plan":
-      return { name: `${prefix}removal-plan`, input: pkg };
     case "package-mutate":
       return {
         name: `${prefix}${verb}`,
-        input: manager === "brew" && verb === "remove" ? pkg : bottle,
+        input: bottle,
       };
     case "tool-verified":
       if (verb === "manager_converge" || input.intent_only) {
@@ -194,9 +192,6 @@ export function toolNode(invoke = localTool) {
             }
             const spec = command(step, input, intent.kind);
             if (step === "package-before" && baseline) {
-              if (
-                intent.kind === "tool.remove" && await probeInventory() === null
-              ) return { installed_version: null, block: null };
               return {
                 installed_version: baseline.installed_version,
                 block: null,
@@ -205,7 +200,6 @@ export function toolNode(invoke = localTool) {
             if (step === "package-mutate" && baseline) {
               const observed = await probeInventory();
               // Native resume observes desired state before repeating an uncertain mutation.
-              if (intent.kind === "tool.remove" && observed === null) return {};
               if (
                 intent.kind === "tool.install" &&
                 baseline.installed_version === null && observed !== null &&
@@ -250,9 +244,7 @@ export function toolNode(invoke = localTool) {
                 };
                 await ctx.writeResource("before", beforeName, baseline);
               }
-              const outcome = intent.kind === "tool.remove"
-                ? "applied"
-                : intent.kind === "tool.install"
+              const outcome = intent.kind === "tool.install"
                 ? (baseline?.installed_version !== null
                   ? "unchanged"
                   : "applied")

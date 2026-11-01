@@ -73,25 +73,33 @@ class QueriesTest(unittest.TestCase):
     def test_homebrew_reads_selected_native_metadata_and_never_mutates_packages(self):
         binary = self.path('/home/linuxbrew/.linuxbrew/bin/brew'); binary.parent.mkdir(parents=True); binary.touch()
         record = {'name': 'hello', 'installed': [{'version': '1.2.3'}]}
-        result = self.run_query('brew', ['Homebrew 7.0.0\n', {'formulae': [record]}])
+        result = self.run_query('brew', ['Homebrew 7.0.0\n', {'formulae': [record]}, 'hello\n'])
         self.assertEqual(result['homebrew'], record)
         self.assertEqual(result['versions'], ['1.2.3'])
-        self.assertEqual(self.calls[-1][0][1:], ['info', '--json=v2', '--formula', '--installed'])
+        self.assertEqual(self.calls[-2][0][1:], ['info', '--json=v2', '--formula', '--installed'])
         self.assertEqual(self.calls[-1][1]['env']['HOMEBREW_NO_AUTO_UPDATE'], '1')
         self.assertNotIn('HOMEBREW_FORCE_API_AUTO_UPDATE', self.calls[-1][1]['env'])
 
     def test_unavailable_formula_is_absent_without_a_named_lookup(self):
         binary = self.path('/home/linuxbrew/.linuxbrew/bin/brew'); binary.parent.mkdir(parents=True); binary.touch()
-        self.assertEqual(self.run_query('brew', ['Homebrew 7.0.0\n', {'formulae': []}])['versions'], [])
-        self.assertEqual(self.calls[-1][0][-1], '--installed')
+        self.assertEqual(self.run_query('brew', ['Homebrew 7.0.0\n', {'formulae': []}, ''])['versions'], [])
+        self.assertEqual(self.calls[-1][0][-1], '-1')
 
     def test_casks_filter_other_taps_and_read_os_for_variations(self):
         binary = self.path('/opt/homebrew/bin/brew'); binary.parent.mkdir(parents=True); binary.touch()
         record = {'token': 'hello', 'tap': 'homebrew/cask', 'installed': '1.2.3'}
-        result = self.run_query('brew-cask', ['Homebrew 7.0.0\n', {'casks': [{'token': 'hello', 'tap': 'other/tap', 'installed': '9.0'}, record]}, '15.4\n'], 'macos')
+        result = self.run_query('brew-cask', ['Homebrew 7.0.0\n', {'casks': [{'token': 'hello', 'tap': 'other/tap', 'installed': '9.0'}, record]}, 'hello\n', '15.4\n'], 'macos')
         self.assertEqual(result['versions'], ['1.2.3'])
         self.assertEqual(result['os_major'], 15)
         self.assertTrue(all('sudo' not in argv for argv, _ in self.calls))
+
+    def test_installed_name_metadata_disagreement_cannot_prove_absence(self):
+        binary = self.path('/home/linuxbrew/.linuxbrew/bin/brew'); binary.parent.mkdir(parents=True); binary.touch()
+        for rows, names in [([], 'hello\n'), ([{'name': 'hello', 'installed': [{'version': '1'}]}], '')]:
+            self.assertFalse(self.run_query('brew', ['Homebrew 7\n', {'formulae': rows}, names])['complete'])
+        binary = self.path('/opt/homebrew/bin/brew'); binary.parent.mkdir(parents=True); binary.touch()
+        for rows in ([], [{'token': 'hello', 'tap': 'foreign/tap', 'installed': '9.0'}]):
+            self.assertFalse(self.run_query('brew-cask', ['Homebrew 7\n', {'casks': rows}, 'hello\n', '15.4\n'], 'macos')['complete'])
 
     def test_scope_absence_and_invalid_manager_json_are_bounded(self):
         self.assertEqual(self.run_query('composer', [])['scope'], 'absent')

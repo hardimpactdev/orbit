@@ -1,126 +1,100 @@
-"""Both destruction parents run through the shared pinned-native harness."""
+"""Native owned-set fan-out, per-server secrets, typed aggregate and resume."""
+import copy
+import hashlib
 import json
-import yaml
-import secrets
-from pathlib import Path
+import os
+import signal
+import subprocess
 import sys
-ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT / 'tests'))
-from native_harness import NativeTestCase
+import time
+import unittest
+import uuid
+from pathlib import Path
 
-class DatabaseDestroyOwnedNative(NativeTestCase):
+ROOT=Path(__file__).resolve().parents[4]
+sys.path.insert(0,str(ROOT/'tests'))
+from database_command_native import DatabaseCommands, reply
+
+
+class DatabaseDestroyOwnedNative(DatabaseCommands):
+    # DatabaseCommands.fail injects fixture errors; keep unittest assertions fatal.
+    fail = unittest.TestCase.fail
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
-        for module, factory, replace in [('destroy.ts', 'databaseDestroy', '...databaseDestroy()'), ('destroy_owned.ts', 'databaseDestroyOwned', '...databaseDestroyOwned()')]:
-            path = self.repo / 'extensions/behaviors/operations/database' / module
-            if path.exists():
-                path.write_text('import {fixtureHttp,fixtureInvoke} from "./destroy_native_fixture.ts";\n' + path.read_text().replace(replace, '...'+factory+'(() => fixtureHttp, fixtureInvoke)'))
-        self.secrets = (secrets.token_hex(24),)
-        self.native_env = {'DESTROY_PRIVATE_SENTINEL': self.secrets[0]}
-        self.intent = {'driver':'mysql','container':'orbit-process-42-proof','host':'10.44.0.9','port':3306,'default_open':False,'databases':['proof'],'users':['proof'],'test_prefixes':[],'owners':{'proof':'proof'}}
-        self.state = {'operation':{'id':17,'kind':'database.destroy','node_id':209,'status':'queued','result':None,'cancel_requested':False,'input':self.intent},'paths':[],'effects':0}
-    def save(self):
-        (self.repo / 'native-destroy.json').write_text(json.dumps(self.state))
-    def read(self):
-        return json.loads((self.repo / 'native-destroy.json').read_text())
-    def run_parent(self, owned=False, success=True, engine_failure=None, wrong_selected_node=False):
-        self.workflow = 'operation-database-destroy' + ('-owned' if owned else '')
-        source = ROOT / 'workflows' / ('workflow-'+self.workflow+'.yaml')
-        # Local fixture retains the DAG while removing only worker placement.
-        fixture_workflow = yaml.safe_load(source.read_text())
-        fixture_workflow.pop('target', None)
-        fixture_workflow.pop('labels', None)
-        for job in fixture_workflow['jobs']:
-            job.pop('target', None)
-            job.pop('labels', None)
-            for step in job['steps']:
-                step.pop('target', None)
-                step.pop('labels', None)
-        if engine_failure:
-            job = next(job for job in fixture_workflow['jobs'] if job['name'] == engine_failure)
-            job['steps'][0]['task']['methodName'] = 'missing-method'
-        if wrong_selected_node:
-            job = next(job for job in fixture_workflow['jobs'] if job['name'] == 'effects')
-            job['steps'][0]['task']['inputs']['selected_node_id'] = 10
-        (self.repo / 'workflows' / source.name).write_text(yaml.safe_dump(fixture_workflow, sort_keys=False))
-        self.save()
-        if not engine_failure:
-            self.cli('workflow','validate',self.workflow)
-        result = self.cli('workflow','run',self.workflow,'--input','operation_id=17','--input','node_id=209','--input','kind='+self.state['operation']['kind'],success=success)
-        self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
-    def test_owned_two_nodes_are_steps_in_one_parent_run(self):
-        self.state['operation'].update(kind='database.destroy_owned',input={'servers':[{'server_id':42,'node_id':9,'intent':self.intent},{'server_id':43,'node_id':10,'intent':self.intent}],'sqlite':[]})
-        self.run_parent(owned=True)
-        state=self.read()
-        self.assertEqual(state['operation']['status'],'succeeded')
-        self.assertEqual(state['effects'],6)
-        self.assertTrue(all('/direct-operations/17' in p for p in state['paths']))
-    def test_empty_owned_set_projects_success(self):
-        self.state['operation'].update(kind='database.destroy_owned',input={'servers':[],'sqlite':[]})
-        self.run_parent(owned=True)
-        self.assertEqual(self.read()['operation']['status'],'succeeded')
-        self.assertEqual(self.read()['effects'],0)
-    def test_owned_refusal_projects_failed_without_gateway_children(self):
-        self.state['refuse']=True
-        self.state['operation'].update(kind='database.destroy_owned',input={'servers':[{'server_id':42,'node_id':9,'intent':self.intent}],'sqlite':[]})
-        self.run_parent(owned=True,success=False)
-        self.assertEqual(self.read()['operation']['status'],'failed')
-        self.assertEqual(self.read()['operation']['result'],{'error_code':'database.ownership_unproven'})
+        self.prepare_commands(['workflow-operation-database-destroy-owned.yaml','workflow-database-destroy-actions.yaml','workflow-database-owned-sqlite-remove.yaml'])
+        fake=self.repo/'fixture-ssh';s=fake.read_text().replace('import json,os,shlex,sys','import json,os,shlex,sys,hashlib')
+        s=s.replace("m=json.load(sys.stdin);assert m['password'] not in repr(args)","m={} if scripts[0]=='owned_sqlite_remove' else json.load(sys.stdin)\nif m:assert m['password'] not in repr(args)")
+        s=s.replace("fd=os.open(", "scope=json.loads(args[-5])['container'] if scripts[0]=='destroy' else 'sqlite'\nif m:assert hashlib.sha256(m['password'].encode()).hexdigest()==v['password_hashes'][scope]\nfd=os.open(")
+        s=s.replace("{'action':action,'item':item}","{'action':action,'item':item,'scope':scope,'scratch':args[-1] if scripts[0]=='destroy' else ''}")
+        s=s.replace("else {'ready':True}))", "else {'backend':'absent'} if action=='owned_sqlite_remove' else {'ready':True}))")
+        fake.write_text(s)
+        ssh={'host':'fixture','user':'orbit','host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}
+        intent={'driver':'mysql','container':'orbit-process-42-proof','host':'10.44.0.9','port':3306,'default_open':False,'databases':['proof'],'users':['proof'],'test_prefixes':[],'owners':{'proof':'proof'},'ssh':ssh}
+        servers=[{'server_id':42,'node_id':9,'intent':intent},{'server_id':43,'node_id':9,'intent':dict(copy.deepcopy(intent),container='orbit-process-43-proof',port=3307)}]
+        self.public={'operation_id':17,'node_id':209,'kind':'database.destroy_owned','intent':{'servers':servers,'sqlite':[{'connection_id':2,'node_id':10,'checkout':'/apps/proof','path':'/apps/proof/database.sqlite','ssh':ssh}]},'execution_secrets':{}}
+        self.cli('vault','create','local_encryption','orbit-control-inputs')
+        secrets=[];hashes={}
+        for server in servers:
+            password='private-owned-'+uuid.uuid4().hex;secrets.append(password);hashes[server['intent']['container']]=hashlib.sha256(password.encode()).hexdigest()
+            key='database-destroy-owned-intent-17-server-'+str(server['server_id'])
+            self.cli('vault','put','orbit-control-inputs',key,input=json.dumps({'password':password}))
+            self.public['execution_secrets']['server_'+str(server['server_id'])]={'vault':'orbit-control-inputs','key':key}
+        self.secrets=tuple(secrets)
+        state=json.loads(self.state.read_text());state['password_hashes']=hashes;self.state.write_text(json.dumps(state))
 
-    def owned(self):
-        self.state['operation'].update(kind='database.destroy_owned', input={'servers':[{'server_id':42,'node_id':9,'intent':self.intent}], 'sqlite':[]})
+    def run_owned(self,success=True):
+        self.cli('workflow','validate','operation-database-destroy-owned')
+        return reply(self.cli('workflow','run','operation-database-destroy-owned','--input',json.dumps(self.public),success=success).stdout)
 
-    def test_cancel_before_plan_skips_all_placed_effects(self):
-        self.owned()
-        self.state['operation']['cancel_requested'] = True
-        self.run_parent(owned=True)
-        state = self.read()
-        self.assertEqual(state['operation']['status'], 'cancelled')
-        self.assertEqual(state['effects'], 0)
-        self.assertFalse(any('private-material' in path for path in state['paths']))
+    def test_two_servers_on_one_node_and_sqlite_use_independent_children_and_passwords(self):
+        run=self.run_owned();calls=self.calls()
+        self.assertEqual(self.outcome(run),{'backend':'absent'})
+        self.assertEqual(sum(c['action']=='drop_database' for c in calls),2)
+        self.assertEqual(sum(c['action']=='owned_sqlite_remove' for c in calls),1)
+        self.assertEqual(len({c['scratch'] for c in calls if c['scope']!='sqlite'}),2)
+        models=reply(self.cli('data','query','modelName.startsWith("dbd-") && name == "run-exec-server"','--select','modelName').stdout)['results']
+        self.assertEqual(len(set(models)),2)
+        self.assert_private_absent(json.dumps(self.history(run)))
 
-    def test_cancel_between_plan_and_placed_effect_skips_sql(self):
-        self.owned()
-        self.state['cancelOnRead'] = 2
-        self.run_parent(owned=True)
-        state = self.read()
-        self.assertEqual(state['operation']['status'], 'cancelled')
-        self.assertEqual(state['effects'], 0)
-        self.assertFalse(any('private-material' in path for path in state['paths']))
+    def test_empty_set_needs_no_vault_reference_and_runs_no_ssh(self):
+        self.public['intent']={'servers':[],'sqlite':[]};self.public['execution_secrets']={}
+        run=self.run_owned();self.assertEqual(self.calls(),[]);self.assertEqual(self.outcome(run),{'backend':'absent'})
 
-    def test_wrong_selected_node_refuses_before_private_or_effect(self):
-        self.owned()
-        self.run_parent(owned=True, success=False, wrong_selected_node=True)
-        state = self.read()
-        self.assertEqual(state['operation']['status'], 'running')
-        self.assertEqual(state['effects'], 0)
-        self.assertFalse(any('private-material' in path for path in state['paths']))
-        self.assertFalse(any(path.endswith('/failure') for path in state['paths']))
+    def test_refusal_keeps_unknown_when_native_failed_child_omits_outputs(self):
+        DatabaseCommands.fail(self,'ownership','database.ownership_unproven')
+        run=self.run_owned(False)
+        self.assertNotIn('drop_database',[c['action'] for c in self.calls()])
+        self.assertEqual(self.outcome(run),{'error_code':'database.destroy_owned_outcome_unknown'})
 
-    def test_engine_failure_before_plan_or_effect_retains_native_failure(self):
-        for job in ['admission', 'effects']:
-            with self.subTest(job=job):
-                self.owned()
-                self.state['operation']['status'] = 'queued'
-                self.state['paths'] = []
-                self.state['effects'] = 0
-                self.run_parent(owned=True, success=False, engine_failure=job)
-                state = self.read()
-                self.assertIn(state['operation']['status'], ['queued', 'running'])
-                self.assertIsNone(state['operation'].get('error_code'))
-                self.assertEqual(state['effects'], 0)
-                self.assertFalse(any('private-material' in path for path in state['paths']))
-                self.assertFalse(any(path.endswith('/failure') for path in state['paths']))
+    def test_missing_sqlite_output_does_not_claim_success(self):
+        state=json.loads(self.state.read_text());state['empty_output']='owned_sqlite_remove';self.state.write_text(json.dumps(state))
+        run=self.run_owned(False);self.assertEqual(self.outcome(run),{'error_code':'database.destroy_owned_outcome_unknown'})
 
-    def test_owned_lost_projection_resumes_same_root_without_repeating_sql(self):
-        self.owned()
-        self.state['loseProject'] = True
-        self.run_parent(owned=True, success=False)
-        before = self.read()
-        self.assertEqual(before['operation']['status'], 'running')
-        self.assertEqual(before['effects'], 3)
-        self.cli('workflow', 'resume', self.workflow, '--run', self.run_id)
-        state = self.read()
-        self.assertEqual(state['operation']['status'], 'succeeded')
-        self.assertEqual(state['effects'], before['effects'])
+    def test_terminal_resume_after_another_root_does_not_repeat_removal(self):
+        marker=self.repo/'delivery-failed';marker.touch()
+        self.workflows['workflow-operation-database-destroy-owned.yaml']['jobs'][-1]['steps'].append({'name':'fixture_delivery','dependsOn':[{'step':'accept_result','condition':{'type':'succeeded'}}],'task':{'type':'behavior','behaviorType':'command/shell','behaviorName':'fixture-delivery-${{ run.id }}','methodName':'execute','inputs':{'run':f'test ! -e "{marker}"'}}})
+        self.save();first=self.run_owned(False);marker.unlink();self.public['operation_id']=18;self.run_owned()
+        before=self.calls();self.cli('workflow','resume','operation-database-destroy-owned','--run',first['id'])
+        self.assertEqual(self.calls(),before);self.assertEqual(self.outcome(first),{'backend':'absent'})
+
+    def test_native_cancellation_after_postgres_fence_runs_restore_and_keeps_cancelled(self):
+        self.public['intent']['servers']=self.public['intent']['servers'][:1];self.public['intent']['servers'][0]['intent']['driver']='pgsql';self.public['intent']['sqlite']=[]
+        marker=self.repo/'cancel-ready'
+        fake=self.repo/'fixture-ssh';s=fake.read_text();before="if v.get('transport_fail')==action:sys.exit(255)"
+        s=s.replace(before,"if action=='drop_database':\n import time\n Path("+repr(str(marker))+").touch();time.sleep(60)\n"+before);fake.write_text(s)
+        env=dict(os.environ,SWAMP_NO_UPDATE_CHECK='1',SWAMP_NO_TELEMETRY='1')
+        for name in ('SWAMP_SERVER_URL','SWAMP_SERVE_URL','SWAMP_SERVER_TOKEN','SWAMP_SERVER_TOKEN_FILE','SWAMP_REPO_DIR','SWAMP_CA_CERT','SWAMP_EXTENSIONS_DIR'):env.pop(name,None)
+        process=subprocess.Popen([os.environ.get('SWAMP_BIN','swamp'),'workflow','run','operation-database-destroy-owned','--input',json.dumps(self.public),'--json'],cwd=self.repo,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            deadline=time.monotonic()+90
+            while not marker.exists():
+                self.assertIsNone(process.poll(),'Native cancellation gate was not reached');self.assertLess(time.monotonic(),deadline,'Native cancellation gate timed out');time.sleep(.05)
+            process.send_signal(signal.SIGINT)
+            stdout,stderr=process.communicate(timeout=90);self.assert_private_absent(stdout,stderr)
+            run=reply(stdout);self.assertEqual(run['status'],'cancelled')
+            self.assertIn('restore',[c['action'] for c in self.calls()])
+        finally:
+            if process.poll() is None:process.kill();process.communicate(timeout=10)
+
+
+if __name__=='__main__':unittest.main()

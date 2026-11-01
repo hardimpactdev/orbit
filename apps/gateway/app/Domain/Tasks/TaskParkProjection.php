@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
 use App\Models\Task;
@@ -37,6 +38,12 @@ final readonly class TaskParkProjection implements DirectOperationProjection
             }
             $vm = $this->intent->owned($operation);
             if ($status === OperationStatus::Succeeded) {
+                if (($result['task_vm_id'] ?? null) !== $vm->id || ($result['group_id'] ?? null) !== $operation->target_id
+                    || ($result['instance_id'] ?? null) !== ($operation->input['instance_id'] ?? null)
+                    || ($result['project_id'] ?? null) !== ($operation->input['project_id'] ?? null)
+                    || ($result['parked'] ?? null) !== true || ($result['stop_confirmed'] ?? null) !== true) {
+                    throw new ResourceOperationException('operation.invalid_result', 'The native park result does not confirm the admitted group VM.', 422);
+                }
                 TaskParkIntent::requireEligible(Task::topLevel()->findOrFail($operation->target_id));
             }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);

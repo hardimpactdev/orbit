@@ -26,11 +26,11 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan and manager list keep their read paths.
 
-Swamp owns manager convergence, candidate constraints, adoption, exact removal, retries and cancellation. Its worker runs fixed system commands directly, using sudo where required and the exact admitted Node account for account-owned scopes. Tool writes never invoke agent actions. The agent retains read-only observations for scan. It uses fixed system commands on the admitted Node's exact worker. Package-manager output and credentials never enter public results. The Gateway projects only bounded version, outcome and error fields into the selected Tool and manager records. It does not check execution receipts or repeat native completion policy.
+Adoption and removal run on control Node 209 through official `@swamp/ssh`, using the admitted managed account and full stored host keys. Each query, removal plan, package mutation and absence check is a separate native step. Adoption reads one selected package. Removal preserves protected packages, Composer roots and safe official-cask uninstall policy. An admitted intent-only removal deletes the Tool record without SSH. Package output and credentials stay out of public results. The Gateway projects bounded version, outcome and error fields after native completion.
 
-Node and Instance workflows compose manager prerequisites as native steps in their own root DAG. They do not create `tool.manager_converge` child Operations. Project runtime environments belong to the Instances family.
+Install, update and manager convergence retain their existing Swamp workflows. Tool writes do not invoke agent actions. Scan keeps its read-only agent boundary.
 
-Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
+Node and Instance workflows compose manager prerequisites as native steps in their own root DAG. They do not create `tool.manager_converge` child Operations. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
 
@@ -103,9 +103,11 @@ Update and removal use the same `tool.manager_unavailable` code when the macOS s
 
 ### The dpkg lock
 
-APT manager execution uses typed `tool.apt-*` agent commands. Rust reads candidate and installed versions, parses removal plans, and runs fixed package-manager arguments. The Gateway keeps package constraints, protected-package policy, and Tool records.
+Native APT removal first reads `apt-get --simulate remove -- <package>`. It refuses a plan containing another package. The mutation uses `dpkg --remove -- <package>` so dependency changes after the plan cannot select additional removals. A separate query must prove absence before success. The command uses dpkg’s own dependency checks and lock, with no custom lock wait, purge or autoremove. A failed removal keeps the Tool and its recorded version for an explicit retry. Native resume can restart at the before-query phase to reconcile an uncertain reply.
 
-On Linux, every apt command in the table passes `-o DPkg::Lock::Timeout=300`. On Ubuntu 26.04, apt 3.2.0 applies that timeout only while it takes the dpkg frontend lock and the dpkg admin lock. Those locks are `/var/lib/dpkg/lock-frontend` and `/var/lib/dpkg/lock`. `apt-get install` and `apt-get remove` take them, so they wait up to 300 seconds. The `apt` manager's update is `apt-get install`, so it waits too. A daily upgrade, such as `apt-daily-upgrade`, can hold one of those locks. Install and remove wait for that upgrade to release the lock instead of failing at once.
+The retained install and update steps use fixed package-manager commands. The Gateway keeps package constraints, protected-package policy and Tool records.
+
+The retained apt install commands in the table pass `-o DPkg::Lock::Timeout=300`. On Ubuntu 26.04, apt 3.2.0 applies that timeout only while it takes the dpkg frontend lock and the dpkg admin lock. Those locks are `/var/lib/dpkg/lock-frontend` and `/var/lib/dpkg/lock`. `apt-get install` takes them, so it waits up to 300 seconds. The `apt` manager's update is `apt-get install`, so it waits too. A daily upgrade, such as `apt-daily-upgrade`, can hold one of those locks. Retained installs wait for that upgrade to release the lock instead of failing at once.
 
 Caddy and PHP package installation pass this same option. Caddy uses the shared [package step](/reference/node-provisioning#package-sources) for role prerequisites and publication. Prerequisite `apt-get update` passes it and does not use it. Update takes the lists lock, `/var/lib/apt/lists/lock`, and fails at once when that lock is busy.
 
@@ -116,11 +118,11 @@ Caddy and PHP package installation pass this same option. Caddy uses the shared 
 | `composer` prerequisites | `apt-get update` | None. The lists lock fails at once. |
 | `composer` prerequisites | `apt-get install` of `composer`, `git`, and `unzip` | Up to 300 seconds on the dpkg locks. |
 | `apt` install and update | `apt-get install` | Up to 300 seconds on the dpkg locks. |
-| `apt` remove | `apt-get remove` | Up to 300 seconds on the dpkg locks. |
+| `apt` remove | `dpkg --remove` | Native dpkg lock refusal. |
 
 Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not pass the option and do not wait.
 
-When a dpkg frontend or admin lock is still held after 300 seconds, install or remove exits with an error and changes no package. That covers a `brew` or `composer` prerequisite install, and the `apt` manager's install, update, and remove. A prerequisite `apt-get update` does not reach this timeout. A busy lists lock makes that update fail at once.
+When a dpkg frontend or admin lock is still held after 300 seconds, the retained install exits with an error and changes no package. That covers a `brew` or `composer` prerequisite install, and the `apt` manager's install and update. A prerequisite `apt-get update` does not reach this timeout. A busy lists lock makes that update fail at once.
 
 Either failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Retry the install.
 
@@ -406,7 +408,9 @@ An unsupported installed cask stays in discovery with `adoption` `unsupported` a
 
 `tool:remove` removes an `installed` or `failed` Tool. Every success returns the Tool object with `status` `removed` and `outcome` `applied`. This covers an actual removal, a package that was already absent, and a failed Tool with no probed version. `removed` appears only in that response. It is never stored, so list and show never return it.
 
-The Gateway first reads the installed version. For `apt`, it then plans the removal with `apt-get --simulate remove` and refuses a plan that removes any other package, with `tool.removal_plan_unsafe`. It removes only the recorded package and never runs an autoremove. After the removal, it reads the version again. A Tool whose package is gone is deleted.
+Removal runs from Node209 through official SSH with the captured account and full host pins. The workflow reads installed facts, checks the selected package, removes it, and verifies absence before terminal projection.
+
+For `apt`, a separate `apt-get --simulate remove` read must name only the selected package. The mutation uses `dpkg --remove` for that exact package. Native dpkg dependency checks refuse a later conflict without removing other packages. Orbit never runs an autoremove. A Tool whose package is gone is deleted.
 
 `apt` removes a package without purging its configuration files. The Gateway treats a package that dpkg lists as removed with only its configuration left as absent.
 
@@ -453,7 +457,7 @@ No other `details` keys are returned.
 
 ## Locks
 
-Swamp serializes Tool mutations through the stable `tools-node-<node_id>` behavior identity. The Node agent retains the package manager's native locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). The Gateway records no Tool target hold. Scan does not acquire an Operation lock.
+Tool admission holds the existing Operation `lock_key` for the exact Node and manager until normal terminal projection releases it. A competing Tool install, update, remove, adopt or manager convergence on that pair returns `operation.target_busy` (HTTP 409) without starting a run. Idempotent replay returns the original Operation. A different Node or manager can admit work independently. This approved admission boundary covers native removal and retained mutations. Package managers retain their own locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). Scan creates no Operation hold.
 
 ## Check removal with Doctor
 
@@ -461,11 +465,11 @@ Use the Tool removal result and native Tool scan to inspect installation state. 
 
 ## Direct Swamp execution
 
-Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Adopt runs on Node209 through official SSH with the admitted target pins and existing209 identity.
+Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Adopt and remove run on Node209 through official SSH with the admitted target pins and existing209 identity.
 
 Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; one shipped query script reads facts for the selected manager. A typed check applies package ownership, eligibility and version constraints. The four-step graph reads that asset, queries through official SSH, records the bounded result, then fails on a refusal.
 
-Install, update, remove and manager convergence retain their declared Node worker paths pending their kind conversions. There is no migration-pool fallback or polled writer.
+Install, update and manager convergence retain their declared Node worker paths pending their kind conversions. There is no migration-pool fallback or polled writer.
 
 Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Native adoption rows reject intent and result HTTP callbacks. Cancelling an admitted adoption sends one cancellation request to its bound Swamp root; the native terminal subscriber records the outcome. An unconfirmed cancellation remains a request. Read-only scan stays in Orbit.
 

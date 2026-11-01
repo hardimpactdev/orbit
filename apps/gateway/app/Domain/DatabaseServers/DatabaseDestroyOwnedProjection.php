@@ -10,8 +10,10 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +22,42 @@ final readonly class DatabaseDestroyOwnedProjection implements DirectOperationPr
 {
     public function input(Operation $operation): array
     {
-        return array_intersect_key($operation->input, array_flip(['servers', 'sqlite']));
+        $id = app(DatabaseIntentSource::class)->ownerId($operation);
+        if ($id === null || $operation->kind !== 'database.destroy_owned' || $operation->target_type !== 'instance') {
+            throw new ResourceOperationException('database.ownership_unproven', 'The owned removal does not match its admitted Instance.', 422);
+        }
+        $intent = DatabaseExecutionIntent::recorded($id);
+        $admission = $intent->payload['admission'] ?? throw new ResourceOperationException('database.ownership_unproven', 'The owned removal has no admission snapshot.', 422);
+        $input = array_intersect_key($admission['input'], array_flip(['servers', 'sqlite']));
+        $rows = $input['servers'] ?? null;
+        $passwords = $intent->payload['commands']['database-apply']['input']['participant_passwords'] ?? null;
+        if (! is_array($rows) || ! array_is_list($rows) || ! is_array($passwords)) {
+            throw new ResourceOperationException('database.ownership_unproven', 'The owned removal snapshot is incomplete.', 422);
+        }
+        $copies = [];
+        $servers = [];
+        foreach ($rows as $row) {
+            $server = ValidatedData::object($row);
+            $serverId = ValidatedData::integer($server['server_id'] ?? null);
+            $nodeId = ValidatedData::integer($server['node_id'] ?? null);
+            $serverInput = ValidatedData::object($server['intent'] ?? null);
+            $serverInput['owners'] = (object) ValidatedData::object($serverInput['owners'] ?? []);
+            $server['intent'] = $serverInput;
+            $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-destroy-owned-intent-'.$id.'-server-'.$serverId];
+            if (! $operation->status->terminal()) {
+                $participant = $passwords[$nodeId] ?? null;
+                $password = is_array($participant) ? ($participant[$serverId] ?? null) : null;
+                if (! is_string($password)) {
+                    throw new ResourceOperationException('database.ownership_unproven', 'The admitted server password is missing.', 422);
+                }
+                $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'], json_encode(['password' => $password], JSON_THROW_ON_ERROR));
+            }
+            $servers[] = $server;
+            $copies['server_'.$serverId] = $copy;
+        }
+        $input['servers'] = $servers;
+
+        return ['intent' => $input, 'execution_secrets' => $copies];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void

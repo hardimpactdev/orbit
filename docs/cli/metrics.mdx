@@ -38,7 +38,7 @@ orbit metrics:enable [node] [--json]
 orbit metrics:enable beast
 ```
 
-A second enable fails with `node.role_conflict`. Retry a failed convergence with `orbit node:role:add <node> metrics --converge`.
+The API accepts a native Operation, and the CLI follows it to its terminal result. `--json` returns the Operation and public result. A second enable fails with `node.role_conflict`. Recover a failed step through the existing native Operation recovery path.
 
 ## orbit metrics:status
 
@@ -110,10 +110,10 @@ orbit metrics:disable --force --purge-data
 
 In a terminal, the command shows a preview and asks for confirmation. The default answer is No. A decline, Ctrl-C, or EOF fails with `input.cancelled` and changes nothing. Without `--force`, a call that cannot prompt fails with `metrics.force_required`. `--purge-data` without `--force` fails the same way in every mode.
 
-The result reports `publication` as `cleaned` or `uncleaned`. For `uncleaned`, the command prints a warning: the `metrics.orbit` site, certificate, and DNS record stay on the Gateway. [Disable and purge](/reference/metrics#disable-and-purge) lists what the command removes and what it keeps.
+The CLI follows the accepted native Operation. Terminal success confirms runtime and publication removal. Failure keeps the assignment and credentials for native recovery. [Disable and purge](/reference/metrics#disable-and-purge) lists what the command removes and what it keeps.
 
 ## Related
 
-- [`node`](/cli/node) retries a failed convergence with `node:role:add <node> metrics --converge`, relocates the role, and removes it with `node:role:remove`.
+- [`node`](/cli/node) owns separate role relocation and Node removal workflows.
 - [`doctor`](/cli/doctor) checks the exporter firewall rules on selected Nodes.
 - [`firewall`](/cli/firewall) adds operator rules beside the role's `orbit:` rules.

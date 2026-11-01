@@ -23,7 +23,7 @@ final readonly class StartTaskVmResumeAction
     {
         return DB::transaction(function () use ($taskVmId): ?Operation {
             $vm = TaskVm::query()->lockForUpdate()->find($taskVmId);
-            if ($vm === null || $vm->state !== TaskVmState::Parked) {
+            if ($vm === null || ! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready], true)) {
                 return null;
             }
             $existing = Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)

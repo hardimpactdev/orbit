@@ -23,7 +23,7 @@ def observe():
     entries = json.loads(query([binary, "list", "-g", "--json"], env).stdout)
     names = [p["name"] for p in entries]
     complete = all(isinstance(n, str) and 0 < len(n) <= 255 for n in names) and len(set(names)) == len(names)
-    return {"manager_version": manager, "complete": complete,
+    return {"manager_version": manager, "complete": complete, "scope_path": str(found[0]),
             "versions": [p.get("version") for p in entries if p["name"] == INPUT["package"]]}
 
 finish(observe)

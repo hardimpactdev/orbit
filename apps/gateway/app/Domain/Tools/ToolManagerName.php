@@ -12,6 +12,11 @@ enum ToolManagerName: string
     case Brew = 'brew';
     case BrewCask = 'brew-cask';
 
+    public function operationLockKey(int $nodeId): string
+    {
+        return "node_tools:{$nodeId}:{$this->value}";
+    }
+
     public function scope(): self
     {
         return $this === self::BrewCask ? self::Brew : $this;

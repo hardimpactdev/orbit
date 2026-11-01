@@ -3,10 +3,10 @@ name: '@nckrtl/tool-adopt-command'
 version: 2026.11.01.1
 visibility: private
 license: MIT
-description: Typed public assets and selected package adoption policy for official
-  SSH observations.
+description: Typed public manager observations and bounded Tool operation results.
 behaviors:
 - operations/tools/adopt.ts
+- operations/tools/remove.ts
 additionalFiles:
 - queries/support.py
 - queries/apt.py
@@ -15,3 +15,9 @@ additionalFiles:
 - queries/brew_query.py
 - queries/brew.py
 - queries/brew_cask.py
+- mutations/apt.py
+- mutations/apt_plan.py
+- mutations/brew.py
+- mutations/brew_cask.py
+- mutations/composer.py
+- mutations/vp.py

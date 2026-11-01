@@ -24,8 +24,7 @@ def dispatch(value):
  else:
   if not name.startswith(prefix):refuse('tool.input_invalid')
   verb=name[len(prefix):]
-  if verb not in ('version','inventory','candidate','removal-plan','install','update','remove'):refuse('tool.input_invalid')
-  if verb=='removal-plan' and manager in ('brew','brew-cask'):refuse('tool.input_invalid')
+  if verb not in ('version','inventory','candidate','install','update'):refuse('tool.input_invalid')
  allowed={'package','architecture','operation'} if verb not in ('version','inventory','scope') else set()
  if set(data)-allowed:refuse('tool.input_invalid')
  if verb not in ('version','inventory','scope'):package(manager,data.get('package'))

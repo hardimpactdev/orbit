@@ -126,18 +126,7 @@ def apt(host,verb,data):
   rows=[line.lstrip()[10:] for line in host.run(['/usr/bin/apt-cache','policy','--',name])[1].splitlines() if line.lstrip().startswith('Candidate:')]
   if len(rows)!=1 or not rows[0].startswith((' ','\t')) or not version(rows[0].strip()):refuse('tool.output_invalid')
   return {'version':None if rows[0].strip()=='(none)' else rows[0].strip()}
- if verb=='removal-plan':
-  rows=[]
-  for line in host.run(['/usr/bin/apt-get','--simulate','remove','--',name])[1].splitlines():
-   if not re.match(r'\s*Remv(?:\s|$)',line):continue
-   match=re.match(r'Remv\s+([a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?)(?:\s|$)',line)
-   if not match:refuse('tool.output_invalid')
-   value=match[1];value=name if value.startswith(name+':') else value
-   if value not in rows:rows.append(value)
-  return {'packages':rows}
- argv=['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=300','remove' if verb=='remove' else 'install','--yes']
- if verb!='remove':argv+=['--no-install-recommends']
- host.run(argv+['--',name],root=True,env={'DEBIAN_FRONTEND':'noninteractive'});return {}
+ host.run(['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=300','install','--yes','--no-install-recommends','--',name],root=True,env={'DEBIAN_FRONTEND':'noninteractive'});return {}
 
 COMPOSER_FLAGS=['--no-interaction','--no-ansi','--no-progress','--no-audit','--with-all-dependencies']
 def composer(host,verb,data):
@@ -155,9 +144,9 @@ def composer(host,verb,data):
    except Refusal:continue
    packages.append({'name':name,'version':entry.get('version') if version(entry.get('version')) else None})
   return {'packages':packages}
- name=package('composer',data.get('package'));op={'install':'require','update':'update','remove':'remove','removal-plan':'remove','candidate':'require' if data.get('operation')=='install' else 'update'}[verb]
+ name=package('composer',data.get('package'));op={'install':'require','update':'update','candidate':'require' if data.get('operation')=='install' else 'update'}[verb]
  target=name+':*' if op=='require' else name;args=['global',op,target]
- if verb in ('candidate','removal-plan'):args+=['--dry-run']
+ if verb=='candidate':args+=['--dry-run']
  code,out,err=call(args+COMPOSER_FLAGS,check=False)
  if len(out.encode())>65536 or len(err.encode())>65536:refuse('tool.output_invalid')
  text=out+'\n'+err
@@ -165,7 +154,6 @@ def composer(host,verb,data):
   missing='Could not find a matching version of package '+name+'. Check the package spelling, your version constraint and that the package is available in a stability which matches your minimum-stability'
   if verb=='candidate' and len(text)<=32768 and missing in ' '.join(text.split()):return {'version':None}
   refuse('tool.command_failed')
- if verb=='removal-plan':return {'packages':[name]}
  if verb!='candidate':return {}
  if not text.strip() or len(text)>32768:refuse('tool.output_invalid')
  found=[];operations=0;noop=0
@@ -220,6 +208,6 @@ def vp(host,verb,data):
   if not safe(value):refuse('tool.output_invalid')
   return {'version':value}
  if name=='pnpm':refuse('tool.vp_package_protected')
- argv={'install':['install','-g',name,'--node','lts'],'update':['update','-g',name,'--reinstall-node-mismatch'],'remove':['remove','-g',name],'removal-plan':['remove','-g','--dry-run',name]}[verb]
- call(argv);return {'packages':[name]} if verb=='removal-plan' else {}
+ argv={'install':['install','-g',name,'--node','lts'],'update':['update','-g',name,'--reinstall-node-mismatch']}[verb]
+ call(argv);return {}
 `;

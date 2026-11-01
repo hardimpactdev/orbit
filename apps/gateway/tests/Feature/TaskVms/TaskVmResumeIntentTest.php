@@ -5,18 +5,17 @@ declare(strict_types=1);
 use App\Actions\TaskVms\StartTaskVmResumeAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmResumeIntent;
+use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\TaskVms\TaskVmSecretSource;
 use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Node;
 use App\Models\Operation;
@@ -31,6 +30,13 @@ beforeEach(function (): void {
     $this->guest = Node::query()->create(['name' => 'resume-guest', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.208', 'public_ssh_host' => '192.0.2.208']);
     $this->gateway = Node::query()->create(['name' => 'resume-gateway', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.14', 'public_ssh_host' => '192.0.2.14']);
     $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    foreach ([$this->host, $this->guest, $this->gateway] as $node) {
+        $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'ssh_host_fingerprint' => 'SHA256:'.rtrim(base64_encode(hash('sha256', base64_decode('AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG'), true)), '=')]);
+    }
+    config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem', 'swamp.run_token' => 'fixture.fake']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)], 'piArtifactSha256' => str_repeat('c', 64)]);
     $this->vm = TaskVm::query()->create(['name' => 'pending', 'provider' => 'incus', 'state' => 'parked', 'host_node_id' => $this->host->id, 'node_id' => $this->guest->id, 'wireguard_ip' => $this->guest->wireguard_ip, 'pi_token' => 'private-pi-token']);
     $this->vm->update(['name' => 'tvm-'.$this->vm->id]);
@@ -50,26 +56,25 @@ it('freezes exact provider and guest placement without reading the host or start
     $before = $this->vm->fresh()->getRawOriginal();
     $operation = savedResumeIntent();
     $input = app(TaskVmResumeIntent::class)->input($operation);
-    expect($input['node_id'])->toBe($this->host->id)->and($input['guest_node_id'])->toBe($this->guest->id)
-        ->and($input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->host))
-        ->and($input['guest_agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->guest))
-        ->and($input['pi_url'])->toBe('http://'.$this->guest->wireguard_ip.':3774')
-        ->and($input['vm'])->toBe(['project' => 'orbit-tasks', 'name' => $this->vm->name, 'cidr' => '10.251.77.0/24'])
-        ->and($operation->input['participant_node_ids'])->toBe([$this->host->id, $this->guest->id])
-        ->and($operation->input['private_bindings']['pi_token'])->toBe(['owner_node_id' => $this->guest->id, 'read_node_ids' => [$this->host->id], 'write_node_ids' => []])
-        ->and($input)->not->toHaveKeys(['pi_token', 'upcloud_token', 'private_bindings', 'participant_node_ids'])
+    expect($input['intent']['node_id'])->toBe($this->host->id)->and($input['intent']['guest_node_id'])->toBe($this->guest->id)
+        ->and($input['intent']['ssh_execution']['control_node_id'])->toBe(209)
+        ->and($input['intent']['provider_input']['host_ssh_execution']['target']['host'])->toBe($this->host->wireguard_ip)
+        ->and($input['intent']['provider_input']['vm'])->toBe(['project' => 'orbit-tasks', 'name' => $this->vm->name])
+        ->and($input['execution_secrets'])->toBe([])
         ->and(json_encode($operation->input))->not->toContain('private-pi-token')
+        ->and($operation->input)->not->toHaveKeys(['pi_token', 'upcloud_token', 'private_bindings', 'participant_node_ids'])
         ->and($this->vm->fresh()->getRawOriginal())->toBe($before);
 });
 
-it('keeps UpCloud API and Pi references on the owning Gateway host without public token bytes', function (): void {
+it('copies UpCloud API material through the shared vault and keeps Pi material guest-local', function (): void {
     $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null, 'provider_id' => '8330af24-e530-48a0-810c-803f101c70ec']);
+    app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'ucat_resume_PRIVATE'));
     $operation = savedResumeIntent();
+    $envelope = app(TaskVmResumeIntent::class)->input($operation);
     expect($operation->node_id)->toBe($this->gateway->id)
-        ->and($operation->input['participant_node_ids'])->toBe([$this->gateway->id, $this->guest->id])
-        ->and($operation->input['private_bindings']['pi_token'])->toBe(['owner_node_id' => $this->guest->id, 'read_node_ids' => [$this->gateway->id], 'write_node_ids' => []])
-        ->and($operation->input['pi_token'])->toBe(['$secret' => 'task_vm.pi_token', 'id' => $this->vm->id])
-        ->and(app(TaskVmResumeIntent::class)->input($operation)['vm'])->toBeNull();
+        ->and($envelope['execution_secrets'])->toBe(['upcloud' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-upcloud-token']])
+        ->and($envelope['intent']['provider_input']['vm'])->toBeNull()
+        ->and(json_encode($operation->input))->not->toContain('ucat_resume_PRIVATE')->not->toContain('private-pi-token');
 });
 
 it('refuses moved VM ownership before exposing its input', function (array $changes): void {
@@ -81,9 +86,9 @@ it('refuses moved VM ownership before exposing its input', function (array $chan
 it('reports lost resume eligibility without hiding an already terminal native result', function (): void {
     $operation = savedResumeIntent();
     $this->vm->update(['state' => 'destroying']);
-    expect(app(TaskVmResumeIntent::class)->input($operation)['eligible'])->toBeFalse();
+    expect(app(TaskVmResumeIntent::class)->input($operation)['intent']['eligible'])->toBeFalse();
     $this->vm->update(['state' => 'ready']);
-    expect(app(TaskVmResumeIntent::class)->input($operation)['eligible'])->toBeFalse();
+    expect(app(TaskVmResumeIntent::class)->input($operation)['intent']['eligible'])->toBeFalse();
 });
 
 it('refuses guest account and address drift and a mismatched parent kind', function (string $change): void {
@@ -146,7 +151,7 @@ function nativeResumeResult(Operation $operation, string $status): TestResponse
         'run_id' => '3fc3ad54-423a-4b4b-8187-99514098426b', 'status' => $status,
         'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => $status === 'running' ? null : '2026-10-31T00:00:01.000Z',
         'error_code' => $status === 'failed' ? 'task_vm.resume_failed' : null,
-        'result' => $status === 'succeeded' ? ['task_vm_id' => test()->vm->id, 'guest_node_id' => test()->guest->id, 'ready' => true] : [],
+        'result' => $status === 'succeeded' ? ['task_vm_id' => test()->vm->id, 'guest_node_id' => test()->guest->id, 'ready' => true, 'resumed' => true, 'ssh_ready' => true, 'ssh_host_key' => test()->guest->only(['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint'])] : [],
     ]);
 }
 
@@ -176,34 +181,11 @@ it('records native success without overwriting a VM outside the parked state', f
         ->and($operation->fresh()->status)->toBe(OperationStatus::Succeeded);
 })->with(['destroying', 'failed', 'ready']);
 
-it('reads only the exact provider credentials through the bound private callback', function (string $provider): void {
-    if ($provider === 'upcloud') {
-        $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null, 'provider_id' => '8330af24-e530-48a0-810c-803f101c70ec']);
-        TaskVmSettingsBuilder::bind(['piArtifactSha256' => str_repeat('c', 64), 'upcloud' => new TaskVmUpCloud(false, [], '/fixture/upcloud', 1, 'fi-hel1', '1xCPU-2GB', 20, '00000000-0000-4000-8000-000000000001')]);
-        app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'ucat_resume_PRIVATE'));
-    }
-    $operation = admitNativeResume();
-    $this->withServerVariables(['REMOTE_ADDR' => $provider === 'upcloud' ? $this->gateway->wireguard_ip : $this->host->wireguard_ip]);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $response = $this->getJson($path.'/private-material?run_id=3fc3ad54-423a-4b4b-8187-99514098426b')->assertOk();
-    $response->assertJsonPath('data.pi_token', 'private-pi-token');
-    if ($provider === 'upcloud') {
-        $response->assertJsonPath('data.upcloud_token', 'ucat_resume_PRIVATE');
-    } else {
-        $response->assertJsonPath('data.upcloud_token', null);
-    }
-    $this->getJson($path.'?run_id=3fc3ad54-423a-4b4b-8187-99514098426b')->assertOk()
-        ->assertJsonMissing(['pi_token' => 'private-pi-token'])->assertJsonMissing(['upcloud_token' => 'ucat_resume_PRIVATE']);
-    $this->getJson($path.'/private-material?run_id=920c3e86-2e22-46ce-9716-91aa0c3eec46')->assertConflict();
-    $this->guest->update(['user' => 'foreign']);
-    $this->getJson($path.'/private-material?run_id=3fc3ad54-423a-4b4b-8187-99514098426b')->assertUnprocessable();
-})->with(['incus', 'upcloud']);
-
-it('refuses private hydration after the admitted Incus host changes', function (): void {
-    $operation = savedResumeIntent();
-    $operation->update(['node_id' => $this->gateway->id]);
-    $source = new TaskVmSecretSource('task_vm.pi_token');
-    expect(fn () => $source->resolve($operation, $this->vm->id, '', 'pi_token'))->toThrow(ResourceOperationException::class);
+it('declares no private hydration or family callback for the converted resume', function (): void {
+    $definition = app(DirectOperation::class)->definition('task_vm.resume');
+    expect($definition['private_material'] ?? [])->toBe([])
+        ->and($definition['workflow_inputs'])->toBeTrue()
+        ->and($definition['terminal_result'])->toBe(['job' => 'resume', 'step' => 'result']);
 });
 
 it('refuses resume admission when its Incus host is inactive', function (): void {
@@ -218,4 +200,56 @@ it('admits a fresh resume after an interrupted Operation releases its target', f
     expect($admitted->id)->not->toBe($previous->id);
     expect($admitted->status)->toBe(OperationStatus::Running);
     expect($previous->fresh()->status)->toBe(OperationStatus::Interrupted);
+});
+
+it('captures missing guest pins through the trusted Incus host for existing ready VMs', function (): void {
+    $this->vm->update(['state' => TaskVmState::Ready]);
+    $this->guest->update(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null]);
+    $operation = savedResumeIntent();
+    $input = app(TaskVmResumeIntent::class)->input($operation);
+    expect($input['intent']['eligible'])->toBeTrue()
+        ->and($input['intent']['ssh_execution'])->toBeNull()
+        ->and($input['intent']['ssh_identity']['control_node_id'])->toBe(209)
+        ->and($input['intent']['node']['wireguard_ip'])->toBe($this->vm->wireguard_ip);
+});
+
+it('records an observed host pin through the canonical endpoint action on resume success', function (): void {
+    $pin = $this->guest->only(['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint']);
+    $this->guest->update(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null]);
+    $operation = admitNativeResume();
+    app(TaskVmResumeProjection::class)->apply($operation, [
+        'run_id' => '3fc3ad54-423a-4b4b-8187-99514098426b', 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['task_vm_id' => $this->vm->id, 'guest_node_id' => $this->guest->id, 'resumed' => true, 'ready' => true, 'ssh_ready' => true, 'ssh_host_key' => $pin],
+    ]);
+    expect($this->guest->fresh()->only(array_keys($pin)))->toBe($pin);
+});
+
+it('rejects a changed recorded host pin without marking resume or VM successful', function (): void {
+    $operation = admitNativeResume();
+    $pin = $this->guest->only(['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint']);
+    $pin['ssh_host_fingerprint'] = 'SHA256:changed';
+    expect(fn () => app(TaskVmResumeProjection::class)->apply($operation, [
+        'run_id' => '3fc3ad54-423a-4b4b-8187-99514098426b', 'status' => 'succeeded',
+        'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['task_vm_id' => $this->vm->id, 'guest_node_id' => $this->guest->id, 'resumed' => true, 'ready' => true, 'ssh_ready' => true, 'ssh_host_key' => $pin],
+    ]))->toThrow(ResourceOperationException::class);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running)
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('admits convergence of a ready VM through the normal resume command', function (): void {
+    $this->vm->update(['state' => TaskVmState::Ready]);
+    prepareNativeResume();
+    $this->artisan('task-vms:resume', ['vm' => (string) $this->vm->id])->assertSuccessful();
+    $operation = Operation::query()->where('kind', 'task_vm.resume')->sole();
+    expect($operation->input['admitted_state'])->toBe('ready');
+    nativeResumeResult($operation, 'succeeded')->assertOk();
+    expect($this->vm->fresh()->state)->toBe(TaskVmState::Ready);
+});
+
+it('does not turn an already ready VM into failed when SSH convergence fails', function (): void {
+    $this->vm->update(['state' => TaskVmState::Ready]);
+    $operation = admitNativeResume();
+    nativeResumeResult($operation, 'failed')->assertOk();
+    expect($this->vm->fresh()->state)->toBe(TaskVmState::Ready);
 });

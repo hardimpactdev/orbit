@@ -222,7 +222,7 @@ final readonly class MetricsFleetCapture
      */
     public function forExporter(Node $metrics, Node $target, bool $enabled): array
     {
-        $node = $this->services->forNode($metrics, $target);
+        $node = $this->services->forNode($metrics, $target, $enabled);
         $connection = app(NativeCaddyPublicationInput::class)->connectionForNode($target);
         $host = $connection['connection'];
         $state = $this->service($node, (string) $metrics->wireguard_ip);

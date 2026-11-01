@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Actions\Metrics\AdmitMetricsExporterAction;
+use App\Actions\Metrics\AdmitMetricsRoleAction;
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\RepairNodeDnsAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
@@ -29,7 +30,6 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -55,7 +55,7 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
             expect($exception->errorCode)->toBe('node.platform_unsupported')
                 ->and($exception->status)->toBe(422);
         });
-    expect(fn () => app(NativeMetricsRoleManager::class)->enable($node->id))
+    expect(fn () => app(AdmitMetricsRoleAction::class)->execute($node->id, true))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);

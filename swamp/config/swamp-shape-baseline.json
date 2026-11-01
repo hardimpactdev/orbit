@@ -506,26 +506,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/destroy_owned.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/destroy_owned.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/database/destroy_owned.ts",
-      "rule": "secret-output",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/native_effect.ts",
       "rule": "gateway-http",
       "count": 2,
@@ -2590,36 +2570,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "agent-action",
-      "count": 1,
-      "evidence": [
-        "incus.vm"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "agent-dynamic",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/park.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/pi_delivery.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -2676,54 +2626,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
-      "rule": "secret-output",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/resume.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/task-vms/runtime.ts",
@@ -2853,13 +2755,13 @@
     {
       "file": "extensions/behaviors/operations/tools/homebrew_program.ts",
       "rule": "inline-script",
-      "count": 173,
+      "count": 161,
       "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/tools/local.ts",
       "rule": "inline-script",
-      "count": 43,
+      "count": 42,
       "evidence": []
     },
     {
@@ -2888,7 +2790,7 @@
     {
       "file": "extensions/behaviors/operations/tools/system_program.ts",
       "rule": "inline-script",
-      "count": 224,
+      "count": 212,
       "evidence": []
     },
     {
@@ -3065,14 +2967,6 @@
         "workload/served",
         "workload/served-assets",
         "workload/served-command"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-database-destroy-owned.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "effects/remove-${{ self.work.key }}"
       ]
     },
     {

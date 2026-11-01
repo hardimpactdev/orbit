@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\Metrics;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ProgressOutcome;
-use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Metrics\DisableMetricsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
 use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DisableMetricsCommand extends MetricsCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'metrics:disable {--force : Skip confirmation} {--purge-data : Delete Metrics data} {--json : Return machine-readable JSON}';
 
@@ -67,13 +68,15 @@ final class DisableMetricsCommand extends MetricsCommand
         $response = $this->sendWithProgress(
             $connector,
             new DisableMetricsRequest(force: true, purgeData: $purge),
-            MetricsMutationResponse::class,
-            ['Disable Metrics', 'Disabling Metrics', 'Disabled Metrics'],
-            static fn (MetricsMutationResponse $response): ProgressState|ProgressOutcome => $response->publication === 'uncleaned'
-                ? new ProgressOutcome(ProgressState::Warning, 'Disabled Metrics; publication not cleaned')
-                : ProgressState::Success,
+            OperationResponse::class,
+            ['Disable Metrics', 'Requesting Metrics removal', 'Metrics removal accepted'],
         );
 
-        return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
+        if (! $response instanceof OperationResponse) {
+            return self::FAILURE;
+        }
+        $profile = $this->activeGatewayProfile($repository);
+
+        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $response, 'Metrics', 'Role');
     }
 }

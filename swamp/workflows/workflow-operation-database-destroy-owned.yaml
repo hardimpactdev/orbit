@@ -1,84 +1,71 @@
 id: 9b7c8d6f-2e2a-4a8a-b0bb-bb626fe1008b
 name: operation-database-destroy-owned
-description: Remove all admitted owned databases in one placed native DAG.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Remove an admitted owned set through independent native SQL and SQLite children from209.
 writes: true
-vaults: []
+vaults: [orbit-control-inputs]
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database.destroy_owned
-  required:
-  - operation_id
-  - node_id
-  - kind
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.destroy_owned]}
+    intent:
+      type: object
+      properties:
+        servers: {type: array, maxItems: 1000, items: {type: object, properties: {server_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, intent: {type: object}}, required: [server_id, node_id, intent], additionalProperties: false}}
+        sqlite: {type: array, maxItems: 10000, items: {type: object, properties: {connection_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, checkout: {type: string}, path: {type: string}, ssh: {type: object}}, required: [connection_id, node_id, checkout, path, ssh], additionalProperties: false}}
+      required: [servers, sqlite]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-- name: admission
+- name: remove
+  target: orbit-node-209
   steps:
-  - name: plan
+  - name: server-${{ self.server.server_id }}
+    target: orbit-node-209
+    forEach: {item: server, in: '${{ inputs.intent.servers }}'}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-destroy-owned'
-      behaviorName: ${{ "database-destroy-owned-" + string(inputs.operation_id) }}
-      methodName: plan
+      type: workflow
+      workflowIdOrName: database-destroy-actions
       inputs:
         operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
+        node_id: ${{ self.server.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: effects
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  steps:
-  - name: remove-${{ self.work.key }}
-    forEach:
-      item: work
-      in: ${{ steps.plan.outputs.work }}
-    target: '${{ "orbit-node-" + string(self.work.type == "server" ? self.work.server.node_id : self.work.sqlite.node_id)
-      }}'
-    labels:
-      node: '${{ string(self.work.type == "server" ? self.work.server.node_id : self.work.sqlite.node_id) }}'
+        scope: '${{ "server-" + string(self.server.server_id) }}'
+        intent: ${{ self.server.intent }}
+        execution_secrets: {database_destroy: '${{ inputs.execution_secrets["server_" + string(self.server.server_id)] }}'}
+  - name: sqlite-${{ self.database.connection_id }}
+    target: orbit-node-209
+    forEach: {item: database, in: '${{ inputs.intent.sqlite }}'}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-destroy-owned'
-      behaviorName: ${{ "database-destroy-owned-" + string(inputs.operation_id) }}
-      methodName: apply
+      type: workflow
+      workflowIdOrName: database-owned-sqlite-remove
       inputs:
         operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
+        node_id: ${{ self.database.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        work: ${{ self.work }}
-        selected_node_id: '${{ self.work.type == "server" ? self.work.server.node_id : self.work.sqlite.node_id }}'
-- name: projection
-  dependsOn:
-  - job: effects
-    condition:
-      type: succeeded
+        intent: ${{ self.database }}
+- name: result
+  target: orbit-node-209
+  dependsOn: [{job: remove, condition: {type: always}}]
   steps:
-  - name: project
+  - name: result
+    target: orbit-node-209
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-destroy-owned'
-      behaviorName: ${{ "database-destroy-owned-" + string(inputs.operation_id) }}
-      methodName: project
+      behaviorType: '@nckrtl/database-server-command-assets'
+      behaviorName: ${{ "db-owned-result-" + run.id }}
+      methodName: owned_result
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        started_at: ${{ steps.plan.outputs.started_at }}
-        cancelled: ${{ steps.plan.outputs.cancelled }}
-        results: ${{ steps.plan.outputs.work.map(w, steps["remove-" + w.key].outputs.result) }}
+        expected: '${{ inputs.intent.servers.map(s, "server-" + string(s.server_id)) + inputs.intent.sqlite.map(s, "sqlite-" + string(s.connection_id)) }}'
+        steps: ${{ steps }}
+  - name: accept_result
+    target: orbit-node-209
+    writes: false
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Owned database removal did not complete.}
