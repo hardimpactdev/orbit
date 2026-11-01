@@ -6,6 +6,7 @@ covers:
   - apps/gateway/app/{Actions,Domain,Infrastructure}/Firewall/**
   - apps/gateway/app/Http/Controllers/Api/{FirewallRulesController,FleetFirewallRulesController}.php
   - apps/gateway/app/Http/Requests/Firewall/**
+  - apps/gateway/database/migrations/2027_01_09_120020_add_sources_to_firewall_rules.php
 ---
 
 Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it needs for public SSH recovery, WireGuard member trust, and each role. Those rules carry an `orbit:` prefix. The rule `orbit:wireguard-members` admits every WireGuard member on the Node's WireGuard address, as [private network trust](/reference/routes#private-network-trust) describes. The `firewall` family adds operator rules beside them, each identified by a stable name on one Node.
@@ -21,6 +22,7 @@ Named rules use the official firewall model and its UFW defaults. Read-only `fir
 | Command | Result |
 | --- | --- |
 | [`firewall:allow`](#orbit-firewallallow) | Create or converge one named allow rule. |
+| [`firewall:allowlist`](#orbit-firewallallowlist) | Replace the sources allowed to reach a port before broad peer trust. |
 | [`firewall:deny`](#orbit-firewalldeny) | Create or converge one named deny rule. |
 | [`firewall:inspect`](#orbit-firewallinspect) | Refresh the native UFW inspection snapshot for one Node. |
 | [`firewall:list`](#orbit-firewalllist) | List the named rules of one Node. |
@@ -107,6 +109,8 @@ If authorized overlap narrowing occurred, restore the exact previous operator re
 
 ## Rules and names
 
+The [allowlist design](/decisions/0241-firewall-source-allowlists) defines the closed source-set contract.
+
 Every command accepts `--json` and requires `--node` with a numeric Node ID. A rule name is 1 through 63 characters of lowercase letters, digits, dots, underscores, and hyphens, starting and ending with a letter or digit; it cannot contain a colon, so an operator name never collides with an `orbit:` rule. The name identifies a Gateway intent record. The official model converges its tuple; old `orbit:node:<node-id>:firewall:<name>` comments are removed when the last contribution to their tuple is removed.
 
 All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
@@ -156,6 +160,31 @@ The Gateway refuses a deny rule whose port contains the Node's public SSH port f
 </Warning>
 
 Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node, rule name and input.
+
+## orbit firewall:allowlist
+
+Admit only selected source IPv4 addresses or CIDRs to a port or range. This block precedes other UFW rules, including `orbit:wireguard-members`. Source allows come first, followed by a deny for everyone else. Existing connections can survive through connection tracking; verify with new connections.
+
+```bash
+orbit firewall:allowlist rex --node=7 --port=7297 --from=10.44.0.6 --from=10.44.0.9
+orbit firewall:allowlist rex --node=7 --port=7297 --from=10.44.0.0/28
+```
+
+| Input | Meaning |
+| --- | --- |
+| `name` | Stable name, unique among all named firewall rules on the Node. |
+| `--node=ID` | Required numeric Linux Node ID. |
+| `--port=PORT` | Required port or ordered range, such as `7297` or `7297:7299`. |
+| `--from=SOURCE` | Required, repeatable IPv4 address or CIDR. At least one source. |
+| `--protocol=PROTO` | `tcp` by default, or `udp`. |
+
+The API is `POST /api/v1/nodes/{node}/firewall-rules/allowlist` with `name`, `port`, optional `protocol`, and a `sources` array. MCP exposes `firewall-allowlist` from the same contract. Up to 64 sources are normalized, deduplicated and sorted. Repeating a name replaces the complete source list; omitted old sources are withdrawn. The port and protocol cannot change under the same name. An allowlist exclusively owns its port or range and protocol among named operator rules. Overlapping ordinary allows, denies or allowlists refuse with `firewall.allowlist_overlap`.
+
+The Gateway refuses SSH port 22, the Node's recovery SSH port, the configured WireGuard port, and bounded ports in its managed firewall catalog, including ports reserved by assigned roles even before they have traffic with `firewall.protected_port`. This includes a protected port inside a requested range, regardless of protocol. The broad WireGuard trust rule does not reserve all ports. Invalid or empty sources return `validation.failed` from the API.
+
+Use `firewall:list` to read the complete source set and `firewall:remove` to remove all lines owned by the allowlist. Removal restores the underlying firewall policy. Use `firewall:inspect` followed by `firewall:live:list` to check source lines, the final deny and their order. A block after broad trust reports drift. Doctor reuses the native comparison and reports missing lines, drift, inactive UFW and failed rule lifecycle.
+
+Use `--idempotency-key=KEY` to retry the same admission. A changed source set needs a new key. Human and JSON output follow the same Operation as other firewall writes. An unowned identical UFW tuple refuses before mutation with `firewall.rule_collision`; UFW cannot keep two separately owned copies of that tuple.
 
 ## orbit firewall:list
 
@@ -234,5 +263,5 @@ The managed list is the set that convergence keeps, not every rule Orbit can wri
 
 ## Related
 
-- [`doctor`](/cli/doctor) reports Node, role-service and Process liveness; firewall configuration remains with the native firewall family.
+- [`doctor`](/cli/doctor) reports Node, role-service and Process liveness, and reuses native firewall comparison.
 - [`node`](/cli/node) removal refuses a Node that still owns named firewall rules.

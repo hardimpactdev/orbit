@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { inspectionResult } from "../../operations/firewall/inspection-result.ts";
 import {
     FamilyReport,
     Input,
@@ -33,6 +34,15 @@ export function planReads(intent: z.infer<typeof Input>): Read[] {
                 sudo,
             });
         };
+        if (intent.families.includes("firewall") && node.platform === "linux") {
+            add(
+                "firewall",
+                { id: `node:${node.id}`, name: node.name },
+                "firewall",
+                ["/usr/sbin/ufw", "status", "numbered"],
+                true,
+            );
+        }
         if (intent.families.includes("node")) {
             add("node", node, "platform", ["uname", "-sm"]);
             add("node", node, "disk", ["df", "-Pk", "/"]);
@@ -244,6 +254,23 @@ export function compare(
                     observed(role.id, "role.lifecycle_not_active");
                 }
             }
+            if (family === "firewall" && node.managed && !node.parked) {
+                for (const rule of node.resources.firewall_rules) {
+                    if (rule.status !== "active") {
+                        issues.push(
+                            issue(
+                                family,
+                                "firewall.lifecycle_not_active",
+                                rule,
+                                "Firewall rule lifecycle is not active.",
+                                "active",
+                                rule.status,
+                            ),
+                        );
+                    }
+                    observed(rule.id, "firewall.lifecycle_not_active");
+                }
+            }
             for (const read of selected) {
                 const value = output(results, read.key);
                 if (!value || value.exitCode !== 0) {
@@ -251,7 +278,62 @@ export function compare(
                     continue;
                 }
                 try {
-                    if (read.check === "platform") {
+                    if (read.check === "firewall") {
+                        const snapshot = inspectionResult({
+                            stdout: value.stdout,
+                            expected: node.resources.firewall_expected,
+                        });
+                        const resource = (name: string) =>
+                            node.resources.firewall_rules.find((r) =>
+                                r.name === name
+                            ) ?? { id: `node:${node.id}`, name };
+                        if (snapshot.backend !== "active") {
+                            issues.push(
+                                issue(
+                                    family,
+                                    "firewall.backend_inactive",
+                                    read.resource,
+                                    "UFW is inactive.",
+                                    "active",
+                                    snapshot.backend,
+                                ),
+                            );
+                        }
+                        for (
+                            const row of snapshot.comparison.live.filter((r) =>
+                                r.match === "drift"
+                            )
+                        ) {
+                            issues.push(
+                                issue(
+                                    family,
+                                    "firewall.rule_mismatch",
+                                    resource(row.name),
+                                    "Firewall rule differs from intent or has unsafe ordering.",
+                                ),
+                            );
+                        }
+                        for (const row of snapshot.comparison.missing) {
+                            issues.push(
+                                issue(
+                                    family,
+                                    "firewall.rule_missing",
+                                    resource(row.name),
+                                    "An intended firewall line is missing.",
+                                    "present",
+                                    "missing",
+                                ),
+                            );
+                        }
+                        observed(read.resource.id, "firewall.backend_inactive");
+                        for (const rule of node.resources.firewall_rules) {
+                            observed(
+                                rule.id,
+                                "firewall.rule_mismatch",
+                                "firewall.rule_missing",
+                            );
+                        }
+                    } else if (read.check === "platform") {
                         const [platform, architecture, ...extra] = value.stdout
                             .trim().split(/\s+/);
                         if (!platform || !architecture || extra.length) {

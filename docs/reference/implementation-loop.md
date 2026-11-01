@@ -220,6 +220,8 @@ Root `composer check` runs `bin/review-check`, the candidate gate. The Orbit Pro
 
 The gate checks the working tree as it is, including uncommitted and untracked files. It runs these checks.
 
+API ownership matching removes the shared `api/v1` prefix, so a Form Request used by a grouped route maps to its versioned OpenAPI operation.
+
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
 2. It runs `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, and `bin/docs-nav`.
 3. It seeds absent quality caches with `bin/worktree-cache`.

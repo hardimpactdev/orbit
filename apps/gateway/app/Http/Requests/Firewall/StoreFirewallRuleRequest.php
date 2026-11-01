@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use InvalidArgumentException;
 
-final class StoreFirewallRuleRequest extends FormRequest
+class StoreFirewallRuleRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array

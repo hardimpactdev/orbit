@@ -4,8 +4,9 @@ import { z } from "npm:zod@4.4.3";
 const Rule = z.object({
     node_id: z.number().int().positive(),
     name: z.string(),
-    action: z.enum(["allow", "deny"]),
+    action: z.enum(["allow", "deny", "allowlist"]),
     source: z.string(),
+    sources: z.array(z.string()).optional(),
     port: z.string(),
     protocol: z.enum(["tcp", "udp"]),
 });
@@ -22,7 +23,7 @@ const Intent = z.object({
         }),
     }),
     rule: Rule,
-    tuples: z.array(Tuple).min(1),
+    tuples: z.array(Tuple),
     ensure: z.enum(["present", "absent"]),
 });
 const State = z.object({
@@ -77,6 +78,23 @@ export function observe(raw: unknown) {
 const Result = Observe.extend({ outcomes: z.record(z.string(), z.unknown()) });
 export function result(raw: unknown) {
     const args = Result.parse(raw);
+    if (args.intent.rule.action === "allowlist") {
+        const step = z.object({
+            status: z.literal("succeeded"),
+            outputs: z.object({
+                stdout: z.string(),
+                exitCode: z.union([z.literal(0), z.literal(1)]),
+            }),
+        }).parse(args.outcomes["allowlist"]);
+        const body = JSON.parse(step.outputs.stdout);
+        if (step.outputs.exitCode === 1) {
+            throw new Error(
+                z.object({ error_code: z.string().regex(/^firewall\.[a-z_]+$/) })
+                    .parse(body).error_code,
+            );
+        }
+        return z.object({ backend: z.enum(["absent", "active"]) }).parse(body);
+    }
     if (observe(args).legacy) throw new Error("firewall.remove_verify_failed");
     for (const [index, tuple] of args.intent.tuples.entries()) {
         const step = z.object({

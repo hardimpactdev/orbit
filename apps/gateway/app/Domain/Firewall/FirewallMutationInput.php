@@ -20,6 +20,10 @@ final readonly class FirewallMutationInput
         $rule->loadMissing('node');
 
         $ssh = $this->ssh->forNode($rule->node);
+        if ($rule->action === FirewallAction::Allowlist) {
+            return ['ssh' => $ssh, 'rule' => [...$this->intent($rule), 'sources' => $rule->sources],
+                'tuples' => [], 'legacy_remove' => [], 'ensure' => $removing ? 'absent' : 'present'];
+        }
         $survivors = FirewallRule::query()->where('node_id', $rule->node_id)
             ->whereKeyNot($rule->id)->orderBy('id')->get();
         $managed = app(NodeFirewallDesiredRules::class)->forNode($rule->node);

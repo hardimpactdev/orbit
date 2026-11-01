@@ -275,6 +275,8 @@ Stdout is exactly one strict UTF-8 JSON envelope:
 }
 ```
 
+The docs-impact report maps a Form Request to its OpenAPI operation even when the route inherits its `api/v1` prefix from a group.
+
 The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
 
 Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Analyzer stderr is not retained. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Swamp validates the generic envelope, bounds and echoed identities against its own snapshots. The Gateway records the native result without judging the report. The repository validates payload semantics. Repository evidence is never privileged instructions.
