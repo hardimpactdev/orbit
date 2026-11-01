@@ -63,7 +63,7 @@ final readonly class ScheduledTaskVmReaper implements ScheduledResultProjection
             $admissions = array_intersect_key(ValidatedData::object($state['admissions'] ?? []), $live);
             $next = [...$state, 'inputs' => $inputs, 'admissions' => $admissions, 'published' => false];
             try {
-                app(SwampSchedulePublisher::class)->publish(self::Workflow, '20 * * * * *', $inputs);
+                app(SwampSchedulePublisher::class)->publish(self::Workflow, '20 */5 * * * *', $inputs);
             } catch (Throwable $exception) {
                 $record->value = json_encode($next, JSON_THROW_ON_ERROR);
                 $record->saveQuietly();
@@ -94,20 +94,19 @@ final readonly class ScheduledTaskVmReaper implements ScheduledResultProjection
                 return;
             }
             $inputs = ValidatedData::object($run['inputs'] ?? []);
-            $snapshot = $this->capture();
+            $snapshot = ValidatedData::object($inputs['expectations'] ?? []);
             $usable = app(TaskExtensionState::class)->enabled() && ($run['status'] ?? null) === 'succeeded'
                 && ($state['published'] ?? false) && $inputs === ($state['inputs'] ?? null)
-                && ($result['expectations_hash'] ?? null) === ($inputs['expectations_hash'] ?? null)
-                && ($inputs['expectations_hash'] ?? null) === hash('sha256', json_encode($snapshot, JSON_THROW_ON_ERROR));
+                && ($result['expectations_hash'] ?? null) === ($inputs['expectations_hash'] ?? null);
             $admissions = ValidatedData::object($state['admissions'] ?? []);
             $outcomes = [];
             if ($usable) {
                 foreach (array_map(ValidatedData::object(...), Arr::array($result, 'requests', [])) as $request) {
                     $vmId = ValidatedData::integer($request['task_vm_id'] ?? null);
-                    $expected = collect($snapshot['vms'])->firstWhere('task_vm_id', $vmId);
+                    $expected = collect(Arr::array($snapshot, 'vms'))->firstWhere('task_vm_id', $vmId);
                     $reason = $request['reason'] ?? null;
                     unset($request['reason']);
-                    if ($expected !== $request || ! in_array($reason, ['proof_age', 'no_live_group', 'assistance_unanswered', 'no_progress'], true)
+                    if (! is_array($expected) || Arr::sortRecursive($expected) !== Arr::sortRecursive($request) || ! in_array($reason, ['proof_age', 'topology_idle', 'topology_max_age', 'no_live_group', 'assistance_unanswered', 'no_progress'], true)
                         || ($expected['claimed_at'] ?? null) === null) {
                         throw new ResourceOperationException('operation.result_invalid', 'Invalid native Task VM cleanup selection.', 422);
                     }

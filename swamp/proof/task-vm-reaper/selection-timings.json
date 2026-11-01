@@ -1,40 +1,133 @@
 {
-  "scope": "isolated pinned-native selection only; not F10 topology proof",
+  "scope": "isolated pinned-native plan/stat/select with official SSH executable fixture seam; not F10 topology proof",
   "workflow": "task-vm-reaper",
   "proof_project_id": 62,
   "runs": [
     {
-      "completed_at": "2026-11-01T12:01:46.753Z",
-      "phase": "select",
-      "phase_ms": 102,
-      "run_id": "40e58057-c89f-447d-bff7-ba36c4cceeb3",
-      "started_at": "2026-11-01T12:01:46.632Z",
+      "completed_at": "2026-11-01T12:24:21.319Z",
+      "phases": [
+        {
+          "ms": 66,
+          "name": "plan",
+          "status": "succeeded"
+        },
+        {
+          "ms": 161,
+          "name": "inspect-0",
+          "status": "succeeded"
+        },
+        {
+          "ms": 157,
+          "name": "inspect-1",
+          "status": "succeeded"
+        },
+        {
+          "ms": 161,
+          "name": "inspect-2",
+          "status": "failed"
+        },
+        {
+          "ms": 157,
+          "name": "inspect-3",
+          "status": "failed"
+        },
+        {
+          "ms": 25,
+          "name": "result",
+          "status": "succeeded"
+        }
+      ],
+      "run_id": "219d8ae6-303b-4a20-9e0b-51ccb6140751",
+      "started_at": "2026-11-01T12:24:21.026Z",
       "status": "succeeded",
-      "run_seconds": 0.121
+      "run_seconds": 0.293
     },
     {
-      "completed_at": "2026-11-01T12:01:49.109Z",
-      "phase": "select",
-      "phase_ms": 76,
-      "run_id": "75740550-a132-4912-98b7-08256210111a",
-      "started_at": "2026-11-01T12:01:49.017Z",
+      "completed_at": "2026-11-01T12:24:23.453Z",
+      "phases": [
+        {
+          "ms": 67,
+          "name": "plan",
+          "status": "succeeded"
+        },
+        {
+          "ms": 154,
+          "name": "inspect-0",
+          "status": "succeeded"
+        },
+        {
+          "ms": 155,
+          "name": "inspect-1",
+          "status": "succeeded"
+        },
+        {
+          "ms": 151,
+          "name": "inspect-2",
+          "status": "failed"
+        },
+        {
+          "ms": 151,
+          "name": "inspect-3",
+          "status": "failed"
+        },
+        {
+          "ms": 30,
+          "name": "result",
+          "status": "succeeded"
+        }
+      ],
+      "run_id": "b62569d2-6a59-491c-bad3-c6d8b9282645",
+      "started_at": "2026-11-01T12:24:23.148Z",
       "status": "succeeded",
-      "run_seconds": 0.092
+      "run_seconds": 0.305
     },
     {
-      "completed_at": "2026-11-01T12:01:51.403Z",
-      "phase": "select",
-      "phase_ms": 98,
-      "run_id": "d3023ced-6250-4a8f-b2ea-5ff92010de58",
-      "started_at": "2026-11-01T12:01:51.290Z",
+      "completed_at": "2026-11-01T12:24:25.444Z",
+      "phases": [
+        {
+          "ms": 53,
+          "name": "plan",
+          "status": "succeeded"
+        },
+        {
+          "ms": 123,
+          "name": "inspect-0",
+          "status": "succeeded"
+        },
+        {
+          "ms": 120,
+          "name": "inspect-1",
+          "status": "succeeded"
+        },
+        {
+          "ms": 119,
+          "name": "inspect-2",
+          "status": "failed"
+        },
+        {
+          "ms": 121,
+          "name": "inspect-3",
+          "status": "failed"
+        },
+        {
+          "ms": 24,
+          "name": "result",
+          "status": "succeeded"
+        }
+      ],
+      "run_id": "d12d3d78-cf2a-4ac8-abc3-625cbb039e1d",
+      "started_at": "2026-11-01T12:24:25.203Z",
       "status": "succeeded",
-      "run_seconds": 0.113
+      "run_seconds": 0.241
     }
   ],
   "sample": 3,
-  "p95_seconds": 0.121,
+  "p95_seconds": 0.305,
   "selection_budget_seconds": 30,
   "queue_timeout_seconds": 15,
   "cleanup": "existing tasks.cancel and task_vm.destroy own their phases and budgets",
-  "f10": "pending B schedule mode; shared cleanup source dependency PR2320 3f5a37ac189e975ca90f7c48043cc4ed6a65e6ea consumed"
+  "f10": "pending B schedule mode; shared cleanup source dependency PR2320 3f5a37ac189e975ca90f7c48043cc4ed6a65e6ea consumed",
+  "stat_timeout_seconds": 15,
+  "remote_timeout_seconds": 10,
+  "cadence": "20 */5 * * * *"
 }

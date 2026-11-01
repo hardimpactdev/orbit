@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Activity;
 use App\Models\Operation;
 use App\Models\Task;
@@ -71,10 +73,19 @@ final readonly class TaskVmReaperInput
             }
         }
 
+        $ssh = null;
+        if ($vm->node !== null) {
+            try {
+                $ssh = app(SwampSshExecutionInput::class)->forNode($vm->node);
+            } catch (ResourceOperationException) {
+                // No pinned access means no native idle proof; age limits remain usable.
+            }
+        }
+
         return [
             'task_vm_id' => $vm->id, 'provider_id' => $vm->provider_id, 'name' => $vm->name,
             'node_id' => $vm->node_id, 'host_node_id' => $vm->host_node_id,
-            'group_id' => $vm->group_id, 'claimed_at' => $vm->claimed_at?->toISOString(),
+            'group_id' => $vm->group_id, 'group_title' => $group?->title, 'ssh' => $ssh, 'claimed_at' => $vm->claimed_at?->toISOString(),
             'project_id' => $group?->project_id, 'group_created_at' => $group?->created_at?->toISOString(),
             'group_live' => $group !== null && ! in_array($group->status, TaskGroupStatus::endedStatuses(), true),
             'progress_at' => $progressAt->toISOString(),

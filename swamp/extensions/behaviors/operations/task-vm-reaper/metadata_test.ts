@@ -5,6 +5,8 @@ const now = new Date("2026-11-01T12:00:00Z");
 const vm = {
     task_vm_id: 17,
     group_id: 23 as number | null,
+    group_title: "proof node.role_add app-dev@v1" as string | null,
+    ssh: null as Record<string, unknown> | null,
     provider_id: "tvm-17",
     name: "tvm-17",
     node_id: 42,
@@ -101,6 +103,108 @@ Deno.test("the proof Project has only its age rule even when ordinary progress o
             project_id: 62,
             progress_at: "2026-10-01T00:00:00Z",
             assistance_requested_at: "2026-10-01T00:00:00Z",
+        }),
+        [],
+    );
+});
+
+const ssh = {
+    control_node_id: 209,
+    identity_file: "/fixture/identity",
+    public_key: "ssh-ed25519 public",
+    target: {
+        name: "target",
+        host: "192.0.2.17",
+        user: "orbit",
+        port: 22,
+        host_keys: ["ssh-ed25519 public"],
+    },
+};
+const topology = (patch: Partial<typeof vm> = {}, step: unknown = undefined) =>
+    selectStuckVms({
+        expectations_hash: "a".repeat(64),
+        proof_project_id: 62,
+        vms: [{
+            ...vm,
+            project_id: 62,
+            group_title: "topology app-dev@v1 lane21",
+            ssh,
+            group_created_at: "2026-11-01T10:00:00Z",
+            ...patch,
+        }],
+        steps: step === undefined ? {} : { "inspect-0": step },
+    }, now).requests;
+const stat = (stdout: string, exitCode = 0, stderr = "") => ({
+    status: "succeeded",
+    outputs: { exitCode, stdout, stderr, signal: null },
+});
+const missing = stat(
+    "",
+    1,
+    "stat: cannot statx '/var/lib/orbit/swamp-proof/last-run': No such file or directory",
+);
+
+Deno.test("persistent topology missing marker uses creation and expires at exactly sixty minutes", () => {
+    assertEquals(
+        topology({ group_created_at: "2026-11-01T11:00:01Z" }, missing),
+        [],
+    );
+    assertEquals(
+        topology({ group_created_at: "2026-11-01T11:00:00Z" }, missing)[0]
+            .reason,
+        "topology_idle",
+    );
+});
+Deno.test("a fresh native run preserves an older topology until sixty minutes after that run", () => {
+    assertEquals(
+        topology({}, stat(String(Date.parse("2026-11-01T11:00:01Z") / 1000))),
+        [],
+    );
+    assertEquals(
+        topology({}, stat(String(Date.parse("2026-11-01T11:00:00Z") / 1000)))[0]
+            .reason,
+        "topology_idle",
+    );
+});
+Deno.test("failed SSH, timeout, denied stat and malformed output never prove topology idle", () => {
+    for (
+        const step of [
+            undefined,
+            { status: "failed" },
+            stat("", 255, "Permission denied (publickey)"),
+            stat("", 124),
+            stat("", 1, "Permission denied"),
+            stat("not an epoch"),
+        ]
+    ) {
+        assertEquals(topology({}, step), []);
+    }
+});
+Deno.test("eight-hour cap needs no native read and wins even after a fresh run", () => {
+    assertEquals(topology({ group_created_at: "2026-11-01T04:00:01Z" }), []);
+    assertEquals(
+        topology({ group_created_at: "2026-11-01T04:00:00Z", ssh: null })[0]
+            .reason,
+        "topology_max_age",
+    );
+    assertEquals(
+        topology(
+            { group_created_at: "2026-11-01T04:00:00Z" },
+            stat(String(now.getTime() / 1000)),
+        )[0].reason,
+        "topology_max_age",
+    );
+});
+Deno.test("topology title is special only inside the proof Project and unknown proof titles are not guessed", () => {
+    assertEquals(
+        topology({ project_id: 4, progress_at: "2026-11-01T11:00:00Z" })[0]
+            .reason,
+        "no_progress",
+    );
+    assertEquals(
+        topology({
+            group_title: "unrecognized",
+            group_created_at: "2026-10-01T00:00:00Z",
         }),
         [],
     );

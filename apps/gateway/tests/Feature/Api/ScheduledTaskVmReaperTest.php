@@ -79,6 +79,7 @@ it('publishes public expectations without admitting work and deduplicates metric
 
     expect($this->socket->sent)->toHaveCount(1)
         ->and($this->socket->sent[0]['payload']['workflowName'])->toBe('task-vm-reaper')
+        ->and($this->socket->sent[0]['payload']['schedule'])->toBe('20 */5 * * * *')
         ->and(($this->state)()['inputs']['expectations']['proof_project_id'])->toBeNull()
         ->and(Operation::query()->count())->toBe(0);
 });
@@ -233,3 +234,28 @@ it('uses the shared ended-group cleanup seam and projects only its complete nati
         ->and(Instance::query()->find($this->workspace->id))->toBeNull()
         ->and($this->vm->fresh()->state->value)->toBe('destroyed');
 })->with(['completed', 'cancelled']);
+
+it('reaps VM A when unrelated VM B progresses after the accepted publication', function (): void {
+    $group = Task::topLevel()->forceCreate(['project_id' => $this->group->project_id, 'title' => 'Other work', 'brief' => 'Other work',
+        'status' => 'running', 'orchestration' => 'external', 'created_at' => now()->subHours(3), 'started_at' => now()->subHours(2)]);
+    $other = TaskVm::query()->create(['group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-other', 'state' => 'ready',
+        'host_node_id' => $this->host->id, 'wireguard_ip' => '10.44.0.130', 'claimed_at' => now()->subHours(2)]);
+    $this->schedule->publish();
+    [$run, $result] = ($this->selection)();
+    Task::topLevel()->whereKey($group->id)->update(['started_at' => now()]);
+
+    $this->schedule->applyScheduled(ScheduledTaskVmReaper::Workflow, $run, $result);
+
+    $operation = Operation::query()->sole();
+    expect($operation->kind)->toBe('tasks.cancel')->and($operation->target_id)->toBe($this->group->id)
+        ->and($other->fresh()->state->value)->toBe('ready');
+});
+
+it('accepts native JSON object key order while keeping strict VM values', function (): void {
+    [$run, $result] = ($this->selection)();
+    $result['requests'][0] = array_reverse($result['requests'][0], true);
+
+    $this->schedule->applyScheduled(ScheduledTaskVmReaper::Workflow, $run, $result);
+
+    expect(Operation::query()->sole()->kind)->toBe('tasks.cancel');
+});
