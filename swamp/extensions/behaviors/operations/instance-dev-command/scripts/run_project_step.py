@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import re
-import selectors
 import stat
 import subprocess
 import sys
@@ -44,30 +43,48 @@ else:
             redactions.update([item, *item.splitlines()])
 redactions.discard('')
 secrets = sorted((item.encode() for item in redactions), key=len, reverse=True)
-limit = 4096 + max(map(len, secrets), default=0)
-tails = {'stdout': bytearray(), 'stderr': bytearray()}
+# Fragment checks cover secret values only, not the command text, which is redacted whole.
+secret_values = [item for item in secrets if item != command.encode()]
+# Failure output is stderr only (F1). Command stdout is never kept.
+CAPTURE_LIMIT = 1048576
+TAIL_LIMIT = 4096
+FRAGMENT = 8
+captured = bytearray()
+truncated = False
 process = subprocess.Popen(['/bin/bash', '-eu', '-c', command], env=environment,
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-with selectors.DefaultSelector() as streams:
-    streams.register(process.stdout, selectors.EVENT_READ, 'stdout')
-    streams.register(process.stderr, selectors.EVENT_READ, 'stderr')
-    while streams.get_map():
-        for key, _event in streams.select():
-            chunk = os.read(key.fd, 65536)
-            if not chunk:
-                streams.unregister(key.fileobj)
-                key.fileobj.close()
-                continue
-            tail = tails[key.data]
-            tail.extend(chunk)
-            if len(tail) > limit:
-                del tail[:-limit]
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+while chunk := os.read(process.stderr.fileno(), 65536):
+    captured.extend(chunk)
+    if len(captured) > CAPTURE_LIMIT:
+        del captured[:-CAPTURE_LIMIT]
+        truncated = True
+process.stderr.close()
 code = process.wait()
-output = {'exitCode': code}
-for name, tail in tails.items():
-    text = bytes(tail)
+
+
+def redact(text: bytes) -> bytes:
     for secret in secrets:
         text = text.replace(secret, b'[REDACTED]')
-    output[name] = text[-4096:].decode('utf-8', errors='ignore')
+    return text
+
+
+def holds_fragment(line: bytes) -> bool:
+    for secret in secret_values:
+        if len(secret) < FRAGMENT:
+            continue
+        for offset in range(len(secret) - FRAGMENT + 1):
+            if secret[offset:offset + FRAGMENT] in line:
+                return True
+    return False
+
+
+# Redact the whole capture first, then cut the tail, then redact the tail again for matches split at its start.
+whole = redact(bytes(captured))
+tail = redact(whole[-TAIL_LIMIT:])
+lines = tail.split(b'\n')
+if truncated or len(whole) > TAIL_LIMIT:
+    lines = lines[1:]  # the first line may start mid-secret
+kept = [b'[REDACTED LINE]' if holds_fragment(line) else line for line in lines]
+output = {'exitCode': code, 'stderr': b'\n'.join(kept).decode('utf-8', errors='ignore')}
 print(json.dumps(output))
 sys.exit(code)
