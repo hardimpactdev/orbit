@@ -155,6 +155,12 @@ The Grafana user is `admin`. The first convergence generates a random password. 
 
 One lock per Metrics Node covers password creation, verified reads, resets, and purge. A competing request waits within its deadline. It then reads the finished state or returns HTTP 409 `metrics.credentials_busy` with no changes. Credential responses use `Cache-Control: no-store`. No other response contains a password.
 
+### Material for native parents
+
+An admitted Node parent reads existing fleet material through `MetricsFleetRuntimeMaterial::resolveFleetMaterial(plan, ownerNodeId, candidate?)`. It validates the complete public plan digest, real Metrics assignment and owner address before reading the stored password. An explicit matching enrollment candidate permits capture before that Node becomes active. The lower creates no password, Operation, endpoint or host effect. It returns the existing `OperationSecretValue`; debug and JSON serialization redact its contents.
+
+The private value has `runtime: {operation: 'converge', assignment, configuration}` and `verify: {operation: 'verify', password}`. The configuration includes the admitted public files and the existing Grafana password file. A parent captures this value under `metrics_runtime`, beside its role-specific `runtime_material`. The protected fields are `metrics_runtime.runtime.configuration` and `metrics_runtime.verify.password`. The parent owns their binding to official SSH stdin and their redaction. This data API does not activate a native parent or grant execution authority.
+
 ## Disable and purge
 
 `orbit metrics:disable` removes the role. After it, the Metrics Node runs neither container. The Gateway removes `/etc/orbit/metrics`, both Grafana firewall rules, and every exporter drop-in and exporter rule on eligible Nodes. It removes the `metrics.orbit` site, certificate, and DNS record. It keeps these items, so a later `metrics:enable` reuses them:
