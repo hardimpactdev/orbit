@@ -35,6 +35,7 @@ final readonly class TaskVmSettings
      * @param  list<TaskVmHost>  $hosts
      * @param  list<string>  $piModels
      * @param  list<int>  $mediumProjectIds
+     * @param  list<int>  $largeProjectIds
      * @param  array<int, list<string>>  $topologyPaths  Project id => path patterns that need a declared topology
      */
     public function __construct(
@@ -49,6 +50,7 @@ final readonly class TaskVmSettings
         public int $parkAfterMinutes = 30,
         public ?TaskVmUpCloud $upcloud = null,
         public array $mediumProjectIds = [],
+        public array $largeProjectIds = [],
         public array $topologyPaths = [],
         public ?string $swampHost = null,
     ) {}
@@ -89,7 +91,6 @@ final readonly class TaskVmSettings
         $values = [
             'pi' => ['artifact_path' => $artifactPath, 'artifact_sha256' => $artifactSha256, 'models' => $pi['models'] ?? null],
             'park_after_minutes' => $config['park_after_minutes'] ?? null,
-            'medium_projects' => $config['medium_projects'] ?? null,
             'topology_paths' => $config['topology_paths'] ?? null,
         ];
         $together = 'pi.artifact_path and pi.artifact_sha256 must be set together.';
@@ -100,8 +101,6 @@ final readonly class TaskVmSettings
             'pi.models' => ['present', 'list'],
             'pi.models.*' => ['required', 'string', 'regex:/\A[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}\z/D'],
             'park_after_minutes' => ['required', 'integer', 'between:1,10080'],
-            'medium_projects' => ['present', 'list'],
-            'medium_projects.*' => ['integer:strict', 'min:1'],
             'topology_paths' => ['present', static function (string $attribute, mixed $value, Closure $fail) use ($topologyPaths): void {
                 if (! self::validTopologyPaths($value)) {
                     $fail($topologyPaths);
@@ -115,8 +114,6 @@ final readonly class TaskVmSettings
             'pi.models' => 'pi.models must be a JSON list of model names.',
             'pi.models.*' => 'pi.models must contain only model names.',
             'park_after_minutes' => 'park_after_minutes must be a whole number of minutes from 1 to 10080.',
-            'medium_projects' => 'medium_projects must be a JSON list of Project ids.',
-            'medium_projects.*' => 'medium_projects must be a JSON list of Project ids.',
             'topology_paths' => $topologyPaths,
         ]);
         $topology = [];
@@ -135,10 +132,27 @@ final readonly class TaskVmSettings
             piModels: array_values(array_unique(TaskVmConfig::strings($values['pi']['models']))),
             parkAfterMinutes: $valid->integer('park_after_minutes'),
             upcloud: TaskVmUpCloud::fromConfig(is_array($config['upcloud'] ?? null) ? $config['upcloud'] : [], $enabled),
-            mediumProjectIds: array_values(array_unique(TaskVmConfig::ints($values['medium_projects']))),
+            mediumProjectIds: self::projectIds($config, 'medium_projects'),
+            largeProjectIds: self::projectIds($config, 'large_projects'),
             topologyPaths: $topology,
             swampHost: $swampHost,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<int>
+     */
+    private static function projectIds(array $config, string $key): array
+    {
+        $value = $config[$key] ?? null;
+        $message = "{$key} must be a JSON list of Project ids.";
+        TaskVmConfig::validate([$key => $value], [
+            $key => ['present', 'list'],
+            "{$key}.*" => ['integer:strict', 'min:1'],
+        ], [$key => $message, "{$key}.*" => $message]);
+
+        return array_values(array_unique(TaskVmConfig::ints($value)));
     }
 
     /** Read the canonical Cluster setting without validating unrelated image configuration. */

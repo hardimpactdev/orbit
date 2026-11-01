@@ -10,7 +10,8 @@ use App\Models\Task;
 /**
  * The size of a task VM, decided once at the claim from the group's declared topology and its Project. A group whose
  * subtasks declare no `topology` gets a normal VM with the host's size, which takes one slot, or
- * a medium VM when its Project is listed in `task_vms.medium_projects`. A topology gets the smallest size whose
+ * a medium or large VM when its Project is listed in `task_vms.medium_projects` or `task_vms.large_projects`.
+ * Large takes precedence when the Project is in both lists. A topology gets the smallest size whose
  * `testNodes` holds its test nodes: a medium VM, which takes two slots, holds one, and a large VM, which takes three,
  * holds two. Medium and large VMs are always new, only run on an Incus host, and have free page reporting on. The size
  * never changes while the VM exists. A bigger size is one more case: {@see TaskTopology::maxNodes()} follows it.
@@ -43,17 +44,19 @@ enum TaskVmSize: string
     }
 
     /**
-     * The size of the group's VM: by the test nodes of its declared topology, else medium when the group's Project is
-     * one of `$mediumProjectIds`, else normal.
+     * The size of the group's VM: by the test nodes of its declared topology, else large when the group's Project is
+     * one of `$largeProjectIds`, else medium for `$mediumProjectIds`, else normal.
      *
      * @param  list<int>  $mediumProjectIds
+     * @param  list<int>  $largeProjectIds
      */
-    public static function forGroup(Task $group, array $mediumProjectIds = []): self
+    public static function forGroup(Task $group, array $mediumProjectIds = [], array $largeProjectIds = []): self
     {
         $topology = TaskTopology::forGroup($group);
 
         return match (true) {
             ! $topology->isEmpty() => self::forTopology($topology),
+            in_array((int) $group->project_id, $largeProjectIds, true) => self::Large,
             in_array((int) $group->project_id, $mediumProjectIds, true) => self::Medium,
             default => self::Normal,
         };
