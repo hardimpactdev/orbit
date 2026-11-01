@@ -32,7 +32,7 @@ Deno.test("DNS grace resolves its shipped asset before the placed wait", async (
     // The general shape rule also allows shorter sleeps, so it cannot own this assertion.
     assertMatch(
         Deno.readTextFileSync(new URL(asset, directory)),
-        /^exec timeout(?: --verbose)? 35 \/usr\/bin\/sleep 31$/m,
+        /^timeout 35 \/usr\/bin\/sleep 31$/m,
     );
     assertEquals(output, {
         grace_script: "/worker/cache/scripts/route_dns_grace.sh",
@@ -69,4 +69,34 @@ Deno.test("DNS grace resolves its shipped asset before the placed wait", async (
         step: "assets",
         condition: { type: "succeeded" },
     }]);
+});
+
+Deno.test("DNS grace reports its phase and budget only on timeout, preserving exit status", async () => {
+    const directory = Deno.makeTempDirSync();
+    const script = new URL("scripts/route_dns_grace.sh", import.meta.url).pathname;
+    try {
+        Deno.writeTextFileSync(`${directory}/timeout`, `#!/bin/bash
+if [ "$1" = --verbose ]; then shift; fi
+[ "$*" = "35 /usr/bin/sleep 31" ] || exit 97
+exit "$ORBIT_TEST_TIMEOUT_STATUS"
+`, { mode: 0o700 });
+        for (const status of [0, 1, 124]) {
+            const result = await new Deno.Command("bash", {
+                args: [script],
+                env: {
+                    PATH: `${directory}:${Deno.env.get("PATH")}`,
+                    ORBIT_TEST_TIMEOUT_STATUS: String(status),
+                },
+                stdout: "piped",
+                stderr: "piped",
+            }).output();
+            assertEquals(result.code, status);
+            assertEquals(new TextDecoder().decode(result.stdout), "");
+            assertEquals(new TextDecoder().decode(result.stderr), status === 124
+                ? "route-dns-grace timed out after 35 seconds\n"
+                : "");
+        }
+    } finally {
+        Deno.removeSync(directory, { recursive: true });
+    }
 });
