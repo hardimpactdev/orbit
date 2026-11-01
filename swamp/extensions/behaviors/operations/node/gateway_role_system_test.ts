@@ -1,10 +1,12 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   gatewayCaddyOrdering,
-  GatewayCaddyOrderingProgram,
   GatewayRoleProgram,
   gatewayRoleSystem,
 } from "./gateway_role_system.ts";
+const GatewayCaddyOrderingProgram = await Deno.readTextFile(
+  new URL("../fleet-recipe/scripts/caddy_ordering.py", import.meta.url),
+);
 import type { SystemTransport } from "./system_command.ts";
 
 const input = {
@@ -364,7 +366,9 @@ assert not directory.exists()
   } as const;
   assertEquals(
     await gatewayCaddyOrdering(() =>
-      Promise.resolve({ success: true, stdout: JSON.stringify(refusal) })
+      Promise.resolve({ success: true, stdout: JSON.stringify(refusal) }),
+      undefined,
+      GatewayCaddyOrderingProgram,
     ),
     refusal,
   );
@@ -376,7 +380,7 @@ assert not directory.exists()
       () => Promise.resolve({ success: true, stdout: '{"completed":true}' }),
     ]
   ) {
-    const error = await assertRejects(() => gatewayCaddyOrdering(invoke));
+    const error = await assertRejects(() => gatewayCaddyOrdering(invoke, undefined, GatewayCaddyOrderingProgram));
     assertEquals(String(error).includes("private sentinel"), false);
   }
   await assertRejects(() =>

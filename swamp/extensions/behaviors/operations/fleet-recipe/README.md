@@ -19,3 +19,7 @@ Both retained Node provisioning and native role contributions receive these
 bytes through the Fleet manifest context. The optional `install_packages=false`
 mode requires parent-verified package coverage and still checks the managed
 account and Composer scope before creating directories. It does not run APT.
+
+The shared Caddy VPN ordering action is shipped as `caddy_ordering.py`.
+Retained Gateway roles and native application roles consume the same filesystem
+checks, systemd drop-in and recovery policy.
