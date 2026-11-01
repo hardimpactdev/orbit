@@ -1,0 +1,166 @@
+id: 5c48c4ee-452a-4dd5-8f14-5d3e1b681445
+name: operation-tool-remove-209
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [tool.remove]}
+    intent: {type: object}
+    ssh: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, ssh]
+  additionalProperties: false
+jobs:
+- name: tools
+  target: orbit-node-209
+  steps:
+  - name: before_assets
+    target: orbit-node-209
+    allowFailure: true
+    forEach: &active
+      item: package
+      in: '${{ inputs.intent.intent_only ? [] : [inputs.intent] }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-remove-command'
+      behaviorName: '${{ "tool-remove-before_assets-" + run.id + "-" + string(self._index) }}'
+      methodName: assets
+      inputs: {action: query, input: '${{ self.package }}'}
+  - name: before_query
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    dependsOn: [{step: before_assets, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+      methodName: script
+      globalArgs: &ssh
+        name: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.ssh.target.user }}'
+          port: '${{ inputs.ssh.target.port }}'
+          hostKeys: '${{ inputs.ssh.target.host_keys }}'
+          identityFile: '${{ inputs.ssh.identity_file }}'
+          identitiesOnly: true
+        hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: false
+        script: '${{ steps["before_assets-0"].outputs.script_body }}'
+  - name: before
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    dependsOn: [{step: before_query, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-remove-command'
+      behaviorName: '${{ "tool-remove-before-" + run.id + "-" + string(self._index) }}'
+      methodName: observe
+      inputs: {input: '${{ self.package }}', observation: '${{ steps["before_query-0"].outputs }}'}
+  - name: plan_assets
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    guard: '${{ inputs.intent.manager != "apt" || !steps["before-0"].outputs.ready || !steps["before-0"].outputs.present }}'
+    dependsOn: [{step: before, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-remove-command'
+      behaviorName: '${{ "tool-remove-plan_assets-" + run.id + "-" + string(self._index) }}'
+      methodName: assets
+      inputs: {action: plan, input: '${{ self.package }}'}
+  - name: plan_query
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    dependsOn: [{step: plan_assets, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+      methodName: script
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', sudo: false, interpreter: python3, script: '${{ steps["plan_assets-0"].outputs.script_body }}'}
+  - name: plan
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    dependsOn: [{step: plan_query, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-remove-command'
+      behaviorName: '${{ "tool-remove-plan-" + run.id + "-" + string(self._index) }}'
+      methodName: plan
+      inputs: {package: '${{ self.package.package }}', observation: '${{ steps["plan_query-0"].outputs }}'}
+  - name: remove_assets
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    guard: '${{ !steps["before-0"].outputs.ready || !steps["before-0"].outputs.present || (inputs.intent.manager == "apt" && (steps["plan-0"].status != "succeeded" || !steps["plan-0"].outputs.ready)) }}'
+    dependsOn: [{step: before, condition: {type: succeeded}}, {step: plan, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-remove-command'
+      behaviorName: '${{ "tool-remove-remove_assets-" + run.id + "-" + string(self._index) }}'
+      methodName: assets
+      inputs: {action: remove, input: '${{ self.package }}', before: '${{ steps["before-0"].outputs }}'}
+  - name: remove
+    target: orbit-node-209
+    writes: true
+    allowFailure: true
+    forEach: *active
+    dependsOn: [{step: remove_assets, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+      methodName: script
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', sudo: '${{ self.package.manager == "apt" }}', interpreter: python3, script: '${{ steps["remove_assets-0"].outputs.script_body }}'}
+  - name: after_query
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    dependsOn: [{step: remove, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+      methodName: script
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', sudo: false, interpreter: python3, script: '${{ steps["before_assets-0"].outputs.script_body }}'}
+  - name: after
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    dependsOn: [{step: after_query, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-remove-command'
+      behaviorName: '${{ "tool-remove-after-" + run.id + "-" + string(self._index) }}'
+      methodName: observe
+      inputs: {input: '${{ self.package }}', observation: '${{ steps["after_query-0"].outputs }}'}
+  - name: result
+    target: orbit-node-209
+    dependsOn: [{step: after, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-remove-command'
+      behaviorName: '${{ "tool-remove-result-" + run.id }}'
+      methodName: result
+      inputs: {input: '${{ inputs.intent }}', steps: '${{ steps }}'}
+  - name: assert
+    target: orbit-node-209
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task:
+      type: assert
+      expr: 'steps.result.outputs.ok'
+      severity: high
+      message: Tool removal requires proven absence or admitted intent retirement

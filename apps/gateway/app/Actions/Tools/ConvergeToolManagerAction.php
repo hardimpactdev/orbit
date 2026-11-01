@@ -27,6 +27,6 @@ final readonly class ConvergeToolManagerAction
             'node_id' => $node->id, 'user' => $node->user, 'manager' => $manager->value, 'platform' => $node->platform,
             'architecture' => $node->architecture,
             ...$this->intent->input($node, $manager, $imageProvidesManager),
-        ], 'system', null);
+        ], 'system', null, lockKey: $manager->operationLockKey($node->id));
     }
 }

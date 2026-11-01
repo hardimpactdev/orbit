@@ -19,13 +19,13 @@ final readonly class StartOperationAction
     /** @param array<string,mixed> $input
      * @param  list<string>  $supersedes
      */
-    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = [], ?string $expectedWriter = null): Operation
+    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = [], ?string $expectedWriter = null, ?string $lockKey = null): Operation
     {
         app(DirectOperation::class)->writer($kind);
         if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
         }
-        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId);
+        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey);
         if ($operation->wasRecentlyCreated) {
             DB::afterCommit(static fn () => app(StartSwampRun::class)->start($operation));
         }

@@ -2890,13 +2890,13 @@
     {
       "file": "extensions/behaviors/operations/tools/homebrew_program.ts",
       "rule": "inline-script",
-      "count": 173,
+      "count": 161,
       "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/tools/local.ts",
       "rule": "inline-script",
-      "count": 43,
+      "count": 42,
       "evidence": []
     },
     {
@@ -2925,7 +2925,7 @@
     {
       "file": "extensions/behaviors/operations/tools/system_program.ts",
       "rule": "inline-script",
-      "count": 224,
+      "count": 212,
       "evidence": []
     },
     {

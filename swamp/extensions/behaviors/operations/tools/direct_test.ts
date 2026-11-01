@@ -99,7 +99,6 @@ Deno.test("direct policy preserves retained kinds across the closed manager regi
       const kind of [
         "tool.install",
         "tool.update",
-        "tool.remove",
         "tool.manager_converge",
       ]
     ) {
@@ -137,8 +136,8 @@ Deno.test("silent adoption remains refused while native resume reconciles an unc
   assertEquals(interrupted.resources.size, 2);
 });
 
-Deno.test("native resume reconciles completed update and removal without repeating effects", async () => {
-  for (const kind of ["tool.update", "tool.remove"]) {
+Deno.test("native resume reconciles completed update without repeating effects", async () => {
+  for (const kind of ["tool.update"]) {
     const f = new Fixture(kind);
     f.lost = true;
     await assertRejects(() => f.execute());
@@ -147,7 +146,7 @@ Deno.test("native resume reconciles completed update and removal without repeati
   }
 });
 
-Deno.test("candidate constraints and exact removal plans remain policy gates", async () => {
+Deno.test("candidate constraints remain policy gates", async () => {
   const f = new Fixture();
   f.value.input.version_constraint = "^1.0";
   assertEquals(
@@ -155,15 +154,6 @@ Deno.test("candidate constraints and exact removal plans remain policy gates", a
     "tool.version_constraint_blocked",
   );
   assertEquals(f.mutations().length, 0);
-  const remove = new Fixture("tool.remove");
-  const invoke = remove.invoke;
-  const result = await toolNode((name, input) =>
-    name.endsWith("-removal-plan")
-      ? Promise.resolve({ packages: ["jq", "curl"] })
-      : invoke(name, input)
-  ).methods.apply.execute({ intent: remove.value }, remove.ctx);
-  assertEquals(result.outcome.error_code, "tool.removal_plan_unsafe");
-  assertEquals(remove.mutations().length, 0);
 });
 
 Deno.test("malformed constraints refuse before manager materialization or package commands", async () => {
@@ -179,7 +169,7 @@ Deno.test("malformed constraints refuse before manager materialization or packag
 
 Deno.test("ambiguous unreadable and incomplete inventories cannot prove package state", () => {
   const input = ToolIntentInput.parse(
-    new Fixture("tool.remove", "vp").value.input,
+    new Fixture("tool.update", "vp").value.input,
   );
   for (
     const raw of [{ packages: [], scan_complete: false }, {

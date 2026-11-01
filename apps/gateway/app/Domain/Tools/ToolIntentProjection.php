@@ -23,14 +23,15 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
 
     public function native(Operation $operation): bool
     {
-        return $operation->kind === 'tool.adopt';
+        return in_array($operation->kind, ['tool.adopt', 'tool.remove'], true);
     }
 
     public function input(Operation $operation): array
     {
-        if ($operation->kind === 'tool.adopt') {
+        if (in_array($operation->kind, ['tool.adopt', 'tool.remove'], true)) {
             return ['intent' => array_intersect_key($operation->input, array_flip([
                 'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version',
+                ...($operation->kind === 'tool.remove' ? ['intent_only'] : []),
             ])), 'ssh' => $operation->input['ssh']];
         }
 
@@ -100,10 +101,10 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $toolId = $input['tool_id'] ?? null;
         $tool = is_int($toolId) ? Tool::query()->find($toolId) : null;
         if ($status !== OperationStatus::Succeeded) {
-            if (! is_string($version) || ($tool === null && $operation->error_code === 'tool.package_already_installed')) {
+            if (($verb !== 'remove' && ! is_string($version)) || ($tool === null && $operation->error_code === 'tool.package_already_installed')) {
                 return;
             }
-            if ($tool === null && $verb === 'install') {
+            if ($tool === null && $verb === 'install' && $record !== null) {
                 $tool = $this->createTool($operation, $record);
             }
             $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $result['installed_version'] ?? $tool->installed_version,
