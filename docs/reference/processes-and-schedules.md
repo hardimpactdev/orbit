@@ -364,18 +364,20 @@ Leaf Process kinds use the direct native workflow only. Their completion project
 
 1. Start and restart of a production Process check the admitted release directory.
 2. A Vite Process runs the shared `operation-process-vite` child, which create also uses: it suspends traffic, writes the Vite environment file and publishes Caddy.
-3. Boot policy: stop disables the systemd unit; start and restart enable it unless it starts on demand. Docker skips this step.
+3. Boot policy. Stop disables the systemd unit. Start and restart enable it, except for an on-demand Process. Docker skips this step.
 4. One start, stop or restart of the exact unit or container.
 5. Verification of the running or stopped state. Its output is the projected result.
-6. For Vite, one listener ownership check; an explicit start then sets the awake marker.
+6. For Vite, one listener ownership check. An explicit start then sets the awake marker.
 
-The approved existing 209 identity and captured host-key pins select the connection. A successful run removes its run directory; a failed run keeps it, so a resumed run finds the scripts; Python runs with `-B` so it creates no root-owned bytecode files. The kinds install no target worker or Swamp binary and mint no worker token. They need no private material, Gateway callback or agent digest. Admission takes no Gateway runtime lease or target hold. Hibernation keeps its separate stop-only behavior because it preserves boot policy and desired-running state.
+The approved existing 209 identity and captured host-key pins select the connection. A successful run removes its run directory. A failed run keeps it, so a resumed run finds the scripts. Python runs with `-B`, so it creates no root-owned bytecode files. The kinds install no target worker or Swamp binary and mint no worker token. They need no private material, Gateway callback or agent digest. Admission takes no Gateway runtime lease or target hold. Hibernation keeps its separate stop-only behavior because it preserves boot policy and desired-running state.
 
-Three Vite steps differ from legacy:
+Three Vite steps differ from legacy.
 
-- A Vite restart writes the environment and publishes Caddy, then restarts the unit once. Legacy stopped the unit before it wrote the environment and started it afterwards; the unit reads its environment file on restart, so the result is the same.
-- The listener check runs once, right after the start. Legacy polled the listener for up to 15 seconds. The Swamp shape allows a bounded poll only for external HTTPS state, so a Vite start can fail with `vite.listener_unavailable` before Vite binds its port.
-- When the listener check fails, the Process keeps running with its traffic suspended. Legacy stopped it and refused with `vite.not_ready`. Run `process:stop`, or start it again once Vite is ready.
+A Vite restart writes the environment and publishes Caddy, then restarts the unit once. Legacy stopped the unit first and started it after the environment write. The unit reads its environment file on restart, so the result is the same.
+
+The listener check runs once, right after the start. Legacy polled the listener for up to 15 seconds. The Swamp shape allows a bounded poll only for external HTTPS state. A Vite start can therefore fail with `vite.listener_unavailable` before Vite binds its port.
+
+A failed listener check leaves the Process running with its traffic suspended. Legacy stopped it and refused with `vite.not_ready`. Run `process:stop`, or start the Process again once Vite is ready.
 
 Schedule enable, manual run and destroy use their [direct Schedule workflow](/reference/schedules#direct-swamp-control). The landed direct kinds have no polled discovery or executor registration.
 
