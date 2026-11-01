@@ -142,6 +142,19 @@ export function createCompletionSteps(input = "inputs"): Fields[] {
         direction: "to",
         recursive: true,
     });
+    end.metadata(
+        "environment-library",
+        "environment_script",
+        {},
+        "@nckrtl/task-repository-assets",
+    );
+    end.sshAction("environment-library-copy", "copy", {
+        src: e(end.output("environment-library") + ".script_file"),
+        dst: e(
+            '"/tmp/orbit-create-phase-" + run.id + "/scripts/project_environment.py"',
+        ),
+        direction: "to",
+    });
     end.sshAction("setup", "exec", {
         argv: [
             "/usr/bin/python3",

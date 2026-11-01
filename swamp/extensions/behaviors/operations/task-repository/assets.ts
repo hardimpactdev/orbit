@@ -21,11 +21,41 @@ const Assets = z.object({
 /** Public schemas and native additionalFiles metadata; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-repository-assets",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
+        environment_script: {
+            schema: z.object({ script_file: z.string() }),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
     },
     methods: {
+        environment_script: {
+            description:
+                "Resolve the canonical owned-checkout environment parser for native setup",
+            arguments: z.object({}).strict(),
+            execute: async (_args: Record<string, never>, ctx: {
+                extensionFile(name: string): string;
+                writeResource(
+                    spec: string,
+                    name: string,
+                    value: unknown,
+                ): Promise<unknown>;
+            }) => {
+                const value = {
+                    script_file: ctx.extensionFile(
+                        "scripts/project_environment.py",
+                    ),
+                };
+                await ctx.writeResource(
+                    "environment_script",
+                    "environment",
+                    value,
+                );
+                return value;
+            },
+        },
         read: {
             description:
                 "Resolve repository actions and serialize the admitted public intent",

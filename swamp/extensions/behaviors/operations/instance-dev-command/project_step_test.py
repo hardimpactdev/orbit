@@ -1,5 +1,6 @@
 """Project command shell, cwd and immutable seed contract."""
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -7,8 +8,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).parent / 'scripts/run_project_step.py'
+LIBRARY = Path(__file__).parent.parent / 'task-repository/scripts'
 
 
 class ProjectStep(unittest.TestCase):
@@ -17,7 +21,8 @@ class ProjectStep(unittest.TestCase):
             'command':command,'sha256':hashlib.sha256(command.encode()).hexdigest(),
             'directory':str(directory),'instance_id':17,'instance_name':'proof',
             'seed_path':'/captured/default','seed_commit':'a'*40,
-        }), text=True, capture_output=True, check=False)
+        }), text=True, capture_output=True, check=False,
+            env=dict(os.environ, PYTHONPATH=str(LIBRARY)))
 
     def test_bash_features_and_captured_seed_at_checkout_root(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
@@ -59,6 +64,31 @@ class ProjectStep(unittest.TestCase):
             self.assertLessEqual(len(output['stdout'].encode()), 4096)
             result = self.run_step(path, 'printf \'private-quote-sentinel"\'')
             self.assertEqual(json.loads(result.stdout)['stdout'], '[REDACTED]')
+
+    def test_owned_dotenv_and_managed_vp_are_the_command_environment(self):
+        sys.path.insert(0, str(LIBRARY))
+        spec = importlib.util.spec_from_file_location('project_step', SCRIPT)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            home = root / 'account'
+            binary = home / '.vite-plus/bin/vp'
+            binary.parent.mkdir(parents=True)
+            binary.write_text('#!/bin/sh\nprintf runtime-ok')
+            binary.chmod(0o755)
+            (root / '.env').write_text('APP_KEY="private-runtime-sentinel"\n')
+            account = SimpleNamespace(pw_dir=str(home), pw_name='fixture', pw_uid=os.geteuid(), pw_gid=os.getegid())
+            command = 'test "$APP_KEY" = private-runtime-sentinel; test -n "$VP_HOME"; vp; printf "$APP_KEY"'
+            value = {'command': command, 'sha256': hashlib.sha256(command.encode()).hexdigest(),
+                     'directory': str(root), 'instance_id': 17, 'instance_name': 'proof', 'seed_path': '', 'seed_commit': ''}
+            exists = Path.exists
+            with patch.object(runner.pwd, 'getpwuid', return_value=account), patch.object(
+                    Path, 'exists', lambda p: False if str(p) == '/opt/orbit/vite-plus/bin/vp' else exists(p)):
+                result = runner.execute_command(value)
+            self.assertEqual(result['exitCode'], 0)
+            self.assertEqual(result['stdout'], 'runtime-ok[REDACTED]')
+            self.assertNotIn('private-runtime-sentinel', json.dumps(result))
 
 
 if __name__ == '__main__':

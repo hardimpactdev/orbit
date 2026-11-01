@@ -1,11 +1,10 @@
 """Run the legacy ordered setup list in one phase, using canonical command policy."""
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from run_project_step import command_input
+from run_project_step import command_input, execute_command
 
 
 def setup(value):
@@ -17,17 +16,19 @@ def setup(value):
         seconds = step['timeout_seconds']
         if type(seconds) is not int or not 1 <= seconds <= 540:
             raise ValueError('instance.setup_identity_changed')
-        programs.append((*command_input(step), seconds, step['name']))
+        command_input(step)
+        programs.append(step)
     completed = []
-    for command, directory, environment, seconds, name in programs:
-        result = subprocess.run(['/usr/bin/timeout', '--kill-after=1s', str(seconds) + 's',
-                                 '/bin/bash', '-eu', '-c', command], cwd=directory, env=environment, check=False,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if result.returncode:
-            return {'ready': False, 'completed': completed, 'failed_command': name,
-                    'error_code': 'operation.timed_out' if result.returncode in (124, 137) else 'instance.setup_step_failed'}
-        completed.append(name)
-    return {'ready': True, 'completed': completed}
+    tails = {'stdout': '', 'stderr': ''}
+    for step in programs:
+        result = execute_command(step, step['timeout_seconds'])
+        for stream in tails:
+            tails[stream] = (tails[stream] + result[stream]).encode()[-4096:].decode('utf-8', errors='ignore')
+        if result['exitCode']:
+            return {'ready': False, 'completed': completed, 'failed_command': step['name'], **result, **tails,
+                    'error_code': 'operation.timed_out' if result['exitCode'] in (124, 137) else 'instance.setup_step_failed'}
+        completed.append(step['name'])
+    return {'ready': True, 'completed': completed, 'exitCode': 0, **tails}
 
 
 if __name__ == '__main__':
