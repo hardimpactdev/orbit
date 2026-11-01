@@ -1,0 +1,97 @@
+{
+  "kind": "node.role_add",
+  "workflow": "operation-node-role-add-direct",
+  "topology": [
+    "spare"
+  ],
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [],
+  "request": {
+    "argv": [
+      "orbit",
+      "node:role:add",
+      "${topology.spare.node_id}",
+      "app-prod",
+      "--idempotency-key=proof-add-app-prod-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "node_id": "${topology.spare.node_id}",
+    "intent": {
+      "target": {
+        "node_id": "${topology.spare.node_id}",
+        "assignment_id": "${match.positive_int}",
+        "role": "app-prod",
+        "created": true,
+        "ssh": {
+          "target": {
+            "host": "${topology.spare.wireguard_ip}"
+          }
+        }
+      }
+    },
+    "execution_secrets": {
+      "observer": {
+        "vault": "orbit-control-inputs",
+        "key": "${match.nonempty_string}"
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "ready": true,
+        "target_completed": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "account",
+      "job": "target",
+      "step": "account",
+      "budget_seconds": 30
+    },
+    {
+      "name": "observer-install",
+      "job": "target",
+      "step": "observer_install",
+      "budget_seconds": 90
+    },
+    {
+      "name": "legacy-prerequisites",
+      "job": "target",
+      "step": "packages",
+      "budget_seconds": 600
+    },
+    {
+      "name": "target-contribution",
+      "job": "target",
+      "step": "role_result",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/node-role-parent-parity.py",
+      "node.role_add",
+      "app-prod",
+      "spare"
+    ],
+    "cases": [
+      "same-admitted-assignment",
+      "target-role-active",
+      "observer-unit-active",
+      "role-service-and-files",
+      "legacy-failure-parity-tests"
+    ]
+  }
+}

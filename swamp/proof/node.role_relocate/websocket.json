@@ -1,0 +1,150 @@
+{
+  "kind": "node.role_relocate",
+  "workflow": "operation-node-role-relocate-direct",
+  "topology": [
+    "app-prod",
+    "app-prod-2"
+  ],
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "node:role:add",
+        "${topology.app-prod.node_id}",
+        "websocket",
+        "--idempotency-key=proof-source-websocket-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "assignment_id": "$.input.intent.target.assignment_id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "node:role:relocate",
+      "${topology.app-prod-2.node_id}",
+      "websocket",
+      "--force",
+      "--from=${topology.app-prod.node_id}",
+      "--idempotency-key=proof-relocate-websocket-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "node_id": "${topology.app-prod-2.node_id}",
+    "intent": {
+      "target": {
+        "node_id": "${topology.app-prod-2.node_id}",
+        "assignment_id": "${capture.assignment_id}",
+        "role": "websocket",
+        "created": false,
+        "ssh": {
+          "target": {
+            "host": "${topology.app-prod-2.wireguard_ip}"
+          }
+        }
+      },
+      "source": {
+        "node_id": "${topology.app-prod.node_id}",
+        "assignment_id": "${capture.assignment_id}",
+        "role": "websocket",
+        "ssh": {
+          "target": {
+            "host": "${topology.app-prod.wireguard_ip}"
+          }
+        }
+      },
+      "withdrawal_grace_seconds": 31
+    },
+    "execution_secrets": {
+      "observer": {
+        "vault": "orbit-control-inputs",
+        "key": "${match.nonempty_string}"
+      },
+      "runtime_material": {
+        "vault": "orbit-control-inputs",
+        "key": "${match.nonempty_string}"
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "ready": true,
+        "target_completed": true,
+        "source_completed": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "account",
+      "job": "target",
+      "step": "account",
+      "budget_seconds": 30
+    },
+    {
+      "name": "observer-install",
+      "job": "target",
+      "step": "observer_install",
+      "budget_seconds": 90
+    },
+    {
+      "name": "legacy-prerequisites",
+      "job": "target",
+      "step": "packages",
+      "budget_seconds": 600
+    },
+    {
+      "name": "target-contribution",
+      "job": "target",
+      "step": "role_result",
+      "budget_seconds": 10
+    },
+    {
+      "name": "dns-withdrawal-grace",
+      "job": "source",
+      "step": "source_grace",
+      "budget_seconds": 35
+    },
+    {
+      "name": "source-publication",
+      "job": "source",
+      "step": "source_publication",
+      "budget_seconds": 30
+    },
+    {
+      "name": "source-runtime-cleanup",
+      "job": "source",
+      "step": "source_cleanup",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/node-role-parent-parity.py",
+      "node.role_relocate",
+      "websocket",
+      "app-prod-2",
+      "app-prod"
+    ],
+    "cases": [
+      "same-admitted-assignment",
+      "target-role-active",
+      "target-listener-ready",
+      "source-unit-removed",
+      "source-role-absent",
+      "legacy-failure-parity-tests"
+    ]
+  }
+}

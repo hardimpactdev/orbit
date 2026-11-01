@@ -1,0 +1,118 @@
+{
+  "kind": "node.role_add",
+  "workflow": "operation-node-role-add-direct",
+  "topology": [
+    "app-prod"
+  ],
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "cluster:create",
+        "proof-ingress-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "cluster_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "cluster:node:add",
+        "${capture.cluster_id}",
+        "${topology.app-prod.node_id}",
+        "--json"
+      ]
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "node:role:add",
+      "${topology.app-prod.node_id}",
+      "ingress",
+      "--idempotency-key=proof-add-ingress-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "node_id": "${topology.app-prod.node_id}",
+    "intent": {
+      "target": {
+        "node_id": "${topology.app-prod.node_id}",
+        "assignment_id": "${match.positive_int}",
+        "role": "ingress",
+        "created": true,
+        "ssh": {
+          "target": {
+            "host": "${topology.app-prod.wireguard_ip}"
+          }
+        }
+      }
+    },
+    "execution_secrets": {
+      "observer": {
+        "vault": "orbit-control-inputs",
+        "key": "${match.nonempty_string}"
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "ready": true,
+        "target_completed": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "account",
+      "job": "target",
+      "step": "account",
+      "budget_seconds": 30
+    },
+    {
+      "name": "observer-install",
+      "job": "target",
+      "step": "observer_install",
+      "budget_seconds": 90
+    },
+    {
+      "name": "legacy-prerequisites",
+      "job": "target",
+      "step": "packages",
+      "budget_seconds": 600
+    },
+    {
+      "name": "target-contribution",
+      "job": "target",
+      "step": "role_result",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/node-role-parent-parity.py",
+      "node.role_add",
+      "ingress",
+      "app-prod"
+    ],
+    "cases": [
+      "same-admitted-assignment",
+      "target-role-active",
+      "observer-unit-active",
+      "role-service-and-files",
+      "legacy-failure-parity-tests"
+    ]
+  }
+}

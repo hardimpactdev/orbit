@@ -24,7 +24,7 @@ class RoleParentNative(database.DatabaseRoleNative):
         policy = self.repo/'extensions/behaviors/operations/routes/publication-command'
         policy.mkdir()
         shutil.copy(ROOT/'extensions/behaviors/operations/routes/publication-command/sections.ts', policy)
-        for name in ['node-role-converge-retained', 'operation-route-caddy-delta', 'operation-route-php-delta', 'route-dns-publish']:
+        for name in ['operation-route-caddy-delta', 'operation-route-php-delta', 'route-dns-publish']:
             flow = yaml.safe_load((ROOT/('workflows/workflow-'+name+'.yaml')).read_text())
             flow.pop('target', None)
             flow['jobs'] = [{'name': 'boundary', 'steps': [{'name': 'result', 'task': {'type': 'assert', 'expr': 'true', 'message': 'Unselected or separately tested shared child'}}]}]
@@ -40,6 +40,7 @@ class RoleParentNative(database.DatabaseRoleNative):
                     task = step['task']
                     if task.get('behaviorType') == '@swamp/ssh':
                         task['globalArgs']['sshBinary'] = str(self.repo/'fixture-ssh')
+                        task['globalArgs']['scpBinary'] = str(self.repo/'fixture-scp')
             (self.repo/('workflows/workflow-'+name+'.yaml')).write_text(yaml.safe_dump(flow, sort_keys=False))
         self.input['kind'] = 'node.role_add'
         self.input['intent'] = {'target': self.input['intent']}

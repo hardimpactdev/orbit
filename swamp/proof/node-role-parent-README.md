@@ -1,16 +1,22 @@
 # Role parent proof inputs
 
-These v0 fixtures come from the real `AdmitNodeRoleOperationAction` admission tests in `NodeRoleParentNativeTest.php`. Set `SWAMP_PROOF_CAPTURE_DIR` to regenerate the public envelopes. Only disposable environment fields are replaced by the binding names in B’s `swamp-proof-fixture-v0.md`. The source fixtures contain no fleet credentials.
+Each JSON variant drives the real operator CLI through the F13 runner. The topology Gateway records the assignment, captures the public intent, supplies private execution copies and signs through its own CA. The fixtures contain partial input expectations and typed matchers for generated identities. They contain no synthetic artifact pins, private material, signer address or fleet target.
 
-They are draft inputs, not successful F10 receipts. Do not run them as proof until the following inputs are finalized with B:
+| Kind / variant | Topology | Request |
+| --- | --- | --- |
+| role_add / database | app-dev | Add Database to app-dev |
+| role_add / ingress | app-prod | Create a Cluster, attach app-prod, then add Ingress |
+| role_add / websocket | app-prod | Add WebSocket to app-prod |
+| role_add / app-prod | spare | Add AppProd to roleless spare |
+| role_relocate / websocket | app-prod, app-prod-2 | Prepare WebSocket on app-prod, then transfer the same assignment to app-prod-2 |
 
-- The capture test’s placeholder observer download and CLI checksum must be replaced by actual published artifacts. The agent CA must be a disposable proof CA. The observer points only at a closed loopback endpoint here.
-- WebSocket relocation requires distinct source and target Nodes plus an isolated certificate signer and complete publication participants. V0 supplies only one target host binding. The current target binding in the source fields is an explicit placeholder, and cannot prove a cross-Node move. No fleet host is a substitute.
-- B must provide disposable source/signer bindings or the supported setup contract. The runtime-material file is a throwaway test value, never a fleet credential.
+Lane 11 owns the `spare` catalog entry. A missing entry blocks that variant; the fixture does not remove an existing role or edit the Gateway database to manufacture a target. Signing uses the topology Gateway's normal CA. The relocation fixture captures the source assignment from the completed prepare Operation and requires the request to retain that identity.
 
-The parity commands inspect the public native terminal receipt. The source parity tests also cover admission identity and secrets (`NodeRoleParentNativeTest.php` and `NodeRoleRelocationOperationTest.php`), created-only WebSocket cleanup (`node_role_parent_native_test.py`), and source withdrawal ordering. F10 must additionally check the real target service/files through the runner’s supplied SSH prefix before merge.
+Parity runs on the proof VM host. It reads the terminal Operation and role assignments through the operator CLI, then checks the target service and files through `PROOF_EXEC`. WebSocket relocation also proves that the source unit is absent and its role assignment is gone. Each fixture lists the legacy failure cases covered by the focused admission, parent, runtime and residue tests. Those tests remain required alongside the successful topology run.
 
-`node-role-parent-timings.json` records local native measurements and limits. They exclude real download/package/network time, so these budgets remain provisional until F10. Queue timeout is 30 seconds for both roots. Runtime prerequisites, forward role/runtime/certificates/publication, DNS withdrawal grace and source cleanup retain the legacy order. The existing native WebSocket lower owns activation restoration and release cleanup; the add parent removes only a newly-created runtime after later publication failure. Terminal source cleanup alone retires source credentials.
+These files are proof requests, not proof receipts. `bin/swamp-proof` is not installed in this checkout yet. Native fixture measurements in `node-role-parent-timings.json` use executable seams and exclude real downloads, packages and network time. Their p95 values and the 120/180-second draft budgets remain provisional; the topology measurement must set the final F8 budgets before merge. The shared prerequisites phase currently permits 600 seconds, which must also be reconciled with the parent budget. Queue timeout is 30 seconds.
+
+The source draft is not ready: parent aggregation, unported-role routing and the last native certificate-residue conversion remain open. The old retained-converge workflow is removed; the shared converge dispatcher retains its canonical add-root fallback. No source update authorizes a production load or Node effect.
 
 ## Remaining legacy phases
 
@@ -18,9 +24,9 @@ The parity commands inspect the public native terminal receipt. The source parit
 | --- | --- | --- |
 | Gateway | prerequisites; private DNS; Caddy VPN ordering; runtime/observer; certificates/publication; firewall; CLI | target forward proof; existing publication withdrawal; native DNS grace where applicable; source runtime and credential cleanup |
 | AppDev | storage and hibernation paths; role prerequisites; PHP; Composer/JavaScript managers; runtime/publication; footprint; CLI | not relocatable |
-| AppProd | canonical PHP/JavaScript/Composer prerequisites; Caddy VPN ordering; publication/firewall; runtime footprint; CLI (Nodes owner’s increment pending) | not relocatable |
+| AppProd | canonical PHP/JavaScript/Composer prerequisites; Caddy VPN ordering; publication/firewall; runtime footprint; CLI (shared factory checkpoint included) | not relocatable |
 | Metrics | Metrics runtime and credentials; exporter fleet contribution; publication/firewall; footprint; CLI | target contribution, then source publication and old-owner cleanup while retaining shared exporters (#2278) |
 | Analytics | managed ClickHouse/Postgres preparation; Plausible runtime; certificates/publication; firewall; footprint; CLI | not relocatable |
 | CiRunner | canonical host/project preparation; prerequisites; observer/footprint; firewall; CLI | not relocatable |
 
-Database, Ingress and WebSocket forward contributions are available from dependency #2226. WebSocket is the only currently supported singleton relocation. VPN and Router are protected from generic mutation. Unsupported contributions refuse before assignment and vault effects; they are not claimed migrated by this draft.
+Database, Ingress, WebSocket and AppProd forward contributions come from the shared Nodes factory. WebSocket is the supported singleton relocation in these fixtures. VPN and Router are protected from generic mutation. The draft still needs to preserve the existing execution path for the other mutable roles; rejecting them before effects does not meet the merge gate.
