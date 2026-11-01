@@ -68,10 +68,10 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
         self.workflow["name"] = "process-command-fixture"
         for job in self.workflow["jobs"]:
             self.assertEqual(job.pop("target"), "orbit-node-209")
-            self.assertEqual(job.pop("labels"), {"node": "209"})
+            self.assertNotIn("labels", job)
             for step in job["steps"]:
                 self.assertEqual(step.pop("target"), "orbit-node-209")
-                self.assertEqual(step.pop("labels"), {"node": "209"})
+                self.assertNotIn("labels", step)
                 task = step["task"]
                 if task["behaviorType"] == "@swamp/ssh":
                     task["globalArgs"].update(sshBinary=str(fake), scpBinary=str(scp))

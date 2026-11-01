@@ -408,12 +408,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/certificates/role-publication.ts",
-      "rule": "inline-script",
-      "count": 30,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/certificates/system.ts",
       "rule": "inline-script",
       "count": 125,
@@ -511,20 +505,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/fleet/cli_install_program.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/cli_install_program.ts",
-      "rule": "inline-script",
-      "count": 112,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/maintenance.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -539,37 +519,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_direct.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_local.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_program.ts",
-      "rule": "custom-control",
-      "count": 11,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_program.ts",
-      "rule": "inline-script",
-      "count": 1523,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
@@ -821,195 +770,6 @@
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/children.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/create_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_root.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_steps.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_system.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_teardown.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_teardown.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/mod.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setInterval",
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/production_home_system.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control",
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/production_home_system.ts",
-      "rule": "inline-script",
-      "count": 212,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/production_home_system.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "secret-output",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/session.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/session.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/integrations/metrics_certificate_system.ts",
@@ -1305,12 +1065,6 @@
     },
     {
       "file": "extensions/behaviors/operations/node/footprint_system.ts",
-      "rule": "inline-script",
-      "count": 206,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/footprint_system.ts",
       "rule": "multi-action",
       "count": 2,
       "evidence": [
@@ -1389,30 +1143,6 @@
     },
     {
       "file": "extensions/behaviors/operations/node/observer_install_system.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/php_runtime_system.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control",
-        "lock"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/php_runtime_system.ts",
-      "rule": "inline-script",
-      "count": 284,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/php_runtime_system.ts",
       "rule": "multi-action",
       "count": 2,
       "evidence": [
@@ -1766,20 +1496,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/routes/dns-publication.ts",
       "rule": "custom-control",
       "count": 5,
@@ -1843,14 +1559,6 @@
       "file": "extensions/behaviors/operations/routes/publication.ts",
       "rule": "gateway-http",
       "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/removal.ts",
-      "rule": "gateway-http",
-      "count": 4,
       "evidence": [
         "<unknown> <unknown>"
       ]
@@ -2349,36 +2057,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-instance-route-workload.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 14,
-      "evidence": [
-        "workload/dev-source",
-        "workload/dev-source-assets",
-        "workload/dev-source-command",
-        "workload/prod-source",
-        "workload/prod-source-assets",
-        "workload/prod-source-command",
-        "workload/runtime-identity",
-        "workload/runtime-pool",
-        "workload/runtime-pool-proof",
-        "workload/runtime-reload",
-        "workload/runtime-validate",
-        "workload/served",
-        "workload/served-assets",
-        "workload/served-command"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-instance-destroy.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 2,
-      "evidence": [
-        "cleanup/cleanup-${{ self.member.node_id }}",
-        "databases/database-${{ self.work.key }}"
-      ]
-    },
-    {
       "file": "workflows/workflow-operation-process-restart-instance.yaml",
       "rule": "foreach-shared-identity",
       "count": 1,
@@ -2396,14 +2074,6 @@
         "check/base_ready-${{ self._index }}",
         "check/deliverable-${{ self._index }}",
         "check/setup-${{ self._index }}"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-vault-sync.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "deletions/delete"
       ]
     },
     {

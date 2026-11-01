@@ -45,8 +45,8 @@ removed in their family rewrites; they are not part of this exception.
 
 ## Node role pairs
 
-Gateway, Metrics, WebSocket and Analytics use `roleCertificateActions()` from
-`certificates/role-actions.ts`. Admit
+Gateway, Metrics, WebSocket and Analytics use the native
+`node-role-certificate-publish` child. Admit
 `{node_id, scope, domain, version, root_hash}`, where `scope` is `role-gateway`,
 `role-metrics`, `role-websocket` or `role-analytics`, `version` is 16 lowercase
 hex characters and `root_hash` is the SHA-256 digest of the public root PEM.
@@ -56,7 +56,7 @@ supply paths or private material.
 
 New parents compose the `node-role-certificate-publish` child with `roleCertificateSteps(name,leafExpr,fullGlobals,dependency?,guard?)` from `certificates/role_steps.ts`. Supply the canonical role leaf and complete official SSH `name`, `transport` and `hosts` map with target `target`, approved209 identity and full pins. Read `steps["<name>"].outputs.result` for `{ready:true,node_id,scope,version}`. Every child action runs on209. The signer receives the root parent run ID.
 
-The native child exposes separate `scripts/role_request.py`, `scripts/role_verify.py`, `scripts/role_publish.py`, activation and `scripts/role_cleanup.py` actions. Verification stages the signed public pair without changing the serving pair. Pending-key cleanup depends on successful activation, so failure preserves the workspace for native resume. They share the existing certificate `scripts/local.py` key, CSR and public signature helpers. `scripts/role_paths.py` owns the fixed paths for native and retained callers. Official SSH copies the shipped script directory and executes each action. The retained guarded helpers live in `retained_role_policy.py`, outside that directory.
+The native child exposes separate `scripts/role_request.py`, `scripts/role_verify.py`, `scripts/role_publish.py`, activation and `scripts/role_cleanup.py` actions. Verification stages the signed public pair without changing the serving pair. Pending-key cleanup depends on successful activation, so failure preserves the workspace for native resume. They share the existing certificate `scripts/local.py` key, CSR and public signature helpers. `scripts/role_paths.py` owns the fixed paths for native and retained callers. Official SSH copies the shipped script directory and executes each action. Retained withdrawal ownership checks live in `retained_role_policy.py`, outside that directory.
 
 The RSA key stays on its effect Node. Only the CSR and signed public certificates enter Swamp resources. A native `systemctl try-reload-or-restart caddy` action reloads an active service before readiness and leaves an inactive service stopped. This also runs for a current pair, so fresh admission retries an interrupted activation. Failed activation stays failed; resume the child from `activate`. The complete parent owns restoration of its admitted publication snapshots. The child has no pair snapshot or automatic restoration engine. The complete contract is in [Native Node role certificates](https://github.com/hardimpactdev/orbit/blob/main/docs/reference/node-role-certificates.md).
 
@@ -67,9 +67,9 @@ Publication keeps
 `/etc/caddy/orbit-analytics-cert-current/{analytics.pem,analytics.key}`. Each
 publication also keeps the public `root-ca.pem` for local renewal checks. An
 existing owned version link is accepted only within that role's fixed versions
-directory. Retained local callers use the existing Caddy lock around their
-transaction. The native child uses explicit publication and activation
-steps. The Gateway projects role state after those stages succeed.
+directory. Retained withdrawal checks the owned pair under the existing Caddy lock.
+Role publication uses the native child with explicit verification, publication,
+activation and key cleanup steps. The Gateway projects role state after those stages succeed.
 
 ## Native leaf actions and the official certificate extension
 

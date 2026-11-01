@@ -12,7 +12,9 @@ return [
     'fleet.recipe' => [
         'workflow' => 'operation-fleet-recipe-direct',
         'projection' => RecipeDirectProjection::class,
-        'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'result', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^recipe-operation-[1-9][0-9]*-observer$']],
     ],
     'fleet.docker_migrate' => [
         'workflow' => 'operation-fleet-docker-migrate',

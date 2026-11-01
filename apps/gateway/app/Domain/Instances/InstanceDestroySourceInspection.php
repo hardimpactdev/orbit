@@ -82,24 +82,6 @@ final readonly class InstanceDestroySourceInspection
 
             return [...$member, ...$source];
         }, InstanceLifecycleInput::members($input));
-        $detail = ValidatedData::object($input['direct_destroy']);
-        $detail['members'] = array_map(function (array $member) use ($captured): array {
-            $source = $captured->get(ValidatedData::integer($member['instance_id']));
-            if (! is_array($source)) {
-                $this->conflict();
-            }
-            $base = ValidatedData::object($member['source']);
-            $digest = ValidatedData::string($source['source_digest']);
-
-            return [...$member, 'source' => [...$base,
-                'root' => $source['source_root'], 'user' => $source['user'], 'group' => $source['group'],
-                'digest' => $digest, 'common_repository' => $source['common_repository_path'],
-                'source_identity' => $source['source_identity']],
-                'origin' => $source['origin'], 'worktrees' => $source['worktree_inventory'], 'commit' => $source['source_commit'],
-                'receipt' => hash('sha256', ValidatedData::string($base['operation'])."\0".ValidatedData::string($base['member'])."\0".$digest."\0finalized"),
-            ];
-        }, InstanceLifecycleInput::members(['members' => $detail['members']]));
-        $input['direct_destroy'] = $detail;
         $input['source_pending'] = false;
 
         return $input;

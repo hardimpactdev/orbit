@@ -21,8 +21,8 @@ class DirectRoleNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'node-worker', 'operations')
-        module = self.repo / 'extensions/behaviors/operations/node/role_direct.ts'
-        module.write_text('import {fixtureHttp, fixtureBaseline, fixtureFootprint, fixtureCli} from "./role_direct_native_fixture.ts";\n' +
+        module = self.repo / 'extensions/behaviors/operations/fleet-recipe/node_role.ts'
+        module.write_text('import {fixtureHttp, fixtureBaseline, fixtureFootprint, fixtureCli} from "../node/role_direct_native_fixture.ts";\n' +
                           module.read_text().replace('export const behavior = nodeRoleAdd();',
                             'export const behavior = nodeRoleAdd(fixtureBaseline, () => fixtureHttp, fixtureFootprint, fixtureCli);'))
         removal = self.repo / 'extensions/behaviors/operations/node/role_removal.ts'

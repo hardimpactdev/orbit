@@ -557,6 +557,8 @@ If confirmation is lost after submission, the request returns `swamp.start_uncer
 
 Resolution requires native evidence for the exact workflow, `inputs.operation_id`, `inputs.node_id`, `inputs.kind` and recorded start key. A matching run can supply the missing binding for the existing terminal subscriber. Only authoritative proof that no run started permits a not-started failure and another admission. An unreadable or empty partial response is not that proof. A connection failure before submission or an explicit native refusal still fails the Operation.
 
+At observer startup, record-channel recovery or an Operation notice, an unbound running Operation marked `swamp.start_uncertain` receives one native run lookup per observer lifetime. The lookup uses its recorded workflow, admitted identity and `orbit_start_key`. Exactly one matching root supplies the binding, then the normal subscriber attaches and projects its terminal result. Missing, ambiguous, mismatched or unavailable evidence leaves the Operation and target hold unchanged. Repeated notices and receive passes never repeat the lookup or submit work.
+
 ### Execution-copy failures
 
 The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. A failed push returns `swamp.vault_sync_unavailable`. The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.

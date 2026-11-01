@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Setting;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -152,3 +153,26 @@ it('needs no CA material for roles with no role certificate publication', functi
 
     expect($capture->capture($node, $role))->toBe(['leaves' => [], 'withdrawals' => []]);
 })->with([RoleName::Gateway, RoleName::CiRunner, RoleName::Database]);
+
+it('captures immutable official SSH transport for exactly the certificate effect Node', function (): void {
+    $gateway = FleetFixtures::node('certificate-pinned-gateway', [RoleName::Gateway]);
+    $metrics = FleetFixtures::node('certificate-pinned-metrics', [RoleName::Metrics]);
+    $expected = app(SwampSshExecutionInput::class)->forNode($gateway);
+
+    $snapshot = roleCertificateCapture()->captureForExecution($metrics, RoleName::Metrics);
+    $gateway->update(['wireguard_ip' => '10.44.0.250', 'ssh_host_key' => 'changed-public-pin']);
+
+    expect($snapshot['connections'])->toBe([['node_id' => $gateway->id, 'ssh' => $expected]])
+        ->and($snapshot['connections'][0]['ssh']['control_node_id'])->toBe(209)
+        ->and($snapshot['leaves'][0])->not->toHaveKey('key');
+});
+
+it('refuses role publication without a stored SSH pin but withdrawal needs no connection', function (): void {
+    $node = FleetFixtures::node('certificate-missing-pin', [RoleName::WebSocket]);
+    $node->update(['ssh_host_key' => null]);
+
+    expect(fn () => roleCertificateCapture()->captureForExecution($node, RoleName::WebSocket))
+        ->toThrow(ResourceOperationException::class, 'stored target address, user and host key');
+    expect(roleCertificateCapture()->capture($node, RoleName::WebSocket, removing: true))
+        ->toBe(['leaves' => [], 'withdrawals' => [['node_id' => $node->id, 'scope' => 'role-websocket']]]);
+});

@@ -1,4 +1,4 @@
-import type { RoleBaselineAction } from "./assets.ts";
+import type { RoleBaselineAction } from "../fleet-recipe/observer_assets.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
 const placement = { target: "orbit-node-209" };

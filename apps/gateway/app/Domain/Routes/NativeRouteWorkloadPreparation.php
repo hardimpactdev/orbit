@@ -18,7 +18,7 @@ use App\Support\ValidatedData;
 final readonly class NativeRouteWorkloadPreparation
 {
     /** @return array<string,mixed> */
-    public function capture(Instance $instance, ?Route $before, Route $after): array
+    public function capture(Instance $instance, ?Route $before, Route $after, bool $withdrawal = false): array
     {
         $instance->loadMissing(['node', 'project']);
         $common = ['node_id' => $instance->node_id, 'instance_id' => $instance->id,
@@ -29,7 +29,9 @@ final readonly class NativeRouteWorkloadPreparation
             }
             $catalog = app(DevelopmentSiteRepository::class)->all();
             $prospective = $catalog->reject(static fn ($site): bool => $site->domain === $before->domain)->values();
-            $prospective->push(...app(DevelopmentSiteRepository::class)->routeSites($after));
+            if (! $withdrawal) {
+                $prospective->push(...app(DevelopmentSiteRepository::class)->routeSites($after));
+            }
             $prior = app(RoutePublicationSites::class)->render($catalog, fn (): array => ValidatedData::object(app(RouteWorkloadInput::class)->forInstance($instance, $before, $instance->node_id)['source_access'] ?? ['user' => $instance->node->user, 'sites' => []]));
             $selected = app(RoutePublicationSites::class)->render($prospective, fn (): array => ValidatedData::object(app(RouteWorkloadInput::class)->forInstance($instance, $after, $instance->node_id)['source_access'] ?? ['user' => $instance->node->user, 'sites' => []]));
             $union = [...$selected, 'sites' => array_values(array_unique([...RouteExecutionProof::objects($prior['sites']), ...RouteExecutionProof::objects($selected['sites'])], SORT_REGULAR))];
@@ -40,6 +42,10 @@ final readonly class NativeRouteWorkloadPreparation
         }
 
         $prior = RouteWebRoot::servedApplications($instance);
+        if ($withdrawal) {
+            $after = clone $after;
+            $after->web_root = null;
+        }
         $selected = RouteWebRoot::servedApplications($instance, $after);
         $union = array_values(array_unique([...$prior, ...$selected], SORT_REGULAR));
         [$oldRuntime] = app(InstanceDeploymentIntent::class)->runtimeIntent($instance);

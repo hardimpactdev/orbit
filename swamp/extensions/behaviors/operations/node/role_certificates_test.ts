@@ -28,7 +28,28 @@ class Fixture {
         kind: "node.role_add",
         status: "running",
         cancel_requested: false,
-        input: { certificates: { leaves: [leaf], withdrawals: [] } },
+        input: {
+            certificates: {
+                leaves: [leaf],
+                withdrawals: [],
+                connections: [{
+                    node_id: leaf.node_id,
+                    ssh: {
+                        control_node_id: 209 as const,
+                        identity_file:
+                            "/run/credentials/orbit-node-worker.service/proxy-ssh-identity" as const,
+                        public_key: "ssh-ed25519 fixture",
+                        target: {
+                            name: "target" as const,
+                            host: "10.44.0.14",
+                            user: "orbit",
+                            port: 22,
+                            host_keys: ["ssh-ed25519 pinned"],
+                        },
+                    },
+                }],
+            },
+        },
     };
     writes: unknown[] = [];
     posts: Record<string, unknown>[] = [];
@@ -115,111 +136,76 @@ Deno.test("role certificate recording cannot select a foreign effect Node", asyn
     assertEquals(f.writes, []);
 });
 
-Deno.test("role certificate jobs use canonical models and fixed signer, then root-only phase writes", () => {
+Deno.test("role certificate jobs use the native child before root-only phase writes", () => {
     const generated = roleCertificateJobs("baseline_job", {
         blocked: "!steps.admit.outputs.ready",
     });
-    type Job = {
+    const jobs = generated.jobs as {
         name: string;
         dependsOn: unknown;
         steps: {
-            name: string;
-            dependsOn?: unknown;
             target?: string;
-            labels?: unknown;
             guard?: string;
-            task: {
-                behaviorType: string;
-                behaviorName: string;
-                methodName: string;
-                inputs: Record<string, unknown>;
-            };
+            task: Record<string, unknown>;
         }[];
-    };
-    const jobs = generated.jobs as Job[];
+    }[];
     let previous = "baseline_job";
     for (const job of jobs) {
         assertEquals(job.dependsOn, [{
             job: previous,
             condition: { type: "succeeded" },
         }]);
-        if (job.name === "role_certificates_sign_job") {
-            for (const step of job.steps) {
-                assertEquals(
-                    step.guard?.includes("!steps.admit.outputs.ready"),
-                    true,
-                );
-                assertEquals(step.guard?.includes(".size() == 0"), true);
-            }
-        } else {
-            assertEquals(
-                job.steps[0].guard,
-                "${{ !steps.admit.outputs.ready }}",
-            );
-        }
+        assertEquals(job.steps[0].guard, "${{ !steps.admit.outputs.ready }}");
         previous = job.name;
     }
-    assertEquals(jobs.map((job) => job.steps[0].task.methodName), [
-        "inventory",
-        "roleRequest",
-        "prepareSignBatch",
-        "rolePublish",
-        "record",
-        "complete",
-    ]);
-    for (const index of [1, 3]) {
-        assertEquals(
-            jobs[index].steps[0].target,
-            '${{ "orbit-node-" + string(self.leaf.node_id) }}',
-        );
-        assertEquals(jobs[index].steps[0].labels, undefined);
-        assertEquals(
-            jobs[index].steps[0].task.behaviorType,
-            "@nckrtl/certificates",
-        );
-    }
-    const signing = jobs[2].steps;
-    assertEquals(signing.map((step) => step.task.methodName), [
-        "prepareSignBatch",
-        "execute",
-        "signBatch",
-    ]);
-    for (const step of signing) {
-        assertEquals(step.target, "orbit-node-209");
-        assertEquals(step.labels, undefined);
-    }
+    assertEquals(jobs.length, 4);
+    const child = jobs[1].steps[0];
+    assertEquals(child.target, "orbit-node-209");
+    assertEquals(child.task.type, "workflow");
+    assertEquals(child.task.workflowIdOrName, "node-role-certificate-publish");
+    const inputs = child.task.inputs as Record<string, unknown>;
+    assertEquals(inputs.parent_run_id, "${{ run.id }}");
+    const ssh = inputs.ssh as {
+        name: string;
+        transport: Record<string, unknown>;
+        hosts: { transport: Record<string, unknown> }[];
+    };
     assertEquals(
-        signing[0].task.behaviorName,
-        '${{ "certificate-batch-" + run.id }}',
-    );
-    assertEquals(signing[1].task.behaviorType, "command/shell");
-    assertEquals(
-        signing[1].task.behaviorName,
-        '${{ "certificate-sign-" + run.id }}',
+        ssh.name,
+        '${{ "role-certificate-" + run.id + "-" + string(self._index) }}',
     );
     assertEquals(
-        signing[2].task.behaviorName,
-        '${{ "certificate-batch-" + run.id }}',
-    );
-    for (const index of [1, 2]) {
-        assertEquals(signing[index].dependsOn, [{
-            step: signing[index - 1].name,
-            condition: { type: "succeeded" },
-        }]);
-    }
-    assertEquals(
-        signing[2].task.inputs.native_stdout,
-        '${{ steps["role_certificates_sign-http"].outputs.stdout }}',
+        ssh.transport.identityFile,
+        "${{ steps.role_certificates_inventory.outputs.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh.identity_file }}",
     );
     assertEquals(
-        jobs[4].steps[0].target,
+        ssh.hosts[0].transport.hostKeys,
+        "${{ steps.role_certificates_inventory.outputs.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh.target.host_keys }}",
+    );
+    assertEquals(jobs[2].steps[0].task.methodName, "record");
+    assertEquals(
+        jobs[2].steps[0].target,
         '${{ "orbit-node-" + string(inputs.node_id) }}',
     );
-    assertEquals(jobs[4].steps[0].labels, undefined);
+    assertEquals(jobs[3].steps[0].task.methodName, "complete");
     assertEquals(jobs.at(-1)?.name, generated.lastJob);
     assertThrows(() =>
         roleCertificateJobs("baseline", { prefix: 'bad"prefix' })
     );
+});
+
+Deno.test("role inventory refuses missing duplicate or foreign SSH targets before children", async () => {
+    for (const change of ["missing", "duplicate", "foreign"]) {
+        const f = new Fixture();
+        const plan = f.current.input.certificates;
+        if (change === "missing") plan.connections = [];
+        if (change === "duplicate") plan.connections.push(plan.connections[0]);
+        if (change === "foreign") plan.connections[0].node_id = 209;
+        await assertRejects(() =>
+            f.behavior.methods.inventory.execute(args, f.ctx)
+        );
+        assertEquals(f.writes, []);
+    }
 });
 
 Deno.test("a parent owns its aggregate certificate view without impersonating a standalone role kind", async () => {

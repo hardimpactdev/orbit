@@ -17,7 +17,7 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}> */
+    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}> */
     private array $definitions;
 
     /** @param iterable<DirectOperationContribution> $contributions */
@@ -70,7 +70,7 @@ final readonly class DirectOperation
         $this->scheduledResultDefinitions();
     }
 
-    /** @return array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string} */
+    /** @return array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>},rows:string} */
     private static function scheduledResult(mixed $declaration): array
     {
         if (! is_array($declaration) || count($declaration) !== 4
@@ -84,7 +84,7 @@ final readonly class DirectOperation
             'terminal_result' => self::terminalResult($declaration['terminal_result'] ?? null), 'rows' => $declaration['rows']];
     }
 
-    /** @return array<string,array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows?:string,context_workflow?:string,projection?:class-string<ScheduledResultProjection>}> */
+    /** @return array<string,array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>},rows?:string,context_workflow?:string,projection?:class-string<ScheduledResultProjection>}> */
     public function scheduledResultDefinitions(): array
     {
         $scheduled = [];
@@ -150,16 +150,30 @@ final readonly class DirectOperation
             && ! array_any($map, static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\z/D', $value) !== 1);
     }
 
-    /** @return array{job:string,step:string} */
+    /** @return array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>} */
     private static function terminalResult(mixed $selector): array
     {
-        if (! is_array($selector) || count($selector) !== 2
+        if (! is_array($selector) || array_diff(array_keys($selector), ['job', 'step', 'captures']) !== []
             || ! is_string($selector['job'] ?? null) || ! is_string($selector['step'] ?? null)
             || array_any([$selector['job'], $selector['step']], static fn (string $name): bool => trim($name) === '' || strlen($name) > 256 || preg_match('/[\x00-\x1f\x7f]/', $name) === 1)) {
             throw new LogicException('A direct Operation needs one fixed family declaration.');
         }
 
-        return ['job' => $selector['job'], 'step' => $selector['step']];
+        $captures = $selector['captures'] ?? [];
+        if (! is_array($captures) || count($captures) > 16) {
+            throw new LogicException('Terminal captures need fixed public output selectors.');
+        }
+        $normalizedCaptures = [];
+        foreach ($captures as $name => $capture) {
+            if (! is_string($name) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $name) !== 1 || ! is_array($capture)
+                || array_diff(array_keys($capture), ['job', 'step', 'field']) !== []
+                || (isset($capture['field']) && (! is_string($capture['field']) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $capture['field']) !== 1))) {
+                throw new LogicException('Terminal captures need fixed public output selectors.');
+            }
+            $normalizedCaptures[$name] = [...self::terminalResult(['job' => $capture['job'] ?? null, 'step' => $capture['step'] ?? null]), ...(isset($capture['field']) ? ['field' => $capture['field']] : [])];
+        }
+
+        return ['job' => $selector['job'], 'step' => $selector['step'], ...($normalizedCaptures !== [] ? ['captures' => $normalizedCaptures] : [])];
     }
 
     public static function owns(Operation $operation): bool
@@ -189,7 +203,7 @@ final readonly class DirectOperation
         return $this->definitions;
     }
 
-    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
+    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;

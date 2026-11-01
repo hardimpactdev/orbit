@@ -38,15 +38,18 @@ Deno.test("certificate control steps use exactly one selector and distinct child
         }
     }
 });
-Deno.test("same-Node role scopes get distinct model identities across request publish and record fanouts", () => {
+Deno.test("same-Node role scopes get distinct model identities across child and record fanouts", () => {
     const generated = roleCertificateJobs("baseline");
     for (const job of generated.jobs) {
         for (const raw of job.steps as Record<string, unknown>[]) {
             assertEquals("target" in raw && "labels" in raw, false);
             if (raw.forEach) {
                 const task = raw.task as Record<string, unknown>;
-                assert(String(task.behaviorName).includes("run.id"));
-                assert(String(task.behaviorName).includes("self._index"));
+                const identity = task.type === "workflow"
+                    ? (task.inputs as { ssh: { name: string } }).ssh.name
+                    : task.behaviorName;
+                assert(String(identity).includes("run.id"));
+                assert(String(identity).includes("self._index"));
             }
         }
     }
@@ -130,4 +133,17 @@ Deno.test("role publication keeps verification and key cleanup as separate recov
     );
     assert(!publish.includes("write_signature("));
     assert(!publish.includes("rmtree("));
+});
+
+Deno.test("retained role parents delegate each leaf to the visible native child", () => {
+    const jobs = roleCertificateJobs("baseline").jobs;
+    const steps = jobs.flatMap((job) => job.steps) as Record<string, unknown>[];
+    const tasks = steps.map((step) => step.task as Record<string, unknown>);
+    assert(!tasks.some((task) => task.behaviorType === "@nckrtl/certificates"));
+    const child = tasks.find((task) => task.type === "workflow")!;
+    assertEquals(child.workflowIdOrName, "node-role-certificate-publish");
+    assertEquals(
+        steps.find((step) => step.task === child)!.target,
+        "orbit-node-209",
+    );
 });

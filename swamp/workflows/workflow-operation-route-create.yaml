@@ -1,7 +1,9 @@
 id: 8882537c-e250-4b80-8690-ce8c0fa419b8
 name: operation-route-create
-description: One admitted Route parent with exact Node effects and native recovery.
-vaults: []
+description: Immutable Route workload mutation and restoration through official209
+  publication children.
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:
@@ -15,1492 +17,482 @@ inputs:
       type: string
       enum:
       - route.create
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties: false
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+        required:
+        - vault
+        - key
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
-- name: admission
+- name: update
   steps:
-  - name: admit
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(inputs.node_id) }}
-      methodName: admit
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-    writes: true
-  dependsOn: []
-- name: certificate-requests
-  steps:
-  - name: certificate-request
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(self.node) }}
-      methodName: requestAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.certificates.filter(leaf,
-          leaf.node_id == self.node) }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" }}
+  - name: prepare
+    target: orbit-node-209
     forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: &id001
-      type: or
-      conditions:
-      - type: succeeded
-      - type: skipped
-- name: certificate-signatures
-  steps:
-  - name: certificate-sign-http-input
-    target: orbit-node-209
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
-      run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
-      "admission-" + run.id).attributes.intent.mode == "publication" }}
-    writes: true
+      item: workload
+      in: ${{ inputs.intent.workloads }}
+    dependsOn: []
     task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: prepareSignBatch
+      type: workflow
+      workflowIdOrName: instance-route-workload
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids.map(node,
-          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
-        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.certificates
-          }}
-  - name: certificate-sign-http
+        intent:
+          node_id: ${{ self.workload.node_id }}
+          instance_id: ${{ self.workload.instance_id }}
+          connection: ${{ self.workload.connection }}
+          host_keys: ${{ self.workload.host_keys }}
+          plan: ${{ self.workload.prepare }}
+        execution_secrets: {}
+  - name: prepare-upstream
     target: orbit-node-209
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
-      run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
-      "admission-" + run.id).attributes.intent.mode == "publication" }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign-" + run.id }}'
-      methodName: execute
-      inputs:
-        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
-        env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps["certificate-sign-http-input"].outputs.sign_script }}'
-          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
-          ORBIT_CERTIFICATE_MODE: batch
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["certificate-sign-http-input"].outputs.requests_json }}
     dependsOn:
-    - step: certificate-sign-http-input
+    - step: prepare
       condition:
-        type: succeeded
-  - name: certificate-sign
+        type: always
+    forEach:
+      item: part
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.upstream_firewalls
+        : [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
+      }}
+    task:
+      type: workflow
+      workflowIdOrName: route-upstream-firewall
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.part }}
+        execution_secrets: {}
+  - name: prepare-certificates
     target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: signBatch
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        requests: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids.map(node,
-          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
-        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.certificates
-          }}
-        native_stdout: ${{ steps["certificate-sign-http"].outputs.stdout }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
-      run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
-      "admission-" + run.id).attributes.intent.mode == "publication" }}
-    writes: true
     dependsOn:
-    - step: certificate-sign-http
+    - step: prepare
       condition:
-        type: succeeded
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-- name: certificates
-  steps:
-  - name: certificate-publish
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(self.node) }}
-      methodName: publishAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.certificates.filter(leaf,
-          leaf.node_id == self.node) }}
-        requests: ${{ data.latest("certificate-node-" + string(self.node), "requests-" + run.id).attributes.requests
-          }}
-        signed: ${{ data.latest("orbit-certificate-signing", "signed-" + run.id).attributes.certificates }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" }}
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
     forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-- name: web-roots
-  steps:
-  - name: prepare-web-roots
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: prepareWebRoots
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.production
-      || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.web_root
-      == null }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-- name: production-urls
-  steps:
-  - name: production-urls
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: synchronizeEnvironment
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.production
-      || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.web_root
-      == null }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-- name: stored-sites
-  steps:
-  - name: publish-sites
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        checkpoint: sites-published
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-- name: workload-runtime
-  steps:
-  - name: source-access
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: prepareSource
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  - name: production-runtime
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: prepareRuntime
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-- name: php-pools
-  steps:
-  - name: php-pools
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishPhp
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.production
+      item: part
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id
+        == item.node_id)[0].scope == item.scope) : [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
       }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-- name: workload-firewall
-  steps:
-  - name: workload-firewall
-    target: ${{ "orbit-node-" + string(self.node) }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: convergeFirewall
+      type: workflow
+      workflowIdOrName: route-certificate-publish
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.production
+        intent:
+          leaves: ${{ inputs.intent.preparation.certificates.filter(leaf,leaf.node_id
+            == self.part.node_id) }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].host_keys }}
+          node_id: ${{ self.part.node_id }}
+        execution_secrets: {}
+        parent_run_id: ${{ run.id }}
+        restoring: false
+  - name: prepare-lan
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    forEach:
+      item: part
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.lan : [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
       }}
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].host_keys }}
+        execution_secrets: {}
+  - name: prepare-caddy
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
     forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-- name: workload-caddy
-  steps:
-  - name: workload-caddy
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_caddy_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-- name: lan
-  steps:
-  - name: workload-lan
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: convergeLan
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-- name: workload-verification
-  steps:
-  - name: verify-workloads
-    target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
-      + run.id).attributes.intent.router_node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id),
-        "admission-" + run.id).attributes.intent.router_node_id) }}
-      methodName: verify
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.router_node_id
-          }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.router_node_id
-      == null }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-- name: router-caddy
-  steps:
-  - name: router-caddy
-    target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
-      + run.id).attributes.intent.router_node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id),
-        "admission-" + run.id).attributes.intent.router_node_id) }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.router_node_id
-          }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.router_node_id
-      == null }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-- name: environment
-  steps:
-  - name: synchronize-environment
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: synchronizeEnvironment
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.production
-      || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.web_root
-      == null }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-  - job: router-caddy
-    condition: *id001
-- name: dns
-  steps:
-  - name: dns
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishDns
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "publication" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.dns_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-  - job: router-caddy
-    condition: *id001
-  - job: environment
-    condition: *id001
-- name: upstream-firewall
-  steps:
-  - name: upstream-firewall
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: verifyUpstreamFirewall
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: false
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.upstream_firewall_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-  - job: router-caddy
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: dns
-    condition: *id001
-- name: public-verification
-  steps:
-  - name: verify-public
-    target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
-      + run.id).attributes.intent.ingress_node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id),
-        "admission-" + run.id).attributes.intent.ingress_node_id) }}
-      methodName: verify
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.ingress_node_id
-          }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" || !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.public
-      || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.ingress_node_id
-      == null }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-  - job: router-caddy
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: dns
-    condition: *id001
-  - job: upstream-firewall
-    condition: *id001
-- name: public-state
-  steps:
-  - name: public-state
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        checkpoint: public-activated
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" || !data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.public
+      item: part
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.publications :
+        [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
       }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-  - job: router-caddy
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: dns
-    condition: *id001
-  - job: upstream-firewall
-    condition: *id001
-  - job: public-verification
-    condition: *id001
-- name: public-caddy
-  steps:
-  - name: public-caddy
-    target: ${{ "orbit-node-" + string(self.node) }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishCaddy
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" }}
+        intent: ${{ self.part }}
+        execution_secrets: {}
+  - name: prepare-probe
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
+    - step: prepare-caddy
+      condition:
+        type: always
     forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.public_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-  - job: router-caddy
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: dns
-    condition: *id001
-  - job: upstream-firewall
-    condition: *id001
-  - job: public-verification
-    condition: *id001
-  - job: public-state
-    condition: *id001
-- name: public-firewall
-  steps:
-  - name: public-firewall
-    target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
-      + run.id).attributes.intent.ingress_node_id) }}
+      item: part
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.probes : [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
+      }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id),
-        "admission-" + run.id).attributes.intent.ingress_node_id) }}
-      methodName: convergeFirewall
+      type: workflow
+      workflowIdOrName: cluster-router-probe
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.ingress_node_id
-          }}
-    guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
-      == "web_root" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.ingress_node_id
-      == null }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id001
-  - job: certificate-requests
-    condition: *id001
-  - job: certificate-signatures
-    condition: *id001
-  - job: certificates
-    condition: *id001
-  - job: web-roots
-    condition: *id001
-  - job: production-urls
-    condition: *id001
-  - job: stored-sites
-    condition: *id001
-  - job: workload-runtime
-    condition: *id001
-  - job: php-pools
-    condition: *id001
-  - job: workload-firewall
-    condition: *id001
-  - job: workload-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: workload-verification
-    condition: *id001
-  - job: router-caddy
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: dns
-    condition: *id001
-  - job: upstream-firewall
-    condition: *id001
-  - job: public-verification
-    condition: *id001
-  - job: public-state
-    condition: *id001
-  - job: public-caddy
-    condition: *id001
-- name: rollback-state
-  steps:
-  - name: rollback-state
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+        intent: ${{ self.part }}
+        execution_secrets: {}
+  - name: forward
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
+    - step: prepare-caddy
+      condition:
+        type: always
+    - step: prepare-probe
+      condition:
+        type: always
+    guard: ${{ !inputs.intent.effectful || steps.exists(k,k.startsWith("prepare-")
+      && steps[k].status == "failed") }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
+      type: workflow
+      workflowIdOrName: route-mutation-forward
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        checkpoint: rollback-initial
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: &id002
-      type: always
-  - job: certificate-requests
-    condition: *id002
-  - job: certificate-signatures
-    condition: *id002
-  - job: certificates
-    condition: *id002
-  - job: web-roots
-    condition: *id002
-  - job: production-urls
-    condition: *id002
-  - job: stored-sites
-    condition: *id002
-  - job: workload-runtime
-    condition: *id002
-  - job: php-pools
-    condition: *id002
-  - job: workload-firewall
-    condition: *id002
-  - job: workload-caddy
-    condition: *id002
-  - job: lan
-    condition: *id002
-  - job: workload-verification
-    condition: *id002
-  - job: router-caddy
-    condition: *id002
-  - job: environment
-    condition: *id002
-  - job: dns
-    condition: *id002
-  - job: upstream-firewall
-    condition: *id002
-  - job: public-verification
-    condition: *id002
-  - job: public-state
-    condition: *id002
-  - job: public-caddy
-    condition: *id002
-  - job: public-firewall
-    condition: *id002
-- name: rollback-dns
-  steps:
-  - name: rollback-dns
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishDns
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        parent_run_id: ${{ run.id }}
+  - name: verify
+    target: orbit-node-209
     forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.dns_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-- name: rollback-caddy
-  steps:
-  - name: rollback-caddy
-    target: ${{ "orbit-node-" + string(self.node) }}
+      item: part
+      in: '${{ inputs.intent.effectful ? inputs.intent.verifications : [] }}'
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
+    - step: prepare-caddy
+      condition:
+        type: always
+    - step: prepare-probe
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishCaddy
+      type: workflow
+      workflowIdOrName: cluster-router-probe
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
+        intent: ${{ self.part }}
+        execution_secrets: {}
+  - name: retire
+    target: orbit-node-209
     forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.caddy_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-- name: rollback-upstream-firewall
-  steps:
-  - name: rollback-upstream-firewall
-    target: ${{ "orbit-node-" + string(self.node) }}
+      item: workload
+      in: ${{ inputs.intent.workloads }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
+    - step: prepare-caddy
+      condition:
+        type: always
+    - step: prepare-probe
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: verifyUpstreamFirewall
+      type: workflow
+      workflowIdOrName: instance-route-workload
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
+        intent:
+          node_id: ${{ self.workload.node_id }}
+          instance_id: ${{ self.workload.instance_id }}
+          connection: ${{ self.workload.connection }}
+          host_keys: ${{ self.workload.host_keys }}
+          plan: ${{ self.workload.selected }}
+        execution_secrets: {}
+  - name: restore-workload
+    target: orbit-node-209
     forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.upstream_firewall_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-- name: rollback-runtime
-  steps:
-  - name: rollback-runtime
-    target: ${{ "orbit-node-" + string(self.node) }}
+      item: workload
+      in: ${{ inputs.intent.workloads }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
+    - step: prepare-caddy
+      condition:
+        type: always
+    - step: prepare-probe
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    - step: retire
+      condition:
+        type: always
+    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status
+      != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-")
+      || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: prepareRuntime
+      type: workflow
+      workflowIdOrName: instance-route-workload
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-  - job: rollback-upstream-firewall
-    condition: *id001
-- name: rollback-php
-  steps:
-  - name: rollback-php
-    target: ${{ "orbit-node-" + string(self.node) }}
+        intent:
+          node_id: ${{ self.workload.node_id }}
+          instance_id: ${{ self.workload.instance_id }}
+          connection: ${{ self.workload.connection }}
+          host_keys: ${{ self.workload.host_keys }}
+          plan: ${{ self.workload.restore }}
+        execution_secrets: {}
+  - name: restore
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
+    - step: prepare-caddy
+      condition:
+        type: always
+    - step: prepare-probe
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    - step: retire
+      condition:
+        type: always
+    - step: restore-workload
+      condition:
+        type: always
+    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status
+      != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-")
+      || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishPhp
+      type: workflow
+      workflowIdOrName: route-mutation-restore
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-  - job: rollback-upstream-firewall
-    condition: *id001
-  - job: rollback-runtime
-    condition: *id001
-- name: rollback-urls
-  steps:
-  - name: rollback-urls
-    target: ${{ "orbit-node-" + string(self.node) }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        parent_run_id: ${{ run.id }}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare-upstream
+      condition:
+        type: always
+    - step: prepare-certificates
+      condition:
+        type: always
+    - step: prepare-lan
+      condition:
+        type: always
+    - step: prepare-caddy
+      condition:
+        type: always
+    - step: prepare-probe
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    - step: retire
+      condition:
+        type: always
+    - step: restore-workload
+      condition:
+        type: always
+    - step: restore
+      condition:
+        type: always
     task:
       type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: synchronizeEnvironment
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-update-result
+      methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.workload_node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-  - job: rollback-upstream-firewall
-    condition: *id001
-  - job: rollback-runtime
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-- name: rollback-certificates
-  steps:
-  - name: rollback-certificates
-    target: ${{ "orbit-node-" + string(self.node) }}
+        effectful: ${{ inputs.intent.effectful }}
+        failure_code: route.create_failed
+        preparation_counts: '${{ inputs.intent.effectful ? {"prepare-certificates":
+          size(inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id
+          == item.node_id)[0].scope == item.scope)), "prepare-lan": size(inputs.intent.preparation.lan),
+          "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe":
+          size(inputs.intent.preparation.probes), "prepare-upstream": "upstream_firewalls"
+          in inputs.intent.preparation ? size(inputs.intent.preparation.upstream_firewalls)
+          : 0, "verify": "verifications" in inputs.intent ? size(inputs.intent.verifications)
+          : 0} : {} }}'
+        route_id: ${{ inputs.intent.route_id }}
+        result_route_id: ${{ inputs.intent.result_route_id }}
+        workload_count: ${{ size(inputs.intent.workloads) }}
+        steps: ${{ steps }}
+  - name: complete
+    target: orbit-node-209
+    dependsOn:
+    - step: result
+      condition:
+        type: always
     task:
       type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: removeCertificates
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-update-complete
+      methodName: complete
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        leaves: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.rollback_removals.filter(leaf,
-          leaf.node_id == self.node) }}
-        recovery: true
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-  - job: rollback-upstream-firewall
-    condition: *id001
-  - job: rollback-runtime
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-  - job: rollback-urls
-    condition: *id001
-- name: rollback-firewall
-  steps:
-  - name: rollback-firewall
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: restoreFirewall
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-  - job: rollback-upstream-firewall
-    condition: *id001
-  - job: rollback-runtime
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-  - job: rollback-urls
-    condition: *id001
-  - job: rollback-certificates
-    condition: *id001
-- name: rollback-lan
-  steps:
-  - name: rollback-lan
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(self.node) }}
-      methodName: rollbackLan
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && data.latest("route-convergence-node-" +
-      string(inputs.node_id), "admission-" + run.id).attributes.intent.status != "active" && data.latest("route-convergence-node-"
-      + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode != "state_only") }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.node_ids
-        }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-  - job: rollback-upstream-firewall
-    condition: *id001
-  - job: rollback-runtime
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-  - job: rollback-urls
-    condition: *id001
-  - job: rollback-certificates
-    condition: *id001
-  - job: rollback-firewall
-    condition: *id001
-- name: completion
-  steps:
-  - name: finish
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-convergence'
-      behaviorName: ${{ "route-convergence-node-" + string(inputs.node_id) }}
-      methodName: finish
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        route_id: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.route_id
-          }}
-        failed: ${{ steps.exists(name, steps[name].status == "failed") }}
-        cancelled: false
-    writes: true
-  dependsOn:
-  - job: admission
-    condition: *id002
-  - job: certificate-requests
-    condition: *id002
-  - job: certificate-signatures
-    condition: *id002
-  - job: certificates
-    condition: *id002
-  - job: web-roots
-    condition: *id002
-  - job: production-urls
-    condition: *id002
-  - job: stored-sites
-    condition: *id002
-  - job: workload-runtime
-    condition: *id002
-  - job: php-pools
-    condition: *id002
-  - job: workload-firewall
-    condition: *id002
-  - job: workload-caddy
-    condition: *id002
-  - job: lan
-    condition: *id002
-  - job: workload-verification
-    condition: *id002
-  - job: router-caddy
-    condition: *id002
-  - job: environment
-    condition: *id002
-  - job: dns
-    condition: *id002
-  - job: upstream-firewall
-    condition: *id002
-  - job: public-verification
-    condition: *id002
-  - job: public-state
-    condition: *id002
-  - job: public-caddy
-    condition: *id002
-  - job: public-firewall
-    condition: *id002
-  - job: rollback-state
-    condition: *id002
-  - job: rollback-dns
-    condition: *id002
-  - job: rollback-caddy
-    condition: *id002
-  - job: rollback-upstream-firewall
-    condition: *id002
-  - job: rollback-runtime
-    condition: *id002
-  - job: rollback-php
-    condition: *id002
-  - job: rollback-urls
-    condition: *id002
-  - job: rollback-certificates
-    condition: *id002
-  - job: rollback-firewall
-    condition: *id002
-  - job: rollback-lan
-    condition: *id002
+        stdout: ${{ steps.result.outputs.stdout }}

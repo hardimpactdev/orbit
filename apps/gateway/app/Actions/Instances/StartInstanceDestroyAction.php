@@ -18,6 +18,7 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
@@ -50,6 +51,9 @@ final readonly class StartInstanceDestroyAction
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
+        if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
+        }
         $snapshot = $this->snapshot($instance, $force);
 
         return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
@@ -63,7 +67,7 @@ final readonly class StartInstanceDestroyAction
     }
 
     /** @return array<string, mixed> */
-    public function snapshot(Instance $instance, bool $force, bool $routesOwnedByParent = false): array
+    public function snapshot(Instance $instance, bool $force): array
     {
         if (! $instance->placedOnAppDev() || DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
@@ -89,7 +93,7 @@ final readonly class StartInstanceDestroyAction
         $snapshots = [];
         $additional = [];
         foreach ($members as $position => $member) {
-            $route = $routesOwnedByParent ? $member->routes->sortBy('id')->first() : $this->route($member);
+            $route = $this->route($member);
             foreach ($member->routes as $candidate) {
                 if ($route === null || $candidate->id !== $route->id) {
                     $additional[] = $candidate->id;

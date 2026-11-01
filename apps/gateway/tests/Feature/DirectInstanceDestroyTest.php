@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
-use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
@@ -33,7 +33,7 @@ use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'Destroy proof', 'slug' => 'destroy-proof',
         'repository_url' => 'https://github.com/example/destroy-proof.git', 'root' => 'public']);
-    $this->node = Node::query()->create(['name' => 'destroy-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
+    $this->node = Node::query()->create(['name' => 'destroy-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     orbit_test_set_app_placement_role($this->node, false);
     $this->instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
         'name' => 'proof', 'checkout_path' => '/srv/apps/destroy-proof/proof', 'source_layout' => 'checkout', 'status' => 'reserved']);
@@ -170,12 +170,9 @@ it('stores the owning SQLite artifact and records desired state without executin
         ->and($recorded['direct_destroy']['node_user'])->toBe($this->node->user)
         ->and($recorded['direct_destroy']['teardown'][0]['user'])->toBe($this->node->user)
         ->and($recorded['direct_destroy']['teardown'][0]['steps'])->toBe([])
-        ->and($recorded['direct_destroy']['members'][0]['worktrees'])->toBe($input['members'][0]['worktree_inventory'])
-        ->and($recorded['direct_destroy']['members'][0]['source']['operation'])->toBe($input['removal_id'])
-        ->and($recorded['direct_destroy']['routes'][0]['schema'])->toBe('route.withdrawal.v1')
-        ->and($recorded['direct_destroy']['routes'][0]['route_ids'])->toBe([])
-        ->and(json_encode($recorded['direct_destroy']['routes'][0]['php']['configurations']))->toBe('{}')
-        ->and($recorded['direct_destroy']['routes'][0]['dns'])->toBe([])
+        ->and($recorded['members'][0]['worktree_inventory'])->toBe($input['members'][0]['worktree_inventory'])
+        ->and($recorded['direct_destroy']['routes'])->toBe([])
+        ->and($recorded['native_destroy']['route_mutations']['forward']['publications'])->toBe([])
         ->and($this->instance->refresh()->status->value)->toBe('removing')
         ->and(Operation::query()->count())->toBe(0)
         ->and(json_encode($recorded))->not->toContain('never-in-intent', $this->command);
@@ -249,12 +246,10 @@ it('captures complete Route withdrawal artifacts without detaching their targets
 
     $recorded = app(DirectInstanceDestroyIntent::class)->record($input);
 
-    $artifact = $recorded['direct_destroy']['routes'][0];
-    expect($artifact['schema'])->toBe('route.withdrawal.v1')
-        ->and($artifact['instance_id'])->toBe($this->instance->id)
-        ->and($artifact['route_ids'])->toBe(array_column($routes, 'id'))
-        ->and($artifact['nodes'][0]['certificate_scopes'])->toContain('route-'.$routes[1]->id)
-        ->and($recorded['direct_destroy']['publication_node_ids'])->toBe([$this->node->id])
+    $forward = $recorded['native_destroy']['route_mutations']['forward'];
+    expect($forward['publications'])->not->toBeEmpty()
+        ->and($recorded['direct_destroy']['publication_node_ids'])->toContain($this->node->id)
+        ->and(json_encode($forward))->toContain('route-'.$routes[1]->id)
         ->and(Operation::query()->count())->toBe(0);
     foreach ($routes as $route) {
         expect($route->refresh()->status->value)->toBe('retiring')
@@ -299,13 +294,13 @@ it('records immutable workload Router and VPN participants while retaining all R
         $cluster = Cluster::query()->create(['name' => $name]);
         $router = Node::query()->create(['name' => $name, 'cluster_id' => $cluster->id,
             'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'amd64', 'status' => 'active',
-            'public_ssh_host' => '192.0.2.'.($index + 17), 'wireguard_ip' => '10.44.0.'.($index + 17)]);
+            'public_ssh_host' => '192.0.2.'.($index + 17), 'wireguard_ip' => '10.44.0.'.($index + 17), 'ssh_host_key_type' => $this->node->ssh_host_key_type, 'ssh_host_key' => $this->node->ssh_host_key]);
         $router->roles()->create(['role' => 'router', 'status' => 'active', 'cluster_id' => $cluster->id]);
         $routers[] = [$cluster, $router];
     }
     $this->node->update(['cluster_id' => $routers[0][0]->id]);
     $vpn = Node::query()->create(['name' => 'vpn', 'user' => 'orbit', 'platform' => 'linux',
-        'architecture' => 'amd64', 'status' => 'active', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']);
+        'architecture' => 'amd64', 'status' => 'active', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'ssh_host_key_type' => $this->node->ssh_host_key_type, 'ssh_host_key' => $this->node->ssh_host_key]);
     $vpn->roles()->create(['role' => 'vpn', 'status' => 'active']);
     $route = Route::query()->create(['project_id' => $this->project->id, 'cluster_id' => $routers[0][0]->id,
         'transition_cluster_id' => $routers[1][0]->id, 'domain' => 'cluster-destroy.test',
@@ -315,7 +310,7 @@ it('records immutable workload Router and VPN participants while retaining all R
     $input['members'][0]['route_id'] = $route->id;
 
     $recorded = app(DirectInstanceDestroyIntent::class)->record($input);
-    $participants = [$this->node->id, $routers[0][1]->id, $routers[1][1]->id, $vpn->id];
+    $participants = [$this->node->id, $routers[0][1]->id, $routers[1][1]->id, $vpn->id, 209];
     sort($participants);
     expect($recorded['participant_node_ids'])->toBe($participants)
         ->and($recorded['direct_destroy']['publication_node_ids'])->toBe($participants)
@@ -326,7 +321,7 @@ it('records immutable workload Router and VPN participants while retaining all R
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id]);
 });
 
-it('rolls back Route and Instance intent outside the private withdrawal contract', function (): void {
+it('captures public Route withdrawal using the canonical native mutation policy', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $route = Route::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
         'domain' => 'public-destroy.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
@@ -337,12 +332,11 @@ it('rolls back Route and Instance intent outside the private withdrawal contract
     $input = directDestroyFixture($this->instance);
     $input['members'][0]['route_id'] = $route->id;
 
-    expect(fn () => app(DirectInstanceDestroyIntent::class)->record($input))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('route.withdrawal_invalid'));
-    expect($route->refresh()->status->value)->toBe('pending')
+    $recorded = app(DirectInstanceDestroyIntent::class)->record($input);
+    expect($route->refresh()->status->value)->toBe('retiring')
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id])
-        ->and($this->instance->refresh()->status->value)->toBe('reserved')
-        ->and(InstanceRemoval::query()->count())->toBe(0);
+        ->and($this->instance->refresh()->status->value)->toBe('removing')
+        ->and($recorded['native_destroy']['route_mutations'])->toHaveKeys(['forward', 'restore']);
 });
 
 it('projects the complete native removal atomically including extra Routes and owned runtime', function (): void {
@@ -446,7 +440,7 @@ it('keeps the complete admitted Route inventory immutable before successful proj
 function directDestroyResult(array $intent, array $databaseIds = []): array
 {
     return ['removal_id' => $intent['removal_id'], 'removed' => true,
-        'instance_ids' => array_column($intent['direct_destroy']['members'], 'instance_id')];
+        'instance_ids' => array_column($intent['members'], 'instance_id')];
 }
 
 function directDestroyFixture(Instance $instance): array
@@ -469,7 +463,7 @@ function directDestroyFixture(Instance $instance): array
         ]]];
 }
 
-it('acknowledges actual successful destroy POST and terminal GET after owned rows are gone', function (): void {
+it('rejects HTTP result callbacks and projects only the bound native terminal once', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
     $run = (string) Str::uuid();
@@ -484,22 +478,23 @@ it('acknowledges actual successful destroy POST and terminal GET after owned row
     $path = '/api/v1/direct-operations/'.$operation->id;
     $body = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => '2026-10-31T04:00:00.000Z',
         'finished_at' => '2026-10-31T04:00:01.000Z', 'result' => directDestroyResult($intent), 'error_code' => null];
-    $this->postJson($path.'/result', $body)->assertOk()->assertJsonPath('data.status', 'succeeded');
+    $this->postJson($path.'/result', $body)->assertUnprocessable();
+    $projector = app(DevelopmentInstanceDestroyProjection::class);
+    $projector->apply($operation, $body);
     $this->assertModelMissing($this->instance);
-    $this->getJson($path.'?run_id='.$run)->assertOk()->assertJsonPath('data.status', 'succeeded')
-        ->assertJsonMissingPath('data.input.direct_destroy.routes.0.php');
-    $this->postJson($path.'/result', $body)->assertOk()->assertJsonPath('data.status', 'succeeded');
+    expect($operation->refresh()->status->value)->toBe('succeeded');
+    $projector->apply($operation, $body);
+    expect($operation->refresh()->status->value)->toBe('succeeded');
 });
 
-it('returns a fresh same-root Caddy render and keeps PHP in the private channel', function (): void {
+it('keeps the admitted native publication snapshots stable after later Node changes', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $operation = new Operation(['kind' => 'instance.destroy', 'target_type' => 'instance',
-        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $intent]);
-    $input = app(InstanceDestroyProjection::class)->input($operation);
-    expect($input['caddy_publication']['node_id'])->toBe($this->node->id)
-        ->and($input['direct_destroy']['routes'][0])->not->toHaveKey('php')
-        ->and($input['withdrawal_publications'][0])->not->toHaveKey('php');
+    $captured = $intent['native_destroy'];
+    $this->node->update(['name' => 'later-name']);
+    expect($intent['native_destroy'])->toBe($captured)
+        ->and($captured['ssh_execution']['target']['host_keys'])->not->toBeEmpty()
+        ->and($captured)->toHaveKeys(['route_mutations', 'execution_secrets']);
 });
 
 it('has exactly one direct destroy dispatch and no executor or child execution contract', function (): void {
@@ -540,7 +535,7 @@ it('records native cancellation and leaves accepted removal retryable without re
     expect($operation->refresh()->status->value)->toBe('queued')
         ->and($operation->cancel_requested_at)->not->toBeNull()
         ->and($this->instance->refresh()->status->value)->toBe('removing');
-    app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'cancelled',
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'cancelled',
         'started_at' => '2026-10-31T04:00:00Z', 'finished_at' => '2026-10-31T04:00:01Z',
         'result' => ['error_code' => 'operation.cancelled', 'failed_step' => 'runtime'], 'error_code' => 'operation.cancelled']);
     expect($operation->refresh()->status->value)->toBe('cancelled')
@@ -558,7 +553,7 @@ it('projects native failure with its exact failed phase and retries the complete
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
     $result = ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'];
 
-    app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
         'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z',
         'result' => $result, 'error_code' => 'instance.destroy_failed']);
 
@@ -575,14 +570,14 @@ it('upgrades a saved standalone worktree retry to independent forced removal', f
     $snapshot = directDestroyFixture($this->instance);
     $snapshot['force'] = false;
     $initial = app(DirectInstanceDestroyIntent::class)->record($snapshot);
-    expect($initial['direct_destroy']['members'][0]['independent_worktree'])->toBeFalse();
+    expect($initial['force'])->toBeFalse();
     $removal = InstanceRemoval::query()->sole();
     $removal->update(['status' => 'failed', 'failed_step' => 'source_preparation', 'error_code' => 'instance.destroy_failed']);
 
     $retry = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
     $recorded = app(DirectInstanceDestroyIntent::class)->record($retry);
 
-    expect($recorded['direct_destroy']['members'][0]['independent_worktree'])->toBeTrue();
-    expect($recorded['direct_destroy']['members'][0]['worktrees'])->toBe($initial['direct_destroy']['members'][0]['worktrees']);
+    expect($recorded['force'])->toBeTrue();
+    expect($recorded['members'][0]['worktree_inventory'])->toBe($initial['members'][0]['worktree_inventory']);
     expect($recorded['direct_destroy']['database'])->toBe($initial['direct_destroy']['database']);
 });

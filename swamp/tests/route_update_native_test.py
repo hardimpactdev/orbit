@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import yaml
-
 from tests import route_mutation_command_native_test as fixture
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +17,7 @@ class RouteUpdateNative(fixture.RouteMutationFixture):
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/routes/update-command")
+        self.copy_behaviors("operations/firewall")
         for name in (
             self.root_workflow,
             "route-mutation-forward",

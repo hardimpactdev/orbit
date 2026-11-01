@@ -1203,7 +1203,7 @@ To remove a host, lower its capacity to stop new placements, wait until all its 
 
 This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb and the private Swamp Route share TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
 
-Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints its ID; submission does not mean the filter is ready. Its native workflow runs on209 and reaches the VPN Node through official SSH with the recorded host pins. It validates the complete nft ruleset, publishes the managed filter and systemd unit, applies the canonical control SSH rule, activates the unit, then verifies the exact live nft rule. A failed step leaves the Operation failed for native resume. No Swamp binary or worker is installed on the VPN Node.
+Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints its ID; submission does not mean the filter is ready. Its native workflow runs on209 and reaches the VPN Node through official SSH with the recorded host pins. It validates the complete nft ruleset, publishes the managed filter and systemd unit, applies the canonical control SSH rule, activates the unit, then verifies the exact live control and Router nft rules. A failed step leaves the Operation failed for native resume. No Swamp binary or worker is installed on the VPN Node.
 
 The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The nft transaction replaces only `inet orbit_task_vms`; unrelated firewall tables remain unchanged.
 
@@ -1215,16 +1215,16 @@ The command takes every value from Gateway records and settings:
 - the Node with the `gateway` role, and the Pi port `orbit.pi.port` (`ORBIT_PI_PORT`, default `3774`);
 - Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role; the Swamp Route uses that same Node and port;
 - the host and port of `task_vms.model_proxy_origin`;
-- the router of the dev Cluster.
+- every active Node with a recorded Router-role assignment in the dev Cluster, including a provisioning replacement until its assignment is withdrawn.
 
 The table filters only the reserved range. Its first rule passes every packet that has no address in the range, so traffic between other Nodes does not change. The range must be inside the WireGuard subnet, because every Node routes only the subnet through the tunnel. `TaskVmSettings` checks that. The command refuses a range that holds the address of a Node not named `tvm-<id>`. It also refuses a missing dev Cluster or origin, and an origin whose host is not an IPv4 address outside the range.
 
 | Direction | Allowed |
 | --- | --- |
 | From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
-| To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster router on TCP 80, 443, and 5173 |
+| To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
 
-The209 SSH rule comes from the same canonical definition shown by `firewall-managed-list` on the VPN Node. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall-live-list` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
+The209 SSH rule and Cluster Router web rules come from the same canonical definitions shown by `firewall-managed-list` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall-live-list` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 

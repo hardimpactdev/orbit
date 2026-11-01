@@ -6,6 +6,8 @@ namespace App\Infrastructure\Swamp;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationResultFields;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -30,9 +32,51 @@ final readonly class SwampCommandStep
         return $this->copies->synchronize($vault, $key, $value);
     }
 
+    /** One native lookup for a lost start confirmation. Missing evidence never permits resubmission. */
+    public function recoverUnbound(Operation $operation): void
+    {
+        $direct = app(DirectOperation::class);
+        $workflow = $direct->definition($operation->kind)['workflow'] ?? null;
+        $start = ['key' => 'operation:'.$operation->id, 'workflow' => $workflow];
+        if ($workflow === null || ! $direct->usesNativeTerminal($operation) || $operation->status !== OperationStatus::Running
+            || $operation->error_code !== 'swamp.start_uncertain' || isset($operation->state['swamp_run_id'])
+            || ($operation->state['swamp_start'] ?? null) !== $start) {
+            return;
+        }
+        $reply = $this->read('workflow.run.search', ['workflow' => $workflow,
+            'inputs' => ['operation_id' => (string) $operation->id, 'node_id' => (string) $operation->node_id, 'kind' => $operation->kind],
+            'tags' => ['orbit_start_key' => $start['key']], 'limit' => 2]);
+        $data = $reply['data'] ?? null;
+        $rows = is_array($data) ? ($data['results'] ?? null) : null;
+        if (($reply['total'] ?? null) !== 1 || ! is_array($rows) || ! array_is_list($rows) || count($rows) !== 1 || ! is_array($rows[0])) {
+            throw $this->unavailable();
+        }
+        $run = $rows[0];
+        $runId = $run['runId'] ?? null;
+        $inputs = $run['inputs'] ?? null;
+        $tags = $run['tags'] ?? null;
+        if (! is_string($runId) || ! Str::isUuid($runId) || isset($run['parentRun'])
+            || ($run['workflowName'] ?? null) !== $workflow || ! is_array($inputs) || ! is_array($tags)
+            || ($inputs['operation_id'] ?? null) !== $operation->id
+            || ($inputs['node_id'] ?? null) !== $operation->node_id || ($inputs['kind'] ?? null) !== $operation->kind
+            || ($tags['orbit_start_key'] ?? null) !== $start['key']) {
+            throw $this->unavailable();
+        }
+        DB::transaction(function () use ($operation, $runId, $start): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if ($current->status !== OperationStatus::Running || isset($current->state['swamp_run_id'])
+                || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start
+                || $current->node_id !== $operation->node_id || $current->kind !== $operation->kind) {
+                return;
+            }
+            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => null,
+                'state' => [...($current->state ?? []), 'swamp_run_id' => $runId]]);
+        });
+    }
+
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector): Operation
     {
@@ -180,7 +224,7 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string}  $selector
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
@@ -221,6 +265,28 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
 
+        foreach ($selector['captures'] ?? [] as $name => $capture) {
+            if (array_key_exists($name, $result)) {
+                continue;
+            }
+            foreach ($jobs as $job) {
+                if (($job['name'] ?? null) !== $capture['job']) {
+                    continue;
+                }
+                foreach ($job['steps'] as $step) {
+                    if (! is_array($step) || ($step['name'] ?? null) !== $capture['step'] || ($step['status'] ?? null) !== 'succeeded' || ! is_array($step['outputs'] ?? null)) {
+                        continue;
+                    }
+                    $outputs = $step['outputs'];
+                    if (! isset($capture['field'])) {
+                        $result[$name] = $outputs;
+                    } elseif (array_key_exists($capture['field'], $outputs)) {
+                        $result[$name] = $outputs[$capture['field']];
+                    }
+                }
+            }
+        }
+
         return $result;
     }
 
@@ -228,6 +294,20 @@ final readonly class SwampCommandStep
      * @return array<string,mixed>
      */
     private function history(string $runId): array
+    {
+        $reply = $this->read('workflow.history.get', ['workflowIdOrName' => $runId]);
+        $run = $reply['data'] ?? null;
+        if (! is_array($run)) {
+            throw $this->unavailable();
+        }
+
+        return ValidatedData::object($run);
+    }
+
+    /** @param array<string,mixed> $arguments
+     * @return array<string,mixed>
+     */
+    private function read(string $type, array $arguments): array
     {
         $token = config('swamp.read_token');
         $address = config('swamp.address');
@@ -238,7 +318,7 @@ final readonly class SwampCommandStep
         $id = bin2hex(random_bytes(16));
         try {
             $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
-            $this->socket->send(['type' => 'workflow.history.get', 'id' => $id, 'payload' => ['workflowIdOrName' => $runId]]);
+            $this->socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
             $deadline = microtime(true) + 30;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
                 foreach ($this->socket->receive(min(1.0, $remaining)) as $message) {
@@ -246,9 +326,8 @@ final readonly class SwampCommandStep
                         continue;
                     }
                     $payload = $message['payload'] ?? null;
-                    $run = is_array($payload) ? ($payload['data'] ?? null) : null;
-                    if (($message['type'] ?? null) === 'workflow.history.get' && is_array($run)) {
-                        return ValidatedData::object($run);
+                    if (($message['type'] ?? null) === $type && is_array($payload)) {
+                        return ValidatedData::object($payload);
                     }
                     throw $this->unavailable();
                 }

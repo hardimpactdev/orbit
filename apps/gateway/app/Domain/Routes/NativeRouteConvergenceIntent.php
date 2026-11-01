@@ -98,20 +98,6 @@ final readonly class NativeRouteConvergenceIntent
         return ValidatedData::integerList($operation->input['participant_node_ids'] ?? []);
     }
 
-    /** Pure fresh public rendering, called while the native Node publication lock is held.
-     * @return array<string, mixed>
-     */
-    public function publicInput(Operation $operation, int $callerNodeId): array
-    {
-        $intent = ValidatedData::object($operation->input['route_convergence'] ?? []);
-        if (! in_array($callerNodeId, self::participants($operation), true)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The Node is not an admitted Route participant.', 403);
-        }
-
-        return $this->publicInputForRoute($operation, $callerNodeId, $intent,
-            Route::query()->findOrFail(ValidatedData::integer($intent['route_id'])));
-    }
-
     /** The composing parent supplies its stored candidate; publications still render fresh DB state.
      * @param  array<string,mixed>  $intent
      * @return array<string,mixed>

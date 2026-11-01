@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { BaselineStage } from "./role_direct_local.ts";
-import { nodeRoleAdd } from "./role_direct.ts";
+import { nodeRoleAdd } from "../fleet-recipe/node_role.ts";
 import type { RoleSnapshot } from "./role_direct_contract.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { Stage } from "./converge_direct_contract.ts";
@@ -79,6 +79,7 @@ function fixture() {
     },
   );
   const ctx = {
+    extensionFile: (path:string) => new URL("../fleet-recipe/"+path,import.meta.url).pathname,
     globalArgs: {
       gatewayUrl: "https://gateway.test",
       caFile: "/tmp/public-ca.pem",
