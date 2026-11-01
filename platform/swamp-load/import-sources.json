@@ -49,6 +49,10 @@
     "swamp_load_log.py": {
       "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/swamp_load_log.py",
       "sha256": "332b1508e010296bb67d538e10cbc99e5de14c035ad5edbb1c6e442081fe305d"
+    },
+    "loader.py": {
+      "source": "/home/nckrtl/swamp-execution/platform/load-on-merge/loader.py",
+      "sha256": "b7c8eb4b7a5300786b16ef75e355a83337001822e9e364dc12788e95b80ff839"
     }
   }
 }
