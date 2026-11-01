@@ -145,14 +145,18 @@ export function swampRoleConvergeSteps(
                     argv: [
                         "/usr/bin/timeout",
                         String(budget),
-                        "/usr/bin/python3",
-                        "-B",
-                        ex(
-                            '"/tmp/orbit-swamp-role-' +
-                                (name ? name + "-" : "") + '"+run.id+"/' +
-                                phase + '.py"',
-                        ),
-                        stage,
+                        ...(phase === "units"
+                            ? ["/usr/bin/systemctl", "daemon-reload"]
+                            : [
+                                "/usr/bin/python3",
+                                "-B",
+                                ex(
+                                    '"/tmp/orbit-swamp-role-' +
+                                        (name ? name + "-" : "") +
+                                        '"+run.id+"/' + phase + '.py"',
+                                ),
+                                stage,
+                            ]),
                     ],
                     ...(phase === "install"
                         ? {

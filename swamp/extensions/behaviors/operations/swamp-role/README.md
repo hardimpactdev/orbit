@@ -5,7 +5,7 @@ exports its bounded native contribution. Gateway registration and parent admissi
 are pending. No live assignment, load or registry change is authorized.
 
 The install pin, memory floor, primary worker unit and checker come from the
-existing canonical worker suppliers. Eight script-file phases use official SSH,
+existing canonical worker suppliers. Seven script-file phases and one direct systemctl step use official SSH,
 coreutils deadlines and explicit queue timeouts. One official cfgmgmt firewall
 step admits the captured Services proxy to TCP 9417. Assets resolve once.
 

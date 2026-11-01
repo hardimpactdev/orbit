@@ -33,6 +33,10 @@ if '-M' in sys.argv or '-O' in sys.argv:raise SystemExit(0)
 argv=shlex.split(sys.argv[-1])
 if '/usr/bin/mkdir' in argv:
  Path(argv[-1]).mkdir(parents=True,exist_ok=True);raise SystemExit(0)
+if '/usr/bin/systemctl' in argv:
+ assert argv[-2:]==['/usr/bin/systemctl','daemon-reload']
+ with Path(AUDIT).open('a') as stream:stream.write(json.dumps('units')+'\\n')
+ raise SystemExit(0)
 if '/usr/bin/python3' not in argv:raise SystemExit('unexpected fixture command')
 phase=Path(argv[-2]).stem
 stage=Path(argv[-1]);plan=json.loads((stage/'plan.json').read_text())

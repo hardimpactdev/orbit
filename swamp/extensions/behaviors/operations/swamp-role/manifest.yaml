@@ -13,6 +13,5 @@ additionalFiles:
   - scripts/checkout.py
   - scripts/configuration.py
   - scripts/release_load.py
-  - scripts/units.py
   - scripts/activation.py
   - scripts/verify.py

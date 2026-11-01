@@ -45,7 +45,7 @@ class Custody(unittest.TestCase):
                 patch.object(
                     Path,
                     "is_file",
-                    lambda path: (
+                    lambda path, missing=missing: (
                         str(path) != "/usr/local/libexec/behavior_versions.py"
                         or missing != "helper"
                     ),

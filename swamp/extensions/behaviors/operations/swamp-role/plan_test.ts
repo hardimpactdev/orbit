@@ -121,6 +121,12 @@ Deno.test("Swamp contribution resolves assets once and bounds every SSH phase", 
             String(budgets[phase]),
         ]);
         assertEquals(inputs.timeoutSec, budgets[phase] + 10);
+        if (phase === "units") {
+            assertEquals((inputs.argv as unknown[]).slice(2), [
+                "/usr/bin/systemctl",
+                "daemon-reload",
+            ]);
+        }
     }
     assertEquals(JSON.stringify(steps).includes("${{ steps }}"), false);
 });

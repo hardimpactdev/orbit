@@ -50,6 +50,7 @@ export const behavior = {
                     prefix: "orbit-swamp-role-",
                 });
                 for (const name of [...phases, "common"]) {
+                    if (name === "units") continue;
                     await Deno.copyFile(
                         await ctx.extensionFile("scripts/" + name + ".py"),
                         directory + "/" + name + ".py",
