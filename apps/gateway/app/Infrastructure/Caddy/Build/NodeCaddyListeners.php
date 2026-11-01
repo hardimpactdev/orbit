@@ -46,7 +46,7 @@ final readonly class NodeCaddyListeners
         return new self(
             ingress: $node->exists && CaddySiteRoles::nodeServes($node->id, RoleName::Ingress),
             wireGuard: $wireGuard,
-            explicit: array_values(array_unique(array_filter([$wireGuard, self::address($node->lan_ip)]))),
+            explicit: array_values(array_unique(array_filter([$wireGuard, self::address(app(RouteRenderContext::class)->lanIp($node))]))),
             vpnSubnet: $vpnSubnet,
             taskVmRange: $taskVmRange,
             swampHost: $swampHost,
