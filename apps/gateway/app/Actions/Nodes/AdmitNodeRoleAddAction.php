@@ -8,8 +8,8 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
-use App\Domain\Nodes\NodeRoleParentInput;
 use App\Domain\Nodes\NodeRoleIntent;
+use App\Domain\Nodes\NodeRoleParentInput;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
@@ -68,7 +68,7 @@ final readonly class AdmitNodeRoleAddAction
                 '_role' => $captured['snapshot'], 'native_role' => $captured['intent'],
                 'intent' => ['target' => $captured['intent']], 'execution_secrets' => $copies,
                 'participant_node_ids' => $captured['participant_node_ids']],
-                'state' => [...$operation->state, 'role_intent' => NodeRoleIntent::capture($assignment, $created)]]);
+                'state' => [...($operation->state ?? []), 'role_intent' => NodeRoleIntent::capture($assignment, $created)]]);
 
             return $operation;
         });

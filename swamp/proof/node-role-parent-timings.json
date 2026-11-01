@@ -2,44 +2,20 @@
   {
     "kind": "node.role_add",
     "sample": "disposable native fixture using official SSH executable seam; not F10",
-    "n": 9,
+    "n": 3,
     "p95_ms": 5805,
     "runs": [
       {
-        "run_id": "0cac47c1-e917-4181-86ad-b8a732083364",
-        "duration_ms": 1267
-      },
-      {
-        "run_id": "4a1caa7c-9044-4b07-94d7-c0d39c4a4ae7",
-        "duration_ms": 5805
-      },
-      {
         "run_id": "2c7e268e-119d-495a-9a66-0c444fb09d36",
         "duration_ms": 1701
-      },
-      {
-        "run_id": "790b4736-1e65-47d2-8d0e-7408c64b9d72",
-        "duration_ms": 2287
-      },
-      {
-        "run_id": "5369aa44-5a72-4653-a808-d27c1f367961",
-        "duration_ms": 1654
-      },
-      {
-        "run_id": "618252fc-b04b-4cab-a6d3-c20a1873e1fd",
-        "duration_ms": 2413
-      },
-      {
-        "run_id": "17be9fb2-2a13-4210-825d-d3339b54f73e",
-        "duration_ms": 1862
       },
       {
         "run_id": "4f386e10-7da3-42f7-a1e2-d4fc1a6dd65d",
         "duration_ms": 3223
       },
       {
-        "run_id": "d429b970-c30d-4a74-9198-83173cb5998d",
-        "duration_ms": 2587
+        "run_id": "4a1caa7c-9044-4b07-94d7-c0d39c4a4ae7",
+        "duration_ms": 5805
       }
     ],
     "budget_seconds": 120,

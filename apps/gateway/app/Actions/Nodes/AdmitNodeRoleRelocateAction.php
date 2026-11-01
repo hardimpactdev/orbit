@@ -9,8 +9,8 @@ use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
-use App\Domain\Nodes\NodeRoleParentInput;
 use App\Domain\Nodes\NodeRoleIntent;
+use App\Domain\Nodes\NodeRoleParentInput;
 use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleSettings;
@@ -65,7 +65,7 @@ final readonly class AdmitNodeRoleRelocateAction
                 if ($previous === null || ! isset($priorTransfer['source_before'], $priorTransfer['source'], $priorIntent['source'])) {
                     throw new ResourceOperationException('operation.kind_unavailable', 'This transfer has no captured native source state; its original outcome must be settled first.', 422);
                 }
-                $roleIntent = ValidatedData::object($previous->state['role_intent']);
+                $roleIntent = ValidatedData::object($previous->state['role_intent'] ?? []);
                 $transfer = $priorTransfer;
                 $before = RouteExecutionProof::objects($transfer['source_before']);
                 $sourceSnapshot = ValidatedData::object($transfer['source']);
@@ -112,7 +112,7 @@ final readonly class AdmitNodeRoleRelocateAction
                     'withdrawal_grace_seconds' => $role === RoleName::WebSocket ? PrivateDnsAnswerExpiry::WithdrawalGraceSeconds : 0],
                 'execution_secrets' => $copies,
                 'participant_node_ids' => array_values(array_unique([...$captured['participant_node_ids'], $source->id, ...array_map(static fn (array $member): int => ValidatedData::integer($member['node_id']), $after)]))],
-                'state' => [...$operation->state, 'role_intent' => $roleIntent]]);
+                'state' => [...($operation->state ?? []), 'role_intent' => $roleIntent]]);
 
             return $operation;
         });
