@@ -684,7 +684,7 @@ The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while
 
 Provider children isolate SSH and vault inputs. Native cleanup children iterate a completed plan, then the root publishes one result. A provider or SSH failure never supplies a missing-VM observation. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection. 
 
-Each sweep workflow has a 60-second worker queue timeout. Its execution budget is 300 seconds, allowing for the existing 180-second Incus deletion timeout; shared native run-timeout delivery remains pending.
+Each sweep workflow has a 60-second worker queue timeout. Its execution budget is 300 seconds, allowing for the existing 180-second Incus deletion timeout; the shared start path does not yet pass that budget to Swamp.
 
 The native run checks that the host's Incus project exists with `incus project show`. It then compares the instance names with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 

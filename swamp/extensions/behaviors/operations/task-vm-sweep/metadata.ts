@@ -15,7 +15,7 @@ const CloudInventory = z.object({
     servers: z.array(
         z.object({
             uuid: z.uuid(),
-            title: Name,
+            title: z.string(),
             labels: z.object({
                 label: z.array(
                     z.object({ key: z.string(), value: z.string() }),

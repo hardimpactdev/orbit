@@ -16,6 +16,7 @@ const server = (n: number, name: string, key: string, value: string) => ({
 Deno.test("cloud sweep only selects admitted orphan IDs and inactive old image stamps", () => {
     const rows = {
         servers: [
+            server(40, "A foreign labelled server", "orbit-task-vm", "40"),
             server(6, "tvm-6", "orbit-task-vm", "6"),
             server(7, "tvm-7", "orbit-task-vm", "7"),
             server(11, "tvm-11", "orbit-task-vm", "11"),
