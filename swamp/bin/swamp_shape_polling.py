@@ -1,10 +1,177 @@
 """Prove bounded script controls from syntax, without running a phase or its queries."""
 import ast
+import ipaddress
 import json
+import re
 import subprocess
+from urllib.parse import urlsplit
 
 
-def python_controls(tree, seconds):
+def external_origin(value):
+    """A fixed HTTPS authority, never an Orbit/local name or IP address."""
+    if not value or not re.match(r'https://[^/]+/', value) or re.search(r'[\\\x00-\x20]', value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        host = (parsed.hostname or '').lower().rstrip('.')
+        port = parsed.port
+    except ValueError:
+        return False
+    if parsed.username is not None or parsed.password is not None or port not in (None, 443):
+        return False
+    labels = host.split('.')
+    if len(labels) < 2 or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]*[a-z0-9])?', label) for label in labels):
+        return False
+    if 'gateway' in host or labels[-1].isdigit() or any(label in ('orbit', 'gw', 'localhost', 'local', 'internal') for label in labels):
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        return True
+
+
+class PythonReads:
+    """Prove straight-line GET -> checked response -> state, including wrappers."""
+    def __init__(self, tree, bound):
+        self.bound = bound
+        self.checked = set()
+        self.imports = {}
+        self.functions = {}
+        writes = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del))}
+        writes.update(node.arg for node in ast.walk(tree) if isinstance(node, ast.arg))
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                for item in node.names:
+                    self.imports[item.asname or item.name.split('.')[0]] = item.name if item.asname else item.name.split('.')[0]
+            elif isinstance(node, ast.ImportFrom):
+                for item in node.names:
+                    self.imports[item.asname or item.name] = f'{node.module}.{item.name}'
+            elif isinstance(node, ast.FunctionDef):
+                self.functions.setdefault(node.name, []).append(node)
+        import_writes = writes | {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                root = node.value
+                while isinstance(root, ast.Attribute):
+                    root = root.value
+                if isinstance(root, ast.Name):
+                    import_writes.add(root.id)
+        self.imports = {key: value for key, value in self.imports.items() if key not in import_writes}
+        self.functions = {key: values[0] for key, values in self.functions.items() if len(values) == 1 and key not in writes}
+
+    def name(self, node):
+        if isinstance(node, ast.Name):
+            return self.imports.get(node.id, '')
+        if isinstance(node, ast.Attribute):
+            return f'{self.name(node.value)}.{node.attr}'
+        return ''
+
+    def value(self, node, values, stack=()):
+        if node is None or node in stack:
+            return None
+        stack = (*stack, node)
+        if isinstance(node, ast.Constant):
+            return ('literal', node.value)
+        if isinstance(node, ast.Name):
+            if node.id in values:
+                return values[node.id]
+            return self.value(self.bound(node.id, node), values, stack)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            if any(isinstance(part, ast.Call) for part in ast.walk(node)):
+                return None
+            left, right = self.value(node.left, values, stack), self.value(node.right, values, stack)
+            if left and left[0] in ('literal', 'prefix') and isinstance(left[1], str):
+                if left[0] == 'literal' and right and right[0] == 'literal' and isinstance(right[1], str):
+                    return ('literal', left[1] + right[1])
+                return ('prefix', left[1])
+        if isinstance(node, ast.Subscript):
+            base = self.value(node.value, values, stack)
+            if base and base[0] == 'state' and not any(isinstance(part, ast.Call) for part in ast.walk(node.slice)):
+                return base
+        if isinstance(node, ast.Attribute) and node.attr in ('text', 'content'):
+            base = self.value(node.value, values, stack)
+            if base and base[0] == 'response' and base[1] in self.checked:
+                return ('state', base[1])
+        if not isinstance(node, ast.Call):
+            return None
+        called = self.name(node.func)
+        # Arguments may select data, not run another hidden action.
+        if any(isinstance(part, ast.Call) for arg in [*node.args, *(kw.value for kw in node.keywords)] for part in ast.walk(arg)):
+            return None
+        if called in ('requests.get', 'httpx.get', 'urllib.request.Request', 'urllib.request.urlopen'):
+            args = [self.value(arg, values, stack) for arg in node.args]
+            kw = {item.arg: self.value(item.value, values, stack) for item in node.keywords}
+            if None in kw:
+                return None
+            target = args[0] if args else kw.get('url')
+            if called == 'urllib.request.urlopen' and target and target[0] == 'request':
+                target = target[1]
+            if not target or target[0] not in ('literal', 'prefix') or not isinstance(target[1], str) or not external_origin(target[1]):
+                return None
+            if called == 'urllib.request.Request':
+                if len(args) > 1 or kw.get('method', ('literal', 'GET')) != ('literal', 'GET') or kw.get('data', ('literal', None)) != ('literal', None):
+                    return None
+                return ('request', target)
+            if len(args) > 1 or any(key not in ('url', 'timeout', 'headers', 'params') for key in kw):
+                return None
+            if called == 'urllib.request.urlopen':
+                self.checked.add(node)
+            return ('response', node)
+        if isinstance(node.func, ast.Attribute):
+            base = self.value(node.func.value, values, stack)
+            if base and (base[0] == 'state' and node.func.attr == 'get' or
+                         base[0] == 'response' and base[1] in self.checked and node.func.attr in ('json', 'read')):
+                return ('state', base[1])
+        if called == 'json.loads' and len(node.args) == 1 and not node.keywords:
+            data = self.value(node.args[0], values, stack)
+            return data if data and data[0] == 'state' else None
+        if isinstance(node.func, ast.Name) and node.func.id in self.functions:
+            function = self.functions[node.func.id]
+            if function in stack or function.decorator_list or node.keywords or function.args.vararg or function.args.kwarg or function.args.kwonlyargs:
+                return None
+            parameters = [*function.args.posonlyargs, *function.args.args]
+            if len(node.args) != len(parameters):
+                return None
+            local = {parameter.arg: self.value(arg, values, stack) for parameter, arg in zip(parameters, node.args)}
+            return self.body(function.body, local, (*stack, function))
+        return None
+
+    def status(self, node, values):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr != 'raise_for_status' or node.args or node.keywords:
+            return False
+        base = self.value(node.func.value, values)
+        if not base or base[0] != 'response':
+            return False
+        self.checked.add(base[1])
+        return True
+
+    def body(self, statements, values, stack):
+        for index, statement in enumerate(statements):
+            if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
+                value = self.value(statement.value, values, stack)
+                if value is None:
+                    return None
+                values[statement.targets[0].id] = value
+            elif isinstance(statement, ast.Expr) and self.status(statement.value, values):
+                continue
+            elif isinstance(statement, ast.With) and len(statement.items) == 1 and index == len(statements) - 1:
+                item = statement.items[0]
+                value = self.value(item.context_expr, values, stack)
+                if not value or value[0] != 'response' or value[1] not in self.checked or not isinstance(item.optional_vars, ast.Name):
+                    return None
+                values[item.optional_vars.id] = value
+                return self.body(statement.body, values, stack)
+            elif isinstance(statement, ast.Return) and index == len(statements) - 1:
+                value = self.value(statement.value, values, stack)
+                return value if value and value[0] == 'state' else None
+            else:
+                # In particular: no try/except, action, loop or conditional status check.
+                return None
+        return None
+
+
+def python_controls(tree, seconds, bound):
     """Only successful external GET observations may select whether to wait again."""
     if not seconds:
         return set()
@@ -14,8 +181,16 @@ def python_controls(tree, seconds):
         sleep = all_sleeps[0]
         if len(sleep.args) == 1 and not sleep.keywords and isinstance(sleep.args[0], ast.Constant) and type(sleep.args[0].value) in (int, float) and 0 < sleep.args[0].value < seconds:
             allowed.add(sleep)
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
     for loop in ast.walk(tree):
         if not isinstance(loop, ast.While) or not isinstance(loop.test, ast.Constant) or loop.test.value is not True:
+            continue
+        ancestor = parents.get(loop)
+        guarded = False
+        while ancestor is not None:
+            guarded |= isinstance(ancestor, (ast.Try, ast.TryStar, ast.With, ast.AsyncWith))
+            ancestor = parents.get(ancestor)
+        if guarded:
             continue
         nodes = list(ast.walk(loop))
         if any(isinstance(node, ast.While) and node is not loop for node in nodes):
@@ -31,50 +206,42 @@ def python_controls(tree, seconds):
         interval = sleeps[0].args[0]
         if not isinstance(interval, ast.Constant) or type(interval.value) not in (int, float) or not 0 < interval.value < seconds:
             continue
-        reads = [node for node in nodes if isinstance(node, ast.Call) and
-                 (ast.unparse(node.func) == 'api' and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == 'GET' or
-                  ast.unparse(node.func) in ('requests.get', 'httpx.get'))]
-        if not reads:
-            continue
-        if any(isinstance(node, ast.Call) and node not in reads and node not in sleeps and
-               ast.unparse(node.func) not in ('RuntimeError', 'ValueError', 'SystemExit') and
-               not (isinstance(node.func, ast.Attribute) and node.func.attr == 'get') for node in nodes):
-            continue
         if any(isinstance(node, (ast.Continue, ast.NamedExpr)) for node in nodes):
-            continue
-        # Mutation requests and process exit-status retries cannot masquerade as state observations.
-        if any(isinstance(node, ast.Call) and
-               (ast.unparse(node.func).startswith(('subprocess.', 'os.system')) or
-                ast.unparse(node.func) in ('api', 'requests.post', 'requests.put', 'requests.delete') and node not in reads)
-               for node in nodes):
             continue
         # Keep the sleep unconditional and last. Track the current observation,
         # not a name which once held state but has since been overwritten.
         if loop.orelse or not isinstance(loop.body[-1], ast.Expr) or loop.body[-1].value is not sleeps[0]:
             continue
-        observed = set()
+        proof = PythonReads(tree, bound)
+        values = {}
         good = bad = False
         valid = True
         for statement in loop.body[:-1]:
             if isinstance(statement, ast.Assign):
-                if not all(isinstance(target, ast.Name) for target in statement.targets) or not any(
-                    part in reads or isinstance(part, ast.Name) and part.id in observed for part in ast.walk(statement.value)
-                ):
+                value = proof.value(statement.value, values)
+                if not all(isinstance(target, ast.Name) for target in statement.targets) or not value or value[0] not in ('response', 'state'):
                     valid = False
                     break
-                observed.update(target.id for target in statement.targets)
+                values.update((target.id, value) for target in statement.targets)
+            elif isinstance(statement, ast.Expr) and proof.status(statement.value, values):
+                continue
             elif isinstance(statement, ast.If):
                 if (statement.orelse or not isinstance(statement.test, ast.Compare) or
-                    not any(isinstance(part, ast.Name) and part.id in observed for part in ast.walk(statement.test)) or
+                    any(isinstance(part, ast.Call) for part in ast.walk(statement.test)) or
+                    not any(isinstance(part, ast.Name) and values.get(part.id, ('',))[0] == 'state' for part in ast.walk(statement.test)) or
                     len(statement.body) != 1):
                     valid = False
                     break
                 terminal = statement.body[0]
+                if any(isinstance(part, ast.Call) for part in ast.walk(terminal) if part is not getattr(terminal, 'exc', None)):
+                    valid = False
+                    break
                 good |= isinstance(terminal, (ast.Return, ast.Break))
-                readable = isinstance(terminal, ast.Raise) and terminal.exc is not None and any(
+                readable = (isinstance(terminal, ast.Raise) and isinstance(terminal.exc, ast.Call) and
+                            isinstance(terminal.exc.func, ast.Name) and terminal.exc.func.id in ('RuntimeError', 'ValueError', 'SystemExit') and any(
                     isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value.strip()
-                    for arg in ast.walk(terminal.exc)
-                )
+                    for arg in terminal.exc.args
+                ))
                 bad |= readable
                 if not isinstance(terminal, (ast.Return, ast.Break)) and not readable:
                     valid = False
@@ -172,7 +339,7 @@ def shell_controls(source, outer_seconds, errexit=False):
                 return False
             # Static external HTTPS origin; never poll Orbit or Gateway state.
             urls = [arg for arg in request if arg.startswith('https://')]
-            if len(urls) != 1 or any(word in urls[0].lower() for word in ('gateway', '.orbit', 'localhost', '127.0.0.1')):
+            if len(urls) != 1 or not external_origin(urls[0]):
                 return False
             params = [part for part in descendants(selector.get('Word', {})) if part.get('Type') == 'ParamExp']
             if len(params) != 1 or params[0].get('Param', {}).get('Value') != assigns[0].get('Name', {}).get('Value'):
@@ -209,7 +376,11 @@ def shell_controls(source, outer_seconds, errexit=False):
                     index = tail.index('-c')
                     if index + 2 != len(tail) or tail[index + 1] is None:
                         return False
-                    return shell_controls(tail[index + 1], bound, any(arg and arg.startswith('-') and 'e' in arg for arg in tail[2:index]))
+                    flags = tail[2:index]
+                    # Long options contain letters, not bundled short flags.
+                    if any(arg not in ('-e', '-u', '-eu', '-ue', '--noprofile', '--norc') for arg in flags):
+                        return False
+                    return shell_controls(tail[index + 1], bound, any(arg in ('-e', '-eu', '-ue') for arg in flags))
                 return False
             if binary == 'sleep':
                 return bool((poll or single_wait) and seconds and len(argv) == 2 and argv[1] and argv[1].replace('.', '', 1).isdigit() and 0 < float(argv[1]) < seconds)

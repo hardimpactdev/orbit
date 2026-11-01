@@ -58,6 +58,18 @@ class ShapeGate(unittest.TestCase):
         ]:
             self.assertTrue(any(row['rule'] == 'gateway-http' for row in scan(variant)), variant)
 
+    def test_httpx_gateway_reads_share_the_external_origin_boundary(self):
+        def scan(source):
+            result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        for client in ('requests', 'httpx'):
+            for host in ('gw.orbit', 'gateway.example', 'gateway-prod.example', '10.7.0.14', '127.1', 'localhost'):
+                source = f"import {client}\n{client}.get('https://{host}/api/v1/operations/5')\n"
+                self.assertTrue(any(row['rule'] == 'gateway-http' for row in scan(source)), source)
+            source = f"import {client} as client\nclient.get('https://api.provider.example/gateway-state')\n"
+            self.assertEqual(scan(source), [])
+            self.assertEqual(scan(source.replace("client.get('", "client.get(url='")), [])
+
     def test_only_proven_named_host_tool_flocks_are_not_workflow_mutexes(self):
         def scan(source):
             result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
