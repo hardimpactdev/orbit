@@ -141,7 +141,7 @@ def validate(case, selected, operation, instance, workload):
             raise RuntimeError("proof-setup-success-not-projected")
         if operation.get("input", {}).get("list") != "setup":
             raise RuntimeError("proof-not-project-setup-list")
-    return {"case": case, "passed": True, **({"github_token_path": "not_exercised"} if case in ("branch-in-use", "setup-fails-then-skips") else {})}
+    return {"case": case, "passed": True}
 
 
 def main():

@@ -2,8 +2,8 @@
   "kind": "instance.create",
   "workflow": "operation-instance-create",
   "topology": "app-dev",
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": 600,
+  "budget_seconds": 60,
+  "queue_timeout_seconds": 30,
   "request": {
     "argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "proof-${proof.run}", "--root=empty-environment", "--branch=proof-${proof.run}", "--json"],
     "operation": "$.id"
@@ -42,7 +42,7 @@
       "name": "source",
       "job": "prepare",
       "step": "source-result",
-      "budget_seconds": 1800
+      "budget_seconds": 60
     },
     {
       "name": "setup",

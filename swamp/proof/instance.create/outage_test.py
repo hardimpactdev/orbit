@@ -40,10 +40,11 @@ class OutageFixtures(unittest.TestCase):
             value = json.loads((ROOT / (case + '.json')).read_text())
             self.assertEqual(value['expect']['outputs']['step'], 'finish-setup-1-0')
 
-    def test_github_token_limit_is_an_explicit_case(self):
+    def test_github_token_limit_is_only_a_receipt_limitation(self):
         for case in ('branch-in-use', 'setup-fails-then-skips'):
             value = json.loads((ROOT / (case + '.json')).read_text())
-            self.assertIn('github_token_path: not_exercised', value['parity']['cases'])
+            self.assertEqual(value['limitations'], ['github_token_path: not_exercised (topology repositories are not GitHub)'])
+            self.assertFalse(any('github_token_path' in case for case in value['parity']['cases']))
 
     def test_macro_alias_is_sent_to_the_gateway_not_expanded_in_the_fixture(self):
         value = json.loads((ROOT / 'setup-macros.json').read_text())
@@ -123,7 +124,7 @@ class OutageParity(unittest.TestCase):
         return parity.validate(**(args | changes))
 
     def test_failed_command_requires_execution_evidence_and_skip(self):
-        self.assertEqual(self.validate()['github_token_path'], 'not_exercised')
+        self.assertTrue(self.validate()['passed'])
         for change in ({'first': False}, {'failed': False}, {'skipped': True}):
             with self.assertRaisesRegex(RuntimeError, 'order-or-skip'):
                 self.validate(workload=self.workload | change)

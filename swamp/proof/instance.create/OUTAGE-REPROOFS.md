@@ -1,6 +1,6 @@
 # Instance outage re-proofs
 
-Run these fixtures after lane 25 validates `bin/swamp-proof up`, before the source-setup and database-migration proofs for #2327. They use normal Gateway admission in an isolated app-dev topology. They do not change product code.
+Run these fixtures after lane 25 validates `bin/swamp-proof up`, before the source-setup and database-migration proofs for #2327. They use normal Gateway admission in an isolated app-dev topology. The accompanying F8 change sets only the two workflows’ queue timeouts.
 
 Use this order from D's `re-proof-owed.md` plan. Select each variant explicitly; alphabetical all-variant execution has a different order.
 
@@ -25,7 +25,7 @@ The macro fixture sends literal `@orbit/ci-caches` to the Gateway. The canonical
 
 Stage main, plus at most one small F8 compliance PR as D permits. These selectors target the expanded outage workflow, before #2327's grouped setup rewrite. Do not use #2327 to close the outage rows. Recheck selectors if a required fix changes the workflow.
 
-Main's create and setup workflows currently omit an explicit `queueTimeout`. The fixtures record the inherited native default of 600 seconds as a provisional value. The harness correctly refuses them until the owning F8 change declares a queue timeout and these values match it. A fixture is not an exception to that check. The 1800-second run ceilings are unmeasured proof ceilings, not p95 claims; reconcile them with the admitted kind budgets before running.
+Both workflows declare `queueTimeout: 30`, inherited by their steps. This is D’s worker-wait policy, separate from the run budget. Create fixtures use the PLAN F8 60-second budget. The setup fixture uses 64 seconds: the longest success in the two retained native success samples is 42.499 seconds (Operation 6798, run `e90c20c8-f551-476e-8b2a-50814e033a83`), multiplied by 1.5 and rounded up. The other retained success is 2.528 seconds (Operation 5570, run `30116b61-fd94-414c-95f0-f3a5e95d5f0e`). These two samples do not establish a p95 or a fleet-wide maximum. The proof must meet its budget; there is no runner exception.
 
 The fixture contract added `limitations` on 2026-11-01 at 14:08Z. The harness must accept and copy that field before these variants run. No receipt is claimed by local tests.
 
