@@ -114,7 +114,7 @@ it('admits one idempotent public network root with immutable participants', func
     [$existing, $peer, $hub] = nativeNetworkFixture();
     $existing->delete();
     $gateway = FleetFixtures::node('native-gateway', [RoleName::Gateway]);
-    config(['swamp_workers.nodes' => [$peer->id]]);
+    config(['swamp_workers.nodes' => []]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->withHeader('Idempotency-Key', 'native-network-root');
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
@@ -152,7 +152,7 @@ it('refuses public network programs credentials and caller placement before inte
     [$existing, $peer] = nativeNetworkFixture();
     $existing->delete();
     $gateway = FleetFixtures::node('native-gateway', [RoleName::Gateway]);
-    config(['swamp_workers.nodes' => [$peer->id]]);
+    config(['swamp_workers.nodes' => []]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     $this->postJson("/api/v1/nodes/{$peer->id}/network/converge", [$field => 'untrusted'])->assertUnprocessable();
     expect(Operation::query()->exists())->toBeFalse();
