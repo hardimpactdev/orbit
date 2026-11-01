@@ -9,7 +9,7 @@
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/enrollment.ts": "b043853c6c8e7c03443ea80646ca0c8faf0120a3d01610b3e8ce6c0e5170ef56",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/input.ts": "c00f5ce0f27de4541651b468880b39a9f809a740b570f278ba2f37a507715aa6",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/input_test.ts": "c13e0329a7376fb5a6d53c32b4f7087621d012e0e29301933c13d806bd2101b0",
-    "swamp/extensions/behaviors/operations/task-vm-lifecycle/metadata.ts": "c58f30f0e5018416b70107e689703276f9de4e5daf974d8c3bd19fb11a92838c",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/metadata.ts": "b4512084c77c8e22baf2df3aa354d53f9caa3d9222c25cce725e1be35752dcca",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/provision_input.ts": "f990a21541c5150a30bb297719f0639606d471871ed6efea9b059eaa593d593d",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/ssh_input.ts": "acf8c662b55b60c02ac2a1dba3ca42c279ff974fe0d738fa7f5babb2f8054157",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/ssh_firewall.py": "23e35896009bcfa908b5bf00d3577a4b63b7aea2f3a9dc4720e05f33982c7851",
@@ -18,12 +18,12 @@
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py": "fced77f41ca3d8d7cf7ca94d851fcf6c628f7ec731c80651a4fa8e28100d134e",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_create.py": "787339420a97cadae46c1bc96998344be0406e511a0a3067a03f4f1d51cfcf6b",
     "swamp/workflows/workflow-task-vm-provider-upcloud.yaml": "b34015c02d229d8da4bccb0c2499c817a087fbc72f7b2cd795a69571ed0b411b",
-    "swamp/tests/task_vm_upcloud_provider_native_test.py": "7612be846ca9fab088968a0b2d06e61d87cddadcd38c052ec4ab1b9cd9b7720a",
+    "swamp/tests/task_vm_upcloud_provider_native_test.py": "6bef091ff53b2355ead97e50e466974172bfb7098c2ef240f34e8f002e99c6be",
     "swamp/tests/task_vm_upcloud_wait_test.py": "7803aae69e92572f094ab69cd68da6d1eec769569c1636e6a72c1f1045102f86",
-    "apps/gateway/app/Domain/Operations/OperationRunBudgets.php": "44e94dad130e1853fa2af042716c753dc03b3edc0c7666c8e17952e8eb3d7494",
-    "apps/gateway/tests/Feature/Infrastructure/Swamp/OperationRunBudgetTest.php": "df512c387c22d5df5316135e6fb883b1418fe7c8eb334f378673b59d39020d3c",
+    "apps/gateway/app/Domain/Operations/OperationRunBudgets.php": "8cced5d733bce91177776ebcb665d9cabb2a9d32a99ad09dc391cc6002df7f3b",
+    "apps/gateway/tests/Feature/Infrastructure/Swamp/OperationRunBudgetTest.php": "3f213c3a4a30a6a81bef6099b6f1355b8bf06300ccd0e128826f57495b5e07da",
     "swamp/tests/swamp_shape_gate_test.py": "7d15ed5fb4eb62f0ee0a53205662d5d21fd6d827e0faf40ddfc0654969ac370a",
-    "swamp/tests/task_vm_upcloud_composition_native_test.py": "ac6d2aeaec84b90fcc5b60f9a4e819c2532918e8f08be91148584bd9f58e58a9"
+    "swamp/tests/task_vm_upcloud_composition_native_test.py": "ee56f40fabc8fbb55115340fd596a8b552aee8883d4f640560fde633d9a6b5bd"
   },
   "provider_native": {
     "test_file": "swamp/tests/task_vm_upcloud_provider_native_test.py",
@@ -194,25 +194,28 @@
     "passed": 76
   },
   "budgets": {
-    "provider_critical_path_seconds": 345,
+    "provider_literal_critical_path_seconds": 345,
     "provider_review_allowance_seconds": 375,
     "ssh_preparation_review_allowance_seconds": 600,
-    "enrollment_allowance_seconds": 1500,
-    "rollback_allowance_seconds": 900,
-    "queue_timeout_seconds": 10,
-    "native_step_queue_count": 160,
-    "queue_allowance_seconds": 1600,
-    "subtotal_seconds": 4975,
-    "multiplier": 1.5,
-    "explicit_root_budget_seconds": 7500,
+    "enrollment_legacy_ceiling_seconds": 1500,
+    "rollback_legacy_ceiling_seconds": 900,
+    "legacy_phase_total_seconds": 3375,
+    "explicit_root_budget_seconds": 3900,
+    "budget_headroom_seconds": 525,
+    "serve_max_run_duration_seconds": 5400,
+    "fits_serve_ceiling": true,
+    "authority": "F final budget decision",
+    "measurement": "derived from legacy phase ceilings, not native history",
+    "removal_condition": "replace with history \u00d7 1.5 once UpCloud provisions succeed",
     "live_helper_invoked": false
   },
   "not_verified": [
     "real UpCloud API/provider latency",
     "F13 topology",
-    "live uptake of this new explicit budget row",
     "600-second aggregate SSH preparation cap",
-    "shared F1 phase/budget timeout text (projector pending)"
+    "shared F1 phase/budget timeout text (projector pending)",
+    "full literal phase and queue bounds (follow-up per F)",
+    "live uptake of the 3900-second budget row"
   ],
   "composition_native": {
     "test_file": "swamp/tests/task_vm_upcloud_composition_native_test.py",
@@ -225,7 +228,7 @@
     "passed": 54,
     "assertions": 465,
     "regression_before_change_seconds": 120,
-    "pinned_after_change_seconds": 7500,
+    "pinned_after_change_seconds": 3900,
     "providers": [
       "incus",
       "upcloud"
@@ -234,5 +237,35 @@
   "python_shape_gate_tests": {
     "tests": 17,
     "passed": 17
+  },
+  "budget_audit": {
+    "status": "F_approved_legacy_ceiling_derivation",
+    "source": "budget-check.json",
+    "derived_budget_ready": true,
+    "serve_ceiling_seconds": 5400,
+    "budget_fits": true,
+    "missing_ssh_phase_bounds": "follow-up per F"
+  },
+  "harness_timeout_investigation": {
+    "cause": "Old permanent-maintenance fixture left its real 240-second phase active; Python per-command harness expired at 120 seconds first",
+    "old_test_source": "fd42b901c1^:swamp/tests/task_vm_upcloud_composition_native_test.py:148",
+    "fixed_fixture_bound_seconds": 1,
+    "harness_bound_seconds": 120,
+    "replacement_count_checked": true,
+    "native_provider_run_id": "28dd7a9b-c29c-4f1e-998e-afc7b52c6548",
+    "native_phase": "observe",
+    "native_phase_duration_ms": 1066,
+    "native_error": "Command exited with code 124",
+    "targeted_tests": 2,
+    "passed": 2,
+    "elapsed_seconds": 34.964
+  },
+  "version_smoke": {
+    "package_version": "2026.11.01.7",
+    "tests": 1,
+    "passed": 1,
+    "elapsed_seconds": 18.719,
+    "native_run_id": "56f61973-8791-4d60-96a0-8007f0aed687",
+    "native_run_duration_ms": 6584
   }
 }

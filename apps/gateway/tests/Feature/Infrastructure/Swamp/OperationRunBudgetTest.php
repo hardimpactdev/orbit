@@ -512,6 +512,6 @@ it('pins the full provision path budget when fast Incus history would shrink the
     $history->forceFill(['status' => OperationStatus::Succeeded, 'lock_key' => null,
         'input' => ['provider' => 'incus'], 'started_at' => now()->subMinutes(2), 'finished_at' => now()->subMinute()])->save();
 
-    expect(OperationRunBudgets::seconds($operation))->toBe(7500);
-    expect(OperationRunBudgets::deadline($operation)?->equalTo(now()->addSeconds(7500)))->toBeTrue();
+    expect(OperationRunBudgets::seconds($operation))->toBe(3900);
+    expect(OperationRunBudgets::deadline($operation)?->equalTo(now()->addSeconds(3900)))->toBeTrue();
 })->with(['incus', 'upcloud']);

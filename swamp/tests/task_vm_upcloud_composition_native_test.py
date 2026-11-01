@@ -148,7 +148,9 @@ class UpCloudCompositionNative(unittest.TestCase):
     def test_start_timeout_retains_unknown_uuid_without_guest_actions(self):
         self.cloud.state = 'maintenance'
         path = self.vm.repo / 'workflows/workflow-task-vm-provider-upcloud.yaml'
-        path.write_text(path.read_text().replace('timeout 240 ', 'timeout 1 '))
+        source = path.read_text()
+        self.assertEqual(source.count('timeout 240 '), 1, 'The shortened fixture phase must replace its real bound exactly once')
+        path.write_text(source.replace('timeout 240 ', 'timeout 1 '))
         self.vm.run_root(False)
         # Transitional state cannot be safely powered/deleted. Discovery retains
         # the exact VM for normal native observation/resume, never false success.

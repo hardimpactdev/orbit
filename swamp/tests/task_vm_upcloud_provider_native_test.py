@@ -171,12 +171,17 @@ class UpCloudProviderNative(NativeTestCase):
     def test_start_phase_timeout_fails_without_retrying_the_mutation(self):
         self.detail_states = ['maintenance']
         path = self.repo / 'workflows/workflow-task-vm-provider-upcloud.yaml'
-        path.write_text(path.read_text().replace('timeout 240 ', 'timeout 1 '))
+        source = path.read_text()
+        self.assertEqual(source.count('timeout 240 '), 1, 'The shortened fixture phase must replace its real bound exactly once')
+        path.write_text(source.replace('timeout 240 ', 'timeout 1 '))
         run, history = self.create(False)
         self.assertEqual(run['status'], 'failed')
         self.assertEqual(len(self.create_documents), 1)
         self.assertFalse(any(path.endswith('/start') for method, path in self.calls if method == 'POST'))
-        self.assertEqual(next(step for step in history['jobs'][0]['steps'] if step['name'] == 'observe')['status'], 'failed')
+        phase = next(step for step in history['jobs'][0]['steps'] if step['name'] == 'observe')
+        self.assertEqual(phase['status'], 'failed')
+        self.assertRegex(phase['error'], r'\bcode 124\b')
+        print('UPCLOUD-TIMEOUT-BOUNDARY ' + json.dumps({'run_id': run['id'], 'phase': phase['name'], 'duration_ms': phase['duration'], 'error': phase['error'], 'fixture_phase_seconds': 1, 'harness_seconds': self.native_timeout}), flush=True)
         self.assert_private_absent()
 
     def test_foreign_label_refuses_before_create_or_power(self):

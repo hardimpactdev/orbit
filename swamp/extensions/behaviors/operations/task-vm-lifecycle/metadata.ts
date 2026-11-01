@@ -15,7 +15,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
-    version: "2026.11.01.5",
+    version: "2026.11.01.7",
     resources: {
         api_assets: {
             lifetime: "infinite",
