@@ -11,7 +11,7 @@ $intent = [
 ];
 
 return [
-    'firewall.inspect' => ['workflow' => 'operation-firewall-inspect', 'projection' => FirewallInspectionProjection::class],
+    'firewall.inspect' => ['workflow' => 'operation-firewall-inspect', 'projection' => FirewallInspectionProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'inspection', 'step' => 'result']],
     'firewall.allow' => $intent,
     'firewall.deny' => $intent,
     'firewall.remove' => $intent,

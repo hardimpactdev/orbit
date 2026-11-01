@@ -12,7 +12,7 @@ Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it ne
 
 The Gateway validates and records named rule intent, then returns an Operation with `202 Accepted`. Swamp runs one native DAG on the admitted Node's exact worker, applies the fixed local UFW program with sudo, and records the root result. The CLI follows the Operation until it ends. The Gateway projects the managed row without inspecting execution again. There is no agent action, child Operation or polled writer.
 
-Named rules, Route LAN allowances and role rules share `/run/lock/orbit-firewall.lock` for the complete inspect, change and confirmation transaction. A named rule checks exact comment ownership and address families before changing the host. Read-only `firewall:inspect` records a native inspection Operation. It changes no machine state. The live list reads only its recorded snapshot and includes `observed_at`; it does not contact the Node. Raw UFW output stays on the Node.
+Named rules, Route LAN allowances and role rules share `/run/lock/orbit-firewall.lock` for the complete inspect, change and confirmation transaction. A named rule checks exact comment ownership and address families before changing the host. Read-only `firewall:inspect` records a native inspection Operation. Node 209 runs one official pinned SSH `ufw status numbered` read over the stored WireGuard address. A typed native result step parses the IPv4 rules and compares them with the desired rules captured at admission. It changes no machine state. The live list returns this recorded comparison and `observed_at`; it does not contact the Node or recompute drift against later intent. Raw UFW output remains in native SSH history, outside the Gateway result.
 
 [Database servers](/reference/database-servers#private-publication) publish only on explicit WireGuard and LAN addresses. Ports published by Docker bypass UFW. These servers trust the private Orbit networks and have no port firewall; named UFW rules do not restrict their Docker publications.
 
@@ -46,7 +46,7 @@ In the live list, each live rule has a `match` value. `exact` means it equals a 
 
 ## orbit firewall:inspect
 
-`orbit firewall:inspect --node=7 [--idempotency-key=KEY] [--json]` starts the native read and follows its Operation. `POST /api/v1/nodes/{node}/firewall-inspection` returns the same Operation with `202 Accepted`. Only the admitted Node can submit the bounded snapshot. The Node agent is not invoked.
+`orbit firewall:inspect --node=7 [--idempotency-key=KEY] [--json]` starts the native read and follows its Operation. `POST /api/v1/nodes/{node}/firewall-inspection` returns the same Operation with `202 Accepted`. The workflow runs entirely on 209 and needs no target worker. The Gateway projects its bound terminal result. Missing stored host pins refuse admission; SSH failures or unrepresentable or oversized observations fail without a partial snapshot. The Node agent is not invoked.
 
 The snapshot contains the backend status, typed IPv4 rules and `observed_at`. No raw UFW output is returned. Run this command again when a newer snapshot is needed; a live-list GET reads stored data only.
 

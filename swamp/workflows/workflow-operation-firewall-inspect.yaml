@@ -1,29 +1,49 @@
 id: 64e7b66e-e7e4-42c6-ad24-3aa96f2cb56d
 name: operation-firewall-inspect
-description: Read a complete bounded live IPv4 firewall snapshot on its own Node.
+description: One pinned SSH UFW read from209 with native typed comparison.
 vaults: []
+target: orbit-node-209
 inputs:
   type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [firewall.inspect] }
-  required: [operation_id, node_id, kind]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [firewall.inspect]}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
   - name: inspection
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
     steps:
-      - name: inspect
-        writes: true
+      - name: read
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "firewall-read-" + run.id }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "firewall-read-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh.target.user }}'
+              port: '${{ inputs.intent.ssh.target.port }}'
+              identityFile: '${{ inputs.intent.ssh.identity_file }}'
+              hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
+          inputs:
+            hosts: name:target
+            argv: [/usr/sbin/ufw, status, numbered]
+            sudo: true
+      - name: result
+        target: orbit-node-209
+        dependsOn: [{step: read, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: '@nckrtl/firewall-inspection'
-          behaviorName: '${{ "firewall-inspection-node-" + string(inputs.node_id) }}'
+          behaviorName: '${{ "firewall-result-" + run.id }}'
           methodName: inspect
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'
+            stdout: '${{ steps.read.outputs.stdout }}'
+            expected: '${{ inputs.intent.expected }}'
