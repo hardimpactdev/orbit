@@ -38,6 +38,12 @@ export function instanceActions(
             task,
             ...extra,
         };
+        if (extra.forEach) {
+            task.behaviorName = String(task.behaviorName).replace(
+                / \}\}$/,
+                ' + "-" + string(self._index) }}',
+            );
+        }
         steps.push(step);
         return String(step.name);
     }

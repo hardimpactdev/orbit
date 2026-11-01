@@ -37,9 +37,13 @@ Swamp fetches committed source from the admitted Project repository. Working fil
 
 ## Configuration and result
 
+The shared native VP preparation jobs capture the checkout's pinned requirements, prepare the manager only when absent, and install and verify the admitted runtime through the stock VP CLI. A project without VP requirements skips installation. The final clone result requires those jobs to succeed before the Gateway activates the target.
+
 The target receives independently encrypted stored candidate values, excluding `DB_*` and candidate WebSocket app credentials. The Gateway publishes the rendered environment as a named vault execution copy. Official SSH resolves it only for the environment write; private values never enter workflow inputs or public results. The file is written atomically with mode `0640`.
 
 The existing scoped GitHub App mint primitive supplies repository read access. Its root key stays in the Gateway. All other steps use captured inputs and native outputs; no step reads intent or reports progress through Gateway HTTP.
+
+### Terminal projection and retries
 
 The shared terminal subscriber projects source facts and activates the target only after successful native completion. Failure or cancellation keeps the target reserved and records the error. API cancellation requests native cancellation; an acknowledgment does not prove that the root has settled.
 

@@ -13,7 +13,7 @@ class InstanceCloneNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
-        self.copy_behaviors('operations/instance-source-command', 'operations/instance-lifecycle', 'operations/tools')
+        self.copy_behaviors('operations/instance-source-command', 'operations/instance-lifecycle', 'operations/tools', 'operations/instance-vp-command', 'operations/node-bootstrap', 'operations/instance-deploy')
         self.candidate = self.repo / 'candidate'
         self.candidate.mkdir()
         self.git('init', '-q')
@@ -46,7 +46,7 @@ for value in sys.argv[-2:]:
     paths.append(value)
 source,destination=map(Path,paths)
 if source.is_dir():shutil.copytree(source,destination/source.name,dirs_exist_ok=True)
-else:shutil.copyfile(source,destination)
+elif source.resolve() != destination.resolve():shutil.copyfile(source,destination)
 ''')
         scp.chmod(0o755)
         self.native_env['FIXTURE_REPOSITORY'] = str(self.candidate)
@@ -73,7 +73,7 @@ else:shutil.copyfile(source,destination)
                 'prepare_id': '4a2ae14b-93e3-4b16-97df-35f2e33e6027', 'seed_repository': None},
             'resolve': {'instance_name': 'clone', 'default_branch': 'main', 'branch_override': 'main', 'require_branch': True, 'seed_commit': None, 'network': True},
             'application': str(self.target), 'project_type': 'monorepo', 'php_versions': ['8.5'], 'skip_profile': True, 'retained_source': None,
-            'environment_path': str(self.target), 'execution_references_json': '{}',
+            'vp_setup': None, 'environment_path': str(self.target), 'execution_references_json': '{}',
             'candidate': {'checkout': str(self.candidate), 'repository_identity': 'github.com/example/project', 'branch': 'main', 'ssh_execution': connection}}
 
     def git(self, *args):
@@ -95,7 +95,7 @@ else:shutil.copyfile(source,destination)
         self.assertEqual((self.target / '.env').read_text(), 'PRIVATE_FIXTURE=retained\n')
         self.assertEqual((self.target / '.env').stat().st_mode & 0o777, 0o640)
         self.assertTrue((self.target / '.git').is_dir())
-        result = json.loads(history['jobs'][0]['steps'][-1]['outputs']['stdout'])
+        result = json.loads(history['jobs'][-1]['steps'][-1]['outputs']['stdout'])
         self.assertEqual(result['commit'], self.git('rev-parse', 'HEAD'))
         self.assertEqual(result['candidate_commit'], result['commit'])
         self.assertTrue(result['ready'])
@@ -106,7 +106,7 @@ else:shutil.copyfile(source,destination)
         run, history = self.run_clone(success=False)
         self.assertEqual(run['status'], 'failed')
         self.assertFalse((self.target / '.env').exists())
-        self.assertEqual(history['jobs'][0]['steps'][-1]['status'], 'skipped')
+        self.assertEqual(history['jobs'][-1]['steps'][-1]['status'], 'skipped')
 
     def test_shared_source_builder_prepares_linked_worktree_without_replacing_seed(self):
         self.intent["source"]["seed_repository"] = str(self.candidate)

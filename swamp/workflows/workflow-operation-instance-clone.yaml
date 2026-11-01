@@ -63,7 +63,7 @@ inputs:
     - execution_secrets
   additionalProperties: false
 jobs:
-  - name: clone
+  - name: prepare
     target: orbit-node-209
     steps:
       - name: paths
@@ -104,7 +104,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "icl-" + run.id + "-2" }}'
           methodName: exec
-          globalArgs: &ref_0
+          globalArgs: &ref_2
             name: '${{ "icl-candidate-" + run.id }}'
             transport:
               kind: ssh
@@ -141,7 +141,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "icl-" + run.id + "-3" }}'
           methodName: exec
-          globalArgs: *ref_0
+          globalArgs: *ref_2
           inputs:
             hosts: 'name:target'
             argv:
@@ -166,7 +166,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "icl-" + run.id + "-4" }}'
           methodName: exec
-          globalArgs: *ref_0
+          globalArgs: *ref_2
           inputs:
             hosts: 'name:target'
             argv:
@@ -191,7 +191,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "icl-" + run.id + "-5" }}'
           methodName: exec
-          globalArgs: *ref_0
+          globalArgs: *ref_2
           inputs:
             hosts: 'name:target'
             argv:
@@ -230,7 +230,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "icl-" + run.id + "-7" }}'
           methodName: script
-          globalArgs: *ref_0
+          globalArgs: *ref_2
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -281,7 +281,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-1-" + run.id }}'
           methodName: script
-          globalArgs: &ref_1
+          globalArgs: &ref_3
             name: '${{ "source-" + run.id }}'
             transport:
               kind: ssh
@@ -331,7 +331,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-3-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -362,7 +362,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-4-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -416,7 +416,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-6-" + run.id }}'
           methodName: script
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -454,7 +454,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-8-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -482,7 +482,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-9-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -529,7 +529,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-11-" + run.id }}'
           methodName: script
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -564,7 +564,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-13-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -585,7 +585,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "source-copy-" + run.id }}'
           methodName: copy
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             src: '${{ steps["source-paths"].outputs.directory }}'
@@ -609,7 +609,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-15-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -638,7 +638,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-16-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -685,7 +685,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-18-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -716,7 +716,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-19-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             argv:
@@ -761,7 +761,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "src-21-" + run.id }}'
           methodName: script
-          globalArgs: *ref_1
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -821,12 +821,314 @@ jobs:
               ${{
               vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key)
               }}
-      - name: result
+  - name: clone-vp-capture
+    target: orbit-node-209
+    dependsOn:
+      - job: prepare
+        condition:
+          type: succeeded
+    steps:
+      - name: clone-vp-local-directory
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "vp-local-"+run.id }}'
+          methodName: execute
+          inputs:
+            run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
+            env:
+              ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-"+run.id }}'
+      - name: clone-vp-project-asset
         target: orbit-node-209
         dependsOn:
-          - step: environment
+          - step: clone-vp-local-directory
             condition:
               type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-assets'
+          behaviorName: '${{ "idm-clone--1-" + run.id }}'
+          methodName: read
+          inputs:
+            action: project_material
+            input:
+              application: '${{ inputs.intent.application }}'
+              destination: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+      - name: clone-vp-project
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-project-asset
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-clone--2-" + run.id }}'
+          methodName: script
+          globalArgs: &ref_4
+            name: '${{ "id-clone-vp-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["clone-vp-project-asset"].outputs.script_body }}'
+      - name: clone-vp-private-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-project
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-clone--3-" + run.id }}'
+          methodName: copy
+          globalArgs: *ref_4
+          inputs:
+            hosts: 'name:target'
+            src: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+            dst: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+            direction: from
+      - name: clone-vp-requirements
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-private-copy
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-clone--4-" + run.id }}'
+          methodName: capture
+          inputs:
+            path: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+  - name: clone-vp-install
+    target: orbit-node-209
+    dependsOn:
+      - job: clone-vp-capture
+        condition:
+          type: succeeded
+    steps:
+      - name: clone-vp-manager-assets
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-tool-setup-assets'
+          behaviorName: '${{ "idm-clone--0-" + run.id + "-" + string(self._index) }}'
+          methodName: read
+          inputs:
+            setup: '${{ inputs.intent.vp_setup }}'
+        forEach: &ref_0
+          item: runtime
+          in: >-
+            ${{ steps["clone-vp-requirements"].outputs.manager_required ?
+            (steps["clone-vp-requirements"].outputs.runtime == null ? [] :
+            [steps["clone-vp-requirements"].outputs.runtime]) : [] }}
+      - name: clone-vp-manager
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-manager-assets
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-clone--1-" + run.id + "-" + string(self._index) }}'
+          methodName: script
+          globalArgs: &ref_5
+            name: '${{ "id-clone-vp-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["clone-vp-manager-assets-0"].outputs.manager_body }}'
+            sudo: true
+        forEach: *ref_0
+      - name: clone-vp-manager-ready
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-manager-assets
+            condition:
+              type: always
+          - step: clone-vp-manager
+            condition:
+              type: always
+        task:
+          type: assert
+          expr: >-
+            !(steps["clone-vp-requirements"].outputs.manager_required &&
+            steps["clone-vp-requirements"].outputs.runtime != null) ||
+            ("clone-vp-manager-0" in steps && steps["clone-vp-manager-0"].status
+            == "succeeded")
+          severity: high
+          message: The admitted VP manager was not prepared.
+      - name: clone-vp-cli
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-manager-ready
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-clone--3-" + run.id + "-" + string(self._index) }}'
+          methodName: exec
+          globalArgs: *ref_5
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - '${{ self.runtime.store+"/bin/vp" }}'
+              - '--version'
+            env: &ref_6
+              VP_HOME: '${{ self.runtime.store }}'
+        forEach: &ref_1
+          item: runtime
+          in: >-
+            ${{ steps["clone-vp-requirements"].outputs.runtime == null ? [] :
+            [steps["clone-vp-requirements"].outputs.runtime] }}
+      - name: clone-vp-cli-ready
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-cli
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-clone--4-" + run.id + "-" + string(self._index) }}'
+          methodName: cli
+          inputs:
+            runtime: '${{ self.runtime }}'
+            observation: '${{ steps["clone-vp-cli-0"].outputs }}'
+        forEach: *ref_1
+      - name: clone-vp-install
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-cli-ready
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-clone--5-" + run.id + "-" + string(self._index) }}'
+          methodName: exec
+          globalArgs: *ref_5
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - '${{ self.runtime.store+"/bin/vp" }}'
+              - '-C'
+              - '${{ inputs.intent.application }}'
+              - env
+              - install
+              - '${{ "node@"+self.runtime.node_version }}'
+              - >-
+                ${{
+                self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)
+                }}
+            env: *ref_6
+        forEach: *ref_1
+      - name: clone-vp-inventory
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-install
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-clone--6-" + run.id + "-" + string(self._index) }}'
+          methodName: exec
+          globalArgs: *ref_5
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - '${{ self.runtime.store+"/bin/vp" }}'
+              - '-C'
+              - '${{ inputs.intent.application }}'
+              - env
+              - list
+              - '--json'
+            env: *ref_6
+        forEach: *ref_1
+      - name: clone-vp-verify
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-inventory
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-clone--7-" + run.id + "-" + string(self._index) }}'
+          methodName: verify
+          inputs:
+            runtime: '${{ self.runtime }}'
+            inventory: '${{ steps["clone-vp-inventory-0"].outputs }}'
+        forEach: *ref_1
+      - name: clone-vp-result
+        target: orbit-node-209
+        dependsOn:
+          - step: clone-vp-manager-assets
+            condition:
+              type: always
+          - step: clone-vp-manager
+            condition:
+              type: always
+          - step: clone-vp-manager-ready
+            condition:
+              type: always
+          - step: clone-vp-cli
+            condition:
+              type: always
+          - step: clone-vp-cli-ready
+            condition:
+              type: always
+          - step: clone-vp-install
+            condition:
+              type: always
+          - step: clone-vp-inventory
+            condition:
+              type: always
+          - step: clone-vp-verify
+            condition:
+              type: always
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-clone--8-" + run.id }}'
+          methodName: result
+          inputs:
+            name: clone-vp
+            steps: '${{ steps }}'
+  - name: clone
+    target: orbit-node-209
+    dependsOn:
+      - job: clone-vp-install
+        condition:
+          type: succeeded
+    steps:
+      - name: result
+        target: orbit-node-209
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -837,3 +1139,4 @@ jobs:
             source: '${{ steps["source-result"].outputs }}'
             candidate: '${{ steps.candidate.outputs }}'
             environment: '${{ steps.environment.outputs }}'
+            vp: '${{ steps["clone-vp-result"].outputs }}'

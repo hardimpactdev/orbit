@@ -63,4 +63,10 @@ Deno.test("VP graph gates machine installer to absent manager and uses read-only
         "--json",
     ]);
     assertEquals(steps.every((row) => row.target === "orbit-node-209"), true);
+    for (const step of steps.filter((row) => row.forEach)) {
+        assertEquals(
+            step.task.behaviorName.includes("string(self._index)"),
+            true,
+        );
+    }
 });

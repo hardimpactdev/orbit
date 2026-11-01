@@ -59,7 +59,7 @@ final readonly class InstanceCloneProjection implements DirectOperationProjectio
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $terminal = $operation->refresh()->status->terminal();
-            $result = Arr::only(ValidatedData::object($data['result'] ?? []), ['instance_id', 'ready', 'branch', 'commit', 'php_version', 'laravel', 'candidate_commit', 'environment_keys', 'error_code']);
+            $result = Arr::only(ValidatedData::object($data['result'] ?? []), ['instance_id', 'ready', 'branch', 'commit', 'php_version', 'laravel', 'candidate_commit', 'environment_keys', 'vp_environment', 'error_code']);
             $projected = $this->direct->project($operation, $data, $result);
             if (! $terminal) {
                 $instance = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
@@ -68,6 +68,7 @@ final readonly class InstanceCloneProjection implements DirectOperationProjectio
                         'branch' => $result['branch'], 'starting_commit' => $result['commit'],
                         'selected_php_version' => $result['php_version'], 'source_is_laravel' => $result['laravel'],
                         'clone_candidate_commit' => $result['candidate_commit'], 'environment_owned_keys' => $result['environment_keys'],
+                        'vp_environment' => ($result['vp_environment'] ?? null) === null ? null : [...ValidatedData::object($result['vp_environment']), 'status' => 'active', 'checkout_path' => $instance->checkout_path, 'previous' => null],
                         'clone_completed_at' => now(), 'failed_step' => null, 'error_code' => null])->save();
                 } elseif ($projected->status->terminal()) {
                     $instance->update(['error_code' => $projected->error_code]);

@@ -103,7 +103,7 @@ it('projects only the native terminal clone result and preserves the candidate',
     $target = Instance::query()->findOrFail($operation->target_id);
     $done = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'result' => ['instance_id' => $target->id, 'ready' => true, 'branch' => 'main', 'commit' => str_repeat('c', 40),
-            'candidate_commit' => str_repeat('c', 40), 'php_version' => null, 'laravel' => false, 'environment_keys' => ['APP_KEY']]];
+            'candidate_commit' => str_repeat('c', 40), 'php_version' => null, 'laravel' => false, 'environment_keys' => ['APP_KEY'], 'vp_environment' => ['node_version' => '24.2.0', 'package_manager' => 'pnpm']]];
     app(InstanceCloneProjection::class)->apply($operation, $done);
     $completed = $target->refresh()->clone_completed_at;
     app(InstanceCloneProjection::class)->apply($operation, $done);
@@ -111,6 +111,7 @@ it('projects only the native terminal clone result and preserves the candidate',
         ->and(Operation::query()->count())->toBe(1);
     expect($target->refresh()->status->value)->toBe('active')->and($target->starting_commit)->toBe(str_repeat('c', 40))
         ->and($target->clone_candidate_commit)->toBe(str_repeat('c', 40))->and($target->clone_completed_at)->toEqual($completed)
+        ->and($target->vp_environment)->toMatchArray(['status' => 'active', 'checkout_path' => $target->checkout_path, 'node_version' => '24.2.0'])
         ->and($target->environment_owned_keys)->toBe(['APP_KEY'])->and($operation->refresh()->lock_key)->toBeNull()
         ->and($this->candidate->refresh()->starting_commit)->toBe(str_repeat('a', 40));
 });

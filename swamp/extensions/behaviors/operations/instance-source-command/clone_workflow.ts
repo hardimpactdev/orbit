@@ -1,4 +1,5 @@
 import { sourceSteps } from "./workflow.ts";
+import { vpPreparationJobs } from "../instance-vp-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
 /** One development clone with read-only candidate facts and native target source actions. */
@@ -171,7 +172,10 @@ export function cloneWorkflow(): Fields {
         source: expr('steps["source-result"].outputs'),
         candidate: expr("steps.candidate.outputs"),
         environment: expr("steps.environment.outputs"),
+        vp: expr('steps["clone-vp-result"].outputs'),
     });
+    const result = steps.pop()!;
+    delete result.dependsOn;
     return {
         id: "6c413eaa-2e25-43c8-b146-f6c8e103c00d",
         name: "operation-instance-clone",
@@ -204,6 +208,18 @@ export function cloneWorkflow(): Fields {
             ],
             additionalProperties: false,
         },
-        jobs: [{ name: "clone", target: "orbit-node-209", steps }],
+        jobs: [
+            { name: "prepare", target: "orbit-node-209", steps },
+            ...vpPreparationJobs("clone-vp", "inputs.intent", "prepare"),
+            {
+                name: "clone",
+                target: "orbit-node-209",
+                dependsOn: [{
+                    job: "clone-vp-install",
+                    condition: { type: "succeeded" },
+                }],
+                steps: [result],
+            },
+        ],
     };
 }

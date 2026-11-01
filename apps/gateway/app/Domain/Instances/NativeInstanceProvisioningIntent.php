@@ -80,6 +80,7 @@ final readonly class NativeInstanceProvisioningIntent
         }
 
         return [...$this->common($instance, 'development', $user),
+            'vp_setup' => app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp),
             'source' => ['repository' => $input['repository'], 'checkout' => $instance->checkout_path,
                 'root' => $input['source_root'], 'user' => $user, 'seed_repository' => null, 'prepare_id' => $instance->source_prepare_id],
             'resolve' => ['instance_name' => $instance->name, 'default_branch' => $instance->project->default_branch,

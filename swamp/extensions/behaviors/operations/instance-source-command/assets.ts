@@ -126,6 +126,10 @@ export const behavior = {
                 source: ObjectInput,
                 candidate: z.unknown(),
                 environment: z.unknown(),
+                vp: z.object({
+                    ready: z.literal(true),
+                    runtime: z.record(z.string(), z.unknown()).nullable(),
+                }),
             }),
             async execute(
                 args: {
@@ -133,6 +137,10 @@ export const behavior = {
                     source: Record<string, unknown>;
                     candidate: unknown;
                     environment: unknown;
+                    vp: {
+                        ready: true;
+                        runtime: Record<string, unknown> | null;
+                    };
                 },
                 ctx: Context,
             ) {
@@ -154,6 +162,7 @@ export const behavior = {
                     ready: true,
                     ...source,
                     candidate_commit: candidate.commit,
+                    vp_environment: args.vp.runtime,
                     environment_keys: environment.keys,
                 };
                 return {
