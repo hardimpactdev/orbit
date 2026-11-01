@@ -145,23 +145,45 @@ final readonly class SwampCommandStep
         if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
             $operation = app(ExpireOperationAction::class)->execute($operation);
         }
-        if (ExpireOperationAction::awaitsSettlement($operation)) {
+        if (ExpireOperationAction::awaitsSettlement($operation) && ($completedAt === null || $deadline === null || $completedAt->greaterThan($deadline))) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
-        $result = $this->terminalOutput($run, $selector);
         $status = $run['status'];
-        if (in_array($status, ['failed', 'interrupted'], true) && $result === []) {
-            $result = ['error_code' => 'operation.native_failed'];
-        }
 
-        return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result): Operation {
+        return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $selector, $completedAt): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $direct->assertRun($current, $runId);
-            if (ExpireOperationAction::awaitsSettlement($current)) {
-                return app(ExpireOperationAction::class)->settle($current, $runId, $status);
-            }
-            if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
+            if (isset($current->state['swamp_scheduled_result'])) {
                 return $current;
+            }
+            if (ExpireOperationAction::awaitsSettlement($current)) {
+                $deadline = OperationRunBudgets::deadline($current);
+                if ($completedAt === null || $deadline === null || $completedAt->greaterThan($deadline)
+                    || Operation::query()->where('target_type', $current->target_type)->where('target_id', $current->target_id)->where('id', '>', $current->id)->exists()) {
+                    return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+                }
+                // Family projectors re-read the row. Restore eligibility only inside their atomic projection.
+                $state = $current->state ?? [];
+                $timeout = $state['native_timeout'] ?? [];
+                $failure = $state['native_failure'] ?? null;
+                $seconds = is_array($timeout) ? ($timeout['budget_seconds'] ?? null) : null;
+                if (is_array($failure) && is_int($seconds) && ($failure['stderr_recorded'] ?? false) === false
+                    && ($failure['detail'] ?? null) === ExpireOperationAction::budgetDetail($seconds)) {
+                    unset($state['native_failure']);
+                }
+                $current->forceFill(['status' => OperationStatus::Running, 'error_code' => null,
+                    'state' => [...$state, 'native_timeout' => [
+                        ...(is_array($timeout) ? $timeout : []), 'native_terminal_status' => $status,
+                        'native_terminal_observed_at' => now()->toISOString(), 'completed_within_budget' => true,
+                    ]],
+                ])->save();
+            }
+            if ($current->status->terminal()) {
+                return $current;
+            }
+            $result = $this->terminalOutput($run, $selector);
+            if (in_array($status, ['failed', 'interrupted'], true) && $result === []) {
+                $result = ['error_code' => 'operation.native_failed'];
             }
 
             return $direct->projection($current)->apply($current, [

@@ -63,7 +63,7 @@ final class SwampRunSubscriber
             return;
         }
         foreach (Operation::query()->whereIn('kind', $kinds)->where(fn ($query) => $query->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
-            ->orWhere(fn ($query) => $query->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')))
+            ->orWhere(fn ($query) => $query->where('error_code', 'operation.timed_out')))
             ->lazyById() as $operation) {
             $this->follow($operation->id);
         }

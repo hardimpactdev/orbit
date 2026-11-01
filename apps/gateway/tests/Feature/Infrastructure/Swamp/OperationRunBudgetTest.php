@@ -491,6 +491,137 @@ it('projects queued or simultaneous terminal notices once after the deadline wit
     expect(Activity::query()->where('command', 'instance:failure-alert')->exists())->toBeFalse();
 })->with([[true, 'node.bootstrap_probe'], [false, 'node.bootstrap_probe'], [true, 'instance.create']]);
 
+it('recovers an expired native success through a read or subscriber without requiring a target hold', function (bool $locked, bool $subscriber): void {
+    config(['swamp.run_token' => 'fixture.run', 'swamp.read_token' => 'fixture.read',
+        'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem', 'queue.connections.gateway.driver' => 'sync']);
+    $operation = budgetOperation('node.bootstrap_probe', $locked ? [] : ['lock_key' => null]);
+    $start = now()->toISOString();
+    $finish = now()->addSeconds(1799)->toISOString();
+    $this->travel(1800)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($operation);
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => $start, 'completedAt' => $finish,
+        'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'outputs' => [
+            'stdout' => '{"probed":true,"architecture":"x86_64","public_key":"public-fixture"}', 'exitCode' => 0]]]]],
+    ]]]];
+    app()->instance(WebSocketClient::class, $history);
+
+    if ($subscriber) {
+        $events = new FakeSwampEventSocket;
+        $observer = new SwampRunSubscriber($events, new NullLogger);
+        $observer->pass();
+        expect($events->sent)->toHaveCount(1);
+        $events->push(['type' => 'error', 'id' => $events->sent[0]['id'], 'code' => 'not_found']);
+        $observer->pass();
+    } else {
+        app(ReadOperationAction::class)->execute($expired);
+    }
+
+    $result = $operation->fresh();
+    expect($result->status)->toBe(OperationStatus::Succeeded);
+    expect($result->error_code)->toBeNull();
+    expect($result->lock_key)->toBeNull();
+    expect($result->finished_at->toISOString())->toBe($finish);
+    expect($result->result)->toMatchArray(['probed' => true]);
+    expect(Node::query()->findOrFail($operation->node_id)->architecture)->toBe('x86_64');
+    expect($history->sent)->toHaveCount(1);
+    app(ReadOperationAction::class)->execute($result);
+    expect($history->sent)->toHaveCount(1);
+})->with([[false, false], [true, false], [false, true]]);
+
+it('uses the recorded expiry deadline when later history changes the kind budget', function (int $duration, int $finished, OperationStatus $expected): void {
+    config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+    $operation = budgetOperation('node.bootstrap_probe');
+    $start = now()->toISOString();
+    $finish = now()->addSeconds($finished)->toISOString();
+    $this->travel(1800)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($operation);
+    $otherNode = Node::query()->create(['name' => 'budget-history', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
+    $other = $operation->replicate();
+    $other->forceFill(['target_id' => $otherNode->id, 'node_id' => $otherNode->id, 'status' => 'succeeded', 'lock_key' => null,
+        'state' => ['swamp_run_id' => '5295d168-2309-4e68-a32f-50cd1fbb370b'],
+        'started_at' => now()->subSeconds($duration), 'finished_at' => now()])->save();
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => $start, 'completedAt' => $finish,
+        'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'outputs' => ['stdout' => '{"probed":true}', 'exitCode' => 0]]]]],
+    ]]]];
+    app()->instance(WebSocketClient::class, $history);
+
+    $result = app(ReadOperationAction::class)->execute($expired);
+
+    expect($result->status)->toBe($expected);
+    expect($result->error_code)->toBe($expected === OperationStatus::Succeeded ? null : 'operation.timed_out');
+    expect($result->lock_key)->toBeNull();
+    expect(ExpireOperationAction::awaitsSettlement($result))->toBeFalse();
+    expect($history->sent)->toHaveCount(1);
+})->with([[1, 1800, OperationStatus::Succeeded], [3600, 1801, OperationStatus::Failed]]);
+
+it('replaces only the synthetic expiry diagnostic when an on time native failure is recovered', function (bool $observed): void {
+    config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+    $operation = budgetOperation('node.bootstrap_probe');
+    if ($observed) {
+        $operation->update(['state' => [...$operation->state, 'native_failure' => [
+            'failed_step' => 'source', 'detail' => 'Cached native diagnostic.', 'stderr_recorded' => false]]]);
+    }
+    $start = now()->toISOString();
+    $finish = now()->addSeconds(1799)->toISOString();
+    $this->travel(1800)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($operation);
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'failed',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => $start, 'completedAt' => $finish,
+        'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'status' => 'failed', 'error' => 'Native probe refused.', 'outputs' => []]]]],
+    ]]]];
+    app()->instance(WebSocketClient::class, $history);
+
+    $result = app(ReadOperationAction::class)->execute($expired);
+
+    expect($result->error_code)->toBe('operation.native_failed');
+    expect($result->failed_step)->toBe($observed ? 'source' : 'probe-host');
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe($observed ? 'Cached native diagnostic.' : 'Native probe refused.');
+    expect($history->sent)->toHaveCount(1);
+})->with([false, true]);
+
+it('arbitrates expiry against a terminal history read without double projection', function (bool $expiryWins): void {
+    config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+    $operation = budgetOperation('node.bootstrap_probe');
+    $start = now()->toISOString();
+    $finish = now()->addSeconds(1799)->toISOString();
+    $this->travel(1800)->seconds();
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static function (array $request) use ($operation, $expiryWins, $start, $finish): array {
+        if ($expiryWins) {
+            app(ExpireOperationAction::class)->execute($operation->fresh());
+        }
+
+        return [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+            'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded',
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+            'startedAt' => $start, 'completedAt' => $finish,
+            'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'outputs' => ['stdout' => '{"probed":true}', 'exitCode' => 0]]]]],
+        ]]]];
+    };
+    app()->instance(WebSocketClient::class, $history);
+
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $operation->state['swamp_run_id']], ['job' => 'bootstrap', 'step' => 'probe-host']);
+    $result = app(ExpireOperationAction::class)->execute($operation);
+    app(SwampCommandStep::class)->projectTerminal($result, ['id' => $operation->state['swamp_run_id']], ['job' => 'bootstrap', 'step' => 'probe-host']);
+
+    expect($result->status)->toBe(OperationStatus::Succeeded);
+    expect($result->error_code)->toBeNull();
+    expect($result->sequence)->toBe($expiryWins ? 3 : 2);
+    expect($result->cancel_requested_at !== null)->toBe($expiryWins);
+    expect($history->sent)->toHaveCount(1);
+})->with([false, true]);
+
 it('uses own history or thirty minutes for kinds without an explicit measured budget', function (string $kind): void {
     $operation = budgetOperation($kind, ['input' => []]);
     expect(OperationRunBudgets::seconds($operation))->toBe(1800);
