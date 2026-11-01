@@ -136,7 +136,21 @@ export function incusGuest(
   return {
     command,
     async bootstrap() {
-      // Incus/cloud-init report one boot observation. Native resume retries this step.
+      // Incus's guest agent appears during boot. Only this read-only availability check retries.
+      const deadline = Date.now() + 600000;
+      for (;;) {
+        await guard();
+        const ready = await invoke(
+          guestArgv(project, name, ["/usr/bin/true"]),
+          new Uint8Array(),
+          30,
+        );
+        if (ready.success) break;
+        if (Date.now() >= deadline) {
+          throw new Error("task_vm.bootstrap_timeout");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
       await guard();
       const cloud = await invoke(
         guestArgv(project, name, [

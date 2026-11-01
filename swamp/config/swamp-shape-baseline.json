@@ -130,6 +130,12 @@
       ]
     },
     {
+      "file": "extensions/behaviors/_lib/maintenance/batch.ts",
+      "rule": "custom-control",
+      "count": 1,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/_lib/maintenance_worker.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -138,12 +144,6 @@
         "GET <unknown>",
         "POST <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/maintenance/batch.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/_lib/package_sandbox.ts",
@@ -397,14 +397,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/ai-router/accounts_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/ai-router/accounts.ts",
       "rule": "custom-control",
       "count": 1,
@@ -423,6 +415,14 @@
       "rule": "private-material",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/ai-router/accounts_direct.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/analytics/clickhouse.ts",
@@ -715,6 +715,30 @@
       ]
     },
     {
+      "file": "extensions/behaviors/operations/fleet/recipe-pr/direct.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
+      "rule": "custom-control",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
+      "rule": "multi-action",
+      "count": 3,
+      "evidence": [
+        "/usr/bin/gpg",
+        "/usr/bin/gpgv",
+        "/usr/bin/sha256sum"
+      ]
+    },
+    {
       "file": "extensions/behaviors/operations/fleet/recipe_direct.ts",
       "rule": "gateway-http",
       "count": 4,
@@ -746,27 +770,11 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/fleet/recipe-pr/direct.ts",
+      "file": "extensions/behaviors/operations/fleet/release.ts",
       "rule": "gateway-http",
-      "count": 1,
+      "count": 2,
       "evidence": [
         "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/gpg",
-        "/usr/bin/gpgv",
-        "/usr/bin/sha256sum"
       ]
     },
     {
@@ -781,28 +789,6 @@
       "file": "extensions/behaviors/operations/fleet/release_program.ts",
       "rule": "inline-script",
       "count": 78,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/release.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
-      "rule": "inline-script",
-      "count": 241,
       "evidence": []
     },
     {
@@ -829,6 +815,20 @@
         "/usr/bin/python3",
         "/usr/bin/sudo"
       ]
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
+      "rule": "custom-control",
+      "count": 5,
+      "evidence": [
+        "embedded-control"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
+      "rule": "inline-script",
+      "count": 241,
+      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
@@ -929,20 +929,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-deploy/vp_local_python.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-deploy/vp_local_python.ts",
-      "rule": "inline-script",
-      "count": 271,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/instance-deploy/vp_local.ts",
       "rule": "custom-control",
       "count": 1,
@@ -960,17 +946,17 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-environment/local_runtime.ts",
+      "file": "extensions/behaviors/operations/instance-deploy/vp_local_python.ts",
       "rule": "custom-control",
-      "count": 1,
+      "count": 5,
       "evidence": [
         "embedded-control"
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-environment/local_runtime.ts",
+      "file": "extensions/behaviors/operations/instance-deploy/vp_local_python.ts",
       "rule": "inline-script",
-      "count": 132,
+      "count": 271,
       "evidence": []
     },
     {
@@ -989,6 +975,20 @@
         "/usr/bin/python3",
         "/usr/bin/sudo"
       ]
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-environment/local_runtime.ts",
+      "rule": "custom-control",
+      "count": 1,
+      "evidence": [
+        "embedded-control"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-environment/local_runtime.ts",
+      "rule": "inline-script",
+      "count": 132,
+      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/instance-environment/mod.ts",
@@ -1978,6 +1978,20 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
+      "rule": "gateway-http",
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
+      "rule": "private-material",
+      "count": 1,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operations/processes-schedules/instance_native_support.py",
       "rule": "ruff.E402",
       "count": 1,
@@ -1992,20 +2006,6 @@
     {
       "file": "extensions/behaviors/operations/processes-schedules/instance_native_support.py",
       "rule": "ruff.I001",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
-      "rule": "private-material",
       "count": 1,
       "evidence": []
     },
@@ -2318,6 +2318,35 @@
       ]
     },
     {
+      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
+      "rule": "multi-action",
+      "count": 4,
+      "evidence": [
+        "/usr/bin/python3",
+        "/usr/bin/sudo",
+        "/usr/bin/systemctl",
+        "incus"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
+      "rule": "private-material",
+      "count": 3,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
+      "rule": "secret-argv",
+      "count": 3,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operations/task-vms/enrollment_direct.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -2350,35 +2379,6 @@
       "file": "extensions/behaviors/operations/task-vms/enrollment_runtime.ts",
       "rule": "secret-argv",
       "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "multi-action",
-      "count": 4,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo",
-        "/usr/bin/systemctl",
-        "incus"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "private-material",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "secret-argv",
-      "count": 3,
       "evidence": []
     },
     {
@@ -2459,12 +2459,21 @@
     },
     {
       "file": "extensions/behaviors/operations/task-vms/image_guest.ts",
+      "rule": "custom-control",
+      "count": 2,
+      "evidence": [
+        "setTimeout"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/image_guest.ts",
       "rule": "multi-action",
-      "count": 3,
+      "count": 4,
       "evidence": [
         "/usr/bin/cloud-init",
         "/usr/bin/incus",
-        "/usr/bin/sudo"
+        "/usr/bin/sudo",
+        "/usr/bin/true"
       ]
     },
     {
@@ -2551,18 +2560,18 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/task-vms/lifecycle.ts",
+      "rule": "custom-control",
+      "count": 4,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operations/task-vms/lifecycle_intent_direct.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/lifecycle.ts",
-      "rule": "custom-control",
-      "count": 4,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/task-vms/mod.ts",
@@ -2574,14 +2583,6 @@
     },
     {
       "file": "extensions/behaviors/operations/task-vms/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/model_keys_native.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": [
@@ -2610,6 +2611,14 @@
       "rule": "private-material",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/model_keys_native.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/native-fixture.ts",
@@ -2688,15 +2697,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/sweep_incus_host.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/incus",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/sweep-native-fixture.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -2722,6 +2722,15 @@
       "count": 2,
       "evidence": [
         "<unknown> <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/task-vms/sweep_incus_host.ts",
+      "rule": "multi-action",
+      "count": 2,
+      "evidence": [
+        "/usr/bin/incus",
+        "/usr/bin/sudo"
       ]
     },
     {
@@ -2959,6 +2968,14 @@
       "evidence": []
     },
     {
+      "file": "workflows/workflow-group-fanout.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "groups/conflict-${{ self.conflict.workItem }}"
+      ]
+    },
+    {
       "file": "workflows/workflow-group-run.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -2975,32 +2992,6 @@
       "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-behavior",
-      "count": 4,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-implement.yaml",
-      "rule": "vault-placement",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "groups/conflict-${{ self.conflict.workItem }}"
-      ]
     },
     {
       "file": "workflows/workflow-instance-route-workload.yaml",
@@ -3092,6 +3083,24 @@
       "evidence": [
         "deletions/delete"
       ]
+    },
+    {
+      "file": "workflows/workflow-production-smoke.yaml",
+      "rule": "unknown-behavior",
+      "count": 4,
+      "evidence": []
+    },
+    {
+      "file": "workflows/workflow-production-smoke.yaml",
+      "rule": "unknown-workflow",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "workflows/workflow-stage-implement.yaml",
+      "rule": "vault-placement",
+      "count": 1,
+      "evidence": []
     },
     {
       "file": "workflows/workflow-task-check-ci.yaml",

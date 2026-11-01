@@ -26,4 +26,4 @@ The hub's task-VM subnet policy must also admit209 TCP22. Guest readiness does n
 
 Image admission installs the canonical209 public key. Image preparation enables `ssh.service`; the smoke VM must report the service active before image promotion. The existing image executor remains otherwise unchanged by this urgent SSH repair.
 
-Image bootstrap now makes one native cloud-init observation. If Incus guest access is not ready, inspect and resume the native boot step. The removed custom readiness loop is not replaced by a sleep or retry supervisor.
+The image executor retains its existing boot, cleanup and progress behavior. This repair adds placed209 SSH enable/check steps; it does not claim the remaining image conversion defects are closed.

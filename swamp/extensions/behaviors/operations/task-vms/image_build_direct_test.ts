@@ -622,23 +622,3 @@ Deno.test("a successful phase read resets the consecutive channel outage budget"
   assertEquals(await result, null);
   assertEquals(reads, 101);
 });
-
-Deno.test("an unavailable image guest fails one cloud-init observation without a custom retry", async () => {
-  const calls: string[][] = [];
-  const guest = incusGuest(
-    "orbit-tasks",
-    "tvm-image-7",
-    "a".repeat(64),
-    async (args) => {
-      calls.push(args);
-      return { success: false, bytes: new Uint8Array() };
-    },
-  );
-  await assertRejects(
-    () => guest.bootstrap(),
-    Error,
-    "task_vm.bootstrap_failed",
-  );
-  assertEquals(calls.length, 1);
-  assertEquals(calls[0].slice(-3), ["/usr/bin/cloud-init", "status", "--wait"]);
-});
