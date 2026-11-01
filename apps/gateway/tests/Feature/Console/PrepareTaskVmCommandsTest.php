@@ -150,12 +150,55 @@ describe('task-vms:prepare-hub', function (): void {
         $this->artisan('task-vms:prepare-hub')->assertSuccessful();
         $text = Operation::query()->where('kind', 'task_vm.hub_converge')->sole()->input['intent']['nft'];
         foreach (['ip saddr 10.44.0.2 ip daddr 10.44.0.128/25 tcp dport { 22, 3774 } accept',
-            'ip saddr { 10.44.0.7 } ip daddr 10.44.0.128/25 tcp dport { 80, 443, 5173 } accept',
+            'ip saddr 10.44.0.7 ip daddr 10.44.0.128/25 tcp dport 443 accept comment "orbit:task-vm-router-web-10-44-0-7-443"',
             'ct state established,related accept', 'ip saddr 10.44.0.128/25 drop', 'ip daddr 10.44.0.128/25 drop',
             'ip daddr 10.44.0.1 udp dport 53 accept', 'ip daddr 10.44.0.3 tcp dport 8317 accept'] as $retained) {
             expect($text)->toContain($retained);
         }
         expect(strpos($text, 'ip saddr 10.44.0.15'))->toBeLessThan(strpos($text, 'ip saddr 10.44.0.128/25 drop'));
+    });
+
+    it('keeps the control SSH catalog without Router assignments or complete image settings', function (): void {
+        NodeRole::query()->where('role', RoleName::Router)->delete();
+        config(['task_vms.dev_cluster_id' => (string) config('task_vms.dev_cluster_id'),
+            'task_vms.pi.artifact_path' => '/incomplete/image-only-setting']);
+        $rules = app(TaskVmHubPolicy::class)->managedRules();
+        expect(array_map(static fn ($rule): string => $rule->shape->comment, $rules))->toBe([TaskVmHubPolicy::Comment]);
+    });
+
+    it('admits every recorded Router in the task VM Cluster and exposes only their web rules', function (): void {
+        $cluster = Cluster::query()->findOrFail(config('task_vms.dev_cluster_id'));
+        config(['task_vms.dev_cluster_id' => (string) $cluster->id]);
+        $candidate = task_vm_fleet_node('candidate', '10.44.0.11', [RoleName::AppDev], cluster: $cluster);
+        NodeRole::query()->create(['node_id' => $candidate->id, 'cluster_id' => $cluster->id,
+            'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
+        $other = Cluster::query()->create(['name' => 'other']);
+        $foreign = task_vm_fleet_node('other-router', '10.44.0.42', [], cluster: $other);
+        NodeRole::query()->create(['node_id' => $foreign->id, 'cluster_id' => $other->id,
+            'role' => RoleName::Router, 'status' => LifecycleStatus::Active]);
+        task_vm_fleet_node('ordinary-member', '10.44.0.43', [RoleName::AppDev], cluster: $cluster);
+        $inactive = task_vm_fleet_node('inactive-router', '10.44.0.44', [], cluster: $cluster);
+        $inactive->update(['status' => LifecycleStatus::Failed]);
+        NodeRole::query()->create(['node_id' => $inactive->id, 'cluster_id' => $cluster->id,
+            'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
+
+        $this->artisan('task-vms:prepare-hub')->assertSuccessful();
+
+        $intent = Operation::query()->where('kind', 'task_vm.hub_converge')->sole()->input['intent'];
+        expect($intent['policy']['routers'])->toBe(['10.44.0.7', '10.44.0.11']);
+        $rows = array_values(array_filter(app(ListManagedFirewallRulesAction::class)->execute($this->hub),
+            static fn (array $row): bool => str_starts_with($row['name'], 'orbit:task-vm-router-web-')));
+        expect(array_map(static fn (array $row): array => [$row['source'], $row['destination'], $row['port'], $row['protocol']], $rows))->toBe([
+            ['10.44.0.7', '10.44.0.128/25', '80', 'tcp'],
+            ['10.44.0.7', '10.44.0.128/25', '443', 'tcp'],
+            ['10.44.0.11', '10.44.0.128/25', '80', 'tcp'],
+            ['10.44.0.11', '10.44.0.128/25', '443', 'tcp'],
+        ]);
+        expect($intent['router_rules'])->toHaveCount(4);
+        foreach ($rows as $row) {
+            expect($intent['nft'])->toContain('ip saddr '.$row['source'].' ip daddr '.$row['destination'].' tcp dport '.$row['port'].' accept comment "'.$row['name'].'"');
+        }
+        expect($intent['nft'])->not->toContain('5173', '10.44.0.42', '10.44.0.43', '10.44.0.44');
     });
 
     it('passes the configured VPN DNS address, Pi port, and default origin port', function (): void {
@@ -234,7 +277,7 @@ describe('task-vms:prepare-hub', function (): void {
         ],
         'missing dev Cluster' => [
             fn () => config()->set('task_vms.dev_cluster_id', 999),
-            '[task_vm.fleet_unavailable] Cluster [999] has no active router Node.',
+            '[task_vm.fleet_unavailable] Cluster [999] has no active Router-role Node.',
         ],
         'second websocket Node' => [
             fn () => task_vm_fleet_node('reverb2', '10.44.0.20', [RoleName::WebSocket]),
