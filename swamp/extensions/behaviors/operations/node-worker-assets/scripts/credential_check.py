@@ -19,14 +19,14 @@ CERTIFICATE = '/home/orbit/.config/swamp/serve-tls/cert.pem'
 CALL_SECONDS = 30
 ALERT_HOURS = 72
 SOON_HOURS = 6
-# Keeps one bounded report in the step output.
+# Keeps one bounded alert list in the step output.
 MAXIMUM_ROWS = 200
 STALE_HOURS = -168
 # The Swamp host's own worker pair must always be listed.
 EXPECTED = (('access', 'orbit-node-209-access'), ('enrollment', 'orbit-node-209'))
 # Each native list prints one JSON array; these keys must be present on every row.
-REQUIRED = {'access': ('name', 'state', 'effectiveState', 'principalId', 'expiresAt'),
-            'enrollment': ('name', 'state', 'effectiveState', 'expiresAt'),
+REQUIRED = {'access': ('name', 'state', 'expiresAt'),
+            'enrollment': ('name', 'state', 'expiresAt'),
             'club': ('name', 'enabled', 'expiresAt')}
 
 
@@ -67,12 +67,12 @@ def classify(expires_at: datetime.datetime | None, now: datetime.datetime) -> tu
     return ('within_72h' if hours <= ALERT_HOURS else 'ok'), round(hours, 1)
 
 
-def record(kind: str, name: str, expires: str | None, now: datetime.datetime, principal: str | None = None) -> dict:
+def record(kind: str, name: str, expires: str | None, now: datetime.datetime) -> dict:
     expires_at = None if expires is None else datetime.datetime.fromisoformat(expires)
     if expires_at is not None and expires_at.tzinfo is None:
         raise CheckFailed(f'{kind} {name} expiry has no time zone')
     category, hours = classify(expires_at, now)
-    return {'kind': kind, 'name': name, 'principal': principal,
+    return {'kind': kind, 'name': name,
             'expires_at': None if expires_at is None else expires_at.isoformat(), 'hours_left': hours,
             'class': category}
 
@@ -90,7 +90,7 @@ def inspect(now: datetime.datetime) -> list:
     for kind, command in (('access', ['access', 'token', 'list']), ('enrollment', ['worker', 'token', 'list'])):
         for row in rows(kind, run('swamp ' + ' '.join(command), [SWAMP, *command, *LOCAL], DATASTORE_ENV)):
             if row['state'] != 'revoked':
-                found.append(record(kind, row['name'], row['expiresAt'], now, row.get('principalId')))
+                found.append(record(kind, row['name'], row['expiresAt'], now))
     club = run('swamp auth token list', [SWAMP, 'auth', 'token', 'list', '--collective', COLLECTIVE, '--json'])
     found += [record('club', row['name'], row['expiresAt'], now) for row in rows('club', club) if row['enabled']]
     certificate = run('openssl x509 -enddate', ['openssl', 'x509', '-enddate', '-noout', '-in', CERTIFICATE])
@@ -100,15 +100,13 @@ def inspect(now: datetime.datetime) -> list:
 
 
 def report(credentials: list, now: datetime.datetime) -> dict:
-    """Alerts come from the full list; only the published rows are bounded."""
-    # A credential expired for over a week has alerted already; drop it before the bound.
+    """`missing` reads every listed credential; expiry alerts skip credentials expired over a week ago."""
     current = [item for item in credentials if item['hours_left'] is None or item['hours_left'] > STALE_HOURS]
-    return {'checked_at': now.isoformat(), 'credentials': current[:MAXIMUM_ROWS],
-            'alerts': alerts(current)[:MAXIMUM_ROWS]}
+    return {'checked_at': now.isoformat(), 'alerts': alerts(credentials, current)[:MAXIMUM_ROWS]}
 
 
-def alerts(credentials: list) -> list:
-    listed = {(item['kind'], item['name']) for item in credentials}
+def alerts(listed_credentials: list, credentials: list) -> list:
+    listed = {(item['kind'], item['name']) for item in listed_credentials}
     raised = [{'kind': kind, 'name': name, 'reason': 'missing', 'expires_at': None, 'hours_left': None}
               for kind, name in EXPECTED if (kind, name) not in listed]
     raised += [{'kind': item['kind'], 'name': item['name'], 'reason': item['class'],

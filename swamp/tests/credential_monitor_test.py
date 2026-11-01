@@ -18,11 +18,11 @@ def at(hours):
 
 
 def access(name, hours, state='active', principal='worker:orbit-node-209'):
-    return {'name': name, 'state': state, 'effectiveState': state, 'principalId': principal, 'expiresAt': at(hours)}
+    return {'name': name, 'state': state, 'principalId': principal, 'expiresAt': at(hours)}
 
 
 def enrollment(name, hours, state='enrolled'):
-    return {'name': name, 'state': state, 'effectiveState': state, 'expiresAt': at(hours)}
+    return {'name': name, 'state': state, 'expiresAt': at(hours)}
 
 
 def native(access_rows, enrollment_rows, club_rows=(), certificate='notAfter=Nov  7 20:56:22 2027 GMT\n'):
@@ -71,8 +71,7 @@ class Inspect(unittest.TestCase):
 
     def test_malformed_native_output_fails_the_run(self):
         cases = {'not an array': (json.dumps({'tokens': []}), 'access list is not a JSON array'),
-                 'missing key': (json.dumps([{'name': 'a', 'state': 'active', 'effectiveState': 'active',
-                                              'principalId': 'p'}]), 'access row lacks expiresAt')}
+                 'missing key': (json.dumps([{'name': 'a', 'state': 'active'}]), 'access row lacks expiresAt')}
         for label, (stdout, message) in cases.items():
             with self.subTest(label), patch.object(check, 'run', return_value=stdout), \
                     self.assertRaisesRegex(check.CheckFailed, message):
@@ -85,16 +84,17 @@ class Inspect(unittest.TestCase):
             check.inspect(NOW)
 
     def test_report_stays_bounded(self):
-        many = [access(f'stale-{n}', -200) for n in range(3)] + [access(f'live-{n}', n + 1) for n in range(400)]
+        many = [access(f'stale-{n}', -200) for n in range(3)] + [access(f'live-{n}', (n + 1) / 10) for n in range(400)]
         run, _ = native([*many, access('orbit-node-209-access', 500)], [enrollment('orbit-node-209', 500)])
         with patch.object(check, 'run', side_effect=run):
             result = check.report(check.inspect(NOW), NOW)
-        found = result['credentials']
+        self.assertEqual(sorted(result), ['alerts', 'checked_at'])
+        found = result['alerts']
         self.assertEqual(len(found), check.MAXIMUM_ROWS)
         self.assertEqual(found[0]['name'], 'live-0')
         self.assertFalse(any(item['name'].startswith('stale-') for item in found))
-        # The 209 pair falls past the bound but is listed, so it is not reported missing.
-        self.assertNotIn('missing', {item['reason'] for item in result['alerts']})
+        # The 209 pair is listed, so it is not reported missing.
+        self.assertNotIn('missing', {item['reason'] for item in found})
 
 
 class Alerts(unittest.TestCase):
@@ -107,7 +107,7 @@ class Alerts(unittest.TestCase):
                        self.credential('enrollment', 'orbit-node-9', 'expired'),
                        self.credential('tls', 'swamp.orbit', 'ok'),
                        self.credential('club', 'orbit-monorepo-ci', 'no_expiry')]
-        self.assertEqual([(item['name'], item['reason']) for item in check.alerts(credentials)],
+        self.assertEqual([(item['name'], item['reason']) for item in check.alerts(credentials, credentials)],
                          [('orbit-node-209', 'missing'), ('orbit-node-209-access', 'within_72h'),
                           ('orbit-gateway-run-20261030', 'within_6h'), ('orbit-node-9', 'expired')])
 

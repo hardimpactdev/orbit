@@ -6,6 +6,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\SwampCredentials\SwampCredentialAlerts;
 use App\Models\Activity;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function (): void {
@@ -14,9 +15,14 @@ beforeEach(function (): void {
     Http::fake(['https://hooks.example.test/credential-alert' => Http::response('', 200)]);
 });
 
+/** Fixture runs start in this order, one hour apart. */
 function credentialRun(string $status = 'succeeded', string $id = '0e0c6b55-3a6e-4f57-9b5c-2b8f0f6b8d11'): array
 {
-    return ['id' => $id, 'status' => $status];
+    $order = ['0e0c6b55-3a6e-4f57-9b5c-2b8f0f6b8d11', '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01',
+        '9b7e4f0c-2d3a-4e1b-a6c5-7f8e9d0a1b2c', 'c3d4e5f6-0a1b-4c2d-8e3f-4a5b6c7d8e9f'];
+
+    return ['id' => $id, 'status' => $status,
+        'startedAt' => sprintf('2026-11-02T%02d:07:00.000Z', 6 + array_search($id, $order, true))];
 }
 
 function credentialAlert(string $name, string $reason, string $expiresAt = '2026-11-02T12:46:21.024000+00:00'): array
@@ -135,4 +141,32 @@ it('keeps retrying while the webhook is not configured', function (): void {
     app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01'), $result);
 
     Http::assertSentCount(1);
+});
+
+it('sends nothing for a replayed or older run after a reader reset and a time jump', function (): void {
+    $alerts = app(SwampCredentialAlerts::class);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '9b7e4f0c-2d3a-4e1b-a6c5-7f8e9d0a1b2c'),
+        ['alerts' => [credentialAlert('orbit-node-9-access', 'within_6h')]]);
+    Http::assertSentCount(1);
+
+    $this->travel(31)->days();
+    Cache::flush();
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '9b7e4f0c-2d3a-4e1b-a6c5-7f8e9d0a1b2c'),
+        ['alerts' => [credentialAlert('orbit-node-9-access', 'within_6h')]]);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01'),
+        ['alerts' => [credentialAlert('orbit-node-13-access', 'within_6h')]]);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun('failed'), []);
+
+    Http::assertSentCount(1);
+});
+
+it('alerts a condition again after it cleared', function (): void {
+    $missing = ['alerts' => [['kind' => 'enrollment', 'name' => 'orbit-node-209', 'reason' => 'missing', 'expires_at' => null, 'hours_left' => null]]];
+    $alerts = app(SwampCredentialAlerts::class);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(), $missing);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01'), $missing);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '9b7e4f0c-2d3a-4e1b-a6c5-7f8e9d0a1b2c'), ['alerts' => []]);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: 'c3d4e5f6-0a1b-4c2d-8e3f-4a5b6c7d8e9f'), $missing);
+
+    Http::assertSentCount(2);
 });
