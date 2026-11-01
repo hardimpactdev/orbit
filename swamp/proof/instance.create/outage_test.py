@@ -32,7 +32,7 @@ class OutageFixtures(unittest.TestCase):
             self.assertEqual(value['request']['argv'][:2], ['orbit', 'instance:setup' if case == 'already-running' else 'instance:create'])
             self.assertEqual(value['parity']['command'][-1], case)
             self.assertEqual(value['topology'], 'app-dev')
-            self.assertIs(value['needs_caddy'], False)
+            self.assertNotIn('needs_caddy', value)
             self.assertTrue(any(item.startswith('route_phase: not_exercised') for item in value['limitations']))
             self.assertNotIn('before_request', value)
             project = value['prepare'][0]['argv']

@@ -70,7 +70,6 @@
       "stdout-discarded"
     ]
   },
-  "needs_caddy": false,
   "limitations": [
     "route_phase: not_exercised (legacy node-package Projects have no automatic Route; this fixture creates no explicit Route)"
   ]
