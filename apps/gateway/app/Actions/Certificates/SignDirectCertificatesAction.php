@@ -88,6 +88,7 @@ final readonly class SignDirectCertificatesAction
                 : ['route_update.route_mutations.forward.prepare_certificates', 'route_update.route_mutations.forward.certificates'],
             'route.create', 'route.converge', 'route.target_set', 'cluster.router_set', 'cluster.router_unset' => ['certificates'],
             'analytics.enable', 'analytics.disable' => ['tracking.certificates'],
+            'metrics.enable' => ['certificates.leaves'],
             'node.role_add', 'node.role_converge' => ['_role.certificates.leaves'],
             'node.role_relocate' => ['_relocate.certificates.leaves'],
             'node.role_remove' => ['_role_remove.certificates.leaves'],

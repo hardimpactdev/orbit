@@ -5,7 +5,6 @@ covers:
   - apps/gateway/app/Infrastructure/Metrics/**
   - apps/gateway/app/Domain/Metrics/**
   - apps/gateway/app/Infrastructure/Nodes/Metrics/**
-  - apps/gateway/app/Infrastructure/Nodes/Roles/MetricsRoleBaseline.php
   - apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php
   - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php
@@ -29,7 +28,9 @@ The role runs two containers on the Metrics Node and two units on each selected 
 
 Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
 
-The role lifecycle uses the native Metrics runtime lower. It checks ownership of the configuration, containers and volumes before changing them. The lower owns container arguments and specification hashes. The exporter preference workflow uses the same Prometheus image pin to validate configuration, then restarts the existing container. A failed replacement by the lower restores the prior runtime. After healthy replacement, a cleanup failure preserves the new runtime and reports `metrics.container_cleanup_failed`. Grafana's file provider reloads dashboard changes without replacing the container. Credential verification and reset use Grafana's authenticated API.
+`metrics:enable` and `metrics:disable` return an accepted native Operation. Node 209 applies captured public files, container specifications and firewall rules through official cfgmgmt models. The Gateway records the role intent and projects the terminal result. It creates the Grafana password once in its encrypted settings and pushes a names-only execution copy; native SSH writes the protected password file through stdin. No CA private key leaves the Gateway. The canonical certificate workflow creates its key on the target and submits a CSR to the existing signing primitive.
+
+The workflow uses native dependencies and resume. It validates Prometheus configuration before publishing it, applies the two containers, verifies their health once, and composes the existing exporter, Caddy and private DNS workflows. Disable withdraws publication, stops the exporters, removes the containers and configuration, and preserves named volumes and credentials unless `--purge-data --force` was requested. A failed run keeps its desired role state and native step history; recovery resumes the failed step. Nodes consumers retain their existing shared runtime material contract.
 
 The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
 
@@ -37,32 +38,15 @@ The role runs its containers and units itself. They create no `Process` records,
 
 Enable the role with `orbit metrics:enable <node>`. The Node must be active. The role is a singleton and can share a Node with any other role. A second enable returns `node.role_conflict`, even when the existing assignment failed.
 
-Convergence runs four steps in this order. Each failure records its step as `failed_step`.
+The API returns HTTP 202 with an Operation. The CLI follows that Operation. The workflow validates a candidate Prometheus configuration, publishes public files, starts the runtime, checks health once, then publishes exporters, certificates, the Grafana firewall allow, Gateway Caddy and private DNS. Each action has its own native step. Official cfgmgmt owns package, file, image, container removal, systemd and firewall effects; pinned official SSH handles individual commands and the password stdin.
 
-| Step | Work |
-| --- | --- |
-| `converge:metrics-exporters` | Installs and starts the node exporter on each selected Node. |
-| `converge:metrics-cadvisor` | Installs and starts cAdvisor on each selected Node. |
-| `converge:metrics-runtime` | Writes `/etc/orbit/metrics` and runs the two containers. |
-| `converge:metrics-publication` | Publishes the certificate, the Grafana firewall rules, the Gateway Caddy site, and the private DNS record, in that order. |
+A failed native step retains its history and the desired role assignment. Resume the failed native run through the normal Operation recovery path. The workflow does not hide retries, rollback journals or recovery loops. Publication failure keeps the runtime for recovery. The Gateway projects success only after the complete native workflow succeeds; failure records the shared native error code on the assignment.
 
-`error_code` holds the code that stopped the step. This is usually a `metrics.*` code. It can be another component's code, such as a certificate error. A failure without a code records `metrics.convergence_failed`. A step that names itself, such as `converge:private-dns`, keeps its own name and code. The error response carries the code as `details.error_code` next to `details.step`. A publication failure leaves the runtime in place.
+The role workflow recreates its two containers from one canonical public Docker specification. The retained Nodes runtime imports that same specification, including its ownership labels, configuration hash, host networking, mount paths and health checks. Node convergence can therefore inspect or reconcile the runtime without treating it as foreign. Exporter preference changes restart only Prometheus. A password reset uses Grafana's API and replaces no container.
 
-Retry a failed convergence with `orbit node:role:add <node> metrics --converge`. This retries an assignment that is active or whose failed step starts with `converge:`. It also takes over a `provisioning` claim that is stale. A failed removal leaves a failed step that starts with `remove:`. Retry it with `orbit metrics:disable`. `--converge` answers `node.role_conflict` for that assignment.
+### Transport boundary
 
-Convergence has fixed time limits.
-
-| Work | Limit | Error code |
-| --- | --- | --- |
-| Pull a missing image | 300 seconds | `metrics.image_pull_failed` or `metrics.image_pull_timed_out` |
-| Check the Prometheus configuration with `promtool` | 60 seconds | `metrics.prometheus_configuration_check_timed_out` |
-| Install the node exporter package | 300 seconds | `metrics.exporter_install_failed` |
-| Download cAdvisor | 120 seconds, in a 150-second command | `metrics.cadvisor_binary_download_failed` |
-| Any other remote command | 120 seconds | `metrics.remote_command_timed_out` |
-
-Convergence pulls an image only when the Metrics Node lacks it. When an image is missing and Docker does not answer, convergence fails with `metrics.docker_unavailable` and names the Node. Start Docker and converge again.
-
-Role and fleet convergence replace a container only when its configuration changes. Exporter preference changes publish the validated configuration and restart the existing Prometheus container. Both interrupt open queries. Grafana keeps running and reloads dashboard files without a restart. A password reset uses Grafana's API and replaces no container.
+Official cfgmgmt currently exposes no admitted host-key field. Those effects use its default transport and the control worker's managed known-hosts state. Official SSH actions consume the admitted pins directly. This is a separate transport limitation; the role conversion does not claim to close it.
 
 ## Relocate
 
@@ -169,27 +153,15 @@ The private value has `runtime: {operation: 'converge', assignment, configuratio
 
 ## Disable and purge
 
-`orbit metrics:disable` removes the role. After it, the Metrics Node runs neither container. The Gateway removes `/etc/orbit/metrics`, both Grafana firewall rules, and every exporter drop-in and exporter rule on eligible Nodes. It removes the `metrics.orbit` site, certificate, and DNS record. It keeps these items, so a later `metrics:enable` reuses them:
+`orbit metrics:disable --force` returns an accepted native Operation. Force is required for removal. The workflow withdraws exporter and service monitoring, Gateway Caddy, private DNS and the published certificate. It stops the disabled runtime units, removes both containers, deletes their unit files and `/etc/orbit/metrics`, and removes its source-scoped Grafana allow. Older interface-specific rules stay under Nodes convergence ownership.
 
-- the volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`;
-- the stored Grafana password;
-- Docker and the installed packages; and
-- every exporter preference.
+The role assignment is removed only on terminal success. Failure keeps it and the credentials for native recovery. A single active Gateway and all captured SSH targets must be available at admission; this command does not report successful partial publication cleanup.
 
-`--purge-data` also deletes both volumes and the active and pending passwords, and nothing else. The Gateway deletes a volume only when it has the Orbit ownership labels. When a volume lacks them, the Gateway deletes neither volume nor password. It leaves the assignment failed at `remove:baseline` and answers `node_role.remove_failed` (HTTP 502).
+By default, removal keeps both named data volumes, the stored Grafana password, Docker, installed packages and exporter preferences. `--purge-data --force` also removes the two exact named volumes through Docker and purges stored active and pending passwords only after native success. Docker refuses volume removal while a container still uses it. Removal has no private rollback journal.
 
-Metrics convergence and removal [build the Gateway's Caddyfile](/reference/caddy-configuration#node-caddy-build). The build renders `metrics.orbit` while the role converges, is active, or failed at a `converge:` step. It keeps every other site. Convergence publishes the certificate before the build. Removal converges private DNS, builds, removes the Grafana firewall rules, and then removes the certificate when no Metrics site renders.
+The disabled runtime units have no boot target or restart policy. Docker owns reboot behavior while a container exists. Removing a container through retained Nodes paths leaves no enabled unit that can recreate it.
 
-The result reports `publication`:
-
-| Value | Meaning |
-| --- | --- |
-| `cleaned` | The Gateway removed the `metrics.orbit` site, certificate, and DNS record. |
-| `uncleaned` | No single active Gateway existed when the step ran. The site, certificate, and DNS record stay on the Gateway host for an operator to remove. |
-
-An `uncleaned` removal still removes the exporters, both containers, and `/etc/orbit/metrics`. It removes both Grafana firewall rules when the Node's firewall answers.
-
-`orbit node:remove <node> --offline --force` removes the role from an unreachable Metrics Node without SSH. With a single active Gateway, it removes the Gateway publication and reports `cleaned`. Without one, it reports `uncleaned`. The containers, volumes, `/etc/orbit/metrics`, and the Grafana firewall rules stay on the unreachable machine.
+Generic Node removal and relocation retain their separately owned workflows and recovery contracts. Their offline disposition does not prove that this role workflow cleaned an unreachable host.
 
 ## Read Node metrics
 
@@ -204,6 +176,10 @@ These reasons explain the design. Check them before you propose a change.
 ### One Metrics Node with plain Docker containers
 
 One Node keeps placement and private publication simple. Standalone containers keep development and upgrades simple. Do not add Docker Swarm, Compose, custom images, or a registry for this role. The cost is no high availability and no rolling Metrics updates.
+
+### One canonical runtime specification
+
+The official container model cannot express the retained multi-argument Prometheus command, ownership labels and health checks. The role therefore renders the shared Docker argv into systemd oneshot units and applies them through official cfgmgmt. Its container model still owns removal, and its image model owns image availability. This keeps one specification for Nodes and role Operations without adding a transport or supervisor.
 
 ### cAdvisor as a binary
 
@@ -227,7 +203,7 @@ Metrics keeps its own encrypted settings. Orbit has no generic credential system
 
 ### Removal that keeps data
 
-Volumes and the password survive a removal, so re-enabling is safe. Data deletion needs explicit `--purge-data` intent and proven ownership.
+Volumes and the password survive a removal, so re-enabling is safe. Data deletion needs explicit `--purge-data --force` intent. It addresses only the two fixed Metrics volume names.
 
 ### Node metrics through Grafana
 

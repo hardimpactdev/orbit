@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Data\Metrics\MetricsMutationData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
@@ -10,8 +9,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\MetricsPublicationCleanup;
-use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -162,30 +159,6 @@ it('records database create destroy add and remove command names and Instance ta
 
     expect(Activity::query()->where('request_id', $destroy->json('meta.request_id'))->sole())
         ->command->toBe('database:destroy');
-});
-
-it('records a metrics disable request as metrics:disable', function (): void {
-    $gateway = Node::query()->create([
-        'name' => 'metrics-disable-caller',
-        'status' => LifecycleStatus::Active,
-        'public_ssh_host' => '192.0.2.1',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-    $this->markAsGateway($gateway);
-    $manager = Mockery::mock(MetricsRoleManager::class);
-    $manager
-        ->shouldReceive('remove')
-        ->once()
-        ->with(true, true)
-        ->andReturn(new MetricsMutationData($gateway->id, 'removed', MetricsPublicationCleanup::Uncleaned));
-    app()->instance(MetricsRoleManager::class, $manager);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
-        ->assertOk();
-
-    expect(Activity::query()->sole()->command)->toBe('metrics:disable');
 });
 
 it('records project update activity for project create and update targets', function (): void {

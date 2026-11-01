@@ -10,14 +10,8 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Domain\Metrics\MetricsCadvisorLifecycle;
-use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsGatewayResolver;
-use App\Domain\Metrics\MetricsPublicationManager;
-use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsReconcileDeferral;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
@@ -54,7 +48,6 @@ use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\IngressRoleBaseline;
-use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
 use App\Infrastructure\Nodes\Roles\ProductionRoleBaseline;
@@ -221,14 +214,6 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         router_role_baseline($events),
@@ -574,14 +559,6 @@ it('converges database beside router without rewriting routing or node processes
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         router_role_baseline($events),
@@ -765,7 +742,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(count(role_baseline_roles()));
+    $metricsFleet->shouldReceive('reconcile')->times(count(role_baseline_roles()) + 1);
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(
             $firewall,
@@ -781,14 +758,6 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
@@ -842,14 +811,6 @@ it('installs Caddy for an Ingress-only Node, and on removal builds the Node and 
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         ingress: ingress_role_baseline($events),
@@ -872,7 +833,7 @@ it('installs Caddy for an Ingress-only Node, and on removal builds the Node and 
     ]);
 });
 
-it('dispatches removeUnreachable to the matching baseline and skips fleet reconciliation for Metrics', function (): void {
+it('dispatches removeUnreachable and refuses the retired Metrics baseline', function (): void {
     $events = [];
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
     $metricsFleet->shouldReceive('reconcile')->times(2);
@@ -885,14 +846,6 @@ it('dispatches removeUnreachable to the matching baseline and skips fleet reconc
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
@@ -903,7 +856,7 @@ it('dispatches removeUnreachable to the matching baseline and skips fleet reconc
 
     $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
     $dispatcher->removeUnreachable($appProdNode, $appProdAssignment);
-    $dispatcher->removeUnreachable($metricsNode, $metricsAssignment);
+    expect(fn () => $dispatcher->removeUnreachable($metricsNode, $metricsAssignment))->toThrow(ResourceOperationException::class);
 
     expect($events)->toBe(['dns:none']);
 });
@@ -920,14 +873,6 @@ it('republishes private DNS when the dispatcher sheds an unreachable gateway rol
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
@@ -950,14 +895,6 @@ it('propagates the VPN removeUnreachable rejection through the dispatcher', func
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
@@ -980,14 +917,6 @@ it('checks the remote operating system before every role convergence', function 
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
@@ -1024,9 +953,8 @@ it('checks the remote operating system before every role convergence', function 
         'caddy:converge',
         'firewall:converge:app-prod',
         'guard:unknown',
-        'guard:database',
         'ssh:database',
-        'guard:unknown',
+        'guard:database',
         'ssh:caddy-source',
         'ssh:websocket',
         'agent:websocket-runtime',
@@ -1050,14 +978,6 @@ it('stops baseline convergence when the remote operating system guard fails', fu
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard((new FakeAgentCommandRunner)->answer('node.os-release', static function () use (&$events): array {
             $events[] = 'guard:app-dev';
@@ -1154,7 +1074,7 @@ function role_baseline_roles(): array
 {
     return array_values(array_filter(
         RoleName::cases(),
-        static fn (RoleName $role): bool => ! in_array($role, [RoleName::Router, RoleName::Ingress, RoleName::Analytics], strict: true),
+        static fn (RoleName $role): bool => ! in_array($role, [RoleName::Router, RoleName::Ingress, RoleName::Analytics, RoleName::Metrics], strict: true),
     ));
 }
 
@@ -1548,14 +1468,6 @@ it('holds back fleet reconciliation during a deferral and reports that one was r
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         metricsDeferral: $deferral,

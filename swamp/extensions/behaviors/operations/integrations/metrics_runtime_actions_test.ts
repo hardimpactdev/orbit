@@ -13,11 +13,16 @@ function metricsRuntimeActions(deps: MetricsRuntimeDeps = {}) {
       ? {
         engine: {
           call: async (args, _signal, timeoutMs, input) => {
-            const reply = await deps.run!("/usr/bin/docker", [...args], {
+            const reply = await deps.run!("/usr/bin/docker", [
+              ...args,
+            ], {
               input,
               timeoutMs,
             });
-            return { success: reply.code === 0, stdout: reply.stdout };
+            return {
+              success: reply.code === 0,
+              stdout: reply.stdout,
+            };
           },
         },
       }
@@ -243,7 +248,9 @@ Deno.test("observed stop rename create and cleanup success wins over a lost comm
     changed[metricsPaths[1]] = "changed settings";
     h.failure = failure;
     h.afterEffect = true;
-    assertEquals(await h.actions().runtime(input(changed)), { changed: true });
+    assertEquals(await h.actions().runtime(input(changed)), {
+      changed: true,
+    });
     assertEquals(h.containers.size, 2);
     assertEquals(h.files, changed);
   }
@@ -326,7 +333,9 @@ Deno.test("Grafana verify/reset authenticate inside fetch and never invoke a pro
       seen.push({
         url: String(url),
         method: init?.method ?? "",
-        auth: String((init?.headers as Record<string, string>).Authorization),
+        auth: String(
+          (init?.headers as Record<string, string>).Authorization,
+        ),
         body: init?.body as string | undefined,
       });
       return Promise.resolve(new Response("", { status: 200 }));
@@ -417,7 +426,9 @@ Deno.test("Grafana network and server uncertainty stay recoverable with bounded 
     for (const status of [0, 502]) {
       const actions = metricsRuntimeActions({
         fetch: (() => {
-          if (status === 0) throw new Error("PRIVATE_RUNTIME_SENTINEL");
+          if (status === 0) {
+            throw new Error("PRIVATE_RUNTIME_SENTINEL");
+          }
           return Promise.resolve(
             new Response("PRIVATE_RUNTIME_SENTINEL", { status }),
           );
@@ -488,4 +499,67 @@ Deno.test("real private files restore exact bytes owner and mode after replaceme
   } finally {
     await runMetricsProcess("/usr/bin/rm", ["-rf", "--", root]);
   }
+});
+
+Deno.test("native role plan retains the Nodes runtime labels, file marker and health contract", async () => {
+  const { behavior } = await import("./metrics_role_plan.ts");
+  const host = new Host();
+  const config = configuration();
+  let output: unknown;
+  await behavior.methods.plan.execute({
+    assignment_id: 41,
+    address: "10.44.0.17",
+    files: Object.entries(config).filter(([p]) =>
+      !p.endsWith("/admin-password")
+    ).map(([path, content]) => ({ path, content })),
+  }, {
+    writeResource: (_s, _n, value) => {
+      output = value;
+      return Promise.resolve({});
+    },
+  });
+  const plan = behavior.resources.plan.schema.parse(output);
+  for (const service of plan.services) {
+    await host.run("/usr/bin/docker", service.volume_args.slice(1));
+    const line = service.unit.split("\n").find((l) =>
+      l.startsWith("ExecStart=")
+    )!;
+    const args = Array.from(
+      line.matchAll(/"(?:[^"\\]|\\.)*"/g),
+      (m) => JSON.parse(m[0]) as string,
+    );
+    const { metricsRuntimeSpec } = await import(
+      "./metrics_runtime_spec.ts"
+    );
+    const serviceName = service.name.endsWith("prometheus")
+      ? "prometheus"
+      : "grafana";
+    assertEquals(
+      args,
+      (await metricsRuntimeSpec(serviceName, 41, "10.44.0.17", config))
+        .args,
+    );
+    await host.run("/usr/bin/docker", args);
+  }
+  host.files = config;
+  const native = metricsRuntimeActions({ run: host.run });
+  assertEquals(await native.health("prometheus"), { healthy: true });
+  assertEquals(await native.health("grafana"), { healthy: true });
+  host.calls = [];
+  assertEquals(await native.runtime(input(config)), { changed: true });
+  assertEquals(
+    host.calls.filter((a) => a.includes("run") && a.includes("--detach"))
+      .length,
+    0,
+  );
+  assertEquals(
+    plan.files.find((f) => f.path.endsWith("/.orbit-owner"))?.content,
+    "metrics\n",
+  );
+  assert(
+    plan.services.every((s) =>
+      !s.unit.includes("ExecStop=") && !s.unit.includes("WantedBy=") &&
+      !s.unit.includes("PRIVATE_RUNTIME_SENTINEL")
+    ),
+  );
 });

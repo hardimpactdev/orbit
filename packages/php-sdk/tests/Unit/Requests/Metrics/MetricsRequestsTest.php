@@ -48,3 +48,10 @@ it('decodes exporter admission as a native Operation', function (string $class, 
     $result = $connector->send($request)->dto();
     expect($result)->toBeInstanceOf(OperationResponse::class)->and($result->id)->toBe(42)->and($result->kind)->toBe($kind);
 })->with([[EnableMetricsExporterRequest::class, 'metrics.exporter_enable'], [DisableMetricsExporterRequest::class, 'metrics.exporter_disable']]);
+
+it('decodes role enable and disable admissions as Operations', function (string $class, string $kind): void {
+    $request = $class === EnableMetricsRequest::class ? new EnableMetricsRequest(7) : new DisableMetricsRequest(force: true);
+    $connector = new GatewayConnector('https://gateway.example.test');
+    $connector->withMockClient(new MockClient([$class => MockResponse::make(['data' => ['id' => 42, 'kind' => $kind, 'target_type' => 'metrics', 'target_id' => 7, 'status' => 'queued', 'sequence' => 1, 'steps' => []], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 202)]));
+    expect($connector->send($request)->dto())->toBeInstanceOf(OperationResponse::class)->kind->toBe($kind);
+})->with([[EnableMetricsRequest::class, 'metrics.enable'], [DisableMetricsRequest::class, 'metrics.disable']]);
