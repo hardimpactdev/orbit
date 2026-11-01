@@ -85,13 +85,9 @@ inputs:
 jobs:
 - name: write
   target: orbit-node-209
-  labels:
-    node: '209'
   steps:
   - name: sql
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: true
     guard: ${{ inputs.intent.driver == "sqlite" }}
     task:
@@ -168,8 +164,6 @@ jobs:
     allowFailure: true
   - name: sqlite
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: true
     guard: ${{ inputs.intent.driver != "sqlite" }}
     task:
@@ -261,8 +255,6 @@ jobs:
     allowFailure: true
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: false
     dependsOn:
     - step: sql
@@ -307,8 +299,6 @@ jobs:
         ignoreExitCode: true
   - name: accept_result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: result
       condition:

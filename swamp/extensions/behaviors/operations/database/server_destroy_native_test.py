@@ -57,9 +57,9 @@ print(json.dumps(result));sys.exit(code)
         child=yaml.safe_load((ROOT/'workflows/workflow-database-server-remove-container.yaml').read_text())
         for workflow in (self.workflow,child):
             for job in workflow['jobs']:
-                job.pop('target');job.pop('labels')
+                self.assertEqual(job.pop('target'),'orbit-node-209');self.assertNotIn('labels',job)
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'),'orbit-node-209');self.assertEqual(step.pop('labels'),{'node':'209'})
+                    self.assertEqual(step.pop('target'),'orbit-node-209');self.assertNotIn('labels',step)
                     if step['task'].get('behaviorType')=='@swamp/ssh':
                         globals=step['task']['globalArgs'];globals['sshBinary']=str(fake);globals['scpBinary']=str(scp);globals['transport']['identityFile']=str(identity)
         (self.repo/'workflows/workflow-database-server-remove-container.yaml').write_text(yaml.safe_dump(child,sort_keys=False))
@@ -86,6 +86,8 @@ print(json.dumps(result));sys.exit(code)
         self.assertEqual(list(self.state.glob('*.json')),[])
         calls=[json.loads(line) for line in self.calls.read_text().splitlines()]
         self.assertEqual([c['action'] for c in calls[:5]],['inspect.py']*5)
+        records=reply(self.cli('data','query','modelName.startsWith("dbdi-") && name == "run-exec-server"','--select','modelName').stdout)['results']
+        self.assertEqual(set(records),{'dbdi-'+run['id']+'-'+str(index)for index in range(5)})
         self.assertEqual(json.loads(self.output(run)['stdout']),{'backend':'absent'})
 
     def test_foreign_last_slot_refuses_before_any_stop_or_remove(self):
