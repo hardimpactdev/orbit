@@ -72,7 +72,7 @@
       "argv": [
         "python3",
         "-I",
-        "setup.py"
+        "swamp/proof/firewall.inspect/setup.py"
       ]
     }
   ],

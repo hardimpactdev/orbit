@@ -144,7 +144,7 @@ class RequestContractTest(unittest.TestCase):
 
     def test_f13_fixture_accepts_hook_objects_and_rejects_legacy_vault_setup(self):
         fixture = proof.fixture_for('firewall.inspect')
-        self.assertEqual(fixture['before_request'], [{'argv': ['python3', '-I', 'setup.py']}])
+        self.assertEqual(fixture['before_request'], [{'argv': ['python3', '-I', 'swamp/proof/firewall.inspect/setup.py']}])
         for hook in (['sh', 'x'], {'argv': ['sh', 'x'], 'timeout_seconds': 301}, {'argv': ['sh', 'x'], 'timeout_seconds': True}):
             invalid = dict(fixture, before_request=[hook])
             with self.subTest(hook=hook), self.assertRaises(proof.ProofError):
@@ -155,6 +155,8 @@ class RequestContractTest(unittest.TestCase):
 
     def test_topology_uses_existing_catalog_seed_and_node_prerequisites(self):
         self.assertEqual(proof.topology_for('app-dev'), {'name': 'app-dev', 'version': 1, 'nodes': ['app-dev'], 'seed': None})
+        self.assertEqual(proof.topology_for('app-prod')['nodes'], ['app-prod'])
+        self.assertEqual(proof.topology_for('app-prod-2')['nodes'], ['app-prod', 'app-prod-2'])
         self.assertEqual(proof.topology_for('["app-dev","app-prod+ingress"]')['nodes'], ['app-dev', 'app-prod+ingress'])
         for value in (['app-prod-2'], ['app-dev', 'app-dev'], ['gateway'], ['app-dev+unknown'], 'app-dev+ingress'):
             with self.subTest(value=value), self.assertRaises(proof.ProofError):
@@ -354,12 +356,13 @@ class RequestSequenceTest(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout='', stderr='')
             if argv[2:3] == ['observer.py']:
                 events.append('before_request')
-                self.assertEqual(kwargs['cwd'], proof.ROOT / 'swamp/proof/firewall.inspect')
+                self.assertEqual(kwargs['cwd'], proof.ROOT)
                 self.assertEqual(kwargs['timeout'], 23)
                 self.assertEqual(argv[-1], '17')
                 self.assertNotIn('PROOF_OPERATION_ID', kwargs['env'])
                 return SimpleNamespace(returncode=hook_exit, stdout='observer ready', stderr='')
             events.append('parity')
+            self.assertEqual(kwargs['cwd'], proof.ROOT)
             self.assertEqual(json.loads(Path(kwargs['env']['PROOF_OUTPUTS']).read_text()), {'ready': True})
             self.assertEqual(kwargs['env']['PROOF_OPERATION_ID'], '73')
             return SimpleNamespace(returncode=parity_exit, stdout='', stderr='')
@@ -383,6 +386,9 @@ class RequestSequenceTest(unittest.TestCase):
         self.assertEqual(result['native_run_id'], 'exact-root')
         self.assertTrue(any(row.get('operation_id') == 73 and 'operation' not in row for row in snapshots))
         self.assertEqual(result['seed'], 'a' * 64)
+        self.assertEqual(result['enrollment'], 'fixture-set')
+        self.assertEqual(result['topology_ca'], 'fixture-set')
+        self.assertEqual(result['fixture_repositories'], 'separate-caddy')
 
     def test_failed_before_request_never_admits_and_retains_failure_receipt(self):
         result, events, _ = self.execute(hook_exit=1)
@@ -431,14 +437,15 @@ class ArtisanSelectionTest(unittest.TestCase):
 
 
 class ArrayMatchersTest(unittest.TestCase):
-    def test_runtime_uuid_matcher_keeps_whole_array_length_order_and_exact_row_keys(self):
+    def test_runtime_uuid_matcher_keeps_array_length_order_and_recursive_subset_rows(self):
         uuid = '4ba84968-1919-40b2-b919-f0ced3951770'
         expected = {'native_registry': {'runtimes': [{'process_id': '${match.uuid}', 'port': 8790}]}}
         actual = {'native_registry': {'unchecked': True, 'runtimes': [{'process_id': uuid, 'port': 8790}]}}
         self.assertEqual(proof.input_mismatches(actual, expected), [])
+        actual['native_registry']['runtimes'][0]['unchecked'] = True
+        self.assertEqual(proof.input_mismatches(actual, expected), [])
         for rows in ([], [{'process_id': uuid, 'port': 8790}] * 2,
-                     [{'process_id': 'invalid', 'port': 8790}], [{'process_id': uuid, 'port': 8791}],
-                     [{'process_id': uuid, 'port': 8790, 'extra': True}]):
+                     [{'process_id': 'invalid', 'port': 8790}], [{'process_id': uuid, 'port': 8791}]):
             with self.subTest(rows=rows):
                 self.assertTrue(proof.input_mismatches({'native_registry': {'runtimes': rows}}, expected))
         mismatch = proof.input_mismatches({'native_registry': {'runtimes': [{'process_id': 'invalid', 'port': 8790}]}}, expected)
@@ -496,6 +503,72 @@ class ArtisanFailureRecoveryTest(unittest.TestCase):
             result = top.node('gateway', ['php', 'artisan', 'task-vms:build-image'], raw_output=True, allow_failure=True)
         self.assertEqual(result, response['stdout'])
         self.assertIn(response['stderr'], errors.getvalue())
+
+
+class RepositoryBindingTest(unittest.TestCase):
+    def test_committed_variant_payload_binds_public_local_url_before_prepare(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'swamp/proof/instance.create/source/repository').mkdir(parents=True)
+            receipt = {'url': 'https://repositories.orbit/run/instance.create-source.git', 'branch': 'main', 'commit': 'a' * 40}
+            top = SimpleNamespace(root=root, node=Mock(return_value=receipt))
+            context = {}
+            self.assertEqual(runner.bind_repository(top, {}, context, 'instance.create', 'run', 'source'), receipt)
+            self.assertEqual(context['proof.repo.url'], receipt['url'])
+            self.assertEqual(top.node.call_args.args, ('gateway', ['sudo', '-n', 'python3', '-I', '/home/orbit/orbit/tools/swamp_proof_repository.py', 'instance.create', 'run', 'repositories.orbit', 'source']))
+
+    def test_missing_payload_refuses_without_node_effect_or_admission(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            top = SimpleNamespace(root=Path(tmp), node=Mock())
+            fixture = {'prepare': [{'argv': ['orbit', 'project:create', '${proof.repo.url}']}]}
+            with self.assertRaisesRegex(proof.ProofError, 'committed repository payload'):
+                runner.bind_repository(top, fixture, {}, 'instance.create', 'run')
+            self.assertIsNone(runner.bind_repository(top, {}, {}, 'firewall.inspect', 'run'))
+            top.node.assert_not_called()
+
+
+class AcquisitionReadinessTest(unittest.TestCase):
+    def test_bootstrap_never_marks_ready_without_current_release_and_isolated_worker(self):
+        state = {'issue': 'TASK-42', 'commit': 'c' * 40, 'vm': {'group_id': 42}, 'nodes': ['app-dev']}
+        record = {'source': {'host_sha': state['commit'], 'guest_sha': state['commit'], 'dirty': False, 'mounted': True}, 'verification': {'passed': True}}
+        acquired = {'state': 'acquired', 'issue': state['issue'], 'topology': record}
+        sandbox = {'ready': True, 'worker': 'orbit-node-209'}
+        gateway = {'release_sha': state['commit'], 'release': 'proof-release'}
+        for wrong in (None, 'worker', 'ready', 'release_sha', 'release', 'command'):
+            instance = copy.deepcopy(state)
+            observed_sandbox, observed_gateway = dict(sandbox), dict(gateway)
+            if wrong in ('worker', 'ready'):
+                observed_sandbox[wrong] = False
+            elif wrong is not None and wrong != 'command':
+                observed_gateway[wrong] = None
+            def command(_guest, _user, argv, *args, **kwargs):
+                if argv[0] == 'stat':
+                    return b'600:orbit'
+                return json.dumps(acquired).encode() if 'acquire' in argv else b''
+            observations = proof.ProofError('Readiness command failed') if wrong == 'command' else [observed_sandbox, observed_gateway]
+            with self.subTest(wrong=wrong), patch.object(sessions, 'user_call', side_effect=command), patch.object(sessions, 'harness_json', side_effect=observations):
+                if wrong is None:
+                    sessions.bootstrap(Mock(), {'node': {'user': 'orbit'}}, instance, b'bundle')
+                    self.assertTrue(instance['ready'])
+                    self.assertEqual(instance['gateway_install'], 'adopt')
+                else:
+                    with self.assertRaises(proof.ProofError):
+                        sessions.bootstrap(Mock(), {'node': {'user': 'orbit'}}, instance, b'bundle')
+                    self.assertFalse(instance.get('ready', False))
+
+    def test_generic_acquired_status_cannot_claim_a_verified_exact_source(self):
+        state = {'issue': 'TASK-42', 'commit': 'c' * 40}
+        record = {'source': {'host_sha': state['commit'], 'guest_sha': state['commit'], 'dirty': False, 'mounted': True}, 'verification': {'passed': True}}
+        acquired = {'state': 'acquired', 'issue': 'TASK-42', 'topology': record}
+        self.assertEqual(sessions.acquisition_record(acquired, state), record)
+        for field, value in (('host_sha', 'd' * 40), ('guest_sha', 'd' * 40), ('dirty', True), ('mounted', False)):
+            bad = copy.deepcopy(acquired)
+            bad['topology']['source'][field] = value
+            with self.subTest(field=field), self.assertRaises(proof.ProofError):
+                sessions.acquisition_record(bad, state)
+        acquired['topology']['verification']['passed'] = False
+        with self.assertRaises(proof.ProofError):
+            sessions.acquisition_record(acquired, state)
 
 
 if __name__ == '__main__':

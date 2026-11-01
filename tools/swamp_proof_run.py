@@ -82,6 +82,7 @@ class Topology:
 
     def history(self, *argv):
         return self.node('gateway', ['env', 'SWAMP_HOME=' + SWAMP + '/home', 'SWAMP_CONFIG_DIR=' + SWAMP + '/config',
+                                    'SWAMP_API_KEY_FILE=' + SWAMP + '/credentials/club',
                                     'swamp', 'workflow', 'history', *argv, '--repo-dir', SWAMP + '/repository',
                                     '--server', 'wss://localhost:19470', '--token-file', SWAMP + '/credentials/operator',
                                     '--ca-cert', SWAMP + '/tls/cert.pem', '--json'])
@@ -90,8 +91,7 @@ class Topology:
         rows = self.cli(['orbit', 'node:list', '--json'])['nodes']
         if not isinstance(rows, list):
             raise ProofError('Topology node:list did not return its public Node array.')
-        context = {'proof.run': run, 'proof.start_tag': str(uuid.uuid4()),
-                   'proof.repo.url': 'https://github.com/hardimpactdev/swamp-proof-fixture.git'}
+        context = {'proof.run': run, 'proof.start_tag': str(uuid.uuid4())}
         # Resolve actual Gateway IDs from the harness's observed addresses, never list order.
         for key, guest in self.state['topology_record']['construction']['nodes'].items():
             found = [row for row in rows if row['public_ssh_host'] == guest['incus_address'] and row['wireguard_ip'] == guest['wireguard_address']]
@@ -112,6 +112,23 @@ def hook_env(topology, run, folder, operation=None, outputs=None):
     if outputs is not None:
         env['PROOF_OUTPUTS'] = str(outputs)
     return env
+
+
+def bind_repository(topology, fixture, context, kind, run, variant=None):
+    folder = topology.root / 'swamp/proof' / kind
+    candidates = [folder / 'repository']
+    if variant is not None:
+        candidates.insert(0, folder / variant / 'repository')
+    if not any(path.is_dir() for path in candidates):
+        if '${proof.repo.url}' in json.dumps(fixture):
+            raise ProofError('proof.repo.url requires a committed repository payload in the kind or variant folder.')
+        return None
+    argv = ['sudo', '-n', 'python3', '-I', '/home/orbit/orbit/tools/swamp_proof_repository.py', kind, run, 'repositories.orbit']
+    if variant is not None:
+        argv.append(variant)
+    repository = topology.node('gateway', argv)
+    context['proof.repo.url'] = repository['url']
+    return repository
 
 
 def exact_history(topology, operation, fixture):
@@ -158,7 +175,9 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
     receipt.update(kind=kind, variant=variant, workflow=fixture['workflow'], proof_run=run, started_at=utc(), proof_pass=False,
                    swamp_commit=state['commit'], swamp_version=pins(topology.root)['version'],
                    topology=state['topology'], topology_version=state['topology_version'], nodes=state['nodes'],
-                   seed=state['vm']['seed'], vm=dict(state['vm']), destroyed=False)
+                   seed=state['vm']['seed'], vm=dict(state['vm']), gateway_install=state.get('gateway_install'),
+                   gateway_status=state.get('gateway_status'), sandbox_verified=state.get('sandbox_verified'), destroyed=False)
+    receipt.update(enrollment='fixture-set', topology_ca='fixture-set', fixture_repositories='separate-caddy')
     save()
     try:
         # Root-owned timestamp is the only F11 activity fact; no Gateway metadata is written.
@@ -168,13 +187,17 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
         context = topology.context(run)
         now = datetime.now(UTC)
         folder = topology.root / 'swamp/proof' / kind
+        repository = bind_repository(topology, fixture, context, kind, run, variant)
+        if repository is not None:
+            receipt['repository'] = repository
+            save()
         prepare(fixture, context, topology.cli)
         # Resolve expected intent before admitting the request, without learning from actual input.
         bind(fixture['envelope'], context, now, allow_matchers=True)
         env = hook_env(topology, run, folder)
         for hook in fixture.get('before_request', []):
             argv = bind(hook['argv'], context, now)
-            result = topology.execute([str(arg) for arg in argv], timeout=hook.get('timeout_seconds', 60), env=env, cwd=folder)
+            result = topology.execute([str(arg) for arg in argv], timeout=hook.get('timeout_seconds', 60), env=env, cwd=topology.root)
             if result.stdout:
                 print(result.stdout, file=sys.stderr)
             if result.returncode:
@@ -209,7 +232,7 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
             outputs.chmod(0o600)
             env = hook_env(topology, run, folder, operation_id, outputs)
             result = topology.execute([str(arg) for arg in bind(fixture['parity']['command'], context, now)],
-                                      timeout=fixture['budget_seconds'] + 120, env=env)
+                                      timeout=fixture['budget_seconds'] + 120, env=env, cwd=topology.root)
             if result.stdout:
                 print(result.stdout, file=sys.stderr)
             receipt.update(evaluate(history, fixture, result.returncode))

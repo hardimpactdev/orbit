@@ -48,7 +48,7 @@ final readonly class SwampProofFixtureSeeder
             'project.name' => ['required', 'string', 'max:255'],
             'project.slug' => ['required', 'string', 'regex:/\A[a-z][a-z0-9-]*\z/D'],
             'project.type' => ['required', 'in:node-package'],
-            'project.repository_url' => ['required', 'url:https'],
+            'project.repository_url' => ['required', 'in:https://repositories.orbit/seed.git'],
             'project.default_branch' => ['required', 'string'],
             'project.root' => ['required', 'in:.'],
             'project.source_access' => ['required', 'in:github_app'],

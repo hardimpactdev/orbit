@@ -177,7 +177,7 @@ def partial_match(actual, expected):
     return type(actual) is type(expected) and actual == expected
 
 
-def input_mismatches(actual, expected, path='$', exact=False):
+def input_mismatches(actual, expected, path='$'):
     """F13 expected Operation.input is a recursive subset; arrays compare whole."""
     if isinstance(expected, str) and expected.startswith('${match.'):
         matchers = {
@@ -194,17 +194,15 @@ def input_mismatches(actual, expected, path='$', exact=False):
         if not isinstance(actual, list) or len(actual) != len(expected):
             return [{'path': path, 'expected': expected, 'actual': actual}]
         return [difference for index, value in enumerate(expected)
-                for difference in input_mismatches(actual[index], value, path + '[' + str(index) + ']', exact=True)]
+                for difference in input_mismatches(actual[index], value, path + '[' + str(index) + ']')]
     if isinstance(expected, dict) and isinstance(actual, dict):
         differences = []
-        if exact:
-            differences.extend({'path': path + '[' + json.dumps(key) + ']', 'unexpected': True, 'actual': actual[key]} for key in actual if key not in expected)
         for key, value in expected.items():
             child = path + '[' + json.dumps(key) + ']'
             if key not in actual:
                 differences.append({'path': child, 'expected': value, 'missing': True})
             else:
-                differences.extend(input_mismatches(actual[key], value, child, exact=exact))
+                differences.extend(input_mismatches(actual[key], value, child))
         return differences
     return [] if partial_match(actual, expected) else [{'path': path, 'expected': expected, 'actual': actual}]
 

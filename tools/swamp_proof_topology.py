@@ -24,7 +24,7 @@ from swamp_proof import (
 )
 from swamp_proof_transport import Guest, command
 
-CLUB_FILE = '/etc/orbit/swamp-proof/club-api-key'
+CLUB_FILE = '/home/orbit/.config/swamp/club-api-key'
 
 
 def state_path(root=ROOT):
@@ -73,6 +73,25 @@ def bundle_source():
         return commit, path.read_bytes()
 
 
+def acquisition_record(acquired, state):
+    if acquired.get('state') != 'acquired' or acquired.get('issue') != state['issue']:
+        raise ProofError('The existing topology harness did not confirm acquisition.')
+    record = acquired['topology']
+    source = record['source']
+    if not record['verification']['passed'] or source['host_sha'] != state['commit'] or source['guest_sha'] != state['commit'] or source['dirty'] or not source['mounted']:
+        raise ProofError('The topology did not verify the exact committed source mount.')
+    return record
+
+
+def harness_json(guest, user, state, node, argv):
+    raw = user_call(guest, user, ['env', '-C', state['worktree'], 'bin/e2e-topology', 'exec', state['issue'], node,
+                                 '--argv=' + json.dumps(argv), '--timeout=60', '--json'], timeout=75, public=True)
+    response = json.loads(raw)
+    if response.get('state') != 'executed' or response.get('exit_code') != 0:
+        raise ProofError('Topology readiness command did not succeed on ' + node)
+    return json.loads(response['stdout'])
+
+
 def bootstrap(guest, control, state, bundle):
     user = control['node']['user']
     home = '/home/' + user
@@ -95,9 +114,13 @@ def bootstrap(guest, control, state, bundle):
                                 'bin/e2e-topology', 'acquire', state['issue'], worktree,
                                 '--nodes=' + ','.join(state['nodes']), '--json'], timeout=1800, public=True)
     acquired = json.loads(raw)
-    if acquired.get('state') != 'acquired' or acquired.get('issue') != state['issue']:
-        raise ProofError('The existing topology harness did not confirm acquisition.')
-    state.update(worktree=worktree, user=user, topology_record=acquired['topology'], ready=True, ready_at=utc())
+    record = acquisition_record(acquired, state)
+    state.update(worktree=worktree, user=user, topology_record=record)
+    sandbox = harness_json(guest, user, state, 'gateway', ['sudo', '-n', '/usr/local/bin/converge-swamp.py', 'verify'])
+    gateway = harness_json(guest, user, state, 'operator', ['orbit', 'gateway:status', '--json'])
+    if sandbox.get('ready') is not True or sandbox.get('worker') != 'orbit-node-209' or gateway.get('release_sha') != state['commit'] or not gateway.get('release'):
+        raise ProofError('Topology Gateway release or isolated native worker is unconfirmed.')
+    state.update(gateway_install='adopt', gateway_status=gateway, sandbox_verified=sandbox, ready=True, ready_at=utc())
     return state
 
 

@@ -4,7 +4,7 @@
 
 Use `bin/swamp-proof run <kind>` for each kind, `bin/swamp-proof receipt` to print the latest receipt path, and `bin/swamp-proof down` to cancel the Task group through the normal API. Failed `up` also cancels its group. A failed run leaves the held topology for inspection; always finish with `down`. Cleanup failures retain the exact group identity for retry.
 
-The dedicated proof repository is `hardimpactdev/swamp-proof-fixture`. Its Project excludes Beast (Node 9). Provision must select Shark (Node 13), Incus project `orbit-tasks`, network `orbittask0`. No Node, access edge, key or host pin is added by the runner. Normal provision supplies them.
+The outer production Project uses `hardimpactdev/swamp-proof-fixture` only to provision its Task VM. This Project excludes Beast (Node 9). Nested fixture and seeded Projects use topology-local payload repositories; they never point at GitHub. Provision must select Shark (Node 13), Incus project `orbit-tasks`, network `orbittask0`. No Node, access edge, key or host pin is added by the runner. Normal provision supplies them.
 
 ## Topology and lifetime
 
@@ -25,7 +25,7 @@ Each `swamp/proof/<kind>.json` declares `kind`, `workflow`, `topology`, `budget_
 }
 ```
 
-Prepare and request call the real `orbit` CLI on the topology operator. Captures select exact JSON paths such as `$.id` or `$.result.instance_id`. They create every target identity; fixtures do not hard-code IDs. Before-request commands run on the outer Task VM after prepare, with the kind folder as their working directory. Each `{argv:[...]}` object may set `timeout_seconds` (default 60, maximum 300). They may fault-inject workload state or use existing topology `spawn` and `logs` for observers. They never write the Gateway database or Swamp datastore.
+Prepare and request call the real `orbit` CLI on the topology operator. Captures select exact JSON paths such as `$.id` or `$.result.instance_id`. They create every target identity; fixtures do not hard-code IDs. Before-request commands run on the outer Task VM after prepare, with the staged worktree root as their working directory. Each `{argv:[...]}` object may set `timeout_seconds` (default 60, maximum 300). They may fault-inject workload state or use existing topology `spawn` and `logs` for observers. They never write the Gateway database or Swamp datastore.
 
 Bindings are `${topology.<node>.node_id|name|wireguard_ip}`, `${capture.<name>}`, `${proof.run}`, `${proof.repo.url}`, `${proof.start_tag}` (fresh UUID v4), `${proof.now+N}` (UTC ISO string), and `${proof.epoch+N}` (integer Unix seconds). A whole-value binding preserves its JSON type. Secret values never appear in argv; the Gateway supplies them through its normal admission path.
 
@@ -33,13 +33,21 @@ Scheduler and Artisan-only kinds use `request: {"artisan":["schedule:test","--na
 
 A kind with variants uses `<kind>/<variant>.json`. `run <kind> --variant <variant>` selects one; without that flag the runner uses all variants in file-name order. Each is a complete fixture and declares its own required topology. Single-file kinds use `<kind>.json`.
 
-`envelope` is a recursive subset of the actual public `Operation.input`, not workflow inputs. Every supplied key must match; omitted keys are unchecked. Arrays compare whole: exact length and order, exact object keys inside each element, and typed leaf matchers. Generated values support whole-value `${match.uuid}`, `${match.positive_int}`, `${match.sha256}`, `${match.nonempty_string}`, and `${match.present}`. There are no post-admission captures. A receipt stores the full actual input and every mismatch's JSON path.
+`envelope` is a recursive subset of the actual public `Operation.input`, not workflow inputs. Every supplied key must match; omitted keys are unchecked. Arrays compare whole: the same length and order, with recursive subset matching and typed matchers in each element. Generated values support whole-value `${match.uuid}`, `${match.positive_int}`, `${match.sha256}`, `${match.nonempty_string}`, and `${match.present}`. There are no post-admission captures. A receipt stores the full actual input and every mismatch's JSON path.
+
+## Local repository payloads
+
+A kind carries public test code under `<kind>/repository/`. A variant may provide `<kind>/<variant>/repository/`; otherwise it uses the kind's shared payload. Before prepare, the runner turns that payload into one deterministic `main` commit and a bare repository on the topology Gateway. It binds `${proof.repo.url}` to `https://repositories.orbit/<run>/<kind>[-<variant>].git`. Every run has a new repository identity. The seed Project uses its own payload at `seed/repository/` and URL `https://repositories.orbit/seed.git`.
+
+Lane 11's topology setup owns the fixture-only stock Caddy unit `swamp-proof-repositories.service` (`git http-backend` through `fcgiwrap`), private DNS and topology-CA trust. It binds the Gateway's observed Incus address, preserves product Caddy configuration and refuses a port conflict. Receipts record `fixture_repositories: separate-caddy`. The helper enables read-only Git access and disables receive-pack. It installs no service, SSH account or key. Smart HTTP supports production's shallow HTTPS clone path. No production source protocol or authentication policy changes.
+
+The seeding call is `sudo -n python3 -I /home/orbit/orbit/tools/swamp_proof_repository.py seed <issue> repositories.orbit`, before `tools/swamp-proof-seed.php`. Kind calls replace `seed` with the kind and use the run id, with an optional final variant argument. The helper prints `{url, commit, branch}`. Bare repositories live under `/srv/swamp-proof/repositories`. The seed validator accepts only its local HTTPS URL. Its normal `github_app` source-access value requests no credential for this non-GitHub origin.
 
 ## Outputs and parity
 
 Order: prepare, before-request, request, follow the Operation, inspect its exact native history, then parity. Native history search selects the unique declared workflow with the admitted `operation_id`. The runner checks the full run identity again before evaluating timestamps and outputs.
 
-Parity runs on the outer Task VM from the staged worktree root and receives exactly these proof variables:
+Before-request and parity both run on the outer Task VM from the staged worktree root and receives exactly these proof variables:
 
 - `PROOF_EXEC`: the shell-quoted `bin/e2e-topology exec <issue>` prefix.
 - `PROOF_OPERATION_ID`: the admitted Operation ID.
@@ -53,8 +61,8 @@ Before-request receives the same available context, without `PROOF_OPERATION_ID`
 
 ## Installation and custody
 
-The topology Gateway migrates a fresh database from mounted PR source, invokes `tools/swamp-proof-seed.php` with public observed topology facts, then uses the existing Gateway release builder to prepare, deploy and switch into `/home/orbit/runtime/current/apps/gateway`. Services and sandbox Swamp start afterwards. The mounted worktree remains at `/home/orbit/orbit`. `orbit:bootstrap` is not used. Seeded Node and role statuses are fixture intent; the existing verifier proves services, WireGuard, CA, access, pinned SSH and worker readiness.
+The topology Gateway migrates a fresh database from mounted PR source, invokes `tools/swamp-proof-seed.php` with public observed topology facts, creates an independent runtime checkout and starts sandbox Swamp before `gateway:release:adopt`. Adoption needs Swamp for its native Caddy handoff. It then runs `gateway:release:configure` with topology-local values and starts Gateway services. The runtime lives at `/home/orbit/runtime/current/apps/gateway`. The mounted worktree remains at `/home/orbit/orbit`. `orbit:bootstrap` is not used. Receipts record `enrollment: fixture-set` and `topology_ca: fixture-set`. Seeded Node and role statuses are fixture intent; the existing verifier proves services, WireGuard, CA, access, pinned SSH and worker readiness.
 
-The dedicated club token is held by the production Gateway. Only Project 62 / slug `swamp-proof` provision receives its execution copy. Native provision writes `/etc/orbit/swamp-proof/club-api-key` mode 0600 for the proof user. The harness passes it on guest stdin through `ORBIT_E2E_SWAMP_CLUB_TOKEN_FILE`. The wrapper never fetches or holds the credential locally. It dies with the Task VM.
+The dedicated club token is held by the production Gateway. Only Project 62 / slug `swamp-proof` provision receives its execution copy. Native provision writes `/home/orbit/.config/swamp/club-api-key` mode 0600 for the proof user. Its copy step has a 10-second dispatch budget and a 30-second action budget. The harness passes it on guest stdin through `ORBIT_E2E_SWAMP_CLUB_TOKEN_FILE`. Sandbox CLI calls use `SWAMP_API_KEY_FILE` with the nested Gateway's private file. The wrapper never fetches or holds the credential locally. It dies with the Task VM.
 
-Receipts are private JSON under `~/swamp-execution/evidence/proof/<kind>/<UTC timestamp>.json`. Quote their paths in kind PRs. They include the Operation ID and public input/result, native run ID, served commit, runtime pin, topology and seed, per-step and phase timings, budgets, parity, and the owned VM identity. `down` updates their destruction confirmation. An infrastructure refusal or missing readiness prerequisite is not a successful proof.
+Receipts are private JSON under `~/swamp-execution/evidence/proof/<kind>/<UTC timestamp>.json`. Quote their paths in kind PRs. They record `gateway_install: adopt` after the harness confirms that installation. They include the Operation ID and public input/result, native run ID, served commit, runtime pin, topology and seed, per-step and phase timings, budgets, parity, and the owned VM identity. `down` updates their destruction confirmation. An infrastructure refusal or missing readiness prerequisite is not a successful proof.

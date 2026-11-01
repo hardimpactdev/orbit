@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Project;
@@ -26,7 +27,7 @@ function proof_gateway_seed_facts(): array
 
     return ['cluster' => ['name' => 'proof-test'], 'nodes' => $nodes,
         'project' => ['name' => 'Swamp proof test', 'slug' => 'swamp-proof-test', 'type' => 'node-package',
-            'repository_url' => 'https://github.com/hardimpactdev/swamp-proof-fixture.git',
+            'repository_url' => 'https://repositories.orbit/seed.git',
             'default_branch' => 'main', 'root' => '.', 'source_access' => 'github_app']];
 }
 
@@ -48,7 +49,19 @@ it('seeds only fixture records with assigned ids and observed public pins', func
     expect($operator->accessibleNodes->modelKeys())->toBe([$gateway->id]);
     $project = Project::query()->findOrFail($result['project_id']);
     expect($project->task_workspace_routed)->toBeFalse()->and($project->review_and_merge)->toBeFalse();
+    expect(app(RepositoryReadAccess::class)->for($project->repository_url, $project->source_access)->isEmpty())->toBeTrue();
 });
+
+it('refuses a seed repository outside the topology before writing records', function (string $repository): void {
+    $facts = proof_gateway_seed_facts();
+    $facts['project']['repository_url'] = $repository;
+
+    expect(fn () => new SwampProofFixtureSeeder()->execute($facts))->toThrow(ValidationException::class);
+
+    expect(Node::query()->count())->toBe(0);
+    expect(Cluster::query()->count())->toBe(0);
+    expect(Project::query()->count())->toBe(0);
+})->with(['https://github.com/octocat/Hello-World.git', 'https://elsewhere.test/seed.git', 'http://repositories.orbit/seed.git', 'ssh://git@repositories.orbit/seed.git']);
 
 it('refuses an existing database without changing its records', function (string $existing): void {
     $facts = proof_gateway_seed_facts();
