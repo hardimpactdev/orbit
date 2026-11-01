@@ -6,3 +6,5 @@ license: MIT
 description: Pure native Cluster Router terminal result.
 behaviors:
   - operations/cluster-router/result.ts
+additionalFiles:
+  - scripts/phase-timeout.sh

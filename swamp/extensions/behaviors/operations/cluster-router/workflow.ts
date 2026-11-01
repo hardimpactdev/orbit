@@ -5,7 +5,13 @@ import {
 import { routeMutationSteps } from "../routes/mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
-const placement = { target: "orbit-node-209" };
+const queueTimeout = 600;
+const phaseTimeout = Deno.readTextFileSync(
+    new URL("./scripts/phase-timeout.sh", import.meta.url),
+);
+const placement = { target: "orbit-node-209", queueTimeout };
+const queued = (steps: Fields[]) =>
+    steps.map((step) => ({ ...step, queueTimeout }));
 const completed = { type: "always" };
 const after = (
     name: string,
@@ -163,7 +169,8 @@ export function clusterRouterWorkflow(): Fields {
             "One immutable Router transition on209 through shared native publication children.",
         vaults: ["orbit-control-inputs"],
         inputs: envelope,
-        jobs: [{ name: "router", steps }],
+        queueTimeout,
+        jobs: [{ name: "router", steps: queued(steps) }],
     };
 }
 /** Reuse the canonical Route factory; native allowed failures preserve its partial public outcomes. */
@@ -243,7 +250,8 @@ export function publicationWorkflow(mode: "forward" | "restore"): Fields {
             },
             required: [...envelope.required, "parent_run_id"],
         },
-        jobs: [{ name: mode, steps }],
+        queueTimeout,
+        jobs: [{ name: mode, steps: queued(steps) }],
     };
 }
 export function prepareWorkflow(): Fields {
@@ -269,6 +277,35 @@ export function prepareWorkflow(): Fields {
             "packages",
         ),
     ];
+    const phaseSeconds: Record<string, string> = {
+        account_command: "30",
+        packages: "600",
+        caddy_command: "300",
+    };
+    for (const step of steps) {
+        const seconds = phaseSeconds[step.name as string];
+        if (seconds === undefined) continue;
+        const task = step.task as Fields;
+        const inputs = task.inputs as Fields;
+        task.methodName = "exec";
+        task.inputs = {
+            hosts: inputs.hosts,
+            sudo: inputs.sudo,
+            timeoutSec: Number(seconds) + 30,
+            argv: [
+                "/bin/sh",
+                "-c",
+                phaseTimeout,
+                "router-phase",
+                "Router " + step.name,
+                seconds,
+                "/usr/bin/python3",
+                "-I",
+                "-c",
+                inputs.script,
+            ],
+        };
+    }
     steps.push({
         name: "firewall",
         ...placement,
@@ -294,13 +331,15 @@ export function prepareWorkflow(): Fields {
             "Canonical Router prerequisites, Caddy package and owned firewall policy through official SSH.",
         vaults: [],
         inputs: envelope,
-        jobs: [{ name: "prepare", steps }],
+        queueTimeout,
+        jobs: [{ name: "prepare", steps: queued(steps) }],
     };
 }
 export function probeWorkflow(): Fields {
     return {
         id: "5cbf1292-9922-444b-9225-fb2b682111f7",
         name: "cluster-router-probe",
+        queueTimeout,
         description:
             "Verify one admitted workload TLS endpoint from the candidate Router through official SSH.",
         vaults: [],
@@ -318,8 +357,13 @@ export function probeWorkflow(): Fields {
                     globalArgs: sshGlobals(),
                     inputs: {
                         hosts: "name:target",
+                        timeoutSec: 40,
                         argv: expr(
-                            '"protocol" in inputs.intent && inputs.intent.protocol == "http" ? ["/usr/bin/curl","--head","--noproxy","*","--silent","--connect-timeout","10","--max-time","10","--output","/dev/null","--header","Host: " + inputs.intent.probe.domain,"http://" + inputs.intent.probe.address + ":" + string(inputs.intent.probe.port) + "/"] : ["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]',
+                            `"protocol" in inputs.intent && inputs.intent.protocol == "http" ? ["/bin/sh","-c",${
+                                JSON.stringify(phaseTimeout)
+                            },"router-phase","Router HTTP probe","10","/usr/bin/curl","--head","--noproxy","*","--silent","--connect-timeout","10","--max-time","10","--output","/dev/null","--header","Host: " + inputs.intent.probe.domain,"http://" + inputs.intent.probe.address + ":" + string(inputs.intent.probe.port) + "/"] : ["/bin/sh","-c",${
+                                JSON.stringify(phaseTimeout)
+                            },"router-phase","Router TLS probe","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]`,
                         ),
                     },
                 },
