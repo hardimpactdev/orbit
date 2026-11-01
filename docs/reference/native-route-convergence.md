@@ -5,6 +5,8 @@ description: Route creation through one placed Swamp workflow.
 
 Route creation freezes complete BEFORE and prospective AFTER Caddy, PHP, DNS, certificate, workload and firewall plans before dispatch. One native root on Node 209 prepares workload TLS, proves the captured Router-to-workload endpoint, then reuses the canonical Route publication children. Stored serving markers change only after terminal success. An unchanged active Route requires no host work.
 
+Public Route publication changes use the admitted native Route workflow. The Gateway records the preference and projects the terminal result; it has no separate synchronous public Route publication executor.
+
 Public listeners retain Caddy automatic HTTPS. Before publication, probes verify the staged private workload listeners. A target that also serves Ingress is verified through its final public listener. A public Process Route first verifies the admitted managed firewall allowance and sends the existing HTTP HEAD probe from Ingress without a proxy; an HTTP refusal still proves that the upstream answered. Final public TLS verification gates success.
 
 Route removal freezes the same actual BEFORE catalog and a catalog without the selected Route. It withdraws DNS, waits through native DNS grace, removes Caddy sites, then retires PHP, workload access, URL bindings, certificate scopes and obsolete firewall tuples. Stored rows and target associations remain until terminal success. `route.withdraw` retains the row with its serving marker cleared; `route.destroy` deletes it. Failed or cancelled runs retain the stored serving markers, row and associations; successful compensation reports the captured BEFORE selection without inventing success for the failed operation.
