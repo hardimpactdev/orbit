@@ -1,5 +1,6 @@
 id: 22d37697-fc3f-4df0-9e26-ad6d0f78c431
 name: operation-database-connection-update
+queueTimeout: 60
 description: Read an admitted Valkey index limit over official SSH, or project a record-only update.
 writes: true
 vaults: [orbit-control-inputs]

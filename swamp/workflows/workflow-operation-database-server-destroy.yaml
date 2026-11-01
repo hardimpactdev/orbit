@@ -1,5 +1,6 @@
 id: 2fb743f6-7bd7-4d0a-8a61-168d30da8a44
 name: operation-database-server-destroy
+queueTimeout: 60
 description: Inspect all admitted Process slots, then remove them over official SSH without deleting data
   volumes.
 writes: true

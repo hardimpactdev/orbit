@@ -1,5 +1,6 @@
 id: f497279b-80cd-4dc8-82bb-1a6622d977e4
 name: operation-database-server-create
+queueTimeout: 60
 description: Provision and scrub a recorded database server through official SSH from
   209; project native terminal output.
 writes: true

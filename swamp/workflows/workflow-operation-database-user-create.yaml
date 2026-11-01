@@ -1,5 +1,6 @@
 id: 2c8195ba-b28b-4bb1-9c65-abda5b48a477
 name: operation-database-user-create
+queueTimeout: 60
 description: Create an admitted SQL login and replace exact database grants using shipped scripts over official SSH from209.
 writes: true
 vaults:
