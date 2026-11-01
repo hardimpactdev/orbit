@@ -653,13 +653,12 @@ it('renders local validation failures through the exact json boundary', function
             '--username' => 'app',
         ],
         'database.password_required',
-        'A database user requires --password.',
+        'Pipe the password on standard input, or run this command in a terminal to type it.',
     ],
     'database user username' => [
         'database:user:create',
         [
             'slug' => 'app',
-            '--password' => 'secret',
         ],
         'database.username_required',
         'A database user requires --username.',
@@ -669,7 +668,6 @@ it('renders local validation failures through the exact json boundary', function
         [
             'slug' => 'app',
             '--username' => 'validation-secret',
-            '--password' => 'secret',
         ],
         'database.username_invalid',
         'Username must be a 1-32 character identifier of letters, digits, and underscores.',

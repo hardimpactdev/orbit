@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\StandardInputReader;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
@@ -22,6 +23,7 @@ use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
+use Tests\Support\FakeStandardInput;
 
 it('follows database Operations and forwards the start key without reading a deleted target', function (string $name, array $arguments, string $requestClass): void {
     $home = sys_get_temp_dir().'/database-swamp-cli-'.bin2hex(random_bytes(8));
@@ -31,6 +33,7 @@ it('follows database Operations and forwards the start key without reading a del
         'status' => 'succeeded', 'sequence' => 3, 'input' => ['intent_id' => 9], 'result' => ['backend' => 'active']];
     $envelope = ['data' => $data, 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']];
     $mock = MockClient::global([$requestClass => MockResponse::make($envelope, 202), ShowOperationRequest::class => MockResponse::make($envelope), ShowRealtimeRequest::class => MockResponse::make([], 503)]);
+    app()->instance(StandardInputReader::class, FakeStandardInput::piped('synthetic-password'));
     try {
         $command = app(Kernel::class)->all()[$name];
         $tester = new CommandTester($command);
@@ -50,7 +53,7 @@ it('follows database Operations and forwards the start key without reading a del
     'server-close' => ['database:server:close', ['slug' => 'dev-db'], CloseDatabaseServerRequest::class],
     'server-destroy' => ['database:server:destroy', ['slug' => 'dev-db', '--force' => true], DestroyDatabaseServerRequest::class],
     'create' => ['database:create', ['slug' => 'throwaway', '--server' => 'dev-db'], CreateDatabaseConnectionRequest::class],
-    'user-create' => ['database:user:create', ['slug' => 'throwaway', '--username' => 'reader', '--password' => 'synthetic-password'], CreateDatabaseUserRequest::class],
+    'user-create' => ['database:user:create', ['slug' => 'throwaway', '--username' => 'reader'], CreateDatabaseUserRequest::class],
     'destroy' => ['database:destroy', ['slug' => 'throwaway', '--force' => true], DestroyDatabaseConnectionRequest::class],
     'read' => ['database:query', ['slug' => 'throwaway', 'sql' => 'SELECT 1'], QueryDatabaseConnectionRequest::class],
     'write' => ['database:query', ['slug' => 'throwaway', 'sql' => 'CREATE TABLE sample (id integer)', '--write' => true], QueryDatabaseConnectionRequest::class],

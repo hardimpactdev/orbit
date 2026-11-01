@@ -70,7 +70,9 @@ Use Laravel Prompts for prompts and tables. An interactive data list means its c
 
 Use a finite selector for an existing registry entity; an open text or numeric prompt must not replace it. Select and multiselect defaults belong to the admitted choices. Suggest accepts a valid value outside its suggestions. Multi-value prompts use the command's documented multi-value argument or option in noninteractive mode. An empty candidate set produces an explicit empty result or selection failure; it never invents a default target.
 
-Search callbacks are read-only. A noninteractive caller supplies the same value through the documented argument or option. Input secrets are not echoed or logged. Only an explicit current credential-delivery contract may return secret values. Verify those commands with disposable credentials and keep raw artifacts private; remove credentials from shared report excerpts. For each prompt, the command contract states its ID, label, source argument or option, choices, default, validation timing, cancellation, and follow-up behavior.
+Search callbacks are read-only. A noninteractive caller supplies the same value through the documented argument or option. A secret is the exception: it never travels in argv, so a noninteractive caller pipes it on standard input, and a terminal asks for it with a hidden prompt. Input secrets are not echoed or logged.
+
+Only an explicit current credential-delivery contract may return secret values. Verify those commands with disposable credentials and keep raw artifacts private; remove credentials from shared report excerpts. For each prompt, the command contract states its ID, label, source argument or option, choices, default, validation timing, cancellation, and follow-up behavior.
 
 ## Consent
 
