@@ -1,0 +1,78 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task; DECISIONS R1 + round 2 websocket.sync (no Swamp run, the Gateway closes the task from Reverb's own reports). docs/reference/websocket-apps.md.
+  %% status: draft
+  %% command: websocket:app:create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant N as Reverb<br/>on websocket Node
+  CLI->>GW: websocket:app:create<br/>hauzer --operation-key=KEY
+  %%> Command:
+  %%> - `orbit websocket:app:create hauzer`
+  %%> - syntax: `<name> [--operation-key=KEY] [--json]`
+  %%> Input:
+  %%> - the app name: a lowercase kebab slug of at most 63 characters
+  %%> - optionally an operation key, to retry the same request after a lost response
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Save the app, revision 19<br/>R1: no run · task #5150
+  %%> Requirements:
+  %%> - a Node has the `websocket` role
+  %%> - the name is free and is not `gateway`; otherwise `validation.failed`
+  %%> What it does:
+  %%> - generates the app ID, key and secret; the secret is stored encrypted and never returned
+  %%> - saves the app and a new registry revision 19 in one transaction
+  %%> - records task #5150, which waits for revision 19
+  %%> Why no Swamp run:
+  %%> - nothing has to be done on a Node; Reverb pulls the registry itself (R1)
+  %%> Result:
+  %%> - the app exists in the Gateway; Reverb does not serve it yet
+  GW-->>CLI: 202 Accepted<br/>task #5150 · app ID, key
+  %%> What you get:
+  %%> - the task number, the app ID and the key, at once; never the secret
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  loop each Reverb reconcile, 30 s
+    N->>GW: Pull the registry<br/>full snapshot, revision 19
+    %%> What it does:
+    %%> - every Reverb process fetches the full registry snapshot on its own 30-second reconcile
+    %%> - it adds the app without a restart; existing connections stay open
+    %%> Not included:
+    %%> - no Swamp step, no SSH and no Reverb restart
+    N->>GW: Report applied revision<br/>per process and boot
+    %%> What it does:
+    %%> - each process reports the revision it applied, with its boot identity
+    %%> Why:
+    %%> - a report from an old boot cannot confirm a replacement process
+  end
+  alt every process applied 19
+    Note over GW: Close the task<br/>succeeded · app served
+    %%> Result:
+    %%> - every serving Reverb process has loaded the app
+    %%> - task #5150 succeeds
+  else a later revision replaced it
+    Note over GW: Close the task, failed<br/>websocket.registry_superseded
+    %%> When:
+    %%> - the app was destroyed or changed before every process applied revision 19
+    %%> Result:
+    %%> - task #5150 fails; the registry keeps its latest state
+  else no fresh report in 5 min
+    Note over GW: Close the task, failed<br/>websocket.registry_pending
+    %%> When:
+    %%> - a serving process is stale, missing or keeps failing to load the revision
+    %%> Result:
+    %%> - task #5150 fails; the saved app stays, and Reverb loads it when it recovers
+    %%> Retry:
+    %%> - run `websocket:sync` after the fix; it waits for the current revision
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5150
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
