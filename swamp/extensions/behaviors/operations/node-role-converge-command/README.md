@@ -70,3 +70,9 @@ Composer refuses a foreign scope; JavaScript uses the existing Fleet recipe
 policy, including NodeSource and Corepack retirement. Native parity runs must
 measure the p95 before selecting the F8 run budget and queue timeout. This work
 does not activate AppProd until the complete contribution passes those checks.
+
+## F13 topology proof
+
+The complete role variants live at `swamp/proof/node.role_converge/{database,ingress,app-prod,websocket}.json`. Run one with `bin/swamp-proof run node.role_converge --variant <role>`. Each uses the supported AppProd topology Node; a bounded preparation helper replaces its current role through the normal CLI when needed and records public assignment precondition evidence before the convergence request. Preparation requires lane21's native role-add parent. It never writes Gateway records directly.
+
+The WebSocket leaf remains `reverb.orbit` and signs through the topology Gateway's own CA and normal primitive. The proof has no signer address input or disposable signer. Its read-only parity checks recorded assignment identity, native and projected phase proofs, exact public configuration and the target's service state. The fixtures establish warm convergence, not cold installation. A passing F10 receipt is still required before merge.
