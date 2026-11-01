@@ -162,9 +162,10 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
 
     def test_destroy_composes_real_owned_sqlite_child_before_source_removal(self):
         import sqlite3
+        from contextlib import closing
         self.copy_behaviors('operations/database-server-commands')
         database = self.application/'owned.sqlite'
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection:
             connection.execute('CREATE TABLE proof(value)')
         workflow = yaml.safe_load((ROOT/'workflows/workflow-database-owned-sqlite-remove.yaml').read_text())
         workflow = json.loads(json.dumps(workflow).replace('/tmp/orbit-db-owned-', str(self.control)+'/db-owned-').replace('/run/credentials/orbit-node-worker.service/proxy-ssh-identity',str(self.identity)))
