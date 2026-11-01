@@ -174,7 +174,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-publication-command",
-    version: "2026.11.1.1",
+    version: "2026.11.01.1",
     resources: {
         caddy: {
             schema: CaddyPublication,
