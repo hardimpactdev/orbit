@@ -1,27 +1,287 @@
+# deno-fmt-ignore-file
 id: 51bb9b35-450f-4cc3-b5e4-c7f92aa77749
 name: operation-fleet-docker-migrate
-description: Explicit Docker provider migration and Process reconciliation on one owning Node.
-vaults: []
-inputs:
-  properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [fleet.docker_migrate] }
-  required: [operation_id, node_id, kind]
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-labels: { node: "${{ string(inputs.node_id) }}" }
+description: Visible Docker provider migration over pinned official SSH from209.
+vaults:
+- orbit-control-inputs
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [fleet.docker_migrate]}, intent: {type: object}, execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}}, required: [operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
-  - name: migrate
+- name: prepare
+  dependsOn: []
+  steps:
+  - name: assets
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) }}
+    task: {type: behavior, behaviorType: '@nckrtl/fleet-docker-assets', behaviorName: '${{ "docker-metadata-" + run.id }}', methodName: read, inputs: {run_id: '${{ run.id }}', mode: '${{ inputs.intent.mode }}', migration: '${{ inputs.intent.migration }}'}}
+  - name: prepare
+    target: orbit-node-209
+    dependsOn: [{step: assets, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) }}
     writes: true
-    steps:
-      - name: execute
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/fleet-docker-migrate"
-          behaviorName: "${{ 'fleet-docker-migrate-' + string(inputs.node_id) }}"
-          methodName: execute
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: &id001 {name: '${{ "fleet-docker-" + run.id }}', transport: &id002 {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: &id003 [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', argv: [/usr/bin/mkdir, -m, '0700', -p, '${{ "/tmp/orbit-docker-" + run.id }}'], sudo: false}}
+  - name: copy
+    target: orbit-node-209
+    dependsOn: [{step: prepare, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: copy, globalArgs: *id001, inputs: {hosts: 'name:target', direction: to, src: '${{ steps.assets.outputs.scripts }}', dst: '${{ "/tmp/orbit-docker-" + run.id }}', recursive: true}}
+  - name: inventory
+    target: orbit-node-209
+    dependsOn: [{step: copy, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', inventory], sudo: true}}
+  - name: inventory_data
+    target: orbit-node-209
+    dependsOn: [{step: inventory, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) }}
+    task: {type: behavior, behaviorType: '@nckrtl/fleet-docker-assets', behaviorName: '${{ "docker-metadata-" + run.id }}', methodName: decode, inputs: {stdout: '${{ "inventory" in steps && "outputs" in steps["inventory"] ? steps["inventory"].outputs.stdout : "{}" }}'}}
+- name: stop
+  dependsOn: [{job: prepare, condition: {type: always}}]
+  steps:
+  - name: disable-policy
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.container_ids) ? steps.inventory_data.outputs.container_ids : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-disable-policy-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-disable-policy-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', disable-policy, '${{ self.item }}'], sudo: true}}
+  - name: stop
+    target: orbit-node-209
+    dependsOn: [{step: disable-policy, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.container_ids) ? steps.inventory_data.outputs.container_ids : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-stop-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-stop-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', stop, '${{ self.item }}'], sudo: true}}
+  - name: commit
+    target: orbit-node-209
+    dependsOn: [{step: stop, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.unmanaged) ? steps.inventory_data.outputs.unmanaged : [] }}'
+    concurrency: 1
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-commit-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-commit-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', commit, '${{ self.item }}'], sudo: true}}
+- name: catalogue
+  dependsOn: [{job: stop, condition: {type: always}}]
+  steps:
+  - name: catalogue
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', catalogue], sudo: true}}
+  - name: preserved
+    target: orbit-node-209
+    dependsOn: [{step: catalogue, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) }}
+    task: {type: behavior, behaviorType: '@nckrtl/fleet-docker-assets', behaviorName: '${{ "docker-metadata-" + run.id }}', methodName: decode, inputs: {stdout: '${{ "catalogue" in steps && "outputs" in steps["catalogue"] ? steps["catalogue"].outputs.stdout : "{}" }}'}}
+- name: archive
+  dependsOn: [{job: catalogue, condition: {type: always}}]
+  steps:
+  - name: archive
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    forEach:
+      item: item
+      in: '${{ has(steps.preserved) && has(steps.preserved.outputs) && has(steps.preserved.outputs.images) ? steps.preserved.outputs.images : [] }}'
+    concurrency: 1
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-archive-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-archive-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', archive, '${{ self.item }}'], sudo: true}}
+- name: engine
+  dependsOn: [{job: archive, condition: {type: always}}]
+  steps:
+  - name: stop-services
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, stop, docker.service, docker.socket, containerd.service], sudo: true}}
+  - name: backup
+    target: orbit-node-209
+    dependsOn: [{step: stop-services, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', backup], sudo: true}}
+  - name: sources
+    target: orbit-node-209
+    dependsOn: [{step: backup, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', sources], sudo: true}}
+  - name: packages
+    target: orbit-node-209
+    dependsOn: [{step: sources, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', packages], sudo: true}}
+  - name: engine-start
+    target: orbit-node-209
+    allowFailure: true
+    dependsOn: [{step: packages, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, start, docker.service], sudo: true}}
+  - name: readiness
+    target: orbit-node-209
+    dependsOn: [{step: engine-start, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate") }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', readiness], sudo: true}}
+  - name: engine
+    target: orbit-node-209
+    dependsOn: [{step: readiness, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) }}
+    task: {type: behavior, behaviorType: '@nckrtl/fleet-docker-assets', behaviorName: '${{ "docker-metadata-" + run.id }}', methodName: decode, inputs: {stdout: '${{ "readiness" in steps && "outputs" in steps["readiness"] ? steps["readiness"].outputs.stdout : "{}" }}'}}
+  - name: probe-start
+    target: orbit-node-209
+    allowFailure: true
+    dependsOn: [{step: engine, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || (has(steps.engine.outputs) && steps.engine.outputs.fallback)) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.probe) ? steps.inventory_data.outputs.probe : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-probe-start-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-probe-start-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/docker, start, '${{ self.item }}'], sudo: true}}
+  - name: probe-stop
+    target: orbit-node-209
+    dependsOn: [{step: probe-start, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || (has(steps.engine.outputs) && steps.engine.outputs.fallback)) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.probe) ? steps.inventory_data.outputs.probe : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-probe-stop-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-probe-stop-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/docker, stop, --time, '60', '${{ self.item }}'], sudo: true}}
+- name: fallback
+  dependsOn: [{job: engine, condition: {type: always}}]
+  steps:
+  - name: fallback-stop
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, stop, docker.service, docker.socket, containerd.service], sudo: true}}
+  - name: fallback-mask
+    target: orbit-node-209
+    dependsOn: [{step: fallback-stop, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, mask, containerd.service], sudo: true}}
+  - name: fallback-config
+    target: orbit-node-209
+    dependsOn: [{step: fallback-mask, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', fallback-config], sudo: true}}
+  - name: reload
+    target: orbit-node-209
+    dependsOn: [{step: fallback-config, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, daemon-reload], sudo: true}}
+  - name: fallback-start
+    target: orbit-node-209
+    dependsOn: [{step: reload, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, start, docker.service], sudo: true}}
+  - name: volume
+    target: orbit-node-209
+    dependsOn: [{step: fallback-start, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.volumes) ? steps.inventory_data.outputs.volumes : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-volume-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-volume-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', volume, '${{ self.item }}'], sudo: true}}
+  - name: network
+    target: orbit-node-209
+    dependsOn: [{step: volume, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.networks) ? steps.inventory_data.outputs.networks : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-network-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-network-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', network, '${{ self.item }}'], sudo: true}}
+  - name: load
+    target: orbit-node-209
+    dependsOn: [{step: network, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.preserved) && has(steps.preserved.outputs) && has(steps.preserved.outputs.images) ? steps.preserved.outputs.images : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-load-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-load-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', load, '${{ self.item }}'], sudo: true}}
+  - name: tag
+    target: orbit-node-209
+    dependsOn: [{step: load, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.tags) ? steps.inventory_data.outputs.tags : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-tag-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-tag-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', tag, '${{ self.item }}'], sudo: true}}
+  - name: pull
+    target: orbit-node-209
+    dependsOn: [{step: tag, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.unmanaged) ? steps.inventory_data.outputs.unmanaged : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-pull-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-pull-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', pull, '${{ self.item }}'], sudo: true}}
+  - name: recreate
+    target: orbit-node-209
+    dependsOn: [{step: pull, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode != "migrate" || !((has(steps.engine.outputs) && steps.engine.outputs.fallback) || steps.exists(k, k.startsWith("probe-start-") && steps[k].status == "failed"))) }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.unmanaged) ? steps.inventory_data.outputs.unmanaged : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-recreate-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-recreate-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', recreate, '${{ self.item }}'], sudo: true}}
+- name: restore
+  dependsOn: [{job: fallback, condition: {type: always}}]
+  steps:
+  - name: restore-policy
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode == "plan") }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.container_ids) ? steps.inventory_data.outputs.container_ids : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-restore-policy-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-restore-policy-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', restore-policy, '${{ self.item }}'], sudo: true}}
+  - name: start
+    target: orbit-node-209
+    dependsOn: [{step: restore-policy, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode == "plan") }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.unmanaged) ? steps.inventory_data.outputs.unmanaged : [] }}'
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-start-" + run.id + "-" + string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "docker-start-" + run.id + "-" + string(self._index) }}', transport: *id002, hosts: *id003}, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', start, '${{ self.item }}'], sudo: true}}
+  - name: process
+    target: orbit-node-209
+    dependsOn: [{step: start, condition: {type: always}}]
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode == "plan") }}
+    forEach:
+      item: item
+      in: '${{ has(steps.inventory_data) && has(steps.inventory_data.outputs) && has(steps.inventory_data.outputs.process_ids) ? inputs.intent.processes.filter(p, string(p.id) in steps.inventory_data.outputs.process_ids) : [] }}'
+    writes: true
+    task: {type: workflow, workflowIdOrName: operation-process-create, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: process.create, intent: '${{ self.item.intent }}', execution_secrets: '${{ ("member_" + string(self.item.id)) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.item.id)]} : {} }}'}}
+- name: report
+  dependsOn: [{job: restore, condition: {type: always}}]
+  steps:
+  - name: report
+    target: orbit-node-209
+    guard: ${{ steps.exists(k, steps[k].status == "failed" && !((k == "engine-start" || k.startsWith("probe-start-")) && inputs.intent.migration.fallback)) || (inputs.intent.mode == "plan") }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "docker-ssh-" + run.id }}', methodName: exec, globalArgs: *id001, inputs: {hosts: 'name:target', argv: [/usr/bin/env, '${{ "ORBIT_DOCKER_INPUT=" + steps.assets.outputs.input_json }}', /usr/bin/python3, '${{ "/tmp/orbit-docker-" + run.id + "/scripts/actions.py" }}', report], sudo: true}}
+- name: result
+  dependsOn: [{job: report, condition: {type: always}}]
+  steps:
+  - name: result
+    target: orbit-node-209
+    task: {type: behavior, behaviorType: '@nckrtl/fleet-docker-assets', behaviorName: '${{ "docker-metadata-" + run.id }}', methodName: result, inputs: {mode: '${{ inputs.intent.mode }}', steps: '${{ steps }}'}}
+  - name: proven
+    target: orbit-node-209
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.result.outputs.healthy, severity: high, message: Docker migration and all Process children must finish healthy}
