@@ -1581,6 +1581,12 @@ export function analyzeYaml(
       }
     }
     if (typeof value === "string") {
+      // A step input becomes one dispatch frame; history reads grow with every write (B7).
+      if (
+        file.startsWith("workflows/") && path[0] === "jobs" &&
+        path[2] === "steps" && path[4] === "task" && path[5] === "inputs" &&
+        /\bdata\.(?:query|findByTag|findBySpec|listVersions)\s*\(/.test(value)
+      ) add("unbounded-data-input");
       const envValue = path.length >= 4 && path.at(-2) === "env" &&
         path.at(-3) === "inputs" && path.at(-4) === "task";
       const vaultEnv = envValue &&

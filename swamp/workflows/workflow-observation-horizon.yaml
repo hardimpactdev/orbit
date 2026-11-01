@@ -14,7 +14,7 @@ jobs:
       behaviorName: ${{ "observation-select-" + run.id }}
       methodName: select
       inputs:
-        candidates: ${{ data.query('modelType == "@nckrtl/observation-schedule" && specName == "context" && attributes.channel == "horizon"').map(c, c.attributes) }}
+        candidates: ${{ [data.latest("observation-context-horizon", "context").?attributes.orValue(null)].filter(c, c != null) }}
   - name: reading
     dependsOn:
     - {step: context, condition: {type: succeeded}}

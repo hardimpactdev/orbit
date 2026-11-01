@@ -24,6 +24,43 @@ const inventory = {
   "cli.install": "action",
   "caddy.publish": "action",
 };
+Deno.test("step inputs read one bounded data record, never a query or version history", () => {
+  const file = "workflows/workflow-example.yaml";
+  const workflow = (candidates: string) =>
+    JSON.stringify({
+      name: "example",
+      jobs: [{
+        name: "observe",
+        target: "orbit-node-209",
+        steps: [{
+          name: "context",
+          task: {
+            type: "behavior",
+            behaviorType: "@nckrtl/observation-schedule",
+            behaviorName: "select",
+            methodName: "select",
+            inputs: { candidates },
+          },
+        }],
+      }],
+    });
+  const rules = (candidates: string) =>
+    analyzeYaml(file, workflow(candidates)).findings.map((f) => f.rule);
+  for (
+    const unbounded of [
+      `\${{ data.query('specName == "context"').map(c, c.attributes) }}`,
+      `\${{ data.findBySpec("m", "context") }}`,
+      `\${{ data.findByTag("k", "v") }}`,
+      `\${{ data.listVersions("m", "context") }}`,
+    ]
+  ) assert(rules(unbounded).includes("unbounded-data-input"), unbounded);
+  assertEquals(
+    rules(
+      `\${{ [data.latest("observation-context-fleet", "context").?attributes.orValue(null)].filter(c, c != null) }}`,
+    ).includes("unbounded-data-input"),
+    false,
+  );
+});
 Deno.test("Route private DNS grace allows only the approved file, step and literal command", () => {
   const file = "workflows/workflow-route-dns-grace.yaml";
   const workflow = {
