@@ -14,3 +14,4 @@ additionalFiles:
   - scripts/upcloud.py
   - scripts/upcloud_create.py
   - scripts/ssh_firewall.py
+  - scripts/incus_start_wait.py
