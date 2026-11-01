@@ -1,3 +1,6 @@
+import { type RecipePlan, RecipePrPlanner } from "./actions.ts";
+import { effect } from "./effects.ts";
+import type { RecipeGitHub } from "./api.ts";
 import { Repository } from "./policy.ts";
 export const head = "a".repeat(40),
   parent = "b".repeat(40),
@@ -44,7 +47,10 @@ export function recipe() {
         source: "artifact",
         version: "7.0.2",
         artifacts: {
-          amd64: { url: "https://example.test/incus", sha256: "c".repeat(64) },
+          amd64: {
+            url: "https://example.test/incus",
+            sha256: "c".repeat(64),
+          },
         },
       },
       "incus-base": { source: "artifact", version: "7.0.2" },
@@ -54,7 +60,10 @@ export function recipe() {
     common: [],
     base: [],
     roles: {},
-    php: { shared: [], versions: { "8.5": { packages: ["php8.5-common"] } } },
+    php: {
+      shared: [],
+      versions: { "8.5": { packages: ["php8.5-common"] } },
+    },
     artifact_mirror: "https://example.test/mirror",
     git: { packages: ["git", "git-man"], usn_since: "2026-08-11" },
   };
@@ -73,4 +82,62 @@ export function openPlanStore() {
       return Promise.resolve();
     },
   };
+}
+
+/** Test driver for unit policy cases; the separate native fixture executes the actual YAML. */
+export class RecipeWorkflowFixture {
+  constructor(
+    private github: RecipeGitHub,
+    private indexes: ConstructorParameters<typeof RecipePrPlanner>[1],
+    private plans = openPlanStore(),
+  ) {}
+  async execute(input: unknown) {
+    const plan = (await this.plans.read() ??
+      await new RecipePrPlanner(this.github, this.indexes).prepare(
+        input,
+      )) as RecipePlan;
+    if (plan.action === "none") {
+      return {
+        completed: true,
+        outcome: plan.outcome,
+        ...(plan.url ? { url: plan.url } : {}),
+      };
+    }
+    await this.plans.write(plan);
+    let result: Record<string, unknown> = {};
+    if (plan.action === "open") {
+      for (const method of ["branch", "file", "pull"]) {
+        result = await effect(method, this.github, plan);
+      }
+    }
+    if (plan.action === "update") {
+      const tree = await effect("tree", this.github, plan);
+      const commit = await effect(
+        "commit",
+        this.github,
+        plan,
+        tree.sha as string,
+      );
+      result = await effect(
+        "ref",
+        this.github,
+        plan,
+        undefined,
+        commit.sha as string,
+      );
+    }
+    if (["merge", "close"].includes(plan.action)) {
+      result = await effect(plan.action, this.github, plan);
+    }
+    if (plan.comment) {
+      try {
+        await effect("comment", this.github, plan);
+      } catch { /* Native allowFailure. */ }
+    }
+    return {
+      completed: true,
+      outcome: "checked",
+      ...(result.url ? { url: result.url } : {}),
+    };
+  }
 }

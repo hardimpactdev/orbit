@@ -631,14 +631,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/fleet/recipe-pr/direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
       "rule": "custom-control",
       "count": 1,

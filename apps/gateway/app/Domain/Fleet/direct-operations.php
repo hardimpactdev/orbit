@@ -35,6 +35,7 @@ return [
         'workflow' => 'operation-fleet-recipe-pr',
         'projection' => RecipePrProjection::class,
         'github_token' => ['repository' => 'hardimpactdev/orbit', 'permissions' => ['contents' => 'write', 'pull_requests' => 'write', 'checks' => 'read']],
-        'private_material' => ['github' => 'github.installation'],
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'github', 'step' => 'result'],
     ],
 ];
