@@ -14,21 +14,51 @@ const LanPlan = z.object({
     migrate: z.boolean(),
     legacy_router: z.literal(true).optional(),
 }).strict();
+function tupleKeys(status: string): Set<string> {
+    if (!/^Status: active$/m.test(status)) throw new Error("firewall.inactive");
+    return new Set(
+        status.split("\n").flatMap((line) => {
+            const row = line.trim().match(
+                /^(\d+)\/(tcp|udp)\s+ALLOW(?:\s+IN)?\s+([0-9.]+)\s*$/,
+            );
+            return row ? [`${Number(row[1])}/${row[2]}/${row[3]}`] : [];
+        }),
+    );
+}
+const tupleKey = (rule: z.infer<typeof LanRule>) =>
+    `${rule.port}/${rule.protocol}/${rule.source}`;
+export function neededLanRules(plan: z.infer<typeof LanPlan>, status: string) {
+    const current = tupleKeys(status);
+    return plan.rules.filter((rule) =>
+        current.has(tupleKey(rule)) !== (rule.ensure === "present")
+    )
+        .map((rule) => rule.model_name);
+}
+const LanOutcomes = z.object({
+    plan: LanPlan,
+    outcomes: z.record(z.string(), z.unknown()),
+});
+type LanOutcomes = z.infer<typeof LanOutcomes>;
 function verifyLanRules(
     plan: z.infer<typeof LanPlan>,
     outcomes: Record<string, unknown>,
 ): void {
-    plan.rules.forEach((rule, index) => {
-        const step = z.object({
+    const observe = (name: string) =>
+        z.object({
             status: z.literal("succeeded"),
-            outputs: z.object({
-                current: z.object({ ruleExists: z.boolean() }),
-            }),
-        }).parse(outcomes[`apply-${index}`]);
-        if (
-            step.outputs.current.ruleExists !==
-                (rule.ensure === "present")
-        ) throw new Error("firewall.tuple_unproven");
+            outputs: z.object({ stdout: z.string() }),
+        }).parse(outcomes[name]).outputs.stdout;
+    const needed = neededLanRules(plan, observe("observe-before"));
+    const current = tupleKeys(observe("observe-after"));
+    plan.rules.forEach((rule, index) => {
+        if (needed.includes(rule.model_name)) {
+            z.object({ status: z.literal("succeeded") }).parse(
+                outcomes[`apply-${index}`],
+            );
+        }
+        if (current.has(tupleKey(rule)) !== (rule.ensure === "present")) {
+            throw new Error("firewall.tuple_unproven");
+        }
     });
 }
 const RouteObservation = z.object({
@@ -58,9 +88,15 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.10.31.3",
+    version: "2026.11.01.1",
     resources: {
-        lan: { schema: LanPlan, lifetime: "infinite", garbageCollection: 10 },
+        lan_changes: {
+            schema: z.object({
+                model_names: z.array(z.string()),
+            }),
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
         ready: {
             lifetime: "infinite",
             garbageCollection: 10,
@@ -117,18 +153,27 @@ export const behavior = {
         },
     },
     methods: {
+        lanChanges: {
+            description:
+                "Shape visible tuple commands from the pinned UFW observation",
+            arguments: z.object({ plan: LanPlan, current: z.string() }),
+            execute: async (
+                args: { plan: z.infer<typeof LanPlan>; current: string },
+                ctx: Context,
+            ) => ({
+                dataHandles: [
+                    await ctx.writeResource("lan_changes", "changes", {
+                        model_names: neededLanRules(args.plan, args.current),
+                    }),
+                ],
+            }),
+        },
         lanApplied: {
             description:
                 "Prove official tuple state before legacy rules can be removed",
-            arguments: z.object({
-                plan: LanPlan,
-                outcomes: z.record(z.string(), z.unknown()),
-            }),
+            arguments: LanOutcomes,
             execute: async (
-                args: {
-                    plan: z.infer<typeof LanPlan>;
-                    outcomes: Record<string, unknown>;
-                },
+                args: LanOutcomes,
                 ctx: Context,
             ) => {
                 verifyLanRules(args.plan, args.outcomes);
@@ -144,15 +189,9 @@ export const behavior = {
         lanResult: {
             description:
                 "Verify every official firewall tuple and the optional one-time migration",
-            arguments: z.object({
-                plan: LanPlan,
-                outcomes: z.record(z.string(), z.unknown()),
-            }),
+            arguments: LanOutcomes,
             execute: async (
-                args: {
-                    plan: z.infer<typeof LanPlan>;
-                    outcomes: Record<string, unknown>;
-                },
+                args: LanOutcomes,
                 ctx: Context,
             ) => {
                 verifyLanRules(args.plan, args.outcomes);
@@ -224,18 +263,6 @@ export const behavior = {
                             args.alternatives,
                         ),
                     ),
-                ],
-            }),
-        },
-        lan: {
-            description: "Read the complete public Node tuple plan",
-            arguments: z.object({ intent: LanPlan }),
-            execute: async (
-                args: { intent: z.infer<typeof LanPlan> },
-                ctx: Context,
-            ) => ({
-                dataHandles: [
-                    await ctx.writeResource("lan", "lan", args.intent),
                 ],
             }),
         },

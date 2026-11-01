@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Metrics;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Metrics\EnableMetricsExporterRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class EnableMetricsExporterCommand extends MetricsCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'metrics:exporter:enable {node : Node ID or name} {--json : Return machine-readable JSON}';
 
@@ -30,10 +33,15 @@ final class EnableMetricsExporterCommand extends MetricsCommand
         $response = $this->sendWithProgress(
             $connector,
             new EnableMetricsExporterRequest($nodeId),
-            MetricsMutationResponse::class,
-            ['Enable Metrics exporter', 'Enabling Metrics exporter', 'Enabled Metrics exporter'],
+            OperationResponse::class,
+            ['Enable Metrics exporter', 'Requesting exporter enable', 'Exporter enable accepted'],
         );
 
-        return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
+        if (! $response instanceof OperationResponse) {
+            return self::FAILURE;
+        }
+        $profile = $this->activeGatewayProfile($repository);
+
+        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $response, 'Metrics exporter', 'Exporter');
     }
 }

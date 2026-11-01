@@ -17,6 +17,8 @@ use Orbit\Sdk\Requests\Metrics\ResetMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 use Saloon\Enums\Method;
@@ -447,57 +449,38 @@ it('rejects an unknown node name before any Metrics mutation', function (): void
     $mock->assertNotSent(EnableMetricsRequest::class);
 });
 
-it('resolves exporter node names through the node list', function (): void {
+it('resolves exporter node names and follows the native Operation', function (): void {
     $mock = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [metrics_cli_node_payload(id: 3, name: 'app-prod', status: 'active', roles: ['app-prod'])],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
-        DisableMetricsExporterRequest::class => MockResponse::make([
-            'data' => ['node_id' => 3, 'status' => 'active'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+        ListNodesRequest::class => MockResponse::make(['data' => [metrics_cli_node_payload(id: 3, name: 'app-prod', status: 'active', roles: ['app-prod'])], 'meta' => ['request_id' => metrics_cli_request_id()]]),
+        DisableMetricsExporterRequest::class => metrics_cli_exporter_operation('metrics.exporter_disable', 3),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.exporter_disable', 3),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
     ]);
-
-    $this
-        ->artisan('metrics:exporter:disable', ['node' => 'app-prod', '--json' => true])
-        ->assertSuccessful();
-
-    expect($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/metrics/exporters/3');
+    $this->artisan('metrics:exporter:disable', ['node' => 'app-prod', '--json' => true])->expectsOutputToContain('"kind":"metrics.exporter_disable"')->assertSuccessful();
+    $mock->assertSent(static fn ($request): bool => $request instanceof DisableMetricsExporterRequest && $request->resolveEndpoint() === '/api/v1/metrics/exporters/3');
 });
 
-it('sends the selected node through each exporter request', function (
-    string $command,
-    string $requestClass,
-    Method $method,
-): void {
+it('sends the selected node and follows the exact exporter Operation result', function (string $command, string $requestClass, Method $method, string $kind): void {
     $mock = MockClient::global([
-        $requestClass => MockResponse::make([
-            'data' => ['node_id' => 7, 'status' => 'active'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+        $requestClass => metrics_cli_exporter_operation($kind, 7),
+        ShowOperationRequest::class => metrics_cli_exporter_operation($kind, 7),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
     ]);
-
-    $this
-        ->artisan($command, ['node' => '7', '--json' => true])
-        ->expectsOutput(json_encode([
-            'node_id' => 7,
-            'status' => 'active',
-            'request_id' => metrics_cli_request_id(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->assertSuccessful();
-
-    expect($mock->getLastRequest())
-        ->toBeInstanceOf($requestClass)
-        ->and($mock->getLastRequest()?->getMethod())
-        ->toBe($method)
-        ->and($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/metrics/exporters/7');
+    $this->artisan($command, ['node' => '7', '--json' => true])->expectsOutputToContain('"kind":"'.$kind.'"')->assertSuccessful();
+    $mock->assertSent(static fn ($request): bool => $request instanceof $requestClass && $request->getMethod() === $method && $request->resolveEndpoint() === '/api/v1/metrics/exporters/7');
 })->with([
-    'enable' => ['metrics:exporter:enable', EnableMetricsExporterRequest::class, Method::PUT],
-    'disable' => ['metrics:exporter:disable', DisableMetricsExporterRequest::class, Method::DELETE],
+    'enable' => ['metrics:exporter:enable', EnableMetricsExporterRequest::class, Method::PUT, 'metrics.exporter_enable'],
+    'disable' => ['metrics:exporter:disable', DisableMetricsExporterRequest::class, Method::DELETE, 'metrics.exporter_disable'],
 ]);
+
+it('returns native exporter failure without printing a completed mutation', function (): void {
+    MockClient::global([
+        EnableMetricsExporterRequest::class => metrics_cli_exporter_operation('metrics.exporter_enable', 7, 'failed'),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.exporter_enable', 7, 'failed'),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
+    ]);
+    $this->artisan('metrics:exporter:enable', ['node' => '7', '--json' => true])->expectsOutputToContain('"error_code":"operation.native_failed"')->assertExitCode(1);
+});
 
 it('renders complete human status tables', function (): void {
     MockClient::global([
@@ -710,4 +693,15 @@ function metrics_cli_display(string $command, array $arguments = []): array
     $tester = new CommandTester(app(Kernel::class)->all()[$command]);
 
     return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
+
+function metrics_cli_exporter_operation(string $kind, int $node, string $status = 'succeeded'): MockResponse
+{
+    return MockResponse::make(['data' => ['id' => 42, 'kind' => $kind, 'target_type' => 'metrics', 'target_id' => 3,
+        'node_id' => $node, 'input' => [], 'status' => $status, 'sequence' => 4, 'current_step' => null, 'failed_step' => null,
+        'error_code' => $status === 'failed' ? 'operation.native_failed' : null,
+        'result' => $status === 'failed' ? ['error_code' => 'operation.native_failed'] : ['node_id' => $node, 'status' => $kind === 'metrics.exporter_enable' ? 'enabled' : 'disabled'],
+        'cancel_requested' => false, 'attempts' => 0, 'triggered_by' => 'operator', 'created_at' => '2026-11-01T02:00:00Z',
+        'started_at' => '2026-11-01T02:00:01Z', 'finished_at' => '2026-11-01T02:00:02Z', 'poll_after_seconds' => 2],
+        'meta' => ['request_id' => metrics_cli_request_id()]], 202);
 }

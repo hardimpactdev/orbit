@@ -21,6 +21,8 @@ final class FakeRoutePublicationSocket implements WebSocketClient
 
     public ?\Closure $onConnect = null;
 
+    public bool $keepConnected = false;
+
     private bool $connected = false;
 
     public function __construct(private bool $accepted = true) {}
@@ -40,7 +42,7 @@ final class FakeRoutePublicationSocket implements WebSocketClient
 
     public function receive(float $timeoutSeconds): array
     {
-        $this->connected = false;
+        $this->connected = $this->keepConnected;
 
         if ($this->reply !== null) {
             return ($this->reply)(array_last($this->sent));

@@ -71,14 +71,9 @@ function command(
         name: `${prefix}${verb}`,
         input: manager === "brew" && verb === "remove" ? pkg : bottle,
       };
-    case "adoption-scope":
-      return { name: "tool.inspect-composer-scope", input: {} };
     case "tool-verified":
       if (verb === "manager_converge" || input.intent_only) {
         return { name: version, input: {} };
-      }
-      if (verb === "adopt" && manager.startsWith("brew")) {
-        return { name: `${prefix}adoption`, input: bottle };
       }
       return { name: `${prefix}inventory`, input: {} };
   }
@@ -255,9 +250,7 @@ export function toolNode(invoke = localTool) {
                 };
                 await ctx.writeResource("before", beforeName, baseline);
               }
-              const outcome = intent.kind === "tool.adopt"
-                ? (input.tool_status === "installed" ? "unchanged" : "applied")
-                : intent.kind === "tool.remove"
+              const outcome = intent.kind === "tool.remove"
                 ? "applied"
                 : intent.kind === "tool.install"
                 ? (baseline?.installed_version !== null
@@ -269,14 +262,6 @@ export function toolNode(invoke = localTool) {
                 ? "unchanged"
                 : "applied";
               return { installed_version: version, block: null, outcome };
-            }
-            if (spec.name.endsWith("-adoption")) {
-              return {
-                ...raw,
-                outcome: input.tool_status === "installed"
-                  ? "unchanged"
-                  : "applied",
-              };
             }
             return raw;
           };

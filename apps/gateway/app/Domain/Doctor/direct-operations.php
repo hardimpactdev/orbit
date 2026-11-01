@@ -8,7 +8,8 @@ use App\Domain\Observation\ObservationMaintenanceProjection;
 return ['doctor.inspect' => [
     'workflow' => 'operation-doctor-inspect',
     'projection' => DoctorProjection::class,
-    'private_material' => ['database_servers' => 'doctor.database_servers', 'schedules' => 'doctor.schedules'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'report', 'step' => 'result'],
 ], 'observation.maintain' => [
     'workflow' => 'operation-observation-maintain',
     'projection' => ObservationMaintenanceProjection::class,

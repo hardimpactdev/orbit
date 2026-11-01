@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Metrics\AdmitMetricsExporterAction;
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Data\Metrics\MetricsMutationData;
 use App\Data\Metrics\MetricsStatusData;
+use App\Data\Operations\OperationData;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsStatusReader;
@@ -16,6 +18,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Metrics\EnableMetricsRequest;
 use App\Http\Requests\Metrics\RemoveMetricsRequest;
 use App\Http\Requests\Metrics\ResetMetricsCredentialsRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,14 +51,18 @@ final class MetricsController extends Controller
         return $this->response($request, $manager->reset())->header('Cache-Control', 'no-store');
     }
 
-    public function enableExporter(Request $request, Node $node, MetricsRoleManager $manager): JsonResponse
+    #[StartsOperation('metrics.exporter_enable')]
+    public function enableExporter(Request $request, Node $node, AdmitMetricsExporterAction $action): JsonResponse
     {
-        return $this->response($request, $manager->enableExporter($node->id));
+        return response()->json(['data' => OperationData::fromModel($action->execute($node, true))->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
-    public function disableExporter(Request $request, Node $node, MetricsRoleManager $manager): JsonResponse
+    #[StartsOperation('metrics.exporter_disable')]
+    public function disableExporter(Request $request, Node $node, AdmitMetricsExporterAction $action): JsonResponse
     {
-        return $this->response($request, $manager->disableExporter($node->id));
+        return response()->json(['data' => OperationData::fromModel($action->execute($node, false))->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
     private function response(

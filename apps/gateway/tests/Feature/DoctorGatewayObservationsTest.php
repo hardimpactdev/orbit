@@ -31,9 +31,9 @@ it('reads current Gateway observations at each Operation input read without chan
     $operation = new Operation(['kind' => 'doctor.inspect', 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
         'input' => ['nodes' => [['id' => $node->id, 'resources' => []]], 'families' => ['node'], 'collect_problems' => false]]);
     $projection = app(DoctorProjection::class);
-    expect($projection->input($operation)['nodes'][0]['observations']['freshness'])->toBe('missing');
+    expect($projection->publicInput($operation, $node->id)['nodes'][0]['observations']['freshness'])->toBe('missing');
     seed_agent_view($node->id, ['systemd:orbit-process-42-web' => 'active']);
-    expect($projection->input($operation)['nodes'][0]['observations']['freshness'])->toBe('fresh')
+    expect($projection->publicInput($operation, $node->id)['nodes'][0]['observations']['freshness'])->toBe('fresh')
         ->and($operation->input['nodes'][0])->not->toHaveKey('observations');
 });
 

@@ -106,7 +106,7 @@ A public repository and a repository on another host work with `github_app`. A `
 
 ## Repository identity
 
-The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout. [Doctor](/cli/doctor#what-each-family-checks) uses it to compare a checkout's origin with the Project, so an SSH origin of an HTTPS Project is not `project.repository_origin_mismatch`.
+The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout.
 
 ## Registration needs a Project
 
@@ -153,7 +153,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 
-A slug change does not move a development checkout. Orbit creates it at `APPS_ROOT/SLUG/NAME` and stores that path. Deployment, source resolution, removal, and Doctor read the checkout's directory from the stored path, not from the current slug. So a checkout created under the old slug keeps working after the change.
+A slug change does not move a development checkout. Orbit creates it at `APPS_ROOT/SLUG/NAME` and stores that path. Deployment, source resolution and removal read the checkout's directory from the stored path, not from the current slug. So a checkout created under the old slug keeps working after the change.
 
 ### Change source access
 
@@ -165,7 +165,7 @@ The Gateway first resolves the remote default branch with the new `source_access
 
 The create and update commands accept `--task-workspace-routed=true` or `--task-workspace-routed=false`. An invalid CLI value returns `project.task_workspace_routed_invalid` before a request. The setting controls task provisioning only. It does not change ordinary Instances or bypass root, Route, and Project-type validation. A settings-only update does not reconcile existing sources or Routes.
 
-Each task workspace keeps its recorded routing mode, so Doctor does not reinterpret it after a settings change. Renaming a Project does not change the setting, and the engine never consults the slug.
+Each task workspace keeps its recorded routing mode after a settings change. Renaming a Project does not change the setting, and the engine never consults the slug.
 
 ### Review and merge
 
@@ -210,7 +210,7 @@ When updating source, the Gateway calls `project.update-source`. The agent passe
 
 Branch switch, rollback, and origin changes run as the Node's managed user, the owner of the checkout. Branch switch and rollback checkout commands write the work tree, so they run without a credential environment. A switch checks out with `--no-track`, and then records the branch's upstream. Preflight fetches use the Project repository URL and never read the checkout's configuration; see [credentialed Git](/reference/instance-setup#credentialed-git).
 
-Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
+Use the owning native Operation result to inspect a failed projection.
 
 ### Repository changes
 
@@ -329,7 +329,7 @@ Project actions live in `Actions/Projects`. A class is `Project*` or `Instance*`
 
 Environment placeholders are `{{instance.domain}}` and `{{instance.environment}}`. A stored value that contains any other `{{...}}` placeholder is invalid. Synchronization returns `env.reference_unavailable`. A write that fails placeholder validation returns `env.configuration_invalid`. Project has no morph alias. The public subject type is `project`. The Instance morph alias is `instance`. Stored Project activity class names are `App\Models\Project`.
 
-Realtime types are `project.created`, `project.updated`, and `project.deleted`. Payload classes are `ProjectData`, `InstanceData`, and `InstanceDeploymentData`. Project error codes use the `project.` prefix. `project.has_instances` means removal found Instances. `node.has_instances` means the Node still has Instances. `instance.placement_unavailable` means placement failed. Doctor's repository family is `project`.
+Realtime types are `project.created`, `project.updated`, and `project.deleted`. Payload classes are `ProjectData`, `InstanceData`, and `InstanceDeploymentData`. Project error codes use the `project.` prefix. `project.has_instances` means removal found Instances. `node.has_instances` means the Node still has Instances. `instance.placement_unavailable` means placement failed.
 
 Monorepo folders such as `apps/cli` and `apps/gateway`, the Laravel root namespace `App\`, `app/` source folders, `config/app.php`, `APP_*` variables, Node roles `app-dev` and `app-prod`, the GitHub App, the type `laravel-app`, the Route kind `app`, and the node storage setting `apps` are not this domain.
 

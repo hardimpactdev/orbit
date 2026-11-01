@@ -314,76 +314,9 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/observation/doctor_infrastructure.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_applications.ts",
-      "rule": "inline-script",
-      "count": 460,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_infrastructure.ts",
-      "rule": "inline-script",
-      "count": 21,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_node.ts",
-      "rule": "inline-script",
-      "count": 58,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
       "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
       "rule": "inline-script",
-      "count": 247,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "incus",
-        "sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_node.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_node.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor.ts",
-      "rule": "private-material",
-      "count": 1,
+      "count": 81,
       "evidence": []
     },
     {
@@ -570,20 +503,6 @@
       "file": "extensions/behaviors/operations/database/clone.ts",
       "rule": "private-material",
       "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/database/connection_update.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/connection_update.ts",
-      "rule": "private-material",
-      "count": 1,
       "evidence": []
     },
     {
@@ -1385,21 +1304,6 @@
         "/usr/bin/dpkg-query",
         "/usr/bin/systemctl"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/metrics_fleet_direct.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/metrics_fleet_direct.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/integrations/metrics_runtime_actions.ts",
@@ -2905,7 +2809,7 @@
     {
       "file": "extensions/behaviors/operations/tools/homebrew_program.ts",
       "rule": "inline-script",
-      "count": 198,
+      "count": 173,
       "evidence": []
     },
     {
@@ -2940,7 +2844,7 @@
     {
       "file": "extensions/behaviors/operations/tools/system_program.ts",
       "rule": "inline-script",
-      "count": 232,
+      "count": 224,
       "evidence": []
     },
     {
@@ -3163,14 +3067,6 @@
     },
     {
       "file": "workflows/workflow-operation-process-restart-instance.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "members/member-${{ string(self.member) }}"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-schedule-install-instance-definitions.yaml",
       "rule": "foreach-shared-identity",
       "count": 1,
       "evidence": [

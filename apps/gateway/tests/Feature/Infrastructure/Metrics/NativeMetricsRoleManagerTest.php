@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
@@ -14,7 +12,6 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Models\Node;
 use Tests\Support\FakeNodeRoleFirewallManager;
@@ -96,40 +93,6 @@ function metricsRoleManagerNode(string $name, string $address, RoleName $role = 
 
     return $node;
 }
-
-it('omits the publication key from mutations that do not touch it', function (): void {
-    metricsRoleManagerNode('gateway', '10.44.0.1', RoleName::Gateway);
-    $node = metricsRoleManagerNode('worker', '10.44.0.4', RoleName::AppProd);
-    metricsRoleManagerStubBaselines();
-
-    $result = app(NativeMetricsRoleManager::class)->enableExporter($node->id);
-
-    expect($result->publication)
-        ->toBeNull()
-        ->and($result->toArray())
-        ->not->toHaveKey('publication');
-});
-
-it('refuses ineligible exporter enablement before preference or fleet work', function (): void {
-    $node = metricsRoleManagerNode('unmanaged', '10.44.0.5', RoleName::AppProd);
-    $node->roles()->delete();
-    $node->update(['ssh_host_fingerprint' => null]);
-    $fleet = Mockery::mock(MetricsFleetReconciler::class);
-    $fleet->shouldNotReceive('reconcile');
-    app()->instance(MetricsFleetReconciler::class, $fleet);
-
-    try {
-        app(NativeMetricsRoleManager::class)->enableExporter($node->id);
-        $this->fail('Expected exporter enablement to be refused.');
-    } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)
-            ->toBe('metrics.exporter_node_ineligible')
-            ->and($exception->status)
-            ->toBe(409);
-    }
-
-    expect(app(ExporterPreferenceRepository::class)->get($node->id))->toBeNull();
-});
 
 /**
  * Stubs the Metrics baseline's remote collaborators, not the baseline.

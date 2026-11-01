@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
+use App\Actions\Metrics\AdmitMetricsExporterAction;
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\RepairNodeDnsAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
@@ -59,12 +60,12 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);
         });
-    expect(fn () => app(NativeMetricsRoleManager::class)->enableExporter($node->id))
+    expect(fn () => app(AdmitMetricsExporterAction::class)->execute($node, true))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);
         });
-    expect(fn () => app(NativeMetricsRoleManager::class)->disableExporter($node->id))
+    expect(fn () => app(AdmitMetricsExporterAction::class)->execute($node, false))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);

@@ -13,15 +13,25 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
-/** One synchronous native submission. Unconfirmed starts are terminal and never resubmitted. */
+/** One native submission. A lost confirmation never proves that no run started. */
 final readonly class StartSwampRun
 {
-    public function __construct(private WebSocketClient $socket) {}
+    private const int ConfirmationSeconds = 120;
+
+    /** @var Closure(): float */
+    private Closure $clock;
+
+    /** @param (Closure():float)|null $clock */
+    public function __construct(private WebSocketClient $socket, ?Closure $clock = null)
+    {
+        $this->clock = $clock ?? static fn (): float => microtime(true);
+    }
 
     public function start(Operation $operation): void
     {
@@ -118,6 +128,11 @@ final readonly class StartSwampRun
             if ($operation->status->terminal()) {
                 return;
             }
+            if ($code === 'swamp.start_uncertain') {
+                app(OperationStore::class)->change($operation, ['error_code' => $code]);
+
+                return;
+            }
             app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                 'error_code' => $code, 'current_step' => null, 'failed_step' => null, 'lock_key' => null]);
         });
@@ -135,13 +150,15 @@ final readonly class StartSwampRun
     {
         $id = bin2hex(random_bytes(16));
         $stage = 'connect';
+        $started = ($this->clock)();
         try {
             $this->socket->connect($endpoint, 15);
             $stage = 'send';
             $this->socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => $payload]);
             $stage = 'receive';
-            $deadline = microtime(true) + 30;
-            while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+            // Observed pre-dispatch setup took 32.7s and 55.3s; worker dispatch follows started.
+            $deadline = ($this->clock)() + self::ConfirmationSeconds;
+            while ($this->socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
                 $confirmed = null;
                 foreach ($this->socket->receive(min(0.2, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
@@ -179,7 +196,11 @@ final readonly class StartSwampRun
             }
             throw $this->uncertain();
         } catch (Throwable $exception) {
-            Log::warning('Swamp direct start response unavailable', ['stage' => $stage, 'exception_type' => $exception::class]);
+            $inputs = $payload['inputs'] ?? null;
+            Log::warning('Swamp direct start response unavailable', ['operation_id' => is_array($inputs) ? ($inputs['operation_id'] ?? null) : null,
+                'workflow' => $payload['workflowIdOrName'], 'request_id' => $id, 'stage' => $stage,
+                'elapsed_ms' => (int) round((($this->clock)() - $started) * 1000),
+                'confirmation_seconds' => self::ConfirmationSeconds, 'exception_type' => $exception::class]);
             if ($exception instanceof ResourceOperationException) {
                 throw $exception;
             }

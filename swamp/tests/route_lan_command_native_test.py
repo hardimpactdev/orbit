@@ -18,16 +18,6 @@ class RouteLanFixture(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.connection = install_ssh(self)
-        target = self.repo / ".swamp/pulled-extensions/@swamp/cfgmgmt"
-        shutil.copytree(ROOT / ".swamp/pulled-extensions/@swamp/cfgmgmt", target)
-        inventory = json.loads(
-            (ROOT / "extensions/models/upstream_extensions.json").read_text()
-        )
-        (self.repo / "extensions/models/upstream_extensions.json").write_text(
-            json.dumps(
-                {key: inventory[key] for key in ["@swamp/ssh", "@swamp/cfgmgmt"]}
-            )
-        )
         self.copy_behaviors("operations/routes/mutation-command")
         path = (
             self.repo
@@ -42,20 +32,17 @@ class RouteLanFixture(NativeTestCase):
         self.state = self.repo / "ufw-state.json"
         self.audit = self.repo / "ufw-audit.jsonl"
         tools = self.repo / "ssh-tools"
-        (tools / "ssh").write_text(
-            "#!"
-            + sys.executable
-            + "\n"
-            + """import shlex,subprocess,sys
-args=sys.argv[1:]
-if '-M' in args or '-O' in args or '-N' in args:raise SystemExit(0)
-argv=shlex.split(args[-1])
-if argv[:1]==['sudo']:
-    argv=argv[argv.index('--')+1:]
-result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
-sys.stdout.buffer.write(result.stdout);sys.stderr.buffer.write(result.stderr)
-raise SystemExit(result.returncode)
-"""
+        ssh = tools / "ssh"
+        ssh.write_text(
+            ssh.read_text().replace(
+                "args=sys.argv[1:]",
+                "args=sys.argv[1:]\n"
+                "if '-O' not in args and '-M' not in args:\n"
+                "    known=next((v.split('=',1)[1] for v in args if v.startswith('UserKnownHostsFile=')), '')\n"
+                "    if 'StrictHostKeyChecking=yes' not in args or not known or "
+                + repr(PIN)
+                + " not in Path(known).read_text():raise SystemExit('admitted pin required')",
+            )
         )
         fake = tools / "ufw"
         fake.write_text(
@@ -104,7 +91,9 @@ else:raise SystemExit(9)
 
         def paths(value):
             if isinstance(value, str):
-                return value.replace("/tmp/orbit-route-", str(self.repo / "remote-"))
+                return value.replace(
+                    "/tmp/orbit-route-", str(self.repo / "remote-")
+                ).replace("/usr/sbin/ufw", str(fake))
             if isinstance(value, list):
                 return [paths(v) for v in value]
             if isinstance(value, dict):
@@ -122,7 +111,7 @@ else:raise SystemExit(9)
             for job in workflow["jobs"]:
                 for step in job["steps"]:
                     self.assertEqual(step.pop("target"), "orbit-node-209")
-                    self.assertEqual(step.pop("labels"), {"node": "209"})
+                    self.assertNotIn("labels", step)
             (self.repo / f"workflows/workflow-{name}.yaml").write_text(
                 yaml.safe_dump(workflow, sort_keys=False)
             )
@@ -135,6 +124,8 @@ else:raise SystemExit(9)
         success=True,
         rules=None,
         legacy_router=None,
+        host_keys=None,
+        input_refused=False,
     ):
         value = {
             "operation_id": 1,
@@ -150,7 +141,7 @@ else:raise SystemExit(9)
                 "migrate": migrate,
                 "control_node_id": 209,
                 "connection": self.connection,
-                "host_keys": [PIN],
+                "host_keys": [PIN] if host_keys is None else host_keys,
             },
         }
         workflow = "operation-route-lan-remove"
@@ -160,7 +151,7 @@ else:raise SystemExit(9)
             value["intent"] = {
                 "control_node_id": 209,
                 "connection": self.connection,
-                "host_keys": [PIN],
+                "host_keys": [PIN] if host_keys is None else host_keys,
                 "rule": {
                     "node_id": 9,
                     "rules": old["rules"],
@@ -168,27 +159,24 @@ else:raise SystemExit(9)
                     **({"legacy_router": True} if legacy_router else {}),
                 },
             }
-        result = json.loads(
-            self.cli(
-                "workflow",
-                "run",
-                workflow,
-                "--input",
-                json.dumps(value),
-                success=success,
-            ).stdout
+        process = self.cli(
+            "workflow", "run", workflow, "--input", json.dumps(value), success=success
         )
+        if input_refused:
+            return process
+        result = json.loads(process.stdout)
         return (
             result,
             json.loads(self.state.read_text()),
-            [json.loads(line) for line in self.audit.read_text().splitlines()],
+            [json.loads(line) for line in self.audit.read_text().splitlines()]
+            if self.audit.exists()
+            else [],
         )
 
     def initialize(self, tuples=None, legacy=None, **extra):
         self.state.write_text(
             json.dumps({"tuples": tuples or [], "legacy": legacy or [], **extra})
         )
-
 
 
 class RouteLanCommandNative(RouteLanFixture):
@@ -317,3 +305,16 @@ class RouteLanCommandNative(RouteLanFixture):
             i for i, c in enumerate(calls) if c[:2] == ["--force", "delete"]
         )
         self.assertEqual(sum(c[:1] == ["allow"] for c in calls[:first_delete]), 3)
+
+    def test_wrong_or_missing_admitted_pins_refuse_before_any_ufw_command(self):
+        self.initialize()
+        result, state, calls = self.run_lan(
+            host_keys=[PIN[:-4] + "AgIC"], success=False
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(state["tuples"], [])
+        self.assertEqual(calls, [])
+        process = self.run_lan(host_keys=[], success=False, input_refused=True)
+        self.assertEqual(process.stdout, "")
+        self.assertIn("host_keys", process.stderr)
+        self.assertFalse(self.audit.exists())

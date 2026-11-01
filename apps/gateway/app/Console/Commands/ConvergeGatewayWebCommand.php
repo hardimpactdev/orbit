@@ -14,12 +14,12 @@ final class ConvergeGatewayWebCommand extends Command
     protected $signature = 'orbit:gateway-web';
 
     #[\Override]
-    protected $description = 'Render and publish the Gateway site, certificate, and web directory without bootstrapping.';
+    protected $description = 'Converge the Gateway web site.';
 
     public function handle(ConvergeGatewayWebAction $action): int
     {
         try {
-            $node = $action->execute();
+            $action->execute();
         } catch (NodeProvisioningException $exception) {
             $this->error(
                 "Gateway web convergence failed at step [{$exception->step}] with error [{$exception->errorCode}].",
@@ -27,9 +27,5 @@ final class ConvergeGatewayWebCommand extends Command
 
             return self::FAILURE;
         }
-
-        $this->info("Gateway [{$node->name}] site is published.");
-
-        return self::SUCCESS;
     }
 }

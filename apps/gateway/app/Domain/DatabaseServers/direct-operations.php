@@ -19,7 +19,9 @@ use App\Domain\DatabaseServers\DatabaseWriteProjection;
 return ['database.update' => [
     'workflow' => 'operation-database-connection-update',
     'projection' => DatabaseConnectionUpdateProjection::class,
-    'private_material' => ['password' => 'database.intent'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'update', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-update-intent-[1-9][0-9]*$']],
 ], 'database.read' => [
     'workflow' => 'operation-database-read',
     'projection' => DatabaseReadProjection::class,

@@ -58,7 +58,7 @@ final class DoctorCommand extends GatewayCommand
             ['Verify registered state', 'Verifying registered state', 'Verified registered state'],
             function (OperationResponse $operation) use ($connector, &$report): ProgressState {
                 $follower = new OperationFollower(
-                    fn (int $sequence): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($operation->id, $sequence), OperationResponse::class),
+                    fn (): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($operation->id), OperationResponse::class),
                     null,
                 );
                 try {

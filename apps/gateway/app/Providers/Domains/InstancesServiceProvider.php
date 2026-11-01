@@ -34,13 +34,11 @@ use App\Domain\Instances\InstanceTransferProcessMaterial;
 use App\Domain\Instances\InstanceTransferRouteEnvironment;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
-use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionInstanceProvisioner;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\ProductionRepositoryBinding;
-use App\Domain\Instances\ProductionRouteProjector;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
 use App\Domain\Instances\Registration\RegistrationSourceManager;
@@ -60,7 +58,6 @@ use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
-use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
@@ -108,8 +105,6 @@ final class InstancesServiceProvider extends ServiceProvider
         ProductionInstanceSourceLifecycle::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionReleaseLayout::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
-        ProductionRouteProjector::class => NativeProductionRouteProjector::class,
-        ProductionCloneRouteProjector::class => NativeProductionRouteProjector::class,
         InstanceEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceRouteEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceLogReader::class => RemoteInstanceLogReader::class,

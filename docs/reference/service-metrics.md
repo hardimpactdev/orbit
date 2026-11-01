@@ -59,7 +59,7 @@ The Gateway renders the PHP-FPM status lines into each production Instance's `po
 
 ## Private access
 
-Caddy serves its metrics handler on WireGuard port 9103. It does not expose the administration API. Cbox listens on WireGuard port 9114. An owned allow and deny rule pair comes before the broader member rules, so only the current Metrics Node can connect. Caddy also checks the scraper's source address.
+Caddy serves its metrics handler on WireGuard port 9103. It does not expose the administration API and checks the scraper's source address. Cbox listens on WireGuard port 9114. Explicit exporter preference changes use the official firewall model with source-scoped allows and trust WireGuard membership; these allows do not restrict other peers admitted by the broader member rule. Node and role convergence still manages the older service allow/deny pairs ahead of that member rule. The preference workflow leaves these interface-specific rules unchanged, so an existing pair may retain the narrower Metrics-only access policy.
 
 Service jobs use a 15-second interval, a 12-second timeout, and a limit of 20,000 samples. Cbox has a 10-second collection deadline and a 3-second pool timeout. The node exporter and cAdvisor keep their 10-second interval.
 
@@ -81,15 +81,19 @@ Production clone completion and production Instance creation or removal also rec
 
 If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. It skips that Node and continues reconciling the others. The operation that triggered the reconcile, such as an Instance removal on another Node, continues. A later reconcile retries the Node and clears its degradation when it succeeds. Inspect the affected Node's exporter row in `metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
 
-Removing Metrics, or disabling a Node's exporter, removes the owned listeners, firewall rules, exporter unit, binary, and pool status lines. It keeps the application runtimes and local tuning. The small recovery directory `/etc/orbit/service-metrics` stays.
+Removing Metrics removes the owned listeners, firewall rules, exporter unit, binary, and pool status lines. Explicit exporter disable stops the owned listeners and removes the exporter unit, binary, pool status lines, and official source-scoped port rules; older rules tied to an interface stay under Node and role convergence ownership. It keeps the application runtimes and local tuning. The small recovery directory `/etc/orbit/service-metrics` stays.
 
 When the Metrics Node changes, the scrape access moves to the new Node. When a Node is unreachable, removal tries to clean up and drops its targets even if cleanup fails. `metrics:status` has no per-service fields.
+
+### Explicit exporter preference changes
+
+Exporter enable and disable return an accepted native Operation. Node 209 composes the canonical PHP monitor and Caddy workflows from captured public inputs. Official cfgmgmt manages the FPM exporter download, configuration and systemd unit. The official firewall model adds an allow rule for the Metrics address on each scrape port. The workflow publishes the complete Prometheus configuration after those actions. It needs no Grafana credential or Gateway callback. Failure retains desired preference and native step history for resume.
 
 ### Recovery
 
 FPM updates validate a candidate file. When the reload fails, Orbit restores the earlier pool file. The scrape site renders from stored state in the [Node Caddy build](/reference/caddy-configuration#node-caddy-build), which owns validation and rollback. Service metrics never reads or writes Caddy files on a Node. It asks for a build of each `ingress` Node. When its own lifecycle fails, it restores the exporter and pool state and builds that Node again.
 
-The Gateway calls `metrics.service-runtime` through the [Node agent command runner](/reference/node-agent#commands) to snapshot or apply exporter state. Rust owns the pinned exporter download, file ownership checks, service changes, scrape firewall rules, and recovery journal. Both operations use the same target lock because a snapshot first recovers an interrupted update. Invalid desired state is refused before any change. A retry restores the journaled state before applying the next change.
+Node role and fleet reconciliation use the native service-metrics lower to snapshot or apply exporter state. It manages the pinned download, files, units and scrape rules under the existing target lock. A snapshot first restores an interrupted update from its journal. Invalid desired state fails before changes. Explicit exporter preference Operations use the native workflow described above.
 
 When convergence fails on one Node, Orbit tries to restore that Node's exporter and pool state before continuing on the other Nodes. If that recovery fails, the Node's degradation records the `restore` step and `metrics.service_rollback_failed`. An ownership conflict degrades the affected Node without changing unmanaged state.
 
@@ -99,9 +103,7 @@ If the operation loses a Node lock, reconciliation stops and reports `node.lock_
 
 ### Doctor
 
-Doctor's firewall family expects the service allow and deny rules. Doctor's production Instance checks expect the status lines when monitoring is selected. These checks do not replace scrape health.
-
-The exporter restarts when its pool configuration changes. A fingerprint of the PHP configuration also refreshes Cbox's limits at the next reconcile after a tuning change. A manual tuning edit without a reconcile can leave those limits stale.
+[Doctor](/cli/doctor#what-each-family-checks) checks registered Process and role-service liveness. The native Metrics family owns exporter, scrape and firewall configuration validation.
 
 ## Why it works this way
 

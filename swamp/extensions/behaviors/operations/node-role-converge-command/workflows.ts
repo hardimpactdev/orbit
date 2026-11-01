@@ -1,3 +1,4 @@
+import { roleFirewallSteps } from "./firewall_steps.ts";
 import {
     roleActionSteps,
     rolePackageSteps,
@@ -26,7 +27,32 @@ const references = {
         additionalProperties: false,
     },
 };
-export function databaseWorkflow() {
+/** Empty/singleton actions bind optional data to self before expression evaluation. */
+function select(group: Fields[], item: string, list: string): Fields[] {
+    for (const step of group) {
+        step.forEach = { item, in: ex(list) };
+        let task = JSON.stringify(step.task);
+        for (const member of group) {
+            task = task.replaceAll(
+                String(member.name) + '\\"',
+                String(member.name) + '-0\\"',
+            );
+        }
+        step.task = JSON.parse(task);
+        const typed = step.task as Fields;
+        typed.behaviorName = ex(
+            '"' + step.name + '-"+run.id+"-"+string(self._index)',
+        );
+        if (typed.globalArgs) {
+            typed.globalArgs = {
+                ...typed.globalArgs as Fields,
+                name: typed.behaviorName,
+            };
+        }
+    }
+    return group;
+}
+export function roleWorkflow() {
     const ssh = "inputs.intent.ssh";
     const globals = {
         name: ex('"role-converge-"+run.id'),
@@ -55,6 +81,17 @@ export function databaseWorkflow() {
             globals,
             "account",
         ),
+        ...select(
+            roleActionSteps(
+                "caddy_package",
+                "caddy_package",
+                "self.caddy",
+                globals,
+                "observer_install",
+            ),
+            "caddy",
+            'inputs.intent.role == "ingress" ? [inputs.intent.caddy_package] : []',
+        ),
         ...rolePackageSteps(
             "packages",
             "inputs.intent.prerequisites",
@@ -62,6 +99,59 @@ export function databaseWorkflow() {
             "observer_install",
         ),
     ];
+    const packageAsset = steps.find((step) => step.name === "packages_assets")!;
+    packageAsset.dependsOn = [
+        ...on("observer_install"),
+        ...on("caddy_package", "always"),
+    ];
+    packageAsset.guard = ex(
+        'steps.exists(k,k.startsWith("caddy_package") && steps[k].status != "succeeded")',
+    );
+    const ingress = 'inputs.intent.role == "ingress" ? [inputs.intent] : []';
+    steps.push(
+        ...select(
+            [{
+                name: "caddy_service",
+                ...target,
+                writes: true,
+                dependsOn: on("packages"),
+                task: {
+                    type: "behavior",
+                    behaviorType: "@swamp/ssh",
+                    methodName: "exec",
+                    globalArgs: globals,
+                    inputs: {
+                        hosts: "name:target",
+                        sudo: true,
+                        argv: [
+                            "/usr/bin/systemctl",
+                            "enable",
+                            "--now",
+                            "caddy.service",
+                        ],
+                    },
+                },
+            }, {
+                name: "caddy",
+                ...target,
+                dependsOn: on("caddy_service"),
+                task: {
+                    type: "workflow",
+                    workflowIdOrName: "operation-route-caddy",
+                    inputs: {
+                        operation_id: ex("inputs.operation_id"),
+                        node_id: ex("inputs.node_id"),
+                        kind: "node.role_converge",
+                        execution_secrets: {},
+                        intent: { caddy_publication: ex("self.role.caddy") },
+                    },
+                },
+            }],
+            "role",
+            ingress,
+        ),
+        ...roleFirewallSteps("firewall", "inputs.intent", globals, "caddy"),
+    );
     function action(
         name: string,
         methodName: string,
@@ -124,28 +214,11 @@ export function databaseWorkflow() {
         public_key: ex("self.dns.public_key"),
         domains: ex("self.dns.domains"),
     }, "packages");
-    for (const step of steps.slice(start)) {
-        step.forEach = {
-            item: "dns",
-            in: ex(
-                "inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns]",
-            ),
-        };
-        const task = step.task as Fields;
-        const identity = ex(
-            '"' + String(step.name) + '-" + run.id + "-" + string(self._index)',
-        );
-        task.behaviorName = identity;
-        if (task.globalArgs) {
-            task.globalArgs = { ...task.globalArgs as Fields, name: identity };
-        }
-        step.task = JSON.parse(
-            JSON.stringify(step.task).replaceAll(
-                'peer_dns_assets\\"',
-                'peer_dns_assets-0\\"',
-            ).replaceAll('peer_dns_command\\"', 'peer_dns_command-0\\"'),
-        );
-    }
+    select(
+        steps.slice(start),
+        "dns",
+        "inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns]",
+    );
     steps.push(
         ...roleObserverSteps(
             "observer",
@@ -174,15 +247,22 @@ export function databaseWorkflow() {
     }
     return {
         id: "21b08662-58e5-4485-b42c-540dd9bd6004",
-        name: "node-database-role-converge",
+        name: "node-role-converge",
         vaults: ["orbit-control-inputs"],
         inputs: {
             type: "object",
             properties: {
                 intent: { type: "object" },
+                operation_id: { type: "integer", minimum: 1 },
+                node_id: { type: "integer", minimum: 1 },
                 execution_secrets: references,
             },
-            required: ["intent", "execution_secrets"],
+            required: [
+                "intent",
+                "execution_secrets",
+                "operation_id",
+                "node_id",
+            ],
             additionalProperties: false,
         },
         ...target,
@@ -239,9 +319,11 @@ export function dispatcherWorkflow() {
                 },
                 task: {
                     type: "workflow",
-                    workflowIdOrName: "node-database-role-converge",
+                    workflowIdOrName: "node-role-converge",
                     inputs: {
                         intent: ex("has(inputs.intent) ? inputs.intent : null"),
+                        operation_id: ex("inputs.operation_id"),
+                        node_id: ex("inputs.node_id"),
                         execution_secrets: ex("inputs.execution_secrets"),
                     },
                 },
@@ -256,7 +338,7 @@ export function dispatcherWorkflow() {
                 },
                 task: {
                     type: "workflow",
-                    workflowIdOrName: "operation-node-role-converge-direct",
+                    workflowIdOrName: "operation-node-role-add-direct",
                     inputs: {
                         operation_id: ex("inputs.operation_id"),
                         node_id: ex("inputs.node_id"),
@@ -291,14 +373,14 @@ export function dispatcherWorkflow() {
                     expr:
                         "!has(inputs.intent) || inputs.intent == null || (has(steps.result.outputs.role_proven) && steps.result.outputs.role_proven)",
                     severity: "high",
-                    message: "Required Database role actions must complete",
+                    message: "Required role actions must complete",
                 },
             }],
         }],
     };
 }
 export function generatedRoleWorkflows() {
-    return [databaseWorkflow(), dispatcherWorkflow()].map((workflow) => ({
+    return [roleWorkflow(), dispatcherWorkflow()].map((workflow) => ({
         path: new URL(
             "../../../../workflows/workflow-" + workflow.name + ".yaml",
             import.meta.url,

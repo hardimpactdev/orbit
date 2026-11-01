@@ -69,7 +69,7 @@ For a `node.network_converge` child of `node.add`, the Swamp network transport r
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
-The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. Gateway web convergence and release handoff install its [disk retention configuration](/reference/gateway-recovery#disk-retention) beside the release units. They install a missing package only on Gateways not yet converged to the recipe. APT waits up to 300 seconds for dpkg locks. During that installation, temporary systemd masks block logrotate's package hooks and `NEEDRESTART_MODE=l` prevents automatic service restarts. Cleanup attempts to remove every temporary mask, even if one removal fails, and preserves the original installation error.
+The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. The release handoff installs its [disk retention configuration](/reference/gateway-recovery#disk-retention) beside the release units. They install a missing package only on Gateways not yet converged to the recipe. APT waits up to 300 seconds for dpkg locks. During that installation, temporary systemd masks block logrotate's package hooks and `NEEDRESTART_MODE=l` prevents automatic service restarts. Cleanup attempts to remove every temporary mask, even if one removal fails, and preserves the original installation error.
 
 Existing operator masks remain in place. Convergence skips enabling `logrotate.timer` when `systemctl is-enabled` reports `masked` or `masked-runtime` for either `logrotate.service` or `logrotate.timer`, so an operator mask does not block releases. Otherwise it enables the configured timer afterward; it does not restart journald or force a rotation.
 
@@ -296,7 +296,7 @@ These operations refuse macOS before remote mutation and before they write a rol
 | Firewall mutation | `firewall.platform_unsupported` | 422 |
 | DNS repair | `node.dns_repair_platform_unsupported` | 422 |
 
-Doctor checks lifecycle, SSH reachability, platform, architecture, tunnel identity, tools, and free space on the enrolled account's home volume. It does not expect systemd, a Node agent, an exporter, or a Linux disk path. A missing agent is not `node.agent_missing`. Realtime and the web page treat the Mac as a Node with no agent, not as a failed Linux service.
+Doctor checks platform, architecture and free space on the root filesystem. It does not expect systemd, a Node agent, an exporter, or a Linux disk path. A missing agent is not `node.agent_missing`. Realtime and the web page treat the Mac as a Node with no agent, not as a failed Linux service.
 
 ### Removal
 
@@ -331,7 +331,7 @@ On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Ad
 
 [Node retarget](/reference/node-retarget) keeps a Node without roles in operator DNS mode. The `DNS =` line stays, and the Node does not get an `orbit.dns-link`.
 
-Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
+Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. A Node without a pinned SSH host key dispatches no Doctor reads and supplies no positive recovery evidence.
 
 ## iPadOS peers
 
@@ -353,7 +353,7 @@ The Gateway treats an `ipados` Node as a peer it never contacts. It reuses the p
 | DNS repair | `node.dns_repair_operator_owned`, because the Node has no role. |
 | Tool operations | `tool.node_unmanaged` (HTTP 409). |
 | Fleet rollout | Left out with reason `platform`. |
-| Doctor | Lifecycle check only, as for any Node without a pinned SSH host key. |
+| Doctor | No SSH reads or positive recovery evidence without a pinned SSH host key. |
 
 `node:wireguard-key` still sets the peer's public key, and `node:access:add` still grants it access to call the Gateway. Removing an `ipados` Node deletes the registry row and the hub peer. It skips the Node agent step and `firewall-recovery`. `retained_on_node` lists `host-wireguard`, the tunnel the operator configured on the device.
 
@@ -460,7 +460,7 @@ The Caddy package digest covers the package program and the `CaddyRelease` floor
 
 The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
 
-A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. The agent skips absent FPM binaries, and recipe convergence publishes the module after installing PHP. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own operations publish them, and Doctor reports their drift.
+A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. The agent skips absent FPM binaries, and recipe convergence publishes the module after installing PHP. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own native operations publish and verify them.
 
 The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. Its native binary installers own their update locks; it starts no separate SSH lock holder.
 
@@ -520,7 +520,7 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles. [Doctor](/cli/doctor) reports each assignment of a conflicting pair as `role.assignment_conflict`.
+`router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
 
 Not every role can be added the same way.
 
@@ -555,11 +555,11 @@ For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev`
 
 An application role then installs the JavaScript runtimes its [recipe profile](/reference/compute-drivers#role-and-base-tool-sets) pins: Node, Vite+, pnpm, and Bun. It sends `recipe.install-javascript`, the same command and verified archives as [recipe convergence](#converge-a-node-to-a-recipe), and it runs no downloaded installer. Image programs render the same call as `javascript-runtime`. Like recipe convergence, it replaces any root-owned launcher in `/usr/local/bin`. After it verifies the recipe Node, it removes the apt `nodejs` package, retires the NodeSource apt source, and removes Corepack links.
 
-Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
+Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 
 Analytics role effects run in their native parent workflow. The Node PHP baseline refuses Analytics. An unported Analytics kind returns `operation.kind_unavailable`.
 
-The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. AI router publication does the same on its Node. On the Gateway machine, the bootstrap and `php artisan orbit:gateway-web` install Caddy through the agent command `caddy.install-package`. A failure there stops at step `gateway-caddy-install` with `gateway.caddy_install_failed`, and the live Caddy configuration stays unchanged. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 
 `caddy.install-package` owns package installation for every caller. The Gateway sends the release pins and keeps the operation error mapping. The agent owns the download URL, kernel setting, and obsolete source paths. It checks the pins and host paths before mutation, verifies the downloaded package before apt sees it, and publishes the kernel setting atomically. Package and system commands share the command deadline. Rust tests cover installation, repetition, drift, and refusal; Gateway tests cover intent. `caddy.order-after-vpn` then orders Caddy after WireGuard. Its failure maps to `gateway.caddy_start_failed`.
 
@@ -579,7 +579,7 @@ HTTP/1.1 clients can still get an empty reply on a new connection during a reloa
 
 ### Caddy on the Gateway machine
 
-Converging the `gateway` role runs the Caddy step over SSH before its firewall step. A failure returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. Run `orbit node:role:add <node> gateway --converge` to repair it. While the role is `failed`, `php artisan orbit:gateway-web` refuses with `gateway.web_node_missing`, because it needs an active `gateway` role.
+Converging the `gateway` role runs the Caddy step over SSH before its firewall step. A failure returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. Run `orbit node:role:add <node> gateway --converge` to repair it. `php artisan orbit:gateway-web` currently refuses with `gateway.web_unavailable` for every role state and makes no host change.
 
 Caddy also serves the Gateway API. A convergence that installs a newer Caddy restarts it, so the CLI can report `Could not reach the gateway.` while the Gateway finishes. `orbit activity:list` shows the real result. Run the command again after a minute.
 
@@ -598,7 +598,7 @@ Every failed role operation returns its step's own code in `details.error_code`,
 
 `node:role:relocate` and Cluster Router changes take the lock only around the baseline step. The Metrics fleet reconcile runs inside the lock for `node:role:add`, `node:role:remove`, and `node:add`. It converges exporters on other Nodes without their locks, so two operations can never wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
 
-An operation that dies, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no operation holds the lock. That is the role lock's request term plus a 1-minute margin. `node:role:add --converge` and `node:role:remove` then take it over, and Doctor reports `role.claim_stale`.
+An operation that dies, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no operation holds the lock. That is the role lock's request term plus a 1-minute margin. `node:role:add --converge` and `node:role:remove` then take it over. Doctor reports the inactive role lifecycle.
 
 ### Per-Node locks
 
@@ -630,7 +630,7 @@ The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Eve
 - When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
 - When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes two warning lines to its stderr.
 
-A reachability check always opens a new connection. Doctor's Node inspection, the `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
+A reachability check always opens a new connection. The `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. Doctor uses official Swamp SSH. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
 
 A Node that the Gateway reaches through a [jump Node](#enroll-through-a-jump-host) shares a connection named after the jump Node, the Node's address, and its pinned host key.
 
@@ -659,7 +659,7 @@ The Gateway runs the [Node agent](/reference/node-agent#commands)'s `wireguard.p
 | `wireguard.hub_config_invalid` | `wireguard-server-validate` | `vpn.server_config_invalid` |
 | `wireguard.hub_start_failed`, or no result | `wireguard-server-restart` | `vpn.server_start_failed` |
 
-The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`. Doctor compares it, and the VPN DNS records, with the digests that `wireguard.inspect-hub` reads on the `vpn` Node.
+The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`. The native VPN convergence validates its configuration and DNS projection.
 
 Peer convergence still runs over SSH. It generates or reads the peer key and installs the peer configuration during admission, over the public bootstrap address, before the tunnel that the agent's transport uses exists.
 
@@ -736,9 +736,9 @@ Agent configuration stores its returned hash through the encrypted Node owner st
 
 A Mac is a managed Node for tools, not a service host. It uses the account, WireGuard identity, and SSH access that already exist. Enrollment pins the approved host key and checks the platform, architecture, account, and tunnel before it succeeds. It creates no account, installs no Ubuntu packages, and does not change host DNS or the firewall.
 
-An application role was rejected because tools do not need application services and the role list stays empty. SSH carries named agent commands for enrollment, package operations, and Doctor. The command binary does not run an observer or login-session service on macOS. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
+An application role was rejected because tools do not need application services and the role list stays empty. Native Doctor reads use official Swamp SSH exec. The command binary does not run an observer or login-session service on macOS. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
 
-Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the observer service do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS login-session agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.
+Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the observer service do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS login-session agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low`.
 
 ### CI roles own hosts; operators own runner registration
 
@@ -796,8 +796,10 @@ The owning parent admits role snapshots and private bindings. Inside its private
 
 After checking its admitted publication participant, the parent uses `NodeRolePublicationInput::forPlan($plan, $node)` for fresh Caddy, PHP and private DNS input. The lower renders only duties in that immutable plan. Role removal, relocation source, role, Metrics and proxy metadata stay in the owning public view. These internal lower APIs create no Operation and grant no new private endpoint authority.
 
-## Native Database role convergence
+## Native role convergence
 
-Existing Database-only assignments use `operation-node-role-converge-209` when no serving Metrics fleet needs reconciliation. The admitted public intent includes the canonical209 SSH descriptor and full target pins. Account lookup, observer binary delivery, OS prerequisites, peer DNS repair, observer configuration and service, and CLI installation are native steps through official SSH. The observer configuration contains no worker stanza or token. The Gateway records state only from the terminal run result. Failed prerequisites fail the role; footprint and CLI failures remain explicit follow-ups.
+Existing Database-only and Ingress-only assignments use `operation-node-role-converge-209` when no serving Metrics fleet needs reconciliation. The admitted public intent includes the canonical209 SSH descriptor and full target pins. Account lookup, observer binary delivery, OS prerequisites, peer DNS repair, observer configuration and service, and CLI installation are native steps through official SSH. The observer configuration contains no worker stanza or token. The Gateway records state only from the terminal run result.
 
-Other role sets keep their current workflow and dependencies. That child receives the original root run ID for existing callbacks. Native Database admissions cannot use the retained callback execution path. Cancellation sends one request to Swamp’s native cancellation endpoint; only the terminal run settles the Operation. An unconfirmed cancellation remains an explicit error and does not invent a terminal state. This partial switch does not provide enrollment restoration or change hub, peer, Metrics or Tool kinds.
+Ingress also installs the canonical pinned Caddy package, publishes the admitted complete Caddy catalog through the Route child, and applies its canonical firewall rules after publication. Each firewall rule is a visible official SSH action using the canonical catalog's UFW arguments and UFW's idempotence; this root does not use the retained status parser. Publication and firewall failures fail the role. Failed prerequisites fail the role; observer, peer DNS and CLI failures remain explicit follow-ups.
+
+Other role sets use the shared retained role-add graph and keep their current dependencies. The duplicate retained converge graph is removed. The shared child receives the original root run ID for existing callbacks. Native admissions cannot use the retained callback execution path. Cancellation sends one request to Swamp’s native cancellation endpoint; only the terminal run settles the Operation. An unconfirmed cancellation remains an explicit error and does not invent a terminal state. This partial switch does not provide enrollment restoration or change hub, peer, Metrics or Tool kinds.

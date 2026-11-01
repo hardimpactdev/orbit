@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Doctor\StartDoctorAction;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorProjection;
-use App\Domain\Doctor\DoctorScheduleMaterialSource;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Problems\ProblemCollector;
@@ -82,15 +81,15 @@ it('commits native log signals and cursors together and ignores stale native cur
     expect(ProblemCollectorState::query()->first()->log_offset)->toBe(150);
 });
 
-it('keeps Schedule commands private and refuses a changed or foreign specification', function (): void {
+it('keeps Schedule commands private and opts into fixed terminal projection', function (): void {
     $schedule = Schedule::query()->create(['id' => '0192e29b-9fd8-7c96-8e38-f863234d7112', 'target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id, 'name' => 'doctor-safe', 'command' => 'private schedule sentinel', 'calendar' => '*:0/5', 'timeout_seconds' => 30, 'desired_timer_state' => 'enabled']);
     $operation = app(StartDoctorAction::class)->execute($this->caller, $this->node->id, [DoctorFamily::Schedule]);
     expect(json_encode(app(DoctorProjection::class)->input($operation)))->not->toContain('private schedule sentinel');
-    request()->setUserResolver(fn () => $this->node);
-    $source = app(DoctorScheduleMaterialSource::class);
-    expect($source->resolve($operation, $this->node->id, '', 'schedules')->value)->toBe([$schedule->id => 'private schedule sentinel']);
-    $schedule->update(['command' => 'changed specification']);
-    expect(fn () => $source->resolve($operation, $this->node->id, '', 'schedules'))->toThrow(ResourceOperationException::class);
+    expect($operation->input)->not->toHaveKeys(['private_bindings', 'database_servers', 'schedules']);
+    expect(app(DirectOperation::class)->definition('doctor.inspect'))->toMatchArray([
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'report', 'step' => 'result'],
+    ]);
+
 });
 
 it('exposes expectations only to their admitted participant and keeps final projection root-only', function (): void {
@@ -102,6 +101,30 @@ it('exposes expectations only to their admitted participant and keeps final proj
     $view = $projection->publicInput($operation, $this->caller->id);
     expect($view['nodes'][0]['resources'])->toEqual((object) [])->and($view['nodes'][1]['resources'])->toBe(['processes' => [['id' => 41]]])->and($view)->not->toHaveKey('logs');
     expect(fn () => $projection->publicInput($operation, 999999))->toThrow(ResourceOperationException::class);
+});
+
+it('recovers a native read failure without clearing retired numeric-resource checks', function (): void {
+    $scope = 'node:'.$this->node->id;
+    $family = ['family' => 'node', 'checked' => 3, 'issues' => [[
+        'code' => 'node.inspection_failed', 'kind' => 'unverifiable', 'resource_id' => $scope, 'resource_name' => $this->node->name,
+        'summary' => 'Native read unavailable.', 'expected' => 'verifiable', 'observed' => 'unverifiable',
+    ]], 'observed_resources' => [], 'observed_checks' => [], 'observed_inventories' => []];
+    $projection = app(DoctorProjection::class);
+    $apply = function (array $row) use ($projection): void {
+        $operation = native_doctor_operation($this->node, true);
+        $projection->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+            'result' => ['report' => ['nodes' => [['node_id' => $this->node->id, 'node_name' => $this->node->name, 'families' => [$row]]]]]]);
+    };
+    $apply($family);
+    $failure = ProblemFingerprint::query()->sole();
+    $family['issues'][0]['resource_id'] = $this->node->id;
+    $apply($family);
+    $this->travel(1)->minutes();
+    $family['issues'] = [];
+    $family['observed_checks'] = [$scope => ['node.inspection_failed']];
+    $apply($family);
+    expect($failure->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    expect(ProblemFingerprint::query()->whereKeyNot($failure->id)->sole()->evidence)->not->toHaveKey('resolved_at');
 });
 
 function native_doctor_operation(Node $node, bool $collect): Operation

@@ -1,0 +1,89 @@
+id: 08946703-b9c1-4e36-a59d-81b0037625df
+name: operation-tool-adopt-209
+vaults: []
+inputs:
+  type: object
+  properties:
+    execution_secrets:
+      type: object
+      additionalProperties: false
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tool.adopt
+    intent:
+      type: object
+    ssh:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - ssh
+  additionalProperties: false
+jobs:
+- name: tools
+  target: orbit-node-209
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-adopt-command'
+      behaviorName: tool-adopt-assets
+      methodName: assets
+      inputs:
+        input: ${{ inputs.intent }}
+  - name: query
+    target: orbit-node-209
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tool-adopt-" + run.id }}
+      methodName: script
+      globalArgs:
+        name: ${{ "tool-adopt-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh.target.user }}
+          port: ${{ inputs.ssh.target.port }}
+          hostKeys: ${{ inputs.ssh.target.host_keys }}
+          identityFile: ${{ inputs.ssh.identity_file }}
+          identitiesOnly: true
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh.target.host }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: false
+        script: ${{ steps.assets.outputs.script_body }}
+  - name: result
+    target: orbit-node-209
+    dependsOn: [{step: query, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-adopt-command'
+      behaviorName: tool-adopt-result
+      methodName: result
+      inputs:
+        input: ${{ inputs.intent }}
+        observation: ${{ steps.query.outputs }}
+  - name: assert
+    target: orbit-node-209
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-adopt-command'
+      behaviorName: tool-adopt-assert
+      methodName: assert
+      inputs:
+        ok: ${{ steps.result.outputs.ok }}

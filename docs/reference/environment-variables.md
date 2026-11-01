@@ -208,7 +208,7 @@ When a step fails before the new slug is published, the Gateway restores the sto
 
 ## Inspect the projection with Doctor
 
-[Doctor](/cli/doctor) renders the stored configuration against the Instance's Route and placement and compares it with the `.env` file. It reports a missing, unsafe, or different production file as an `instance` finding. It shows no key or value, and it does not inspect a framework cache.
+Environment synchronization and deployment own configuration projection and validation. [Doctor](/cli/doctor#what-each-family-checks) does not read `.env` files or framework caches.
 
 ## Storage and recovery
 

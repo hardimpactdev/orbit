@@ -300,7 +300,7 @@ A copy is independent. Changing or removing a copy does not change the definitio
 
 ## Inspect with Doctor
 
-[Doctor](/cli/doctor) compares the desired state of each Instance and Node Process with the systemd or Docker status on the Node. `doctor.inspect-process` verifies the owned runtime and gathers bounded observations in one agent call. For a running systemd Process, Rust takes two samples two seconds apart unless the first already shows an automatic restart; the command’s ten-second bound includes both samples. It reports a missing runtime, a state mismatch, a [systemd crash loop](#process-runtime-state), a failed inspection, or an unreachable Node, and changes nothing. A sleeping development Process is not a mismatch; see [hibernation](/reference/app-dev-runtime-hibernation).
+[Doctor](/cli/doctor#what-each-family-checks) reads each registered Process with a focused `systemctl show` or filtered Docker state command. It compares presence and running/stopped state with intent. A systemd `activating/auto-restart` snapshot is crash-loop evidence; a cumulative restart count alone is not. Doctor takes no timed samples. A stopped non-keep-alive Process desired running is healthy only when its managed hibernation marker is proven absent. The owning native Process operations retain configuration validation.
 
 ## Why it works this way
 
@@ -330,7 +330,9 @@ The systemd `User=` of a Node Process can be an account other than the managed u
 
 Instance Process restart executes as member steps in one native parent. `process.restart_instance` captures only active, desired-running Processes with `restart_on_deploy` enabled. The captured list stays fixed when later inventory changes. The run creates no member Operation. Owning native parents can reuse the record capture and local action exports without admitting another root. Native member outcomes drive bounded record projections.
 
-`process.install_instance_definitions` captures owned definition copies and reuses the canonical private Process installer in the same root. Copies remain stopped. The Gateway capture action records definitions without converging a runtime. `schedule.install_instance_definitions` applies the same captured-selection contract to Schedule copies and leaves their timers disabled. Private command values stay inside the canonical callback.
+`process.install_instance_definitions` captures owned definition copies and reuses the canonical private Process installer in the same root. Copies remain stopped. The Gateway capture action records definitions without converging a runtime.
+
+`schedule.install_instance_definitions` passes each captured public Schedule definition to the native Schedule-create workflow on Node209. Native `forEach` owns the member fan-out; each child run has distinct model identities and uses official cfgmgmt over pinned SSH. Timers remain disabled. Installation needs no command bytes, private-material callback or member Operation. The root terminal outcome applies to every captured member; failed convergence keeps applied files and marks the captured set failed so a normal request can converge it again.
 
 Instance transfer captures a Process installation batch for each admitted placement. Capture uses supplied Process targets without discovering accounts or checking ports. Working-directory and environment-file paths within the original checkout move with that checkout. Paths outside it are refused; null values stay null. Swamp resolves the admitted system user to fill certificate-path templates before installation.
 
@@ -347,7 +349,7 @@ Leaf Process kinds use the direct native workflow only. Their completion project
 
 ## Direct Process controls
 
-`process.stop` uses `operation-process-stop` for every systemd and Docker Process, including Vite Processes. The Gateway submits the complete public control descriptor and binds the native run ID. The workflow resolves the shared shipped Process scripts on a 209 worker and copies them to a run directory through official `@swamp/ssh`. Separate official SSH actions disable systemd boot start, stop the runtime, and verify its stopped state on the admitted target. The approved existing 209 identity and captured host-key pins select that connection. 
+`process.stop` uses `operation-process-stop` for every systemd and Docker Process, including Vite Processes. The Gateway submits the complete public control descriptor and binds the native run ID. The workflow resolves the shared shipped Process scripts on a 209 worker and copies them to a run directory through official `@swamp/ssh`. Separate official SSH actions disable systemd boot start, stop the runtime, and verify its stopped state on the admitted target. The approved existing 209 identity and captured host-key pins select that connection.
 
 Successful execution removes its run directory; Python runs with `-B` so it creates no root-owned bytecode files. Stop installs no target worker or Swamp binary and mints no worker token.
 

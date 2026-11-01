@@ -8,13 +8,14 @@ use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
+use App\Domain\AgentView\AgentStateView;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Problems\ProblemCollector;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Doctor\DoctorExecutionInput;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -26,11 +27,18 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
 {
     public function input(Operation $operation): array
     {
+        return app(DoctorExecutionInput::class)->forIntent($this->publicIntent($operation));
+    }
+
+    /** @return array<string,mixed> */
+    private function publicIntent(Operation $operation): array
+    {
         $input = array_intersect_key($operation->input, array_flip(['nodes', 'families', 'collect_problems', 'logs', 'participant_node_ids']));
         $nodes = [];
         foreach (Arr::array($input, 'nodes') as $value) {
             $node = ValidatedData::object($value);
-            $node['observations'] = app(DoctorObservations::class)->forNode(Arr::integer($node, 'id'));
+            $view = app(DoctorObservations::class)->forNode(Arr::integer($node, 'id'));
+            $node['observations'] = [...$view, 'valid_until' => is_numeric($view['received_at'] ?? null) ? (float) $view['received_at'] + AgentStateView::FreshSeconds : null];
             $nodes[] = $node;
         }
         $input['nodes'] = $nodes;
@@ -43,7 +51,6 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
-        app(DirectOperationPrivateBindings::class)->assertParticipant($operation, $callerNodeId);
         if (! array_any(Arr::array($operation->input, 'nodes'), static fn (mixed $node): bool => is_array($node) && ($node['id'] ?? null) === $callerNodeId)) {
             throw new ResourceOperationException('operation.executor_forbidden', 'Only an admitted Doctor Node may read its expectations.', 403);
         }
@@ -52,7 +59,7 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
     public function publicInput(Operation $operation, int $callerNodeId): array
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
-        $input = $this->input($operation);
+        $input = $this->publicIntent($operation);
         $nodes = [];
         foreach (Arr::array($input, 'nodes') as $value) {
             $node = ValidatedData::object($value);

@@ -51,3 +51,15 @@ Deno.test("readiness requires successful own-key verification and retains only i
     );
     assertEquals(writes.length, 1);
 });
+
+Deno.test("first-key workflow declares its exact bootstrap vault", async () => {
+    const { sshAccessWorkflow } = await import("./ssh_access_workflow.ts");
+    assertEquals(sshAccessWorkflow().vaults, ["orbit-control-inputs"]);
+    const yaml = await Deno.readTextFile(
+        new URL(
+            "../../../../workflows/workflow-operation-node-ssh-access-converge.yaml",
+            import.meta.url,
+        ),
+    );
+    assertEquals(yaml.includes("\nvaults: [orbit-control-inputs]\n"), true);
+});

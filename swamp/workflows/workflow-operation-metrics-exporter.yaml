@@ -1,0 +1,254 @@
+id: b1f8417f-fd4e-49a3-81f4-34f168e47d30
+name: operation-metrics-exporter
+description: Official exporter configuration and Prometheus publication from captured intent.
+vaults: [default]
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [metrics.exporter_enable, metrics.exporter_disable]}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+jobs:
+- name: install
+  steps:
+  - name: package
+    <<: &effect
+      target: orbit-node-209
+      guard: '${{ inputs.intent.runtime == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    guard: '${{ inputs.intent.runtime == null || !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      <<: &apply {type: behavior, methodName: apply, inputs: {}}
+      behaviorType: '@swamp/cfgmgmt/apt'
+      behaviorName: '${{ "metrics-package-" + run.id }}'
+      globalArgs:
+        <<: &target
+          nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+          nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+          nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+          nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          become: true
+        packages: [prometheus-node-exporter]
+        ensure: present
+  - name: downloads
+    <<: *effect
+    forEach: {item: download, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.downloads }}'}
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: '${{ "metrics-download-" + run.id + "-" + string(self._index) }}'
+      globalArgs:
+        <<: *target
+        url: ${{ self.download.url }}
+        path: ${{ self.download.path }}
+        checksum: ${{ self.download.checksum }}
+        owner: ${{ self.download.owner }}
+        group: ${{ self.download.group }}
+        mode: ${{ self.download.mode }}
+- name: stop
+  dependsOn: [{job: install, condition: &job_done {type: succeeded}}]
+  steps:
+  - name: stopped
+    <<: *effect
+    forEach: {item: unit, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.units.filter(u, !u.enabled) }}'}
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: '${{ "metrics-stop-" + run.id + "-" + string(self._index) }}'
+      globalArgs:
+        <<: *target
+        service: ${{ self.unit.service }}
+        ensure: ${{ self.unit.ensure }}
+        enabled: ${{ self.unit.enabled }}
+- name: configuration
+  dependsOn: [{job: stop, condition: *job_done}]
+  steps:
+  - name: directories
+    <<: *effect
+    forEach: {item: directory, in: '${{ ["/etc/systemd/system/prometheus-node-exporter.service.d", "/etc/orbit/service-metrics"] }}'}
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ "metrics-directory-" + run.id + "-" + string(self._index) }}'
+      globalArgs: {<<: *target, path: '${{ self.directory }}', ensure: present, owner: root, group: root, mode: '0755'}
+  - name: files
+    dependsOn: [{step: directories, condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    <<: *effect
+    forEach: {item: file, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.files }}'}
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ "metrics-file-" + run.id + "-" + string(self._index) }}'
+      globalArgs:
+        <<: *target
+        path: ${{ self.file.path }}
+        ensure: ${{ self.file.ensure }}
+        owner: ${{ self.file.owner }}
+        group: ${{ self.file.group }}
+        mode: ${{ self.file.mode }}
+        content: '${{ "content" in self.file ? self.file.content : "" }}'
+- name: units
+  dependsOn: [{job: configuration, condition: *job_done}]
+  steps:
+  - name: reload_units
+    <<: *effect
+    task:
+      <<: &ssh
+        type: behavior
+        behaviorType: '@swamp/ssh'
+        methodName: exec
+        globalArgs: &ssh_target
+          name: '${{ "metrics-target-" + run.id }}'
+          transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}
+          hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
+      behaviorName: '${{ "metrics-reload-units-" + run.id }}'
+      inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, daemon-reload], sudo: true}
+  - name: started
+    dependsOn: [{step: reload_units, condition: *done}]
+    <<: *effect
+    forEach: {item: unit, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.units.filter(u, u.enabled) }}'}
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: '${{ "metrics-start-" + run.id + "-" + string(self._index) }}'
+      globalArgs:
+        <<: *target
+        service: ${{ self.unit.service }}
+        ensure: ${{ self.unit.ensure }}
+        enabled: ${{ self.unit.enabled }}
+  - name: restarted
+    dependsOn: [{step: started, condition: *done}]
+    <<: *effect
+    forEach: {item: unit, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.units.filter(u, u.enabled) }}'}
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: '${{ "metrics-restart-" + run.id + "-" + string(self._index) }}'
+      methodName: restart
+      globalArgs:
+        <<: *target
+        service: ${{ self.unit.service }}
+        ensure: ${{ self.unit.ensure }}
+        enabled: ${{ self.unit.enabled }}
+- name: services
+  dependsOn: [{job: units, condition: *job_done}]
+  steps:
+  - name: pools
+    <<: *effect
+    forEach: {item: pool, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.pools }}'}
+    task:
+      type: workflow
+      workflowIdOrName: operation-php-monitor
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ self.pool }}', execution_secrets: {}}
+  - name: caddy
+    <<: *effect
+    guard: '${{ inputs.intent.runtime == null || inputs.intent.service.caddy == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: '${{ inputs.intent.runtime == null ? {} : inputs.intent.service.caddy }}'}, execution_secrets: {}}
+- name: ports
+  dependsOn: [{job: services, condition: *job_done}]
+  steps:
+  - name: firewall
+    <<: *effect
+    forEach: {item: rule, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.rules }}'}
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ "metrics-firewall-" + run.id + "-" + string(self._index) }}'
+      globalArgs:
+        <<: *target
+        port: ${{ self.rule.port }}
+        action: ${{ self.rule.action }}
+        ensure: ${{ self.rule.ensure }}
+        source: ${{ self.rule.source }}
+- name: exporters
+  dependsOn: [{job: ports, condition: *job_done}]
+  steps:
+  - name: verify_exporters
+    <<: *effect
+    forEach: {item: url, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.checks }}'}
+    task:
+      <<: *ssh
+      behaviorName: '${{ "metrics-verify-" + run.id + "-" + string(self._index) }}'
+      inputs: {hosts: 'name:target', argv: [/usr/bin/curl, --fail, --silent, --output, /dev/null, '${{ self.url }}']}
+- name: exporter
+  dependsOn: [{job: exporters, condition: *job_done}]
+  steps:
+  - name: candidate
+    <<: *effect
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ "metrics-candidate-" + run.id }}'
+      globalArgs:
+        <<: &owner
+          nodeHost: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host }}'
+          nodeUser: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.user : inputs.intent.runtime.ssh_execution.target.user }}'
+          nodePort: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.port : inputs.intent.runtime.ssh_execution.target.port }}'
+          nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          become: true
+        path: '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml" }}'
+        ensure: present
+        content: '${{ inputs.intent.runtime == null ? "" : inputs.intent.runtime.configuration }}'
+        owner: root
+        group: root
+        mode: '0644'
+  - name: validate
+    dependsOn: [{step: candidate, condition: *done}]
+    <<: *effect
+    task:
+      <<: *ssh
+      behaviorName: '${{ "metrics-validate-" + run.id }}'
+      globalArgs: &ssh_owner
+        name: '${{ "metrics-owner-" + run.id }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.user : inputs.intent.runtime.ssh_execution.target.user }}', port: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.port : inputs.intent.runtime.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host_keys : inputs.intent.runtime.ssh_execution.target.host_keys }}'}}]
+      inputs:
+        hosts: 'name:target'
+        sudo: true
+        argv: [/usr/bin/docker, run, --rm, --entrypoint, /bin/promtool, --volume, '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml:/etc/prometheus/prometheus.yml:ro" }}', 'prom/prometheus:v3.5.0', check, config, /etc/prometheus/prometheus.yml]
+  - name: publish
+    dependsOn: [{step: validate, condition: *done}]
+    <<: *effect
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ "metrics-publish-" + run.id }}'
+      globalArgs: {<<: *owner, path: /etc/orbit/metrics/prometheus.yml, ensure: present, content: '${{ inputs.intent.runtime == null ? "" : inputs.intent.runtime.configuration }}', owner: root, group: root, mode: '0644'}
+  - name: prometheus
+    dependsOn: [{step: publish, condition: *done}]
+    <<: *effect
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/docker_container'
+      behaviorName: '${{ "metrics-prometheus-" + run.id }}'
+      methodName: restart
+      globalArgs: {<<: *owner, name: orbit-metrics-prometheus, image: 'prom/prometheus:v3.5.0', ensure: running}
+  - name: verify
+    dependsOn: [{step: prometheus, condition: *done}]
+    <<: *effect
+    task:
+      <<: *ssh
+      behaviorName: '${{ "metrics-ready-" + run.id }}'
+      globalArgs: *ssh_owner
+      inputs: {hosts: 'name:target', argv: [/usr/bin/curl, --fail, --silent, --output, /dev/null, 'http://127.0.0.1:9090/-/ready']}
+  - name: remove_candidate
+    dependsOn: [{step: verify, condition: *done}]
+    <<: *effect
+    task:
+      <<: *apply
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ "metrics-remove-candidate-" + run.id }}'
+      globalArgs: {<<: *owner, path: '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml" }}', ensure: absent}
+  - name: result
+    dependsOn: [{step: remove_candidate, condition: *done}]
+    target: orbit-node-209
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "metrics-result-" + run.id }}'
+      methodName: execute
+      inputs: {run: "printf '%s\\n' '{\"ready\":true}'"}

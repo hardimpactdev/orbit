@@ -29,34 +29,6 @@ export async function executeToolPolicy(
     final = await run("tool-verified");
   } else if (input.intent_only) {
     final = await run("tool-verified");
-  } else if (verb === "adopt") {
-    let composerRoots: unknown;
-    if (input.manager === "composer") {
-      const scope = await run("adoption-scope");
-      composerRoots = scope.roots;
-    }
-    final = await run("tool-verified");
-    if (final.installed_version === null && final.block === null) {
-      throw new ToolRefusal("tool.package_absent");
-    }
-    if (
-      input.manager === "composer" &&
-      (!Array.isArray(composerRoots) ||
-        !composerRoots.includes(input.package))
-    ) {
-      throw new ToolRefusal("tool.adoption_unsupported", {
-        block: "dependency",
-      });
-    }
-    if (final.block !== null) {
-      throw new ToolRefusal("tool.adoption_unsupported", {
-        block: final.block,
-      });
-    }
-    if (!safeVersion(final.installed_version)) {
-      throw new ToolRefusal("tool.version_probe_failed");
-    }
-    verifyInstalled(input, final.installed_version);
   } else {
     const beforeReceipt = await run("package-before");
     const before = beforeReceipt.installed_version;
