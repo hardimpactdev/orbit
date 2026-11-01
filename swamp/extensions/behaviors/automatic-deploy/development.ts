@@ -26,6 +26,7 @@ export const DevelopmentState = z.object({
     key: z.string(),
     operation_id: z.number().int().positive().nullable(),
   }).nullable().default(null),
+  retry_after: z.string().datetime({ offset: true }).nullable().default(null),
   result: z.string().nullable().default(null),
   commit: sha.nullable().default(null),
   since: z.string().nullable().default(null),
@@ -224,18 +225,24 @@ export async function tickDevelopment(
             operation.error_code ?? "",
           ) &&
           operation.attempts === 0 && operation.result === null;
+        const interruptedWithoutDeployment = operation.status === "interrupted" &&
+          typeof operation.result?.deployment_id !== "number";
         if (
           !historyVisible &&
           !startFailed &&
+          !interruptedWithoutDeployment &&
           !isAdmissionFence(operation) &&
           manual <= intent.manual_after
         ) {
           await publish("failed", operation.id);
           continue;
         }
+        if (interruptedWithoutDeployment) {
+          state.retry_after = new Date(Date.parse(now) + 600000).toISOString();
+        }
         state.pending = null;
         await save();
-        // The next observation must include the terminal history before another decision.
+        // Observe again before another decision; interrupted attempts may lack history.
         await publish(
           operation.status === "succeeded" ? "up_to_date" : "failed",
           operation.id,
@@ -312,6 +319,14 @@ export async function tickDevelopment(
       if (head === instance.seed_commit) {
         await publish("up_to_date");
         continue;
+      }
+      if (state.retry_after !== null) {
+        if (Date.parse(now) < Date.parse(state.retry_after)) {
+          await publish("backing_off");
+          continue;
+        }
+        state.retry_after = null;
+        await save();
       }
       const manual = Math.max(
         0,
