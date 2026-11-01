@@ -58,8 +58,11 @@ for publication in intent["route_mutations"]["forward"]["publications"]:
         api["assert_selected"](
             view, context["domain"], context["new"], serves=role == context["new_role"]
         )
-    assert view["disk_sha256"] == api["digest"](
-        publication["after"]["caddy"]["content"]
+    api["assert_publication"](
+        publication,
+        intent["route_mutations"]["artifacts"],
+        context["views"][role],
+        view,
     )
     if view["active"]:
         assert view["loaded_matches_disk"]
@@ -72,10 +75,6 @@ for publication in intent["route_mutations"]["forward"]["publications"]:
     assert view["cleanup"] == [
         {"scope": item["scope"], "absent": True} for item in cleanup
     ]
-    dns = publication["after"]["dns"]
-    if dns is not None:
-        assert view["dns_records_sha256"] == api["digest"](dns["records"])
-        assert view["dns_catalog_sha256"] == api["digest"](dns["catalog"])
     views[role] = view
 assert context["old_role"] in views and context["new_role"] in views
 assert sum(len(view["leaves"]) for view in views.values()) == len(

@@ -3,7 +3,7 @@ title: Native Cluster Router transitions
 description: An admitted Router set or unset runs on209 through official SSH and canonical Route children.
 ---
 
-`cluster.router_set` and `cluster.router_unset` capture complete public intent before starting one native Swamp run. The input includes the candidate, obsolete assignments, canonical package prerequisites, SSH connections with stored host keys, certificate intents, and before/prepared/withdrawn/after Caddy, PHP and DNS snapshots. Admission reads stored state and the public certificate root. It does not query a Node account or change the selected Router.
+`cluster.router_set` and `cluster.router_unset` capture complete public intent before starting one native Swamp run. The input includes the candidate, obsolete assignments, canonical package prerequisites, SSH connections with stored host keys, certificate intents, and before/prepared/withdrawn/after references into the shared pool of affected Caddy, PHP and DNS artifacts. Admission reads stored state and the public certificate root. It does not query a Node account or change the selected Router.
 
 Every step runs on209. Official `@swamp/ssh` reaches the admitted target. The Node role lower resolves the account and installs prerequisites and the pinned Caddy package. Router ingress and workload LAN allowances share the canonical Route LAN child and its official pinned SSH actions. Rules use Node-wide port, protocol and source tuples. Candidate-to-workload certificate probes run after the workload allowances and before DNS selection. Native Route children publish certificates and host state, retain both Routers through the canonical DNS grace, and then withdraw obsolete sites, scopes and allowances. Scope removal checks fresh loaded Caddy references.
 
@@ -25,9 +25,13 @@ Certificate signing and decoding steps use a control-worker target alone. Retain
 
 ## Proof budget and phase order
 
-The existing Gateway budget for each Router set or unset is 2,700 seconds. It is provisional: no full successful Router run has supplied a p95. Op 6592 took 2,417.179 seconds including restoration; its forward phase took 1,345.582 seconds and restoration 944.722 seconds. Its 119 probe observations had a queue-inclusive p95 of 654 seconds and maximum 707 seconds. These are failed-run observations, not SSH execution times or a successful p95.
+The approved proof budget for each Router set or unset is 3,600 seconds. Admission waits until that budget is live in the Gateway; an earlier source helper or the 30-minute no-history default does not establish acceptance. This is a provisional policy budget: no full successful Router run has supplied a p95.
 
-The Router parent, prepare, forward, restore and probe workflows declare a 600-second queue timeout on every step and at workflow level. This makes the existing pinned-serve default explicit. It does not claim to fix probe fan-out starvation. The prepare account, package and Caddy actions run through official SSH exec under coreutils `timeout` at 30, 600 and 300 seconds. HTTP and TLS workload probes each run under a 10-second coreutils timeout. Each official SSH execution timeout adds 30 seconds beyond its remote process bound, so its inherited 300-second limit cannot shorten the package phase.
+Op 6592 took 2,417.179 seconds including restoration; its forward phase took 1,345.582 seconds and restoration 944.722 seconds. Its 119 probe observations had a queue-inclusive p95 of 654 seconds and maximum 707 seconds. These are failed-run observations, not SSH execution times or a successful p95.
+
+The Router parent, prepare, forward, restore and probe workflows declare a 600-second queue timeout on every step and at workflow level. This makes the existing pinned-serve default explicit. It does not claim to fix probe fan-out starvation.
+
+The prepare account, package and Caddy actions run through official SSH exec under coreutils `timeout` at 30, 600 and 300 seconds. Phase expiry preserves exit 124 and writes the phase name and budget to stderr. HTTP and TLS workload probes each run under a 10-second coreutils timeout. Each official SSH execution timeout adds 30 seconds beyond its remote process bound, so its inherited 300-second limit cannot shorten the package phase.
 
 The shared Route children own the execution bounds of their phases; this Router declaration cannot impose a process timeout inside another workflow.
 

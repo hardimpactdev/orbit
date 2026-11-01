@@ -40,12 +40,12 @@ def read(payload):
     config = Path("/etc/caddy/Caddyfile")
     result = {
         "active": state == "active",
-        "disk_sha256": None,
+        "caddy": "",
         "loaded_matches_disk": False,
         "hosts": [],
     }
     if config.exists():
-        result["disk_sha256"] = digest(config.read_text())
+        result["caddy"] = config.read_text()
         if result["active"]:
             loaded = json.loads(
                 command(
@@ -129,10 +129,10 @@ def read(payload):
             }
         )
     for name, path in {
-        "dns_records_sha256": "/etc/dnsmasq.d/orbit-records.conf",
-        "dns_catalog_sha256": "/var/lib/orbit/private-dns/catalog.json",
+        "dns_records": "/etc/dnsmasq.d/orbit-records.conf",
+        "dns_catalog": "/var/lib/orbit/private-dns/catalog.json",
     }.items():
-        result[name] = digest(Path(path).read_text()) if Path(path).exists() else None
+        result[name] = Path(path).read_text() if Path(path).exists() else ""
     if payload.get("https_address") is not None:
         result["https"] = command(
             [

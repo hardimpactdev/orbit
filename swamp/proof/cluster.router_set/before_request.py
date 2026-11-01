@@ -37,6 +37,8 @@ for role, node in [(old_role, old), (new_role, new)]:
 gateway = orbit("node:show", gateway_id)
 app = orbit("node:show", app_id)
 assert gateway["id"] == int(gateway_id) and app["id"] == int(app_id)
+for role in ["gateway", "app-dev"]:
+    views[role] = api["read_node"](role, domain)
 context = {
     "gateway": {
         key: gateway[key] for key in ("id", "cluster_id", "wireguard_ip", "lan_ip")

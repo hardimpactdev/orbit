@@ -6,6 +6,9 @@ import { routeMutationSteps } from "../routes/mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
 const queueTimeout = 600;
+const phaseTimeout = Deno.readTextFileSync(
+    new URL("./scripts/phase-timeout.sh", import.meta.url),
+);
 const placement = { target: "orbit-node-209", queueTimeout };
 const queued = (steps: Fields[]) =>
     steps.map((step) => ({ ...step, queueTimeout }));
@@ -290,7 +293,11 @@ export function prepareWorkflow(): Fields {
             sudo: inputs.sudo,
             timeoutSec: Number(seconds) + 30,
             argv: [
-                "/usr/bin/timeout",
+                "/bin/sh",
+                "-c",
+                phaseTimeout,
+                "router-phase",
+                "Router " + step.name,
                 seconds,
                 "/usr/bin/python3",
                 "-I",
@@ -352,7 +359,11 @@ export function probeWorkflow(): Fields {
                         hosts: "name:target",
                         timeoutSec: 40,
                         argv: expr(
-                            '"protocol" in inputs.intent && inputs.intent.protocol == "http" ? ["/usr/bin/timeout","10","/usr/bin/curl","--head","--noproxy","*","--silent","--connect-timeout","10","--max-time","10","--output","/dev/null","--header","Host: " + inputs.intent.probe.domain,"http://" + inputs.intent.probe.address + ":" + string(inputs.intent.probe.port) + "/"] : ["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]',
+                            `"protocol" in inputs.intent && inputs.intent.protocol == "http" ? ["/bin/sh","-c",${
+                                JSON.stringify(phaseTimeout)
+                            },"router-phase","Router HTTP probe","10","/usr/bin/curl","--head","--noproxy","*","--silent","--connect-timeout","10","--max-time","10","--output","/dev/null","--header","Host: " + inputs.intent.probe.domain,"http://" + inputs.intent.probe.address + ":" + string(inputs.intent.probe.port) + "/"] : ["/bin/sh","-c",${
+                                JSON.stringify(phaseTimeout)
+                            },"router-phase","Router TLS probe","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]`,
                         ),
                     },
                 },

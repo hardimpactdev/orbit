@@ -67,8 +67,16 @@ Deno.test("Router remote preparation and probes have process bounds", () => {
         assertEquals(task.methodName, "exec");
         const inputs = task.inputs as { argv: string[]; timeoutSec: number };
         assertEquals(inputs.timeoutSec, Number(seconds) + 30);
-        assertEquals(inputs.argv.slice(0, 5), [
-            "/usr/bin/timeout",
+        assertEquals(inputs.argv.slice(0, 2), ["/bin/sh", "-c"]);
+        assertEquals(
+            inputs.argv[2],
+            Deno.readTextFileSync(
+                new URL("./scripts/phase-timeout.sh", import.meta.url),
+            ),
+        );
+        assertEquals(inputs.argv.slice(3, 9), [
+            "router-phase",
+            "Router " + name,
             seconds,
             "/usr/bin/python3",
             "-I",
@@ -80,14 +88,39 @@ Deno.test("Router remote preparation and probes have process bounds", () => {
     }[])[0].steps[0];
     assertEquals(
         probe.task.inputs.argv.includes(
-            '["/usr/bin/timeout","10","/usr/bin/curl"',
+            '"Router HTTP probe","10","/usr/bin/curl"',
         ),
         true,
     );
     assertEquals(
         probe.task.inputs.argv.includes(
-            '["/usr/bin/timeout","10","/usr/bin/openssl"',
+            '"Router TLS probe","10","/usr/bin/openssl"',
         ),
         true,
     );
+});
+
+Deno.test("Router phase expiry names its phase and budget without changing exit status", async () => {
+    const shell =
+        new URL("./scripts/phase-timeout.sh", import.meta.url).pathname;
+    for (
+        const [argv, code, diagnostic] of [
+            [
+                ["0.02", "/bin/sleep", "1"],
+                124,
+                "Router account exceeded 0.02-second budget\n",
+            ],
+            [["1", "/bin/sh", "-c", "exit 23"], 23, ""],
+            [["1", "/bin/true"], 0, ""],
+        ] as const
+    ) {
+        const output = await new Deno.Command("/bin/sh", {
+            args: [shell, "Router account", ...argv],
+            stdout: "piped",
+            stderr: "piped",
+        }).output();
+        assertEquals(output.code, code);
+        assertEquals(new TextDecoder().decode(output.stderr), diagnostic);
+        assertEquals(output.stdout.length, 0);
+    }
 });

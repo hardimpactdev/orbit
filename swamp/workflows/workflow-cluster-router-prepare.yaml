@@ -67,7 +67,22 @@ jobs:
         sudo: false
         timeoutSec: 60
         argv:
-        - /usr/bin/timeout
+        - /bin/sh
+        - -c
+        - |
+          #!/bin/sh
+          # Keep the process bound in coreutils and identify an expired Router phase.
+          phase=$1
+          seconds=$2
+          shift 2
+          /usr/bin/timeout "$seconds" "$@"
+          status=$?
+          if [ "$status" -eq 124 ]; then
+              printf '%s exceeded %s-second budget\n' "$phase" "$seconds" >&2
+          fi
+          exit "$status"
+        - router-phase
+        - Router account_command
         - '30'
         - /usr/bin/python3
         - -I
@@ -126,7 +141,22 @@ jobs:
         sudo: true
         timeoutSec: 630
         argv:
-        - /usr/bin/timeout
+        - /bin/sh
+        - -c
+        - |
+          #!/bin/sh
+          # Keep the process bound in coreutils and identify an expired Router phase.
+          phase=$1
+          seconds=$2
+          shift 2
+          /usr/bin/timeout "$seconds" "$@"
+          status=$?
+          if [ "$status" -eq 124 ]; then
+              printf '%s exceeded %s-second budget\n' "$phase" "$seconds" >&2
+          fi
+          exit "$status"
+        - router-phase
+        - Router packages
         - '600'
         - /usr/bin/python3
         - -I
@@ -173,7 +203,22 @@ jobs:
         sudo: true
         timeoutSec: 330
         argv:
-        - /usr/bin/timeout
+        - /bin/sh
+        - -c
+        - |
+          #!/bin/sh
+          # Keep the process bound in coreutils and identify an expired Router phase.
+          phase=$1
+          seconds=$2
+          shift 2
+          /usr/bin/timeout "$seconds" "$@"
+          status=$?
+          if [ "$status" -eq 124 ]; then
+              printf '%s exceeded %s-second budget\n' "$phase" "$seconds" >&2
+          fi
+          exit "$status"
+        - router-phase
+        - Router caddy_command
         - '300'
         - /usr/bin/python3
         - -I

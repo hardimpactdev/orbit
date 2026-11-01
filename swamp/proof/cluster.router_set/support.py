@@ -1,8 +1,8 @@
 """Normal topology CLI and public readback checks; no admissions in parity."""
 
-import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -56,10 +56,6 @@ def read_node(role, domain, leaves=(), https_address=None, cleanup=()):
     )
 
 
-def digest(value):
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
 def addresses(node):
     return {value for key in ("wireguard_ip", "lan_ip") if (value := node.get(key))}
 
@@ -97,3 +93,74 @@ def baseline_path(variant):
     return Path(os.environ["PROOF_KIND_DIR"]) / (
         variant + "-" + os.environ["PROOF_RUN"] + "-baseline.json"
     )
+
+
+def caddy_sections(text):
+    markers = list(re.finditer(r"^# orbit: ([^\s]+) ([^\r\n]+)\n", text, re.MULTILINE))
+    groups = {}
+    for index, marker in enumerate(markers):
+        end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+        groups.setdefault(marker.groups(), []).append(
+            text[marker.start() : end].rstrip("\n") + "\n"
+        )
+    return text[: markers[0].start() if markers else len(text)].rstrip("\n"), groups
+
+
+def dns_records(text):
+    result = {}
+    for line in text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        match = re.fullmatch(
+            r"(host-record)=([^,]+),.+|(address|local)=/([^/]+)/.*", line
+        )
+        assert match, "Unexpected DNS record"
+        key = match.group(1, 2) if match[1] else match.group(3, 4)
+        assert key not in result, "Duplicate DNS record"
+        result[key] = line
+    return result
+
+
+def catalog_leaves(value, path=()):
+    if isinstance(value, dict):
+        return {
+            key: leaf
+            for name, child in value.items()
+            for key, leaf in catalog_leaves(child, (*path, name)).items()
+        }
+    return {} if value == [] else {path: value}
+
+
+def assert_delta(before, after, baseline, observed):
+    expected = {key: value for key, value in baseline.items() if key not in before}
+    assert observed == {**expected, **after}, "Affected or retained entry differs"
+
+
+def assert_publication(publication, artifacts, baseline, observed):
+    def artifact(phase, kind):
+        index = publication[phase][kind]
+        assert type(index) is int and 0 <= index < len(artifacts[kind])
+        return artifacts[kind][index]
+
+    before, after = artifact("before", "caddy"), artifact("after", "caddy")
+    header, desired = caddy_sections(after["content"])
+    actual_header, actual = caddy_sections(observed["caddy"])
+    assert actual_header == header, "Caddy global configuration differs"
+    assert_delta(
+        caddy_sections(before["content"])[1],
+        desired,
+        caddy_sections(baseline["caddy"])[1],
+        actual,
+    )
+    if publication["after"]["dns"] is not None:
+        before, after = artifact("before", "dns"), artifact("after", "dns")
+        for field, parse in [
+            ("records", dns_records),
+            ("catalog", lambda text: catalog_leaves(json.loads(text or "{}"))),
+        ]:
+            assert_delta(
+                parse(before[field]),
+                parse(after[field]),
+                parse(baseline["dns_" + field]),
+                parse(observed["dns_" + field]),
+            )

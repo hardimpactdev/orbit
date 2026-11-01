@@ -104,6 +104,78 @@ class RouterProof(unittest.TestCase):
         with self.assertRaises(AssertionError):
             proof.assert_selected(view, "proof.test", node, False)
 
+    def test_sparse_artifacts_preserve_unrelated_caddy_and_dns_entries(self):
+        header = "# Managed by Orbit: Node Caddy build\n{}\n"
+        old = "# orbit: routes moving\nhttps://moving.test { respond old }\n"
+        new = old.replace("old", "new")
+        survivor = (
+            "# orbit: routes retained\nhttps://retained.test { respond unchanged }\n"
+        )
+        artifacts = {
+            "caddy": [{"content": header + old}, {"content": header + new}],
+            "dns": [
+                {
+                    "records": "host-record=moving.test,192.0.2.43\n",
+                    "catalog": '{"overrides":{"node:43":{"moving.test":"old"}}}',
+                },
+                {
+                    "records": "host-record=moving.test,192.0.2.44\n",
+                    "catalog": '{"overrides":{"node:43":{"moving.test":"new"}}}',
+                },
+            ],
+        }
+        publication = {
+            "before": {"caddy": 0, "dns": 0},
+            "after": {"caddy": 1, "dns": 1},
+        }
+        baseline = {
+            "caddy": header + old + survivor,
+            "dns_records": "host-record=moving.test,192.0.2.43\nhost-record=retained.test,192.0.2.42\n",
+            "dns_catalog": '{"overrides":{"node:43":{"moving.test":"old","retained.test":"same"}},"requesters":{"192.0.2.42":42}}',
+        }
+        observed = {
+            "caddy": header + new + survivor,
+            "dns_records": baseline["dns_records"].replace("192.0.2.43", "192.0.2.44"),
+            "dns_catalog": baseline["dns_catalog"].replace('"old"', '"new"'),
+        }
+        proof.assert_publication(publication, artifacts, baseline, observed)
+        for field, value in [
+            ("caddy", baseline["caddy"]),
+            ("caddy", header + new),
+            ("dns_records", baseline["dns_records"]),
+            ("dns_records", artifacts["dns"][1]["records"]),
+            ("dns_catalog", baseline["dns_catalog"]),
+            ("dns_catalog", artifacts["dns"][1]["catalog"]),
+        ]:
+            with (
+                self.subTest(field=field, value=value),
+                self.assertRaises(AssertionError),
+            ):
+                proof.assert_publication(
+                    publication, artifacts, baseline, {**observed, field: value}
+                )
+        removed = copy.deepcopy(artifacts)
+        removed["caddy"][1]["content"] = header
+        removed["dns"][1] = {"records": "", "catalog": "{}"}
+        proof.assert_publication(
+            publication,
+            removed,
+            baseline,
+            {
+                "caddy": header + survivor,
+                "dns_records": "host-record=retained.test,192.0.2.42\n",
+                "dns_catalog": '{"overrides":{"node:43":{"retained.test":"same"}},"requesters":{"192.0.2.42":42}}',
+            },
+        )
+        for index in [-1, True, {"content": "legacy"}]:
+            with self.subTest(index=index), self.assertRaises(AssertionError):
+                proof.assert_publication(
+                    {**publication, "after": {"caddy": index, "dns": 1}},
+                    artifacts,
+                    baseline,
+                    observed,
+                )
+
     def test_actual_parity_checks_prepared_leaves_not_empty_forward_certificates(self):
         kind = Path(__file__).parent
         context = {
@@ -113,6 +185,7 @@ class RouterProof(unittest.TestCase):
             "gateway": {"id": 40},
             "app": {"id": 42},
             "domain": "proof.test",
+            "views": {"spare": {"caddy": "old"}, "spare-2": {"caddy": "old"}},
         }
         prepared = [
             {
@@ -125,6 +198,10 @@ class RouterProof(unittest.TestCase):
         ]
         operation = copy.deepcopy(self.operation)
         operation["input"]["route_mutations"] = {
+            "artifacts": {
+                "caddy": [{"content": "old"}, {"content": "new"}],
+                "dns": [],
+            },
             "forward": {
                 "certificates": [],
                 "prepare_certificates": prepared,
@@ -132,14 +209,16 @@ class RouterProof(unittest.TestCase):
                 "publications": [
                     {
                         "node_id": 43,
-                        "after": {"caddy": {"content": "old"}, "dns": None},
+                        "before": {"caddy": 0, "dns": None},
+                        "after": {"caddy": 0, "dns": None},
                     },
                     {
                         "node_id": 44,
-                        "after": {"caddy": {"content": "new"}, "dns": None},
+                        "before": {"caddy": 0, "dns": None},
+                        "after": {"caddy": 1, "dns": None},
                     },
                 ],
-            }
+            },
         }
         with tempfile.TemporaryDirectory() as tmp:
             baseline = Path(tmp) / "baseline.json"
@@ -153,7 +232,16 @@ class RouterProof(unittest.TestCase):
             ]:
                 seen = []
 
-                def read_node(role, domain, leaves, **kwargs):
+                def read_node(
+                    role,
+                    domain,
+                    leaves,
+                    *,
+                    seen=seen,
+                    empty=empty,
+                    root_hash=root_hash,
+                    **kwargs,
+                ):
                     seen.extend(leaves)
                     observed = (
                         []
@@ -168,9 +256,7 @@ class RouterProof(unittest.TestCase):
                         ]
                     )
                     return {
-                        "disk_sha256": proof.digest(
-                            "old" if role == "spare" else "new"
-                        ),
+                        "caddy": "old" if role == "spare" else "new",
                         "active": True,
                         "loaded_matches_disk": True,
                         "leaves": observed,
@@ -187,7 +273,7 @@ class RouterProof(unittest.TestCase):
                     "check_terminal": proof.check_terminal,
                     "read_node": read_node,
                     "assert_selected": lambda *a, **kw: None,
-                    "digest": proof.digest,
+                    "assert_publication": proof.assert_publication,
                 }
                 original = runpy.run_path
                 with (
