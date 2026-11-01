@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Architecture",
+      "order": 40,
+      "pages": ["swamp/diagrams/instance-transfer"]
+    }
+  ]
+}

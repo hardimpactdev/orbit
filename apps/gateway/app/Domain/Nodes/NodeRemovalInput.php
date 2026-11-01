@@ -13,10 +13,13 @@ use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
 /** Full immutable public intent. Nothing is read from the Gateway by an executing step. */
@@ -25,19 +28,22 @@ final readonly class NodeRemovalInput
     /** @param array<string,mixed> $snapshot
      * @return array<string,mixed>
      */
-    public function capture(array $snapshot): array
+    public function capture(array $snapshot, ?Instance $removingWorkspace = null): array
     {
         $node = Node::query()->findOrFail(ValidatedData::integer($snapshot['node_id']));
         $ssh = app(SwampSshExecutionInput::class);
         $nativeRoles = app(NativeNodeRoleRemovalInput::class);
         $machineDeleted = ($snapshot['machine_deleted'] ?? false) === true;
+        $taskVmGuest = TaskVm::query()->where('node_id', $node->id)->exists()
+            && ! app(NodeWorkerRollout::class)->allows($node);
         $roles = $node->roles()->orderBy('id')->lockForUpdate()->get();
         $before = [];
+        $removingRoutes = $removingWorkspace === null ? [] : app(NodeRemovalPolicy::class)->workspaceRouteIds($node, $removingWorkspace);
         foreach ($roles as $role) {
             if (! $machineDeleted && in_array($role->status, [LifecycleStatus::Provisioning, LifecycleStatus::Removing], true)) {
                 throw new ResourceOperationException('node.role_busy', 'Wait for the active role operation before removing this Node.', 409);
             }
-            app(RouteRemovalGuard::class)->assertRoleRemovable($node, $role->role);
+            app(RouteRemovalGuard::class)->assertRoleRemovable($node, $role->role, $removingRoutes);
             $before[$role->id] = $nativeRoles->publications($node, $role->role, $machineDeleted);
         }
         foreach ($roles as $role) {
@@ -125,7 +131,7 @@ final readonly class NodeRemovalInput
 
         return ['snapshot' => $snapshot, 'participant_node_ids' => array_values(array_unique($participants)),
             'intent' => ['schema_version' => 1, 'node_id' => $node->id, 'name' => $node->name,
-                'offline' => $snapshot['offline'], 'machine_deleted' => $machineDeleted, 'platform' => $node->platform,
+                'offline' => $snapshot['offline'], 'machine_deleted' => $machineDeleted, 'platform' => $node->platform, 'task_vm_guest' => $taskVmGuest,
                 'probe' => ['host' => $node->wireguard_ip, 'port' => 22], 'ssh' => $target,
                 'roles' => $roleIntents, 'dns' => $dns, 'peers' => $peers, 'hub' => $hub, 'router_rules' => $routerRules,
                 'public_ssh' => ['argv' => ['ufw', ...array_slice($publicSsh->arguments, 2)]],

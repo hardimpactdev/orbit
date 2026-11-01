@@ -4,7 +4,7 @@
       "tab": "Documentation",
       "group": "Architecture",
       "order": 32,
-      "pages": ["swamp/porting"]
+      "pages": ["swamp/porting", "swamp/porting-retros"]
     }
   ]
 }

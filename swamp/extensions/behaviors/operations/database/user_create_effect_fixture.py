@@ -96,7 +96,7 @@ def effect(driver):
             assert sql("SELECT rolreplication::text FROM pg_roles WHERE rolname='reader';")=='false'
         print(json.dumps({'driver':driver,'user_created':True,'login':True,'recorded_repair':True}))
     finally:
-        docker(['rm','--force',container],check=False)
+        docker(['rm','--force','--volumes',container],check=False)
 
 
 if __name__=='__main__':effect(sys.argv[1])

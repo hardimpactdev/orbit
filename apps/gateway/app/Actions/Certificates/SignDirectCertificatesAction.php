@@ -82,7 +82,6 @@ final readonly class SignDirectCertificatesAction
             throw new ResourceOperationException('operation.finished', 'This intent no longer permits certificate signing.', 409);
         }
         $paths = match ($operation->kind) {
-            'certificate.converge' => [''],
             'route.update' => $restoring
                 ? ['route_update.route_mutations.restore.certificates']
                 : ['route_update.route_mutations.forward.prepare_certificates', 'route_update.route_mutations.forward.certificates'],
@@ -101,11 +100,14 @@ final readonly class SignDirectCertificatesAction
             'node.remove' => $restoring ? ['_removal.restore_certificates'] : [],
             'instance.transfer' => $restoring ? ['route_publication.route_mutations.restore.certificates']
                 : ['route_publication.route_mutations.forward.prepare_certificates', 'route_publication.route_mutations.forward.certificates'],
+            'websocket.app_attach', 'websocket.app_detach' => $restoring
+                ? ['websocket_attachment.route_mutations.restore.certificates']
+                : ['websocket_attachment.route_mutations.forward.prepare_certificates', 'websocket_attachment.route_mutations.forward.certificates'],
             default => [],
         };
         $leaves = [];
         foreach ($paths as $path) {
-            $rows = $path === '' ? [$operation->input] : Arr::get($operation->input, $path, []);
+            $rows = Arr::get($operation->input, $path, []);
             foreach (is_array($rows) ? $rows : [] as $row) {
                 if (! is_array($row) || ! is_int($row['node_id'] ?? null) || ! is_string($row['scope'] ?? null)
                     || ! is_string($row['domain'] ?? null) || ! RouteDomain::isValid($row['domain'])

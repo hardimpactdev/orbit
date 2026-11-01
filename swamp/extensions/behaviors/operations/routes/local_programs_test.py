@@ -137,25 +137,12 @@ class Firewall(unittest.TestCase):
         self.firewall.change=change
         self.assertEqual(self.firewall.main(dict(mode='route',operation='remove',route_id=7)),dict(matches=True))
         self.assertEqual(calls,[['--force','delete','3'],['--force','delete','2']]);self.assertEqual(len(rows),1)
-    def test_route_retirement_preserves_the_current_router_and_foreign_rules(self):
-        wanted=dict(self.shape,source='192.168.6.2')
-        rows=[dict(number=1,comment=self.shape['comment'],shape=self.shape),dict(number=2,comment=wanted['comment'],shape=wanted),dict(number=3,comment='operator-owned',shape=None)]
-        calls=[]
-        self.firewall.status=lambda:('active',list(rows))
-        def change(args):
-            calls.append(args);rows[:]=[r for r in rows if r['number']!=int(args[-1])]
-        self.firewall.change=change
-        payload=dict(mode='route',operation='retire',route_id=7,keep=[dict(router='192.168.6.2',workload='192.168.6.18')])
-        self.assertEqual(self.firewall.main(payload),dict(matches=True))
-        self.assertEqual(calls,[['--force','delete','1']]);self.assertEqual(len(rows),2)
-        self.assertEqual(self.firewall.main(payload),dict(matches=True));self.assertEqual(len(calls),1)
-    def test_route_detach_removes_owned_rules_and_refuses_missing_survivor(self):
-        rows=[dict(number=1,comment=self.shape['comment'],shape=self.shape)]
-        self.firewall.status=lambda:('active',list(rows))
-        self.firewall.change=lambda args:rows.clear()
-        self.assertEqual(self.firewall.main(dict(mode='route',operation='retire',route_id=7,keep=[])),dict(matches=True))
-        self.assertEqual(rows,[])
-        self.assertEqual(self.firewall.main(dict(mode='route',operation='retire',route_id=7,keep=[dict(router='192.168.6.2',workload='192.168.6.18')])),dict(error_code='firewall.verify_failed'))
+    def test_removed_route_write_operations_refuse_before_observing_or_mutating(self):
+        self.firewall.status=lambda:self.fail('Removed Route write observed UFW')
+        self.firewall.change=lambda args:self.fail('Removed Route write mutated UFW')
+        for operation in ['converge','retire']:
+            with self.subTest(operation=operation):
+                self.assertEqual(self.firewall.main(dict(mode='route',operation=operation,route_id=7,router='192.168.6.2',workload='192.168.6.18',keep=[])),dict(error_code='firewall.input_invalid'))
     def test_role_rule_drift_refuses_before_deleting_or_adding_anything(self):
         wrong=dict(self.shape,source='192.168.6.99');self.firewall.status=lambda:('active',[dict(number=1,comment=wrong['comment'],shape=wrong)])
         self.firewall.change=lambda args:self.fail('Drift caused mutation')

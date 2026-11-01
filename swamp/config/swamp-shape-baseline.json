@@ -1162,12 +1162,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/php/shared_program.ts",
-      "rule": "inline-script",
-      "count": 131,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/processes-schedules/installation.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -1312,7 +1306,7 @@
     {
       "file": "extensions/behaviors/operations/routes/firewall-program.ts",
       "rule": "inline-script",
-      "count": 260,
+      "count": 233,
       "evidence": []
     },
     {

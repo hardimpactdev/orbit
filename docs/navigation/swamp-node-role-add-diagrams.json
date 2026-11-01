@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Architecture",
+      "order": 36,
+      "pages": ["swamp/diagrams/node-role-add"]
+    }
+  ]
+}

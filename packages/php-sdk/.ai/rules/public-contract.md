@@ -10,7 +10,7 @@ The SDK models exactly 247 concrete public Gateway API operations:
 - Project: list, show, create, update, remove, and Swamp dependency results read; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
 - Development node exclusion: add, list, and remove from either the Project or the Node.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
-- Operation: list, show, and cancel. Instance deploy, rollback, and task group provision, check, script, analyze, turn, park, and publish return the queued operation.
+- Operation: list, show, and cancel. Instance deploy, rollback, environment synchronization, and task group provision, check, script, analyze, turn, park, and publish return the queued operation.
 - Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Fleet Docker maintenance: one typed Node admission with plan, migrate or restore-policies intent, explicit confirmation, optional exact recipe and fallback; returns an Operation.
@@ -63,9 +63,9 @@ operations. Keep the public API typed and small.
   sensitive transport values. Keep them out of generic debug and serialization
   representations while preserving their intended request or event value.
 - Keep Instance environment transport limited to an ID-or-domain selector,
-  optional import replacement, one key and string value for update, an empty
-  synchronization body, and the bounded value-free operation result. The
-  Gateway owns lookup, validation, references, storage, and synchronization.
+  optional import replacement, one key and string value for update, and an
+  empty synchronization body. Import and update return the bounded value-free
+  result; synchronization returns the queued operation. The Gateway owns lookup, validation, references, storage, and synchronization.
 - Keep dependency reads bodyless and transport only numeric resource identity,
   optional source identity, and pagination. Preserve Swamp provenance, freshness,
   findings and PR certainty. The Gateway owns validation and read policy.

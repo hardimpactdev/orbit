@@ -121,7 +121,7 @@ The importer accepts blank lines, comments, quoted and escaped values, multiline
 
 Without `replace`, a file key that is already stored returns `env.import_conflict` (409), and nothing is stored. With `replace`, matching keys take the file value, new keys are added, and stored keys that the file lacks stay.
 
-For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps a non-empty `APP_KEY` as the file has it. When the file contains `APP_KEY` with an empty value, import reuses the Instance's non-empty stored key, or generates a cryptographically random 32-byte key with the `base64:` prefix if no usable stored key exists. This also applies to the existing-file import during Instance creation. A missing `APP_KEY` stays missing; other values stay as the file has them. Non-Laravel imports do not generate keys.
+For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps a non-empty `APP_KEY` as the file has it. When the file contains `APP_KEY` with an empty value, import reuses the Instance's non-empty stored key, or generates a cryptographically random 32-byte key with the `base64:` prefix if no usable stored key exists. A missing `APP_KEY` stays missing; other values stay as the file has them. Non-Laravel imports do not generate keys.
 
 When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root. A [Route with a web root](/reference/routes#serve-several-web-roots) writes `APP_URL` into the `.env` of the directory it serves; the stored Instance environment belongs to the Instance's own Route. On production, that file is `<home>/env/<directory>/.env`, which each release links to.
 
@@ -151,7 +151,7 @@ The Gateway renders every stored key in sorted order, as a quoted value. The [No
 
 Before it writes, Swamp reads the file's key names locally. A key that stored configuration lacks fails the Operation with `env.sync_would_drop_keys`, and the file stays unchanged. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. To keep the other keys, store them with `env:update`, or import the file with `replace` when its other keys are already stored. Otherwise remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
 
-When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
+When Swamp cannot confirm the write, the Operation fails with `env.sync_unconfirmed`, and the file may have changed. Repeat synchronization: it checks the file again and either accepts the matching file or writes it.
 
 A stored Database attachment keeps its explicit network choice when synchronization projects environment values. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) requires an active peer and a current managed publication; WireGuard is the default. Transfer and clone reattachment reset the choice to WireGuard.
 
@@ -163,11 +163,11 @@ For an Instance that owns its `DB` database, synchronization also writes `.env.t
 
 Laravel loads `.env.testing` instead of `.env` when `APP_ENV` is `testing`. So a new file holds every key of `.env`, such as `APP_KEY`.
 
-When Git cannot report whether it tracks the file, for example because of a dubious-ownership error or a damaged repository, synchronization returns `env.testing_tracking_unknown` and leaves `.env.testing` unchanged. A checkout outside a Git repository counts as untracked. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
+When Git cannot report whether it tracks the file, for example because of a dubious-ownership error or a damaged repository, the Operation fails with `env.testing_tracking_unknown` and leaves `.env.testing` unchanged. A checkout outside a Git repository counts as untracked. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
 Development synchronization changes only `.env` and `.env.testing`. The placed Swamp worker performs these writes directly as the admitted Node account, using fixed local filesystem commands. It never calls an agent action.
 
-Production synchronization rebuilds an existing Laravel configuration cache into a private candidate, boots Artisan against it and replaces the old cache only after success. An uncached application stays uncached. It then refreshes the dedicated FPM OPcache through the canonical PHP action and restarts active Processes whose desired state is running and whose `restart_on_deploy` setting is true. All steps run on the admitted Node within the same native root. A failed cache build preserves the previous cache and prevents FPM refresh and Process restarts. A missing current release skips runtime refresh.
+Production synchronization refreshes the runtime on every request, even when `.env` is unchanged. It rebuilds an existing Laravel configuration cache into a private candidate, boots Artisan against it and replaces the old cache only after success. An uncached application stays uncached. It then refreshes the dedicated FPM OPcache through the canonical PHP action and restarts active Processes whose desired state is running and whose `restart_on_deploy` setting is true. All steps run on the admitted Node within the same native root. A failed cache build preserves the previous cache and prevents FPM refresh and Process restarts. A missing current release skips runtime refresh.
 
 The Gateway records the native outcome and updates the list of owned keys only after success. A failed root preserves the previous key list and pending-runtime marker. Repeat synchronization after correcting the bounded error.
 
@@ -218,7 +218,7 @@ Laravel import creates an application's `APP_KEY` only when the source value is 
 
 ## Errors
 
-Environment operations return these codes in the Orbit error envelope. None of them contains a value.
+Import, update, and the start of synchronization return these codes in the Orbit error envelope, with the HTTP status shown. A synchronization Operation that fails records its code in `error_code`; those rows show `Operation`. None of the codes contains a value.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -229,14 +229,15 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.import_source_missing` | 404 | The recorded source `.env` file does not exist; fix or restore the file before importing. |
 | `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. |
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
-| `env.operation_busy` | 409 | Another operation holds the Instance's lock. |
-| `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
-| `env.config_cache_refresh_failed` | 502 | The file changed, but config cache preparation failed or was unconfirmed. FPM opcache was not reset. |
-| `env.php_runtime_refresh_failed` | 502 | The file changed and config cache preparation completed, but FPM opcache refresh failed. |
+| `operation.target_busy` | 409 | Another operation holds the Instance. |
+| `env.configuration_missing` | 409 | Synchronization found no stored configuration. Import or store values first. |
+| `env.sync_unconfirmed` | Operation | Swamp cannot confirm the write. Repeat synchronization. |
+| `env.config_cache_refresh_failed` | Operation | Config cache preparation failed or was unconfirmed. A failed build keeps the old cache; an unconfirmed result may have replaced it. FPM opcache was not reset. |
+| `env.php_runtime_refresh_failed` | Operation | Config cache preparation completed, but FPM opcache refresh failed. |
 | `operation.kind_unavailable` | 409 | Native synchronization is not registered. No Operation or file change is admitted. |
-| `env.runtime_refresh_failed` | 502 | Orbit could not record or confirm the runtime refresh. No application output is returned. Retry env-sync. |
-| `env.sync_would_drop_keys` | 409 | The file has keys that stored configuration lacks and Orbit never wrote. Store or import them, or remove them from the file. |
-| `env.testing_tracking_unknown` | 409 | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
+| `env.runtime_refresh_failed` | Operation | Preparing or restarting a Process failed. No application output is returned. Repeat synchronization. |
+| `env.sync_would_drop_keys` | Operation | The file has keys that stored configuration lacks and Orbit never wrote. Store or import them, or remove them from the file. |
+| `env.testing_tracking_unknown` | Operation | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
 
 ## Why it works this way
 

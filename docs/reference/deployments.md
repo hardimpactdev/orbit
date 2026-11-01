@@ -255,7 +255,7 @@ A deployment reads the branch and the steps once, when it starts. Then it runs t
 
 Each Process restart uses the normal Process restart action and reports success or failure in deployment events. A failure stops the deployment before after-activation steps and cleanup. The new release stays selected.
 
-Deployment environment synchronization only writes files. It does not run the explicit env-sync runtime refresh or restart Processes before activation. Explicit [production env-sync](/reference/environment-variables#synchronize) refreshes PHP and uses the same Process restart action afterward, reporting restarted Process IDs in its response.
+Deployment environment synchronization only writes files. It does not run the explicit env-sync runtime refresh or restart Processes before activation. Explicit [production env-sync](/reference/environment-variables#synchronize) refreshes PHP and uses the same Process restart action afterward, reporting restarted Process IDs in its Operation result.
 
 Orbit skips PHP refresh for an Instance that does not serve PHP. A changed resolved release restarts the dedicated service so its workers enter the new application directory.
 
@@ -703,7 +703,9 @@ When a development deploy runs, it leaves Process definitions, Route publication
 
 ### Automatic policy
 
-A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
+A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
+
+Policy checkpoints stay durable before and after keyed admission. When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
 
 Swamp owns development discovery, branch checks, backoff, retry limits and admission. An `interrupted` Operation is terminal, like a failed Operation: after its deployment evidence is settled, the policy applies the normal failure backoff before admitting the branch head again. The existing automatic workflow keeps its minute cadence. Discovery uses the Gateway's canonical eligibility, including ambiguous or inactive role placement. Each native source action and Project command has its own timeout. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.
 

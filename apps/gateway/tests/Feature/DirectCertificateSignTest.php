@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WebSocket\DirectWebSocketProjection;
 use App\Infrastructure\Certificates\FilesystemRootCertificate;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -36,9 +39,9 @@ beforeEach(function (): void {
     $this->root = file_get_contents($this->home.'/ca/root.pem');
     $this->leaf = ['node_id' => $this->node->id, 'scope' => 'route-31', 'domain' => 'example.orbit',
         'root_hash' => hash('sha256', $this->root)];
-    $this->operation = Operation::query()->create(['kind' => 'certificate.converge', 'target_type' => 'node_certificate',
+    $this->operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster',
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Running,
-        'state' => ['swamp_run_id' => $this->runId], 'input' => $this->leaf]);
+        'state' => ['swamp_run_id' => $this->runId], 'input' => ['certificates' => [$this->leaf]]]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id.'/certificates/sign';
     $this->body = ['run_id' => $this->runId, 'requests' => [['node_id' => $this->node->id,
         'scope' => $this->leaf['scope'], 'state' => 'request', 'request_base64' => base64_encode(direct_sign_csr())]]];
@@ -94,7 +97,7 @@ it('refuses a wrong run, terminal intent, cancellation or stale root', function 
         'run' => $this->body['run_id'] = 'e9c6ca86-29c4-4646-ab88-319b61de6d6c',
         'terminal' => $this->operation->update(['status' => OperationStatus::Succeeded]),
         'cancel' => $this->operation->update(['cancel_requested_at' => now()]),
-        'root' => $this->operation->update(['input' => [...$this->leaf, 'root_hash' => str_repeat('0', 64)]]),
+        'root' => $this->operation->update(['input' => ['certificates' => [[...$this->leaf, 'root_hash' => str_repeat('0', 64)]]]]),
     };
     $this->postJson($this->path, $this->body)->assertConflict();
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
@@ -177,7 +180,7 @@ it('rechecks the original live intent after signing before releasing a public bu
         public function run(ProcessInvocation $invocation): CommandResult
         {
             $result = (new NativeProcessRunner)->run($invocation);
-            $this->operation->update(['input' => [...$this->operation->input, 'domain' => 'changed.orbit']]);
+            $this->operation->update(['input' => ['certificates' => [[...$this->operation->input['certificates'][0], 'domain' => 'changed.orbit']]]]);
 
             return $result;
         }
@@ -296,3 +299,86 @@ it('does not grant Route signing authority from the opposite phase or a flat fal
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
 })->with([['route.update', 'route_update', false], ['route.update', 'route_update', true],
     ['route.target_set', 'route_target', false], ['route.target_set', 'route_target', true], ['route.create', 'route_lifecycle', false], ['route.create', 'route_lifecycle', true], ['route.destroy', 'route_lifecycle', true]]);
+
+/** Use the public registry seam until the independently owned parent declaration lands. */
+function direct_sign_websocket_parent(string $kind, array $input): void
+{
+    if (app(DirectOperation::class)->definition($kind) === null) {
+        app()->instance(DirectOperation::class, new DirectOperation([new class($kind) implements DirectOperationContribution
+        {
+            public function __construct(private string $kind) {}
+
+            public function definitions(): array
+            {
+                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => DirectWebSocketProjection::class]];
+            }
+        }]));
+    }
+    test()->operation->update(['kind' => $kind, 'input' => $input]);
+}
+
+it('signs WebSocket parent leaves only from the exact admitted phase containers', function (string $kind, string $path, bool $restoring): void {
+    $foreign = [...$this->leaf, 'domain' => 'foreign.orbit'];
+    $input = ['certificates' => [$foreign], 'websocket_attachment' => ['certificates' => [$foreign], 'route_mutations' => [
+        'forward' => ['prepare_certificates' => $restoring ? [$foreign] : [], 'certificates' => $restoring ? [$foreign] : []],
+        'restore' => ['certificates' => $restoring ? [] : [$foreign]],
+    ]]];
+    data_set($input, 'websocket_attachment.route_mutations.'.$path, [$this->leaf]);
+    direct_sign_websocket_parent($kind, $input);
+    $this->body['restoring'] = $restoring;
+    $before = $this->operation->fresh()->toArray();
+
+    $response = $this->postJson($this->path, $this->body)->assertOk();
+    $certificate = base64_decode($response->json('data.certificates.0.certificate_base64'), true);
+    expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe('example.orbit')
+        ->and($this->operation->fresh()->toArray())->toBe($before)
+        ->and(Activity::query()->where('command', 'operation:certificate:sign')->sole()->subject_id)->toBe($this->operation->id);
+})->with(['websocket.app_attach', 'websocket.app_detach'])->with([
+    ['forward.prepare_certificates', false], ['forward.certificates', false], ['restore.certificates', true],
+]);
+
+it('refuses WebSocket signing leaves under other namespaces, containers or phases', function (string $kind, bool $restoring): void {
+    $paths = ['certificates', 'tracking.certificates', '_role.certificates.leaves',
+        'route_mutations.forward.certificates', 'route_update.route_mutations.forward.certificates',
+        'route_lifecycle.route_mutations.restore.certificates', 'route_publication.route_mutations.forward.certificates',
+        'websocket_attachment.certificates', 'websocket_attachment.preparation.certificates',
+        'websocket_attachment.route_mutations.certificates', 'websocket_attachment.route_mutations.prepare_certificates',
+        'websocket_attachment.route_mutations.forward.preparation.certificates',
+        'websocket_attachment.route_mutations.restore.prepare_certificates',
+        'websocket_attachment.route_mutations.after.certificates'];
+    $paths = [...$paths, ...array_map(static fn (string $path): string => 'websocket_attachment.route_mutations.'.$path,
+        $restoring ? ['forward.prepare_certificates', 'forward.certificates'] : ['restore.certificates'])];
+    $this->body['restoring'] = $restoring;
+    foreach ($paths as $path) {
+        $input = [];
+        data_set($input, $path, [$this->leaf]);
+        direct_sign_websocket_parent($kind, $input);
+        $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
+    }
+    expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
+})->with(['websocket.app_attach', 'websocket.app_detach'])->with([false, true]);
+
+it('keeps WebSocket signing scoped to the requested Operation and its actual parent run', function (string $kind, bool $wrongRun): void {
+    $input = ['websocket_attachment' => ['route_mutations' => ['forward' => ['certificates' => [$this->leaf]]]]];
+    direct_sign_websocket_parent($kind, $input);
+    if ($wrongRun) {
+        $this->body['run_id'] = 'e9c6ca86-29c4-4646-ab88-319b61de6d6c';
+    } else {
+        $foreign = Operation::query()->create(['kind' => $kind, 'target_type' => 'node_certificate',
+            'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Running,
+            'state' => ['swamp_run_id' => $this->runId], 'input' => $input]);
+        $this->operation->update(['input' => []]);
+        expect($foreign->id)->not->toBe($this->operation->id);
+    }
+    $this->postJson($this->path, $this->body)->assertStatus($wrongRun ? 409 : 403)
+        ->assertJsonPath('error.code', $wrongRun ? 'operation.run_mismatch' : 'certificate.intent_missing');
+    expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
+})->with(['websocket.app_attach', 'websocket.app_detach'])->with([false, true]);
+
+it('refuses signing authority from a retired standalone certificate Operation', function (): void {
+    $this->operation->update(['kind' => 'certificate.converge', 'input' => $this->leaf]);
+
+    $this->postJson($this->path, $this->body)->assertUnprocessable()->assertJsonPath('error.code', 'operation.direct_invalid');
+
+    expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
+});

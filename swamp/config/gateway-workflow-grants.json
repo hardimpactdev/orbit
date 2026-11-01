@@ -43,7 +43,8 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^analytics-plausible-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^vault-sync-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^task-provision-git-[1-9][0-9]*$", "actions": ["write", "read"]}
+    {"vault": "orbit-control-inputs", "key_pattern": "^task-provision-git-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^swamp-proof-club-api-key$", "actions": ["write", "read"]}
   ],
   "workflows": [
     {"workflow": "project-observe", "actions": ["run", "read"]},
@@ -63,8 +64,6 @@
     {"workflow": "operation-analytics-disable-direct", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-enable-direct", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-update-direct", "actions": ["run", "read"]},
-    {"workflow": "operation-certificate-converge", "actions": ["run", "read"]},
-    {"workflow": "operation-certificate-remove", "actions": ["run", "read"]},
     {"workflow": "operation-cluster-router", "actions": ["run", "read"]},
     {"workflow": "operation-conn-direct", "actions": ["run", "read"]},
     {"workflow": "operation-conn-pairing-revoke", "actions": ["run", "read"]},
@@ -80,7 +79,6 @@
     {"workflow": "operation-database-server-destroy", "actions": ["run", "read"]},
     {"workflow": "operation-database-sqlite-export", "actions": ["run", "read"]},
     {"workflow": "operation-database-sqlite-seed", "actions": ["run", "read"]},
-    {"workflow": "operation-database-sqlite-seed-abandon", "actions": ["run", "read"]},
     {"workflow": "operation-database-user-create", "actions": ["run", "read"]},
     {"workflow": "operation-database-write", "actions": ["run", "read"]},
     {"workflow": "operation-dependency-merge", "actions": ["run", "read"]},

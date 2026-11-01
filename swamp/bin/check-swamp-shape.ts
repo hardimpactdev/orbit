@@ -2,6 +2,9 @@ import { parser as pythonParser } from "npm:@lezer/python@1.1.18";
 import ts from "npm:typescript@5.9.3";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { posix } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { boundedPhaseScripts } from "./bounded-phase-scripts.ts";
 import { effectivePlacement, selectsNode } from "./workflow-placement.ts";
 import {
   movedLimits,
@@ -1388,7 +1391,7 @@ export function analyzeTs(
   for (const text of scriptLeaves.values()) {
     result.findings.push(...gatewayShellFindings(file, text));
     const controlSites = text.match(
-      /\b(?:while\s+(?:True|true|:)|time\.sleep\s*\(|sleep\s+\d|flock\s*\(|LOCK_EX|O_EXCL|lockfile|for\s+\w*(?:attempt|retry)\w*\s+in)/g,
+      /\b(?:while\s+(?:True|true|:)|time\.sleep\s*\(|sleep\s+(?:\d|["'$])|flock\s*\(|LOCK_EX|O_EXCL|lockfile|for\s+\w*(?:attempt|retry)\w*\s+in)/g,
     ) ?? [];
     if (controlSites.length) {
       add(root, "custom-control", controlSites.length, [
@@ -1581,6 +1584,12 @@ export function analyzeYaml(
       }
     }
     if (typeof value === "string") {
+      // A step input becomes one dispatch frame; history reads grow with every write (B7).
+      if (
+        file.startsWith("workflows/") && path[0] === "jobs" &&
+        path[2] === "steps" && path[4] === "task" && path[5] === "inputs" &&
+        /\bdata\.(?:query|findByTag|findBySpec|listVersions)\s*\(/.test(value)
+      ) add("unbounded-data-input");
       const envValue = path.length >= 4 && path.at(-2) === "env" &&
         path.at(-3) === "inputs" && path.at(-4) === "task";
       const vaultEnv = envValue &&
@@ -1787,6 +1796,7 @@ export function analyzeScript(
   file: string,
   source: string,
   inventory: Record<string, string> = {},
+  boundedControls = false,
 ): Analysis {
   const result = empty();
   if (file.endsWith(".py")) {
@@ -1809,8 +1819,9 @@ export function analyzeScript(
     /(?:subprocess\.(?:run|Popen|call)|os\.system)[^\n]*(?:password|secret|private_key|token|identity)|\b(?:curl|exec|sudo|python\w*)[^\n]*\$\{?\w*(?:SECRET|TOKEN|PASSWORD|IDENTITY)/i
       .test(withoutComments)
   ) add("secret-argv");
-  const controlsFound = withoutComments.match(
-    /\b(?:time\.sleep\s*\(|sleep\s+\d|flock\b|LOCK_EX\b|lockfile\b)|while\s+(?:True|true|:)\b/g,
+  const controlsFound = withoutComments.match(boundedControls
+    ? /\b(?:flock\b|LOCK_EX\b|lockfile\b)/g
+    : /\b(?:time\.sleep\s*\(|sleep\s+(?:\d|["'$])|flock\b|LOCK_EX\b|lockfile\b)|while\s+(?:True|true|:)\b/g,
   ) ?? [];
   if (controlsFound.length) {
     add("custom-control", controlsFound.length);
@@ -1986,10 +1997,11 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
   }
   return sources;
 }
-let pythonAnalyzer = "bin/swamp-shape-python.py";
-async function toolFindings(
+let pythonAnalyzer = fileURLToPath(new URL("./swamp-shape-python.py", import.meta.url));
+export async function toolFindings(
   sources: Map<string, string>,
 ): Promise<Finding[]> {
+  const phases = boundedPhaseScripts(sources);
   const files: [string, string, string][] = [...sources].filter(([file]) =>
     /\.(?:py|sh)$/.test(file)
   ).map(([file, text]) => [file, text, file.endsWith(".sh") ? "sh" : "py"]);
@@ -2038,6 +2050,7 @@ async function toolFindings(
           ],
           JSON.stringify({
             source,
+            phase_seconds: phases.get(file) ?? 0,
             sources: Object.fromEntries(
               [...sources].filter(([path]) =>
                 path.endsWith(".py") &&
@@ -2101,6 +2114,30 @@ export function analyze(
   inventory: Record<string, string>,
 ) {
   const analyses = new Map<string, Analysis>();
+  const phases = boundedPhaseScripts(sources);
+  const shellPhases = Object.fromEntries(
+    [...phases].filter(([file]) => file.endsWith(".sh"))
+      .map((
+        [file, seconds],
+      ) => [file, { source: sources.get(file), seconds }]),
+  );
+  let boundedShell: Record<string, boolean> = {};
+  if (Object.keys(shellPhases).length) {
+    const proof = spawnSync(
+      "python3",
+      [pythonAnalyzer, "--phase-controls"],
+      {
+        input: JSON.stringify(shellPhases),
+        encoding: "utf8",
+      },
+    );
+    if (proof.status !== 0) {
+      throw new Error(
+        `Phase script syntax analysis failed: ${proof.stderr}`,
+      );
+    }
+    boundedShell = JSON.parse(proof.stdout);
+  }
   const wrappers = new Set<string>();
   for (const [file, source] of sources) {
     if (!file.endsWith(".ts") || !/node-agent/.test(source)) continue;
@@ -2143,7 +2180,7 @@ export function analyze(
           ? analyzeTs(file, source, inventory, wrappers)
           : /\.ya?ml$/.test(file)
           ? analyzeYaml(file, source, inventory)
-          : analyzeScript(file, source, inventory),
+          : analyzeScript(file, source, inventory, boundedShell[file] === true),
       );
     }
   }

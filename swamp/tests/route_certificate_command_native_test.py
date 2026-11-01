@@ -13,7 +13,7 @@ from tests.route_ssh_fixture import PIN
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(
     "certificate_fixture",
-    ROOT / "extensions/behaviors/operations/certificates/native_test.py",
+    ROOT / "extensions/behaviors/operations/certificates/native_fixture.py",
 )
 _fixture = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_fixture)
@@ -21,11 +21,6 @@ PARENT_RUN = "43e367e0-0760-41a8-a169-84e6e0933e4f"
 
 
 class RouteCertificateNative(_fixture.Certificates):
-    # Standalone root cases remain under their owner; reuse only its TLS host fixture.
-    test_fresh_current_and_removal_use_official_ssh_and_one_parent_signer = None
-    test_signer_refusal_makes_no_publication_or_hidden_callback = None
-    test_native_inspection_resume_preserves_the_key_without_signing_again = None
-
     def setUp(self):
         _fixture.Certificates.setUp(self)
         # Official copy returns the public CSR file as well as staging scripts.
@@ -60,16 +55,6 @@ else:shutil.copyfile(src,dst)
                 / "extensions/behaviors/operations/routes/publication-command/sections.ts"
             ).read_text()
         )
-        root = yaml.safe_load(
-            (
-                self.repo / "workflows/workflow-operation-certificate-converge.yaml"
-            ).read_text()
-        )
-        signer = next(
-            s["task"]["inputs"]["run"]
-            for s in root["jobs"][0]["steps"]
-            if s["task"]["behaviorType"] == "command/shell"
-        )
         for mode in ("publish", "remove"):
             workflow = yaml.safe_load(
                 (ROOT / f"workflows/workflow-route-certificate-{mode}.yaml").read_text()
@@ -83,8 +68,6 @@ else:shutil.copyfile(src,dst)
                         sshBinary=str(self.tools / "ssh"),
                         scpBinary=str(self.tools / "scp"),
                     )
-                if step["name"] == "sign":
-                    task["inputs"]["run"] = signer
             raw = yaml.safe_dump(workflow, sort_keys=False).replace(
                 "/tmp/orbit-route-", str(self.fixture / "staging-")
             )
@@ -92,7 +75,15 @@ else:shutil.copyfile(src,dst)
                 self.repo / f"workflows/workflow-route-certificate-{mode}.yaml"
             ).write_text(raw)
 
-    def run_child(self, mode="publish", restoring=False, success=True, leaves=None):
+    def run_child(
+        self,
+        mode="publish",
+        restoring=False,
+        success=True,
+        leaves=None,
+        host_keys=None,
+        raw=False,
+    ):
         leaf = (
             self.leaf
             if mode == "publish"
@@ -128,21 +119,28 @@ else:shutil.copyfile(src,dst)
                     "nodeIdentityFile": "/fixture/approved-key",
                     "become": True,
                 },
-                "host_keys": [PIN],
+                "host_keys": [PIN] if host_keys is None else host_keys,
             },
         }
-        reply = json.loads(
-            self.cli(
-                "workflow",
-                "run",
-                "route-certificate-" + mode,
-                "--input",
-                json.dumps(value),
-                success=success,
-            ).stdout
+        response = self.cli(
+            "workflow",
+            "run",
+            "route-certificate-" + mode,
+            "--input",
+            json.dumps(value),
+            success=success,
         )
+        if raw:
+            return response
+        reply = json.loads(response.stdout)
         history = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
         return history
+
+    def test_missing_pins_refuse_before_any_canonical_child_effect(self):
+        result = self.run_child(success=False, host_keys=[], raw=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.signs, [])
+        self.assertEqual(list(self.fixture.glob("staging-*")), [])
 
     def test_publish_current_remove_keep_parent_signer_binding_and_clean_assets(self):
         first = self.run_child(restoring=True)

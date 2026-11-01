@@ -11,7 +11,7 @@ import yaml
 
 HERE = Path(__file__).parent
 spec = importlib.util.spec_from_file_location(
-    "certificate_native", HERE / "native_test.py"
+    "certificate_native", HERE / "native_fixture.py"
 )
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
@@ -80,19 +80,6 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
                 task["globalArgs"].update(
                     sshBinary=str(fake), scpBinary=str(self.tools / "scp")
                 )
-            if task.get("behaviorType") == "command/shell":
-                # The fixture signer and its synthetic CA stay outside the native repository.
-                original = next(
-                    s
-                    for s in yaml.safe_load(
-                        (
-                            self.repo
-                            / "workflows/workflow-operation-certificate-converge.yaml"
-                        ).read_text()
-                    )["jobs"][0]["steps"]
-                    if s["task"].get("behaviorType") == "command/shell"
-                )
-                task["inputs"]["run"] = original["task"]["inputs"]["run"]
         (
             self.repo / "workflows/workflow-node-role-certificate-publish.yaml"
         ).write_text(
@@ -298,12 +285,6 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         self.globals["hosts"][0]["transport"]["hostKeys"] = []
         self.run_role(success=False)
         self.assertFalse(self.current.exists())
-
-    # Only the role child is exercised by this derived fixture.
-    test_fresh_current_and_removal_use_official_ssh_and_one_parent_signer = None
-    test_missing_pins_refuse_before_any_remote_action = None
-    test_signer_refusal_makes_no_publication_or_hidden_callback = None
-    test_native_inspection_resume_preserves_the_key_without_signing_again = None
 
 
 if __name__ == "__main__":

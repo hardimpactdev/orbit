@@ -17,10 +17,12 @@ jobs:
   target: orbit-node-209
   steps:
   - name: capture
+    # One stable record per channel; a late older revision never replaces a newer one.
+    guard: ${{ data.latest("observation-context-" + inputs.channel, "context").?attributes.?revision.orValue(0) >= inputs.revision }}
     task:
       type: behavior
       behaviorType: '@nckrtl/observation-schedule'
-      behaviorName: ${{ "observation-context-" + inputs.channel + "-" + string(inputs.revision) }}
+      behaviorName: ${{ "observation-context-" + inputs.channel }}
       methodName: capture
       inputs:
         channel: ${{ inputs.channel }}
@@ -29,3 +31,4 @@ jobs:
         captured_at: ${{ inputs.captured_at }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent }}
+queueTimeout: 60

@@ -698,6 +698,8 @@ Cancel or complete the group of a missing VM to destroy its Node, as for [a VM t
 
 The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays).
 
+A successful Incus sweep releases a failed build's cleanup claim only after its final observation contains none of that build's builder, attempt or smoke names. Failed, cancelled or incomplete sweeps keep the claim. The failed build can then start a fresh attempt through normal resume or recipe retry.
+
 It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Admission records retirement of expired nonrunning builds before dispatch, using the same conditional update as resume. The native run deletes only those admitted builders. Captured maximum VM and build IDs exclude resources allocated after admission. The sweep preserves live VMs, running builds and names that the operator owns. An absent build row permits cleanup only within those captured ID limits.
 
 The sweep never changes another project, an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
@@ -1045,6 +1047,8 @@ Run `php artisan task-vms:build-recipe` on the Gateway to queue the current reci
 Use `php artisan task-vms:build-recipe --rebuild` after an image-builder fix, or whenever the current recipe needs a fresh image. It rebuilds the unchanged recipe from stock on every configured Incus host and UpCloud. It cannot be combined with `--retry`. It refuses while a build for the same recipe is running or its UpCloud rebuild request is pending, or while a configured Incus host is building another recipe.
 
 Each candidate runs the normal build, verify, smoke, topology-seed (Incus), and promote path with the desired-recipe and generation fences. A cold rebuild stays inside the current desired generation: it does not resume a halted Node rollout or resolve its incident. If the deployed recipe is not yet desired, reconcile it before requesting a cold rebuild.
+
+A failed or cancelled image Operation also marks its owning build attempt failed, including a Gateway run-budget timeout. That records failure, not native termination: the Operation keeps its native-settlement hold until the shared reader verifies the terminal run. When the shared reader corrects an expiry to verified native success, the same attempt and recipe become succeeded with the already promoted fingerprint; recipe retry reuses that image.
 
 A failed candidate leaves the promoted image in service. A newer promoted build for the same host and recipe resolves the failed candidate's image-build incident. Promotion swaps the image only after the candidate passes. Build records and candidate aliases distinguish rebuilds of the same recipe; the recipe identity used by Nodes does not change.
 

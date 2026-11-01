@@ -65,7 +65,7 @@ These commands stay in the scheduler and never go to the queue, also while it is
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-Observation is explicitly admitted through the configured control-plane peer. Fleet collection and the Horizon health admission use the native Doctor workflow. Maintenance and retention admission use `operation-observation-maintain`, with the full public intent captured before submission. All reads run on Node 209 through official `@swamp/ssh` and the stored target host key. The existing shared terminal subscriber records one typed result.
+Observation is explicitly admitted through the configured control-plane peer. Fleet collection and the Horizon health admission use the native Doctor workflow. Maintenance and retention admission use `operation-observation-maintain`, with the full public intent captured before submission. All reads run on Node 209 through official `@swamp/ssh` and the stored target host key. Each read has a 10-second connect timeout and a 60-second limit. A stopped or stalled Node fails only its own reads, which become unverifiable Doctor issues, and the pass still completes. The existing shared terminal subscriber records one typed result.
 
 Maintenance reads Gateway host uptime/load and the registered Horizon unit's memory, CPU and task counters. It reports how many admitted running Activities meet the interrupted cutoff, capped at 500. Retention reports eligible batch and failed-job counts using the configured 24-hour and 168-hour defaults. Tasks being disabled suppresses the batch count. Eligibility uses the admitted timestamp and strict cutoffs; it does not change Activity status or delete records. Failed reads are reported as unavailable rather than replaced with zero observations.
 
@@ -252,7 +252,9 @@ Fleet and Horizon health collection use native Doctor on Node 209. The Gateway p
 
 Horizon context uses a bounded public metadata notification directly, so its monitoring does not depend on Horizon workers. Fleet uses that same notification when the queue is absent. It waits for no worker or start confirmation and submits no host work. Notification failures are logged and never fail committed API writes; a failed native tick requests fresh context.
 
-Each capture is immutable, so delayed publication cannot replace a newer revision. Unchanged captures are reused for up to 30 minutes. Native context is unavailable after one hour without a refresh. Native ticks reject missing or expired context; the Gateway rejects changed expectations before recording recovery. Registry commits that keep the expectations hash do not replace the context; Activity, assistance and cursor commits leave in-flight host reads valid. Results carry their original log cursor for the existing cursor comparison. Fleet and Horizon have separate replay markers.
+Each channel keeps one context record, and its newest version is the one a tick reads. The capture step skips a revision older than the stored one, so delayed publication cannot replace a newer revision. Unchanged captures are reused for up to 30 minutes. Native context is unavailable after one hour without a refresh.
+
+Native ticks reject missing or expired context; the Gateway rejects changed expectations before recording recovery. Registry commits that keep the expectations hash do not replace the context; Activity, assistance and cursor commits leave in-flight host reads valid. Results carry their original log cursor for the existing cursor comparison. Fleet and Horizon have separate replay markers.
 
 The automatic cadence reads native service and runtime facts; stored agent-view freshness stays in explicit Doctor reads. Each marker, its fingerprints and collector cursors commit together. Cursor changes republish the next public context. An unavailable context never becomes a healthy observation.
 

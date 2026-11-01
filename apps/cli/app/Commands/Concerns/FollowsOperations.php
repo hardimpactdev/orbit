@@ -161,6 +161,26 @@ trait FollowsOperations
             }
         }
 
+        if ($operation->kind === 'instance.sync_environment') {
+            $refresh = $operation->result['runtime_refresh'] ?? null;
+            $restarted = $operation->result['restarted_process_ids'] ?? null;
+
+            if (is_string($refresh)) {
+                $this->writeHumanMessage('Production PHP: '.match ($refresh) {
+                    'config_cache_and_opcache_refreshed' => 'config cache rebuilt; FPM opcache reset',
+                    'opcache_refreshed_config_uncached' => 'FPM opcache reset; config remains uncached',
+                    'skipped_unchanged' => 'refresh skipped: environment file unchanged',
+                    'skipped_no_php_version' => 'refresh skipped: no PHP version selected',
+                    'skipped_no_current_release' => 'refresh skipped: no current release',
+                    default => $refresh,
+                });
+            }
+
+            if (is_array($restarted)) {
+                $this->writeHumanMessage('Processes restarted: '.($restarted === [] ? 'none' : implode(', ', array_filter($restarted, is_int(...)))));
+            }
+        }
+
         $selected = $operation->result['selected_release'] ?? null;
 
         if (is_string($selected)) {

@@ -52,10 +52,13 @@ jobs:
       behaviorName: ${{ "doctor-read-" + run.id + "-" + string(self._index) }}
       globalArgs:
         name: ${{ "doctor-read-" + run.id + "-" + string(self._index) }}
+        # F8: a stopped or stalled Node fails this read within its bound.
+        defaultTimeoutSec: 60
         transport:
           kind: ssh
           user: ${{ self.read.ssh.user }}
           port: ${{ self.read.ssh.port }}
+          connectTimeoutSec: 10
           identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
         hosts:
         - name: target
@@ -90,10 +93,13 @@ jobs:
       methodName: script
       globalArgs:
         name: ${{ "doctor-logs-" + run.id + "-" + string(self._index) }}
+        # F8: a stopped or stalled Node fails this read within its bound.
+        defaultTimeoutSec: 60
         transport:
           kind: ssh
           user: ${{ self.node.ssh.user }}
           port: ${{ self.node.ssh.port }}
+          connectTimeoutSec: 10
           identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
         hosts:
         - name: target
@@ -128,3 +134,4 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         results: ${{ steps }}
+queueTimeout: 60

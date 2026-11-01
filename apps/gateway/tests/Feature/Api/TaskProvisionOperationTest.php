@@ -251,3 +251,38 @@ it('rejects native success without confirmed VM readiness', function (): void {
         ->toThrow(ResourceOperationException::class);
     expect($this->group->fresh()->status->value)->toBe('reserved')->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning);
 });
+
+it('refuses the canonical proof Project before placement when its sandbox credential is absent', function (): void {
+    $proof = Project::query()->forceCreate(['id' => 62, 'name' => 'Proof', 'type' => 'monorepo', 'slug' => 'swamp-proof',
+        'repository_url' => 'https://github.com/example/proof.git', 'default_branch' => 'main', 'task_workspace_routed' => false]);
+    $this->group->update(['project_id' => $proof->id]);
+    config(['swamp.proof_club_api_key' => '']);
+
+    expect(fn () => app(StartTaskProvisionAction::class)->execute($this->group->fresh(), 'fixture', null))
+        ->toThrow(ResourceOperationException::class, 'Gateway-held sandbox club credential');
+    expect($this->vm->fresh()->node_id)->toBeNull()->and(Instance::query()->count())->toBe(0)
+        ->and(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([])
+        ->and($this->group->fresh()->status->value)->toBe('todo');
+});
+
+it('copies the club credential only for the exact canonical proof Project and exposes only its descriptor', function (int $id, string $slug, bool $expected): void {
+    $proof = Project::query()->forceCreate(['id' => $id, 'name' => 'Proof', 'type' => 'monorepo', 'slug' => $slug,
+        'repository_url' => 'https://github.com/example/proof.git', 'default_branch' => 'main', 'task_workspace_routed' => false]);
+    $this->group->update(['project_id' => $proof->id]);
+    $credential = 'sandbox-test-'.bin2hex(random_bytes(24));
+    config(['swamp.proof_club_api_key' => $credential]);
+
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group->fresh(), 'fixture', null);
+    $envelope = app(TaskProvisionProjection::class)->input($operation);
+    $copies = collect($this->socket->sent)->filter(static fn (array $message): bool => ($message['type'] ?? null) === 'vault.put'
+        && ($message['payload']['key'] ?? null) === 'swamp-proof-club-api-key');
+
+    expect(isset($envelope['execution_secrets']['proof_club']))->toBe($expected)
+        ->and($copies)->toHaveCount($expected ? 1 : 0)
+        ->and(isset($operation->input['proof_club_required']))->toBe($expected)
+        ->and(json_encode($operation->fresh()->toArray(), JSON_THROW_ON_ERROR))->not->toContain($credential)
+        ->and(json_encode($envelope, JSON_THROW_ON_ERROR))->not->toContain($credential);
+    if ($expected) {
+        expect($envelope['execution_secrets']['proof_club'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key']);
+    }
+})->with([[62, 'swamp-proof', true], [62, 'another-project', false], [63, 'swamp-proof', false]]);

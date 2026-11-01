@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs\Operations;
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -18,7 +20,7 @@ final class ProjectSwampTerminal implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $operationId, public string $runId, public ?string $status)
+    public function __construct(public int $operationId, public string $runId, public ?string $status, public bool $atDeadline = false)
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
     }
@@ -30,6 +32,16 @@ final class ProjectSwampTerminal implements ShouldQueue
         if ($selector === null) {
             return;
         }
-        $step->projectTerminal($operation, ['id' => $this->runId, ...($this->status !== null ? ['status' => $this->status] : [])], $selector);
+        try {
+            $step->projectTerminal($operation, ['id' => $this->runId, ...($this->status !== null ? ['status' => $this->status] : [])], $selector, $this->atDeadline);
+        } catch (ResourceOperationException $exception) {
+            if (! $this->atDeadline) {
+                throw $exception;
+            }
+            $expired = app(ExpireOperationAction::class)->execute($operation->refresh());
+            if (! ExpireOperationAction::awaitsSettlement($expired)) {
+                throw $exception;
+            }
+        }
     }
 }
