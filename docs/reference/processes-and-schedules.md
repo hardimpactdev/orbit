@@ -56,6 +56,8 @@ Production deployment pauses after PHP refresh, installs the captured Processes,
 
 Transfer validates both captured placements before native submission while the Instance still belongs to its origin. A changed origin, member ownership, member set or specification refuses submission. Public definitions use the existing renderers and account placeholders; official SSH resolves the account on the target. Native failure retains applied state for forward convergence.
 
+Run `deno test -A swamp/tests/shared_installers_native_test.ts` from the repository root on a checkout with the pinned Swamp CLI on `PATH` (or `SWAMP_BIN`) and the pinned SSH/cfgmgmt extensions installed. This native integration suite executes child workflows and the full transfer DAG. Hosted Operations shards run the Deno unit tests without that native runtime.
+
 ## Owners
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.

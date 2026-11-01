@@ -1,9 +1,10 @@
+// Native integration suite: requires the pinned Swamp binary and installed SSH/cfgmgmt extensions.
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { fromFileUrl } from "jsr:@std/path@1.1.2";
 
 for (const [name, module, directory] of [
-  ["Process definition, deploy and transfer installer parents", "process_instance_install_native_test", "."],
-  ["full Instance transfer ordering and recovery", "transfer_native_test", "../instance-lifecycle/"],
+  ["Process definition, deploy and transfer installer parents", "process_instance_install_native_test", "../extensions/behaviors/operations/processes-schedules/"],
+  ["full Instance transfer ordering and recovery", "transfer_native_test", "../extensions/behaviors/operations/instance-lifecycle/"],
 ]) {
   Deno.test("native " + name, async () => {
     const result = await new Deno.Command("/usr/bin/python3", {
