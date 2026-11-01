@@ -1,0 +1,72 @@
+{
+  "kind": "instance.create",
+  "workflow": "operation-instance-create",
+  "topology": "app-dev",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 600,
+  "request": {
+    "argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "proof-${proof.run}", "--root=source-setup", "--branch=proof-${proof.run}", "--json"],
+    "operation": "$.id"
+  },
+  "expect": {
+    "status": "failed",
+    "outputs": {
+      "job": "create",
+      "step": "finish-setup-1-0",
+      "match": {
+        "exitCode": 37
+      }
+    }
+  },
+  "prepare": [
+    {
+      "argv": ["orbit", "project:create", "proof-setup-fails-then-skips-${proof.run}", "node-package", "${proof.repo.url}", "--root=source-setup", "--default-branch=main", "--source-access=github_app", "--json"],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "first-marker", "--project=${capture.project_id}", "--command=printf first > .orbit-proof-first", "--timeout=10", "--json"]
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "expected-failure", "--project=${capture.project_id}", "--command=printf failed > .orbit-proof-failed; printf \"expected-setup-failure\\n\" >&2; exit 37", "--timeout=10", "--json"]
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "must-skip", "--project=${capture.project_id}", "--command=printf forbidden > .orbit-proof-skipped", "--timeout=10", "--json"]
+    }
+  ],
+  "envelope": {
+    "project_id": "${capture.project_id}",
+    "node_id": "${topology.app-dev.node_id}",
+    "root": "source-setup",
+    "branch_override": "proof-${proof.run}",
+    "repository": "${proof.repo.url}",
+    "default_branch": "main"
+  },
+  "phases": [
+    {
+      "name": "source",
+      "job": "prepare",
+      "step": "source-result",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "setup",
+      "job": "create",
+      "step": "finish-setup-1-0",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": ["python3", "-I", "swamp/proof/instance.create/outage_parity.py", "setup-fails-then-skips"],
+    "cases": [
+      "exact-normal-operation-terminal-projection",
+      "setup-fails-then-skips",
+      "later-setup-command-not-executed",
+      "github_token_path: not_exercised"
+    ]
+  },
+  "limitations": [
+    "github_token_path: not_exercised (topology repositories are not GitHub)"
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "kind": "instance.create",
+  "workflow": "operation-instance-create",
+  "topology": "app-dev",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 600,
+  "request": {
+    "argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "proof-${proof.run}", "--root=setup-macros", "--branch=proof-${proof.run}", "--json"],
+    "operation": "$.id"
+  },
+  "expect": {
+    "status": "failed",
+    "outputs": {
+      "job": "create",
+      "step": "finish-setup-1-0",
+      "match": {
+        "exitCode": 31
+      }
+    }
+  },
+  "prepare": [
+    {
+      "argv": ["orbit", "project:create", "proof-setup-macros-${proof.run}", "node-package", "${proof.repo.url}", "--root=setup-macros", "--default-branch=main", "--source-access=github_app", "--json"],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "import-ci-caches", "--project=${capture.project_id}", "--command=@orbit/ci-caches", "--timeout=10", "--json"]
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "macro-tail", "--project=${capture.project_id}", "--command=printf expanded > .orbit-proof-macro; python3 -c 'import sys; sys.stderr.write(\"macro-padding\\n\"*400+\"macro-tail-marker\\n\"); sys.exit(31)'", "--timeout=10", "--json"]
+    }
+  ],
+  "envelope": {
+    "project_id": "${capture.project_id}",
+    "node_id": "${topology.app-dev.node_id}",
+    "root": "setup-macros",
+    "branch_override": "proof-${proof.run}",
+    "repository": "${proof.repo.url}",
+    "default_branch": "main"
+  },
+  "phases": [
+    {
+      "name": "source",
+      "job": "prepare",
+      "step": "source-result",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "setup",
+      "job": "create",
+      "step": "finish-setup-1-0",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": ["python3", "-I", "swamp/proof/instance.create/outage_parity.py", "setup-macros"],
+    "cases": [
+      "exact-normal-operation-terminal-projection",
+      "setup-macros",
+      "canonical-ci-caches-macro-expanded",
+      "failed-command-stderr-tail-bounded"
+    ]
+  }
+}

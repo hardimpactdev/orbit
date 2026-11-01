@@ -1,0 +1,73 @@
+{
+  "kind": "instance.create",
+  "workflow": "operation-instance-create",
+  "topology": "app-dev",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 600,
+  "request": {
+    "argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "proof-${proof.run}", "--root=setup-redaction", "--branch=proof-${proof.run}", "--json"],
+    "operation": "$.id"
+  },
+  "expect": {
+    "status": "failed",
+    "outputs": {
+      "job": "create",
+      "step": "finish-setup-1-0",
+      "match": {
+        "exitCode": 47
+      }
+    }
+  },
+  "prepare": [
+    {
+      "argv": ["orbit", "project:create", "proof-setup-redaction-${proof.run}", "node-package", "${proof.repo.url}", "--root=setup-redaction", "--default-branch=main", "--source-access=github_app", "--json"],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "seed-private-values", "--project=${capture.project_id}", "--command=python3 setup-redaction/prepare_values.py", "--timeout=10", "--json"]
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "expected-private-failure", "--project=${capture.project_id}", "--command=python3 setup-redaction/fail_redaction.py", "--timeout=10", "--json"]
+    },
+    {
+      "argv": ["orbit", "instance:setup-step:create", "must-skip", "--project=${capture.project_id}", "--command=printf forbidden > .orbit-proof-skipped", "--timeout=10", "--json"]
+    }
+  ],
+  "envelope": {
+    "project_id": "${capture.project_id}",
+    "node_id": "${topology.app-dev.node_id}",
+    "root": "setup-redaction",
+    "branch_override": "proof-${proof.run}",
+    "repository": "${proof.repo.url}",
+    "default_branch": "main"
+  },
+  "phases": [
+    {
+      "name": "source",
+      "job": "prepare",
+      "step": "source-result",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "setup",
+      "job": "create",
+      "step": "finish-setup-1-0",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": ["python3", "-I", "swamp/proof/instance.create/outage_parity.py", "setup-redaction"],
+    "cases": [
+      "exact-normal-operation-terminal-projection",
+      "setup-redaction",
+      "tab-escape-redacted",
+      "unspaced-hash-redacted",
+      "non-utf8-never-assembles-secret",
+      "no-known-eight-byte-fragment",
+      "stderr-at-most-4096-bytes",
+      "stdout-discarded"
+    ]
+  }
+}

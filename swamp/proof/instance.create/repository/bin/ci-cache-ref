@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from pathlib import Path
+
+Path(".orbit-proof-ci-cache-tool").write_text("imported\n")

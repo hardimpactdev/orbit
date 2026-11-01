@@ -1,0 +1,63 @@
+{
+  "kind": "instance.create",
+  "workflow": "operation-instance-create",
+  "topology": "app-dev",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 600,
+  "request": {
+    "argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "proof-${proof.run}", "--root=source-setup", "--branch=main", "--json"],
+    "operation": "$.id"
+  },
+  "expect": {
+    "status": "failed",
+    "outputs": {
+      "job": "create",
+      "step": "finish-result",
+      "match": {
+        "ready": false
+      }
+    }
+  },
+  "prepare": [
+    {
+      "argv": ["orbit", "project:create", "proof-branch-in-use-${proof.run}", "node-package", "${proof.repo.url}", "--root=source-setup", "--default-branch=main", "--source-access=github_app", "--json"],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "default", "--root=source-setup", "--json"],
+      "capture": {
+        "default_instance_id": "$.target_id"
+      }
+    }
+  ],
+  "envelope": {
+    "project_id": "${capture.project_id}",
+    "node_id": "${topology.app-dev.node_id}",
+    "root": "source-setup",
+    "branch_override": "main",
+    "repository": "${proof.repo.url}",
+    "default_branch": "main"
+  },
+  "phases": [
+    {
+      "name": "source-branch-refusal",
+      "job": "prepare",
+      "step": "source-branch-available",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": ["python3", "-I", "swamp/proof/instance.create/outage_parity.py", "branch-in-use"],
+    "cases": [
+      "exact-normal-operation-terminal-projection",
+      "branch-in-use",
+      "owned-default-worktree-unchanged",
+      "github_token_path: not_exercised"
+    ]
+  },
+  "limitations": [
+    "github_token_path: not_exercised (topology repositories are not GitHub)"
+  ]
+}
