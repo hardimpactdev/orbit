@@ -1,7 +1,7 @@
 import { stringify } from "jsr:@std/yaml@1.0.12";
 type Fields = Record<string, unknown>;
 const ex = (source: string) => "${{ " + source + " }}";
-const placed = { target: "orbit-node-209" };
+const placed = { target: "orbit-node-209", queueTimeout: 30 };
 const settled = {
     type: "or",
     conditions: [{ type: "succeeded" }, { type: "skipped" }],
@@ -121,9 +121,6 @@ function workflow(
             : "";
         const tokenPhase = name === "operation-node-remove" &&
             [
-                "worker_tokens",
-                "access_tokens",
-                "tokens",
                 "revoke_worker",
                 "revoke_access",
             ].includes(String(step.name));
@@ -141,8 +138,6 @@ function workflow(
         const step = steps[index];
         const count = name === "operation-node-remove" && index === 0
             ? 4
-            : step.name === "worker_tokens"
-            ? 3
             : String(step.name).endsWith("_assets") ||
                     step.name === "prepare_result"
             ? 2
@@ -462,95 +457,37 @@ export function nodeRemovalWorkflow() {
             },
         },
     });
-    const cli = "/home/orbit/.local/bin/swamp";
-    const cliFlags =
-        " --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json";
-    const shell = (name: string, run: string, previous: string): Fields => ({
-        name,
-        ...placed,
-        writes: true,
-        dependsOn: dep(previous),
-        task: {
-            type: "behavior",
-            behaviorType: "command/shell",
-            behaviorName: ex(JSON.stringify(name + "-") + "+run.id"),
-            methodName: "execute",
-            inputs: {
-                run,
-                env: {
-                    SWAMP_HOME: "/home/orbit/.swamp",
-                    SWAMP_CONFIG_DIR: "/home/orbit/.config/swamp",
-
-                    SWAMP_NO_UPDATE_CHECK: "1",
-                    SWAMP_NO_TELEMETRY: "1",
+    for (
+        const [name, kind, previous] of [
+            ["revoke_worker", "worker", "reload_units"],
+            ["revoke_access", "access", "revoke_worker"],
+        ]
+    ) {
+        steps.push({
+            name,
+            ...placed,
+            writes: true,
+            dependsOn: dep(previous),
+            task: {
+                type: "behavior",
+                behaviorType: "command/shell",
+                behaviorName: ex(JSON.stringify(name + "-") + "+run.id"),
+                methodName: "execute",
+                inputs: {
+                    run: '/usr/bin/timeout 30 /usr/bin/python3 -I "$REVOKE_SCRIPT" ' +
+                        kind + ' "$NODE_ID"',
+                    env: {
+                        REVOKE_SCRIPT: ex("steps.assets.outputs.revoke_token"),
+                        NODE_ID: ex("string(inputs.intent.node_id)"),
+                        SWAMP_HOME: "/home/orbit/.swamp",
+                        SWAMP_CONFIG_DIR: "/home/orbit/.config/swamp",
+                        SWAMP_NO_UPDATE_CHECK: "1",
+                        SWAMP_NO_TELEMETRY: "1",
+                    },
                 },
             },
-        },
-    });
-    steps.push(
-        shell(
-            "worker_tokens",
-            cli + " worker token list" + cliFlags,
-            "reload_units",
-        ),
-    );
-    steps.push(
-        shell(
-            "access_tokens",
-            cli + " access token list" + cliFlags,
-            "worker_tokens",
-        ),
-    );
-    steps.push({
-        ...resource("tokens", "tokens", {
-            node_id: ex("inputs.intent.node_id"),
-            worker_stdout: ex("steps.worker_tokens.outputs.stdout"),
-            server_stdout: ex("steps.access_tokens.outputs.stdout"),
-        }),
-        dependsOn: dep("access_tokens"),
-    });
-    steps.push({
-        ...shell(
-            "revoke_worker",
-            cli + " worker token revoke '${{ self.token }}'" + cliFlags,
-            "tokens",
-        ),
-        forEach: {
-            item: "token",
-            in: ex(
-                "inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.worker",
-            ),
-        },
-        task: {
-            ...(shell(
-                "revoke_worker",
-                cli + " worker token revoke '${{ self.token }}'" + cliFlags,
-                "tokens",
-            ).task as Fields),
-            behaviorName: ex('"revoke-worker-"+run.id+"-"+string(self._index)'),
-        },
-    });
-    steps.push({
-        ...shell(
-            "revoke_access",
-            cli + " access token revoke '${{ self.token }}'" + cliFlags,
-            "revoke_worker",
-        ),
-        forEach: {
-            item: "token",
-            in: ex(
-                "inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.server",
-            ),
-        },
-        task: {
-            ...(shell(
-                "revoke_access",
-                cli + " access token revoke '${{ self.token }}'" + cliFlags,
-                "revoke_worker",
-            ).task as Fields),
-            behaviorName: ex('"revoke-access-"+run.id+"-"+string(self._index)'),
-        },
-    });
+        });
+    }
     steps.push(
         ...action(
             "keys",
@@ -701,9 +638,6 @@ export function nodeRemovalWorkflow() {
             },
         },
     });
-    for (const name of ["roles", "revoke_worker"]) {
-        delete steps.find((s) => s.name === name)!.dependsOn;
-    }
     return workflow(
         "operation-node-remove",
         "450e57df-e174-4ad6-bba5-306c2581d919",

@@ -13,7 +13,6 @@ use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
@@ -34,8 +33,7 @@ final readonly class NodeRemovalInput
         $ssh = app(SwampSshExecutionInput::class);
         $nativeRoles = app(NativeNodeRoleRemovalInput::class);
         $machineDeleted = ($snapshot['machine_deleted'] ?? false) === true;
-        $taskVmGuest = TaskVm::query()->where('node_id', $node->id)->exists()
-            && ! app(NodeWorkerRollout::class)->allows($node);
+        $taskVmGuest = TaskVm::query()->where('node_id', $node->id)->exists();
         $roles = $node->roles()->orderBy('id')->lockForUpdate()->get();
         $before = [];
         $removingRoutes = $removingWorkspace === null ? [] : app(NodeRemovalPolicy::class)->workspaceRouteIds($node, $removingWorkspace);
