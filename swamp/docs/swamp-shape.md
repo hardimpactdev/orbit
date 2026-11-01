@@ -22,10 +22,10 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - Secrets are never inputs. Pass the vault name and key name, and resolve them in the step.
    - Steps do not call back to the Gateway to read intent or report progress. There is no binding wait.
 2. **The Gateway records the result from the run.** Steps return outputs. The Gateway projects the terminal result of the run. It does not re-validate it.
-3. **One action is one step.**
-   - Run operational commands as placed `command/shell` steps: `type: behavior`, `methodName: execute`, `run: ...`.
+3. **One action group is one step.**
+   - Run each legacy phase from a script file as one placed `command/shell` or official `@swamp/ssh` step (PLAN F9). Keep its commands and edge cases together.
    - Use a typed TypeScript behavior only when you need a typed, schema-validated result.
-   - A behavior that runs many actions in sequence is a workflow in disguise. Split it into steps.
+   - Separate phases, Node changes and guards remain visible native steps. A change to the legacy phase sequence needs a written reason in the PR.
 4. **Scripts are visible and linted.**
    - The script text lives in the workflow or the behavior definition (`run: |`), or in a file that Swamp ships to the worker, never inside a TypeScript string.
    - CI runs shellcheck (and ruff for Python) on all of it.
@@ -41,7 +41,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - **Tolerated failure:** `allowFailure`.
    - **Recovery:** `swamp workflow resume`; no hand-written retry loop.
    - **Parallelism:** `concurrency`.
-   - **Waiting for a worker:** `queueTimeout`; inherit the 600s default.
+   - **Waiting for a worker:** set `queueTimeout` on every step per PLAN F8 and the measured kind budget.
    - **Waiting for a person:** `manual_approval`.
    - **Child work:** `type: workflow`.
 
