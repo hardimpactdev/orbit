@@ -1,0 +1,25 @@
+sequenceDiagram
+  %% Target design from ADR 0244: native Swamp schedules, nothing installed on the Node.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: schedule:enable<br/>{schedule: 7f3c…}
+  Note over GW: Mark the Schedule enabled<br/>calendar, command, budget
+  GW->>SW: Publish the trigger<br/>workflow.trigger.set
+  SW-->>GW: trigger active
+  GW-->>CLI: Schedule enabled<br/>next fire 03:00
+  loop each calendar fire
+    Note over SW: serve fires a root run<br/>task-command-run
+    SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
+    N-->>SW: exit code, output
+    GW->>SW: Read new runs<br/>shared run reader
+    SW-->>GW: run started / finished
+    Note over GW: Record the task<br/>trigger: schedule
+  end

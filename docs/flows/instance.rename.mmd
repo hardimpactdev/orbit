@@ -1,0 +1,22 @@
+sequenceDiagram
+  %% Target design: DECISIONS scope (instance.rename record-only per docs/cli/instance.mdx, R1); a new domain admits route.update.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  CLI->>GW: instance:rename 42<br/>{branch: t3code/login, domain?}
+  Note over GW: Check active dev Instance<br/>no clone, no transfer
+  alt rename is valid
+    Note over GW: Record the branch<br/>R1 · no task, no run
+    opt new domain given
+      Note over GW: Admit a route.update<br/>task #5160 · own chart
+      GW->>SW: Start route.update run<br/>operation-route-update
+    end
+    GW-->>CLI: 200 Renamed<br/>Instance 42 · task #5160 if any
+  else not a dev Instance
+    GW--xCLI: 422 Refused<br/>error_code, nothing changed
+  end

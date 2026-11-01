@@ -1,0 +1,34 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, single-swamp-node (@swamp/ssh from 209), F9 rollback phases; DECISIONS round 2 (port with deploy, fix php_input/runtime_definitions, admit instead of refuse) + R4.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-prod Node<br/>reached over ssh
+  CLI->>GW: instance:rollback<br/>{instance: 42, release: r12}
+  Note over GW: Check release, admit it<br/>lock Instance, task #5133
+  GW->>SW: Start run, full intent<br/>php_input, runtime_definitions
+  GW-->>CLI: 202 Accepted<br/>operation #5133
+  SW->>N: Read current and target<br/>@swamp/ssh · target must exist
+  SW->>N: Switch current release<br/>atomic swap, receipt must match
+  opt Instance has PHP
+    SW->>N: Refresh PHP-FPM<br/>converge, OPcache reset in 30 s
+  end
+  SW->>N: Restart Processes<br/>restart_on_deploy only
+  alt all steps succeed
+    SW-->>GW: Run succeeded<br/>selected release, commit
+    Note over GW: Record rollback deploy<br/>block old commits, pause auto
+  else a step fails
+    N--xSW: exit ≠ 0 or timeout
+    SW--xGW: Run failed<br/>failed_step, read-back selection
+    Note over GW: Record failed rollback<br/>block commits, pause auto
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5133
+    GW-->>CLI: status + result
+  end

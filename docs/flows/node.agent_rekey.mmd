@@ -1,0 +1,27 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + decision agent-observer-swamp-acts; the key stays on the Node, R2.
+  %% status: draft
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  Note over GW: Operator starts recovery<br/>orbit:node-agent-rekey 12 5130
+  Note over GW: Bind open converge #5130<br/>same Node, user, observer pin
+  Note over GW: Record task, lock Node<br/>task #5134 · no secret in intent
+  GW->>SW: Start run, full intent<br/>operation-node-agent-rekey
+  SW->>N: Look up the Node account<br/>@swamp/ssh · getent passwd orbit
+  SW->>N: Write a new observer key<br/>0600 file, never leaves the Node
+  SW->>N: Restart the observer<br/>systemctl restart orbit-agent
+  alt observer back up
+    N-->>SW: verifier, SHA-256 only
+    SW-->>GW: Run succeeded<br/>terminal event · verifier_hash
+    Note over GW: Store the new verifier<br/>agent_secret_hash · old key void
+    N->>GW: Observer reports state<br/>new key · read-only, no actions
+  else write or restart fails
+    N--xSW: exit ≠ 0
+    SW--xGW: Run failed<br/>operation.native_failed
+    Note over GW: Keep the old verifier<br/>converge #5130 stays open
+  end

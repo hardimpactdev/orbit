@@ -1,0 +1,37 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run) + 2 (DNS held).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane S icon=server pill=target tone=amber
+  %% lane D icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant S as Source Node<br/>app-dev over ssh
+  participant D as Destination<br/>app-dev over ssh
+  CLI->>GW: instance:transfer 42<br/>{node: 15, sqlite_source_path?}
+  Note over GW: Preflight, record intent<br/>Route, Process, Schedule plan
+  GW->>SW: Start run, full intent<br/>operation-instance-transfer
+  GW-->>CLI: 202 Accepted<br/>operation #5133
+  SW->>S: Stop runtime, archive<br/>git + .env, SQLite if chosen
+  SW->>D: Copy, install the archive<br/>@swamp/ssh copy via 209, sha256
+  SW->>D: Start Processes, Schedules<br/>process/schedule.create shape
+  SW->>D: Make a CSR<br/>key stays on the destination
+  SW->>GW: Ask to sign the CSR<br/>certificate-sign primitive
+  Note over SW: Move the Route<br/>route-mutation-forward · DNS held
+  alt cutover ready
+    SW->>S: Retire source runtime<br/>remove Processes, Schedules
+    SW-->>GW: Run succeeded<br/>terminal event · transfer.result
+    Note over GW: Instance 42 on Node 15<br/>Route moved · task succeeded
+  else a step fails before cutover
+    SW->>S: Restore source runtime<br/>route-mutation-restore
+    SW--xGW: Run failed<br/>failed_step, error_code
+    Note over GW: Instance stays on source<br/>destination discarded
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5133
+    GW-->>CLI: status + result
+  end

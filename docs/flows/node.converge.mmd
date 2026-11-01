@@ -1,0 +1,34 @@
+sequenceDiagram
+  %% Target design: ADR 0243/0244 + decisions agent-observer-swamp-acts, single-swamp-node, R2, R4.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: node:converge 12<br/>--force (optional)
+  Note over GW: Render desired footprint<br/>Caddyfile, DNS, PHP, digests
+  Note over GW: Record task, lock Node<br/>task #5132 · node-converge:12
+  GW->>SW: Start run, full intent<br/>operation-node-converge-direct
+  GW-->>CLI: 202 Accepted<br/>operation #5132
+  SW->>N: Install pinned observer<br/>curl, sha256 check, install
+  SW->>N: Apply changed artifacts<br/>Caddy, DNS, PHP, tmpfiles, residue
+  SW->>N: Configure the observer<br/>same key, read-only, restart
+  alt every artifact applied
+    N-->>SW: digest per artifact
+    SW-->>GW: Run succeeded<br/>terminal event · artifacts
+    Note over GW: Record footprint digests<br/>NodeFootprint for Node 12
+  else an artifact fails
+    N--xSW: step exits ≠ 0
+    SW->>N: Restore DNS, clean up<br/>DNS backup, rm staged binary
+    SW--xGW: Run failed<br/>failed_artifact, error_code
+    Note over GW: Record finished artifacts<br/>next converge retries the rest
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #OP
+    GW-->>CLI: status + result
+  end

@@ -1,0 +1,26 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task; DECISIONS round 2 (websocket.sync: no polling step, Gateway closes the task from Reverb's own reports, R1 no run).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant N as Reverb<br/>on websocket Node
+  CLI->>GW: websocket:sync<br/>{wait: 60}
+  Note over GW: Pin current registry<br/>revision 18 · R1, no run
+  GW-->>CLI: 202 Accepted<br/>task #5125
+  loop each Reverb reconcile, 30 s
+    N->>GW: Pull the registry<br/>Reverb reconcile
+    N->>GW: Report applied revision<br/>per process, epoch
+  end
+  alt every process applied 18
+    Note over GW: Close task, succeeded<br/>backend: applied
+  else stale, superseded, timeout
+    Note over GW: Close task, failed<br/>websocket.registry_pending
+  end
+  loop every 2 s until terminal or --wait
+    CLI->>GW: operation:show #5125
+    GW-->>CLI: status + result
+  end

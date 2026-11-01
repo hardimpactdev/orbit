@@ -1,0 +1,36 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + analytics-plausible-via-swamp + gateway-root-of-trust-keys + single-swamp-node; DECISIONS 2 (DNS publication held).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane P icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Route Node<br/>Caddy over ssh
+  participant P as Plausible<br/>HTTPS from 209
+  CLI->>GW: instance:analytics:enable<br/>{instance: 42}
+  Note over GW: Validate, plan tracking<br/>certs, Caddy, DNS deltas
+  GW->>SW: Store Plausible creds<br/>analytics-plausible-<uuid>
+  GW->>SW: Start run, full intent<br/>operation-analytics-enable-direct
+  GW-->>CLI: 202 Accepted<br/>task #5126
+  SW->>P: Reconcile site and goals<br/>command/shell · site.py
+  SW->>N: Request a CSR<br/>route-certificate-publish
+  SW->>GW: Ask to sign the CSR<br/>certificate-sign primitive
+  GW-->>SW: Signed leaf<br/>Orbit CA stays in Gateway
+  SW->>N: Publish Caddy, probe<br/>operation-route-caddy-delta
+  Note over SW: DNS publication held<br/>native-dns-takeover-held
+  alt all jobs succeed
+    SW-->>GW: Run succeeded<br/>terminal event + result_json
+    Note over GW: Tracking Routes active<br/>store site binding
+  else a job fails
+    SW--xGW: Run failed<br/>error_code
+    Note over GW: Routes unchanged<br/>task failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5126
+    GW-->>CLI: status + result
+  end

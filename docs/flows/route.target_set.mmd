@@ -1,0 +1,34 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + gateway-root-of-trust-keys (Gateway signs) + single-swamp-node; DECISIONS R2 (state from terminal result) + 2 (DNS held).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Route Node<br/>Caddy over ssh
+  CLI->>GW: route:target:set<br/>{route: 14, instance: 42}
+  Note over GW: Guard, record task only<br/>targets unchanged · target_set
+  GW->>SW: Start run, full intent<br/>operation-route-target-set
+  GW-->>CLI: 202 Accepted<br/>task #5140
+  SW->>N: Prepare workload, CSR<br/>instance-route-workload
+  SW->>GW: Ask to sign the CSR<br/>certificate-sign primitive
+  GW-->>SW: Signed leaf<br/>Orbit CA stays in Gateway
+  SW->>N: Stage site, probe TLS<br/>cluster-router-probe
+  SW->>N: Publish Caddy, PHP, URLs<br/>route-mutation-forward
+  Note over SW: DNS publication held<br/>native-dns-takeover-held
+  alt all steps succeed
+    SW-->>GW: Run succeeded<br/>terminal event + outputs
+    Note over GW: Write the new targets<br/>from terminal result · active
+  else a step fails
+    Note over SW: Restore prior state<br/>route-mutation-restore
+    SW--xGW: Run failed<br/>route.target_set_failed
+    Note over GW: Old targets kept<br/>task failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5140
+    GW-->>CLI: status + result
+  end

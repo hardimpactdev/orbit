@@ -1,0 +1,23 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-01. Only the Node agent collects facts; doctor reads Gateway state. No Swamp run (R1).
+  %% status: reviewed
+  %% command: doctor
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
+  loop continuously, on change
+    Note over A: Observe the Node<br/>services, Processes, disk, ufw
+    A->>GW: Report observations<br/>with observed_at
+    Note over GW: Store latest facts<br/>per Node, per check
+  end
+  CLI->>GW: doctor --node=7<br/>{families: [node, firewall]}
+  Note over GW: Compare facts with intent<br/>exact, drift, missing
+  alt facts are fresh
+    GW-->>CLI: Report<br/>findings, exit 0 or 1
+  else agent silent too long
+    GW-->>CLI: Report with gaps<br/>Node 7 unverifiable
+  end

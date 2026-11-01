@@ -1,0 +1,129 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
+  %% status: draft
+  %% command: process:restart
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: process:restart 417<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - `orbit process:restart 417`
+  %%> - syntax: `process:restart <process> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the numeric Process ID from `process:list`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, record the task<br/>Process 417: provisioning · #5130
+  %%> Requirements:
+  %%> - your Node has an access grant to the Node that runs Process 417
+  %%> - Process 417 exists and is not being removed
+  %%> - the Process can start: it is installed on its Node
+  %%> Result:
+  %%> - task #5130 recorded with the full intent: unit or container name, runtime, on-demand flag, Vite plan
+  %%> - Process 417 marked provisioning; its desired state does not change yet
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-process-control
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - `kind`: process.restart
+  %%> - the Process unit or container name, runtime and on-demand flag
+  %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - for a production Instance, its release directory
+  %%> - for a Vite dev Process, the Vite plan and the Caddy publication for its Route
+  GW-->>CLI: 202 Accepted<br/>task #5130
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>SW: Resolve check assets<br/>@nckrtl/process-command-assets
+  %%> What it does:
+  %%> - validates the intent and finds the shipped Process scripts on Node 209
+  %%> Why:
+  %%> - the scripts check ownership: they act only on the unit or container marked with Process 417
+  SW->>N: Make the asset directory<br/>@swamp/ssh exec · mkdir
+  %%> What it does:
+  %%> - makes a private directory for this run on the Node, under `/tmp`
+  SW->>N: Copy check assets<br/>@swamp/ssh copy
+  %%> What it does:
+  %%> - copies the shipped scripts into that directory
+  %%> How:
+  %%> - Swamp reaches the Node over SSH from 209 with the official `@swamp/ssh` behavior, the `swamp` role SSH identity and the Node's pinned host keys
+  opt production release
+    SW->>N: Check the release<br/>check_release.py
+    %%> What it does:
+    %%> - checks that the admitted release directory exists
+    %%> On failure:
+    %%> - `process.release_unavailable`; nothing else runs
+  end
+  opt Vite dev Process
+    SW->>N: Publish the dev route<br/>child operation-process-vite
+    %%> What it does:
+    %%> - suspends traffic to the Instance, writes its Vite environment file and publishes Caddy for its Route
+    %%> Shared:
+    %%> - `process:create` runs the same child
+  end
+  SW->>N: Set boot policy<br/>systemctl enable
+  %%> What it does:
+  %%> - enables the systemd unit, so it starts at boot
+  %%> Skipped:
+  %%> - for an on-demand Process, which starts on its first request
+  %%> - for Docker, which keeps its own restart policy
+  SW->>N: Control the Process<br/>systemctl restart <unit>
+  %%> What it does:
+  %%> - one `restart` of the exact unit, or `docker container restart` for Docker
+  %%> Requirements:
+  %%> - the unit or container belongs to Process 417; a foreign one is refused (`process.name_collision`)
+  SW->>N: Verify the state<br/>systemctl is-active → active
+  %%> What it does:
+  %%> - checks once that the Process is running
+  %%> Result:
+  %%> - this step's output is the projected result: `ready` and the observed state
+  opt Vite dev Process
+    SW->>N: Check the listener<br/>lifecycle_listener.py
+    %%> What it does:
+    %%> - checks once that the Vite port listener belongs to this Process
+  end
+  SW->>N: Clean up<br/>remove the run directory
+  %%> What it does:
+  %%> - removes the run directory after a successful run
+  %%> On failure:
+  %%> - the directory stays, so a resumed run can reuse the scripts
+  alt Process active
+    N-->>SW: active
+    %%> Returns:
+    %%> - the Process is active
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    Note over GW: Record result<br/>Process: active · task succeeded
+    %%> Result:
+    %%> - Process 417 desired state becomes running; its status becomes active
+    %%> - task #5130 succeeds with the observed state
+  else restart or verify fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - SSH fails, the unit is missing or foreign, or the state does not match
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the Process failed<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - Process 417 is marked failed with the error code; its desired state does not change
+    %%> - task #5130 fails
+    %%> - there is no rollback; run the same command again after fixing the cause
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5130
+    %%> What it does:
+    %%> - asks for the task status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

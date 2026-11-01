@@ -1,0 +1,117 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape), ADR 0242 signed apt sources, single-swamp-node.
+  %% status: reviewed
+  %% command: tool:install
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: tool:install ripgrep<br/>--node=12 --manager=apt
+  %%> Command:
+  %%> - `orbit tool:install ripgrep --node=12 --manager=apt`
+  %%> - syntax: `<package> --node=ID --manager=MANAGER [--constraint=RANGE] [--repository=JSON]`
+  %%> Input:
+  %%> - the package, as its manager names it
+  %%> - the Node and the Tool Manager: `apt`, `composer`, `vp`, `brew` or `brew-cask`, as the Node's platform supports
+  %%> - optionally a SemVer constraint, which only stops an unsafe version
+  %%> - optionally a signed apt repository, for packages outside Ubuntu's own (ADR 0242)
+  Note over GW: Validate, lock the manager<br/>Tool: installing · task #5133
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12's platform supports the Tool Manager, and its installation isn't conflicting
+  %%> - the package isn't already a Tool on Node 12
+  %%> - the package isn't protected: packages Orbit manages itself, such as Caddy or PHP, can't become Tools
+  %%> - no other change runs for this Tool Manager on Node 12; the Gateway holds one lock per Node and Tool Manager
+  %%> Result:
+  %%> - Tool `ripgrep` recorded as installing (the record is dropped if the Tool Manager setup fails)
+  %%> - task #5133 recorded with the full intent
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-tool-write
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the package, manager, constraint and repository definition
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5133
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  opt Tool Manager not ready yet
+    SW->>N: Set up the Tool Manager<br/>Linux first use · pinned version
+    %%> When:
+    %%> - only on Linux, the first time this Tool Manager is used on the Node
+    %%> Per Tool Manager:
+    %%> - `apt`: always ready; `node:add` sets it up
+    %%> - `composer`: installed on first use (or with the `app-dev`/`app-prod` role)
+    %%> - `vp` (Vite+): installed on first use (or with an application role)
+    %%> - `brew` (Homebrew): installs a pinned Homebrew revision on first use
+    %%> - macOS (`brew`, `brew-cask`, `vp`): never installed by Orbit; Orbit only checks the existing installation
+    %%> What it does:
+    %%> - installs the Tool Manager itself at a pinned version and checks that version
+    %%> Not supported:
+    %%> - other Tool Managers such as `mise`; Orbit has five, fixed in code
+  end
+  opt --repository given
+    SW->>N: Add the signed apt source<br/>key checked by fingerprint
+    %%> When:
+    %%> - only for `apt` with `--repository`
+    %%> What it does:
+    %%> - downloads the signing key and checks its fingerprint
+    %%> - adds the apt source, so apt trusts only packages signed with that key
+  end
+  SW->>N: Check the candidate<br/>version vs constraint
+  %%> What it does:
+  %%> - asks the manager which version it would install
+  %%> - compares it with the constraint; a version outside it stops the run here
+  SW->>N: Install the package<br/>apt-get install --no-remove
+  %%> What it does:
+  %%> - installs the package with the manager
+  %%> - for `apt`, never removes other packages to make room
+  %%> Busy apt lock:
+  %%> - when Ubuntu's automatic updates hold the apt lock, it waits for the lock within the run's time budget, then fails
+  %%> Runs as:
+  %%> - root for `apt`; the Node's managed user for `composer` and `vp`
+  alt install succeeds
+    N-->>SW: ripgrep 14.1.0 installed
+    %%> Returns:
+    %%> - the installed version, read back from the manager
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>Tool: installed 14.1.0
+    %%> Result:
+    %%> - Tool `ripgrep` recorded as installed, version 14.1.0
+    %%> - the apt repository recorded, when one was given
+    %%> - task #5133 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0 or no candidate
+    %%> When:
+    %%> - the manager can't install, the key doesn't match, or no version fits the constraint
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark what failed<br/>Tool Manager or Tool · rerun
+    %%> Result when the Tool Manager setup failed:
+    %%> - the Tool Manager is marked failed
+    %%> - no Tool is recorded
+    %%> Result when the install failed:
+    %%> - Tool `ripgrep` marked failed, so you can see it
+    %%> Always:
+    %%> - task #5133 fails
+    %%> On the Node:
+    %%> - a manager or apt source set up before the failure stays; a rerun reuses it
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5133
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

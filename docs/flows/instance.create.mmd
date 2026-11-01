@@ -1,0 +1,130 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + full intent as inputs, single Swamp Node, DECISIONS 1 (token minted at admission, vault.get), Gateway renders .env from the Project env template (orbit-gateway-renders-create-env; Nick 2026-11-01), budget rule swamp-operation-time-budgets (<10 s, 60 s).
+  %% status: reviewed
+  %% command: instance:create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-dev Node<br/>reached over ssh
+  CLI->>GW: instance:create<br/>{project: 7, node: 12, name}
+  %%> Input:
+  %%> - Project, app-dev Node and Instance name
+  %%> - optional: branch, domain, Database server for the Instance's database
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, render .env<br/>Instance 42 reserved, task #5121
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - the Node has the `app-dev` role
+  %%> - the Project may be placed on this Node (not excluded)
+  %%> - the Instance name and path are free
+  %%> Renders .env:
+  %%> - from the Project's stored env template, with its placeholders
+  %%> - filled with Instance values: `APP_URL`, a new `APP_KEY`, database keys
+  %%> Result:
+  %%> - Instance 42 recorded as reserved, with its rendered environment
+  %%> - task #5121 recorded with the full intent
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Push token and .env<br/>vault: github-token, env-5121
+  %%> Why:
+  %%> - the repository is private, so the clone needs a GitHub token
+  %%> - only the Gateway holds the GitHub App key
+  %%> - `.env` can hold secrets, which travel only through the vault
+  %%> What it does:
+  %%> - mints a read token for this one repository, valid 1 hour
+  %%> - pushes the token and the rendered `.env` into Swamp's vault
+  %%> Result:
+  %%> - the run reads both from the vault; no step calls the Gateway back (decision 1)
+  GW->>SW: Start run, full intent<br/>operation-instance-create · 60 s
+  %%> What it does:
+  %%> - starts one run of `operation-instance-create` on Swamp serve (Node 209)
+  %%> Inputs:
+  %%> - everything the run needs: Node address, paths, branch, setup steps
+  %%> - secrets only as vault key names
+  %%> Budget:
+  %%> - 60 s for the whole run, target under 10 s
+  GW-->>CLI: 202 Accepted<br/>operation #5121
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the work continues in Swamp; the CLI follows it with `operation:show`
+  SW->>N: Clone, check out branch<br/>vault.get token · git as Node user
+  %%> How:
+  %%> - Swamp reaches the Node over `@swamp/ssh` from 209
+  %%> What it does:
+  %%> - clones the repository into the Instance path with the vault token
+  %%> - checks out the branch
+  %%> Runs as:
+  %%> - the Node's own user, not root
+  SW->>N: Write .env<br/>vault.get env-5121 · Vite+ store
+  %%> What it does:
+  %%> - writes the rendered `.env` from the vault into the checkout
+  %%> - selects the Node's Vite+ store for this Project (`VP_HOME`), so `vp` works in the setup steps
+  %%> Not included:
+  %%> - renders nothing; the Gateway already rendered `.env`
+  %%> - installs no dependencies; `composer install` and `vp install` are setup steps
+  %%> - starts no Process; that happens after the setup steps
+  SW->>N: Run Project setup steps<br/>@swamp/ssh · own timeout each
+  %%> What it does:
+  %%> - runs the Project's setup steps in order, as the Node's managed user, from the repository root
+  %%> Typical steps:
+  %%> - `composer install`
+  %%> - `vp install`
+  %%> - `php artisan migrate`
+  %%> Limits:
+  %%> - each step has its own timeout
+  %%> - the whole run stays inside the 60 s budget
+  SW->>N: Create, start Processes<br/>Project definitions · e.g. vp-dev
+  %%> What it does:
+  %%> - creates the Instance's Processes from the Project's Process definitions for `development`
+  %%> - starts them, for example the Vite dev server (`vp-dev`) or a queue worker
+  %%> Why here:
+  %%> - after the setup steps, because Processes need the installed dependencies
+  %%> Today:
+  %%> - Project definitions only accept `production`; `development` must be added
+  alt all steps pass in budget
+    N-->>SW: checked-out commit
+    %%> Returns:
+    %%> - the commit that was checked out
+    %%> Not returned:
+    %%> - nothing about `.env`; the Gateway rendered and stored it before the run
+    SW-->>GW: Run succeeded<br/>terminal event · finish-result
+  %%> How the Gateway learns it:
+  %%> - its shared run reader sees the terminal event and reads the run's outputs
+  %%> - Swamp never calls the Gateway; the Gateway reads
+    Note over GW: Record result<br/>commit · Instance 42 → active
+    %%> Result:
+    %%> - the commit is recorded
+    %%> - Instance 42 becomes active
+    %%> - task #5121 succeeds
+  else a step fails or 60 s ends
+    N--xSW: exit ≠ 0 or timeout
+  %%> When:
+  %%> - a step exits with an error, or the 60 s budget runs out
+  %%> Effect:
+  %%> - the run stops at that step
+    SW--xGW: Run failed<br/>failed_step, error_code
+  %%> The Gateway reads:
+  %%> - which step failed
+  %%> - its error code
+    Note over GW: Keep Instance, mark failed<br/>task → failed · retry is new task
+  %%> Result:
+  %%> - Instance 42 stays, marked failed, so you can see what happened
+  %%> - task #5121 fails
+  %%> Retry:
+  %%> - a retry is a new task; the Gateway never re-runs work by itself
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5121
+  %%> What it does:
+  %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+  %%> Returns:
+  %%> - the current status
+  %%> - the result, once the task has ended
+  end

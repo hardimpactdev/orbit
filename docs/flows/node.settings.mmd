@@ -1,0 +1,33 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + DECISIONS R1, R2, R4; orbit-agent observes only, Swamp prepares the root.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: node:settings 12<br/>{apps: {path: /srv/apps}}
+  Note over GW: Validate patch and root<br/>bridge CIDR, account, Linux
+  Note over GW: Record-only? Store, no run<br/>R1 · 200 with the Node
+  Note over GW: Record task, not settings<br/>task #5131 · R2
+  GW->>SW: Start run, full intent<br/>operation-node-settings
+  GW-->>CLI: 202 Accepted<br/>operation #5131
+  SW->>N: Look up the Node account<br/>@swamp/ssh · getent passwd orbit
+  SW->>N: Prepare the apps root<br/>mkdir, chown, protected roots
+  alt root ready
+    N-->>SW: owner and mode checked
+    SW-->>GW: Run succeeded<br/>terminal event · prepared: true
+    Note over GW: Store the settings patch<br/>NodeUpdated broadcast
+  else path refused or unowned
+    N--xSW: exit ≠ 0
+    SW--xGW: Run failed<br/>node.settings_root_failed
+    Note over GW: Keep the old settings<br/>task → failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #OP
+    GW-->>CLI: status + result
+  end

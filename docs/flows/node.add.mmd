@@ -1,0 +1,38 @@
+sequenceDiagram
+  %% Target design: ADR 0243/0244 + decisions single-swamp-node, agent-observer-swamp-acts, root-of-trust-gateway-only; one native node.add run on 209.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane HUB icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  participant HUB as WireGuard hub<br/>vpn Node 1
+  CLI->>GW: node:add beast<br/>203.0.113.7 · roles app-dev
+  Note over GW: Validate, record intent<br/>Node provisioning · task #6201
+  Note over GW: Copy SSH key to vault<br/>inputs carry the key name only
+  GW->>SW: Start run, full intent<br/>pins, roles, peer 10.6.0.42
+  GW-->>CLI: 202 Accepted<br/>task #6201
+  SW->>N: Probe host key, arch<br/>@swamp/ssh, pinned fingerprint
+  alt key and x86_64 match
+    SW->>N: Bootstrap the host<br/>user, sudo, 209 key, observer
+    SW->>N: Create WireGuard key<br/>public key as step output
+    SW->>HUB: Add the peer<br/>wg set, live sync, no restart
+    SW->>N: Bring up the tunnel<br/>wg-quick@orbit, DNS, ufw trust
+    SW->>N: Converge roles<br/>app-dev over WireGuard ssh
+    SW->>HUB: Publish private DNS<br/>beast records in catalog
+    SW-->>GW: Run succeeded<br/>terminal event, run reader
+    Note over GW: Project Node active<br/>WG key, arch, ssh host pins
+  else key or arch mismatch
+    N--xSW: Probe refuses<br/>node.ssh_host_key_mismatch
+    SW--xGW: Run failed, no change<br/>error_code, failed step
+    Note over GW: Mark Node failed<br/>at machine-architecture
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #6201
+    GW-->>CLI: status + result
+  end

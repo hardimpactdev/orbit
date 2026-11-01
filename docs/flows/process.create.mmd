@@ -1,0 +1,187 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs). instance.create reuses this workflow for development Processes.
+  %% status: draft
+  %% command: process:create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: process:create queue<br/>--node=7 --command=… --start
+  %%> Command:
+  %%> - `orbit process:create queue --node=7 --command=/usr/bin/php --command=artisan --command=queue:work --restart=on-failure --start`
+  %%> - syntax: `process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [options]`
+  %%> Input:
+  %%> - the Process name and its owner: an Instance, a Node, or a Project definition
+  %%> - the runtime (`systemd` or `docker`), command, image, environment, ports, volumes and restart policy
+  %%> - `--start` to start it after it installs
+  %%> Not handled here:
+  %%> - a Project definition with `--for=production` is recorded only; it starts no run (R1)
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, record the task<br/>Process 418: pending · #5130
+  %%> Requirements:
+  %%> - your Node has an access grant to the owner's Node
+  %%> - the name is free for this owner
+  %%> - a `--user` account exists on the Node
+  %%> Result:
+  %%> - Process 418 recorded with its definition, status pending
+  %%> - the unit or container rendered; secret environment values pushed to the vault key `process-create-operation-5130`
+  %%> - task #5130 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-process-create
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - `kind`: process.create
+  %%> - the rendered unit, or the container definition without its environment values
+  %%> - the desired state, mounts and a retired name when the runtime or name changed
+  %%> - vault key names for the environment, never the values
+  %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5130
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Check the account<br/>getent passwd orbit
+  %%> What it does:
+  %%> - reads the account the Process runs as, and its home directory
+  SW->>SW: Resolve check assets<br/>@nckrtl/process-command-assets
+  %%> What it does:
+  %%> - validates the intent and finds the shipped Process scripts on Node 209
+  %%> Why:
+  %%> - the scripts check ownership: they act only on the unit or container marked with Process 417
+  SW->>N: Make the asset directory<br/>@swamp/ssh exec · mkdir
+  %%> What it does:
+  %%> - makes a private directory for this run on the Node, under `/tmp`
+  SW->>N: Copy check assets<br/>@swamp/ssh copy
+  %%> What it does:
+  %%> - copies the shipped scripts into that directory
+  %%> How:
+  %%> - Swamp reaches the Node over SSH from 209 with the official `@swamp/ssh` behavior, the `swamp` role SSH identity and the Node's pinned host keys
+  SW->>N: Write the intent file<br/>@swamp/cfgmgmt/file · 0600
+  %%> What it does:
+  %%> - writes the public intent into the run directory for the scripts
+  SW->>N: Inspect the Process<br/>inspect.py
+  %%> What it does:
+  %%> - reads whether the unit or container exists, its state and spec
+  SW->>SW: Read the observation<br/>@nckrtl/process-command-assets
+  %%> What it does:
+  %%> - turns the inspection into fields later steps check
+  opt production release, running
+    SW->>N: Check the release<br/>check_release.py
+    %%> What it does:
+    %%> - checks that the admitted release directory exists
+  end
+  SW->>N: Check required mounts<br/>test -e <path>
+  %%> What it does:
+  %%> - checks each required mount path once; a systemd Process only
+  opt runtime or name changed
+    SW->>SW: Remove the retired unit<br/>child operation-process-destroy
+    %%> What it does:
+    %%> - removes the unit or container under its old name
+  end
+  alt systemd
+    SW->>N: Write the environment<br/>lifecycle_environment.py · stdin
+    %%> What it does:
+    %%> - writes the EnvironmentFile, root-owned 0600, from the vault value on stdin
+    %%> Skipped:
+    %%> - when the Process has no environment values
+    SW->>N: Write the unit<br/>@swamp/cfgmgmt/file
+    %%> What it does:
+    %%> - writes the rendered unit to `/etc/systemd/system`
+    SW->>N: Reload systemd<br/>@swamp/cfgmgmt/exec
+    %%> What it does:
+    %%> - runs `systemctl daemon-reload`
+    opt Vite dev Process
+      SW->>N: Publish the dev route<br/>child operation-process-vite
+      %%> What it does:
+      %%> - suspends traffic, writes the Vite environment file and publishes Caddy for the Route
+    end
+    SW->>N: Stop a transitioning unit<br/>systemctl stop
+    %%> What it does:
+    %%> - stops a unit that is still starting or stopping when the desired state is stopped
+    SW->>N: Apply the unit state<br/>@swamp/cfgmgmt/systemd
+    %%> What it does:
+    %%> - enables and starts the unit when the desired state is running, unless it starts on demand; else disables and stops it
+    SW->>N: Restart if changed<br/>@swamp/cfgmgmt/systemd restart
+    %%> What it does:
+    %%> - restarts a running unit whose unit file changed
+  else docker
+    SW->>N: Pull the image<br/>@swamp/cfgmgmt/exec · docker pull
+    %%> What it does:
+    %%> - pulls the image unless it is already present
+    SW->>N: Stop the old container<br/>control.py stop
+    %%> What it does:
+    %%> - stops the owned container when its spec changed
+    SW->>N: Remove the old container<br/>remove_container.py
+    %%> What it does:
+    %%> - removes that container; volumes stay
+    SW->>N: Create the container<br/>lifecycle_container.py · stdin
+    %%> What it does:
+    %%> - creates the container; environment values come from the vault on stdin, never as arguments
+    SW->>N: Create container, no env<br/>lifecycle_container.py
+    %%> What it does:
+    %%> - the same, for a container without environment values
+    SW->>N: Apply the container state<br/>docker container start|stop
+    %%> What it does:
+    %%> - starts or stops the container to match the desired state
+  end
+  SW->>N: Verify it runs<br/>verify.py
+  %%> What it does:
+  %%> - checks once that the unit or container has the desired state
+  %%> Result:
+  %%> - this step's output is the projected result
+  opt Vite dev Process, running
+    SW->>N: Check the listener<br/>lifecycle_listener.py
+    %%> What it does:
+    %%> - checks once that the Vite port listener belongs to this Process
+    SW->>N: Prepare the awake marker<br/>mkdir <marker directory>
+    %%> What it does:
+    %%> - makes the hibernation marker directory
+    SW->>N: Mark it awake<br/>touch <awake marker>
+    %%> What it does:
+    %%> - marks the Instance awake, so its Route serves traffic
+  end
+  SW->>N: Clean up<br/>remove the run directory
+  %%> What it does:
+  %%> - removes the run directory after a successful run
+  %%> On failure:
+  %%> - the directory stays, so a resumed run can reuse the scripts
+  SW->>SW: Report the result<br/>command/shell
+  %%> What it does:
+  %%> - prints the verified state as the run result
+  alt Process running
+    N-->>SW: active (running)
+    %%> Returns:
+    %%> - the Process has its desired state
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    Note over GW: Record result<br/>Process 418: active
+    %%> Result:
+    %%> - Process 418 becomes active with its desired state
+    %%> - task #5130 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - SSH fails, a refusal such as `process.name_collision`, or the state does not match
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the Process failed<br/>task failed · rerun converges
+    %%> Result:
+    %%> - Process 418 is marked failed with the error code
+    %%> - work done on the Node stays; a new `process:update` or create converges
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5130
+    %%> What it does:
+    %%> - asks for the task status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

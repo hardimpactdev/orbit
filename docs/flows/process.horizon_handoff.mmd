@@ -1,0 +1,35 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task (trigger automatic, gateway-release) + single-swamp-node + gateway-recovery runtime handoff; DECISIONS round 2 bug fix (terminate when active=true, start when false; one test per branch).
+  %% status: draft
+  autonumber
+  %% lane GW icon=gateway pill=caller tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Gateway Node<br/>reached over ssh
+  Note over GW: Release handoff, serve<br/>gateway:release:handoff
+  Note over GW: Render the Horizon unit<br/>task #5132 · Process 418
+  GW->>SW: Start run, full intent<br/>operation-process-horizon-handoff
+  SW->>N: Copy scripts, inspect<br/>@swamp/ssh · inspect.py
+  N-->>SW: unit hash, active state
+  opt unit content differs
+    SW->>N: Stage and verify unit<br/>systemd-analyze verify
+    SW->>N: Publish, reload, enable<br/>systemctl daemon-reload, enable
+  end
+  opt Horizon was active
+    SW->>N: Hand off to new release<br/>horizon:terminate
+  end
+  opt Horizon was not active
+    SW->>N: Start Horizon<br/>systemctl start
+  end
+  SW->>N: Verify the unit runs<br/>systemctl is-active --quiet
+  alt Horizon is active
+    N-->>SW: active
+    SW-->>GW: Run succeeded<br/>terminal event · result
+    Note over GW: Process active<br/>store systemd_activation_hash
+  else a step fails
+    N--xSW: exit ≠ 0
+    SW--xGW: Run failed<br/>error_code
+    Note over GW: Process failed<br/>task → failed
+  end

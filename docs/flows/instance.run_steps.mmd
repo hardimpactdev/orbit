@@ -1,0 +1,32 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + intent-as-workflow-inputs + single-swamp-node; orbit-instance-run-account; DECISIONS R4 (commands as inputs, sudo -u intent account, terminal projection).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-dev Node<br/>reached over ssh
+  CLI->>GW: instance:setup<br/>{instance: 42}
+  Note over GW: Check active dev Instance<br/>list digest · task #5131
+  GW->>SW: Start run, full intent<br/>step commands, account as inputs
+  GW-->>CLI: 202 Accepted<br/>operation #5131
+  loop each admitted step
+    SW->>N: Run the step in checkout<br/>@swamp/ssh · sudo -u intent user
+    N-->>SW: exit 0
+  end
+  alt all steps pass
+    SW-->>GW: Run succeeded<br/>terminal projection · outcome
+    Note over GW: Clear failed_step<br/>task → succeeded
+  else a step fails or times out
+    N--xSW: exit ≠ 0 or timeout
+    SW--xGW: Run failed<br/>failed_step, error_code
+    Note over GW: Keep Instance, mark failed<br/>instance.setup_step_failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5131
+    GW-->>CLI: status + result
+  end

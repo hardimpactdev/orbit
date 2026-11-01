@@ -1,0 +1,34 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + gateway-root-of-trust-keys (Gateway signs) + single-swamp-node; DECISIONS 2 (DNS held, same-Node work).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Route Node<br/>Caddy over ssh
+  CLI->>GW: route:create<br/>{domain: shop.test, instance: 42}
+  Note over GW: Validate, reserve domain<br/>Route pending · task route.create
+  GW->>SW: Start run, full intent<br/>operation-route-create
+  GW-->>CLI: 202 Accepted<br/>task #5120
+  SW->>N: Request a CSR<br/>@swamp/ssh · node_batch.py
+  N-->>SW: CSR, key stays on Node
+  SW->>GW: Ask to sign the CSR<br/>certificate-sign primitive
+  GW-->>SW: Signed leaf<br/>Orbit CA stays in Gateway
+  SW->>N: Install cert, Caddyfile<br/>caddy validate, then reload
+  Note over SW: DNS publication held<br/>native-dns-takeover-held
+  alt all steps succeed
+    SW-->>GW: Run succeeded<br/>terminal event + outputs
+    Note over GW: Project result<br/>Route active · task succeeded
+  else a step fails
+    Note over SW: Restore prior state<br/>route-mutation-restore
+    SW--xGW: Run failed<br/>error_code
+    Note over GW: Route failed<br/>task failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5120
+    GW-->>CLI: status + result
+  end

@@ -1,0 +1,36 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS 1 (token at admission, vault.get) + scope (instance.clone: Process/Schedule definitions, preview Route, DNS held).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane C icon=server pill=target tone=purple
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant C as Candidate<br/>app-dev over ssh
+  participant N as Target Node<br/>app-prod over ssh
+  CLI->>GW: instance:clone<br/>{candidate: 42, node: 14, name}
+  Note over GW: Reserve Instance 43<br/>env + token → vault · #5130
+  GW->>SW: Start run, full intent<br/>operation-instance-clone
+  GW-->>CLI: 202 Accepted<br/>operation #5130
+  SW->>C: Check candidate source<br/>@swamp/ssh · branch, commit, clean
+  SW->>N: Fetch, check out branch<br/>vault.get token · git as Node user
+  SW->>N: Write .env, install Vite+<br/>vault.get .env · vp install
+  SW->>N: Add Processes, Schedules<br/>process/schedule.create shape
+  SW->>N: Publish preview Route<br/>same-Node Caddy · DNS held
+  alt all steps succeed
+    N-->>SW: commit, env keys, runtime
+    SW-->>GW: Run succeeded<br/>terminal event · clone.result
+    Note over GW: Project source facts<br/>Instance 43 active, preview Route
+  else a step fails
+    N--xSW: exit ≠ 0 or timeout
+    SW--xGW: Run failed<br/>failed_step, error_code
+    Note over GW: Keep Instance 43 reserved<br/>task → failed · retry reuses it
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5130
+    GW-->>CLI: status + result
+  end

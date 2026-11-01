@@ -1,0 +1,34 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, decision swamp-vault-secrets (vault.get, no secret inputs), F9 sync phases; DECISIONS round 2 (rendered .env pushed to vault after commit, vault.get from 209, no private-material fetch, no per-Node worker).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: env:sync<br/>{instance: 42}
+  Note over GW: Lock env, render .env<br/>push to vault after commit
+  GW->>SW: Start run, full intent<br/>operation-instance-environment
+  GW-->>CLI: 202 Accepted<br/>operation #5131
+  SW->>N: Read key names, check<br/>@swamp/ssh · values stay on Node
+  N-->>SW: key names, write check
+  SW->>N: Write .env, .env.testing<br/>vault.get · @swamp/ssh from 209
+  opt production, file changed
+    SW->>N: Refresh runtime<br/>config cache, OPcache, Processes
+  end
+  alt all steps succeed
+    SW-->>GW: Run succeeded<br/>key names, changed flag
+    Note over GW: Record owned keys<br/>clear refresh pending
+  else a key would drop
+    N--xSW: env.sync_would_drop_keys
+    SW--xGW: Run failed<br/>error_code, key names
+    Note over GW: Stored values stay<br/>task → failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5131
+    GW-->>CLI: status + result
+  end

@@ -1,0 +1,37 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, deployments.md phases; DECISIONS 4 / R4 (process.stop shape: steps on 209, @swamp/ssh, account from intent) + 1 (token at admission).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  participant GH as GitHub<br/>deploy source
+  CLI->>GW: instance:deploy<br/>{instance: 42, commit?}
+  Note over GW: Validate, freeze intent<br/>secrets, token → vault · #5121
+  GW->>SW: Start run, full intent<br/>steps, account · all steps on 209
+  GW-->>CLI: 202 Accepted<br/>operation #5121
+  SW->>N: Fetch, check out commit<br/>vault.get token · new release dir
+  N->>GH: Fetch the branch<br/>commit must be on first parent
+  SW->>N: Write .env, run steps<br/>before_activation · sudo -u app
+  opt production Instance
+    SW->>N: Activate the release<br/>current link, FPM, Processes
+    SW->>N: After steps, cleanup<br/>after_activation · keep 3
+  end
+  alt required steps pass
+    SW-->>GW: Run succeeded<br/>terminal event + result
+    Note over GW: Record the deployment<br/>commit, release, task → succeeded
+  else a required step fails
+    N--xSW: exit ≠ 0 or timeout
+    SW--xGW: Run failed<br/>failed_step, error_code
+    Note over GW: Record failed deployment<br/>old release stays before switch
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5121
+    GW-->>CLI: status + result
+  end

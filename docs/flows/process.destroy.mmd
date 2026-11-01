@@ -1,0 +1,135 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
+  %% status: draft
+  %% command: process:destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: process:destroy 417<br/>--yes
+  %%> Command:
+  %%> - `orbit process:destroy 417 --yes`
+  %%> - syntax: `process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the numeric Process ID; `--yes` skips the confirmation
+  %%> Not handled here:
+  %%> - `--project` removes a Project definition only; it starts no run (R1)
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, record the task<br/>Process 417: removing · #5130
+  %%> Requirements:
+  %%> - your Node has an access grant to the Process's Node
+  %%> - no Route points to the Process, else `process.has_routes`
+  %%> - the Process is not required by a Database server
+  %%> Result:
+  %%> - Process 417 marked removing; the record stays until the run succeeds
+  %%> - task #5130 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-process-destroy
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - `kind`: process.destroy
+  %%> - the unit or container name and runtime, and for Vite the Instance environment path
+  %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5130
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>SW: Resolve check assets<br/>@nckrtl/process-command-assets
+  %%> What it does:
+  %%> - validates the intent and finds the shipped Process scripts on Node 209
+  %%> Why:
+  %%> - the scripts check ownership: they act only on the unit or container marked with Process 417
+  SW->>N: Make the asset directory<br/>@swamp/ssh exec · mkdir
+  %%> What it does:
+  %%> - makes a private directory for this run on the Node, under `/tmp`
+  SW->>N: Copy check assets<br/>@swamp/ssh copy
+  %%> What it does:
+  %%> - copies the shipped scripts into that directory
+  %%> How:
+  %%> - Swamp reaches the Node over SSH from 209 with the official `@swamp/ssh` behavior, the `swamp` role SSH identity and the Node's pinned host keys
+  SW->>N: Inspect the Process<br/>inspect.py
+  %%> What it does:
+  %%> - reads whether the unit or container exists and its state
+  SW->>SW: Read the observation<br/>@nckrtl/process-command-assets
+  %%> What it does:
+  %%> - turns the inspection into fields later steps check
+  %%> Already gone:
+  %%> - an absent unit or container skips the stop steps, so a repeat converges
+  alt systemd
+    SW->>N: Disable it<br/>systemctl disable
+    %%> What it does:
+    %%> - stops the unit starting at boot
+    SW->>N: Stop it<br/>systemctl stop
+    %%> What it does:
+    %%> - stops the unit
+    SW->>N: Clear failures<br/>systemctl reset-failed
+    %%> What it does:
+    %%> - clears a failed state, only when the unit failed
+    SW->>N: Remove the unit<br/>remove_unit.py
+    %%> What it does:
+    %%> - removes the owned unit file
+    SW->>N: Remove env files<br/>remove_environment.py
+    %%> What it does:
+    %%> - removes the Process EnvironmentFiles
+    opt Vite dev Process
+      SW->>N: Remove the dev environment<br/>/etc/orbit/vite/app-instance-42…
+      %%> What it does:
+      %%> - removes the Instance Vite environment file
+    end
+    SW->>N: Reload systemd<br/>systemctl daemon-reload
+    %%> What it does:
+    %%> - reloads systemd after the unit is gone
+  else docker
+    SW->>N: Stop the container<br/>control.py stop
+    %%> What it does:
+    %%> - stops the owned container
+    SW->>N: Remove the container<br/>remove_container.py
+    %%> What it does:
+    %%> - removes it; volumes stay
+  end
+  SW->>N: Clean up<br/>remove the run directory
+  %%> What it does:
+  %%> - removes the run directory after a successful run
+  %%> On failure:
+  %%> - the directory stays, so a resumed run can reuse the scripts
+  SW->>SW: Report the result<br/>command/shell
+  %%> What it does:
+  %%> - prints `ready` as the run result
+  alt all removed
+    N-->>SW: unit gone
+    %%> Returns:
+    %%> - nothing of Process 417 is left on the Node
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    Note over GW: Delete the record<br/>Process 417 removed
+    %%> Result:
+    %%> - the Process record is deleted
+    %%> - task #5130 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - SSH fails, or the unit or container belongs to another Process (`process.name_collision`)
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the record, failed<br/>task failed · repeat destroy
+    %%> Result:
+    %%> - Process 417 keeps its record, marked with the error code
+    %%> - repeat `process:destroy` to converge
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5130
+    %%> What it does:
+    %%> - asks for the task status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

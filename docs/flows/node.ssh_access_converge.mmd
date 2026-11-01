@@ -1,0 +1,33 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + DECISIONS 5 (one swamp-role SSH identity) and R3 (vault key names).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: node:ssh-access:converge<br/>{node: 12}
+  Note over GW: Check the non-root account<br/>refuse root · ssh_account_invalid
+  Note over GW: Reuse task if same digest<br/>target + 209 public key
+  GW->>SW: Start run, full intent<br/>bootstrap key as vault key name
+  GW-->>CLI: 202 Accepted<br/>operation #5133
+  Note over SW: Read bootstrap identity<br/>vault.get · bootstrap key, Node 12
+  SW->>N: Authorize the 209 key<br/>bootstrap key · authorized_keys
+  SW->>N: Log in with the 209 key<br/>swamp-role identity · true
+  alt login works
+    N-->>SW: exit 0
+    SW-->>GW: Run succeeded<br/>ssh_access_ready: true
+    Note over GW: Store ssh_access_digest<br/>NodeFootprint for Node 12
+  else key not accepted
+    N--xSW: Permission denied
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Keep the old digest<br/>retry is a new task
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #OP
+    GW-->>CLI: status + result
+  end

@@ -1,0 +1,104 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity).
+  %% status: reviewed
+  %% command: firewall:deny
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: firewall:deny 25<br/>--node=7 --label=smtp
+  %%> Command:
+  %%> - `orbit firewall:deny 25 --node=7 --label=smtp`
+  %%> - syntax: `<port> --node=ID [--from=SOURCE] [--protocol=tcp|udp] [--label=TEXT]`
+  %%> Input:
+  %%> - the port as the argument: a number such as `25`, or a range such as `8000:8100`
+  %%> - the Node, and optionally the source address and the protocol
+  %%> - optionally a label or short description, for example `smtp`
+  %%> Not accepted:
+  %%> - service names such as `smtp` as the port
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, record the rule<br/>rule: provisioning · task #5132
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 7
+  %%> - Node 7 is an active Linux Node
+  %%> - the port and source are valid
+  %%> - Node 7 has no rule yet for the same port, protocol and source
+  %%> - no opposite rule for the same port, protocol and source; an allow and a deny for exactly the same scope is refused (`firewall.rule_conflict`)
+  %%> Allowed:
+  %%> - overlapping rules with a different scope, for example deny `5432` from anywhere plus allow `5432` from one IP
+  %%> - the port is not protected: SSH (22 and the recovery port), the WireGuard port, and the ports Orbit's own roles need can't be denied, so you can't cut a Node off
+  %%> - no allow rule on Node 7 uses the same port, protocol and source
+  %%> - no other firewall change runs on Node 7; the Gateway holds one lock per Node
+  %%> Result:
+  %%> - the rule for port 25 recorded with status provisioning
+  %%> - task #5132 recorded with the full intent
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-firewall-direct
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the rule as exact ufw lines: port, protocol, source, direction
+  %%> - Node 7's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5132
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Add the ufw rule<br/>@swamp/cfgmgmt/firewall apply
+  %%> How:
+  %%> - Swamp reaches Node 7 over SSH from 209, with the official `@swamp/cfgmgmt/firewall` behavior
+  %%> What it does:
+  %%> - adds one ufw deny line per port and protocol, commented with its label
+  %%> Order:
+  %%> - narrower rules go above broader ones, allow or deny, so an exception such as one IP wins over a rule for anywhere
+  %%> - ufw stops at the first match, so Orbit sets this order on every change
+  %%> - all operator rules sit above Orbit's own broad rules, such as WireGuard peer trust, so a deny on a port also applies to WireGuard peers
+  %%> - an existing identical line is left as it is
+  SW->>N: Check the rule is live<br/>@swamp/cfgmgmt/firewall check
+  %%> What it does:
+  %%> - reads ufw back and checks every expected line is present
+  %%> - checks that narrower rules sit above broader ones for the same port
+  %%> Why:
+  %%> - the rule only counts as active when ufw shows it
+  alt every line is present
+    N-->>SW: ufw lines present
+    %%> Returns:
+    %%> - the check passed for every line
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>rule: active · task succeeded
+    %%> Result:
+    %%> - the rule for port 25 becomes active
+    %%> - task #5132 succeeds
+  else adding or checking fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - ufw refuses the line, SSH fails, or a line is missing after the add
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the rule failed<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - the rule for port 25 is marked failed, so you can see it
+    %%> - task #5132 fails
+    %%> On the Node:
+    %%> - lines added before the failure stay; there is no rollback
+    %%> - that is safe: the rule is marked failed, and a rerun skips lines that already exist
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5132
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

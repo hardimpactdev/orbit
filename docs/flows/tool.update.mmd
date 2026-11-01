@@ -1,0 +1,101 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape, R2 state from the result), ADR 0242 signed apt sources. Same shape as tool.install.
+  %% status: reviewed
+  %% command: tool:update
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: tool:update 31<br/>Tool id · --repository optional
+  %%> Command:
+  %%> - `orbit tool:update 31`
+  %%> - syntax: `<tool> [--repository=JSON]`
+  %%> Input:
+  %%> - the Tool's id, as `tool:list --node=ID` shows it
+  %%> - optionally a changed signed apt repository, which replaces the stored one
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, lock the manager<br/>task #5134 · ripgrep on Node 12
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Tool 31 exists and is installed
+  %%> - no other change runs for this Tool Manager on Node 12; the Gateway holds one lock per Node and Tool Manager
+  %%> Result:
+  %%> - task #5134 recorded with the full intent, including the Tool's stored constraint
+  %%> - the Tool record stays as it is until the run ends
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-tool-write
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the package, Tool Manager, installed version, constraint and repository definition
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5134
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  opt --repository given
+    SW->>N: Update the apt source<br/>key checked by fingerprint
+    %%> When:
+    %%> - only for `apt` with `--repository`
+    %%> What it does:
+    %%> - downloads the signing key and checks its fingerprint
+    %%> - replaces the apt source with the new definition
+  end
+  SW->>N: Check the candidate<br/>version vs constraint
+  %%> What it does:
+  %%> - asks the Tool Manager which version it would install now
+  %%> - compares it with the installed version and the stored constraint
+  %%> Outcomes:
+  %%> - same version: nothing to do, outcome `unchanged`
+  %%> - outside the constraint: stop here, outcome `blocked_by_constraint`
+  %%> - newer and allowed: go on to the upgrade
+  SW->>N: Upgrade the package<br/>apt-get install --no-remove
+  %%> When:
+  %%> - only when the candidate is newer and inside the constraint
+  %%> What it does:
+  %%> - upgrades the package with the Tool Manager
+  %%> - for `apt`, never removes other packages to make room
+  %%> Busy apt lock:
+  %%> - when Ubuntu's automatic updates hold the apt lock, it waits within the run's time budget, then fails
+  alt the run ends normally
+    N-->>SW: ripgrep 14.1.1, applied
+    %%> Returns:
+    %%> - the installed version, read back from the Tool Manager
+    %%> - the outcome: `applied`, `unchanged` or `blocked_by_constraint`
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>version · outcome · task succeeded
+    %%> Result:
+    %%> - the Tool's version is updated when the outcome is `applied`
+    %%> - `unchanged` and `blocked_by_constraint` leave the Tool as it is; both are a success
+    %%> - a new repository definition is recorded, when one was given
+    %%> - task #5134 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - the Tool Manager can't upgrade, the key doesn't match, or SSH fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the Tool failed<br/>keeps 14.1.0 · rerun after a fix
+    %%> Result:
+    %%> - the Tool is marked failed, with its last known version 14.1.0
+    %%> - the stored repository definition stays the old one
+    %%> - task #5134 fails
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5134
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

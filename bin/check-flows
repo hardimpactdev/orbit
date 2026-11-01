@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+// Checks every docs/flows/*.mmd against the subset the renderer supports and the text limits.
+const { readdirSync, readFileSync } = require('node:fs')
+const dir = `${__dirname}/../docs/flows`
+const ok = [/^sequenceDiagram$/, /^autonumber$/, /^%%/, /^participant \w+ as .+$/, /^(alt|loop|opt)\b/, /^else\b/, /^end$/,
+  /^Note over [\w, ]+: .+$/, /^\w+\s*(-->>|->>|--x|-x)\s*\w+\s*:\s*.+$/]
+let bad = 0
+for (const f of readdirSync(dir).filter((n) => n.endsWith('.mmd'))) {
+  const ids = new Set(), errs = []
+  readFileSync(`${dir}/${f}`, 'utf8').split('\n').forEach((raw, i) => {
+    const l = raw.trim(); if (!l) return
+    if (!ok.some((r) => r.test(l))) errs.push(`${i + 1}: unsupported: ${l}`)
+    let m
+    if ((m = l.match(/^participant (\w+) as (.+)$/))) { ids.add(m[1]); const [t, s = ''] = m[2].split('<br/>'); if (t.length > 14 || s.length > 18) errs.push(`${i + 1}: lane text too long`) }
+    if ((m = l.match(/^(\w+)\s*(?:-->>|->>|--x|-x)\s*(\w+)\s*:\s*(.+)$/))) { for (const id of [m[1], m[2]]) if (!ids.has(id)) errs.push(`${i + 1}: unknown lane ${id}`) }
+    const text = l.match(/^(?:Note over [\w, ]+|\w+\s*(?:-->>|->>|--x|-x)\s*\w+)\s*:\s*(.+)$/)?.[1]
+    if (text) { const [a, b = ''] = text.split('<br/>'); if (a.length > 26 || b.length > 34) errs.push(`${i + 1}: text too long (${a.length}/${b.length})`) }
+  })
+  if (errs.length) { bad++; console.log(`${f}\n  ${errs.join('\n  ')}`) }
+}
+console.log(bad ? `${bad} file(s) with problems` : 'all flows ok')
+process.exitCode = bad ? 1 : 0

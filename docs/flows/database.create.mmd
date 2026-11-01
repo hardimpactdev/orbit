@@ -1,0 +1,33 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS R3 (root password by server vault key), 5 (swamp role SSH identity), round 2 bugs (always-run cleanup).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as DB server Node<br/>reached over ssh
+  CLI->>GW: database:create<br/>{slug: shop, server: mysql-1}
+  Note over GW: Validate, make password<br/>record connection + task
+  GW->>SW: Store owner password<br/>database-create-intent-5121
+  GW->>SW: Start run, full intent<br/>operation-database-create
+  GW-->>CLI: 202 Accepted<br/>task #5121
+  SW->>N: Copy action scripts<br/>@swamp/ssh · swamp role identity
+  SW->>N: Create owner, database<br/>vault.get server key, owner key
+  Note over N: Probe, create user, grant<br/>create database in container
+  Note over SW: Remove /tmp scripts<br/>always-run step, pass or fail
+  alt every action exits 0
+    N-->>SW: exit 0 per action
+    SW-->>GW: Run succeeded<br/>terminal event + outputs
+    Note over GW: Connection active<br/>attach to Instance if instance_id
+  else an action fails
+    N--xSW: exit 1, step output
+    SW--xGW: Run failed<br/>error_code
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5121
+    GW-->>CLI: status + result
+  end

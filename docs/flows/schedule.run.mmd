@@ -1,0 +1,32 @@
+sequenceDiagram
+  %% Target design from ADR 0244: native Swamp schedules, nothing installed on the Node; DECISIONS R1-R3.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: schedule:run<br/>{schedule: 7f3c…}
+  Note over GW: Admit a task from template<br/>trigger: operator · #5130
+  GW->>SW: Start run, full intent<br/>task-command-run · vault key name
+  GW-->>CLI: 202 Accepted<br/>task #5130
+  SW->>N: Check account, directory<br/>getent, test -d, @swamp/ssh
+  SW->>N: Verify the command hash<br/>stdin: vault.get(command key)
+  SW->>N: Run the command<br/>sudo -u user, timeout, stdin
+  alt exit 0 in budget
+    N-->>SW: exit 0, output
+    SW-->>GW: Run succeeded<br/>terminal event, run reader
+    Note over GW: Close the task<br/>output in the Swamp step
+  else fails or times out
+    N--xSW: exit ≠ 0 or timeout
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Mark the task failed<br/>timer state unchanged
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5130
+    GW-->>CLI: status + result
+  end

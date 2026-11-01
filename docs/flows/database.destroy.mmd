@@ -1,0 +1,33 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS R3 (server key by name, no root password in intent), 5 (swamp role SSH identity), always-run cleanup.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as DB server Node<br/>reached over ssh
+  CLI->>GW: database:destroy<br/>{connection: shop}
+  Note over GW: Refuse if attached<br/>plan databases + unshared users
+  GW->>SW: Start run, full intent<br/>operation-database-destroy
+  GW-->>CLI: 202 Accepted<br/>task #5124
+  SW->>N: Copy action scripts<br/>@swamp/ssh · swamp role identity
+  SW->>N: Inventory, fence, check<br/>vault.get server key · blockers
+  SW->>N: Drop databases, users<br/>destroy.py drop · ACL save
+  Note over SW: Remove /tmp scripts<br/>always-run step, pass or fail
+  alt every action exits 0
+    N-->>SW: exit 0 per action
+    SW-->>GW: Run succeeded<br/>terminal event + outputs
+    Note over GW: Delete connection rows<br/>broadcast DatabaseDeleted
+  else a check or drop fails
+    N--xSW: exit 1, step output
+    Note over SW: Restore fenced state<br/>restore · acl_restore
+    SW--xGW: Run failed<br/>…destroy_outcome_unknown
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5124
+    GW-->>CLI: status + result
+  end

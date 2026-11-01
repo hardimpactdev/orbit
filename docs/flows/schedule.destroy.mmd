@@ -1,0 +1,29 @@
+sequenceDiagram
+  %% Target design from ADR 0244: native Swamp schedules, nothing installed on the Node; DECISIONS R1-R3.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: schedule:destroy<br/>{schedule: 7f3c…}
+  Note over GW: Mark Schedule removing<br/>no new fire is recorded
+  GW->>SW: Remove the trigger<br/>trigger removal frame (TBD)
+  alt removal confirmed
+    SW-->>GW: trigger gone
+    GW->>SW: Empty the command key<br/>vault: schedule-command-7f3c…
+    Note over GW: Delete the Schedule<br/>its tasks stay as history
+    GW-->>CLI: Schedule destroyed<br/>204 No Content
+  else Swamp does not confirm
+    SW--xGW: no confirmation
+    Note over GW: Keep Schedule removing<br/>repeat destroy to converge
+    GW--xCLI: 503 removal unconfirmed<br/>swamp.schedule_publish_unavailable
+  end
+  opt a fire is still running
+    SW->>N: Finish the running fire<br/>@swamp/ssh, own timeout
+    GW->>SW: Read the final run<br/>shared run reader
+  end

@@ -1,0 +1,35 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), 2 (DNS held), ADR 0244 native schedules.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-dev Node<br/>reached over ssh
+  CLI->>GW: instance:destroy<br/>{instance: 42, force: false}
+  Note over GW: Refuse prod, capture set<br/>token → vault if not forced
+  GW->>SW: Start run, full intent<br/>operation-instance-destroy
+  GW-->>CLI: 202 Accepted<br/>operation #5132
+  SW->>N: Inspect source, worktrees<br/>@swamp/ssh · per member
+  opt not forced
+    SW->>N: Check work is pushed<br/>vault.get token · fetch, compare
+  end
+  SW->>N: Teardown, stop runtime<br/>teardown list, Processes, SQLite
+  Note over SW: Drop triggers and Route<br/>triggers · Caddy · DNS held
+  SW->>N: Remove source<br/>worktrees first, checkout last
+  alt all steps succeed
+    SW-->>GW: Run succeeded<br/>terminal event · remove-result
+    Note over GW: Delete Instance, records<br/>from terminal result · #5132
+  else a step fails
+    N--xSW: exit ≠ 0 or timeout
+    SW--xGW: Run failed<br/>failed_step, error_code
+    Note over GW: Removal failed, keep rows<br/>retry is a new task
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5132
+    GW-->>CLI: status + result
+  end

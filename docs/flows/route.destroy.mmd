@@ -1,0 +1,32 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS round 2 (route.destroy cleanup in the workflow, R2) + 2 (DNS held).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Route Node<br/>Caddy over ssh
+  CLI->>GW: route:destroy<br/>{route: 14, offline: false}
+  Note over GW: Guard, capture placements<br/>task route.destroy · rows kept
+  GW->>SW: Start run, full intent<br/>operation-route-removal
+  GW-->>CLI: 202 Accepted<br/>task #5130
+  Note over SW: DNS withdrawal held<br/>native-dns-takeover-held
+  SW->>N: Withdraw the Caddy site<br/>caddy validate, then reload
+  SW->>N: Converge PHP pool, URLs<br/>route-environment-write
+  SW->>N: Remove certs, LAN firewall<br/>route-certificate-remove · ufw
+  alt all steps succeed
+    SW-->>GW: Run succeeded<br/>terminal event + outputs
+    Note over GW: Delete captured Route rows<br/>task succeeded · retained_on_nodes
+  else a step fails
+    Note over SW: Restore prior state<br/>route-mutation-restore
+    SW--xGW: Run failed<br/>route.withdrawal_failed
+    Note over GW: Route failed, rows kept<br/>failed_step · task failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5130
+    GW-->>CLI: status + result
+  end

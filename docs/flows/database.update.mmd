@@ -1,0 +1,35 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS R1 (record-only: no run), R3 (server key by name), refuse with no server, always-run cleanup.
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as DB server Node<br/>reached over ssh
+  CLI->>GW: database:update<br/>{connection: cache, database: 3}
+  Note over GW: Validate, seal the patch<br/>no server → server_required
+  opt record-only change
+    Note over GW: Write the row, no run<br/>R1 · broadcast DatabaseUpdated
+    GW-->>CLI: 200 Updated<br/>no task
+  end
+  GW->>SW: Start run, full intent<br/>…-database-connection-update
+  GW-->>CLI: 202 Accepted<br/>task #5122
+  SW->>N: Copy action scripts<br/>@swamp/ssh · swamp role identity
+  SW->>N: Check index fits server<br/>vault.get server key by name
+  Note over SW: Remove /tmp scripts<br/>always-run step, pass or fail
+  alt index check passes
+    SW-->>GW: Run succeeded<br/>terminal event + outputs
+    Note over GW: Apply sealed patch<br/>broadcast DatabaseUpdated
+  else index check fails
+    N--xSW: exit 1, step output
+    SW--xGW: Run failed<br/>database.server_command_failed
+    Note over GW: Connection unchanged<br/>task failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5122
+    GW-->>CLI: status + result
+  end

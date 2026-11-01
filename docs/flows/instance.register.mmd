@@ -1,0 +1,32 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node (@swamp/ssh from 209).
+  %% status: draft
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>on app-dev Node
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-dev Node<br/>reached over ssh
+  CLI->>GW: instance:register<br/>{project: 7, path, name}
+  Note over GW: Check caller and path<br/>Instance 42 reserved · #5131
+  GW->>SW: Start run, full intent<br/>operation-instance-register
+  GW-->>CLI: 202 Accepted<br/>operation #5131
+  SW->>N: Inspect the checkout<br/>@swamp/ssh · owner, mode, git dir
+  SW->>N: Read origin, branch, HEAD<br/>git -C checkout, hooks off
+  alt source matches the Project
+    N-->>SW: branch, commit, digest
+    SW->>N: Protect the .env file<br/>@swamp/ssh · protect_environment
+    SW-->>GW: Run succeeded<br/>terminal event · source.result
+    Note over GW: Store source facts<br/>Instance 42 → active
+  else origin or owner differs
+    N--xSW: check fails, error_code
+    SW--xGW: Run failed<br/>failed_step, error_code
+    Note over GW: Keep Instance 42 reserved<br/>task → failed
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5131
+    GW-->>CLI: status + result
+  end
