@@ -5,8 +5,6 @@ import { roleCertificateJobs } from "../node/role_certificates_workflow.ts";
 Deno.test("certificate control steps use exactly one selector and distinct child signer identity", async () => {
     for (
         const name of [
-            "operation-certificate-converge",
-            "operation-certificate-remove",
             "route-certificate-publish",
             "route-certificate-remove",
             "node-role-certificate-publish",

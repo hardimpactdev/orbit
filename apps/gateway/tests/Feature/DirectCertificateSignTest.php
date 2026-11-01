@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Certificates\CertificateProjection;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WebSocket\DirectWebSocketProjection;
 use App\Infrastructure\Certificates\FilesystemRootCertificate;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -39,9 +39,9 @@ beforeEach(function (): void {
     $this->root = file_get_contents($this->home.'/ca/root.pem');
     $this->leaf = ['node_id' => $this->node->id, 'scope' => 'route-31', 'domain' => 'example.orbit',
         'root_hash' => hash('sha256', $this->root)];
-    $this->operation = Operation::query()->create(['kind' => 'certificate.converge', 'target_type' => 'node_certificate',
+    $this->operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster',
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Running,
-        'state' => ['swamp_run_id' => $this->runId], 'input' => $this->leaf]);
+        'state' => ['swamp_run_id' => $this->runId], 'input' => ['certificates' => [$this->leaf]]]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id.'/certificates/sign';
     $this->body = ['run_id' => $this->runId, 'requests' => [['node_id' => $this->node->id,
         'scope' => $this->leaf['scope'], 'state' => 'request', 'request_base64' => base64_encode(direct_sign_csr())]]];
@@ -97,7 +97,7 @@ it('refuses a wrong run, terminal intent, cancellation or stale root', function 
         'run' => $this->body['run_id'] = 'e9c6ca86-29c4-4646-ab88-319b61de6d6c',
         'terminal' => $this->operation->update(['status' => OperationStatus::Succeeded]),
         'cancel' => $this->operation->update(['cancel_requested_at' => now()]),
-        'root' => $this->operation->update(['input' => [...$this->leaf, 'root_hash' => str_repeat('0', 64)]]),
+        'root' => $this->operation->update(['input' => ['certificates' => [[...$this->leaf, 'root_hash' => str_repeat('0', 64)]]]]),
     };
     $this->postJson($this->path, $this->body)->assertConflict();
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
@@ -180,7 +180,7 @@ it('rechecks the original live intent after signing before releasing a public bu
         public function run(ProcessInvocation $invocation): CommandResult
         {
             $result = (new NativeProcessRunner)->run($invocation);
-            $this->operation->update(['input' => [...$this->operation->input, 'domain' => 'changed.orbit']]);
+            $this->operation->update(['input' => ['certificates' => [[...$this->operation->input['certificates'][0], 'domain' => 'changed.orbit']]]]);
 
             return $result;
         }
@@ -310,7 +310,7 @@ function direct_sign_websocket_parent(string $kind, array $input): void
 
             public function definitions(): array
             {
-                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => CertificateProjection::class]];
+                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => DirectWebSocketProjection::class]];
             }
         }]));
     }
@@ -374,3 +374,11 @@ it('keeps WebSocket signing scoped to the requested Operation and its actual par
         ->assertJsonPath('error.code', $wrongRun ? 'operation.run_mismatch' : 'certificate.intent_missing');
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
 })->with(['websocket.app_attach', 'websocket.app_detach'])->with([false, true]);
+
+it('refuses signing authority from a retired standalone certificate Operation', function (): void {
+    $this->operation->update(['kind' => 'certificate.converge', 'input' => $this->leaf]);
+
+    $this->postJson($this->path, $this->body)->assertUnprocessable()->assertJsonPath('error.code', 'operation.direct_invalid');
+
+    expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
+});

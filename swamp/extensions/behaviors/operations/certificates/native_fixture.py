@@ -1,4 +1,4 @@
-"""Native certificate roots using unmodified official SSH and real OpenSSL."""
+"""Shared disposable TLS/SSH fixture for the canonical certificate children."""
 
 import base64
 import http.server
@@ -11,10 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-import unittest
 from pathlib import Path
-
-import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location(
@@ -224,27 +221,6 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
                 str(self.ca),
             )
         )
-        for kind in ("converge", "remove"):
-            production = yaml.safe_load(
-                (
-                    ROOT / f"workflows/workflow-operation-certificate-{kind}.yaml"
-                ).read_text()
-            )
-            for step in production["jobs"][0]["steps"]:
-                self.assertEqual("orbit-node-209", step["target"])
-                self.assertNotIn("labels", step)
-                step.pop("target", None)
-                step.pop("labels", None)
-                task = step["task"]
-                if task["behaviorType"] == "@swamp/ssh":
-                    task["globalArgs"].update(sshBinary=str(fake), scpBinary=str(scp))
-            # Only disposable paths, placement and documented executable seams differ.
-            raw = yaml.safe_dump(production, sort_keys=False).replace(
-                "/tmp/orbit-certificate-", str(self.fixture / "staging-")
-            )
-            (
-                self.repo / f"workflows/workflow-operation-certificate-{kind}.yaml"
-            ).write_text(raw)
         self.leaf = dict(
             node_id=9,
             user="orbit",
@@ -259,106 +235,3 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
         return subprocess.run(
             ["openssl", *map(str, args)], check=True, capture_output=True
         ).stdout
-
-    def run_workflow(self, kind="converge", success=True, raw=False, **intent_changes):
-        leaf = (
-            self.leaf
-            if kind == "converge"
-            else {
-                **{
-                    k: self.leaf[k]
-                    for k in ("node_id", "scope", "user", "agent_sha256")
-                },
-                "in_use": False,
-            }
-        )
-        intent = dict(
-            leaf=leaf,
-            control_node_id=209,
-            host_keys=[
-                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEV4aXN0aW5nUGlubmVkSG9zdElkZW50aXR5UHVibGlj"
-            ],
-            connection=dict(
-                nodeHost="fixture",
-                nodePort=22,
-                nodeUser="orbit",
-                nodeIdentityFile=str(self.fixture / "existing-identity"),
-            ),
-        )
-        intent.update(intent_changes)
-        (self.fixture / "existing-identity").write_text("synthetic identity never used")
-        name = "operation-certificate-" + kind
-        self.cli("workflow", "validate", name)
-        result = self.cli(
-            "workflow",
-            "run",
-            name,
-            "--input",
-            "operation_id=19",
-            "--input",
-            "node_id=9",
-            "--input",
-            "kind=certificate." + kind,
-            "--input",
-            "intent=" + json.dumps(intent),
-            "--input",
-            "execution_secrets={}",
-            success=success,
-        )
-        return result if raw else json.loads(result.stdout)
-
-    def test_fresh_current_and_removal_use_official_ssh_and_one_parent_signer(self):
-        first = self.run_workflow()
-        self.assertEqual("succeeded", first["status"])
-        self.assertEqual(1, len(self.signs))
-        self.assertEqual(first["id"], self.signs[0][1]["run_id"])
-        second = self.run_workflow()
-        states = {s["name"]: s["status"] for s in second["jobs"][0]["steps"]}
-        self.assertEqual("skipped", states["sign-http"])
-        self.assertEqual("skipped", states["publish"])
-        self.assertEqual(1, len(self.signs))
-        self.assertEqual("succeeded", self.run_workflow("remove")["status"])
-        self.assertFalse((self.home / ".orbit/certificates/route-7-router").exists())
-        self.assertEqual([], list(self.fixture.glob("staging-*")))
-
-    def test_missing_pins_refuse_before_any_remote_action(self):
-        self.run_workflow(success=False, raw=True, host_keys=[])
-        self.assertEqual([], self.signs)
-        self.assertEqual([], list(self.fixture.glob("staging-*")))
-
-    def test_signer_refusal_makes_no_publication_or_hidden_callback(self):
-        self.refuse = True
-        failed = self.run_workflow(success=False)
-        self.assertEqual("failed", failed["status"])
-        self.assertEqual(1, len(self.signs))
-        self.assertFalse(
-            (self.home / ".orbit/certificates/route-7-router/current").exists()
-        )
-        self.assertEqual(
-            "/api/v1/direct-operations/19/certificates/sign", self.signs[0][0]
-        )
-
-    def test_native_inspection_resume_preserves_the_key_without_signing_again(self):
-        (self.fixture / "fail-inspect").touch()
-        failed = self.run_workflow(success=False)
-        key = self.home / ".orbit/certificates/route-7-router/current/key.pem"
-        before = key.read_bytes()
-        (self.fixture / "fail-inspect").unlink()
-        resumed = json.loads(
-            self.cli(
-                "workflow",
-                "resume",
-                "operation-certificate-converge",
-                "--run",
-                failed["id"],
-                "--from",
-                "inspect",
-            ).stdout
-        )
-        self.assertEqual("succeeded", resumed["status"])
-        self.assertEqual(before, key.read_bytes())
-        self.assertEqual(1, len(self.signs))
-
-
-if __name__ == "__main__":
-    unittest.main()
