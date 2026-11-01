@@ -61,4 +61,4 @@ jobs:
       behaviorName: route-upstream-ready
       methodName: upstream
       inputs:
-        stdout: ${{ steps.observe.outputs.stdout }}
+        stdout: ${{ steps.observe.outputs.result.stdout }}
