@@ -28,11 +28,11 @@ final readonly class NativeRouteNodeMutationInput
      */
     public function capture(Node $actual, NativeRouteNodeRender $candidate, ?int $clusterId): array
     {
-        if ($actual->id !== $candidate->nodeId || app(RouteRenderContext::class)->nodeId() !== null) {
+        if ($actual->id !== $candidate->nodeId || ($candidate->enrollment !== null && $candidate->enrollment->clusterId !== $clusterId) || app(RouteRenderContext::class)->nodeId() !== null) {
             throw new ResourceOperationException('route.node_render_invalid', 'Discover mutations from the actual Node outside a prospective render.', 422);
         }
 
-        return DB::transaction(function () use ($actual, $candidate, $clusterId): array {
+        return app(RouteRenderContext::class)->renderActual(fn (): array => DB::transaction(function () use ($actual, $candidate, $clusterId): array {
             $actual = Node::query()->findOrFail($actual->id);
             $beforeSites = $this->sites->all();
             $changes = $this->reconciler->activePrivatePlacementChanges([
@@ -88,12 +88,12 @@ final readonly class NativeRouteNodeMutationInput
             }
             $capture = app(NativeRouteMutationInput::class)->capture($previous, $desired, $staged, $forwardPrior,
                 $beforeSites, $this->render($candidate, fn () => $this->sites->all()),
-                ValidatedData::integerList($batch['node_ids']),
-                fn (Closure $render): array => $this->render($candidate, $render));
+                [...ValidatedData::integerList($batch['node_ids']), ...($candidate->enrollment === null ? [] : [$actual->id])],
+                fn (Closure $render): array => $this->render($candidate, $render), $candidate->enrollment);
             $capture['route_mutations'] += ['batch' => $batch, 'analytics_changes' => $analyticsChanges];
 
             return $capture;
-        });
+        }));
     }
 
     /** Prospective publications follow the parent's captured role certificate actions.
@@ -106,8 +106,10 @@ final readonly class NativeRouteNodeMutationInput
     {
         $context = app(RouteRenderContext::class);
 
-        return $context->render($candidate,
-            fn () => $context->renderRoleCertificates($candidate->roleCertificates, $render));
+        $ready = fn () => $context->renderRoleCertificates($candidate->roleCertificates, $render);
+
+        return $candidate->enrollment === null ? $context->render($candidate, $ready)
+            : $context->renderEnrollment($candidate->enrollment, $ready);
     }
 
     /** @param iterable<Route> $routes

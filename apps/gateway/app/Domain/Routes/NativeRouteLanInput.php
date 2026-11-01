@@ -40,21 +40,23 @@ final readonly class NativeRouteLanInput
      */
     public function forSites(Node $node, Collection $sites): array
     {
-        if (! is_string($node->lan_ip) || $node->lan_ip === '') {
+        $lan = app(RouteRenderContext::class)->lanIp($node);
+        if (! is_string($lan) || $lan === '') {
             return [];
         }
         $domains = $sites->where('nodeId', $node->id)->pluck('domain')->all();
         $tuples = [];
         foreach ($sites as $site) {
             if ($site->nodeId === $node->id || ! in_array($site->domain, $domains, true)
-                || ! in_array($node->lan_ip, $site->upstreamAddresses, true)) {
+                || ! in_array($lan, $site->upstreamAddresses, true)) {
                 continue;
             }
             $router = Node::query()->findOrFail($site->nodeId);
-            if (! is_string($router->lan_ip) || filter_var($router->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            $source = app(RouteRenderContext::class)->lanIp($router);
+            if (! is_string($source) || filter_var($source, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
                 throw new ResourceOperationException('route.lan_unreachable', 'The configured workload LAN requires a Router LAN address.', 409);
             }
-            $tuples[$router->lan_ip] = ['port' => 443, 'protocol' => 'tcp', 'source' => $router->lan_ip];
+            $tuples[$source] = ['port' => 443, 'protocol' => 'tcp', 'source' => $source];
         }
         ksort($tuples);
 
