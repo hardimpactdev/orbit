@@ -10,7 +10,7 @@ use App\Models\Project;
 
 function dev935_instance(string $slug = 'dev935', string $name = 'default', string $role = 'app-dev'): Instance
 {
-    $node = Node::query()->create(['name' => $slug, 'platform' => 'linux', 'architecture' => 'amd64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.35', 'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 35)]);
+    $node = Node::query()->create(['name' => $slug, 'platform' => 'linux', 'architecture' => 'amd64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.35', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 35)]);
     $node->roles()->create(['role' => $role, 'status' => 'active']);
     $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'monorepo', 'repository_url' => 'https://example.test/'.$slug.'.git', 'default_branch' => 'main']);
 

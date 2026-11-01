@@ -44,6 +44,9 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
         $direct->assertRun($operation, $runId);
+        if (! $direct->usesNativeTerminal($operation)) {
+            return $operation;
+        }
         $operation->refresh();
         if ($operation->status->terminal()) {
             return $operation;

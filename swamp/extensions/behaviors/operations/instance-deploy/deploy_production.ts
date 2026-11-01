@@ -347,11 +347,6 @@ export async function runProductionDeploy(
   const underlying = ports.source ??
     localDeploySource({ deadline, signal: ctx.signal });
   const source: DeploySourceLocal = {
-    inspectDevelopment: (...args) => underlying.inspectDevelopment(...args),
-    resolveDevelopment: (...args) =>
-      mutation(() => underlying.resolveDevelopment(...args)),
-    checkoutDevelopment: (...args) =>
-      mutation(() => underlying.checkoutDevelopment(...args)),
     prepareRelease: (...args) =>
       mutation(() => underlying.prepareRelease(...args)),
     inspectRelease: async (...args) => {

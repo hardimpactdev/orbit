@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
+use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentEnvironmentMaterial;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
@@ -54,6 +55,11 @@ final readonly class StartInstanceDeployAction
                 'git_read' => $private, 'vp_materialize' => $private,
                 'environment_material' => $private, 'definitions_material' => $private,
                 ...($commit === null ? [] : ['commit' => $commit])];
+            if ($development) {
+                $input = array_diff_key($input, array_flip(['git_read', 'vp_materialize', 'environment_material', 'definitions_material']));
+                $input['development_runtime'] = app(DevelopmentDeployInput::class)->capture($instance, $deployment['needs_vp'] === true);
+                $input['github'] = ['$secret' => 'github.installation', 'id' => $instance->node_id];
+            }
             if (! $development) {
                 $input['runtime_definitions'] = $members;
                 $input['environment'] = app(InstanceDeploymentEnvironmentMaterial::class)->capture($instance);

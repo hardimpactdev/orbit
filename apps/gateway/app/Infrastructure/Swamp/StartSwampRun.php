@@ -58,7 +58,7 @@ final readonly class StartSwampRun
                 throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
             }
             $outcome = 'started';
-            if (isset($declaration['terminal_result'])) {
+            if (app(DirectOperation::class)->usesNativeTerminal($operation)) {
                 app(OperationBroadcaster::class)->changed($operation, true);
             }
         } catch (Throwable $exception) {
