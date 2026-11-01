@@ -128,3 +128,14 @@ it('skips Projects without GitHub App access', function (): void {
     $this->github->shouldNotHaveReceived('fileBlob');
     expect(ProjectEnvironmentTemplate::query()->count())->toBe(0);
 });
+
+it('skips a repository without a GitHub App installation', function (): void {
+    $github = Mockery::mock(GitHubApi::class);
+    $github->shouldReceive('repositoryInstallation')->once()->andReturnNull();
+    app()->instance(GitHubApi::class, $github);
+
+    ($this->refresh)(str_repeat('a', 40));
+
+    $github->shouldNotHaveReceived('fileBlob');
+    expect(ProjectEnvironmentTemplate::query()->count())->toBe(0);
+});

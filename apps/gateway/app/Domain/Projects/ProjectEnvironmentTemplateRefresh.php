@@ -38,7 +38,11 @@ final readonly class ProjectEnvironmentTemplateRefresh
             return;
         }
         $credentials = $this->store->credentials() ?? throw new GitHubApiException('The Gateway GitHub App is not registered.');
-        $installation = $this->github->repositoryInstallation($credentials, $repository) ?? throw new GitHubApiException('The repository has no GitHub App installation.');
+        $installation = $this->github->repositoryInstallation($credentials, $repository);
+        if ($installation === null) {
+            // The App cannot read this repository, as with gh_cli access; there is no template to keep.
+            return;
+        }
         $token = $this->github->repositoryReadToken($credentials, $installation, $repository);
         $blob = $this->github->fileBlob($token, $repository, $head, $path);
         if ($template !== null && $template->source_path === $path && $template->source_blob === $blob) {
