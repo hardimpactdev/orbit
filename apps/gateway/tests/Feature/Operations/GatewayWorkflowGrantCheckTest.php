@@ -15,27 +15,32 @@ it('checks intended policy against the booted Gateway declarations including con
         ->toBeGreaterThan(0);
 });
 
-it('refuses missing intent for booted core, computed and extension declarations', function (string $workflow): void {
+it('grants every workflow through one wildcard and refuses its absence', function (): void {
     $definitions = app(DirectOperation::class)->grantDefinitions();
     $policy = json_decode(file_get_contents(base_path('../../swamp/config/gateway-workflow-grants.json')), true, flags: JSON_THROW_ON_ERROR);
-    $policy['workflows'] = array_values(array_filter($policy['workflows'], fn (array $entry): bool => $entry['workflow'] !== $workflow));
+    $policy['workflows'] = array_values(array_filter($policy['workflows'], fn (array $entry): bool => $entry['workflow'] !== '*'));
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
-        ->toThrow(LogicException::class, $workflow);
-})->with([
-    'Task CI cadence' => 'task-check-ci',
-    'Observation context' => 'observation-context',
-    'Fleet cadence' => 'observation-collection',
-    'Horizon cadence' => 'observation-horizon',
-    'Horizon' => 'operation-process-horizon-handoff',
-    'Worker known-hosts' => 'operation-node-worker-known-hosts',
-    'Schedule create' => 'operation-schedule-create',
-    'Schedule destroy' => 'operation-schedule-destroy',
-    'Schedule run' => 'operation-schedule-run',
-    'computed bootstrap' => 'operation-node-bootstrap-probe',
-    'Conn contribution' => 'operation-conn-direct',
-    'Vault contribution' => 'operation-vault-direct',
-]);
+        ->toThrow(LogicException::class, 'Missing the run and read grant on every workflow');
+});
+
+it('refuses an exact run and read grant that the wildcard already covers', function (): void {
+    $definitions = app(DirectOperation::class)->grantDefinitions();
+    $policy = json_decode(file_get_contents(base_path('../../swamp/config/gateway-workflow-grants.json')), true, flags: JSON_THROW_ON_ERROR);
+    $policy['workflows'][] = ['workflow' => 'operation-gateway-swamp-load', 'actions' => ['run', 'read']];
+
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
+        ->toThrow(LogicException::class, 'Only a declared schedule input producer');
+});
+
+it('still requires the exact write grant of a schedule input producer', function (): void {
+    $definitions = app(DirectOperation::class)->grantDefinitions();
+    $policy = json_decode(file_get_contents(base_path('../../swamp/config/gateway-workflow-grants.json')), true, flags: JSON_THROW_ON_ERROR);
+    $policy['workflows'] = array_values(array_filter($policy['workflows'], fn (array $entry): bool => $entry['workflow'] !== 'maintenance-projects'));
+
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
+        ->toThrow(LogicException::class, 'maintenance-projects');
+});
 
 it('runs the required registry entrypoint with intended grant validation without resource records', function (): void {
     $process = new Process([PHP_BINARY, base_path('../../bin/check-operation-kinds')], base_path(), [

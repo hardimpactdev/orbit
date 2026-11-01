@@ -40,9 +40,10 @@ base before the extraction, so the frozen checker enforces the same contract.
 
 The required Gateway boot check compares the loaded `DirectOperation` registry,
 including extension contributions, with `config/gateway-workflow-grants.json`.
-Each declared workflow needs one exact entry for `user:orbit-gateway` with both
-`run` and `read`. Missing actions or workflows fail CI. Wildcards, other
-principals or actions, duplicate entries and retired declaration entries fail.
+`user:orbit-gateway` needs exactly one `*` entry with `run` and `read`, which
+covers every workflow. Only a declared schedule input producer has its own exact
+entry, with `run`, `read` and `write`. A missing wildcard, another exact entry,
+other principals or actions, and duplicate or retired entries fail CI.
 Version 2 also checks each kind's public `execution_copies` declarations against the manifest's `vaults` entries. Each entry names one exact vault, an anchored key pattern, and only `write` plus same-key `read`. Missing, broader, duplicate or retired entries fail. The approved patterns cover positive database intent IDs, Vault-sync and Conn-revoke UUIDv4 keys, and the existing exact bootstrap identity key.
 
 Update the declaration and expected policy together. The check also runs when

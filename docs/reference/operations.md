@@ -614,9 +614,9 @@ Those changes require the native Route workflow. Agent recovery returns
 Task workspace removal waits for native publication when approved work has not
 been pushed.
 
-The required CI registry check also requires an exact `run` and `read` intent for every declared workflow in `swamp/config/gateway-workflow-grants.json`, under `user:orbit-gateway`. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. This public manifest describes expected policy, not installed permissions. The live grant owner verifies the registered workflow and the installed Gateway token with native `access.can-i` before uptake. CI never applies grants or reads credentials.
+The required CI registry check reads `swamp/config/gateway-workflow-grants.json` for `user:orbit-gateway`. It requires one `run` and `read` grant on every workflow (`*`), and an exact `write` grant only for a declared schedule input producer. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. This public manifest describes expected policy, not installed permissions. CI never applies grants or reads credentials.
 
-The normal load reconciles this manifest after runtime publication and before consuming its source feed. It backs up policy, adds only missing exact actions, preserves existing grants and groups, and stops for inspection after an uncertain mutation. See the [Swamp shape gate](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape-gate.md#gateway-workflow-grant-intent).
+See the [Swamp shape gate](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape-gate.md#gateway-workflow-grant-intent).
 
 New admission stores `state.swamp_start = {key: 'operation:' + id, workflow: admittedDefinition.workflow}` in the same transaction that creates the Operation, before submission after commit. It preserves unrelated state. A replay or admission fence keeps its recorded row unchanged. This public receipt records the admitted start identity; it does not bind a native run or establish a status. Only native evidence can establish `state.swamp_run_id`.
 

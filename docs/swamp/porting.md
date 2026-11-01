@@ -117,7 +117,7 @@ Add these fields to the family's existing registration and return the full input
 // Projector input(): ['intent' => $fullPublicIntent, 'execution_secrets' => $namesOnlyDescriptors]
 ```
 
-Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOperationAction::execute` when the kind changes a shared target; it is an Operation column, not a declaration key. Add the workflow's `run` and `read` grant and any `execution_copies` vault to `swamp/config/gateway-workflow-grants.json`. Key patterns must pass Swamp's regex-safety check: expand optional groups into a flat alternation.
+Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOperationAction::execute` when the kind changes a shared target; it is an Operation column, not a declaration key. Add any `execution_copies` vault to `swamp/config/gateway-workflow-grants.json`; one `*` grant already gives the Gateway `run` and `read` on every workflow. Key patterns must pass Swamp's regex-safety check: expand optional groups into a flat alternation.
 
 | Done | Gateway checklist |
 | --- | --- |

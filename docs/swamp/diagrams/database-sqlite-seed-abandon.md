@@ -123,7 +123,7 @@ PLAN F9 rebuilds a kind from its legacy sequence when a supported caller needs i
 | Area | Deleted |
 | --- | --- |
 | Gateway | The `database.sqlite_seed_abandon` entry in `apps/gateway/app/Domain/DatabaseServers/direct-operations.php`, and `PrepareSqliteIntentAction::abandon` |
-| Workflow | `swamp/workflows/workflow-operation-database-sqlite-seed-abandon.yaml` and its grant in `swamp/config/gateway-workflow-grants.json` |
+| Workflow | `swamp/workflows/workflow-operation-database-sqlite-seed-abandon.yaml` |
 | Behavior | In `database-server-commands/sqlite_assets.ts`: the abandon kind in the `Kind` enum, the abandon branch, its entry in the `absent` backend list, and the `target_cleanup` action that only abandon used (export and seed keep `source_cleanup`) |
 | Child workflow | The abandon kind and the `target_cleanup` action in `workflow-database-sqlite-action.yaml` |
 | Script | `scripts/sqlite_target_cleanup.py` and its line in `database-server-commands/manifest.yaml` |

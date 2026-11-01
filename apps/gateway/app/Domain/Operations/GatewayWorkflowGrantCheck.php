@@ -28,36 +28,43 @@ final readonly class GatewayWorkflowGrantCheck
                 $scheduleWrites[$definition['workflow']] = true;
             }
         }
-        $grants = [];
+        // One `*` grant gives every workflow run and read; only schedule input producers need an exact write grant.
+        $wildcard = false;
+        $writes = [];
         foreach ($policy['workflows'] as $entry) {
             if (! is_array($entry) || array_diff(array_keys($entry), ['workflow', 'actions', 'publishes_inputs']) !== []
                 || (array_key_exists('publishes_inputs', $entry) && $entry['publishes_inputs'] !== true)
                 || ! is_string($entry['workflow'] ?? null)
-                || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $entry['workflow']) !== 1
+                || preg_match('/\A(?:\*|[a-z][a-z0-9_.-]*)\z/D', $entry['workflow']) !== 1
                 || ! is_array($entry['actions'] ?? null) || ! array_is_list($entry['actions'])) {
-                throw new LogicException('Each exact Gateway workflow grant intent needs workflow, actions and an optional schedule producer marker.');
+                throw new LogicException('Each Gateway workflow grant intent needs workflow, actions and an optional schedule producer marker.');
             }
             $actions = $entry['actions'];
             sort($actions);
-            $expected = isset($scheduleWrites[$entry['workflow']]) ? ['read', 'run', 'write'] : ['read', 'run'];
-            if ($actions !== $expected || (($entry['publishes_inputs'] ?? false) === true) !== isset($scheduleWrites[$entry['workflow']])) {
-                throw new LogicException('Each exact workflow needs run and read, plus write only for its declared schedule input producer.');
+            if ($entry['workflow'] === '*') {
+                if ($wildcard || $actions !== ['read', 'run'] || array_key_exists('publishes_inputs', $entry)) {
+                    throw new LogicException('The Gateway needs exactly one run and read grant on every workflow.');
+                }
+                $wildcard = true;
+
+                continue;
             }
-            if (isset($grants[$entry['workflow']])) {
+            if ($actions !== ['read', 'run', 'write'] || ($entry['publishes_inputs'] ?? false) !== true || ! isset($scheduleWrites[$entry['workflow']])) {
+                throw new LogicException("Only a declared schedule input producer needs its own grant, with run, read and write [{$entry['workflow']}].");
+            }
+            if (isset($writes[$entry['workflow']])) {
                 throw new LogicException("Duplicate Gateway workflow grant intent [{$entry['workflow']}].");
             }
-            $grants[$entry['workflow']] = true;
+            $writes[$entry['workflow']] = true;
         }
-
-        $required = array_unique(array_column($definitions, 'workflow'));
-        $missing = array_diff($required, array_keys($grants));
+        if (! $wildcard) {
+            throw new LogicException('Missing the run and read grant on every workflow (`*`) for user:orbit-gateway.');
+        }
+        $missing = array_diff(array_keys($scheduleWrites), array_keys($writes));
         if ($missing !== []) {
-            throw new LogicException('Missing intended run and read grants for user:orbit-gateway workflows: '.implode(', ', $missing).'.');
+            throw new LogicException('Missing intended write grants for user:orbit-gateway schedule producers: '.implode(', ', $missing).'.');
         }
-        $retired = array_diff(array_keys($grants), $required);
-        if ($retired !== []) {
-            throw new LogicException('Remove undeclared Gateway workflow grant intent: '.implode(', ', $retired).'.');
-        }
+        $required = array_unique(array_column($definitions, 'workflow'));
 
         $requiredVaults = [];
         foreach ($definitions as $definition) {
