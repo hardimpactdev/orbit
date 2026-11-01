@@ -136,6 +136,8 @@ values do not belong in argv or the script body.
 
 Each `forEach` behavior or model-method step uses a per-item model name: a CEL expression referencing `self._index` or its `self.<item>` binding. A shared name serializes execution on Swamp's model lock and can lose receipts. Existing `foreach-shared-identity` findings are grandfathered in the baseline; new findings or increased caps fail. Workflow-child and non-model tasks have no model identity and are outside this check.
 
+Every workflow, including a child, declares the vaults its steps read or forward through execution-copy descriptors in its top-level `vaults` list. The `workflow-vault-declaration` rule checks literal `vault.get` names and bounded descriptor schemas, including maps, child inputs and transitive child requirements. Child vault lists intersect with their parent's list; a parent's declaration cannot replace the child's. Existing findings are grandfathered; new missing vaults or cap growth fail.
+
 Each embedded operational program has a 20-line threshold before grandfathering.
 Independent short strings are not combined to cross it. Script metrics count each
 contributing source literal once, including when a wrapper passes it to Python.

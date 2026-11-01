@@ -127,6 +127,7 @@ Deno.test("official SSH vault stdin and env require a 209 worker and closed exec
     "${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}";
   const workflow = {
     name: "route-environment-write",
+    vaults: ["orbit-control-inputs"],
     inputs: {
       type: "object",
       additionalProperties: false,
@@ -349,6 +350,7 @@ Deno.test("official SSH transport identity vault fields are native sensitive inp
     [],
   );
   const step = `name: official-ssh
+vaults: [orbit-control-inputs]
 jobs:
 - name: action
   steps:
@@ -586,7 +588,7 @@ Deno.test("fixture rename or missing local dependency is unknown, never clean", 
   assert(a.get(file)?.findings.some((f) => f.rule === "unknown-dependency"));
 });
 const workflow = (inputs: string) =>
-  `name: example\njobs:\n- name: action\n  steps:\n  - name: run\n    task:\n      type: behavior\n      behaviorType: command/shell\n      methodName: execute\n      inputs:\n${inputs}`;
+  `name: example\nvaults: [control]\njobs:\n- name: action\n  steps:\n  - name: run\n    task:\n      type: behavior\n      behaviorType: command/shell\n      methodName: execute\n      inputs:\n${inputs}`;
 Deno.test("vault values are permitted only as whole command environment values", () => {
   const good = workflow(
     "        run: python3 scripts/bootstrap.py\n        env:\n          ORBIT_BOOTSTRAP_IDENTITY: \"${{ vault.get('control',steps.intent.outputs.identity_key) }}\"\n",
@@ -1718,4 +1720,44 @@ Deno.test("forEach model identities use the item or index, with no grandfather g
   assert(ratchet(aggregate(findings("shared", "behavior", "other")), { schema: 1, entries }).length > 0);
   assertEquals(ratchet(entries, { schema: 1, entries }), []);
   assert(ratchet(aggregate([...findings("shared"), ...findings("shared")]), { schema: 1, entries }).length > 0);
+});
+Deno.test("workflows declare vaults read directly or forwarded as bounded execution-copy descriptors", () => {
+  const descriptor = { type: "object", additionalProperties: false, properties: {
+    vault: { type: "string", enum: ["copies"] }, key: { type: "string", pattern: "^key$" },
+  }, required: ["vault", "key"] };
+  const findings = (value: unknown, vaults?: string[], schema: unknown = {}) => analyzeYaml(
+    "workflows/child.yaml", JSON.stringify({ vaults, inputs: { type: "object", properties: { execution_secrets: schema } },
+      jobs: [{ name: "job", steps: [{ name: "step", task: { type: "workflow", workflowIdOrName: "child", inputs: value } }] }],
+    }),
+  ).findings.filter((f) => f.rule === "workflow-vault-declaration");
+  for (const vaults of [undefined, [], ["other"]]) {
+    assertEquals(findings('${{ vault.get("copies", "key") }}', vaults).map((f) => f.evidence), [["copies"]]);
+  }
+  assertEquals(findings("${{ vault.get(copies, key) }}", ["copies"]), []);
+  assertEquals(findings("${{ vault.get(inputs.selected_vault, key) }}", []).length, 1);
+  assertEquals(findings("${{ vault.get(inputs.selected_vault, key) }}", ["copies"]), []);
+  assertEquals(findings({ execution_secrets: "${{ steps.capture.outputs.execution_secrets }}" }, []).length, 1);
+  assertEquals(findings("${{ vault.get(inputs.execution_secrets, key) }}", [], { type: "string", enum: ["copies"] }).map((f) => f.evidence), [["copies"]]);
+  const named = { type: "object", additionalProperties: false, properties: { material: descriptor }, required: ["material"] };
+  const map = { type: "object", additionalProperties: descriptor };
+  for (const schema of [named, map]) {
+    for (const value of ['${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}',
+      { execution_secrets: "${{ inputs.execution_secrets }}" }]) {
+      assertEquals(findings(value, [], schema).map((f) => f.evidence), [["copies"]]);
+      assertEquals(findings(value, ["copies"], schema), []);
+    }
+  }
+  assertEquals(findings({ material: { vault: "copies", key: "key" } }, []).map((f) => f.evidence), [["copies"]]);
+  assertEquals(findings({ execution_secrets: {} }, [], named), []);
+  assertEquals(findings({ execution_secrets: "${{ inputs.execution_secrets }}" }, [], { type: "object", additionalProperties: false }), []);
+  assertEquals(findings("public", [], named), []);
+  const source = (name: string, task: unknown, vaults?: string[]) => JSON.stringify({ name, vaults, jobs: [{ name: "job", steps: [{ name: "step", task }] }] });
+  const nested = analyze(new Map([["workflows/child.yaml", source("child", { type: "behavior", inputs: { value: "${{ vault.get(copies, key) }}" } }, ["copies"])],
+    ["workflows/parent.yaml", source("parent", { type: "workflow", workflowIdOrName: "child" }, ["other"])],
+    ["workflows/root.yaml", source("root", { type: "workflow", workflowIdOrName: "parent" })]]), {});
+  for (const [file, a] of nested) assertEquals(a.findings.filter((f) => f.rule === "workflow-vault-declaration").map((f) => f.evidence), file.endsWith("/child.yaml") ? [] : [["copies"]]);
+  const entries = aggregate(findings('${{ vault.get("copies", "key") }}'));
+  assertEquals(ratchet(entries, { schema: 1, entries }), []);
+  assert(ratchet(aggregate(findings('${{ vault.get("other", "key") }}')), { schema: 1, entries }).length > 0);
+  assert(ratchet(aggregate(findings('${{ vault.get("copies", "key") }} ${{ vault.get("other", "key") }}')), { schema: 1, entries }).length > 0);
 });
