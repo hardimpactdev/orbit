@@ -2,7 +2,7 @@
 
 Orbit contains ten projects. Five are separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. The web app, Pi server, Node agent, and desktop app use Bun or Cargo; [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) shows how to run and check them. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
 
-Swamp lives under `swamp/`. Read the binding [Swamp shape guide](swamp/docs/swamp-shape.md) before writing, porting, or reviewing an operation. The guide overrides older contracts and conflicting Recall atoms. Gateway and Swamp changes ship in one Orbit PR. Old-shape conversions stay blocked. Build right-shape changes using the shared native template; live pilot readiness remains separate.
+Swamp lives under `swamp/`. Read the binding [Swamp shape guide](swamp/docs/swamp-shape.md) before writing, porting, or reviewing an operation. The guide overrides older contracts and conflicting Recall atoms. Gateway and Swamp changes ship in one Orbit PR. Old-shape conversions stay blocked. Build right-shape changes with the [swamp-port skill](.claude/skills/swamp-port/SKILL.md) and its [porting reference](docs/swamp/porting.md); live pilot readiness remains separate.
 
 ## Quality bar
 
@@ -38,6 +38,7 @@ Choose the entry point for the work at hand.
 | Build the feature and submit a complete PR | [developing-features](.agents/skills/developing-features/SKILL.md) |
 | Review a proposal or completed PR | [reviewing-pull-requests](.agents/skills/reviewing-pull-requests/SKILL.md) |
 | Merge an approved PR | [merging-pull-requests](.agents/skills/merging-pull-requests/SKILL.md) |
+| Port a legacy command to Swamp, or review a kind PR | [swamp-port](.agents/skills/swamp-port/SKILL.md) |
 
 For focused documentation work, use [writing-documentation](.agents/skills/writing-documentation/SKILL.md). For CLI design and audits, use [designing-cli-commands](.agents/skills/designing-cli-commands/SKILL.md). For real terminal recordings, use [verifying-cli-output](.agents/skills/verifying-cli-output/SKILL.md). For web UI layout on a phone and a desktop, use [verifying-web-ui](.agents/skills/verifying-web-ui/SKILL.md). For discovery on a task group's Incus topology, use [using-incus-topologies](.agents/skills/using-incus-topologies/SKILL.md). Project guidance supplies coding and testing conventions.
 
