@@ -69,6 +69,8 @@ it('admits one full-input destroy root without requiring a guest pin or guest wo
         ->and($operation->input['execution_secrets'])->toBe([])
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroying)
         ->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
+    $this->assertDatabaseCount('operations', 1);
+    expect(Operation::query()->where('lock_key', 'node:'.$this->vm->node_id)->exists())->toBeFalse();
 });
 
 it('clears Node records and credentials only after complete native success', function (string $status): void {

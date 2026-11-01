@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalPolicy;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -47,7 +48,7 @@ final readonly class AdmitNodeRemovalOperationAction
             return $this->operations->execute('node.remove', 'node', $node->id, $node->id,
                 ['offline' => $offline, 'force' => $force, '_node_removal' => $snapshot,
                     'intent' => $execution['intent'], 'execution_secrets' => [],
-                    'participant_node_ids' => $execution['participant_node_ids']], 'operator', $requestId);
+                    'participant_node_ids' => $execution['participant_node_ids']], 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
         });
     }
 
