@@ -170,3 +170,37 @@ it('limits pending peer DNS eligibility to its own Linux candidate and real peer
     });
     expect($policy->manages($node))->toBeFalse();
 });
+
+it('matches the terminal observer digest with retained unowned settings and candidate apps', function (): void {
+    FleetFixtures::node('settings-coherence-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('settings-coherence-node');
+    $stored = ['t3' => ['connection' => 'private-t3-value'], 'apps' => ['path' => '/srv/old', 'unowned' => 'private-app-value']];
+    $node->update(['settings' => $stored]);
+    $before = $node->fresh()->getAttributes();
+    $candidate = footprintCandidate($node, ['user' => $node->user]);
+    $capture = app(NodeConvergeInput::class)->captureFootprint($node, $candidate, ['apps' => ['path' => '/srv/next']]);
+    expect($node->fresh()->getAttributes())->toBe($before)
+        ->and($capture['payloads']['agent']['apps_root'])->toBe('/srv/next')
+        ->and(json_encode($capture, JSON_THROW_ON_ERROR))->not->toContain('private-t3-value', 'private-app-value');
+
+    $node->update(['settings' => ['t3' => ['connection' => 'private-t3-value'], 'apps' => ['unowned' => 'private-app-value', 'path' => '/srv/next']]]);
+    expect(collect($capture['artifacts'])->firstWhere('name', 'agent')['digest'])
+        ->toBe(app(NodeFootprint::class)->expected($node)->artifacts['agent']);
+});
+
+it('distinguishes omitted settings from explicit managed clearing and retains the terminal digest', function (?array $managed): void {
+    FleetFixtures::node('settings-clear-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('settings-clear-node');
+    $node->update(['settings' => ['apps' => ['path' => '/srv/stored']]]);
+    $input = app(NodeConvergeInput::class);
+    $candidate = footprintCandidate($node, ['user' => $node->user]);
+    $preserved = $input->captureFootprint($node, $candidate);
+    $cleared = $input->captureFootprint($node, $candidate, $managed);
+    expect($preserved['payloads']['agent']['apps_root'])->toBe('/srv/stored')
+        ->and($cleared['payloads']['agent']['apps_root'])->toBeNull()
+        ->and($node->fresh()->settings)->toBe(['apps' => ['path' => '/srv/stored']]);
+
+    $node->update(['settings' => null]);
+    expect(collect($cleared['artifacts'])->firstWhere('name', 'agent')['digest'])
+        ->toBe(app(NodeFootprint::class)->expected($node)->artifacts['agent']);
+})->with(['explicit null' => [null], 'empty managed map' => [[]]]);
