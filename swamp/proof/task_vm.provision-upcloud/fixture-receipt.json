@@ -15,17 +15,20 @@
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/ssh_firewall.py": "23e35896009bcfa908b5bf00d3577a4b63b7aea2f3a9dc4720e05f33982c7851",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/ssh_firewall_test.py": "e634f4674655a1aca90aa20f2a2ecdbf593d32a762fcdd4b6542f9d2f0f70592",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py": "8a143374b933e0987c7b7e36cc6aac75854a7927acb8f0884a9e1e0fb5c8edf8",
-    "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py": "04faa708a25629519a86886e7c30b09986f3537b98943896aa65d563ac874c26",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py": "fced77f41ca3d8d7cf7ca94d851fcf6c628f7ec731c80651a4fa8e28100d134e",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_create.py": "787339420a97cadae46c1bc96998344be0406e511a0a3067a03f4f1d51cfcf6b",
     "swamp/workflows/workflow-task-vm-provider-upcloud.yaml": "870b2121888d66e4b6d8b9880f9b411e81ec640748d7dcad2094b52eb97d810d",
     "swamp/tests/task_vm_upcloud_provider_native_test.py": "901a39bf397e5c7d30764a093ffa46518b29e05d33ad92397cf40ee5452c6b50",
-    "swamp/tests/task_vm_upcloud_wait_test.py": "5ed9a02e2e1f028c58c890f190d544c1a103e19bbf9d6d4690e11279806cc40f"
+    "swamp/tests/task_vm_upcloud_wait_test.py": "5ed9a02e2e1f028c58c890f190d544c1a103e19bbf9d6d4690e11279806cc40f",
+    "apps/gateway/app/Domain/Operations/OperationRunBudgets.php": "44e94dad130e1853fa2af042716c753dc03b3edc0c7666c8e17952e8eb3d7494",
+    "apps/gateway/tests/Feature/Infrastructure/Swamp/OperationRunBudgetTest.php": "df512c387c22d5df5316135e6fb883b1418fe7c8eb334f378673b59d39020d3c",
+    "swamp/tests/swamp_shape_gate_test.py": "7d15ed5fb4eb62f0ee0a53205662d5d21fd6d827e0faf40ddfc0654969ac370a"
   },
   "provider_native": {
     "test_file": "swamp/tests/task_vm_upcloud_provider_native_test.py",
     "tests": 9,
     "passed": 9,
-    "elapsed_seconds": 98.215,
+    "elapsed_seconds": 111.236,
     "cases": [
       "test_bad_start_state_fails_without_another_create_or_start",
       "test_create_and_lost_response_observation_never_duplicate_and_never_expose_bootstrap",
@@ -38,145 +41,145 @@
       "test_unknown_uuid_discovery_stop_delete_and_absence_are_native_steps"
     ],
     "successful_run_sample": 4,
-    "nearest_rank_p95_ms": 4273,
+    "nearest_rank_p95_ms": 7364,
     "runs": [
       {
-        "id": "52f1627c-5867-41dd-85dd-9cca5a4f08a6",
+        "id": "8d6bc5ce-1a38-4124-81d2-79f192590aa6",
         "status": "failed",
-        "duration": 4518
+        "duration": 2021
       },
       {
-        "id": "b8cf4059-d559-4a34-b300-be453133712d",
+        "id": "07c43a8c-addc-4bdc-9f21-8cbd1ff6d896",
         "status": "succeeded",
-        "duration": 1613
+        "duration": 4672
       },
       {
-        "id": "f2dc61e2-998f-4e7d-b33c-1a2e6dd7c8ff",
+        "id": "01bf8949-7664-4323-a147-9d8361796d10",
         "status": "succeeded",
-        "duration": 1537
+        "duration": 7364
       },
       {
-        "id": "d56dc173-4238-4afa-bdfa-23cec0bfe27d",
+        "id": "16cc6db7-3406-4eed-9afd-993e0dc6d096",
         "status": "failed",
-        "duration": 1165
+        "duration": 1381
       },
       {
-        "id": "86d1e95a-b008-4f56-a3a8-35f44bb2100c",
+        "id": "acd44224-8070-4ae0-8935-d18684981da9",
         "status": "failed",
-        "duration": 517
+        "duration": 509
       },
       {
-        "id": "e12843ab-886a-4e25-8f7e-dc83a8c81f4a",
+        "id": "d45181bd-719e-4147-8f43-c4f2d4a551f4",
         "status": "succeeded",
-        "duration": 1330
+        "duration": 1348
       },
       {
-        "id": "c5a11cf3-1c4f-4cb6-b416-eba118fced42",
+        "id": "92883c2d-7627-4482-b05d-f08d5646c4eb",
         "status": "succeeded",
-        "duration": 4273
+        "duration": 4314
       },
       {
-        "id": "f3129b2d-f8f1-4eea-8a63-6a9fdf1ffd4c",
+        "id": "adb909eb-5ecb-4465-b24b-a211e4826728",
         "status": "failed",
-        "duration": 1300
+        "duration": 1353
       },
       {
-        "id": "eb6f0a32-824b-4f5f-bbf7-a268a86456fb",
+        "id": "25cc9363-70b1-4526-aecf-47dd7f5b58ca",
         "status": "failed",
-        "duration": 2245
+        "duration": 2473
       }
     ],
     "longest_successful_run_phases": {
       "fixture_only": true,
-      "id": "c5a11cf3-1c4f-4cb6-b416-eba118fced42",
+      "id": "01bf8949-7664-4323-a147-9d8361796d10",
       "status": "succeeded",
-      "startedAt": "2026-11-01T13:41:17.308Z",
-      "completedAt": "2026-11-01T13:41:21.581Z",
-      "duration": 4273,
+      "startedAt": "2026-11-01T14:03:58.763Z",
+      "completedAt": "2026-11-01T14:04:06.127Z",
+      "duration": 7364,
       "phases": [
         {
           "name": "input",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:17.313Z",
-          "completedAt": "2026-11-01T13:41:17.363Z",
-          "duration": 50
+          "startedAt": "2026-11-01T14:03:58.830Z",
+          "completedAt": "2026-11-01T14:03:59.328Z",
+          "duration": 498
         },
         {
           "name": "list",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:17.365Z",
-          "completedAt": "2026-11-01T13:41:17.529Z",
-          "duration": 164
+          "startedAt": "2026-11-01T14:03:59.348Z",
+          "completedAt": "2026-11-01T14:04:01.027Z",
+          "duration": 1679
         },
         {
           "name": "plans",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:17.365Z",
-          "completedAt": "2026-11-01T13:41:17.709Z",
-          "duration": 344
+          "startedAt": "2026-11-01T14:03:59.348Z",
+          "completedAt": "2026-11-01T14:04:00.457Z",
+          "duration": 1109
         },
         {
           "name": "choose",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:17.715Z",
-          "completedAt": "2026-11-01T13:41:17.736Z",
-          "duration": 21
+          "startedAt": "2026-11-01T14:04:01.087Z",
+          "completedAt": "2026-11-01T14:04:01.287Z",
+          "duration": 200
         },
         {
           "name": "create",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:17.741Z",
-          "completedAt": "2026-11-01T13:41:17.893Z",
-          "duration": 152
+          "startedAt": "2026-11-01T14:04:01.336Z",
+          "completedAt": "2026-11-01T14:04:01.944Z",
+          "duration": 608
         },
         {
           "name": "discover",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:17.898Z",
-          "completedAt": "2026-11-01T13:41:18.037Z",
-          "duration": 139
+          "startedAt": "2026-11-01T14:04:02.244Z",
+          "completedAt": "2026-11-01T14:04:03.178Z",
+          "duration": 934
         },
         {
           "name": "selected",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:18.043Z",
-          "completedAt": "2026-11-01T13:41:18.060Z",
-          "duration": 17
+          "startedAt": "2026-11-01T14:04:03.268Z",
+          "completedAt": "2026-11-01T14:04:03.428Z",
+          "duration": 160
         },
         {
           "name": "inspect",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:18.067Z",
-          "completedAt": "2026-11-01T13:41:18.204Z",
-          "duration": 137
+          "startedAt": "2026-11-01T14:04:03.502Z",
+          "completedAt": "2026-11-01T14:04:04.183Z",
+          "duration": 681
         },
         {
           "name": "observed",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:18.210Z",
-          "completedAt": "2026-11-01T13:41:18.231Z",
-          "duration": 21
+          "startedAt": "2026-11-01T14:04:04.221Z",
+          "completedAt": "2026-11-01T14:04:04.358Z",
+          "duration": 137
         },
         {
           "name": "start",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:18.238Z",
-          "completedAt": "2026-11-01T13:41:18.381Z",
-          "duration": 143
+          "startedAt": "2026-11-01T14:04:04.378Z",
+          "completedAt": "2026-11-01T14:04:04.969Z",
+          "duration": 591
         },
         {
           "name": "observe",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:18.389Z",
-          "completedAt": "2026-11-01T13:41:21.534Z",
-          "duration": 3145
+          "startedAt": "2026-11-01T14:04:05.043Z",
+          "completedAt": "2026-11-01T14:04:05.669Z",
+          "duration": 626
         },
         {
           "name": "provider",
           "status": "succeeded",
-          "startedAt": "2026-11-01T13:41:21.541Z",
-          "completedAt": "2026-11-01T13:41:21.563Z",
-          "duration": 22
+          "startedAt": "2026-11-01T14:04:05.711Z",
+          "completedAt": "2026-11-01T14:04:06.022Z",
+          "duration": 311
         }
       ]
     }
@@ -193,19 +196,41 @@
     "provider_critical_path_seconds": 345,
     "provider_review_allowance_seconds": 375,
     "ssh_preparation_review_allowance_seconds": 600,
+    "enrollment_allowance_seconds": 1500,
+    "rollback_allowance_seconds": 900,
     "queue_timeout_seconds": 10,
-    "live_computed_operation_budget_seconds": 1800,
-    "budget_evaluation": "Derived from released #2348 source and normal Gateway successful-history read; no live helper invocation or new Operation."
+    "native_step_queue_count": 160,
+    "queue_allowance_seconds": 1600,
+    "subtotal_seconds": 4975,
+    "multiplier": 1.5,
+    "explicit_root_budget_seconds": 7500,
+    "live_helper_invoked": false
   },
   "not_verified": [
     "real UpCloud API/provider latency",
     "F13 topology",
+    "live uptake of this new explicit budget row",
     "600-second aggregate SSH preparation cap"
   ],
   "composition_native": {
     "test_file": "swamp/tests/task_vm_upcloud_composition_native_test.py",
     "tests": 9,
     "passed": 9,
-    "elapsed_seconds": 210.564
+    "elapsed_seconds": 207.173
+  },
+  "gateway_budget_suite": {
+    "tests": 54,
+    "passed": 54,
+    "assertions": 465,
+    "regression_before_change_seconds": 120,
+    "pinned_after_change_seconds": 7500,
+    "providers": [
+      "incus",
+      "upcloud"
+    ]
+  },
+  "python_shape_gate_tests": {
+    "tests": 17,
+    "passed": 17
   }
 }
