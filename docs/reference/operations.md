@@ -29,6 +29,8 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Native run budgets
 
+Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 30 seconds for setup or destroy. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.
+
 The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The Gateway does not re-read the Project.
 
 An explicit kind budget wins. Long-running kinds have a fixed budget in the same table: the 14-day p95 of successful runs, rounded up to the next five minutes. For example, `task_vm.image_build` has 2,400 seconds and `node.converge` 3,900 seconds. A kind without a successful run gets an explicit budget only from the measured work of a real run. For example, `cluster.router_set` and `cluster.router_unset` have 3,900 seconds. That is 1.5 times the 2,417 seconds of work in their only run, rounded up to five minutes. A first success replaces it with a p95. The create fallback is 60 seconds when no captured phase budget exists. Clients cannot choose the captured budget.

@@ -1,5 +1,6 @@
 id: 612ea82d-eaaa-4c4b-807a-60e35822472d
 name: route-lan-migrate
+queueTimeout: 30
 description: One-time approved removal of old Route-tagged rules after official tuple convergence.
 vaults: []
 inputs:

@@ -1,5 +1,6 @@
 id: 2c16b6c3-e9db-48ec-af98-05cb1a473782
 name: route-certificate-remove
+queueTimeout: 30
 description: Remove only an admitted scope absent from freshly adapted Caddy references.
 vaults: []
 inputs:

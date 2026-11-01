@@ -1,5 +1,6 @@
 id: 3ff714cf-3d11-4b0d-8b07-244817882a2a
 name: database-owned-sqlite-remove
+queueTimeout: 30
 description: Remove one owned SQLite file under its admitted SSH account, with a typed native result.
 writes: true
 vaults: []

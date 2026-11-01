@@ -1,5 +1,6 @@
 id: ba623d94-9335-4d39-a9a3-f77a004cfae6
 name: route-environment-write
+queueTimeout: 30
 description: Apply one captured Route environment or URL write from a vault execution copy.
 vaults:
 - orbit-control-inputs

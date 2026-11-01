@@ -1,5 +1,6 @@
 id: 3aca13ae-e8bb-40b4-bc14-072b4c7e435d
 name: route-dns-publish
+queueTimeout: 30
 description: Apply a full public Route DNS snapshot with official file and service
   actions.
 vaults: []

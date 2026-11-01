@@ -457,6 +457,7 @@ export function ingressWorkflow(): Fields {
     return {
         id: "4977fbb9-658c-4d9c-a984-d003f4dbe225",
         name: "route-ingress-apply",
+        queueTimeout: 30,
         description:
             "Converge public ingress through the canonical pinned tuple child.",
         vaults: [],

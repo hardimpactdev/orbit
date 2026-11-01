@@ -1,5 +1,6 @@
 id: 6c2d24de-e47f-48c7-9d5e-b060e61b893d
 name: route-dns-grace
+queueTimeout: 30
 description: Preserve the private DNS TTL before retiring the prior Route target.
 vaults: []
 inputs:
