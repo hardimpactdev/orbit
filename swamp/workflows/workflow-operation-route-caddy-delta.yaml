@@ -1,5 +1,6 @@
 id: 2c1fb8bb-5e46-4f5e-b742-99e7801684d9
 name: operation-route-caddy-delta
+queueTimeout: 30
 description: Compose captured public sections and apply them with official file actions.
 vaults: []
 inputs:

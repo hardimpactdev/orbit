@@ -1,5 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
+queueTimeout: 10
 description: Development Instance create from209 through separately placed official SSH actions.
 vaults:
   - orbit-control-inputs

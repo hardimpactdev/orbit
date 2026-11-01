@@ -1,5 +1,6 @@
 id: b14d2aa1-9248-43ef-a2f1-233044ec7cb6
 name: route-lan-apply
+queueTimeout: 30
 description: Converge captured shared Route LAN tuples through official pinned SSH.
 vaults: []
 inputs:
