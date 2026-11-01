@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
-import { AdoptInput, Facts, Observation, queryScript } from "./adopt.ts";
+import { AdoptInput, Facts, Observation, queryScript, repositoryError } from "./adopt.ts";
 import { homebrewRemovalBlock } from "./adopt_homebrew.ts";
-import { ToolRefusal } from "./contract.ts";
+import { repositoryJson, sourceInput, ToolRefusal } from "./contract.ts";
 import { writeInventory } from "./write.ts";
 export const RemoveInput = AdoptInput.safeExtend({ intent_only: z.boolean() });
 type Input = z.infer<typeof RemoveInput>;
@@ -33,13 +33,16 @@ export function removalResult(input: Input, steps: Record<string, z.infer<typeof
                 steps["after-0"]?.outputs?.present !== false) error = "tool.remove_failed";
         }
     }
+    if (error === null && input.remove_repository && input.repository) {
+        error = success("repository_cleanup") ? repositoryError(steps["repository_cleanup-0"]?.outputs) : "tool.repository_failed";
+    }
     return { ok: error === null, stdout: JSON.stringify({ manager_version: fact?.facts?.manager_version ?? null,
         installed_version: error === null ? null : input.installed_version, ...(error ? { error_code: error } : { outcome: "applied" }) }) };
 }
 export const behavior = {
-    type: "@nckrtl/tool-remove-command", version: "2026.11.01.1",
+    type: "@nckrtl/tool-remove-command", version: "2026.11.01.2",
     resources: {
-        assets: { schema: z.object({ script_body: z.string() }), lifetime: "1d", garbageCollection: 10 },
+        assets: { schema: z.object({ script_body: z.string(), repository_body: z.string(), repository_json: z.string() }), lifetime: "1d", garbageCollection: 10 },
         probe: { schema: Probe, lifetime: "1d", garbageCollection: 10 },
         plan: { schema: z.object({ ready: z.boolean(), error_code: z.string().optional() }), lifetime: "1d", garbageCollection: 10 },
         result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 },
@@ -57,14 +60,14 @@ export const behavior = {
                     if (args.action === "remove" && (!args.before?.ready || !args.before.present || !args.before.facts)) {
                         throw new ToolRefusal("tool.remove_failed");
                     }
-                    const input = { ...args.input, before: args.before?.facts };
+                    const input = { ...sourceInput(args.input), before: args.before?.facts };
                     if (args.input.manager !== "apt") source = await Deno.readTextFile(ctx.extensionFile("queries/support.py")) + "\n" + source.replace(/^from support import [^\n]*\n/gm, "");
                     const encoded = JSON.stringify(JSON.stringify(input));
                     script_body = args.input.manager === "apt"
                         ? source.replace("REMOVE_INPUT = None", "REMOVE_INPUT = json.loads(" + encoded + ")")
                         : source.replace("QUERY_INPUT = None", "QUERY_INPUT = " + encoded);
                 }
-                const result = { script_body }; await ctx.writeResource("assets", "assets", result); return result;
+                const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: repositoryJson(args.input) }; await ctx.writeResource("assets", "assets", result); return result;
             },
         },
         observe: {

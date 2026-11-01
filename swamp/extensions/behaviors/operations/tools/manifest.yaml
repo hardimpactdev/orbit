@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/tool-adopt-command'
-version: 2026.11.01.1
+version: 2026.11.01.2
 visibility: private
 license: MIT
 description: Typed public manager observations and bounded Tool operation results.
@@ -30,3 +30,4 @@ additionalFiles:
 - writes/composer.py
 - writes/vp.py
 - writes/brew.py
+- apt_repository.py

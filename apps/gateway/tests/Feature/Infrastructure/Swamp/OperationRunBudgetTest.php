@@ -500,3 +500,8 @@ it('uses own history or thirty minutes for kinds without an explicit measured bu
 
     expect(OperationRunBudgets::seconds($operation))->toBe(900);
 })->with(['node.role_converge', 'node.role_relocate']);
+
+it('covers every bounded Tool write phase with a provisional budget', function (string $kind): void {
+    // Repository 180 s + candidate 120 s + mutation 900 s must fit inside the kind budget (ADR 0242).
+    expect(OperationRunBudgets::seconds(budgetOperation($kind, ['input' => []])))->toBe(1500)->toBeGreaterThan(180 + 120 + 900);
+})->with(['tool.install', 'tool.update']);

@@ -1,6 +1,7 @@
 id: 3f4a442f-a80b-4d66-9ef8-5b1f4c462f7f
 name: operation-tool-write-209
 vaults: []
+queueTimeout: 60
 inputs:
   type: object
   properties:
@@ -90,19 +91,27 @@ jobs:
     forEach: *active
     dependsOn: [{condition: {type: succeeded}, step: before_query}]
     task: {behaviorName: '${{ "tw-before-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {input: '${{ self.package }}', observation: '${{ steps["before_query-0"].outputs }}'}, methodName: before, type: behavior}
+  - name: repository
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    writes: true
+    dependsOn: [{condition: {type: succeeded}, step: before}]
+    guard: ${{ !steps["before-0"].outputs.ready || !("repository" in inputs.intent) || inputs.intent.repository==null }}
+    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["timeout","180","/usr/bin/python3","-I","-c",steps["query_assets-0"].outputs.repository_body,"prepare",steps["query_assets-0"].outputs.repository_json] }}', sudo: true}, methodName: exec, type: behavior}
   - name: candidate_assets
     target: orbit-node-209
     allowFailure: true
     forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: before}]
-    guard: ${{ !steps["before-0"].outputs.ready || !steps["before-0"].outputs.package_required }}
-    task: {behaviorName: '${{ "tw-candidate_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {action: candidate, before: '${{ steps["before-0"].outputs.facts }}', input: '${{ self.package }}'}, methodName: assets, type: behavior}
+    dependsOn: [{condition: {type: succeeded}, step: before}, {condition: {type: always}, step: repository}]
+    guard: ${{ !steps["before-0"].outputs.ready || !steps["before-0"].outputs.package_required || ("repository" in inputs.intent && inputs.intent.repository!=null && steps["repository-0"].status!="succeeded") }}
+    task: {behaviorName: '${{ "tw-candidate_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {repository_observation: '${{ "repository-0" in steps && steps["repository-0"].status=="succeeded" ? steps["repository-0"].outputs : null }}', action: candidate, before: '${{ steps["before-0"].outputs.facts }}', input: '${{ self.package }}'}, methodName: assets, type: behavior}
   - name: candidate_query
     target: orbit-node-209
     allowFailure: true
     forEach: *active
     dependsOn: [{condition: {type: succeeded}, step: candidate_assets}]
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["candidate_assets-0"].outputs.script_body }}', sudo: false}, methodName: script, type: behavior}
+    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["python3","-I","-c",steps["candidate_assets-0"].outputs.script_body,steps["candidate_assets-0"].outputs.repository_json] }}', sudo: false, timeoutSec: 120}, methodName: exec, type: behavior}
   - name: candidate
     target: orbit-node-209
     allowFailure: true
@@ -128,14 +137,14 @@ jobs:
     forEach: *active
     dependsOn: [{condition: {type: succeeded}, step: decision}]
     guard: ${{ !steps["decision-0"].outputs.ready || !steps["decision-0"].outputs.mutate }}
-    task: {behaviorName: '${{ "tw-mutate_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {action: mutate, before: '${{ steps["decision-0"].outputs.facts }}', input: '${{ self.package }}'}, methodName: assets, type: behavior}
+    task: {behaviorName: '${{ "tw-mutate_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {candidate: '${{ steps["candidate-0"].outputs }}', action: mutate, before: '${{ steps["decision-0"].outputs.facts }}', input: '${{ self.package }}'}, methodName: assets, type: behavior}
   - name: mutate
     target: orbit-node-209
     allowFailure: true
     forEach: *active
     writes: true
     dependsOn: [{condition: {type: succeeded}, step: mutate_assets}]
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["mutate_assets-0"].outputs.script_body }}', sudo: '${{ inputs.intent.manager=="apt" }}'}, methodName: script, type: behavior}
+    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ (inputs.intent.platform == "linux" ? ["timeout","900"] : []) + ["python3","-I","-c",steps["mutate_assets-0"].outputs.script_body,steps["mutate_assets-0"].outputs.candidate_json,steps["mutate_assets-0"].outputs.repository_json] }}', timeoutSec: 960, sudo: '${{ inputs.intent.manager=="apt" }}'}, methodName: exec, type: behavior}
   - name: after_query
     target: orbit-node-209
     allowFailure: true

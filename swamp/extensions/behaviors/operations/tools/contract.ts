@@ -2,6 +2,14 @@ import { z } from "npm:zod@4.4.3";
 import { constraintMatches } from "./constraints.ts";
 
 export const Manager = z.enum(["apt", "composer", "vp", "brew", "brew-cask"]);
+export const Repository = z.object({
+  name: z.string().max(63).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).refine((v) => !["caddy", "php"].includes(v)),
+  uris: z.array(z.url().startsWith("https://")).min(1).max(16),
+  suites: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)).min(1).max(16),
+  components: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)).min(1).max(16),
+  architectures: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/)).min(1).max(16).optional(),
+  signing_key: z.object({ url: z.url().startsWith("https://"), fingerprint: z.string().regex(/^(?:[A-F0-9]{40}|[A-F0-9]{64})$/) }).strict(),
+}).strict();
 export const Input = z.object({
   node_id: z.number().int().positive(),
   manager: Manager,
@@ -13,9 +21,21 @@ export const Input = z.object({
   tool_status: z.string().nullable().default(null),
   installed_version: z.string().nullable().default(null),
   intent_only: z.boolean().default(false),
+  repository: Repository.nullable().default(null),
+  remove_repository: z.boolean().default(false),
+  repository_packages: z.array(z.string().regex(/^[a-z0-9][a-z0-9+.-]{0,254}$/)).max(256).default([]),
   materialize: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 export type ToolInput = z.infer<typeof Input>;
+/** Rewritten script source never carries repository intent; scripts receive it as argv JSON. */
+export function sourceInput<T extends { repository?: unknown; remove_repository?: unknown; repository_packages?: unknown }>(input: T): Omit<T, "repository" | "remove_repository" | "repository_packages"> {
+  const { repository: _repository, remove_repository: _remove, repository_packages: _packages, ...rest } = input;
+  return rest;
+}
+/** The repository script gets the shared definition plus the packages its apt preference admits. */
+export function repositoryJson(input: { repository: z.infer<typeof Repository> | null; repository_packages: string[] }): string {
+  return JSON.stringify(input.repository ? { ...input.repository, packages: input.repository_packages } : null);
+}
 export type Result = Record<string, unknown>;
 export class ToolRefusal extends Error {
   constructor(readonly code: string, readonly result: Result = {}) {

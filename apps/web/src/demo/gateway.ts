@@ -467,6 +467,7 @@ export function createDemoGateway() {
             manager,
             package: packageName,
             version_constraint: storedConstraint,
+            repository: null,
             status: "installed",
             installed_version: found.installed_version,
             failed_operation: null,

@@ -100,11 +100,53 @@ class ToolWriteNative(NativeTestCase):
         self.assertEqual(self.result(self.run_write(False))['error_code'],'tool.manager_unavailable')
 
 
+    def test_repository_is_prepared_before_candidate_and_changed_suite_upgrades(self):
+        self.input['intent']['repository'] = REPOSITORY
+        self.run_write()
+        actions = [c['action'] for c in self.calls()]
+        self.assertLess(actions.index('repository_prepare'), actions.index('candidate'))
+        self.assertEqual(json.loads((self.repo/'repository').read_text())['suites'], ['preview'])
+        self.kind('tool.update'); self.input['intent']['tool_id'] = 1
+        self.input['intent']['repository'] = {**REPOSITORY, 'suites': ['stable'], 'uris': ['https://next.example.test/apt']}
+        self.state.write_text('1.0.0')
+        self.run_write()
+        self.assertEqual(json.loads((self.repo/'repository').read_text())['suites'], ['stable'])
+        self.assertEqual(self.state.read_text(), '2.0.0')
+
+    def test_unavailable_repository_and_key_mismatch_stop_before_candidates_or_install(self):
+        self.input['intent']['repository'] = REPOSITORY
+        for code in ['tool.repository_unavailable', 'tool.repository_key_mismatch']:
+            (self.repo/'repository-error').write_text(code)
+            self.assertEqual(self.result(self.run_write(False))['error_code'], code)
+        self.assertFalse(any(c['action'] in ['candidate', 'mutate'] for c in self.calls()))
+        self.assertFalse(self.state.exists())
+
+
+REPOSITORY = {'name':'vendor','uris':['https://packages.example.test/apt'],'suites':['preview'],'components':['main'],'signing_key':{'url':'https://packages.example.test/key.gpg','fingerprint':'A'*40}}
+
 SCRIPT = r'''
 import ast,json,sys
 from pathlib import Path
 args=sys.argv[1:];assert KEY in args and 'IdentitiesOnly=yes' in args
-body=sys.stdin.read();tree=ast.parse(body)
+body=sys.stdin.read()
+if not body and 'managed apt repository phase' in args[-1]:
+ import shlex
+ command=shlex.split(args[-1]);action=command[-2]
+ assert action in ('prepare','cleanup') and 'sudo' in args[-1]
+ with Path(AUDIT).open('a') as out:out.write(json.dumps({'action':'repository_'+action,'manager':'apt'})+'\n')
+ marker=Path(AUDIT).with_name('repository')
+ error=Path(AUDIT).with_name('repository-error')
+ if action=='prepare':
+  if error.exists():print(json.dumps({'ready':False,'error_code':error.read_text()}));raise SystemExit(0)
+  marker.write_text(command[-1])
+ else:marker.unlink(missing_ok=True)
+ print('{"ready":true}');raise SystemExit(0)
+mutation_argv=[]
+if not body:
+ import shlex
+ command=shlex.split(args[-1]);index=len(command)-1-command[::-1].index('-c')
+ body=command[index+1];mutation_argv=command[index+2:]
+tree=ast.parse(body)
 node=next((n for n in tree.body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='QUERY_INPUT'),None)
 if node:
  input=json.loads(ast.literal_eval(node.value));action='mutate' if any(isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='print' and n.args and isinstance(n.args[0],ast.Constant) and n.args[0].value=='{"ready":true}' for n in ast.walk(tree)) else 'candidate' if input.get('before') else 'query'
@@ -128,6 +170,8 @@ elif action=='candidate':
  else:print('{"version":"2.0.0"}')
 else:
  assert ('sudo' in args[-1]) == (manager=='apt')
+ assert len(mutation_argv)==2 and 'repository' not in input
+ if json.loads(mutation_argv[1]):assert json.loads(mutation_argv[0])['version']=='2.0.0' and '2.0.0' not in body
  if not Path(NO_EFFECT).exists():Path(STATE).write_text('2.0.0')
  if Path(LOST).exists():Path(LOST).unlink();raise SystemExit(1)
  print('{"ready":true}')

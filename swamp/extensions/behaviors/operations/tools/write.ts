@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
-import { AdoptInput, Facts, Observation, queryScript } from "./adopt.ts";
-import { allows, normalizeVersion, safeVersion, ToolRefusal, verifyInstalled } from "./contract.ts";
+import { AdoptInput, Facts, Observation, queryScript, repositoryError } from "./adopt.ts";
+import { allows, normalizeVersion, repositoryJson, safeVersion, sourceInput, ToolRefusal, verifyInstalled } from "./contract.ts";
 import { homebrewBlock, homebrewCandidateVersion } from "./adopt_homebrew.ts";
 const WriteShape = AdoptInput.safeExtend({ package: z.string().max(255), kind: z.enum(["tool.install", "tool.update", "tool.manager_converge"]), setup: Setup.nullable().default(null) }).refine((v) => v.kind === "tool.manager_converge" ? v.package === "" : v.package.length > 0);
 export const WriteInput = z.preprocess((value) => {
@@ -70,6 +70,7 @@ export function writeResult(input: Input, steps: Record<string, z.infer<typeof S
   if (!success("inspect") || initial?.ready !== true) code = "tool.version_probe_failed";
   else if (initial.setup_required && (!success("setup_manager") || steps["setup_apt-0"]?.status === "failed" || steps["setup_packages-0"]?.status === "failed" || steps["setup_refresh-0"]?.status === "failed")) code = "tool.manager_provision_failed";
   else if (!success("before") || first?.ready !== true) code = first?.error_code ?? "tool.version_probe_failed";
+  else if (input.repository && (!success("repository") || repositoryError(output("repository")))) code = success("repository") ? repositoryError(output("repository")) : "tool.repository_failed";
   else if (first.package_required) {
     if (!success("candidate") || choice?.ready !== true) code = choice?.error_code ?? "tool.candidate_version_probe_failed";
     else if (!success("decision") || action?.ready !== true) code = action?.error_code ?? "tool.version_probe_failed";
@@ -84,11 +85,15 @@ export function writeResult(input: Input, steps: Record<string, z.infer<typeof S
   return { ok: code === null, stdout: JSON.stringify({ manager_version: facts.success ? facts.data.manager_version ?? null : null, installed_version: installed, ...(code ? { error_code: code } : { outcome }) }) };
 }
 export const behavior = {
-  type: "@nckrtl/tool-write-command", version: "2026.11.01.1",
-  resources: { assets: { schema: z.object({ script_body: z.string() }), lifetime: "1d", garbageCollection: 10 }, observation: { schema: Public, lifetime: "1d", garbageCollection: 10 }, result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 } },
+  type: "@nckrtl/tool-write-command", version: "2026.11.01.2",
+  resources: { assets: { schema: z.object({ script_body: z.string(), repository_body: z.string(), repository_json: z.string(), candidate_json: z.string() }), lifetime: "1d", garbageCollection: 10 }, observation: { schema: Public, lifetime: "1d", garbageCollection: 10 }, result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 } },
   methods: {
-    assets: { description: "Bind public input to one manager query or action", arguments: z.object({ action: z.enum(["query", "candidate", "mutate"]), input: WriteInput, before: Facts.optional() }),
-      execute: async (args: { action: "query" | "candidate" | "mutate"; input: Input; before?: z.infer<typeof Facts> }, ctx: Context) => {
+    assets: { description: "Bind public input to one manager query or action", arguments: z.object({ action: z.enum(["query", "candidate", "mutate"]), input: WriteInput, before: Facts.optional(), repository_observation: Observation.nullable().optional(), candidate: Public.optional() }),
+      execute: async (args: { action: "query" | "candidate" | "mutate"; input: Input; before?: z.infer<typeof Facts>; candidate?: Record<string, unknown>; repository_observation?: unknown }, ctx: Context) => {
+        if (args.action === "candidate" && args.input.repository) {
+          const code = repositoryError(args.repository_observation);
+          if (code) throw new ToolRefusal(code);
+        }
         const { setup: _setup, ...publicInput } = args.input;
         const input = { ...publicInput, manager_only: args.input.kind === "tool.manager_converge", before: args.before };
         let script_body;
@@ -96,9 +101,9 @@ export const behavior = {
         else {
           const manager = input.manager.startsWith("brew") ? "brew" : input.manager;
           const source = await Deno.readTextFile(ctx.extensionFile((args.action === "candidate" ? "candidates/" : "writes/") + manager + ".py"));
-          script_body = (await Deno.readTextFile(ctx.extensionFile("queries/support.py")) + "\n" + source.replace(/^from support import [^\n]*\n/gm, "")).replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(input)));
+          script_body = (await Deno.readTextFile(ctx.extensionFile("queries/support.py")) + "\n" + source.replace(/^from support import [^\n]*\n/gm, "")).replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(sourceInput(input))));
         }
-        const result = { script_body }; await ctx.writeResource("assets", "assets", result); return result;
+        const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: repositoryJson(input), candidate_json: JSON.stringify(args.candidate ?? null) }; await ctx.writeResource("assets", "assets", result); return result;
       } },
     inspect: { description: "Select missing Linux manager setup from its native query", arguments: z.object({ input: WriteInput, observation: Observation }), execute: async (args: { input: Input; observation: unknown }, ctx: Context) => { const value = inspect(args.input, args.observation); await ctx.writeResource("observation", "inspect", value); return value; } },
     before: { description: "Check the actual package before any mutation", arguments: z.object({ input: WriteInput, observation: Observation, phase: z.enum(["before", "after"]).default("before") }), execute: async (args: { input: Input; observation: unknown; phase?: "before" | "after" }, ctx: Context) => { const value = before(args.input, args.observation, args.phase === "after"); await ctx.writeResource("observation", "before", value); return value; } },

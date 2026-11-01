@@ -8,10 +8,14 @@ use InvalidArgumentException;
 use Orbit\Sdk\Support\CredentialRedactor;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use Orbit\Sdk\Support\GatewayRequestId;
+use Orbit\Sdk\Support\ToolRepositoryData;
 use SensitiveParameter;
 
 final readonly class ToolResponse
 {
+    /** @var array<string, mixed>|null */
+    public ?array $repository;
+
     public int $id;
 
     public int $nodeId;
@@ -42,6 +46,7 @@ final readonly class ToolResponse
 
     private const string TOKEN_PATTERN = '/\A[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*\z/D';
 
+    /** @param array<string, mixed>|null $repository */
     public function __construct(
         int $id,
         int $nodeId,
@@ -63,7 +68,10 @@ final readonly class ToolResponse
         ?string $outcome,
         #[SensitiveParameter]
         string $requestId,
+        #[SensitiveParameter]
+        ?array $repository = null,
     ) {
+        $this->repository = $repository === null ? null : new CredentialRedactor()->redactArray($repository);
         if ($id < 1 || $nodeId < 1) {
             throw new InvalidArgumentException('Invalid Tool response identifier.');
         }
@@ -152,10 +160,11 @@ final readonly class ToolResponse
             errorCode: self::stringOrNull($data, 'error_code'),
             outcome: self::nullableString($data, 'outcome'),
             requestId: $requestId,
+            repository: ToolRepositoryData::fromGateway($data['repository'] ?? null),
         );
     }
 
-    /** @return array<string, int|string|null> */
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         return [
@@ -164,6 +173,7 @@ final readonly class ToolResponse
             'manager' => $this->manager,
             'package' => $this->package,
             'version_constraint' => $this->versionConstraint,
+            'repository' => $this->repository,
             'status' => $this->status,
             'installed_version' => $this->installedVersion,
             'failed_operation' => $this->failedOperation,

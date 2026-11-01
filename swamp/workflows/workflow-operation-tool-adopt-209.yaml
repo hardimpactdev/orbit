@@ -1,6 +1,7 @@
 id: 08946703-b9c1-4e36-a59d-81b0037625df
 name: operation-tool-adopt-209
 vaults: []
+queueTimeout: 60
 inputs:
   type: object
   properties:
@@ -66,9 +67,24 @@ jobs:
         interpreter: python3
         sudo: false
         script: ${{ steps.assets.outputs.script_body }}
+  - name: repository
+    target: orbit-node-209
+    allowFailure: true
+    forEach: {item: package, in: '${{ "repository" in inputs.intent && inputs.intent.repository!=null ? [inputs.intent] : [] }}'}
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tool-adopt-repository-" + run.id + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "tool-adopt-repository-" + run.id + "-" + string(self._index) }}
+        transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true}
+        hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
+      inputs: {hosts: 'name:target', sudo: false, argv: '${{ ["timeout","180","/usr/bin/python3","-I","-c",steps.assets.outputs.repository_body,"adopt",steps.assets.outputs.repository_json] }}'}
   - name: result
     target: orbit-node-209
-    dependsOn: [{step: query, condition: {type: succeeded}}]
+    dependsOn: [{step: query, condition: {type: succeeded}}, {step: repository, condition: {type: always}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-adopt-command'
@@ -77,6 +93,7 @@ jobs:
       inputs:
         input: ${{ inputs.intent }}
         observation: ${{ steps.query.outputs }}
+        repository_observation: '${{ "repository-0" in steps && steps["repository-0"].status=="succeeded" ? steps["repository-0"].outputs : null }}'
   - name: assert
     target: orbit-node-209
     dependsOn: [{step: result, condition: {type: succeeded}}]
