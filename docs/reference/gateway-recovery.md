@@ -111,7 +111,9 @@ The pinned loader ships before the Gateway release runner requires it. This tran
 
 A second release enables the entry and retires the separate merge publisher. The release runner becomes the only normal loader. It owns the real Gateway release lock and uses existing pinned SSH to 209. The entry accepts one `orbit.swamp.release-load.v1` JSON request on stdin, with `release_sha`, the 12-character `release_id`, `gateway_release_record`, `target_node_id: 209`, a unique `attempt_id`, and `action: prepare|accept`. These identify an attempt; they do not attest locks or grant authority. Credentials stay in existing protected files.
 
-The entry opens the existing host publication lock without creating or following a link. Before taking custody it checks Serve and the clean checkout, fetches the exact admitted SHA, and resolves that commit. The clean checkout must match the accepted native source and runtime. A busy lock or failed preflight changes no native state, leaves no pending marker, and reports `retry_safe: true`.
+The entry opens the existing host publication lock without creating or following a link. Before taking custody it checks Serve and the clean checkout, fetches the exact admitted SHA, and resolves that commit. The clean checkout must match the accepted native source and runtime. A busy lock or failed preflight changes no native state, leaves no pending marker, and reports `retry_safe: true`. 
+
+The Gateway records a matching `prepare` refusal as `failed` and retryable, with the entry code, phase and checkpoint. It does not pause automation. The existing release runner can try again without spending a commit failure attempt. Unknown SSH outcomes, malformed replies and failures after native changes require inspection and pause with reason `native_publication`. A safe flag returned during `accept` cannot authorize a fresh attempt.
 
 This entry only hot-reloads. Running Operations do not block it. It neither reads active run history nor drains work. The receipt requires the same Serve process before and after publication, with zero Serve or worker restarts. A mismatch pauses with the old Gateway live. This entry cannot request a Serve or worker restart.
 
@@ -119,7 +121,7 @@ Immediately before checkout it writes the pending marker. Any failure after that
 
 The loader uses official CLI commands on the installed runtime. One local and one remote workflow list compare every id/name pair. Full `workflow get` checks cover only workflow YAML files changed since the accepted live Swamp SHA, with four concurrent checks at most. For `K` changed workflows and `B` audited extension types, definition and metadata reads cost `2 + 2K + B` CLI calls: two lists, two gets per changed workflow, and the existing source-version audit. Reload and exact manifest reconciliation add their own calls. The receipt records counts and scope. The load has a 600-second bound.
 
-A successful `prepare` returns `awaiting_gateway_verification` and retains `/var/lib/orbit-swamp-main-load/releases/pending.json`. The Gateway callback checks its configured run token and CA, then sends `accept` with the same identity and `receipt_hash`. The entry rechecks source, runtime and health before recording `verified` and clearing the marker. It accepts no self-reported token proof.
+A successful `prepare` returns `awaiting_gateway_verification` and retains `/var/lib/orbit-swamp-main-load/releases/pending.json`. The Gateway callback checks its configured run token and CA using two reads: the complete effective grant inventory and an explicit `admin` on `access:*` denial. It then sends `accept` with the same identity and `receipt_hash`. The entry rechecks source, runtime and health before recording `verified` and clearing the marker. It accepts no self-reported token proof.
 
 If the caller dies, an operator inspects the exact checkpoint, receipt, source and runtime under both release and publication locks. The operator repairs any split state and records a verified native source matching the checkout. Only then does the operator archive the attempt and remove its pending marker before an explicitly approved new attempt. Do not clear an uncertain attempt merely to retry automatically.
 
@@ -127,13 +129,15 @@ The accepted hot reload on pinned e459 is recorded in `evidence/batch-9c2a850f-l
 
 ### Require native publication before the Gateway switch
 
-The release runner publishes the prepared commit's `swamp/` before switching Gateway code. The load owner installs the pinned entry and stops the former merge publisher before this gate goes live. The gate checks the same running release record, invokes the fixed entry through existing pinned SSH to Node 209, and validates the source, runtime, manifest and workflow receipt.
+The release runner publishes the prepared commit's `swamp/` after configuration checks and snapshot, and before migration and the Gateway code switch. A native refusal that changes nothing leaves the Gateway schema and code untouched. The load owner installs the pinned entry and stops the former merge publisher before this gate goes live. The gate checks the same running release record, invokes the fixed entry through existing pinned SSH to Node 209, and validates the source, runtime, manifest and workflow receipt.
 
-It compares the configured Gateway run token's complete effective grant inventory with the prepared manifest, rejecting wildcard, unlisted or overriding grants. Native implied approve, signal and tag actions must match an exact originating grant and the server’s reported implication policy. The runner also checks exact allow and deny decisions before acknowledging that receipt. A missing entry, refused query, mismatched receipt or uncertain call pauses the release with the old Gateway live. It does not retry a native mutation automatically.
+It compares the configured Gateway run token's complete effective grant inventory with the prepared manifest, rejecting wildcard, unlisted or overriding grants. Native implied approve, signal and tag actions must match an exact originating grant and the server’s reported implication policy. The runner also checks an explicit `admin` on `access:*` denial before acknowledging that receipt. This takes two WebSocket requests per release, regardless of workflow count. 
+
+The receipt hash is an opaque acknowledgment echoed to the entry over pinned SSH. A missing entry, refused query, mismatched receipt or uncertain call pauses the release with the old Gateway live; a `prepare` refusal remains retryable when it proves that nothing changed. It does not retry a native mutation automatically.
 
 The release record keeps the verified native receipt and configured-token check separately. A held release also passes native publication before its code switch. A finalize operation rechecks publication for its exact target. A failed load can leave native definitions ahead of the Gateway; the pause records that split state for operator recovery. Swamp-only changes require the normal Gateway release inputs and web artifact, so the same release owns both trees.
 
-Before the remote call, the runner saves the attempt identity. It saves the prepared native receipt before checking the configured token. A failure or dead process retains this evidence and pauses automation. Once native publication starts, a later Gateway failure also pauses, even without migrations. The existing code switch-back can keep the previous Gateway live; it does not undo native publication. The operator inspects the recorded split state and fixes forward.
+Before the remote call, the runner saves the attempt identity. It saves the prepared native receipt before checking the configured token. An uncertain failure or dead process retains this evidence and pauses automation. Once native publication starts, a later Gateway failure also pauses, even without migrations. The existing code switch-back can keep the previous Gateway live; it does not undo native publication. The operator inspects the recorded split state and fixes forward.
 
 ### Prepare a release
 
@@ -325,7 +329,7 @@ Deploy is the manual release. Before it changes anything, it:
 
 Before deploying a schema squash, finish the existing migration chain on the current release. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the baseline loader and its requirements.
 
-Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
+Deploy then takes the pre-release database snapshot, verifies publication of the exact Swamp commit, runs `php artisan migrate --force`, [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
 
 The native command validates the prepared release and replaces `/home/orbit/orbit` with one atomic rename under the release target lock. Readers keep either the old or new release. Repeating the switch leaves the link unchanged. An in-place checkout or a link to something else is refused until `gateway:release:adopt`. A staging path that is not the requested release link is refused without replacing it.
 
@@ -712,6 +716,7 @@ A pause is durable state with a reason. It holds until `resume` or until a deplo
 | Reason | Cause |
 | --- | --- |
 | `migration_failure` | A release failed after its migrations ran. It stays current |
+| `native_publication` | Native publication or a later release phase failed after native custody began. Inspect the entry code, phase and checkpoint, repair any split state, then resume |
 | `rollback` | A rollback went live. The runner does not release a newer commit over it |
 | `manual_deploy` | A manual deploy went live while a newer green commit already existed: a deliberate pin of an older commit. The runner does not undo it |
 | `interrupted` | A release died after a snapshot, a migration, or a switch |

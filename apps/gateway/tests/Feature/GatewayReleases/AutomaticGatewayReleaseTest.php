@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
@@ -19,6 +21,47 @@ afterEach(function (): void {
 });
 
 describe('gateway:release:auto', function (): void {
+
+    it('keeps automation retrying a no-effect native refusal but pauses an uncertain publication with its diagnostic', function (bool $safe): void {
+        $source = $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $sha = $this->pipeline->fixture->commit('Native publication refusal');
+        $this->pipeline->green = $sha;
+        $native = app(GatewayReleaseSwampLoad::class);
+        $native->during = static function () use ($safe): never {
+            throw new GatewayReleaseException('swamp', $safe ? 'gateway.release_swamp_load_busy' : 'gateway.release_swamp_load_unverified',
+                'Native entry refused: publication_busy.', phase: [
+                    'outcome' => $safe ? 'refused' : 'failed', 'code' => 'publication_busy', 'phase' => 'entry',
+                    'retry_safe' => $safe, 'checkpoint' => '/var/lib/orbit-swamp-main-load/releases/pending.json',
+                ]);
+        };
+
+        if ($safe) {
+            for ($attempt = 0; $attempt < 4; $attempt++) {
+                $this->pipeline->automatic()->execute();
+                $this->travel(11)->minutes();
+            }
+        }
+        $tick = $this->pipeline->automatic()->execute();
+        $record = GatewayRelease::query()->latest('id')->firstOrFail();
+        expect($record->outcome)->toBe($safe ? 'failed' : 'paused')
+            ->and($record->retryable)->toBe($safe)
+            ->and($record->phases['swamp'])->toMatchArray([
+                'outcome' => $safe ? 'refused' : 'failed', 'code' => 'publication_busy', 'retry_safe' => $safe,
+                'checkpoint' => '/var/lib/orbit-swamp-main-load/releases/pending.json',
+            ])
+            ->and($this->pipeline->fixture->preparedSha($this->pipeline->fixture->currentId()))->toBe($source)
+            ->and($this->pipeline->automation()->pause()['reason'] ?? null)->toBe($safe ? null : 'native_publication');
+        if ($safe) {
+            expect($record->migrations_ran)->toBeFalse()->and($this->pipeline->steps)->not->toContain('migrate');
+            expect($tick['result'])->not->toBe('paused');
+            $native->during = null;
+            $this->travel(11)->minutes();
+            expect($this->pipeline->automatic()->execute()['result'])->toBe('released')
+                ->and($this->pipeline->fixture->preparedSha($this->pipeline->fixture->currentId()))->toBe($sha);
+        }
+    })->with([true, false]);
+
     it('does nothing while automatic releases are disabled', function (): void {
         $this->pipeline->adopt();
         $this->pipeline->green = $this->pipeline->fixture->commit('Green');
@@ -118,7 +161,7 @@ describe('gateway:release:auto', function (): void {
             ->and($record->outcome)->toBe('verified')
             ->and($record->sha)->toBe($sha)
             ->and($record->requested)->toBe($sha)
-            ->and(array_keys($record->phases))->toBe(['prepare', 'guard', 'configuration', 'snapshot', 'migrate', 'swamp', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke'])
+            ->and(array_keys($record->phases))->toBe(['prepare', 'guard', 'configuration', 'snapshot', 'swamp', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke'])
             ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
             ->and(Activity::query()->where('command', 'gateway:release:auto')->value('status'))->toBe('succeeded')
             ->and($this->pipeline->alerts)->toBe([]);

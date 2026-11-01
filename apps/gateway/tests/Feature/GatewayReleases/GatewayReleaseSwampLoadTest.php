@@ -58,12 +58,23 @@ beforeEach(function (): void {
     $this->requests = [];
     $this->changePrepared = $this->changeAccepted = null;
     $this->prepared = null;
+    $this->failureAction = $this->nativeFailure = null;
     $ssh = Mockery::mock(SshExecutor::class);
     $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
         expect([$connection->host, $connection->identityFile, $connection->knownHostsFile])->toBe(['10.44.0.209', '/protected/identity', '/protected/known-hosts']);
         expect($command->arguments)->toBe(['sudo', '-n', '/usr/local/libexec/orbit-swamp-release-load.py', '--stdin-json']);
         $request = json_decode($command->input, true, 512, JSON_THROW_ON_ERROR);
         $this->requests[] = $request;
+        if ($request['action'] === $this->failureAction) {
+            $failure = is_array($this->nativeFailure) ? [
+                'schema' => $request['schema'], 'attempt_id' => $request['attempt_id'],
+                'state' => 'outcome_uncertain', 'phase' => 'entry',
+                'checkpoint' => '/var/lib/orbit-swamp-main-load/releases/pending.json',
+                ...$this->nativeFailure,
+            ] : $this->nativeFailure;
+
+            return new CommandResult(1, is_array($failure) ? json_encode($failure, JSON_THROW_ON_ERROR) : $failure, '', 10, false);
+        }
         if ($request['action'] === 'prepare') {
             $receipt = f2PreparedReceipt($request, hash('sha256', $this->raw));
             $receipt = $this->changePrepared === null ? $receipt : ($this->changePrepared)($receipt);
@@ -93,10 +104,44 @@ afterEach(function (): void {
     $this->fixture->cleanup();
 });
 
+it('retains exact entry failure details and retries only a proved no-effect prepare refusal', function (bool $safe, string $action): void {
+    $this->failureAction = $action;
+    $this->nativeFailure = ['code' => $safe ? 'publication_busy' : 'served_workflow_mismatch', 'retry_safe' => $safe];
+    $retryable = $safe && $action === 'prepare';
+    try {
+        $this->loader->load($this->sha, $this->record);
+        test()->fail('The entry failure was accepted.');
+    } catch (GatewayReleaseException $exception) {
+        expect($exception->errorCode)->toBe($retryable ? 'gateway.release_swamp_load_busy' : 'gateway.release_swamp_load_unverified')
+            ->and($exception->phase['code'])->toBe($this->nativeFailure['code'])
+            ->and($exception->phase['retry_safe'])->toBe($retryable)
+            ->and($exception->phase['checkpoint'])->toBe('/var/lib/orbit-swamp-main-load/releases/pending.json')
+            ->and($exception->getMessage())->toContain($this->nativeFailure['code']);
+    }
+    if ($retryable) {
+        expect($this->record->fresh()->phases['swamp'])->toMatchArray([
+            'outcome' => 'refused', 'retry_safe' => true, 'code' => 'publication_busy',
+        ])->and($this->socket->sent)->toBe([]);
+    }
+})->with([[true, 'prepare'], [false, 'prepare'], [true, 'accept']]);
+
+it('never infers a safe refusal from missing or mismatched entry evidence', function (mixed $failure): void {
+    $this->failureAction = 'prepare';
+    $this->nativeFailure = $failure;
+    try {
+        $this->loader->load($this->sha, $this->record);
+        test()->fail('The uncertain entry failure was accepted.');
+    } catch (GatewayReleaseException $exception) {
+        expect($exception->errorCode)->toBe('gateway.release_swamp_load_unverified')
+            ->and($exception->phase['retry_safe'] ?? false)->toBeFalse();
+    }
+    expect($this->record->fresh()->phases['swamp']['outcome'])->toBe('preparing');
+})->with(['empty' => [''], 'malformed' => ['not JSON'], 'mismatch' => [['code' => 'publication_busy', 'retry_safe' => true, 'attempt_id' => 'different-attempt']]]);
+
 it('pins one commit proves the configured token and accepts only that receipt', function (): void {
     $result = $this->loader->load($this->sha, $this->record);
 
-    expect($result['outcome'])->toBe('verified')->and($result['configured_token']['checks'])->toBe(12)
+    expect($result['outcome'])->toBe('verified')->and($result['configured_token']['checks'])->toBe(6)
         ->and(array_column($this->requests, 'action'))->toBe(['prepare', 'accept']);
     expect($this->requests[0]['release_sha'])->toBe($this->sha)
         ->and($this->requests[0]['gateway_release_record'])->toBe($this->record->id)
@@ -104,6 +149,8 @@ it('pins one commit proves the configured token and accepts only that receipt', 
     expect(json_encode([$result, $this->requests]))->not->toContain('private-token-sentinel');
     expect($this->socket->endpoint->bearerToken)->toBe('private-token-sentinel');
     expect($this->socket->closed)->toBeTrue();
+    expect(array_map(static fn (array $request): array => (array) $request['payload'], $this->socket->sent))
+        ->toBe([[], ['action' => 'admin', 'resource' => 'access:*']]);
 });
 
 it('refuses mismatched native proof before token verification or acceptance', function (string $field, mixed $value): void {
@@ -125,10 +172,10 @@ it('refuses mismatched native proof before token verification or acceptance', fu
     ['workflow_inventory.equal', false], ['extension_audit.matched', 0], ['workflows.0.served_hash', 'mismatch'],
 ]);
 
-it('refuses altered receipt bytes even when every gate still says verified', function (): void {
+it('echoes the opaque receipt hash for the entry to accept over pinned SSH', function (): void {
     $this->changePrepared = static fn (array $receipt): array => [...$receipt, 'receipt_hash' => str_repeat('0', 64)];
-    expect(fn () => $this->loader->load($this->sha, $this->record))->toThrow(GatewayReleaseException::class);
-    expect($this->socket->sent)->toBe([])->and($this->requests)->toHaveCount(1);
+    expect($this->loader->load($this->sha, $this->record)['outcome'])->toBe('verified');
+    expect($this->requests[1]['receipt_hash'])->toBe(str_repeat('0', 64));
 });
 
 it('keeps custody unaccepted when configured token proof is unavailable or wrong', function (string $condition): void {
@@ -159,9 +206,11 @@ it('does not accept a release with missing or excessive configured-token authori
         $query = (array) $request['payload'];
         if ($fault === 'vault condition' && $query === []) {
             unset($messages[0]['payload']['decisions'][0]['condition']);
-        } elseif (in_array($fault, ['missing read', 'extra write'], true) && ($query['resource'] ?? null) === 'workflow:operation-test'
-            && ($query['action'] ?? null) === ($fault === 'missing read' ? 'read' : 'write')) {
-            $messages[0]['payload']['decisions'][0]['effect'] = $fault === 'missing read' ? 'deny' : 'allow';
+        } elseif ($fault === 'missing read' && $query === []) {
+            $messages[0]['payload']['decisions'] = array_values(array_filter($messages[0]['payload']['decisions'],
+                static fn (array $row): bool => ! ($row['resource'] === 'workflow:operation-test' && $row['action'] === 'read')));
+        } elseif ($fault === 'extra write' && $query === []) {
+            $messages[0]['payload']['decisions'][] = ['grantId' => 'extra-write', 'action' => 'write', 'resource' => 'workflow:operation-test', 'effect' => 'allow'];
         } elseif ($fault === 'admin' && ($query['action'] ?? null) === 'admin') {
             $messages[0]['payload']['decisions'][0]['effect'] = 'allow';
         }

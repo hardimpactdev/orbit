@@ -50,6 +50,12 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
     ) {}
 
+    /** @return array<string,mixed> */
+    public function loadSwamp(string $sha, ?GatewayRelease $record): array
+    {
+        return $this->swamp->load($sha, $record);
+    }
+
     /**
      * @param  array<string, mixed>  $phases
      */
@@ -79,8 +85,10 @@ final readonly class GatewayReleasePromoter
             $this->recorder->progress($record, $phases, $sha);
 
             $step = 'swamp';
-            $phases['swamp'] = $this->swamp->load($sha, $record);
-            $this->recorder->progress($record, $phases);
+            if ($finalize || ! isset($phases['swamp'])) {
+                $phases['swamp'] = $this->loadSwamp($sha, $record);
+                $this->recorder->progress($record, $phases);
+            }
 
             if (! $finalize) {
                 $step = 'switch';
@@ -184,10 +192,12 @@ final readonly class GatewayReleasePromoter
         if (is_array($storedSwamp)) {
             $phases['swamp'] = $storedSwamp;
         }
-        $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
-        if ($exception->step === 'swamp' && is_array($storedSwamp)) {
-            $phases['swamp'] = [...$storedSwamp, ...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
-        }
+        $retrySafeRefusal = $exception->step === 'swamp' && ($exception->phase['outcome'] ?? null) === 'refused'
+            && ($exception->phase['retry_safe'] ?? null) === true;
+        $phases[$exception->step] = [
+            ...($exception->step === 'swamp' && is_array($storedSwamp) ? $storedSwamp : []), ...$exception->phase,
+            'outcome' => $retrySafeRefusal ? 'refused' : 'failed', 'error_code' => $exception->errorCode,
+        ];
         $switched = $previous !== $id && $this->layout->currentReleaseId() === $id;
         $this->recorder->progress($record, $phases);
 
@@ -226,7 +236,7 @@ final readonly class GatewayReleasePromoter
             }
         }
 
-        if (isset($phases['swamp']) || $exception->step === 'swamp') {
+        if (! $retrySafeRefusal && (isset($phases['swamp']) || $exception->step === 'swamp')) {
             $outcome = 'paused';
             $phases['pause'] = [...(is_array($phases['pause'] ?? null) ? $phases['pause'] : []), 'outcome' => 'paused',
                 'current' => $this->layout->currentReleaseId(), 'native_publication_requires_inspection' => true];

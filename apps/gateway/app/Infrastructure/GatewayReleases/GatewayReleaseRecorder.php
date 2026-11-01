@@ -422,7 +422,11 @@ final readonly class GatewayReleaseRecorder
 
         try {
             match (true) {
-                $release->outcome === 'paused' => $this->automation->pauseFor($release->errorCode === 'gateway.release_held' ? 'held' : 'migration_failure', $row),
+                $release->outcome === 'paused' => $this->automation->pauseFor(match (true) {
+                    $release->errorCode === 'gateway.release_held' => 'held',
+                    data_get($release->phases, 'pause.native_publication_requires_inspection') === true => 'native_publication',
+                    default => 'migration_failure',
+                }, $row),
                 $release->outcome === 'verified' && $release->trigger === 'rollback' => $this->pauseAfterRollback($row),
                 $release->outcome === 'verified' => $this->automation->clearPause(),
                 default => null,

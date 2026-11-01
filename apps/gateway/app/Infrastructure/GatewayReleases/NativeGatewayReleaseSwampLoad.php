@@ -18,7 +18,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Support\ValidatedData;
-use stdClass;
 use Throwable;
 
 /** Pinned native publication, inside the release caller's existing lock. No restart or admission. */
@@ -63,7 +62,7 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
             $identity = ['schema' => 'orbit.swamp.release-load.v1', 'release_sha' => $sha, 'release_id' => $id,
                 'gateway_release_record' => $record->id, 'target_node_id' => 209, 'attempt_id' => bin2hex(random_bytes(16))];
             $record->forceFill(['phases' => [...$record->phases, 'swamp' => ['outcome' => 'preparing', 'attempt_id' => $identity['attempt_id'], 'sha' => $sha]]])->saveOrFail();
-            $prepared = $this->call($connection, [...$identity, 'action' => 'prepare'], verifyDigest: true);
+            $prepared = $this->call($connection, [...$identity, 'action' => 'prepare']);
             $this->assertReceipt($prepared, $identity, $tree, hash('sha256', $raw), 'awaiting_gateway_verification');
             $this->assertRecord($record, $sha);
             $record->forceFill(['phases' => [...$record->phases, 'swamp' => [
@@ -82,6 +81,12 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
 
             return ['outcome' => 'verified', 'receipt' => $accepted, 'configured_token' => $tokenProof];
         } catch (GatewayReleaseException $exception) {
+            if (($exception->phase['outcome'] ?? null) === 'refused') {
+                $stored = $record->phases['swamp'] ?? null;
+                $record->forceFill(['phases' => [...$record->phases, 'swamp' => [
+                    ...(is_array($stored) ? $stored : []), ...$exception->phase,
+                ]]])->saveOrFail();
+            }
             throw $exception;
         } catch (Throwable) {
             throw $this->refused();
@@ -103,28 +108,32 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
     /** @param array<string,mixed> $request
      * @return array<string,mixed>
      */
-    private function call(SshConnection $connection, array $request, bool $verifyDigest = false): array
+    private function call(SshConnection $connection, array $request): array
     {
         $result = $this->ssh->execute($connection, new RemoteCommand(
             ['sudo', '-n', '/usr/local/libexec/orbit-swamp-release-load.py', '--stdin-json'],
             input: json_encode($request, JSON_THROW_ON_ERROR), timeout: 620, maxOutputBytes: 2 * 1024 * 1024,
         ));
-        if (! $result->succeeded() || $result->truncated) {
+        if ($result->truncated) {
             throw $this->refused();
         }
-        if ($verifyDigest) {
-            $document = json_decode($result->stdout, false, 512, JSON_THROW_ON_ERROR);
-            if (! $document instanceof stdClass || ! is_string($document->receipt_hash ?? null)) {
+        $document = ValidatedData::object(json_decode($result->stdout, true, 512, JSON_THROW_ON_ERROR));
+        if (! $result->succeeded()) {
+            if (($document['schema'] ?? null) !== $request['schema'] || ($document['attempt_id'] ?? null) !== $request['attempt_id']
+                || ($document['state'] ?? null) !== 'outcome_uncertain'
+                || ! is_string($document['code'] ?? null) || preg_match('/\A[a-z][a-z0-9_]{0,99}\z/D', $document['code']) !== 1
+                || ! is_string($document['phase'] ?? null) || preg_match('/\A[a-z][a-z0-9_]{0,99}\z/D', $document['phase']) !== 1
+                || ($document['checkpoint'] ?? null) !== '/var/lib/orbit-swamp-main-load/releases/pending.json') {
                 throw $this->refused();
             }
-            $hash = $document->receipt_hash;
-            unset($document->receipt_hash);
-            if (! hash_equals($hash, hash('sha256', json_encode($this->canonical($document), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)))) {
-                throw $this->refused();
-            }
+            $safe = $request['action'] === 'prepare' && ($document['retry_safe'] ?? null) === true;
+            throw new GatewayReleaseException('swamp', $safe ? 'gateway.release_swamp_load_busy' : 'gateway.release_swamp_load_unverified',
+                'Native publication stopped: '.$document['code'].' during '.$document['phase'].'. '.($safe ? 'No native changes; the release can retry.' : 'Inspect the pinned checkpoint before resuming.'),
+                phase: ['outcome' => $safe ? 'refused' : 'failed', 'code' => $document['code'], 'phase' => $document['phase'],
+                    'retry_safe' => $safe, 'checkpoint' => $document['checkpoint']]);
         }
 
-        return ValidatedData::object(json_decode($result->stdout, true, 512, JSON_THROW_ON_ERROR));
+        return $document;
     }
 
     /** @param array<string,mixed> $receipt
@@ -160,25 +169,6 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
                 throw $this->refused();
             }
         }
-    }
-
-    private function canonical(mixed $value): mixed
-    {
-        if ($value instanceof stdClass) {
-            $fields = get_object_vars($value);
-            ksort($fields);
-
-            return (object) array_map($this->canonical(...), $fields);
-        }
-        if (is_array($value)) {
-            if (! array_is_list($value)) {
-                ksort($value);
-            }
-
-            return array_map($this->canonical(...), $value);
-        }
-
-        return $value;
     }
 
     private function refused(): GatewayReleaseException

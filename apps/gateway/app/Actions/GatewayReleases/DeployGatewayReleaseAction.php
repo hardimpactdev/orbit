@@ -167,6 +167,9 @@ final readonly class DeployGatewayReleaseAction
                 $phases['hold'] = ['outcome' => 'held', 'record' => $record?->id, ...$this->guard->source()];
                 $this->recorder->stageIntent($record, $prepared->sha, $snapshot, $phases);
             }
+            $step = 'swamp';
+            $phases['swamp'] = $this->promoter->loadSwamp($prepared->sha, $record);
+            $this->recorder->progress($record, $phases);
             $step = 'migrate';
             $this->database->migrate($prepared->path);
             $migrationsRan = true;
@@ -226,18 +229,30 @@ final readonly class DeployGatewayReleaseAction
             }
 
             $migrating = $migrationsRan || $step === 'migrate';
+            $storedSwamp = $record?->fresh()?->phases['swamp'] ?? null;
+            if (is_array($storedSwamp)) {
+                $phases['swamp'] = $storedSwamp;
+            }
+            $safe = $step === 'swamp' && ($exception->phase['outcome'] ?? null) === 'refused' && ($exception->phase['retry_safe'] ?? null) === true;
+            $phases[$step] = [...($step === 'swamp' && is_array($storedSwamp) ? $storedSwamp : []), ...$exception->phase,
+                'outcome' => $safe ? 'refused' : 'failed', 'error_code' => $exception->errorCode];
+            $nativeUncertain = ! $safe && ($step === 'swamp' || isset($phases['swamp']));
+            if ($nativeUncertain) {
+                $phases['pause'] = ['outcome' => 'paused', 'native_publication_requires_inspection' => true];
+            }
+            $paused = $migrating || $nativeUncertain;
             $this->recorder->write(new DeployedGatewayRelease(
                 id: substr($exception->sha, 0, 12),
                 sha: $exception->sha,
-                outcome: $migrating ? 'paused' : 'failed',
+                outcome: $paused ? 'paused' : 'failed',
                 trigger: $trigger,
                 migrationsRan: $migrating,
                 previousId: is_string(data_get($phases, 'hold.source')) ? data_get($phases, 'hold.source') : null,
                 snapshotPath: $snapshot,
                 cleanupPaused: false,
-                retryable: ! $migrating && $this->retry->retryable($exception->errorCode, $exception->sha, $record?->id),
+                retryable: ! $paused && $this->retry->retryable($exception->errorCode, $exception->sha, $record?->id),
                 durationMs: $durationMs,
-                phases: [...$phases, $step => ['outcome' => 'failed', 'error_code' => $exception->errorCode]],
+                phases: $phases,
                 errorCode: $exception->errorCode,
                 message: $exception->getMessage(),
             ), $record);

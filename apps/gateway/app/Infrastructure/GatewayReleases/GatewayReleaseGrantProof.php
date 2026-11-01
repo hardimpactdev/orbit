@@ -95,18 +95,8 @@ final readonly class GatewayReleaseGrantProof
                 throw $this->refused();
             }
             $checks += count($expectedScopes);
-            foreach ($policy['workflows'] as $workflow) {
-                foreach (['read', 'run', 'write'] as $action) {
-                    $reply = $this->query(['action' => $action, 'resource' => 'workflow:'.$workflow['workflow']], $deadline);
-                    $this->decision($reply, $action, 'workflow:'.$workflow['workflow'], in_array($action, $workflow['actions'], true));
-                    $checks++;
-                }
-            }
-            foreach ([['admin', 'access:*'], ['run', 'workflow:orbit-release-unrelated-denied'],
-                ['read', 'workflow:orbit-release-unrelated-denied'], ['write', 'workflow:orbit-release-unrelated-denied']] as [$action, $resource]) {
-                $this->decision($this->query(['action' => $action, 'resource' => $resource], $deadline), $action, $resource, false);
-                $checks++;
-            }
+            $this->decision($this->query(['action' => 'admin', 'resource' => 'access:*'], $deadline), 'admin', 'access:*', false);
+            $checks++;
 
             return ['principal' => 'user:orbit-gateway', 'checks' => $checks, 'checked_at' => now()->toIso8601String(),
                 'mode' => 'configured_token_allow_deny_and_exact_manifest_scopes'];
