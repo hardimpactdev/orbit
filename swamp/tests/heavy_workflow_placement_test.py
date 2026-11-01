@@ -10,7 +10,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 CLI = os.environ.get('SWAMP_BIN', 'swamp')
-SHARED = ('maintenance-projects', 'horizon-new-dawn-detect', 'dependency-package',
+SHARED = ('project-detect', 'project-routine', 'maintenance-projects', 'horizon-new-dawn-detect', 'dependency-package',
           'dependency-routine', 'dependency-upgrade')
 
 
@@ -24,7 +24,8 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
     def test_heavy_methods_and_native_coordinators_select_workers(self):
         for path in placed_workflows():
             workflow = yaml.safe_load(path.read_text())
-            self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, path.name)
+            if path.stem not in ('workflow-project-detect', 'workflow-project-routine'):
+                self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, path.name)
             self.assertNotIn('queueTimeout', workflow)
             for job in workflow['jobs']:
                 for step in job['steps']:

@@ -174,10 +174,7 @@ else:sys.exit(64)
             execute("swamp", "behavior", "validate", "dependency-pr-reader", "--json")
             minute_workflow=root / "workflows/workflow-maintenance-projects.yaml"
             minute_workflow.write_text(minute_workflow.read_text().replace("trigger:\n  schedule: '40 * * * * *'\n", ""))
-            shutil.copyfile(REPO / "workflows/workflow-project-nckrtl-com-detect.yaml", root / "workflows/workflow-detect.yaml")
-            # This isolated repo has no schedule trigger: the test starts exactly its named workflow.
-            workflow = root / "workflows/workflow-detect.yaml"
-            workflow.write_text(workflow.read_text().replace("trigger:\n  schedule: 0 3 * * *\n", ""))
+            shutil.copyfile(REPO / "workflows/workflow-project-detect.yaml", root / "workflows/workflow-detect.yaml")
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
@@ -196,7 +193,7 @@ else:sys.exit(64)
                     else:
                         self.fail("isolated serve did not start")
 
-                    token = json.loads(execute("swamp", "worker", "token", "create", "scan209", "--duration", "10m", "--server", url, "--json"))["token"]
+                    token = json.loads(execute("swamp", "worker", "token", "create", "orbit-node-209", "--duration", "10m", "--server", url, "--json"))["token"]
                     enrollment = root / "enrollment"
                     enrollment.write_text(token)
                     enrollment.chmod(0o600)
@@ -212,7 +209,7 @@ else:sys.exit(64)
                         return frame
 
                     def run():
-                        result = json.loads(execute("swamp", "workflow", "run", "@nckrtl/project-nckrtl-com/detect", "--server", url, "--json"))
+                        result = json.loads(execute("swamp", "workflow", "run", "project-detect", "--input", "projectId=20", "--server", url, "--json"))
                         self.assertEqual(result["status"], "succeeded")
                         return result
 

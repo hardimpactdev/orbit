@@ -102,7 +102,7 @@ for (const source of sources) {
   });
 }
 
-Deno.test("the fleet registers all 18 projects once and owns private, correctly routed schedules", async () => {
+Deno.test("the fleet retains private project configuration without per-project workflows", async () => {
   assertEquals(sources.length, 18);
   assertEquals(new Set(sources.map((s) => s.project.id)).size, 18);
   assert(!sources.some((s) => s.slug === "horizon-new-dawn"));
@@ -116,8 +116,6 @@ Deno.test("the fleet registers all 18 projects once and owns private, correctly 
   };
   assertEquals(gateway.globalArguments.dependencyProjects, []);
   assertEquals(gateway.globalArguments.projectExtensions.length, 19);
-  const names = new Set<string>(), ids = new Set<string>();
-  const schedules = new Set<string>();
   for (const source of sources) {
     const type = `@nckrtl/project-${source.slug}`;
     assertEquals(
@@ -136,64 +134,14 @@ Deno.test("the fleet registers all 18 projects once and owns private, correctly 
       "@nckrtl/composer-maintenance",
       "@nckrtl/js-maintenance",
     ]);
-    assertEquals(
-      manifest.workflows,
-      ["routine", "detect"].map((mode) =>
-        `workflow-project-${source.slug}-${mode}.yaml`
-      ),
-    );
+    assertEquals(manifest.workflows, []);
     for (const mode of ["routine", "detect"]) {
-      const workflow = await yaml(
-        `workflows/workflow-project-${source.slug}-${mode}.yaml`,
-      ) as {
-        id: string;
-        name: string;
-        trigger: { schedule: string };
-        jobs: {
-          steps: {
-            task: {
-              type: string;
-              modelIdOrName?: string;
-              modelType?: string;
-              modelName?: string;
-              methodName: string;
-              inputs: unknown;
-            };
-          }[];
-        }[];
-      };
-      assertEquals(workflow.name, `${type}/${mode}`);
-      assert(!names.has(workflow.name));
-      names.add(workflow.name);
-      assert(!ids.has(workflow.id));
-      ids.add(workflow.id);
-      const cron = workflow.trigger.schedule.split(" ");
-      assertEquals(cron.length, 5);
-      assertEquals(
-        cron.slice(2),
-        mode === "routine" ? ["*", "*", "1"] : ["*", "*", "*"],
+      await Deno.stat(new URL(
+        `workflows/workflow-project-${source.slug}-${mode}.yaml`, repo,
+      )).then(
+        () => { throw new Error("Project-specific workflow still exists"); },
+        (error) => { if (!(error instanceof Deno.errors.NotFound)) throw error; },
       );
-      assert(!schedules.has(`${mode}:${workflow.trigger.schedule}`));
-      schedules.add(`${mode}:${workflow.trigger.schedule}`);
-      assertEquals(workflow.jobs[0].steps[0].task, {
-        type: "model_method",
-        ...(mode === "detect"
-          ? {
-            modelType: "@nckrtl/native-host-method",
-            modelName: `native-project-detect-${source.project.id}`,
-            methodName: "project_scan",
-          }
-          : {
-            modelType: "@nckrtl/native-host-method",
-            modelName: `native-project-routine-${source.project.id}`,
-            methodName: "project_routine",
-          }),
-        inputs: {
-          projectId: source.project.id,
-          ...(mode === "routine" ? { mode } : {}),
-          ...(mode === "detect" ? { runId: "${{ run.id }}" } : {}),
-        },
-      });
     }
   }
 });
@@ -229,5 +177,34 @@ Deno.test("private project config preserves every exception ledger found in the 
     await behavior.methods.configuration.execute({}, context);
     const config = readProjectConfiguration(getWrittenResources()[0].data);
     assertEquals(config.exceptions, row.exceptions);
+  }
+});
+
+Deno.test("both shared Project entrypoints forward the required project input on 209", async () => {
+  const ids = new Set<string>();
+  for (const mode of ["detect", "routine"]) {
+    const workflow = await yaml(`workflows/workflow-project-${mode}.yaml`) as {
+      id: string; name: string; trigger?: unknown; queueTimeout?: unknown;
+      inputs: { required: string[]; properties: { projectId: unknown } };
+      jobs: { steps: { target: string; labels: unknown; task: {
+        modelType: string; modelName: string; methodName: string; inputs: unknown;
+      } }[] }[];
+    };
+    assertEquals(workflow.name, `project-${mode}`);
+    assert(!ids.has(workflow.id));
+    ids.add(workflow.id);
+    assertEquals(workflow.trigger, undefined);
+    assertEquals(workflow.queueTimeout, undefined);
+    assertEquals(workflow.inputs.required, ["projectId"]);
+    assertEquals(workflow.inputs.properties.projectId, { type: "integer", minimum: 1 });
+    const [step] = workflow.jobs[0].steps;
+    assertEquals(step.target, "orbit-node-209");
+    assertEquals(step.labels, { pool: "migration", node: "209" });
+    assertEquals(step.task.modelType, mode === "detect"
+      ? "@nckrtl/dependency-scanner" : "@nckrtl/orbit-gateway");
+    assertEquals(step.task.methodName, mode === "detect" ? "scan" : "schedule_project");
+    assertEquals(step.task.inputs, mode === "detect"
+      ? { projectId: "${{ inputs.projectId }}", runId: "${{ run.id }}" }
+      : { projectId: "${{ inputs.projectId }}", mode: "routine" });
   }
 });

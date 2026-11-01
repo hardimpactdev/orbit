@@ -1,0 +1,25 @@
+id: c031ac7e-2e4f-471e-8d4f-22733dd014e0
+name: project-detect
+description: Shared Project detect entrypoint; the Gateway selects the project input.
+reports:
+  skip: ["@swamp/workflow-summary"]
+inputs:
+  type: object
+  additionalProperties: false
+  required: [projectId]
+  properties:
+    projectId: {type: integer, minimum: 1}
+jobs:
+  - name: start
+    steps:
+      - name: detect
+        target: orbit-node-209
+        labels: {pool: migration, node: "209"}
+        task:
+          type: model_method
+          modelType: "@nckrtl/dependency-scanner"
+          modelName: '${{ "dependency-scanner-" + string(inputs.projectId) }}'
+          methodName: scan
+          inputs:
+            projectId: '${{ inputs.projectId }}'
+            runId: '${{ run.id }}'

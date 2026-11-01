@@ -27,3 +27,17 @@ The retained shared native launcher uses Node 209's monorepo Swamp repository,
 local CLI repository argument and group discovery path. Project maintenance
 and worker-model callers use that same repository. The frozen `orbit-swamp`
 checkout is not a fallback.
+
+Project detection and routine entrypoints are shared: `project-detect` and
+`project-routine` take the Gateway-selected positive `projectId` as a run input.
+Both run on Node209. Project extensions contain configuration only; they no
+longer publish a pair of workflows or a baked-in project schedule. Schedule
+producers must supply the project explicitly when they admit a run.
+
+This consolidation removes the native-host dispatcher's `project_scan` and
+`project_routine` actions. The two entrypoints select the existing scanner and
+Gateway-model methods directly. Those methods still contain Gateway reads and
+nested dispatch; their conversion to full state inputs and terminal-result
+admission is the next lane25 slice. This change does not establish live
+readiness or authorize a new scheduled run. Tasks/maintenance and Dependency
+dispatcher actions remain until their consumers move.

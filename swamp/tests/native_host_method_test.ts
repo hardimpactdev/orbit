@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
+  behavior,
   executeHostMethod,
   invokeNativeModel,
 } from "../extensions/behaviors/native_host_method.ts";
@@ -78,17 +79,16 @@ tmp=pathlib.Path(os.environ['TMPDIR']);(tmp/'nested').mkdir();(tmp/'nested'/'fil
   const previous = Deno.env.get("GH_TOKEN");
   Deno.env.set("GH_TOKEN", "ephemeral_sentinel");
   try {
-    const input = { projectId: 20, runId: "@/must/not/be/read-${{ 1 + 1 }}" };
-    await executeHostMethod("project_scan", input, undefined, f.runtime);
+    const input = {};
+    await executeHostMethod("project_work", input, undefined, f.runtime);
     const proof = JSON.parse(await Deno.readTextFile(`${f.root}/proof`));
     assertEquals(proof.input, input);
     assertEquals(proof.args.slice(0, 4), [
       "behavior",
       "run",
-      "@nckrtl/dependency-scanner",
-      "scan",
+      "orbit-gateway",
+      "project_work",
     ]);
-    assert(proof.args.includes("dependency-scanner-20"));
     assert(proof.args.includes("--literal-inputs"));
     assert(!proof.args.includes("--server"));
     for (
@@ -181,7 +181,7 @@ time.sleep(100)
 Deno.test("host adapter refuses inputs outside each fixed method contract", async () => {
   for (
     const [action, input] of [
-      ["project_scan", { projectId: 0, runId: "run" }],
+      ["project_work", { projectId: 20 }],
       ["project_work", { executable: "/bin/sh" }],
       ["package_admit", {
         workItem: "tg-1",
@@ -234,4 +234,10 @@ p=subprocess.Popen([sys.executable,'-c','import os,signal,time;os.setsid();signa
     await pending.catch(() => {});
     await Deno.remove(f.root, { recursive: true });
   }
+});
+
+Deno.test("Project entrypoints are gone while retained dispatcher actions remain", () => {
+  assertEquals(Object.keys(behavior.methods).sort(), [
+    "dependency_prs", "package_admit", "project_work", "upgrade_plan", "upgrade_scan",
+  ]);
 });

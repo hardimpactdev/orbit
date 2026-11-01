@@ -3,7 +3,7 @@ name: "@nckrtl/project-launch"
 version: 2026.10.28.1
 visibility: private
 license: MIT
-description: launch maintenance configuration and schedules.
+description: launch maintenance configuration.
 repository: https://github.com/hardimpactdev/orbit-swamp
 behaviors:
   - projects/launch/mod.ts
@@ -11,9 +11,7 @@ include:
   - _lib/project_extension.ts
   - _lib/dependency_project_schema.ts
   - _lib/maintenance/policy_schema.ts
-workflows:
-  - workflow-project-launch-routine.yaml
-  - workflow-project-launch-detect.yaml
+workflows: []
 additionalFiles:
   - README.md
   - LICENSE
