@@ -7,19 +7,50 @@ namespace App\Domain\Analytics;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
+use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\ResourceOperationException;
+use SensitiveParameter;
 
-/** Admission-only source for the shared Swamp execution copy. */
+/** Protected Gateway credentials and the admission-only shared execution copy. */
 final readonly class AnalyticsPlausibleCredentials
 {
+    private const string Email = 'analytics.management_email';
+
+    private const string Password = 'analytics.management_password';
+
     public function __construct(private SettingRepository $settings, private AnalyticsStatsKeyStore $keys) {}
+
+    public function storeManagement(#[SensitiveParameter] ?string $email, #[SensitiveParameter] ?string $password): void
+    {
+        foreach ([self::Email => $email, self::Password => $password] as $key => $value) {
+            if ($value !== null) {
+                $this->settings->put(new SettingScope(SettingScopeType::Gateway), $key, $value, SettingValueProtection::Secret);
+            }
+        }
+    }
+
+    /** @return array{email:bool,password:bool} */
+    public function managementStatus(): array
+    {
+        $scope = new SettingScope(SettingScopeType::Gateway);
+
+        return ['email' => ($this->settings->get($scope, self::Email) ?? '') !== '',
+            'password' => ($this->settings->get($scope, self::Password) ?? '') !== ''];
+    }
+
+    public function clearManagement(): void
+    {
+        foreach ([self::Email, self::Password] as $key) {
+            $this->settings->delete(new SettingScope(SettingScopeType::Gateway), $key);
+        }
+    }
 
     /** @return array{email:string,password:string,apiKey:string,plugins?:array{domain:string,token:string}} */
     public function forSite(string $domain, bool $goals): array
     {
         $scope = new SettingScope(SettingScopeType::Gateway);
-        $email = $this->settings->get($scope, 'analytics.management_email');
-        $password = $this->settings->get($scope, 'analytics.management_password');
+        $email = $this->settings->get($scope, self::Email);
+        $password = $this->settings->get($scope, self::Password);
         $apiKey = $this->keys->get();
         $token = $this->settings->get($scope, 'analytics.plugins.'.$domain);
         if (! is_string($email) || $email === '' || ! is_string($password) || $password === '' || $apiKey === null) {

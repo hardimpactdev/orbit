@@ -12,7 +12,7 @@ use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 use SensitiveParameter;
 
-/** Stores a Plausible Stats API key. The key is never returned. */
+/** Stores protected Plausible credentials. Values are never returned. */
 final class SetAnalyticsCredentialsRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
@@ -23,6 +23,10 @@ final class SetAnalyticsCredentialsRequest extends GatewayRequest implements Has
     public function __construct(
         #[SensitiveParameter]
         private readonly string $apiKey,
+        #[SensitiveParameter]
+        private readonly ?string $managementEmail = null,
+        #[SensitiveParameter]
+        private readonly ?string $managementPassword = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -38,9 +42,11 @@ final class SetAnalyticsCredentialsRequest extends GatewayRequest implements Has
         );
     }
 
-    /** @return array{api_key: string} */
+    /** @return array{api_key:string,management_email?:string,management_password?:string} */
     protected function defaultBody(): array
     {
-        return ['api_key' => $this->apiKey];
+        return ['api_key' => $this->apiKey,
+            ...($this->managementEmail === null ? [] : ['management_email' => $this->managementEmail]),
+            ...($this->managementPassword === null ? [] : ['management_password' => $this->managementPassword])];
     }
 }

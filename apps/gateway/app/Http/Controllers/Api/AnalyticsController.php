@@ -40,7 +40,7 @@ final class AnalyticsController extends Controller
         SetAnalyticsCredentialsRequest $request,
         SetAnalyticsCredentialsAction $action,
     ): JsonResponse {
-        return $this->credentialsResponse($request, $action->execute($request->apiKey()));
+        return $this->credentialsResponse($request, $action->execute($request->apiKey(), $request->managementEmail(), $request->managementPassword()));
     }
 
     public function unsetCredentials(Request $request, UnsetAnalyticsCredentialsAction $action): JsonResponse
