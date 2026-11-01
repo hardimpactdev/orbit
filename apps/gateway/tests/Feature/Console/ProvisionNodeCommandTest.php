@@ -2,283 +2,68 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Nodes\NodeConverger;
-use App\Domain\Nodes\NodeObservation;
-use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeProvisioningIdentity;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Processes\CommandResult;
-use App\Models\Cluster;
 use App\Models\Node;
-use App\Models\NodeRole;
-use Illuminate\Support\Facades\Artisan;
-use Symfony\Component\Console\Output\BufferedOutput;
+use App\Models\Operation;
+use Tests\Support\NativeEnrollmentFixtures;
 
-it('provisions the first peer from the gateway console', function (): void {
-    app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
-    {
-        public function converge(?Node $pendingNode = null): void {}
-    });
-    app()->instance(NodeConverger::class, new class implements NodeConverger
-    {
-        public function converge(
-            Node $node,
-            NodeProvisioningIdentity $identity,
-            ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false, ?Closure $recordObservation = null,
-        ): NodeObservation {
-            $observation = new NodeObservation('x86_64');
-            $recordObservation?->__invoke($observation);
-
-            return $observation;
-        }
-    });
-    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
-    {
-        public function converge(Node $node, NodeRole $assignment): void {}
-
-        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-    });
-
-    $cluster = Cluster::query()->create(['name' => 'development']);
-
-    $this
-        ->artisan('orbit:node-provision', [
-            'name' => 'operator',
-            'host' => '94.237.108.25',
-            '--role' => ['app-dev'],
-            '--architecture' => 'x86_64',
-            '--tld' => '.Operator.Test',
-            '--wireguard-ip' => '10.44.0.2',
-            '--cluster' => (string) $cluster->id,
-            '--lan-ip' => '10.0.0.2',
-            '--wireguard-endpoint' => '10.0.0.2:51820',
-            '--dns-server' => '10.0.0.2',
-            '--host-key-fingerprint' => 'SHA256:pinned',
-        ])
-        ->expectsOutputToContain('Node [operator] is active.')
-        ->assertExitCode(0);
-
-    $node = Node::query()->where('name', 'operator')->sole();
-
-    expect($node->platform)
-        ->toBe('linux')
-        ->and($node->architecture)
-        ->toBe('x86_64')
-        ->and($node->tld)
-        ->toBe('operator.test')
-        ->and($node->cluster_id)
-        ->toBe($cluster->id)
-        ->and($node->wireguard_ip)
-        ->toBe('10.44.0.2')
-        ->and($node->getAttributes())
-        ->not
-        ->toHaveKey('wireguard_address')
-        ->and($node->lan_ip)
-        ->toBe('10.0.0.2');
+beforeEach(function (): void {
+    $fixture = NativeEnrollmentFixtures::bind();
+    $this->markAsGateway($fixture['gateway']);
+    $this->socket = $fixture['socket'];
 });
 
-it('reports typed provisioning failures without leaking command output', function (): void {
-    app()->instance(NodeConverger::class, new class implements NodeConverger
-    {
-        public function converge(
-            Node $node,
-            NodeProvisioningIdentity $identity,
-            ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false, ?Closure $recordObservation = null,
-        ): NodeObservation {
-            throw new NodeProvisioningException(
-                step: 'base-packages',
-                errorCode: 'node.package_install_failed',
-                message: 'sensitive command output',
-                result: new CommandResult(1, 'sensitive stdout', 'sensitive stderr', 42, false),
-            );
-        }
-    });
+it('admits the same native enrollment from the console without claiming host completion', function (): void {
+    $this->artisan('orbit:node-provision', [
+        'name' => 'console-native', 'host' => '192.0.2.240', '--architecture' => 'x86_64',
+        '--wireguard-ip' => '10.44.0.240', '--user' => 'bootstrap', '--orbit-user' => 'managed',
+        '--host-key-fingerprint' => 'SHA256:'.str_repeat('A', 43),
+    ])->expectsOutputToContain('Node enrollment Operation [1] is running.')->assertExitCode(0);
 
-    $this
-        ->artisan('orbit:node-provision', [
-            'name' => 'operator',
-            'host' => '94.237.108.25',
-            '--architecture' => 'x86_64',
-            '--host-key-fingerprint' => 'SHA256:pinned',
-        ])
-        ->expectsOutput('Node provisioning failed at step [base-packages] with error [node.package_install_failed].')
-        ->doesntExpectOutputToContain('sensitive command output')
-        ->doesntExpectOutputToContain('sensitive stdout')
-        ->doesntExpectOutputToContain('sensitive stderr')
+    $node = Node::query()->where('name', 'console-native')->sole();
+    $operation = Operation::query()->where('kind', 'node.add')->sole();
+    expect($node->status)->toBe(LifecycleStatus::Provisioning)
+        ->and($node->architecture)->toBeNull()
+        ->and($node->ssh_host_key)->toBeNull()
+        ->and($operation->target_id)->toBe($node->id)
+        ->and($operation->input['intent']['bootstrap']['target']['user'])->toBe('bootstrap')
+        ->and($operation->input['intent']['candidate']['user'])->toBe('managed')
+        ->and(array_filter($this->socket->sent, static fn (array $frame): bool => $frame['type'] === 'workflow.run'))->toHaveCount(1);
+});
+
+it('refuses malformed console input before reservation or native effects', function (array $options): void {
+    $this->artisan('orbit:node-provision', ['name' => 'invalid-console', 'host' => '192.0.2.240', ...$options])
+        ->expectsOutputToContain('Node provisioning arguments are invalid.')->assertExitCode(1);
+
+    expect(Node::query()->where('name', 'invalid-console')->exists())->toBeFalse()
+        ->and(Operation::query()->exists())->toBeFalse()
+        ->and($this->socket->sent)->toBe([]);
+})->with([
+    'decimal port' => [['--ssh-port' => '22.5']],
+    'scientific port' => [['--ssh-port' => '1e2']],
+    'zero port' => [['--ssh-port' => '0']],
+    'large port' => [['--ssh-port' => '65536']],
+    'invalid Cluster' => [['--cluster' => '0']],
+    'invalid LAN address' => [['--lan-ip' => 'fd00::1']],
+    'unknown role' => [['--role' => ['unknown']]],
+]);
+
+it('reports admission refusal without a command tail or partial Node', function (): void {
+    $this->artisan('orbit:node-provision', ['name' => 'unpinned-console', 'host' => '192.0.2.240',
+        '--wireguard-ip' => '10.44.0.240'])
+        ->expectsOutputToContain('Node enrollment was not admitted [node.ssh_host_fingerprint_required].')->assertExitCode(1);
+    expect(Node::query()->where('name', 'unpinned-console')->exists())->toBeFalse()
+        ->and(Operation::query()->exists())->toBeFalse()
+        ->and($this->socket->sent)->toBe([]);
+});
+
+it('does not expose a native execution-copy failure or reserve a partial Node', function (): void {
+    $this->socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'],
+        'error' => ['code' => 'forbidden', 'message' => 'private-execution-copy-detail']]];
+    $this->artisan('orbit:node-provision', ['name' => 'refused-console', 'host' => '192.0.2.240',
+        '--wireguard-ip' => '10.44.0.240', '--host-key-fingerprint' => 'SHA256:'.str_repeat('A', 43)])
+        ->expectsOutputToContain('Node enrollment was not admitted')->doesntExpectOutputToContain('private-execution-copy-detail')
         ->assertExitCode(1);
-});
-
-it('reports a bounded redacted command tail when diagnostics are requested', function (): void {
-    app()->instance(NodeConverger::class, new class implements NodeConverger
-    {
-        public function converge(
-            Node $node,
-            NodeProvisioningIdentity $identity,
-            ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false, ?Closure $recordObservation = null,
-        ): NodeObservation {
-            throw new NodeProvisioningException(
-                step: 'base-packages',
-                errorCode: 'node.package_install_failed',
-                message: 'sensitive command output',
-                result: new CommandResult(1, '', '', 42, false),
-                previous: new RuntimeConvergenceException('role-prerequisites', 'app-dev.prerequisite_failed', 'sensitive command output',
-                    result: new CommandResult(1, str_repeat("old output\n", 50), "apt dependency conflict\nTOKEN=do-not-print\n", 42, false)),
-            );
-        }
-    });
-
-    $output = new BufferedOutput;
-    $exit = Artisan::call('orbit:node-provision', [
-        'name' => 'operator',
-        'host' => '94.237.108.25',
-        '--architecture' => 'x86_64',
-        '--diagnostics' => true,
-        '--host-key-fingerprint' => 'SHA256:pinned',
-    ], $output);
-
-    $text = $output->fetch();
-    expect($exit)->toBe(1);
-    expect($text)->toContain('apt dependency conflict', '[REDACTED]')
-        ->not->toContain('do-not-print', 'sensitive command output');
-    expect(substr_count($text, 'old output'))->toBeLessThan(40);
-});
-
-it('reports unexpected causes only with redacted bounded diagnostics', function (bool $diagnostics): void {
-    app()->instance(NodeConverger::class, new class implements NodeConverger
-    {
-        public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
-        {
-            throw new RuntimeException(str_repeat('old detail ', 500)."\nMissing agent delivery\nTOKEN=do-not-print");
-        }
-    });
-
-    $output = new BufferedOutput;
-    $exit = Artisan::call('orbit:node-provision', [
-        'name' => 'operator',
-        'host' => '192.0.2.95',
-        '--diagnostics' => $diagnostics,
-        '--host-key-fingerprint' => 'SHA256:pinned',
-    ], $output);
-
-    $text = $output->fetch();
-    expect($exit)->toBe(1);
-    expect($text)->toContain('node.provision_failed')->not->toContain('do-not-print');
-    expect(mb_strlen($text))->toBeLessThan(4200);
-    if ($diagnostics) {
-        expect($text)->toContain('Missing agent delivery', '[REDACTED]');
-    } else {
-        expect($text)->not->toContain('Missing agent delivery', 'old detail');
-    }
-})->with([true, false]);
-
-it('passes explicit console user identities', function (): void {
-    app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
-    {
-        public function converge(?Node $pendingNode = null): void {}
-    });
-    $identity = null;
-    app()->instance(NodeConverger::class, new class($identity) implements NodeConverger
-    {
-        public function __construct(
-            private ?NodeProvisioningIdentity &$identity,
-        ) {}
-
-        public function converge(
-            Node $node,
-            NodeProvisioningIdentity $identity,
-            ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false, ?Closure $recordObservation = null,
-        ): NodeObservation {
-            $this->identity = $identity;
-
-            $observation = new NodeObservation('x86_64');
-            $recordObservation?->__invoke($observation);
-
-            return $observation;
-        }
-    });
-    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
-    {
-        public function converge(Node $node, NodeRole $assignment): void {}
-
-        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-    });
-    $this->artisan('orbit:node-provision', [
-        'name' => 'console-identity',
-        'host' => '192.0.2.95',
-        '--user' => 'deployer',
-        '--orbit-user' => 'nckrtl',
-        '--architecture' => 'x86_64',
-        '--host-key-fingerprint' => 'SHA256:pinned',
-    ])->assertExitCode(0);
-    expect($identity?->bootstrapUser)->toBe('deployer')->and($identity?->managedUser)->toBe('nckrtl');
-});
-
-it('bootstraps as root for a new node and as the managed user for an existing node', function (): void {
-    app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
-    {
-        public function converge(?Node $pendingNode = null): void {}
-    });
-    $identities = [];
-    app()->instance(NodeConverger::class, new class($identities) implements NodeConverger
-    {
-        public function __construct(
-            private array &$identities,
-        ) {}
-
-        public function converge(
-            Node $node,
-            NodeProvisioningIdentity $identity,
-            ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false, ?Closure $recordObservation = null,
-        ): NodeObservation {
-            $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
-
-            $observation = new NodeObservation('x86_64');
-            $recordObservation?->__invoke($observation);
-
-            return $observation;
-        }
-    });
-    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
-    {
-        public function converge(Node $node, NodeRole $assignment): void {}
-
-        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-    });
-    Node::query()->create([
-        'name' => 'console-existing',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'architecture' => 'x86_64',
-        'public_ssh_host' => '192.0.2.97',
-        'wireguard_ip' => '10.44.0.97',
-        'user' => 'nckrtl',
-        'ssh_host_fingerprint' => 'SHA256:pinned',
-    ]);
-
-    $this->artisan('orbit:node-provision', [
-        'name' => 'console-new',
-        'host' => '192.0.2.96',
-        '--architecture' => 'x86_64',
-        '--host-key-fingerprint' => 'SHA256:pinned',
-    ])->assertExitCode(0);
-    $this->artisan('orbit:node-provision', [
-        'name' => 'console-existing',
-        'host' => '192.0.2.97',
-    ])->assertExitCode(0);
-
-    expect($identities)->toBe([['root', 'orbit'], ['nckrtl', 'nckrtl']]);
+    expect(Node::query()->where('name', 'refused-console')->exists())->toBeFalse()
+        ->and(Operation::query()->exists())->toBeFalse();
 });

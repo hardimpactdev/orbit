@@ -29,11 +29,6 @@ export function enrollmentSshGlobals(
                         : ".candidate.user"),
             ),
             port: privateAddress ? 22 : expr(intent + ".bootstrap.target.port"),
-            hostKeys: expr(
-                intent + '.mode == "tld_only" ? ' + intent +
-                    ".prior_ssh.target.host_keys : " +
-                    output(bootstrapName + "_pin") + ".host_keys",
-            ),
         },
         hosts: [{
             name: "target",
@@ -43,6 +38,13 @@ export function enrollmentSshGlobals(
                         ? ".candidate.wireguard_ip"
                         : ".bootstrap.target.host"),
             ),
+            transport: {
+                hostKeys: expr(
+                    intent + '.mode == "tld_only" ? ' + intent +
+                        ".prior_ssh.target.host_keys : " +
+                        output(bootstrapName + "_pin") + ".host_keys",
+                ),
+            },
         }],
     };
 }

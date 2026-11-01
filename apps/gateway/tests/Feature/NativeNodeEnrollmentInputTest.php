@@ -18,6 +18,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
+use App\Models\Node;
 use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
@@ -147,3 +148,13 @@ it('keeps canonical observer configuration free of target worker installation', 
     expect($configuration['configuration'])->toContain('gateway_url = "https://gateway.orbit"')
         ->not->toContain('swamp_worker', 'worker_token', 'enrollment_token');
 });
+
+it('refuses an unsupported requested Linux architecture before reservation or native work', function (string $architecture): void {
+    $actual = new Node(['name' => 'unsupported-enrollment']);
+    $count = Node::query()->count();
+    expect(fn () => app(NodeEnrollmentPolicy::class)->prepare($actual, new ProvisionNodeData(
+        name: 'unsupported-enrollment', publicSshHost: '192.0.2.240', architecture: $architecture,
+        expectedSshHostFingerprint: 'SHA256:'.str_repeat('A', 43),
+    )))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.architecture_unsupported'));
+    expect($actual->exists)->toBeFalse()->and(Node::query()->count())->toBe($count);
+})->with(['arm64', 'aarch64', 'unknown']);

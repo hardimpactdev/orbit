@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -31,9 +32,13 @@ afterEach(function (): void {
 it('sends macOS enrollment fields and leaves policy to the gateway', function (array $options, array $body): void {
     $mockClient = MockClient::global([
         '*/api/v1/nodes' => MockResponse::make([
-            'data' => macos_enrolled_node(),
+            'data' => macos_enrollment_operation(),
             'meta' => ['request_id' => macos_request_id()],
-        ], 201),
+        ], 202),
+        ShowOperationRequest::class => MockResponse::make([
+            'data' => macos_enrollment_operation(), 'meta' => ['request_id' => macos_request_id()],
+        ]),
+        '*/api/v1/realtime' => MockResponse::make(['error' => ['code' => 'http.404', 'message' => 'Unavailable']], 404),
     ]);
 
     $this->artisan('node:add', [
@@ -45,10 +50,8 @@ it('sends macOS enrollment fields and leaves policy to the gateway', function (a
         '--json' => true,
     ])->assertExitCode(0);
 
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(AddNodeRequest::class)
-        ->and($mockClient->getLastRequest()?->body()->all())
-        ->toBe($body);
+    $mockClient->assertSent(fn ($request): bool => $request instanceof AddNodeRequest
+        && $request->body()->all() === $body);
 })->with([
     'existing account and tunnel' => [
         [
@@ -212,4 +215,13 @@ function macos_fingerprint(): string
 function macos_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array<string, mixed> */
+function macos_enrollment_operation(): array
+{
+    return ['id' => 7, 'kind' => 'node.add', 'target_type' => 'node', 'target_id' => 2,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'steps' => [],
+        'result' => ['node_id' => 2, 'enrolled' => true, 'restored' => false],
+        'finished_at' => '2026-10-31T23:00:00Z'];
 }

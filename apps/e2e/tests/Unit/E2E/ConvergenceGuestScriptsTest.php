@@ -50,6 +50,7 @@ function guestOrbitStub(string $root): string
         #!/usr/bin/env bash
         printf 'orbit %s\n' "$*" >> '__ROOT__/commands'
         case "$1" in
+          node:add) [[ -z "${ORBIT_CLI_FAIL:-}" ]] || exit 1; printf '{"id":7,"kind":"node.add","status":"succeeded","result":{"enrolled":true}}\n' ;;
           node:list) cat '__ROOT__/nodes.json' ;;
           cluster:list) cat '__ROOT__/clusters.json' 2>/dev/null || printf '{"clusters":[]}\n' ;;
           cluster:create) printf '{"id":7,"name":"%s"}\n' "$2" ;;
@@ -77,15 +78,17 @@ function runGuestScript(array $fixture, array $arguments, array $environment = [
  */
 function convergeNodeFixture(): array
 {
-    return guestScriptFixture('converge-node.sh', [
+    $fixture = guestScriptFixture('converge-node.sh', [
         'sudo' => GUEST_SUDO_STUB,
         'ssh-keyscan' => "printf 'ssh-keyscan %s\\n' \"\$*\" >> '__ROOT__/commands'\nprintf '%s\\n' 'host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOJgN5jVtcfw7oASD2F6If4O5mQ/HZBqbrw4QC9PcHEO'",
         'ssh-keygen' => "cat >/dev/null\nprintf '256 SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA host (ED25519)\\n'",
-        'php' => <<<'BASH'
-            printf 'php %s\n' "$*" >> '__ROOT__/commands'
-            [[ -z "${ORBIT_PHP_FAIL:-}" ]]
-            BASH,
+
     ]);
+    mkdir("{$fixture['home']}/.orbit/ca", 0o700, true);
+    file_put_contents("{$fixture['home']}/.orbit/ca/root.pem", 'fixture-root-ca');
+    guestOrbitStub($fixture['root']);
+
+    return $fixture;
 }
 
 /** @return array{root:string,script:string,home:string,state:string,commands:string,path:string} */
@@ -207,8 +210,9 @@ describe('Node convergence', function () {
         expect(runGuestScript($fixture, ['provision', $node, '192.0.2.12', 'x86_64', $address, $role, $node])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
                 'ssh-keyscan -T 5 -t ed25519 -- 192.0.2.12',
-                "php artisan orbit:node-provision {$node} 192.0.2.12 --role={$role} --tld={$node} --architecture=x86_64 --user=orbit "
-                    ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --diagnostics --no-interaction",
+                "orbit gateway:add https://10.44.0.1 --name=e2e --ca={$fixture['home']}/.orbit/ca/root.pem --use --json",
+                "orbit node:add {$node} 192.0.2.12 --role={$role} --tld={$node} --architecture=x86_64 --user=orbit "
+                    ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --idempotency-key=e2e-node-add-{$node} --json --no-interaction",
             ]);
     })->with([
         'development' => ['app-dev', 'app-dev', '10.44.0.2'],
@@ -220,16 +224,16 @@ describe('Node convergence', function () {
         $fixture = convergeNodeFixture();
 
         expect(runGuestScript($fixture, ['provision', 'operator', '192.0.2.14', 'x86_64', '10.44.0.5'])->getExitCode())->toBe(0)
-            ->and(commandLog($fixture)[1])->toBe(
-                'php artisan orbit:node-provision operator 192.0.2.14 --architecture=x86_64 --user=orbit --wireguard-ip=10.44.0.5 '
-                    .'--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --diagnostics --no-interaction',
+            ->and(commandLog($fixture)[2])->toBe(
+                'orbit node:add operator 192.0.2.14 --architecture=x86_64 --user=orbit --wireguard-ip=10.44.0.5 '
+                    .'--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --idempotency-key=e2e-node-add-operator --json --no-interaction',
             );
     });
 
     it('fails closed when provisioning fails', function () {
         $fixture = convergeNodeFixture();
 
-        expect(runGuestScript($fixture, ['provision', 'app-dev', '192.0.2.11', 'x86_64', '10.44.0.2', 'app-dev', 'beast'], ['ORBIT_PHP_FAIL' => '1'])->getExitCode())->not->toBe(0);
+        expect(runGuestScript($fixture, ['provision', 'app-dev', '192.0.2.11', 'x86_64', '10.44.0.2', 'app-dev', 'beast'], ['ORBIT_CLI_FAIL' => '1'])->getExitCode())->not->toBe(0);
     });
 
     it('refuses invalid arguments before provisioning', function (array $arguments, int $exit) {

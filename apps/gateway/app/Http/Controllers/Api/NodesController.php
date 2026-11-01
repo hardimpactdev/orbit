@@ -99,15 +99,14 @@ final class NodesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
+    #[StartsOperation('node.add')]
     public function store(ProvisionNodeRequest $request, ProvisionNodeAction $action): JsonResponse
     {
-        $node = $action->execute($request->payload());
-        $requestId = $request->attributes->get('orbit.request_id');
-
         return response()->json([
-            'data' => NodeData::fromModel($node)->toArray(),
-            'meta' => ['request_id' => is_string($requestId) ? $requestId : null],
-        ], 201);
+            'data' => OperationData::fromModel($action->start($request->payload(),
+                $request->attributes->getString('orbit.request_id')))->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]

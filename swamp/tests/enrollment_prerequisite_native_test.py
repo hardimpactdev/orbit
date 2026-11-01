@@ -85,6 +85,7 @@ class EnrollmentPrerequisites(NativeTestCase):
             "tools": self.intent,
             "network": {"trust": {"desired": [], "remove": [], "enable": False}},
             "hub": None,
+            "publications": [],
             "prior_ssh": None,
             "bootstrap_firewall": {"desired": [], "remove": [], "enable": True},
             "settings": {
@@ -138,10 +139,14 @@ else:
             .replace("MAC", repr(str(self.repo / "mac")))
         )
         program = """
-import {enrollmentPrerequisiteSteps} from './extensions/behaviors/operations/node-bootstrap/enrollment_prerequisite_steps.ts';
+import {enrollmentPrerequisiteSteps,enrollmentSshGlobals} from './extensions/behaviors/operations/node-bootstrap/enrollment_prerequisite_steps.ts';
+import {selectEnrollmentSteps} from './extensions/behaviors/operations/node-bootstrap/composition.ts';
+import {rolePublicationBindingSteps} from './extensions/behaviors/operations/node-role-converge-command/publication_binding.ts';
 const e=s=>'${{ '+s+' }}';
 const source='steps.admitted.outputs.intent';
 const steps=enrollmentPrerequisiteSteps('prerequisites',source,'"null"');
+steps.push(...selectEnrollmentSteps(rolePublicationBindingSteps('publications',source+'.publications',source+'.candidate',enrollmentSshGlobals('publication-target',source,'prerequisites_bootstrap',false,true),'prerequisites'),source+'.mode == "linux"'));
+for(const step of steps){if(step.target==='orbit-node-209' && step.labels?.node==='209')delete step.labels;}
 for(const step of steps){if(step.task.type==='behavior' && step.task.behaviorType==='@swamp/ssh'){
     step.task.globalArgs.sshBinary=SSH;step.task.globalArgs.scpBinary=SCP;
 }}
@@ -249,3 +254,27 @@ console.log(JSON.stringify([admitted,...steps]));
         self.assertFalse(
             any("install_apt.py" in " ".join(call["argv"]) for call in calls)
         )
+
+    def test_publication_binds_the_same_target_to_its_verified_bootstrap_key(self):
+        self.enrollment["publications"] = [
+            {
+                "node_id": 73,
+                "control_node_id": 209,
+                "connection": {
+                    "nodeHost": "10.44.0.73",
+                    "nodeUser": "orbit",
+                    "nodePort": 22,
+                    "nodeIdentityFile": str(self.repo / "identity"),
+                },
+                "host_keys": None,
+                "before": {},
+                "after": {},
+            }
+        ]
+        run = self.run_prerequisites()
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        steps = {step["name"]: step for step in history["jobs"][1]["steps"]}
+        pins = steps["prerequisites_bootstrap_pin-0"]["outputs"]["host_keys"]
+        bound = steps["publications-0"]["outputs"]["publications"][0]
+        self.assertEqual(bound["host_keys"], pins)
+        self.assertEqual(bound["connection"]["nodeHost"], "10.44.0.73")

@@ -32,6 +32,9 @@ final readonly class NodeEnrollmentPolicy
             || ($mac && $node->exists && $data->platformProvided && $data->platform !== 'macos')) {
             throw $this->refuse('node.platform_unsupported', 'The Node platform cannot be changed by enrollment.');
         }
+        if ($platform === 'linux' && $data->architecture !== null && MachineArchitecture::normalize($data->architecture) !== MachineArchitecture::Linux) {
+            throw $this->refuse('node.architecture_unsupported', 'Linux enrollment requires the supported x86_64 architecture.');
+        }
         if ($data->sshJumpNodeId !== null || $node->ssh_jump_node_id !== null) {
             throw $this->refuse('node.jump_host_unsupported', 'Enrollment connects directly from Node209.');
         }

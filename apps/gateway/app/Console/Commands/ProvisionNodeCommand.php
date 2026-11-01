@@ -6,13 +6,9 @@ namespace App\Console\Commands;
 
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
-use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Console\Command;
-use Symfony\Component\Console\Output\OutputInterface;
 
 final class ProvisionNodeCommand extends Command
 {
@@ -31,17 +27,16 @@ final class ProvisionNodeCommand extends Command
         {--lan-ip= : Cluster-local LAN IP}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
-        {--host-key-fingerprint= : Expected first-contact SSH SHA256 fingerprint}
-        {--diagnostics : Include bounded, redacted failure details}';
+        {--host-key-fingerprint= : Expected first-contact SSH SHA256 fingerprint}';
 
     #[\Override]
-    protected $description = 'Provision the first node directly from the gateway.';
+    protected $description = 'Admit native Node enrollment from the Gateway.';
 
     public function handle(ProvisionNodeAction $action): int
     {
         $name = $this->stringArgument('name');
         $host = $this->stringArgument('host');
-        $sshPort = $this->option('ssh-port');
+        $sshPort = filter_var($this->option('ssh-port'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]);
         $user = $this->stringOption('user');
         $roles = $this->roles();
         $wireguardInput = $this->wireguardIp();
@@ -51,7 +46,7 @@ final class ProvisionNodeCommand extends Command
         if (
             $name === null
             || $host === null
-            || ! is_numeric($sshPort)
+            || $sshPort === false
             || $roles === null
             || ! $wireguardInput['valid']
             || $this->stringOption('cluster') !== null
@@ -65,11 +60,11 @@ final class ProvisionNodeCommand extends Command
         }
 
         try {
-            $node = $action->execute(new ProvisionNodeData(
+            $operation = $action->start(new ProvisionNodeData(
                 name: $name,
                 publicSshHost: $host,
                 roles: $roles,
-                publicSshPort: (int) $sshPort,
+                publicSshPort: $sshPort,
                 user: $user,
                 orbitUser: $this->stringOption('orbit-user'),
                 wireguardIp: $wireguardInput['value'],
@@ -84,52 +79,15 @@ final class ProvisionNodeCommand extends Command
                 lanIpProvided: $lanIp !== null,
                 lanIp: $lanIp,
             ));
-        } catch (NodeProvisioningException $exception) {
-            $this->error(
-                "Node provisioning failed at step [{$exception->step}] with error [{$exception->errorCode}].",
-            );
-
-            if ($this->option('diagnostics')) {
-                $tail = $this->commandFailureTail($exception);
-                if ($tail !== '') {
-                    $this->output->getErrorStyle()->writeln($tail, OutputInterface::OUTPUT_RAW);
-                }
-            }
+        } catch (ResourceOperationException $exception) {
+            $this->error("Node enrollment was not admitted [{$exception->errorCode}].");
 
             return self::FAILURE;
         }
 
-        $this->info("Node [{$node->name}] is {$node->status->value}.");
+        $this->info("Node enrollment Operation [{$operation->id}] is {$operation->status->value}.");
 
         return self::SUCCESS;
-    }
-
-    private function commandFailureTail(NodeProvisioningException $exception): string
-    {
-        $messages = [];
-        for ($cause = $exception; $cause !== null; $cause = $cause->getPrevious()) {
-            $messages[] = $cause::class.': '.$cause->getMessage();
-            if (! $cause instanceof NodeProvisioningException && ! $cause instanceof RuntimeConvergenceException && ! $cause instanceof AgentRunnerFailure) {
-                continue;
-            }
-            $result = $cause->result;
-            if ($result === null || trim($result->stdout.$result->stderr) === '') {
-                continue;
-            }
-
-            // Role-operation wrappers intentionally strip output; diagnostics uses the underlying failure only.
-            return $this->redactedTail($result->stdout."\n".$result->stderr);
-        }
-
-        return $this->redactedTail(implode("\n", $messages));
-    }
-
-    private function redactedTail(string $text): string
-    {
-        $redacted = new CommandActivityInputSanitizer()->redactText($text);
-        $lines = preg_split('/\R/u', mb_scrub(trim($redacted))) ?: [];
-
-        return mb_substr(implode("\n", array_slice($lines, -40)), -4000);
     }
 
     private function stringArgument(string $name): ?string

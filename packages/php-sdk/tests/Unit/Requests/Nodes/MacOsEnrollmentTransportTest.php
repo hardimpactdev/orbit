@@ -6,7 +6,7 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
-use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -86,34 +86,22 @@ describe('macOS enrollment transport', function (): void {
             ->not->toHaveKey('orbit_user');
     });
 
-    it('maps the recorded enrollment response without rewriting the account or architecture', function (): void {
-        $response = macos_fixture_send('nodes/node-add/macos-enrolled', new AddNodeRequest(
-            name: 'mini',
-            publicSshHost: '192.0.2.40',
-            platform: 'macos',
-        ));
-        $recorded = macos_fixture('nodes/node-add/macos-enrolled');
+    it('returns a queued macOS enrollment without projecting an observed identity', function (): void {
+        $request = new AddNodeRequest(name: 'mini', publicSshHost: '192.0.2.40', platform: 'macos');
+        $connector = new GatewayConnector('https://gateway.example.test');
+        $connector->withMockClient(new MockClient([AddNodeRequest::class => MockResponse::make([
+            'data' => ['id' => 7, 'kind' => 'node.add', 'target_type' => 'node', 'target_id' => 2,
+                'status' => 'queued', 'sequence' => 1, 'input' => [], 'steps' => []],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 202)]));
 
-        expect($response)
-            ->toBeInstanceOf(NodeResponse::class)
-            ->and($response->platform)
-            ->toBe('macos')
-            ->and($response->architecture)
-            ->toBe('arm64')
-            ->and($response->user)
-            ->toBe('mini')
-            ->and($response->roles)
-            ->toBe([])
-            ->and($response->status)
-            ->toBe('active')
-            ->and($response->sshHostFingerprint)
-            ->toBe('SHA256:'.str_repeat('M', 43))
-            ->and($response->wireguardIp)
-            ->toBe('10.44.0.40')
-            ->and($response->toArray())
-            ->toMatchArray($recorded['body']['data'])
-            ->and($response->requestId)
-            ->toBe($recorded['body']['meta']['request_id']);
+        $response = $connector->send($request)->dto();
+
+        expect($response)->toBeInstanceOf(OperationResponse::class)
+            ->and($response->kind)->toBe('node.add')
+            ->and($response->targetId)->toBe(2)
+            ->and($response->status)->toBe('queued')
+            ->and($response->result)->toBeNull();
     });
 
     it('preserves a recorded enrollment refusal without rewriting the code', function (string $fixture): void {

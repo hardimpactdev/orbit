@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# On the topology Gateway: provision one Node with `orbit:node-provision`. A workload Node gets its base role and
+# On the topology Gateway: admit and follow one native enrollment through `node:add`. A workload Node gets its base role and
 # TLD; the operator gets none. Each acquisition composes a fresh Gateway, so every Node is provisioned once.
 # Usage: converge-node.sh provision NODE ADDRESS ARCHITECTURE WIREGUARD_IP [ROLE TLD]
 set -euo pipefail
@@ -21,6 +21,11 @@ until keys=$(ssh-keyscan -T 5 -t ed25519 -- "$2" 2>/dev/null) && [[ -n $keys ]];
 done
 fingerprint=$(ssh-keygen -lf - -E sha256 <<<"$keys" | awk 'NR == 1 { print $2 }')
 [[ $fingerprint =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
-sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway \
-  DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php artisan orbit:node-provision "$1" "$2" "${role[@]}" \
-  --architecture="$3" --user=orbit --wireguard-ip="$4" --host-key-fingerprint="$fingerprint" --diagnostics --no-interaction
+ca=/home/orbit/.orbit/ca/root.pem
+[[ -s "$ca" ]] || { echo "converge-node: missing topology root CA" >&2; exit 66; }
+orbit=/home/orbit/orbit/apps/cli/orbit
+as_orbit=(sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit)
+"${as_orbit[@]}" "$orbit" gateway:add https://10.44.0.1 --name=e2e --ca="$ca" --use --json >/dev/null
+"${as_orbit[@]}" "$orbit" node:add "$1" "$2" "${role[@]}" \
+  --architecture="$3" --user=orbit --wireguard-ip="$4" --host-key-fingerprint="$fingerprint" \
+  --idempotency-key="e2e-node-add-$1" --json --no-interaction

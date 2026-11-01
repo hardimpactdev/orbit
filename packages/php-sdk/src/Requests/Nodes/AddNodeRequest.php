@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Nodes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -38,6 +38,7 @@ final class AddNodeRequest extends GatewayRequest implements HasBody
         private readonly ?string $tld = null,
         private readonly bool $settingsProvided = false,
         private readonly ?NodeSettings $settings = null,
+        private readonly ?string $idempotencyKey = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -45,12 +46,15 @@ final class AddNodeRequest extends GatewayRequest implements HasBody
         return '/api/v1/nodes';
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodeResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        $data = $this->unwrapData($response);
-        $requestId = $this->successRequestId($response);
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+    }
 
-        return NodeResponse::fromGatewayData($data, $requestId);
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
     /** @return array<string, mixed> */

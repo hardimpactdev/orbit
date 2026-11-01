@@ -16,58 +16,33 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
-### Per-Node Swamp worker
+### Swamp execution
 
-The operator selects Linux Nodes through the `ORBIT_SWAMP_WORKER_NODES` JSON array, default `[]`, exposed as `swamp_workers.nodes`. A Node read reports this intent as `swamp_worker_selected`. Update the agent fleet before selecting the first Node: the worker configuration changed from a boolean to a table, and old agents must never receive that table. `node.converge` records the desired footprint in the Gateway; Swamp runs its agent installation and configuration steps.
+Node209 runs Serve and every Swamp worker. Native Node actions run there and reach their targets through official SSH with the approved209 identity, full host pins and sudo where required. Enrollment installs no Swamp binary, worker unit or worker token on the target.
 
-The configuration contains the admitted Node ID and configured `user`. Converge installs the checksum-pinned Swamp binary, public Orbit CA and persistent `orbit-node-worker.service`. The binary download stays in a private directory beside its destination, outside memory-backed command scratch. Verification and atomic publication stream the file, so installation does not allocate memory in proportion to its size. It uses the existing account and passwordless sudo. Task VM hosts are supported; task VM Nodes retain their separate worker lifecycle. No worker account or sudo rule is created.
-
-The rollout list records desired workers and permits protected credential staging for their initial enrollment. Complete that enrollment and record actual worker proof before using standalone native convergence, which also uses this selection. Keep VPN and usexit outside the list while they have no worker; their retained polled path remains available. HTTP input cannot override the selection.
-
-Before configuring a selected worker, the agent requires Linux `MemAvailable` to cover the pinned binary's 403,378,168 bytes plus 256 MiB of headroom. Missing or malformed memory information refuses with `swamp.node_worker_memory_low`. The check precedes agent file changes, downloads, credentials and worker publication, applies when the binary is already installed, and runs again before systemd starts the worker. A small Node must remain outside the worker selection; installation never changes swap or memory limits to make it fit.
-
-Every Node-local family step must use both the exact token target `orbit-node-<node_id>` and string worker label `node=<node_id>`. A child that changes Node supplies both selectors. Neither a label alone nor a target alone meets the contract. orbit-swamp CI enforces this placement and rejects third-party extension execution on these Node workers. Only reviewed orbit-swamp main code runs there; third-party package tools stay in the separate `orbit-swamp-package` sandbox without sudo. Serve retains its empty dispatch environment allowlist. An unavailable Node queues until Swamp's native timeout, then fails without fallback.
-
-Enrollment uses native `swamp worker token create orbit-node-<node_id> --duration 30d`, retaining default single-machine enrollment and `_token-secrets` custody. Nick chose 30 days to match the native access-token lifetime and prevent daily fleet outages. Token-authenticated serve also requires an ungranted `worker:orbit-node-<node_id>` access token with its native 30-day default. No API key is installed on workers.
-
-The obsolete per-Node worker enrollment and scheduled rotation workflows are removed. Migrated families execute on209 and reach their effect Nodes through official pinned SSH. This source cleanup does not stop installed worker units or revoke credentials; runtime retirement remains separately owned. The existing209 runtime pools and approved SSH identity remain.
-
-The `node.worker_credentials` private source also supports an unfinished direct `node.converge` intent with a recorded native run. Its callback uses the fixed `worker_credentials` parameter and no step key. The shared private endpoint requires the same Node and exact run, and returns `no-store`. The old footprint step key remains restricted to the old parent. Both paths check the exact owner and staged material; neither records plaintext in the Operation.
-
-A failed delivery re-mints enrollment through native create and delivers it through converge. There is no Gateway renewal timer, claim, lock, polling loop or custom issuer. The old issuer recovery note is not a gate; preserve its live custody until separately reviewed retirement.
-
-Converge publishes root-owned `0600` credential sources under `/etc/orbit/swamp-worker`, with a `0700` parent. Missing or unsafe files fail with `swamp.node_worker_not_ready`. A fixed service runs as root before each start and checks the file custody. systemd loads the sources through credentials, runs the Node user with sudo, logs native worker output to the journal and limits failed starts to three in five minutes. Converge clears the unit's failed-start limit with `systemctl reset-failed` before queuing start or restart. `restart --no-block` and nonblocking opt-out ensure a Node worker never waits for its own drain.
-
-Credentials and the private machine cache survive reboot. The canary, rather than the queued restart acknowledgement, proves connectivity and readiness.
-
-Doctor reports `node.worker_failed` for a failed unit. The Node exporter exposes its failed state through `node_systemd_unit_state{name="orbit-node-worker.service",state="failed"}`. Inspect `journalctl -u orbit-node-worker.service` for native authentication and restart failures.
-
-After review and fleet agent update, prove each selected Node before announcing it ready. VPN and usexit remain outside the current worker rollout. The canary verifies root-owned agent configuration against the expected Node ID and user, hostname, effective user and `sudo -n`. Record its native run ID and worker instance identity before announcing that Node live. Removing a Node from the rollout and converging disables the unit without waiting on its own worker; credentials and cache remain for recovery. macOS launchd is deferred until implemented and proven.
+Lane21 stops existing workers by family after their placements move and replacement execution is verified. Source conversion does not stop workers, revoke credentials or prove target key coverage. The separately tracked first-key rollout owns those effects.
 
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.
 
-For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps in order:
+`POST /api/v1/nodes` returns the admitted `node.add` Operation with HTTP202. `orbit node:add` follows that Operation through the shared follower; JSON returns its terminal receipt. `--idempotency-key` preserves an admission request across a client retry. Interrupting the CLI stops following and leaves native work running.
+
+The Gateway reserves a new Node as `provisioning`. An existing Node keeps its recorded identity and settings during native work. One terminal transaction records the candidate identity, roles, settings, footprint and Route checkpoints after native readiness; a failed run records restoration from captured prior snapshots.
+
+For Ubuntu, Swamp runs these steps in order:
 
 | Step | Work |
 | --- | --- |
-| 1 | Check the host key against the fingerprint. |
-| 2 | Validate and record the candidate architecture. Install the pinned agent through the bootstrap login, then run `node.bootstrap` for base packages and managed SSH access. |
-| 3 | Connect as the managed user and verify the architecture with `agent.status`. |
-| 4 | Publish the Node's WireGuard peer and pin SSH over the tunnel. |
-| 5 | Install the `apt` [Tool Manager](/reference/tools#tool-managers) and converge each requested role. |
-| 6 | Update Router LAN access and private DNS for the Node's Cluster. |
-| 7 | Mark the Node `active`. |
-| 8 | Store and prepare the [storage settings](/reference/node-settings). |
-| 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
-| 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
+| 1 | Collect the public host key once and compare the admitted fingerprint before any mutation. |
+| 2 | Validate the platform, architecture and supported Ubuntu release. |
+| 3 | Prepare the managed account and approved209 public key, then install only the role-selected pinned tools. |
+| 4 | Prepare sudo, publish the pinned observer and verify the managed login. |
+| 5 | Prepare storage and the captured firewall/network transition. |
+| 6 | Apply the requested roles and their runtime prerequisites, then publish the admitted Route changes. |
+| 7 | Verify the observer, footprint and CLI contributions, then return the terminal result. |
 
-For a `node.network_converge` child of `node.add`, the Swamp network transport records the verified bootstrap host key for the Node’s WireGuard address before checking private SSH. This replaces a stale pin when an address is reused, while fingerprint mismatches refuse before either pin changes. The scanner derives the fingerprint from the returned public key bytes. A successful `node.network_rollback` removes the WireGuard pin and preserves other host entries. The private `agent.status` check is read-only and resumable after a lost response; peer publication keeps its original keyed receipt.
-
-`node.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
-
-A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
+A later failure restores the captured network, role and publication snapshots before reporting `restored: true`. Partial restoration remains a failed result. Native resume owns step recovery; the Gateway does not run host callbacks or repeat execution checks.
 
 The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. Gateway web convergence and release handoff install its [disk retention configuration](/reference/gateway-recovery#disk-retention) beside the release units. They install a missing package only on Gateways not yet converged to the recipe. APT waits up to 300 seconds for dpkg locks. During that installation, temporary systemd masks block logrotate's package hooks and `NEEDRESTART_MODE=l` prevents automatic service restarts. Cleanup attempts to remove every temporary mask, even if one removal fails, and preserves the original installation error.
 
@@ -78,7 +53,7 @@ Task checkout operations require systemd 250 or newer, cgroup v2, and the manage
 
 The native Node workflow composes the [Orbit CLI publication](#orbit-cli) step on eligible Nodes. Gateway provisioning and role code perform no CLI installation.
 
-The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
+The Gateway console command `orbit:node-provision` admits the same native enrollment and returns its Operation ID. Use the normal Operation reads to observe completion. Role firewall intent comes from the shared Node firewall rule catalog; native steps apply it through the pinned connection.
 
 Gateway bootstrap installs the pinned agent before preparing its host identity. `gateway.prepare-identity` creates the managed SSH and WireGuard keys under the Gateway's Orbit home, preserving existing private keys on repeat. `gateway.converge-self-access` authorizes the managed public key for the executing account and returns the host public key and fingerprint. Both commands run as the Gateway account. Invalid paths, foreign ownership, and inconsistent existing keys refuse before publication. The Gateway retains its CA authority and known-host records as control-plane data.
 
@@ -94,51 +69,27 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 
 ### Bootstrap identity
 
-The Gateway picks the bootstrap user from the Node record, unless the request names one.
-
-| Node | Bootstrap user | How the bootstrap runs |
-| --- | --- | --- |
-| New | `root` | Directly |
-| Existing | The recorded managed user | Through passwordless sudo |
-
-Name a bootstrap user with `--user` when root cannot log in, or when the managed user cannot log in. `--orbit-user` names the managed user. A new Node uses `orbit`, and an existing Node keeps its recorded user. The API fields are `user` and `orbit_user`. The API refuses an empty or null `user`.
+Node209 uses its approved existing identity for enrollment. A new Linux Node defaults its bootstrap login to `root`; an existing Node defaults to its recorded managed account. `--user` selects another bootstrap account and `--orbit-user` selects the managed account. A new managed account defaults to `orbit`. The API refuses an empty or null `user`.
 
 ### Machine architecture
 
-Linux Nodes are x86_64 only. Orbit has no Linux ARM agent, CLI, or recipe software. macOS Nodes on Apple silicon stay supported; see [macOS Nodes](#macos-nodes).
-
-Before staging the first agent binary, the runner selects its platform and architecture with a fixed `uname -sm` probe over the pinned bootstrap connection. A Linux machine that reports anything other than `x86_64`, such as `aarch64`, fails with `node.architecture_unsupported` (HTTP 422) at step `machine-architecture`. The Gateway records no architecture, stages no agent, and converges no role. Adding a role to such a Node fails before any assignment: `node_role.convergence_failed` (HTTP 422) with `error_code` `node.architecture_unsupported` at step `converge:machine-architecture`.
-
-After bootstrap, `agent.status` verifies the same architecture as the managed user. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value.
-
-`--architecture` is optional. For a Linux Node, the only accepted value is `x86_64`. Any other value fails with `node.architecture_unsupported` (HTTP 422) before the Gateway connects or records the Node.
+Linux Nodes support `x86_64`. macOS supports `x86_64` and `arm64`. Official SSH reads `uname -sm` after the admitted fingerprint comparison. An unsupported platform or architecture stops the run before a software download or host mutation. A requested architecture must match the observation. The Gateway records the observed architecture only at successful terminal projection.
 
 ### Failure codes
 
-Each failure names the check or step that stopped the request.
+Admission failures return the normal API error envelope. Execution failures remain on the Operation with their native failed step and restoration result.
 
 | Code | Meaning |
 | --- | --- |
-| `node.invalid_linux_user` | The bootstrap user or the managed user is not a valid Linux user name. Nothing changes. |
-| `node.user_change_unsupported` | Another managed user for a Node with roles, or another account for an already managed Mac. Nothing changes. |
-| `node.platform_unsupported` | The platform or operation is unsupported. A macOS role request returns it before SSH. HTTP 422. |
-| `node.platform_mismatch` | The observed platform is not the requested one. HTTP 409 at `machine-architecture`. |
-| `node.macos_account_required` | macOS enrollment omitted the existing account. HTTP 422. Nothing changes. |
-| `node.macos_account_mismatch` | `user` and `orbit_user` name different accounts. HTTP 422. Nothing changes. |
-| `node.account_unavailable` | SSH as the existing macOS account failed. HTTP 502 at `account`. |
-| `node.wireguard_required` | macOS enrollment has no WireGuard address to verify, or the requested address differs from the Node row. HTTP 409 at `identity`. Nothing changes. |
-| `node.agent_unsupported` | A Node agent install or repair targeted macOS. HTTP 422. |
-| `node.ssh_host_fingerprint_required` | A new Node has no approved host key fingerprint. |
-| `node.ssh_host_key_scan_failed` | The Gateway could not read the host key. |
-| `node.ssh_host_key_mismatch` | The host key differs from `--host-key-fingerprint`. |
-| `node.ssh_host_key_changed` | The host key differs from the fingerprint stored for the Node. |
-| `node.bootstrap_failed` | The bootstrap failed as the bootstrap user. |
-| `node.orbit_ssh_failed` | The Gateway could not connect as the managed user after the bootstrap. |
-| `node.architecture_unavailable` | The Gateway could not read the architecture. |
-| `node.architecture_mismatch` | macOS only: the requested architecture differs from the observed one. HTTP 409 at `machine-architecture`. |
-| `node.architecture_unsupported` | A Linux Node is not `x86_64`, or the request names another architecture. HTTP 422. An observed architecture fails at `machine-architecture`, before the agent is staged. |
-| `node.role_convergence_failed` | A role failed to converge. The step is `role:<step>`. |
-| `node.agent_install_failed` | The Node agent failed to install. |
+| `node.ssh_host_fingerprint_required` | Enrollment has no complete approved host fingerprint. |
+| `node.ssh_host_key_mismatch` | The requested or observed fingerprint differs from the admitted identity. |
+| `node.architecture_unsupported` | A Linux Node requests or reports an unsupported architecture. |
+| `node.recovery_endpoint_required` | A WireGuard address change has no separate bootstrap endpoint. |
+| `node.has_instances` | The requested change exceeds the supported app-dev TLD-only update. |
+| `node.macos_account_required` | macOS enrollment omits the existing account. |
+| `node.macos_account_mismatch` | The bootstrap and managed macOS accounts differ. |
+| `node.enrollment_failed` | Native enrollment failed; inspect its result for restoration. |
+| `node.reprovision_rollback_failed` | The run did not prove full restoration of the captured prior state. |
 
 ## CI runner role
 
@@ -242,7 +193,7 @@ An application selects this executable through its own browser configuration. Fo
 
 ## macOS Nodes
 
-A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, a working WireGuard connection, and SSH access authorized for the Gateway. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address before it succeeds. The Gateway resolves the host name. An SSH alias on the caller's machine is not a fleet address.
+A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, a working WireGuard connection, and SSH access authorized for Node209. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address before it succeeds. The Gateway resolves the host name. An SSH alias on the caller's machine is not a fleet address.
 
 Use `node:add` with `--platform=macos`, the approved host fingerprint, and `--user` and `--orbit-user` set to the same existing account. The Gateway does not default those fields to `root` or `orbit`. A missing field returns `node.macos_account_required`. Different names return `node.macos_account_mismatch`. A name that fails the existing portable user check returns `node.invalid_linux_user`. All three are HTTP 422 and change nothing.
 
