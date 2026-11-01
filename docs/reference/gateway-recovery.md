@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
-  - '{platform/swamp-load/**,apps/gateway/app/**/GatewayReleases/**}'
+  - '{apps/gateway/app/**/GatewayReleases/**,swamp/workflows/workflow-operation-gateway-swamp-load.yaml}'
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
 ---
@@ -105,25 +105,17 @@ The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below t
 
 The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset or empty, the version is the full commit in the release's `REVISION` file, so `bin/deploy-verify --sha` works without an env edit. Without either, the version is `dev`. Leave `APP_VERSION` out of the shared env file in the release layout; a set value always wins.
 
-### Install the pinned Swamp loader
+### Load Swamp
 
-The pinned loader ships before the Gateway release runner requires it. This transition leaves release checks unchanged. The load owner installs it from one reviewed commit on Node 209 with `python3 platform/swamp-load/install_release_load.py --sha <full-commit>`, using the existing privileged publication path. The installer checks script bytes against that commit and publishes an immutable package at `/usr/local/libexec/orbit-swamp-release-load.py`. Installation does not load Swamp, patch the merge publisher, or restart a service. It requires the existing `behavior_versions.py` audit and Python's YAML parser (`python3-yaml`).
+Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow runs one `command/shell` step on 209:
 
-A second release enables the entry and retires the separate merge publisher. The release runner becomes the only normal loader. It owns the real Gateway release lock and uses existing pinned SSH to 209. The entry accepts one `orbit.swamp.release-load.v1` JSON request on stdin, with `release_sha`, the 12-character `release_id`, `gateway_release_record`, `target_node_id: 209`, a unique `attempt_id`, and `action: prepare|accept`. These identify an attempt; they do not attest locks or grant authority. Credentials stay in existing protected files.
+1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
+2. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+3. it compares the workflows serve lists with the workflows on disk.
 
-The entry opens the existing host publication lock without creating or following a link. Before taking custody it checks Serve and the clean checkout, fetches the exact admitted SHA, and resolves that commit. The clean checkout must match the accepted native source and runtime. A busy lock or failed preflight changes no native state, leaves no pending marker, and reports `retry_safe: true`.
+The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume. The step never restarts serve or a worker.
 
-This entry only hot-reloads. Running Operations, production deploys and QUIET runs do not block it. It neither reads active run history nor drains work. The receipt requires the same Serve process before and after publication, with zero Serve or worker restarts. A mismatch pauses with the old Gateway live. A Serve or worker restart remains a separate operator action under the restart drain fence; this entry cannot request one.
-
-Immediately before checkout it writes the pending marker. Any failure after that point retains the marker and requires inspection. A failed verification can leave Swamp on the new source while the old Gateway stays live. The release pauses and an operator fixes forward; it does not silently reload an old source.
-
-The loader uses official CLI commands on the installed runtime. One local and one remote workflow list compare every id/name pair. Full `workflow get` checks cover only workflow YAML files changed since the accepted live Swamp SHA, with four concurrent checks at most. For `K` changed workflows and `B` audited extension types, definition and metadata reads cost `2 + 2K + B` CLI calls: two lists, two gets per changed workflow, and the existing source-version audit. Reload and exact manifest reconciliation add their own calls. The receipt records counts and scope. The load has a 600-second bound.
-
-A successful `prepare` returns `awaiting_gateway_verification` and retains `/var/lib/orbit-swamp-main-load/releases/pending.json`. The Gateway callback checks its configured run token and CA, then sends `accept` with the same identity and `receipt_hash`. The entry rechecks source, runtime and health before recording `verified` and clearing the marker. It accepts no self-reported token proof.
-
-If the caller dies, an operator inspects the exact checkpoint, receipt, source and runtime under both release and publication locks. The operator repairs any split state and records a verified native source matching the checkout. Only then does the operator archive the attempt and remove its pending marker before an explicitly approved new attempt. Do not clear an uncertain attempt merely to retry automatically.
-
-The accepted hot reload on pinned e459 is recorded in `evidence/batch-9c2a850f-load-20261101/accepted-load-receipt.json` in the operator workspace. It matched the exposed definitions checked in that receipt without restarting. B1, Lab 4223, remains a known failure mode: every load still checks its changed definitions and pauses on a mismatch. Official `workflow.get` omits some placement and `forEach` fields. Unchanged workflows receive identity checks, not a new full definition proof. Extension version equality does not prove bundle bytes or helper freshness. No full extension registry equality is claimed.
+A new workflow also needs a grant for the Gateway principal on serve. `swamp/config/gateway-workflow-grants.json` lists them. Create a missing grant with `swamp access grant create --subject user:orbit-gateway --allow run,read --on workflow:<name>` before the release that starts the workflow.
 
 ### Prepare a release
 
@@ -315,7 +307,7 @@ Deploy is the manual release. Before it changes anything, it:
 
 Before deploying a schema squash, finish the existing migration chain on the current release. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the baseline loader and its requirements.
 
-Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
+Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, [loads Swamp](#load-swamp), [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
 
 The native command validates the prepared release and replaces `/home/orbit/orbit` with one atomic rename under the release target lock. Readers keep either the old or new release. Repeating the switch leaves the link unchanged. An in-place checkout or a link to something else is refused until `gateway:release:adopt`. A staging path that is not the requested release link is refused without replacing it.
 

@@ -34,6 +34,7 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\ReleaseTestOwner;
+use Tests\Support\ReleaseTestSwampLoad;
 
 beforeEach(function (): void {
     $this->fixture = GatewayReleaseFixture::create();
@@ -444,6 +445,34 @@ describe('gateway:release:deploy', function (): void {
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
             ->and($smoke->skip)->toBe(['web'])
             ->and($order->steps)->not->toContain('web:restore');
+    });
+
+    it('loads the release commit into Swamp before the switch', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Swamp source');
+        $swamp = new ReleaseTestSwampLoad;
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime(new ReleaseSteps), new OpenReleaseDatabase, recording_web(new ReleaseSteps), recording_smoke(new ReleaseSteps), swamp: $swamp)->execute($sha);
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and($swamp->loaded)->toBe([$sha])
+            ->and($deployed->phases['swamp'])->toBe(['outcome' => 'loaded', 'operation_id' => 1])
+            ->and(array_keys($deployed->phases))->toContain('migrate', 'swamp', 'switch')
+            ->and(array_search('swamp', array_keys($deployed->phases), true))->toBeLessThan(array_search('switch', array_keys($deployed->phases), true));
+    });
+
+    it('pauses with the old release live when Swamp cannot load the commit', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Swamp refuses');
+        $order = new ReleaseSteps;
+
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), swamp: new ReleaseTestSwampLoad(fails: true))->execute($sha));
+        $record = GatewayRelease::query()->latest('id')->first();
+
+        expect($exception->errorCode)->toBe('gateway.release_swamp_load_failed')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and($order->steps)->toBe([])
+            ->and($record->outcome)->toBe('paused')
+            ->and($record->phases['swamp'])->toBe(['outcome' => 'failed', 'error_code' => 'gateway.release_swamp_load_failed']);
     });
 
     it('pauses a deploy when its web build disappears after migration', function (): void {
@@ -928,6 +957,7 @@ function release_deployer(
     ?GatewayReleaseSwitcher $switcher = null,
     ?GatewayReleaseLock $lock = null,
     ?int $keptReleases = null,
+    ?ReleaseTestSwampLoad $swamp = null,
 ): DeployGatewayReleaseAction {
     $builder = $fixture->builder($web);
     $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
@@ -952,6 +982,7 @@ function release_deployer(
         new GatewayReleaseRetry,
         GatewayReleasePipeline::newestGreen(),
         new ReleaseTestOwner,
+        $swamp ?? new ReleaseTestSwampLoad,
     );
 }
 

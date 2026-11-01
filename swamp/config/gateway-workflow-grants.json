@@ -92,6 +92,7 @@
     {"workflow": "operation-fleet-recipe-direct", "actions": ["run", "read"]},
     {"workflow": "operation-fleet-recipe-pr", "actions": ["run", "read"]},
     {"workflow": "operation-fleet-rollout", "actions": ["run", "read"]},
+    {"workflow": "operation-gateway-swamp-load", "actions": ["run", "read"]},
     {"workflow": "operation-instance-clone", "actions": ["run", "read"]},
     {"workflow": "operation-instance-create", "actions": ["run", "read"]},
     {"workflow": "operation-instance-deploy-direct", "actions": ["run", "read"]},

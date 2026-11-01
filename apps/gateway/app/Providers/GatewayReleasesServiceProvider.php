@@ -35,6 +35,7 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
@@ -79,6 +80,7 @@ use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
 use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseExecutionOwner;
+use App\Infrastructure\GatewayReleases\NativeGatewayReleaseSwampLoad;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseUnitConverger;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
@@ -100,6 +102,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
     {
         $this->app->bind(GatewayReleaseExecutionOwner::class, NativeGatewayReleaseExecutionOwner::class);
         $this->app->bind(GatewayReleaseDrain::class, SystemdGatewayReleaseDrain::class);
+        $this->app->bind(GatewayReleaseSwampLoad::class, NativeGatewayReleaseSwampLoad::class);
         $this->app->bind(GatewayReleaseLayout::class, static fn (): GatewayReleaseLayout => GatewayReleaseLayout::fromConfig());
         $this->app->bind(GatewayReleaseObserver::class, FilesystemGatewayReleaseObserver::class);
         $this->app->bind(

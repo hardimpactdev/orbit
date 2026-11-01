@@ -15,6 +15,7 @@ use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
@@ -91,8 +92,12 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     /** @var array<string, mixed> what the schedule phase reports for the Gateway Node's own agent */
     public array $gatewayAgent = ['outcome' => 'unchanged', 'version' => '0.4.0'];
 
+    /** Every deploy of this pipeline loads Swamp through this fake. */
+    public ReleaseTestSwampLoad $swamp;
+
     public function __construct(private readonly bool $adopted = false)
     {
+        $this->swamp = new ReleaseTestSwampLoad;
         $this->fixture = GatewayReleaseFixture::create(adopted: $adopted);
         $this->home = $this->fixture->base.'/home';
         mkdir($this->home, 0700, true);
@@ -152,7 +157,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         $recorder = $this->recorder();
         $builder = $this->fixture->builder($this);
 
-        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder, $this), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $drain);
+        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder, $this), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $this->swamp, $drain);
     }
 
     public function rollback(?GatewayReleaseSmoke $smoke = null): RollbackGatewayReleaseAction
@@ -207,6 +212,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     {
         $this->bindRecovery();
         app()->instance(GatewayReleaseExecutionOwner::class, new ReleaseTestOwner);
+        app()->instance(GatewayReleaseSwampLoad::class, $this->swamp);
         app()->instance(GatewayReleaseLayout::class, $this->fixture->layout);
         app()->instance(GatewayReleaseLock::class, $this->lock());
         app()->instance(GatewayReleaseBuilder::class, $this->fixture->builder($this));
