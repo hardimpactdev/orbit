@@ -31,28 +31,23 @@ jobs:
           inputs:
             env:
               RELEASE_SHA: '${{ inputs.intent.sha }}'
-              HOME: /home/orbit
-              SWAMP_HOME: /home/orbit/.swamp
-              SWAMP_CONFIG_DIR: /home/orbit/.config/swamp
-              SWAMP_API_KEY_FILE: /home/orbit/.config/swamp/api-key
-              SWAMP_NO_UPDATE_CHECK: '1'
-              SWAMP_NO_TELEMETRY: '1'
-              SERVE: ws://127.0.0.1:9418
-              SERVE_TOKEN: /home/orbit/.config/swamp/serve-driver-token
             # Fast-forward the serve checkout, let serve reload it, and compare the served workflows with the commit.
             run: |
               set -eu
+              export HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp
+              export SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1
               cd /home/orbit/apps/orbit-monorepo-staging/checkout
               previous=$(git rev-parse HEAD)
               timeout 120 git fetch --quiet origin "$RELEASE_SHA"
               git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
               git checkout --quiet --detach "$RELEASE_SHA"
               test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-              timeout 120 /home/orbit/.local/bin/swamp serve reload --server "$SERVE" --token-file "$SERVE_TOKEN" --json \
+              timeout 120 /home/orbit/.local/bin/swamp serve reload --server ws://127.0.0.1:9418 \
+                --token-file /home/orbit/.config/swamp/serve-driver-token --json \
                 | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null
               disk=$(timeout 60 /home/orbit/.local/bin/swamp workflow list --repo-dir swamp --json | jq -ec '[.results[] | [.id, .name]] | sort')
-              live=$(timeout 60 /home/orbit/.local/bin/swamp workflow list --server "$SERVE" --token-file "$SERVE_TOKEN" --json \
-                | jq -ec '[.results[] | [.id, .name]] | sort')
+              live=$(timeout 60 /home/orbit/.local/bin/swamp workflow list --server ws://127.0.0.1:9418 \
+                --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -ec '[.results[] | [.id, .name]] | sort')
               test "$disk" = "$live"
               jq -cn --arg sha "$RELEASE_SHA" --arg previous "$previous" --argjson workflows "$(printf '%s' "$live" | jq length)" \
                 '{sha: $sha, previous: $previous, workflows: $workflows}'
