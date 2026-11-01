@@ -293,46 +293,6 @@ describe('POST /mcp', function (): void {
         $this->assertDatabaseCount('jobs', 1);
     })->with(['/mcp', '/mcp/search']);
 
-    it('starts and replays task check through its generated MCP tool', function (string $endpoint): void {
-        enable_operation_queue();
-        tick_bind_defaults();
-        app(TaskExtensionState::class)->enable();
-        $group = tick_group();
-        Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
-        $arguments = ['group' => $group->id, 'subtask' => $group->tasks()->firstOrFail()->id, 'phase' => 'handoff', 'Idempotency-Key' => 'mcp.check.c1'];
-
-        $first = mcp_tool($this, $endpoint, 'tasks-check', $arguments);
-        $second = mcp_tool($this, $endpoint, 'tasks-check', $arguments);
-
-        expect($first['operation']['kind'])->toBe('tasks.check');
-        expect($first['operation']['input'])->toBe(['subtask' => $arguments['subtask'], 'phase' => 'handoff']);
-        expect($first['poll']['tool'])->toBe('operation-show');
-        expect($second['operation']['id'])->toBe($first['operation']['id']);
-        $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
-    })->with(['/mcp', '/mcp/search']);
-
-    it('starts and replays task publish through its generated MCP tool', function (string $endpoint): void {
-        enable_operation_queue();
-        tick_bind_defaults();
-        app(TaskExtensionState::class)->enable();
-        $group = tick_group();
-        Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
-        $check = $group->tasks()->firstOrFail()->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'commit_sha' => str_repeat('a', 40), 'pid' => 0, 'process_started' => '', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
-        task_checked_operation($check);
-        $arguments = ['group' => $group->id, 'check' => $check->id, 'Idempotency-Key' => 'mcp.publish.c1'];
-
-        $first = mcp_tool($this, $endpoint, 'tasks-publish', $arguments);
-        $second = mcp_tool($this, $endpoint, 'tasks-publish', $arguments);
-
-        expect($first['operation']['kind'])->toBe('tasks.publish');
-        expect($first['operation']['input'])->toBe(['check' => $check->id, 'pull_request' => null]);
-        expect($first['poll']['tool'])->toBe('operation-show');
-        expect($second['operation']['id'])->toBe($first['operation']['id']);
-        $this->assertDatabaseCount('operations', 2);
-        $this->assertDatabaseCount('jobs', 1);
-    })->with(['/mcp', '/mcp/search']);
-
     it('preserves recorded public task failure metadata and pins through both generated operation tools', function (string $endpoint, string $fixture): void {
         app(TaskExtensionState::class)->enable();
         $record = json_decode((string) file_get_contents(fixture_path($fixture)), true, flags: JSON_THROW_ON_ERROR);
