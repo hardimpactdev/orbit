@@ -1,0 +1,9 @@
+[
+  {
+    "title": "Own the sweep proof VM",
+    "brief": "Provision and cancel normally before recreating its exact orphan identity.",
+    "deliverables": [
+      {"id": "cleanup", "type": "review", "description": "The isolated sweep proves final absence."}
+    ]
+  }
+]
