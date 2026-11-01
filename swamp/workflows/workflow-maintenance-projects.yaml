@@ -1,24 +1,48 @@
 id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
 name: maintenance-projects
-labels: { pool: migration, node: "209" }
-description: Admit scheduled work and reconcile findings and completed group receipts.
+description: Select Project maintenance from Gateway-published full public intent.
 trigger:
   schedule: '40 * * * * *'
+inputs:
+  type: object
+  required: [revision, snapshot_hash, projects, groups, operations, admissions]
+  additionalProperties: false
+  properties:
+    revision: {type: integer, minimum: 1}
+    snapshot_hash: {type: string, pattern: '^[a-f0-9]{64}$'}
+    projects: {type: array, items: {type: object}}
+    groups: {type: array, items: {type: object}}
+    operations: {type: array, items: {type: object}}
+    admissions: {type: object}
 reports:
-  skip: ["@swamp/workflow-summary"]
+  skip: ['@swamp/workflow-summary']
 jobs:
-  - name: reconcile
+  - name: maintenance
+    target: orbit-node-209
     steps:
-      - name: work
+      - name: select
+        target: orbit-node-209
         task:
-          type: model_method
-          modelType: "@nckrtl/native-host-method"
-          modelName: native-project-work
-          methodName: project_work
-      - name: dependency-prs
-        dependsOn: [{ step: work, condition: { type: succeeded } }]
+          type: behavior
+          behaviorType: '@nckrtl/project-maintenance-input'
+          behaviorName: '${{ "maintenance-input-" + run.id }}'
+          methodName: schedule
+          inputs:
+            revision: '${{ inputs.revision }}'
+            snapshot_hash: '${{ inputs.snapshot_hash }}'
+            projects: '${{ inputs.projects }}'
+            groups: '${{ inputs.groups }}'
+            operations: '${{ inputs.operations }}'
+            admissions: '${{ inputs.admissions }}'
+      - name: result
+        target: orbit-node-209
+        dependsOn: [{step: select, condition: {type: succeeded}}]
         task:
-          type: model_method
-          modelType: "@nckrtl/native-host-method"
-          modelName: native-dependency-prs
-          methodName: dependency_prs
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "maintenance-result-" + run.id }}'
+          methodName: execute
+          inputs:
+            run: 'printf "%s\n" "$ORBIT_RESULT"'
+            env:
+              ORBIT_RESULT: '${{ steps.select.outputs.result_json }}'

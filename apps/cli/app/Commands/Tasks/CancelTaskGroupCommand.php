@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace App\Commands\Tasks;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\Tasks\Concerns\ConfirmsTaskChanges;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 
 final class CancelTaskGroupCommand extends TaskCommand
 {
     use ConfirmsTaskChanges;
+    use FollowsOperations;
 
     #[\Override]
     protected $signature = 'tasks:cancel
         {group? : Numeric task group ID}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--yes : Confirm without prompting}
         {--json : Return machine-readable JSON}';
 
@@ -31,12 +36,13 @@ final class CancelTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $connector = $this->gatewayConnector($repository, $connectors);
+        $profile = $this->activeGatewayProfile($repository);
 
-        if ($connector === null) {
+        if ($profile === null) {
             return self::FAILURE;
         }
 
+        $connector = $connectors->make($profile);
         $groupId ??= $this->selectGroup($connector, excluded: ['settling', 'waiting_for_review', 'completed']);
 
         if ($groupId === null) {
@@ -59,8 +65,12 @@ final class CancelTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $group = $this->sendWithProgress($connector, new CancelTaskGroupRequest($groupId), TaskGroupResponse::class, ['Cancel task group', 'Cancelling task group', 'Cancelled task group']);
+        $key = $this->option('idempotency-key');
+        $key = is_string($key) && $key !== '' ? $key : 'tasks.cancel.'.Str::uuid();
+        $operation = $this->send($connector, new CancelTaskGroupRequest($groupId, $key), OperationResponse::class);
 
-        return $group instanceof TaskGroupResponse ? $this->renderGroup($group) : self::FAILURE;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Cancel task group [{$groupId}]", 'Cancel')
+            : self::FAILURE;
     }
 }

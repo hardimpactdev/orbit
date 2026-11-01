@@ -166,7 +166,9 @@ The CLI follows the operation with the shared operation display. It accepts `--i
 
 The MCP tool `tasks-worker` takes the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
 
-To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling native provision ends the group `cancelled`; it does not claim VM removal. Only after the provider confirms power-off may cancellation end the group while retaining its offline workspace and requesting removal assistance. Otherwise preservation and removal must succeed. Missing or stale observations do not authorize skipping them. A worker stop must be confirmed first.
+To stop a waiting provision, use `tasks:cancel`. Cancellation first requests cancellation of an existing native group Operation and refuses while that Operation remains active. A fresh keyed request then admits one `tasks.cancel` Operation.
+
+Its native ending DAG runs captured teardown commands through pinned SSH from Node 209 and composes the canonical TaskVM destroy child. The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed or interrupted cleanup retains the records for recovery; it does not mark the group cancelled. A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
 
 #### Start a group worker
 

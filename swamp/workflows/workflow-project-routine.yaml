@@ -1,25 +1,80 @@
 id: eefb6690-519c-4416-a89c-c43c1c34ec97
 name: project-routine
-description: Shared Project routine entrypoint; the Gateway selects the project input.
-reports:
-  skip: ["@swamp/workflow-summary"]
+description: Select a routine from admitted Gateway state and return its group request.
 inputs:
   type: object
   additionalProperties: false
-  required: [projectId]
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   properties:
-    projectId: {type: integer, minimum: 1}
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      enum:
+      - 209
+    kind:
+      type: string
+      enum:
+      - project.routine
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties: {}
+      additionalProperties: false
+reports:
+  skip:
+  - '@swamp/workflow-summary'
 jobs:
-  - name: start
-    steps:
-      - name: routine
-        target: orbit-node-209
-        labels: {pool: migration, node: "209"}
-        task:
-          type: model_method
-          modelType: "@nckrtl/orbit-gateway"
-          modelName: orbit-gateway
-          methodName: schedule_project
-          inputs:
-            projectId: '${{ inputs.projectId }}'
-            mode: routine
+- name: routine
+  target: orbit-node-209
+  steps:
+  - name: input
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-input'
+      behaviorName: ${{ "project-input-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+  - name: select
+    target: orbit-node-209
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        project: ${{ steps.input.outputs.project }}
+        groups: ${{ inputs.intent.groups }}
+        admitted_at: ${{ inputs.intent.admitted_at }}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: select
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "project-routine-result-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' "$ORBIT_RESULT"
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.select.outputs.result_json }}

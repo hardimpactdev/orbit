@@ -18,6 +18,8 @@ inputs:
       - task_vm.destroy
       - task_vm.provision
       - tasks.provision
+      - tasks.cancel
+      - tasks.maintenance_finish
     intent:
       type: object
       properties:

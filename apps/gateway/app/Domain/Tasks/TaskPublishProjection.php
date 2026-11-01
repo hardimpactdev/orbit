@@ -33,6 +33,8 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
                 ]);
             }
 
+            app(TaskMaintenanceContinuation::class)->apply($projected);
+
             return $projected;
         });
     }

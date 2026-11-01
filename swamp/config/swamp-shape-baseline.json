@@ -82,14 +82,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/_lib/dependency_credentials.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "POST <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/dependency_inventory.ts",
       "rule": "custom-control",
       "count": 1,
@@ -130,16 +122,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/maintenance_worker.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "GET /api/v1/operations/{operation_id}",
-        "GET <unknown>",
-        "POST <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/maintenance/batch.ts",
       "rule": "custom-control",
       "count": 1,
@@ -154,54 +136,10 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/package_target.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/project_admission.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET /api/v1/task-groups",
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/project_schedule.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>",
-        "POST /api/v1/task-groups"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/repository_analysis.ts",
       "rule": "custom-control",
       "count": 2,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/_lib/review_capacity.ts",
-      "rule": "gateway-http",
-      "count": 6,
-      "evidence": [
-        "GET /api/v1/operations/{operation_id}",
-        "GET <unknown>",
-        "POST <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/service_detection.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/_lib/service_workspace.ts",
@@ -210,12 +148,6 @@
       "evidence": [
         "lock"
       ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/swamp_maintenance.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/automatic-deploy/development.ts",
@@ -246,12 +178,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/dependency_scanner.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/js-maintenance/_lib/batch.ts",
@@ -441,15 +367,6 @@
       "rule": "private-material",
       "count": 2,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/database/valkey_acl_local.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/docker",
-        "/usr/bin/sudo"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/database/valkey_client.ts",
@@ -967,14 +884,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/converge_direct.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
       "rule": "custom-control",
       "count": 5,
@@ -1151,28 +1060,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/rekey_direct.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/rekey_local.ts",
-      "rule": "agent-action",
-      "count": 1,
-      "evidence": [
-        "agent.configure"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/rekey_local.ts",
-      "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/role_baseline_system.ts",
       "rule": "custom-control",
       "count": 1,
@@ -1254,29 +1141,6 @@
       "rule": "private-material",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/settings.ts",
-      "rule": "agent-action",
-      "count": 2,
-      "evidence": [
-        "account.lookup",
-        "node.prepare-storage-root"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/settings.ts",
-      "rule": "agent-dynamic",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/settings.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/node/test-fixture.ts",
@@ -1488,14 +1352,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/dns-publication.ts",
       "rule": "custom-control",
       "count": 5,
@@ -1542,14 +1398,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/routes/mutation-steps.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/php-shared-program.ts",
       "rule": "inline-script",
       "count": 214,
@@ -1564,33 +1412,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
-      "rule": "inline-script",
-      "count": 35,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
-      "rule": "multi-action",
-      "count": 6,
-      "evidence": [
-        "/usr/bin/git",
-        "/usr/bin/python3",
-        "/usr/bin/readlink",
-        "/usr/bin/rm",
-        "/usr/bin/stat",
-        "/usr/bin/test"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/router-lan.ts",
       "rule": "inline-script",
       "count": 40,
@@ -1601,40 +1422,6 @@
       "rule": "inline-script",
       "count": 100,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/target-set.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/target-unset.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/verification.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/verification.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/curl",
-        "/usr/bin/openssl",
-        "/usr/bin/timeout"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/cache_fill_direct.ts",
@@ -1947,14 +1734,6 @@
     },
     {
       "file": "extensions/behaviors/orbit_gateway.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/orbit_group_run.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []

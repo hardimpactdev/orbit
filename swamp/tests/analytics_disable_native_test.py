@@ -19,7 +19,8 @@ class AnalyticsDisableNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors(
-            "operations/routes/publication-command", "operations/certificates"
+            "operations/routes/publication-command", "operations/certificates",
+            "operations/analytics-site", "operations/analytics"
         )
         shutil.copy(
             ROOT / "extensions/behaviors/operations/routes/caddy-input.ts",
@@ -34,6 +35,9 @@ class AnalyticsDisableNative(NativeTestCase):
                 "signing.ts",
                 "role-input.ts",
             ):
+                path.unlink()
+        for path in (self.repo / "extensions/behaviors/operations/analytics").glob("*.ts"):
+            if path.name not in ("plausible.ts", "host-intent.ts"):
                 path.unlink()
         self.audit = self.repo / "audit"
         self.native_env["ANALYTICS_AUDIT"] = str(self.audit)

@@ -12,9 +12,10 @@ unsupported or unsolved target remains a typed blocked finding.
 
 The shared `orbit-deps.scan` inventory reads manifests and lockfiles from that
 commit through the existing Git reader. It does not request dependency snapshots
-from the Gateway. Its model needs only the checkout path and branch; scan data
-records the resolved commit and checkout sources. The registry planner consumes
-that inventory as before.
+from the Gateway. The native workflow takes the checkout path and branch as run
+inputs. Separate Git steps fetch the branch and resolve its full commit. Scan
+receives that commit explicitly and records its checkout sources. The registry
+planner receives the same run's inventory output directly.
 
 Package target inputs share a schema between worker dispatch and admission.
 The schema lives in `_lib/package_target_schema.ts`, so workers can validate

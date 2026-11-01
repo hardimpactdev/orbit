@@ -1,12 +1,10 @@
 type: '@nckrtl/orbit-deps'
-typeVersion: 2026.10.31.1
+typeVersion: 2026.11.01.1
 id: f9acccd1-c74f-4d87-a383-84c2924da698
 name: orbit-deps
 version: 1
 tags: {}
-globalArguments:
-  checkoutDir: /fast/apps/orbit-swamp-scratch/base
-  branch: main
+globalArguments: {}
 methods: {}
 
 # Native execution history keeps errors; omit duplicate summary versions.

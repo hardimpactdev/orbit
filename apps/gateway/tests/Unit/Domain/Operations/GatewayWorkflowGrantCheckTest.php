@@ -99,3 +99,31 @@ it('refuses retired execution copy intent after its declaration is removed', fun
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute([], $policy))->toThrow(LogicException::class);
 });
+
+it('requires write only for the exact declared schedule input producer', function (): void {
+    $definitions = ['schedule:maintenance' => ['workflow' => 'maintenance-projects', 'schedule_write' => true],
+        'project.routine' => ['workflow' => 'project-routine']];
+    $policy = ['version' => 2, 'principal' => 'user:orbit-gateway', 'vaults' => [], 'workflows' => [
+        ['workflow' => 'maintenance-projects', 'publishes_inputs' => true, 'actions' => ['write', 'read', 'run']],
+        ['workflow' => 'project-routine', 'actions' => ['run', 'read']],
+    ]];
+    expect((new GatewayWorkflowGrantCheck)->execute($definitions, $policy))->toBe(2);
+    $unmarked = $policy;
+    unset($unmarked['workflows'][0]['publishes_inputs']);
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $unmarked))->toThrow(LogicException::class);
+    $false = $policy;
+    $false['workflows'][0]['publishes_inputs'] = false;
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $false))->toThrow(LogicException::class);
+    $missing = $policy;
+    $missing['workflows'][0]['actions'] = ['run', 'read'];
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $missing))->toThrow(LogicException::class);
+    $broader = $policy;
+    $broader['workflows'][1]['actions'][] = 'write';
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $broader))->toThrow(LogicException::class);
+    $retired = $definitions;
+    unset($retired['schedule:maintenance']['schedule_write']);
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($retired, $policy))->toThrow(LogicException::class);
+    $admin = $policy;
+    $admin['workflows'][0]['actions'][] = 'admin';
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $admin))->toThrow(LogicException::class);
+});

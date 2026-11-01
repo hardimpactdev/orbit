@@ -10,7 +10,7 @@ use LogicException;
 final readonly class GatewayWorkflowGrantCheck
 {
     /**
-     * @param  array<string,array{workflow:string,execution_copies?:list<array{vault:string,key_pattern:string}>}>  $definitions
+     * @param  array<string,array{workflow:string,schedule_write?:bool,execution_copies?:list<array{vault:string,key_pattern:string}>}>  $definitions
      * @param  array<string,mixed>  $policy
      */
     public function execute(array $definitions, array $policy): int
@@ -22,12 +22,26 @@ final readonly class GatewayWorkflowGrantCheck
             throw new LogicException('Gateway workflow grant intent needs version 2, principal user:orbit-gateway and workflow and vault lists.');
         }
 
+        $scheduleWrites = [];
+        foreach ($definitions as $definition) {
+            if (($definition['schedule_write'] ?? false) === true) {
+                $scheduleWrites[$definition['workflow']] = true;
+            }
+        }
         $grants = [];
         foreach ($policy['workflows'] as $entry) {
-            if (! is_array($entry) || count($entry) !== 2 || ! is_string($entry['workflow'] ?? null)
+            if (! is_array($entry) || array_diff(array_keys($entry), ['workflow', 'actions', 'publishes_inputs']) !== []
+                || (array_key_exists('publishes_inputs', $entry) && $entry['publishes_inputs'] !== true)
+                || ! is_string($entry['workflow'] ?? null)
                 || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $entry['workflow']) !== 1
-                || ! in_array($entry['actions'] ?? null, [['run', 'read'], ['read', 'run']], true)) {
-                throw new LogicException('Each exact Gateway workflow grant intent needs only workflow and both run and read actions.');
+                || ! is_array($entry['actions'] ?? null) || ! array_is_list($entry['actions'])) {
+                throw new LogicException('Each exact Gateway workflow grant intent needs workflow, actions and an optional schedule producer marker.');
+            }
+            $actions = $entry['actions'];
+            sort($actions);
+            $expected = isset($scheduleWrites[$entry['workflow']]) ? ['read', 'run', 'write'] : ['read', 'run'];
+            if ($actions !== $expected || (($entry['publishes_inputs'] ?? false) === true) !== isset($scheduleWrites[$entry['workflow']])) {
+                throw new LogicException('Each exact workflow needs run and read, plus write only for its declared schedule input producer.');
             }
             if (isset($grants[$entry['workflow']])) {
                 throw new LogicException("Duplicate Gateway workflow grant intent [{$entry['workflow']}].");

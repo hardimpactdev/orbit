@@ -7,6 +7,7 @@ namespace App\Domain\Nodes;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Routes\CaddyPublicationPlan;
+use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
@@ -22,6 +23,7 @@ use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\Route;
@@ -40,6 +42,25 @@ final readonly class NodeConvergeInput
     /** @param iterable<NodeFootprintArtifact> $artifacts */
     public function __construct(private NodeFootprint $footprint, private AgentDelivery $delivery,
         #[Tag(NodeFootprintArtifact::class)] private iterable $artifacts) {}
+
+    /** @return array<string,mixed> */
+    public function captureNative(Node $node, bool $force, bool $firstVisit): array
+    {
+        $snapshot = $this->capture($node, $force, $firstVisit);
+        unset($snapshot['secret_hash']);
+        $payloads = ValidatedData::object($snapshot['payloads']);
+        if (isset($payloads['route-residue'])) {
+            $residue = ValidatedData::object($payloads['route-residue']);
+            $lan = app(NativeRouteLanInput::class);
+            $residue['lan'] = ['node_id' => $node->id, 'rules' => $lan->changes([], $lan->forSites($node, app(DevelopmentSiteRepository::class)->all())), 'migrate' => true];
+            $residue['ingress_commands'] = $residue['ingress'] === null ? null : app(NodeRoleFirewallInput::class)->convergeCommands($node, RoleName::Ingress);
+            unset($residue['ingress'], $residue['firewall']);
+            $payloads['route-residue'] = $residue;
+        }
+
+        return [...$snapshot, 'payloads' => $payloads, 'user' => $node->user,
+            'ssh' => app(SwampSshExecutionInput::class)->forNode($node)];
+    }
 
     /** @return array<string,mixed> */
     public function capture(Node $node, bool $force, bool $firstVisit): array

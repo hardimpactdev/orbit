@@ -18,8 +18,8 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
     public function input(Operation $operation): array
     {
 
-        return ['agent_pin' => $operation->input['agent_pin'],
-            'storage' => array_intersect_key($operation->input, array_flip(['root', 'user', 'create_missing', 'protected_roots', 'managed_checkouts']))];
+        return ['intent' => ['ssh' => $operation->input['ssh'], 'agent_pin' => $operation->input['agent_pin'],
+            'storage' => array_intersect_key($operation->input, array_flip(['root', 'user', 'create_missing', 'protected_roots', 'managed_checkouts']))]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -30,7 +30,7 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
         if ($status === OperationStatus::Succeeded && (($result['prepared'] ?? null) !== true || $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'The storage action has no successful result.', 422);
         }
-        if (($status === OperationStatus::Failed && ($code !== 'node.settings_root_failed' || ($result['error_code'] ?? null) !== $code)) || ($status !== OperationStatus::Failed && $code !== null)) {
+        if (($status === OperationStatus::Failed && (! in_array($code, ['node.settings_root_failed', 'operation.native_failed'], true) || ($result['error_code'] ?? null) !== $code)) || ($status !== OperationStatus::Failed && $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'The storage action needs its refusal code.', 422);
         }
         $result = match ($status) {

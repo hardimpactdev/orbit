@@ -1,6 +1,7 @@
 id: 3aca13ae-e8bb-40b4-bc14-072b4c7e435d
 name: route-dns-publish
-description: Apply a full public Route DNS snapshot with official file and service actions.
+description: Apply a full public Route DNS snapshot with official file and service
+  actions.
 vaults: []
 inputs:
   type: object
@@ -123,10 +124,11 @@ jobs:
         argv:
         - /bin/sh
         - -c
-        - |-
-          set -eu
+        - 'set -eu
+
           /usr/bin/install -m 0644 -o root -g root /dev/null "$1"
-          /usr/bin/cat > "$1"
+
+          /usr/bin/cat > "$1"'
         - route-file
         - /etc/dnsmasq.d/orbit-records.conf
         stdin: ${{ steps.compose.outputs.records }}
@@ -148,10 +150,11 @@ jobs:
         argv:
         - /bin/sh
         - -c
-        - |-
-          set -eu
+        - 'set -eu
+
           /usr/bin/install -m 0644 -o root -g root /dev/null "$1"
-          /usr/bin/cat > "$1"
+
+          /usr/bin/cat > "$1"'
         - route-file
         - /var/lib/orbit/private-dns/catalog.json
         stdin: ${{ steps.compose.outputs.catalog }}
@@ -225,8 +228,9 @@ jobs:
       behaviorName: ${{ "route-dns-result-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          printf '%s\n' '{"ready":true}'
+        run: 'printf ''%s\n'' ''{"ready":true}''
+
+          '
     dependsOn:
     - step: listener
       condition:

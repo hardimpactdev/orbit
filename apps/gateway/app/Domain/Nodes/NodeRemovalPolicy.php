@@ -7,9 +7,11 @@ namespace App\Domain\Nodes;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskableType;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\DatabaseServer;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\TaskVm;
@@ -20,13 +22,27 @@ final readonly class NodeRemovalPolicy
 {
     public function __construct(private ScheduleTargetUseGuard $schedules, private RouteRemovalGuard $routes) {}
 
-    public function protected(Node $node, Node $caller): void
+    public function protected(Node $node, Node $caller, ?Instance $removingWorkspace = null): void
     {
         if ($node->id === 209) {
             throw $this->conflict('node.control_removal_forbidden', 'The Swamp control Node cannot remove its own runtime.');
         }
         $this->schedules->assertNodeRemovable($node);
-        if ($node->instances()->exists()) {
+        if ($removingWorkspace !== null) {
+            $vm = TaskVm::forNode($node->id);
+            $group = $vm?->group;
+            if ($group === null || ! $group->isTopLevel() || $removingWorkspace->node_id !== $node->id
+                || $removingWorkspace->task_workspace_owner_id !== $group->id || $removingWorkspace->project_id !== $group->project_id
+                || $removingWorkspace->task_workspace_routed
+                || ($group->taskable_id !== null && ($group->taskable_type !== TaskableType::Instance || $group->taskable_id !== $removingWorkspace->id))) {
+                throw $this->conflict('task_vm.workspace_mismatch', 'Cleanup requires the exact plain workspace owned by this VM group and Project.');
+            }
+        }
+        $instances = $node->instances();
+        if ($removingWorkspace !== null) {
+            $instances->whereKeyNot($removingWorkspace->id);
+        }
+        if ($instances->exists()) {
             throw $this->conflict('node.has_instances', 'The Node still owns Instances.');
         }
         if (DatabaseServer::query()->where('node_id', $node->id)->exists()) {

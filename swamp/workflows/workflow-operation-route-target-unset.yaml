@@ -1,26 +1,55 @@
 id: b42b9a7e-70cf-4729-a16c-107ffef9e08c
 name: operation-route-target-unset
-description: Confirm the admitted empty Route target set without publication.
+description: Execute immutable admitted Route intent using canonical native children
+  on209.
 vaults: []
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [route.target_unset] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - route.target_unset
+    intent:
+      type: object
+      properties:
+        route_id:
+          type: integer
+          minimum: 1
+        target_ids:
+          type: array
+          maxItems: 0
+      required:
+      - route_id
+      - target_ids
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: confirmation
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: confirm-targets
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/route-target-unset"
-          behaviorName: '${{ "route-target-unset-node-" + string(inputs.node_id) }}'
-          methodName: confirm
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: confirmation
+  steps:
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' ''{"ready":true}''
+
+          '

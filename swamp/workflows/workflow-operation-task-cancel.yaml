@@ -1,0 +1,108 @@
+id: 8ba8f6c9-0a5e-44da-9710-4bde40935894
+name: operation-task-cancel
+description: Captured Tasks ending DAG on 209; retain records until complete native
+  cleanup.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tasks.cancel
+      - tasks.maintenance_finish
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: cancel
+  target: orbit-node-209
+  steps:
+  - name: teardown
+    target: orbit-node-209
+    guard: ${{ size(inputs.intent.teardown) == 0 }}
+    task:
+      type: workflow
+      workflowIdOrName: task-workspace-teardown
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  - name: vm
+    target: orbit-node-209
+    guard: ${{ inputs.intent.instance_id == null }}
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-destroy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn:
+    - step: teardown
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-cancel-result-"+run.id }}
+      methodName: execute
+      inputs:
+        run: "python3 - <<'PYTHON'\nimport json\nimport os\n\nvm = json.loads(os.environ[\"\
+          VM\"])\nprint(\n    json.dumps(\n        {\n            \"group_id\": int(os.environ[\"\
+          GROUP\"]),\n            \"instance_id\": json.loads(os.environ[\"INSTANCE\"\
+          ]),\n            \"cleanup_complete\": vm.get(\"destroyed\") is True\n \
+          \           and vm.get(\"cleanup_complete\") is True\n            if vm\n\
+          \            else True,\n            \"vm\": vm,\n        }\n    )\n)\n\
+          PYTHON\n"
+        env:
+          GROUP: ${{ string(inputs.intent.group_id) }}
+          INSTANCE: '${{ inputs.intent.instance_id == null ? "null" : string(inputs.intent.instance_id)
+            }}'
+          VM: '${{ inputs.intent.instance_id == null ? "{}" : steps.vm.outputs.result.result_json
+            }}'
+    dependsOn:
+    - step: vm
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped

@@ -63,6 +63,29 @@ class ManifestGrants(unittest.TestCase):
             self.assertTrue(M.reconcile(RAW, 'a' * 40, Path(tmp), native)['read_only_recheck'])
             self.assertFalse(any('create' in c or 'reload' in c for c in native.calls))
 
+    def test_schedule_producer_adds_only_missing_write_with_exact_marker(self):
+        policy = json.loads(RAW)
+        policy['workflows'][0].update(publishes_inputs=True, actions=['run', 'read', 'write'])
+        with tempfile.TemporaryDirectory() as tmp:
+            native = Native()
+            native.grants.append({**M.scopes(policy)[0], 'id': 'prior-run-read', 'actions': ['run', 'read']})
+            before = copy.deepcopy(native.grants)
+            out = M.reconcile(json.dumps(policy).encode(), 'a' * 40, Path(tmp), native)
+            self.assertEqual([['write']], [r['actions'] for r in out['created']])
+            self.assertTrue(all(g in native.grants for g in before))
+            self.assertEqual('applied', out['state'])
+
+    def test_workflow_write_requires_marker_and_never_allows_admin(self):
+        for marker, actions in [(None, ['run', 'read', 'write']), (False, ['run', 'read', 'write']),
+                                (True, ['run', 'read']), (True, ['run', 'read', 'write', 'admin'])]:
+            with self.subTest(marker=marker, actions=actions):
+                policy = json.loads(RAW)
+                policy['workflows'][0]['actions'] = actions
+                if marker is not None:
+                    policy['workflows'][0]['publishes_inputs'] = marker
+                with self.assertRaises(ValueError):
+                    M.scopes(policy)
+
     def test_vault_grant_keeps_the_exact_key_condition(self):
         with tempfile.TemporaryDirectory() as tmp:
             policy = json.loads(RAW)

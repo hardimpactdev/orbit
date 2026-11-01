@@ -136,11 +136,18 @@ Deno.test("the fleet retains private project configuration without per-project w
     ]);
     assertEquals(manifest.workflows, []);
     for (const mode of ["routine", "detect"]) {
-      await Deno.stat(new URL(
-        `workflows/workflow-project-${source.slug}-${mode}.yaml`, repo,
-      )).then(
-        () => { throw new Error("Project-specific workflow still exists"); },
-        (error) => { if (!(error instanceof Deno.errors.NotFound)) throw error; },
+      await Deno.stat(
+        new URL(
+          `workflows/workflow-project-${source.slug}-${mode}.yaml`,
+          repo,
+        ),
+      ).then(
+        () => {
+          throw new Error("Project-specific workflow still exists");
+        },
+        (error) => {
+          if (!(error instanceof Deno.errors.NotFound)) throw error;
+        },
       );
     }
   }
@@ -180,31 +187,71 @@ Deno.test("private project config preserves every exception ledger found in the 
   }
 });
 
-Deno.test("both shared Project entrypoints forward the required project input on 209", async () => {
+Deno.test("both shared Project entrypoints accept full Gateway inputs and emit native results on209", async () => {
   const ids = new Set<string>();
   for (const mode of ["detect", "routine"]) {
     const workflow = await yaml(`workflows/workflow-project-${mode}.yaml`) as {
-      id: string; name: string; trigger?: unknown; queueTimeout?: unknown;
-      inputs: { required: string[]; properties: { projectId: unknown } };
-      jobs: { steps: { target: string; labels: unknown; task: {
-        modelType: string; modelName: string; methodName: string; inputs: unknown;
-      } }[] }[];
+      id: string;
+      name: string;
+      trigger?: unknown;
+      queueTimeout?: unknown;
+      inputs: {
+        required: string[];
+        additionalProperties: boolean;
+        properties: Record<string, unknown>;
+      };
+      jobs: {
+        target: string;
+        labels?: unknown;
+        steps: {
+          name: string;
+          target: string;
+          labels?: unknown;
+          task: Record<string, unknown>;
+        }[];
+      }[];
     };
     assertEquals(workflow.name, `project-${mode}`);
     assert(!ids.has(workflow.id));
     ids.add(workflow.id);
     assertEquals(workflow.trigger, undefined);
     assertEquals(workflow.queueTimeout, undefined);
-    assertEquals(workflow.inputs.required, ["projectId"]);
-    assertEquals(workflow.inputs.properties.projectId, { type: "integer", minimum: 1 });
-    const [step] = workflow.jobs[0].steps;
-    assertEquals(step.target, "orbit-node-209");
-    assertEquals(step.labels, { pool: "migration", node: "209" });
-    assertEquals(step.task.modelType, mode === "detect"
-      ? "@nckrtl/dependency-scanner" : "@nckrtl/orbit-gateway");
-    assertEquals(step.task.methodName, mode === "detect" ? "scan" : "schedule_project");
-    assertEquals(step.task.inputs, mode === "detect"
-      ? { projectId: "${{ inputs.projectId }}", runId: "${{ run.id }}" }
-      : { projectId: "${{ inputs.projectId }}", mode: "routine" });
+    assertEquals(workflow.inputs.required, [
+      "operation_id",
+      "node_id",
+      "kind",
+      "intent",
+      "execution_secrets",
+    ]);
+    assertEquals(workflow.inputs.additionalProperties, false);
+    assertEquals(workflow.inputs.properties.kind, {
+      type: "string",
+      enum: [`project-${mode}`.replace("-", ".")],
+    });
+    assertEquals(workflow.inputs.properties.node_id, {
+      type: "integer",
+      enum: [209],
+    });
+    assertEquals(workflow.inputs.properties.projectId, undefined);
+    for (const job of workflow.jobs) {
+      assertEquals(job.target, "orbit-node-209");
+      assertEquals(job.labels, undefined);
+      for (const step of job.steps) {
+        assertEquals(step.target, "orbit-node-209");
+        assertEquals(step.labels, undefined);
+        assertEquals(step.task.modelType, undefined);
+      }
+    }
+    const steps = workflow.jobs[0].steps;
+    const input = steps.find((step) => step.name === "input")!;
+    assertEquals(input.task.inputs, {
+      operation_id: "${{ inputs.operation_id }}",
+      node_id: "${{ inputs.node_id }}",
+      kind: "${{ inputs.kind }}",
+      intent: "${{ inputs.intent }}",
+    });
+    const result = steps.find((step) => step.name === "result")!;
+    assertEquals(result.task.behaviorType, "command/shell");
+    assertEquals(result.task.methodName, "execute");
   }
 });

@@ -1,0 +1,127 @@
+id: 0e659cfe-fc72-4853-af4e-611c6d4fd8f7
+name: project-observe
+description: Observe admitted Project pull requests once and project public lifecycle evidence.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      enum:
+      - 209
+    kind:
+      type: string
+      enum:
+      - project.observe
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^project-dependency-read-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        git_authorization:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^project-dependency-auth-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      additionalProperties: false
+      required:
+      - github_token
+      - git_authorization
+reports:
+  skip:
+  - '@swamp/workflow-summary'
+jobs:
+- name: observe
+  target: orbit-node-209
+  steps:
+  - name: input
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-input'
+      behaviorName: ${{ "project-input-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+  - name: evidence
+    target: orbit-node-209
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: project-dependency-evidence
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        project: ${{ steps.input.outputs.project }}
+        groups: ${{ steps.input.outputs.groups }}
+        pr_urls: ${{ steps.input.outputs.pr_urls }}
+        previous_pr: ${{ steps.input.outputs.previous_pr }}
+        execution_secrets:
+          github_token: ${{ inputs.execution_secrets.github_token }}
+  - name: refresh
+    target: orbit-node-209
+    dependsOn:
+    - step: evidence
+      condition:
+        type: succeeded
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: refresh
+      inputs:
+        rows: '${{ steps.input.outputs.previous_index == null ? [] : [{"project":steps.input.outputs.project,"index":steps.input.outputs.previous_index,"evidence":steps.evidence.outputs.evidence.evidence}]
+          }}'
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: refresh
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "project-observation-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: printf "%s\n" "$ORBIT_RESULT"
+        env:
+          ORBIT_RESULT: ${{ steps.evidence.outputs.evidence.result_json }}

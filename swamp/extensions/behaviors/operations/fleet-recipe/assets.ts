@@ -76,8 +76,11 @@ type Context = {
     extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
-export function publicResult(raw: z.infer<typeof ResultArgs>) {
-    const { intent, steps } = ResultArgs.parse(raw);
+export function assembleFootprint(
+    footprint: z.infer<typeof Intent>["footprint"],
+    steps: Record<string, z.infer<typeof Step>>,
+) {
+    const intent = { footprint };
     const output = (name: string) => {
         const row = steps[name]?.outputs ?? {};
         try {
@@ -88,9 +91,6 @@ export function publicResult(raw: z.infer<typeof ResultArgs>) {
             return {};
         }
     };
-    const failure = Object.entries(steps).find(([name, step]) =>
-        step.status === "failed" && !name.startsWith("residue_")
-    );
     const artifacts: Record<string, unknown>[] = [];
     let failedArtifact: string | undefined;
     const names: Record<string, string[]> = {
@@ -147,6 +147,34 @@ export function publicResult(raw: z.infer<typeof ResultArgs>) {
             });
         } else failedArtifact ??= artifact.name;
     }
+    return {
+        artifacts,
+        footprint_proven: !failedArtifact,
+        ...(failedArtifact
+            ? {
+                failed_artifact: failedArtifact,
+                error_code: "node.footprint_failed",
+            }
+            : {}),
+    };
+}
+export function publicResult(raw: z.infer<typeof ResultArgs>) {
+    const { intent, steps } = ResultArgs.parse(raw);
+    const output = (name: string) => {
+        const row = steps[name]?.outputs ?? {};
+        try {
+            return ObjectInput.parse(
+                typeof row.stdout === "string" ? JSON.parse(row.stdout) : row,
+            );
+        } catch {
+            return {};
+        }
+    };
+    const failure = Object.entries(steps).find(([name, step]) =>
+        step.status === "failed" && !name.startsWith("residue_")
+    );
+    const footprint = assembleFootprint(intent.footprint, steps);
+    const failedArtifact = footprint.failed_artifact;
     const delivered = output("delivery");
     const error_code = failure
         ? String(
@@ -178,16 +206,7 @@ export function publicResult(raw: z.infer<typeof ResultArgs>) {
                 },
             }
             : {}),
-        footprint: {
-            artifacts,
-            footprint_proven: !failedArtifact,
-            ...(failedArtifact
-                ? {
-                    failed_artifact: failedArtifact,
-                    error_code: "node.footprint_failed",
-                }
-                : {}),
-        },
+        footprint,
         ...(error_code ? { error_code } : {}),
     };
     return { ...result, stdout: JSON.stringify(result) };
@@ -271,7 +290,13 @@ export const behavior = {
             arguments: Read,
             execute: async (raw: z.infer<typeof Read>, ctx: Context) => {
                 const a = Read.parse(raw);
-                const footprint = ["listener", "tmpfiles", "dns-health", "dns-validate", "dns-restore"].includes(a.action),
+                const footprint = [
+                        "listener",
+                        "tmpfiles",
+                        "dns-health",
+                        "dns-validate",
+                        "dns-restore",
+                    ].includes(a.action),
                     php = ["php-runtime", "php-pools"].includes(a.action);
                 const file = footprint
                     ? "footprint.py"

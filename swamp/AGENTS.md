@@ -3,7 +3,9 @@
 Read the binding [Swamp shape guide](docs/swamp-shape.md) and its linked
 [Swamp manual](https://swamp-club.com/manual) pages before writing, porting or
 reviewing an operation. They override older repository guidance and conflicting
-Recall atoms.
+Recall atoms. Port and review kinds with the
+[swamp-port skill](../.claude/skills/swamp-port/SKILL.md) and its
+[porting reference](../docs/swamp/porting.md).
 
 The guide owns the execution contract and per-PR checks. Do not copy existing
 grandfathered implementations as templates. Use lane 11's native pilot once its

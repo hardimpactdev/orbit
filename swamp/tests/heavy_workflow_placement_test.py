@@ -10,7 +10,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 CLI = os.environ.get('SWAMP_BIN', 'swamp')
-SHARED = ('project-detect', 'project-routine', 'maintenance-projects', 'horizon-new-dawn-detect', 'dependency-package',
+SHARED = ('project-detect', 'project-routine', 'project-observe', 'maintenance-projects', 'horizon-new-dawn-detect', 'dependency-package',
           'dependency-routine', 'dependency-upgrade')
 
 
@@ -24,11 +24,15 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
     def test_heavy_methods_and_native_coordinators_select_workers(self):
         for path in placed_workflows():
             workflow = yaml.safe_load(path.read_text())
-            if path.stem not in ('workflow-project-detect', 'workflow-project-routine'):
+            native = workflow['name'] in ('project-detect', 'project-routine', 'project-observe',
+                                          'maintenance-projects', 'dependency-upgrade')
+            if not native:
                 self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, path.name)
             self.assertNotIn('queueTimeout', workflow)
             for job in workflow['jobs']:
                 for step in job['steps']:
+                    if native:
+                        self.assertEqual(step['target'], 'orbit-node-209', path.name)
                     task = step['task']
                     fields = {**workflow, **job, **step}
                     self.assertTrue(fields.get('target') or fields.get('labels') or fields.get('platform'), path.name)
@@ -49,7 +53,10 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
             workflow = yaml.safe_load((REPO / f'workflows/workflow-{name}.yaml').read_text())
             for job in workflow['jobs']:
                 for step in job['steps']:
-                    self.assertEqual(step['labels'], {'pool': 'migration', 'node': '209'}, f"{name}/{step['name']}")
+                    if name == 'operation-dependency-merge':
+                        self.assertEqual(job['target'], '${{ "orbit-node-" + string(inputs.node_id) }}')
+                    else:
+                        self.assertEqual(step['labels'], {'pool': 'migration', 'node': '209'}, f"{name}/{step['name']}")
 
     def test_pinned_native_loader_validates_the_shipped_workflows(self):
         with tempfile.TemporaryDirectory(prefix='heavy-workflow-validation-') as tmp:

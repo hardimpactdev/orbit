@@ -19,7 +19,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
         $input = ValidatedData::object($operation->input['_converge'] ?? []);
         unset($input['secret_hash']);
 
-        return $input;
+        return ['intent' => $input];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -35,7 +35,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             if ($wasTerminal || ($artifacts === [] && ! isset($result['failed_artifact']))) {
                 return $projected;
             }
-            app(NodeFootprintProjection::class)->record($operation, $this->input($operation), $result, $artifacts);
+            app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($operation->input['_converge']), $result, $artifacts);
 
             return $projected;
         });

@@ -7,6 +7,8 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import {
   coalescePr,
+  failProjectScan,
+  prepareProjectScan,
   refreshLifecycle,
   type ResultStore,
   type ScanDependencies,
@@ -471,11 +473,7 @@ Deno.test("PR lookup failure retains last success/value, missing group fields ar
     project,
     previous,
     ctx,
-    () =>
-      Promise.resolve({
-        status: 200,
-        body: { data: [{ id: 10, project_id: 20, status: "running" }] },
-      }),
+    [{ id: 10, project_id: 20, status: "running" }],
   );
   assertEquals(e.pr.status, "unknown");
   assertEquals(e.pr.value, value);
@@ -484,7 +482,7 @@ Deno.test("PR lookup failure retains last success/value, missing group fields ar
     project,
     previous,
     ctx,
-    () => Promise.resolve({ status: 200, body: { data: [] } }),
+    [],
   );
   assertEquals(absence.pr.status, "absent");
   assertEquals(absence.pr.value, null);
@@ -515,20 +513,14 @@ Deno.test("PR observation verifies exact URL/head/native run, including a still-
     writeResource: () => Promise.resolve({ name: "fixture", version: 1 }),
     invokeModel: () => Promise.resolve({ ok: true }),
   };
-  const http = () =>
-    Promise.resolve({
-      status: 200,
-      body: {
-        data: [{
-          id: 2195,
-          project_id: 20,
-          status: "failed",
-          pr_url: url,
-          watched_pr_url: url,
-        }],
-      },
-    });
-  const e = await batchEvidence(project, null, ctx, http, (value) => {
+  const groups = [{
+    id: 2195,
+    project_id: 20,
+    status: "failed",
+    pr_url: url,
+    watched_pr_url: url,
+  }];
+  const e = await batchEvidence(project, null, ctx, groups, (value) => {
     calls.push(value);
     return Promise.resolve({
       number: 17,
@@ -545,7 +537,7 @@ Deno.test("PR observation verifies exact URL/head/native run, including a still-
     project,
     e.pr,
     ctx,
-    http,
+    groups,
     () => Promise.reject(new Error("not found")),
   );
   assertEquals(unknown.pr.status, "unknown");
@@ -720,10 +712,7 @@ Deno.test("cancelled PR observation starts no Gateway or GitHub lookup", async (
     writeResource: () => Promise.resolve({ name: "unused" }),
     invokeModel: () => Promise.resolve({ ok: true }),
   };
-  const evidence = await batchEvidence(project, null, ctx, () => {
-    calls++;
-    return Promise.resolve({ status: 200, body: { data: [] } });
-  }, () => {
+  const evidence = await batchEvidence(project, null, ctx, [], () => {
     calls++;
     return Promise.resolve({});
   });
@@ -759,19 +748,13 @@ Deno.test("PR refresh projects real immutable batch targets into its publication
     project,
     null,
     ctx,
-    () =>
-      Promise.resolve({
-        status: 200,
-        body: {
-          data: [{
-            id: 2195,
-            project_id: 20,
-            status: "running",
-            pr_url: null,
-            watched_pr_url: null,
-          }],
-        },
-      }),
+    [{
+      id: 2195,
+      project_id: 20,
+      status: "running",
+      pr_url: null,
+      watched_pr_url: null,
+    }],
   );
   assertEquals(evidence.pr.status, "absent");
   assertEquals(BatchEvidenceSchema.parse(evidence).links[0].targets, [{
@@ -782,4 +765,48 @@ Deno.test("PR refresh projects real immutable batch targets into its publication
   }]);
   assertEquals(target.purpose, "security");
   assertEquals(target.advisories, ["1243066"]);
+});
+
+Deno.test("native acquisition begins by revoking seeded successful findings and settles early failure", async () => {
+  const f = fixture();
+  const old = await scanProject(project, "old-success", f.deps);
+  assertEquals(old.last_attempt.status, "succeeded");
+  assert(f.findings().targets.length > 0);
+  const prepared = await prepareProjectScan(project, "new-checkout", f.deps);
+  assertEquals(prepared.index.last_attempt.status, "running");
+  assertEquals(prepared.index.source_commit, null);
+  assertEquals(f.findings().targets, []);
+  const failed = await failProjectScan(
+    project,
+    "new-checkout",
+    f.deps,
+    "source_acquisition_failed",
+  );
+  assertEquals(failed?.last_attempt.status, "failed");
+  assertEquals(failed?.last_attempt.run_id, "new-checkout");
+  assertEquals(f.findings().source, "new-checkout");
+  assertEquals(f.findings().targets, []);
+  assertEquals(failed?.sources[0].report, old.sources[0].report);
+});
+Deno.test("late failure from an older native root cannot revoke a newer successful plan", async () => {
+  const f = fixture();
+  await prepareProjectScan(project, "older-root", f.deps);
+  const latest = await scanProject(project, "newer-success", f.deps);
+  const plan = structuredClone(f.findings());
+  assertEquals(
+    await failProjectScan(
+      project,
+      "older-root",
+      f.deps,
+      "source_acquisition_failed",
+    ),
+    null,
+  );
+  assertEquals(f.findings(), plan);
+  assertEquals(
+    (await f.store.readIndex(
+      await indexName(project.projectId, latest.source_ref),
+    ))?.last_attempt.status,
+    "succeeded",
+  );
 });
