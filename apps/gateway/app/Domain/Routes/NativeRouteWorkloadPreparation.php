@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
@@ -17,12 +18,15 @@ use App\Support\ValidatedData;
 final readonly class NativeRouteWorkloadPreparation
 {
     /** @return array<string,mixed> */
-    public function capture(Instance $instance, Route $before, Route $after): array
+    public function capture(Instance $instance, ?Route $before, Route $after): array
     {
         $instance->loadMissing(['node', 'project']);
         $common = ['node_id' => $instance->node_id, 'instance_id' => $instance->id,
             ...app(NativeCaddyPublicationInput::class)->connectionForNode($instance->node)];
         if (! $instance->placedOnAppProd()) {
+            if ($before === null) {
+                throw new ResourceOperationException('route.workload_before_required', 'Development workload preparation requires its recorded prior Route.', 409);
+            }
             $catalog = app(DevelopmentSiteRepository::class)->all();
             $prospective = $catalog->reject(static fn ($site): bool => $site->domain === $before->domain)->values();
             $prospective->push(...app(DevelopmentSiteRepository::class)->routeSites($after));

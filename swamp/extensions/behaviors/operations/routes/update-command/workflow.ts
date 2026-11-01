@@ -45,6 +45,27 @@ const common = {
     parent_run_id: expr("run.id"),
 };
 export function updateWorkflow(): Fields {
+    return workloadMutationWorkflow(
+        "b1a5e413-5c52-4d05-966b-f78d57c2da06",
+        "operation-route-update",
+        "route.update",
+        "route.update_failed",
+    );
+}
+export function targetWorkflow(): Fields {
+    return workloadMutationWorkflow(
+        "ca5ceca0-f7da-4338-a1dd-196e06c64cd7",
+        "operation-route-target-set",
+        "route.target_set",
+        "route.target_set_failed",
+    );
+}
+function workloadMutationWorkflow(
+    id: string,
+    name: string,
+    kind: string,
+    failureCode: string,
+): Fields {
     const steps: Fields[] = [];
     const names = () => steps.map((s) => String(s.name));
     const failure =
@@ -75,6 +96,77 @@ export function updateWorkflow(): Fields {
         });
     }
     workloads("prepare", "prepare");
+    if (kind === "route.target_set") {
+        function preparation(
+            name: string,
+            list: string,
+            workflow: string,
+            intent: Fields | string,
+            extra: Fields = {},
+        ) {
+            steps.push({
+                name,
+                ...placed,
+                dependsOn: after(...names()),
+                forEach: {
+                    item: "part",
+                    in: expr(
+                        `inputs.intent.effectful ? inputs.intent.preparation.${list} : []`,
+                    ),
+                },
+                guard: expr(
+                    'steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")',
+                ),
+                task: {
+                    type: "workflow",
+                    workflowIdOrName: workflow,
+                    inputs: {
+                        operation_id: common.operation_id,
+                        node_id: common.node_id,
+                        kind: common.kind,
+                        intent,
+                        execution_secrets: {},
+                        ...extra,
+                    },
+                },
+            });
+        }
+        const connection = (payload: string) => ({
+            [payload]: expr("self.part"),
+            control_node_id: 209,
+            connection: expr(
+                "inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection",
+            ),
+            host_keys: expr(
+                "inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys",
+            ),
+        });
+        preparation(
+            "prepare-certificates",
+            "certificates",
+            "route-certificate-publish",
+            connection("leaf"),
+            { parent_run_id: expr("run.id"), restoring: false },
+        );
+        preparation(
+            "prepare-lan",
+            "lan",
+            "route-lan-apply",
+            connection("rule"),
+        );
+        preparation(
+            "prepare-caddy",
+            "publications",
+            "operation-route-caddy-delta",
+            expr("self.part"),
+        );
+        preparation(
+            "prepare-probe",
+            "probes",
+            "cluster-router-probe",
+            expr("self.part"),
+        );
+    }
     steps.push({
         name: "forward",
         ...placed,
@@ -116,6 +208,14 @@ export function updateWorkflow(): Fields {
             methodName: "read",
             inputs: {
                 effectful: expr("inputs.intent.effectful"),
+                failure_code: failureCode,
+                ...(kind === "route.target_set"
+                    ? {
+                        preparation_counts: expr(
+                            'inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes)} : {}',
+                        ),
+                    }
+                    : {}),
                 route_id: expr("inputs.intent.route_id"),
                 result_route_id: expr("inputs.intent.result_route_id"),
                 workload_count: expr("size(inputs.intent.workloads)"),
@@ -136,12 +236,18 @@ export function updateWorkflow(): Fields {
         },
     });
     return {
-        id: "b1a5e413-5c52-4d05-966b-f78d57c2da06",
-        name: "operation-route-update",
+        id,
+        name,
         description:
-            "Immutable Route update and restoration through official209 publication children.",
+            "Immutable Route workload mutation and restoration through official209 publication children.",
         vaults: ["orbit-control-inputs"],
-        inputs: envelope,
+        inputs: {
+            ...envelope,
+            properties: {
+                ...envelope.properties,
+                kind: { type: "string", enum: [kind] },
+            },
+        },
         jobs: [{ name: "update", steps }],
     };
 }

@@ -9,7 +9,6 @@ use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -52,10 +51,10 @@ it('admits a pending development binding and starts exactly one native target ro
     $operation = app(AdmitRouteOperationAction::class)->setTarget($route, $instance->id);
 
     expect($operation->kind)->toBe('route.target_set')
-        ->and($operation->input['participant_node_ids'])->toBe([$node->id])
+        ->and($operation->input['participant_node_ids'])->toBe([$node->id, 209])
         ->and($operation->input['route_target']['binding_only'])->toBeTrue()
-        ->and($operation->input['route_target']['prepared'])->toHaveCount(1)
-        ->and($operation->input['route_target']['prepared'][0])->toMatchArray(['instance_id' => $instance->id, 'node_id' => $node->id])
+        ->and($operation->input['route_target']['effectful'])->toBeFalse()
+        ->and($operation->input['route_target']['workloads'])->toBe([])
         ->and($route->fresh()->status)->toBe(RouteStatus::Pending)
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$instance->id])
         ->and(Operation::query()->count())->toBe(1)
@@ -63,21 +62,20 @@ it('admits a pending development binding and starts exactly one native target ro
         ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-target-set')
         ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
         ->and($operation->state)->not->toHaveKeys(['route_plan', 'executor_runs', 'steps']);
-    $field = $operation->input['environment_fields'][$node->id];
-    expect($operation->input['private_bindings'][$field])->toBe(['owner_node_id' => $node->id, 'read_node_ids' => [$node->id], 'write_node_ids' => []])
-        ->and($operation->input[$field])->toBe(['$secret' => 'route.environment_sync', 'id' => $route->id])
-        ->and(NativeRouteAdmission::privateMaterial()[$field])->toBe('route.environment_sync');
+    expect($operation->input)->not->toHaveKeys(['environment_fields', 'private_bindings'])
+        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_target'])
+        ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) []);
 });
 
 it('admits an entire production pool without committing its cutover before the native root runs', function (): void {
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
     $cluster = Cluster::query()->create(['name' => 'admission-pool', 'state' => 'active']);
-    $router = Node::query()->create(['name' => 'pool-router', 'cluster_id' => $cluster->id, 'public_ssh_host' => '192.0.2.20', 'wireguard_ip' => '10.44.0.20', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $router = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'pool-router', 'cluster_id' => $cluster->id, 'public_ssh_host' => '192.0.2.20', 'wireguard_ip' => '10.44.0.20', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
     $router->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Pool', 'slug' => 'admission-pool', 'repository_url' => 'https://example.test/pool.git', 'root' => 'public']);
     $instances = [];
     foreach (['old', 'new'] as $index => $name) {
-        $node = Node::query()->create(['name' => 'pool-'.$name, 'cluster_id' => $cluster->id, 'public_ssh_host' => '192.0.2.'.(21 + $index), 'wireguard_ip' => '10.44.0.'.(21 + $index), 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+        $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'pool-'.$name, 'cluster_id' => $cluster->id, 'public_ssh_host' => '192.0.2.'.(21 + $index), 'wireguard_ip' => '10.44.0.'.(21 + $index), 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
         $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
         $instances[] = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'environment' => 'production', 'checkout_path' => '/srv/'.$name, 'production_home' => '/srv/'.$name, 'production_user' => 'orbit-app-'.$project->id, 'source_is_laravel' => false, 'status' => 'active']);
     }
@@ -89,7 +87,7 @@ it('admits an entire production pool without committing its cutover before the n
 
     $participants = [$router->id, $instances[0]->node_id, $instances[1]->node_id, 209];
     sort($participants);
-    expect($operation->input['participant_node_ids'])->toBe($participants)
+    expect($operation->input['participant_node_ids'])->toEqualCanonicalizing($participants)
         ->and($operation->input['route_target']['binding_only'])->toBeFalse()
         ->and($operation->input['route_target']['proposal']['targets'])->toBe(array_map(static fn (Instance $instance): int => $instance->id, $instances))
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$instances[0]->id])
@@ -97,8 +95,7 @@ it('admits an entire production pool without committing its cutover before the n
         ->and(Operation::query()->count())->toBe(1)
         ->and($this->socket->sent)->toHaveCount(1)
         ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-target-set');
-    foreach ($participants as $participant) {
-        $field = $operation->input['environment_fields'][$participant];
-        expect($operation->input['private_bindings'][$field])->toBe(['owner_node_id' => $participant, 'read_node_ids' => [$participant], 'write_node_ids' => []]);
-    }
+    expect($operation->input)->not->toHaveKeys(['environment_fields', 'private_bindings'])
+        ->and($operation->input['route_target']['route_mutations']['forward']['publications'])->not->toBeEmpty()
+        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_target']);
 });

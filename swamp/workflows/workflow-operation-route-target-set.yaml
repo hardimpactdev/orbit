@@ -1,1580 +1,392 @@
 id: ca5ceca0-f7da-4338-a1dd-196e06c64cd7
 name: operation-route-target-set
-description: Prepare and publish one singular binding or production target pool in one native DAG.
-writes: true
-vaults: []
+description: Immutable Route workload mutation and restoration through official209 publication children.
+vaults:
+  - orbit-control-inputs
 inputs:
+  type: object
   properties:
     operation_id:
+      type: integer
+      minimum: 1
+    node_id:
       type: integer
       minimum: 1
     kind:
       type: string
       enum:
-      - route.target_set
-    node_id:
-      type: integer
-      minimum: 1
+        - route.target_set
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties: false
+        properties:
+          vault:
+            type: string
+            enum:
+              - orbit-control-inputs
+          key:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'
+        required:
+          - vault
+          - key
   required:
-  - operation_id
-  - kind
-  - node_id
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
+  additionalProperties: false
 jobs:
-- name: admit
-  steps:
-  - name: admit
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: admit
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-    writes: true
-  dependsOn: []
-- name: staging-request
-  steps:
-  - name: staging-request
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(self.node) }}
-      methodName: requestAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.staging_certificates.filter(leaf,
-          leaf.node_id == self.node) }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: &id001
-      type: or
-      conditions:
-      - type: succeeded
-      - type: skipped
-- name: staging-sign
-  steps:
-  - name: staging-sign-http-input
-    target: orbit-node-209
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: prepareSignBatch
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        requests: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids.map(node,
-          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.staging_certificates
-          }}
-  - name: staging-sign-http
-    target: orbit-node-209
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign-" + run.id }}'
-      methodName: execute
-      inputs:
-        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
-        env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps["staging-sign-http-input"].outputs.sign_script }}'
-          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
-          ORBIT_CERTIFICATE_MODE: batch
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["staging-sign-http-input"].outputs.requests_json }}
-    dependsOn:
-    - step: staging-sign-http-input
-      condition:
-        type: succeeded
-  - name: staging-sign
-    target: orbit-node-209
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: signBatch
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        requests: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids.map(node,
-          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.staging_certificates
-          }}
-        native_stdout: ${{ steps["staging-sign-http"].outputs.stdout }}
-    writes: true
-    dependsOn:
-    - step: staging-sign-http
-      condition:
-        type: succeeded
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-- name: staging-publish
-  steps:
-  - name: staging-publish
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(self.node) }}
-      methodName: publishAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.staging_certificates.filter(leaf,
-          leaf.node_id == self.node) }}
-        requests: ${{ data.latest("certificate-node-" + string(self.node), "requests-" + run.id).attributes.requests
-          }}
-        signed: ${{ data.latest("orbit-certificate-signing", "signed-" + run.id).attributes.certificates }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-- name: prepare
-  steps:
-  - name: prepare
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: prepare
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-- name: preparations-published
-  steps:
-  - name: preparations-published
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        checkpoint: preparations-published
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-- name: prepared-php
-  steps:
-  - name: prepared-php
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishPhp
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-- name: prepared-firewall
-  steps:
-  - name: prepared-firewall
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: firewall
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-- name: prepared-caddy
-  steps:
-  - name: prepared-caddy
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-- name: lan
-  steps:
-  - name: lan
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: lan
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-- name: verify
-  steps:
-  - name: verify
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.router_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.recover_forward)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: verify
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-- name: commit
-  steps:
-  - name: commit
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        checkpoint: database-committed
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-- name: environment
-  steps:
-  - name: environment
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: synchronizeEnvironment
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-- name: environment-state
-  steps:
-  - name: environment-state
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        checkpoint: environment-synchronized
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-- name: live-request
-  steps:
-  - name: live-request
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(self.node) }}
-      methodName: requestAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.live_certificates.filter(leaf,
-          leaf.node_id == self.node) }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-- name: live-sign
-  steps:
-  - name: live-sign-http-input
-    target: orbit-node-209
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: prepareSignBatch
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        requests: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids.map(node,
-          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.live_certificates
-          }}
-  - name: live-sign-http
-    target: orbit-node-209
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign-" + run.id }}'
-      methodName: execute
-      inputs:
-        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
-        env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps["live-sign-http-input"].outputs.sign_script }}'
-          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
-          ORBIT_CERTIFICATE_MODE: batch
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["live-sign-http-input"].outputs.requests_json }}
-    dependsOn:
-    - step: live-sign-http-input
-      condition:
-        type: succeeded
-  - name: live-sign
-    target: orbit-node-209
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: signBatch
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        requests: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids.map(node,
-          data.latest("certificate-node-" + string(node), "requests-" + run.id).attributes.requests) }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.live_certificates
-          }}
-        native_stdout: ${{ steps["live-sign-http"].outputs.stdout }}
-    writes: true
-    dependsOn:
-    - step: live-sign-http
-      condition:
-        type: succeeded
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-- name: live-publish
-  steps:
-  - name: live-publish
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificate-node-" + string(self.node) }}
-      methodName: publishAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        leaves: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.live_certificates.filter(leaf,
-          leaf.node_id == self.node) }}
-        requests: ${{ data.latest("certificate-node-" + string(self.node), "requests-" + run.id).attributes.requests
-          }}
-        signed: ${{ data.latest("orbit-certificate-signing", "signed-" + run.id).attributes.certificates }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-- name: live-state
-  steps:
-  - name: live-state
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        checkpoint: live-certificates
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-  - job: live-publish
-    condition: *id001
-- name: live-caddy
-  steps:
-  - name: live-caddy
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.caddy_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-  - job: live-publish
-    condition: *id001
-  - job: live-state
-    condition: *id001
-- name: router-state
-  steps:
-  - name: router-state
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        checkpoint: router-published
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-  - job: live-publish
-    condition: *id001
-  - job: live-state
-    condition: *id001
-  - job: live-caddy
-    condition: *id001
-- name: dns
-  steps:
-  - name: dns
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.dns_node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishDns
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-  - job: live-publish
-    condition: *id001
-  - job: live-state
-    condition: *id001
-  - job: live-caddy
-    condition: *id001
-  - job: router-state
-    condition: *id001
-- name: vacated-state
-  steps:
-  - name: vacated-state
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        checkpoint: vacated-published
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-  - job: live-publish
-    condition: *id001
-  - job: live-state
-    condition: *id001
-  - job: live-caddy
-    condition: *id001
-  - job: router-state
-    condition: *id001
-  - job: dns
-    condition: *id001
-- name: staging-cleanup
-  steps:
-  - name: staging-cleanup
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: cleanup
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        rollback: false
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-  - job: live-publish
-    condition: *id001
-  - job: live-state
-    condition: *id001
-  - job: live-caddy
-    condition: *id001
-  - job: router-state
-    condition: *id001
-  - job: dns
-    condition: *id001
-  - job: vacated-state
-    condition: *id001
-- name: dispositions
-  steps:
-  - name: dispositions
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !(!data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.binding_only
-      && !data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.noop)
-      }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: removeDispositions
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id001
-  - job: staging-request
-    condition: *id001
-  - job: staging-sign
-    condition: *id001
-  - job: staging-publish
-    condition: *id001
-  - job: prepare
-    condition: *id001
-  - job: preparations-published
-    condition: *id001
-  - job: prepared-php
-    condition: *id001
-  - job: prepared-firewall
-    condition: *id001
-  - job: prepared-caddy
-    condition: *id001
-  - job: lan
-    condition: *id001
-  - job: verify
-    condition: *id001
-  - job: commit
-    condition: *id001
-  - job: environment
-    condition: *id001
-  - job: environment-state
-    condition: *id001
-  - job: live-request
-    condition: *id001
-  - job: live-sign
-    condition: *id001
-  - job: live-publish
-    condition: *id001
-  - job: live-state
-    condition: *id001
-  - job: live-caddy
-    condition: *id001
-  - job: router-state
-    condition: *id001
-  - job: dns
-    condition: *id001
-  - job: vacated-state
-    condition: *id001
-  - job: staging-cleanup
-    condition: *id001
-- name: rollback-state
-  steps:
-  - name: rollback-state
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.binding_only && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.noop) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        checkpoint: '${{ ("commit" in steps && steps["commit"].status == "succeeded") ? "rollback-associations"
-          : "rollback-preparations" }}'
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: &id002
-      type: always
-  - job: staging-request
-    condition: *id002
-  - job: staging-sign
-    condition: *id002
-  - job: staging-publish
-    condition: *id002
-  - job: prepare
-    condition: *id002
-  - job: preparations-published
-    condition: *id002
-  - job: prepared-php
-    condition: *id002
-  - job: prepared-firewall
-    condition: *id002
-  - job: prepared-caddy
-    condition: *id002
-  - job: lan
-    condition: *id002
-  - job: verify
-    condition: *id002
-  - job: commit
-    condition: *id002
-  - job: environment
-    condition: *id002
-  - job: environment-state
-    condition: *id002
-  - job: live-request
-    condition: *id002
-  - job: live-sign
-    condition: *id002
-  - job: live-publish
-    condition: *id002
-  - job: live-state
-    condition: *id002
-  - job: live-caddy
-    condition: *id002
-  - job: router-state
-    condition: *id002
-  - job: dns
-    condition: *id002
-  - job: vacated-state
-    condition: *id002
-  - job: staging-cleanup
-    condition: *id002
-  - job: dispositions
-    condition: *id002
-- name: rollback-environment
-  steps:
-  - name: rollback-environment
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.binding_only && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.noop) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: restoreEnvironment
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-- name: rollback-php
-  steps:
-  - name: rollback-php
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.workload_node_ids
-        }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.binding_only && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.noop) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishPhp
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-environment
-    condition: *id001
-- name: rollback-firewall
-  steps:
-  - name: rollback-firewall
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.binding_only && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.noop) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: restoreFirewall
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-environment
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-- name: rollback-caddy
-  steps:
-  - name: rollback-caddy
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.caddy_node_ids
-        }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.binding_only && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.noop) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-environment
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-  - job: rollback-firewall
-    condition: *id001
-- name: rollback-dns
-  steps:
-  - name: rollback-dns
-    target: ${{ "orbit-node-" + string(self.node) }}
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.dns_node_ids
-        }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.binding_only && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.noop) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.node) }}
-      methodName: publishDns
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        recovery: true
-    writes: true
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-environment
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-  - job: rollback-firewall
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-- name: rollback-certificates
-  steps:
-  - name: rollback-certificates
-    target: ${{ "orbit-node-" + string(self.node) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(self.node) }}
-      methodName: cleanup
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.node }}
-        rollback: true
-    forEach:
-      item: node
-      in: ${{ data.latest("route-target-node-" + string(inputs.node_id), "target-" + run.id).attributes.intent.node_ids
-        }}
-    guard: ${{ !((steps.exists(name, steps[name].status == "failed")) && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.binding_only && !data.latest("route-target-node-" + string(inputs.node_id),
-      "target-" + run.id).attributes.intent.noop) }}
-  dependsOn:
-  - job: rollback-state
-    condition: *id001
-  - job: rollback-environment
-    condition: *id001
-  - job: rollback-php
-    condition: *id001
-  - job: rollback-firewall
-    condition: *id001
-  - job: rollback-caddy
-    condition: *id001
-  - job: rollback-dns
-    condition: *id001
-- name: finish
-  steps:
-  - name: finish
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-target-set'
-      behaviorName: ${{ "route-target-node-" + string(inputs.node_id) }}
-      methodName: finish
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        failed: ${{ steps.exists(name, steps[name].status == "failed") }}
-        cancelled: false
-    writes: true
-  dependsOn:
-  - job: admit
-    condition: *id002
-  - job: staging-request
-    condition: *id002
-  - job: staging-sign
-    condition: *id002
-  - job: staging-publish
-    condition: *id002
-  - job: prepare
-    condition: *id002
-  - job: preparations-published
-    condition: *id002
-  - job: prepared-php
-    condition: *id002
-  - job: prepared-firewall
-    condition: *id002
-  - job: prepared-caddy
-    condition: *id002
-  - job: lan
-    condition: *id002
-  - job: verify
-    condition: *id002
-  - job: commit
-    condition: *id002
-  - job: environment
-    condition: *id002
-  - job: environment-state
-    condition: *id002
-  - job: live-request
-    condition: *id002
-  - job: live-sign
-    condition: *id002
-  - job: live-publish
-    condition: *id002
-  - job: live-state
-    condition: *id002
-  - job: live-caddy
-    condition: *id002
-  - job: router-state
-    condition: *id002
-  - job: dns
-    condition: *id002
-  - job: vacated-state
-    condition: *id002
-  - job: staging-cleanup
-    condition: *id002
-  - job: dispositions
-    condition: *id002
-  - job: rollback-state
-    condition: *id002
-  - job: rollback-environment
-    condition: *id002
-  - job: rollback-php
-    condition: *id002
-  - job: rollback-firewall
-    condition: *id002
-  - job: rollback-caddy
-    condition: *id002
-  - job: rollback-dns
-    condition: *id002
-  - job: rollback-certificates
-    condition: *id002
+  - name: update
+    steps:
+      - name: prepare
+        target: orbit-node-209
+        forEach:
+          item: workload
+          in: '${{ inputs.intent.workloads }}'
+        dependsOn: []
+        task:
+          type: workflow
+          workflowIdOrName: instance-route-workload
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              node_id: '${{ self.workload.node_id }}'
+              instance_id: '${{ self.workload.instance_id }}'
+              connection: '${{ self.workload.connection }}'
+              host_keys: '${{ self.workload.host_keys }}'
+              plan: '${{ self.workload.prepare }}'
+            execution_secrets: {}
+      - name: prepare-certificates
+        target: orbit-node-209
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+        forEach:
+          item: part
+          in: '${{ inputs.intent.effectful ? inputs.intent.preparation.certificates : [] }}'
+        guard: '${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: route-certificate-publish
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              leaf: '${{ self.part }}'
+              control_node_id: 209
+              connection: >-
+                ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id ==
+                self.part.node_id)[0].connection }}
+              host_keys: >-
+                ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id ==
+                self.part.node_id)[0].host_keys }}
+            execution_secrets: {}
+            parent_run_id: '${{ run.id }}'
+            restoring: false
+      - name: prepare-lan
+        target: orbit-node-209
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+        forEach:
+          item: part
+          in: '${{ inputs.intent.effectful ? inputs.intent.preparation.lan : [] }}'
+        guard: '${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: route-lan-apply
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              rule: '${{ self.part }}'
+              control_node_id: 209
+              connection: >-
+                ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id ==
+                self.part.node_id)[0].connection }}
+              host_keys: >-
+                ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id ==
+                self.part.node_id)[0].host_keys }}
+            execution_secrets: {}
+      - name: prepare-caddy
+        target: orbit-node-209
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+          - step: prepare-lan
+            condition:
+              type: always
+        forEach:
+          item: part
+          in: '${{ inputs.intent.effectful ? inputs.intent.preparation.publications : [] }}'
+        guard: '${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: operation-route-caddy-delta
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ self.part }}'
+            execution_secrets: {}
+      - name: prepare-probe
+        target: orbit-node-209
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+          - step: prepare-lan
+            condition:
+              type: always
+          - step: prepare-caddy
+            condition:
+              type: always
+        forEach:
+          item: part
+          in: '${{ inputs.intent.effectful ? inputs.intent.preparation.probes : [] }}'
+        guard: '${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: cluster-router-probe
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ self.part }}'
+            execution_secrets: {}
+      - name: forward
+        target: orbit-node-209
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+          - step: prepare-lan
+            condition:
+              type: always
+          - step: prepare-caddy
+            condition:
+              type: always
+          - step: prepare-probe
+            condition:
+              type: always
+        guard: '${{ !inputs.intent.effectful || steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: route-mutation-forward
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent }}'
+            execution_secrets: '${{ inputs.execution_secrets }}'
+            parent_run_id: '${{ run.id }}'
+      - name: retire
+        target: orbit-node-209
+        forEach:
+          item: workload
+          in: '${{ inputs.intent.workloads }}'
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+          - step: prepare-lan
+            condition:
+              type: always
+          - step: prepare-caddy
+            condition:
+              type: always
+          - step: prepare-probe
+            condition:
+              type: always
+          - step: forward
+            condition:
+              type: always
+        guard: '${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready }}'
+        task:
+          type: workflow
+          workflowIdOrName: instance-route-workload
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              node_id: '${{ self.workload.node_id }}'
+              instance_id: '${{ self.workload.instance_id }}'
+              connection: '${{ self.workload.connection }}'
+              host_keys: '${{ self.workload.host_keys }}'
+              plan: '${{ self.workload.selected }}'
+            execution_secrets: {}
+      - name: restore-workload
+        target: orbit-node-209
+        forEach:
+          item: workload
+          in: '${{ inputs.intent.workloads }}'
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+          - step: prepare-lan
+            condition:
+              type: always
+          - step: prepare-caddy
+            condition:
+              type: always
+          - step: prepare-probe
+            condition:
+              type: always
+          - step: forward
+            condition:
+              type: always
+          - step: retire
+            condition:
+              type: always
+        guard: >-
+          ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" ||
+          !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status ==
+          "failed"))) }}
+        task:
+          type: workflow
+          workflowIdOrName: instance-route-workload
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              node_id: '${{ self.workload.node_id }}'
+              instance_id: '${{ self.workload.instance_id }}'
+              connection: '${{ self.workload.connection }}'
+              host_keys: '${{ self.workload.host_keys }}'
+              plan: '${{ self.workload.restore }}'
+            execution_secrets: {}
+      - name: restore
+        target: orbit-node-209
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+          - step: prepare-lan
+            condition:
+              type: always
+          - step: prepare-caddy
+            condition:
+              type: always
+          - step: prepare-probe
+            condition:
+              type: always
+          - step: forward
+            condition:
+              type: always
+          - step: retire
+            condition:
+              type: always
+          - step: restore-workload
+            condition:
+              type: always
+        guard: >-
+          ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" ||
+          !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status ==
+          "failed"))) }}
+        task:
+          type: workflow
+          workflowIdOrName: route-mutation-restore
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ inputs.intent }}'
+            execution_secrets: '${{ inputs.execution_secrets }}'
+            parent_run_id: '${{ run.id }}'
+      - name: result
+        target: orbit-node-209
+        dependsOn:
+          - step: prepare
+            condition:
+              type: always
+          - step: prepare-certificates
+            condition:
+              type: always
+          - step: prepare-lan
+            condition:
+              type: always
+          - step: prepare-caddy
+            condition:
+              type: always
+          - step: prepare-probe
+            condition:
+              type: always
+          - step: forward
+            condition:
+              type: always
+          - step: retire
+            condition:
+              type: always
+          - step: restore-workload
+            condition:
+              type: always
+          - step: restore
+            condition:
+              type: always
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/route-update-result'
+          behaviorName: route-update-result
+          methodName: read
+          inputs:
+            effectful: '${{ inputs.intent.effectful }}'
+            failure_code: route.target_set_failed
+            preparation_counts: >-
+              ${{ inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates),
+              "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy":
+              size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes)} :
+              {} }}
+            route_id: '${{ inputs.intent.route_id }}'
+            result_route_id: '${{ inputs.intent.result_route_id }}'
+            workload_count: '${{ size(inputs.intent.workloads) }}'
+            steps: '${{ steps }}'
+      - name: complete
+        target: orbit-node-209
+        dependsOn:
+          - step: result
+            condition:
+              type: always
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/route-update-result'
+          behaviorName: route-update-complete
+          methodName: complete
+          inputs:
+            stdout: '${{ steps.result.outputs.stdout }}'
