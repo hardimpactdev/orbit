@@ -61,7 +61,6 @@ export async function initializePlausible(
         runtime: "docker",
         name: container,
         vite: null,
-        anonymous_volumes: true,
       });
       if (removed.error_code !== undefined) {
         return {
@@ -83,7 +82,6 @@ export async function initializePlausible(
           runtime: "docker",
           name: container,
           vite: null,
-          anonymous_volumes: true,
         });
         if (removed.error_code !== undefined) {
           return {

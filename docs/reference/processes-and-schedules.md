@@ -91,6 +91,8 @@ The command has at most 64 arguments of 4,096 bytes each. The restart policy is 
 
 The systemd unit is `orbit-process-{id}-{name}.service`, and the Docker container is `orbit-process-{id}-{name}`. Before the Gateway replaces or removes one, it checks the exact Orbit Process ID marker. It never overwrites, adopts, or deletes a unit or container with another marker.
 
+Every Docker container that Orbit removes is removed with its anonymous volumes (`docker container rm --volumes`). This covers destroy, the old container after a replacement, and a failed or stale candidate. An image can declare a data path as a `VOLUME`, such as `/var/lib/mysql` in the MySQL image. Without a named mount, that data is in an anonymous volume and goes with the container. Named volumes in the Process specification are never removed this way. Mount every data path as a named volume.
+
 ### Move data before removing an override
 
 Keeping a Process ID and its named volumes does not preserve files in the container's writable layer. Updating a Docker specification can replace that container and discard those files, even if the working directory is unchanged. With Valkey's image `WORKDIR` of `/data`, an Orbit override of `/app` can put AOF and RDB files in `/app` instead of the volume mounted at `/data`. Removing the override alone would start Valkey against a different, possibly empty directory.
@@ -200,7 +202,7 @@ A runtime switch returns HTTP 422 (`process.option_invalid`) if it would discard
 
 The Gateway validates and stores the new specification, then starts the same Node209 cfgmgmt/SSH convergence workflow as create. Its inputs contain the public unit or Docker definition; only environment values use the named `process-update-operation-{id}` execution copy. The shared terminal reader projects completion without an intent, private-material or result callback. Swamp verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
 
-Update does not delete named volumes, but replacing a container discards its writable layer. Follow [Move data before removing an override](#move-data-before-removing-an-override) before replacing a stateful container; preserving its ID and links is not a backup.
+Update does not delete named volumes, but replacing a container discards its writable layer and its [anonymous volumes](#runtimes). Follow [Move data before removing an override](#move-data-before-removing-an-override) before replacing a stateful container; preserving its ID and links is not a backup.
 
 A runtime failure is reported with the Process lifecycle status, failed step, and error code; the caller must not treat it as success or assume the old runtime is still running. The response uses the same Process data and redaction as create and list, including nullable `working_directory` for a Docker Process without an override. The SDK preserves this null instead of converting it to an empty string. Updating a Project definition remains separate and affects later copies only.
 

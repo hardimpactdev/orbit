@@ -199,7 +199,7 @@ class DockerComponents(unittest.TestCase):
                 rename.rename, value, ORBIT_PROCESS_DESTINATION_SLOT="candidate"
             )
 
-    def test_remove_refuses_running_then_removes_only_selected_slot_with_volume_flag(
+    def test_remove_refuses_running_then_removes_only_selected_slot_and_its_anonymous_volumes(
         self,
     ):
         self.containers[self.control["name"] + "-candidate"] = {
@@ -210,7 +210,7 @@ class DockerComponents(unittest.TestCase):
         with self.assertRaises(common.Refused):
             self.invoke(remove.remove, value)
         self.invoke(control.control, value, ORBIT_PROCESS_OPERATION="stop")
-        self.invoke(remove.remove, value, ORBIT_PROCESS_ANONYMOUS_VOLUMES="true")
+        self.invoke(remove.remove, value)
         self.assertEqual(
             self.calls[-1],
             [

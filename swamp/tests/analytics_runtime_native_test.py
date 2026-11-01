@@ -168,6 +168,7 @@ class AnalyticsRuntimeNative(NativeTestCase):
         self.assertEqual(state["calls"].count("createdb"), 1)
         self.assertEqual(state["calls"].count("migrate"), 1)
         self.assertIn("create:b", state["calls"])
+        self.assertIn("remove", state["calls"])
 
     def test_initialization_failure_preserves_original_and_does_not_replace(self):
         _, result, state = self.run_update("initialization")

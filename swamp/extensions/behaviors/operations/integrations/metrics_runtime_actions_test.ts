@@ -239,7 +239,7 @@ Deno.test("observed stop rename create and cleanup success wins over a lost comm
       "stop --time 30 -- orbit-metrics-grafana",
       "rename orbit-metrics-grafana ",
       "run --detach --pull=never --name orbit-metrics-grafana",
-      "rm --force -- orbit-metrics-grafana-orbit-rollback",
+      "rm --force --volumes -- orbit-metrics-grafana-orbit-rollback",
     ]
   ) {
     const h = new Host();
@@ -270,7 +270,7 @@ Deno.test("cleanup failure keeps committed configuration and a later converge re
   await h.actions().runtime(input());
   const changed = configuration();
   changed[metricsPaths[1]] = "changed settings";
-  h.failure = "rm --force -- orbit-metrics-grafana-orbit-rollback";
+  h.failure = "rm --force --volumes -- orbit-metrics-grafana-orbit-rollback";
   assertEquals(await h.actions().runtime(input(changed)), {
     error_code: "metrics.container_cleanup_failed",
   });
@@ -299,6 +299,7 @@ Deno.test("remove preserves data unless explicitly purging and health observes o
   assertEquals(await actions.health("grafana"), { healthy: true });
   h.containers.get("orbit-metrics-grafana")!.running = false;
   assertEquals(await actions.health("grafana"), { healthy: false });
+  h.calls = [];
   assertEquals(
     await actions.runtime({
       address: "10.44.0.17",
@@ -307,6 +308,15 @@ Deno.test("remove preserves data unless explicitly purging and health observes o
     { changed: true },
   );
   assertEquals(h.containers.size, 0);
+  // Container removal also removes anonymous volumes; named data volumes stay.
+  assertEquals(
+    h.calls.filter((a) => a[0] === "container" && a[1] === "rm")
+      .map((a) => a.slice(0, -1)),
+    [
+      ["container", "rm", "--force", "--volumes", "--"],
+      ["container", "rm", "--force", "--volumes", "--"],
+    ],
+  );
   assertEquals(h.volumes.size, 2);
   assertEquals(h.files, null);
   assertEquals(

@@ -477,7 +477,7 @@ p.write_text(json.dumps(s))
         self.assertEqual(state["docker"]["body"]["Labels"]["orbit.process.id"], "17")
         self.assertEqual(state["docker"]["body"]["HostConfig"]["Mounts"][0]["Source"], "proof-volume")
         removals = [call for call in state["docker_calls"] if call[:2] == ["container", "rm"]]
-        self.assertEqual(removals, [["container", "rm", "orbit-process-17-proof"]])
+        self.assertEqual(removals, [["container", "rm", "--volumes", "orbit-process-17-proof"]])
         self.run_lifecycle("update")
         self.assertEqual(json.loads(self.state.read_text())["creates"], 2)
         install.update(spec="c" * 64, desired="stopped")

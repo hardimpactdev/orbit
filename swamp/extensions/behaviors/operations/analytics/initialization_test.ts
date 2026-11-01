@@ -145,7 +145,13 @@ Deno.test("cancelled initialization removes owned ephemeral containers and volum
       calls.push(name);
       if (name === "process.remove") {
         assertEquals(actionSignal, undefined);
-        assertEquals(input.anonymous_volumes, true);
+        // process.remove always removes the container's anonymous volumes.
+        assertEquals(Object.keys(input).sort(), [
+          "name",
+          "process_id",
+          "runtime",
+          "vite",
+        ]);
       }
       return Promise.resolve({});
     },

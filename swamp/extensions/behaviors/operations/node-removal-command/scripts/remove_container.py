@@ -17,7 +17,9 @@ def remove(data):
     action = data["action"]
     if action not in ("stop", "rm"):
         raise ValueError("node.role_runtime_invalid")
-    subprocess.run(["/usr/bin/docker", "container", action, "--", name], check=True, stdout=subprocess.DEVNULL)
+    # --volumes removes only anonymous volumes; the named role volumes stay.
+    argv = ["/usr/bin/docker", "container", action, *(["--volumes"] if action == "rm" else []), "--", name]
+    subprocess.run(argv, check=True, stdout=subprocess.DEVNULL)
     return {"removed": action == "rm", "stopped": True}
 
 
