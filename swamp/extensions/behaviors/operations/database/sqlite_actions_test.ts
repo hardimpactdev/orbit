@@ -43,6 +43,7 @@ Deno.test("native file export and receive preserve bytes without putting them in
   const saved = temporary + "/native";
   const incoming = temporary + "/.orbit-sqlite-" + "f".repeat(32);
   const ctx: FileContext = {
+    extensionFile: (path) => path,
     modelId: run,
     modelType: { normalized: "fixture/sqlite" },
     createFileWriter: () => ({
@@ -99,6 +100,7 @@ Deno.test("export refuses a snapshot symlink, a foreign digest, and nonprivate m
     const f = fixture();
     const temp = await Deno.makeTempDir();
     const ctx: FileContext = {
+    extensionFile: (path) => path,
       modelId: run,
       modelType: { normalized: "fixture/sqlite" },
       createFileWriter: () => ({
@@ -190,6 +192,7 @@ Deno.test("clone export replay cleans only its owned partial snapshot directory 
   await Deno.writeFile(partial, new Uint8Array([1]), { mode: 0o600 });
   const calls: string[] = [];
   const ctx: FileContext = {
+    extensionFile: (path) => path,
     modelId: run,
     modelType: { normalized: "fixture/sqlite" },
     createFileWriter: () => ({

@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { copySqlite, sqliteLaunch } from "./sqlite_local.ts";
-import { sqliteProgram } from "./sqlite_program.ts";
+
 
 async function database(path: string) {
     const result = await new Deno.Command("/usr/bin/python3", {
@@ -26,14 +26,14 @@ Deno.test("SQLite launch bundles only fixed domain code and keeps private SQL of
     };
     const launch = sqliteLaunch(call);
     assertEquals(launch.command, "/usr/bin/python3");
-    assertEquals(launch.args, ["-I", "-c", sqliteProgram, "copy", "600"]);
+    assertEquals(launch.args, ["-B", new URL("../database-server-commands/scripts/sqlite_actions.py", import.meta.url).pathname, "copy", "600"]);
     assertEquals(
         launch.args.join(" ").includes("private-local-sqlite-sentinel"),
         false,
     );
     const seed = sqliteLaunch({ action: "seedSource", input: {} });
     assertEquals(seed.command, "/usr/bin/sudo");
-    assertEquals(seed.args.slice(0, 4), ["-n", "--", "/usr/bin/python3", "-I"]);
+    assertEquals(seed.args.slice(0, 4), ["-n", "--", "/usr/bin/python3", "-B"]);
 });
 Deno.test("real domain copy and cleanup preserve private data without returning rows", async () => {
     const root = await Deno.makeTempDir({ prefix: "sqlite-port-test-" });

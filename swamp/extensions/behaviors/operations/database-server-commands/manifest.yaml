@@ -5,6 +5,7 @@ visibility: private
 license: MIT
 description: Database server command files and public result shaping.
 behaviors:
+  - operations/database-server-commands/sqlite_assets.ts
   - operations/database-server-commands/clone_assets.ts
   - operations/database-server-commands/close_assets.ts
   - operations/database-server-commands/assets.ts
@@ -53,3 +54,12 @@ additionalFiles:
   - scripts/sqlite_clone_install.py
   - scripts/sqlite_clone_cleanup_target.py
   - scripts/mysql_clone_probe.py
+  - scripts/sqlite_seed_common.py
+  - scripts/sqlite_source_export.py
+  - scripts/sqlite_source_cleanup.py
+  - scripts/sqlite_cleanup.py
+  - scripts/sqlite_target_prepare.py
+  - scripts/sqlite_target_install.py
+  - scripts/sqlite_target_cleanup.py
+  - scripts/sqlite_verify_snapshot.py
+  - scripts/sqlite_target_recover.py

@@ -1,3 +1,4 @@
+import { sqliteFileInvoke } from "../database/sqlite_local.ts";
 import { z } from "npm:zod@4.4.3";
 import {
   cleanupSnapshot,
@@ -45,7 +46,7 @@ export function transferSqliteActions(
       ctx: FileContext,
       runId: string,
       signal?: AbortSignal,
-    ) => exportSource(plan.source, ctx, `snapshot-${runId}`, undefined, signal),
+    ) => exportSource(plan.source, ctx, `snapshot-${runId}`, sqliteFileInvoke(ctx.extensionFile("database-server-commands/scripts/sqlite_actions.py")), signal),
     install: async (
       plan: TransferSqlite,
       snapshot: Snapshot,
@@ -58,7 +59,7 @@ export function transferSqliteActions(
         plan.target,
         "prepare",
         snapshot,
-        undefined,
+        sqliteFileInvoke(ctx.extensionFile("database-server-commands/scripts/sqlite_actions.py")),
         signal,
       );
       await refresh();
@@ -81,7 +82,7 @@ export function transferSqliteActions(
           plan.target,
           "install",
           snapshot,
-          undefined,
+          sqliteFileInvoke(ctx.extensionFile("database-server-commands/scripts/sqlite_actions.py")),
           signal,
         );
         if (!["changed", "complete"].includes(installed.state)) {
@@ -125,10 +126,10 @@ export function transferSqliteActions(
         throw new Error("env.sync_unconfirmed");
       }
     },
-    cleanupSource: (plan: TransferSqlite) => cleanSource(plan.source),
-    cleanupTarget: async (plan: TransferSqlite) => {
+    cleanupSource: (plan: TransferSqlite, ctx: FileContext) => cleanSource(plan.source, sqliteFileInvoke(ctx.extensionFile("database-server-commands/scripts/sqlite_actions.py"))),
+    cleanupTarget: async (plan: TransferSqlite, ctx: FileContext) => {
       if (
-        (await target(plan.target, "cleanup", undefined)).state !== "cleaned"
+        (await target(plan.target, "cleanup", undefined, sqliteFileInvoke(ctx.extensionFile("database-server-commands/scripts/sqlite_actions.py")))).state !== "cleaned"
       ) {
         throw new Error("database.sqlite_cleanup_failed");
       }

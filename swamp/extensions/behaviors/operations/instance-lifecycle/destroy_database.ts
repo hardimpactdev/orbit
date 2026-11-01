@@ -1,3 +1,4 @@
+import type { SqliteInvoke } from "../database/sqlite_local.ts";
 import { z } from "npm:zod@4.4.3";
 import { destroyOwnedStep } from "../database/destroy_owned.ts";
 import { DestroyInput } from "../database/destroy.ts";
@@ -92,6 +93,7 @@ export async function removeDestroyDatabase(
   gateway: Pick<GatewayOperation, "withPrivateMaterial">,
   signal?: AbortSignal,
   remove = destroyOwnedStep,
+  sqliteInvoke?: SqliteInvoke,
 ) {
   const work = DestroyDatabaseWork.parse(rawWork);
   const admitted = destroyDatabaseWork(admittedDatabase).find((row) =>
@@ -109,6 +111,9 @@ export async function removeDestroyDatabase(
         consume({ payload: material.database_material })
       ),
     signal,
+    undefined,
+    undefined,
+    sqliteInvoke,
   );
   if ("error_code" in result) throw new Error(result.error_code);
   return result;

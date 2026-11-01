@@ -21,16 +21,23 @@ class SqliteLocalNative(NativeTestCase):
         self.copy_behaviors('operations/_lib')
         folder = self.repo / 'extensions/behaviors/operations/database'
         folder.mkdir(parents=True)
-        for name in ('sqlite_actions.ts', 'sqlite_local.ts', 'sqlite_program.ts'):
+        for name in ('sqlite_actions.ts', 'sqlite_local.ts', 'sqlite_input.ts'):
             shutil.copy(ROOT / 'extensions/behaviors/operations/database' / name, folder)
+        shutil.copy(ROOT / 'extensions/behaviors/operations/manifest.yaml', folder.parent / 'manifest.yaml')
+        scripts = folder.parent / 'database-server-commands/scripts'
+        scripts.mkdir(parents=True)
+        for name in ('sqlite_actions.py', 'sqlite_seed_common.py', 'sqlite_clone_common.py'):
+            shutil.copy(ROOT / 'extensions/behaviors/operations/database-server-commands/scripts' / name, scripts)
         (folder / 'proof.ts').write_text('''import {z} from "npm:zod@4.4.3";
 import {exportSnapshot, cleanupSnapshot, snapshotFile} from "./sqlite_actions.ts";
+import {sqliteFileInvoke} from "./sqlite_local.ts";
 export const behavior={type:"@fixture/sqlite-local",version:"2026.10.31.1",files:{snapshot:snapshotFile},
 resources:{result:{schema:z.object({bytes:z.number(),sha256:z.string()}),lifetime:"workflow",garbageCollection:1}},
 methods:{export:{description:"Exercise the actual bundled local SQLite program",arguments:z.object({run_id:z.string().uuid()}),execute:async(args,ctx)=>{
  const source=JSON.parse(await Deno.readTextFile("source.json"));
- const ref=await exportSnapshot(source,ctx,"snapshot-"+args.run_id);
- await cleanupSnapshot(source);
+ const invoke=sqliteFileInvoke(ctx.extensionFile("database-server-commands/scripts/sqlite_actions.py"));
+ const ref=await exportSnapshot(source,ctx,"snapshot-"+args.run_id,invoke);
+ await cleanupSnapshot(source,invoke);
  return {dataHandles:[await ctx.writeResource("result","result",{bytes:ref.bytes,sha256:ref.sha256})]};
 }}}};''')
         source = tempfile.TemporaryDirectory(prefix='sqlite-native-source-')

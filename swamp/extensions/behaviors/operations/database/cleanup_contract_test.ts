@@ -1,13 +1,11 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { cleanupPayload } from "./cleanup_contract.ts";
+import { CleanupInput } from "./cleanup_contract.ts";
 const clone = {
   variant: "clone",
   directory: `/tmp/orbit-sqlite-clone-${"b".repeat(32)}`,
-};
+} as const;
 Deno.test("cleanup exposes only the admitted typed descriptor", () => {
-  assertEquals(cleanupPayload(clone), {
-    input: { variant: "clone", directory: clone.directory },
-  });
+  assertEquals(CleanupInput.parse(clone), clone);
 });
 Deno.test("cleanup cannot select a generic owner command or foreign path", () => {
   for (
@@ -18,7 +16,7 @@ Deno.test("cleanup cannot select a generic owner command or foreign path", () =>
       { ...clone, variant: "install" },
       { ...clone, program: "arbitrary caller source" },
     ]
-  ) assertThrows(() => cleanupPayload(bad));
+  ) assertThrows(() => CleanupInput.parse(bad));
 });
 Deno.test("seed cleanup binds source base target state and operation snapshot", () => {
   const operation = "c".repeat(64);
@@ -33,7 +31,7 @@ Deno.test("seed cleanup binds source base target state and operation snapshot", 
     state_dir: "/var/lib/orbit/app-instance-sqlite-seeds/source-21-target-42",
     snapshot_path: `/tmp/orbit-sqlite-${operation}.sqlite`,
   };
-  assertEquals(cleanupPayload(seed).input.variant, "seed");
+  assertEquals(CleanupInput.parse(seed).variant, "seed");
   for (
     const bad of [
       { ...seed, target_instance_id: 43 },
@@ -43,5 +41,5 @@ Deno.test("seed cleanup binds source base target state and operation snapshot", 
       { ...seed, mode: "prepare" },
       { ...seed, transport_user: "root;sh" },
     ]
-  ) assertThrows(() => cleanupPayload(bad));
+  ) assertThrows(() => CleanupInput.parse(bad));
 });

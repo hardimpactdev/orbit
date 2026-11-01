@@ -1,105 +1,37 @@
 id: ecc09a4a-9791-5928-b24f-45f1f94e4119
 name: operation-database-sqlite-export
-description: Run database.sqlite_export as one native placed DAG.
+description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
 writes: true
 vaults: []
-inputs:
-  properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database.sqlite_export
-  required:
-  - operation_id
-  - node_id
-  - kind
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [database.sqlite_export]}, intent: {type: object},
+    execution_secrets: {type: object, additionalProperties: false}}, required: [operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
-- name: admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
+- name: sqlite
+  target: orbit-node-209
   steps:
-  - name: read
+  - name: run
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: database-sqlite-export
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
+          }}'}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - {step: run, condition: {type: always}}
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
-      methodName: read
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: snapshot
-  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
-  labels:
-    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
-  steps:
-  - name: export
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: result
+      inputs: {kind: '${{ inputs.kind }}', expected: [run], steps: '${{ steps }}', export_step: run}
+  - name: accept_result
+    target: orbit-node-209
+    dependsOn:
+    - {step: result, condition: {type: succeeded}}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
-      methodName: export
-      inputs:
-        source: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-- name: cleanup
-  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
-  labels:
-    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
-  steps:
-  - name: cleanupSource
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
-      methodName: cleanupSource
-      inputs:
-        source: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  - job: snapshot
-    condition:
-      type: always
-- name: projection
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  steps:
-  - name: project
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-sqlite'
-      behaviorName: ${{ "database-sqlite-" + run.id }}
-      methodName: project
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  - job: snapshot
-    condition:
-      type: always
-  - job: cleanup
-    condition:
-      type: always
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: SQLite child did not complete.

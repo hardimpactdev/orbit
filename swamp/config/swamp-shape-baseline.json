@@ -443,44 +443,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/cleanup.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/native_effect.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/sqlite_native.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/sqlite_program.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/sqlite_program.ts",
-      "rule": "inline-script",
-      "count": 465,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/valkey_acl_local.ts",
       "rule": "multi-action",
       "count": 2,
@@ -544,14 +506,6 @@
     },
     {
       "file": "extensions/behaviors/operations/firewall/direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/firewall/inspection.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": [
