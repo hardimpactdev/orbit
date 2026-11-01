@@ -19,18 +19,18 @@ final class PublishObservationContext implements ShouldBeUniqueUntilProcessing, 
 
     public int $uniqueFor = 300;
 
-    public function __construct(public ?string $channel = null, public bool $force = false)
+    public function __construct(public ?string $channel = null, public bool $force = false, public bool $registry = false)
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Problems->value);
     }
 
     public function uniqueId(): string
     {
-        return ($this->channel ?? 'all').($this->force ? ':force' : '');
+        return ($this->channel ?? 'all').($this->force ? ':force' : '').($this->registry ? ':registry' : '');
     }
 
     public function handle(ScheduledObservation $observation): void
     {
-        $observation->publish($this->channel, $this->force);
+        $observation->publish($this->channel, $this->force, $this->registry);
     }
 }

@@ -7,6 +7,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\Observation\PublishObservationContext;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\ProblemCollectorState;
@@ -94,12 +95,28 @@ it('rolls back fingerprints and the replay marker when a terminal cursor is inva
         ->and($this->state->fresh()->observation)->not->toHaveKey('terminals');
 });
 
-it('accepts a completed read after collector-only refresh without losing its original cursor', function (): void {
+it('starts no context for collector-only commits and keeps the in-flight read', function (): void {
     $this->result['revision'] = 2;
-    $this->schedule->invalidate(false);
+    Activity::query()->create(['log_name' => 'commands', 'description' => 'node:list', 'request_id' => 'collector-only', 'command' => 'node:list', 'status' => 'failed']);
+    $this->state->update(['activity_cursor' => 1]);
+    Queue::assertNotPushed(PublishObservationContext::class);
     $this->schedule->applyScheduled($this->workflow, $this->run, $this->result);
     expect(ProblemFingerprint::query()->count())->toBe(1)
         ->and($this->state->fresh()->observation['terminals']['horizon']['status'])->toBe('recorded');
+});
+
+it('starts no context for a registry commit that leaves expectations unchanged', function (): void {
+    Node::withoutEvents(fn () => $this->node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'public.fixture.pin']));
+    $this->schedule->publish();
+    $socket = app(WebSocketClient::class);
+    $published = count($socket->sent);
+    Activity::query()->create(['log_name' => 'commands', 'description' => 'node:list', 'request_id' => 'changed-signal', 'command' => 'node:list', 'status' => 'failed']);
+    $this->node->update(['tld' => 'unchanged-expectations']);
+    Queue::assertPushed(PublishObservationContext::class, fn (PublishObservationContext $job): bool => $job->registry);
+    (new PublishObservationContext('fleet', false, true))->handle($this->schedule);
+    expect($socket->sent)->toHaveCount($published);
+    $this->schedule->publish('fleet');
+    expect($socket->sent)->toHaveCount($published + 1);
 });
 
 it('keeps committed writes available when Horizon metadata fails with or without a queue', function (bool $queue): void {
