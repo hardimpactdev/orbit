@@ -37,12 +37,16 @@ const step = (
   method: string,
   extra: Fields = {},
   guard = stopped,
+  modelName?: string,
 ): Fields => ({
   name,
   writes: true,
   ...placed("inputs.node_id"),
   guard: expr(guard),
-  task: task(method, extra),
+  task: {
+    ...task(method, extra),
+    ...(modelName ? { behaviorName: modelName } : {}),
+  },
 });
 const assert = (name: string, condition: string, source: string): Fields => ({
   name,
@@ -157,7 +161,9 @@ export function nodeRemovalWorkflow() {
         execution_node_id: expr("self.member.node_id"),
         transport: "local",
       },
-    }, guard),
+    }, guard, expr(
+      `"node-removal-${restoring ? "restore-participant" : "participant"}-" + run.id + "-" + string(self._index)`,
+    )),
     name: (restoring ? "restore_participant_" : "participant_") +
       expr("self.member.node_id"),
     ...placed("self.member.node_id"),
@@ -197,7 +203,9 @@ export function nodeRemovalWorkflow() {
   serial("restore_certificate_requests", "restored_hub", [{
     ...step("restore_certificate_request", "requestRestoreCertificates", {
       target_node_id: expr("self.id"),
-    }, certGuard),
+    }, certGuard, expr(
+      '"node-removal-restore-certificate-request-" + run.id + "-" + string(self._index)',
+    )),
     name: "restore_certificate_request_" + expr("self.id"),
     ...placed("self.id"),
     forEach: { item: "id", in: expr(`${has("admit")} ? ${nodes} : []`) },
@@ -232,7 +240,9 @@ export function nodeRemovalWorkflow() {
         'steps["restore_certificate_request_" + string(self.id)].outputs.requests',
       ),
       signed: expr("steps.restore_certificate_sign.outputs.certificates"),
-    }, `${certGuard} || !(${has("restore_certificate_sign")})`),
+    }, `${certGuard} || !(${has("restore_certificate_sign")})`, expr(
+      '"node-removal-restore-certificate-publish-" + run.id + "-" + string(self._index)',
+    )),
     name: "restore_certificate_publish_" + expr("self.id"),
     ...placed("self.id"),
     forEach: { item: "id", in: expr(`${has("admit")} ? ${nodes} : []`) },

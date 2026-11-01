@@ -32,6 +32,7 @@ export function sshAccessWorkflow() {
     return {
         id: "d672c246-33c1-4fc7-b8b4-ae37f4885b1e",
         name: "operation-node-ssh-access-converge",
+        vaults: ["orbit-control-inputs"],
         inputs: {
             type: "object",
             properties: {

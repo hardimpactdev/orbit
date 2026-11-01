@@ -3215,14 +3215,12 @@
     {"file":"workflows/workflow-operation-database-server-destroy.yaml","rule":"foreach-shared-identity","count":1,"evidence":["inspect/inspect-${{ self.member.slot }}"]},
     {"file":"workflows/workflow-operation-instance-destroy.yaml","rule":"foreach-shared-identity","count":2,"evidence":["cleanup/cleanup-${{ self.member.node_id }}","databases/database-${{ self.work.key }}"]},
     {"file":"workflows/workflow-operation-instance-transfer.yaml","rule":"foreach-shared-identity","count":2,"evidence":["recover-leaves/remove-candidate-certificates","retirement/retire-artifacts"]},
-    {"file":"workflows/workflow-operation-node-remove.yaml","rule":"foreach-shared-identity","count":4,"evidence":["restore_certificate_publish/restore_certificate_publish_${{ self.id }}","restore_certificate_requests/restore_certificate_request_${{ self.id }}","restore_serving/restore_participant_${{ self.member.node_id }}","serving/participant_${{ self.member.node_id }}"]},
     {"file":"workflows/workflow-operation-process-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-process-restart-instance.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-schedule-destroy.yaml","rule":"foreach-shared-identity","count":1,"evidence":["schedule/remove_files"]},
     {"file":"workflows/workflow-operation-schedule-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-task-check.yaml","rule":"foreach-shared-identity","count":5,"evidence":["check/base-${{ self._index }}","check/base_prepare-${{ self._index }}","check/base_ready-${{ self._index }}","check/deliverable-${{ self._index }}","check/setup-${{ self._index }}"]},
     {"file":"workflows/workflow-operation-vault-sync.yaml","rule":"foreach-shared-identity","count":1,"evidence":["deletions/delete"]},
-    {"file":"workflows/workflow-task-check-ci.yaml","rule":"foreach-shared-identity","count":2,"evidence":["checks/ci-${{ self.check.attributes.inputs.operation_id }}","checks/observed-${{ self.check.attributes.inputs.operation_id }}"]},
-    {"file":"workflows/workflow-operation-node-ssh-access-converge.yaml","rule":"workflow-vault-declaration","count":1,"evidence":["orbit-control-inputs"]}
+    {"file":"workflows/workflow-task-check-ci.yaml","rule":"foreach-shared-identity","count":2,"evidence":["checks/ci-${{ self.check.attributes.inputs.operation_id }}","checks/observed-${{ self.check.attributes.inputs.operation_id }}"]}
   ]
 }
