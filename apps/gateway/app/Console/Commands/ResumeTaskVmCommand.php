@@ -10,8 +10,10 @@ use Illuminate\Console\Command;
 /** Admit the ordinary resume/converge lifecycle, including an already running VM. */
 final class ResumeTaskVmCommand extends Command
 {
+    #[\Override]
     protected $signature = 'task-vms:resume {vm : Numeric TaskVM ID}';
 
+    #[\Override]
     protected $description = 'Start or converge a TaskVM and its Node209 SSH access through its native lifecycle.';
 
     public function handle(StartTaskVmResumeAction $resume): int

@@ -622,3 +622,8 @@ Deno.test("a successful phase read resets the consecutive channel outage budget"
   assertEquals(await result, null);
   assertEquals(reads, 101);
 });
+
+Deno.test("the retained image adapter does not require native SSH step metadata for cleanup", () => {
+  const { ssh_execution: _nativeOnly, ...input } = intent();
+  assertEquals(ImageIntent.parse(input).name, input.name);
+});

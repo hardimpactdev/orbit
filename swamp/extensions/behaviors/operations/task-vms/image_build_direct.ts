@@ -51,7 +51,7 @@ const StoredImageIntent = z.object({
   candidate_alias: z.string(),
   base_alias: z.string(),
   gateway_public_key: z.string(),
-  ssh_execution: z.record(z.string(), z.unknown()),
+  ssh_execution: z.record(z.string(), z.unknown()).optional(),
   certificate: z.string(),
   recipe: object,
   pi_artifact: z.object({
