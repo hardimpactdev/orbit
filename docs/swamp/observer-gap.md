@@ -6,8 +6,13 @@ Written 2026-11-01T20:14Z at `d761329ff8` (branch `observer-gap-audit`). Read-on
 
 ## Summary
 
-- Today the agent reports only a heartbeat, `orbit-process-*` unit states, Docker availability and task-workspace Git state. Everything else doctor needs (disk, platform, role services, ufw, awake markers) is read over SSH by Swamp, or by on-demand agent commands that the observer does not run.
-- Swamp doctor plans reads for four families only (`firewall`, `node`, `role` services, `process`). The other seven families have issue codes in the Gateway catalog but no producer today. Their old agent commands (`doctor.inspect-*`) are frozen and nothing calls them.
+This section lists the main findings of the audit.
+
+- Today the agent reports only a heartbeat, `orbit-process-*` unit states, Docker availability and task-workspace Git state.
+- Swamp reads the other doctor facts over SSH: disk, platform, role services, ufw and awake markers.
+- Some on-demand agent commands can read them too. The observer does not run those commands.
+- Swamp doctor plans reads for four families only: `firewall`, `node`, `role` services and `process`.
+- The other seven families have issue codes in the Gateway catalog but no producer today. Their old agent commands (`doctor.inspect-*`) are frozen and nothing calls them.
 - The agent runs as root with an empty capability set and `NoNewPrivileges=yes`. Reading `ufw status numbered` needs `CAP_NET_ADMIN` (to verify on a Node), not sudo. The doctor comparison logic (TypeScript in Swamp) must also move to the Gateway.
 
 ## 1. What doctor checks today
@@ -29,13 +34,15 @@ The Gateway catalog (`apps/gateway/app/Domain/Doctor/*DoctorIssueCode.php`) has 
 
 | Family | Codes in catalog | Producer today |
 | --- | --- | --- |
-| node | 28 | Swamp: `platform_mismatch`, `architecture_mismatch`, `disk_low`, `agent_missing`, `agent_inactive`, `agent_view_stale`, `lifecycle_not_active`, `task_vm_parked`, `inspection_failed`. `ssh_unreachable` only blocks the platform read. Gateway jobs: `task_vm_*` (`TaskVmHostAudit`, sweep). `FleetNodeVerifier` owns repair for `ssh_unreachable`, `agent_*`, `cli_foreign`. No producer: `private_dns_*`, `public_dns_unreachable`, `wireguard_ip_mismatch`, `route_residue_retained`, `release_lag`, `worker_failed`. |
+| node | 28 | Swamp: `platform_mismatch`, `architecture_mismatch`, `disk_low`, `agent_missing`, `agent_inactive`, `agent_view_stale`, `lifecycle_not_active`, `task_vm_parked`, `inspection_failed`; `ssh_unreachable` only blocks the platform read. Gateway jobs: `task_vm_*` (`TaskVmHostAudit`, sweep); `FleetNodeVerifier` repairs `ssh_unreachable`, `agent_*` and `cli_foreign`. No producer: `private_dns_*`, `public_dns_unreachable`, `wireguard_ip_mismatch`, `route_residue_retained`, `release_lag`, `worker_failed`. |
 | role | 19 | Swamp: `services_inactive`, `lifecycle_not_active`. No producer: `packages_missing`, `caddy_*`, `php_pool_directory_missing`, `vpn_*`, `dns_projection_mismatch`, `firewall_projection_mismatch`, `ci_runner_host_mismatch`, claim and cluster codes (`caddy_build_drift` is only a fleet-repair trigger). |
 | process | 5 | Swamp: `runtime_missing`, `state_mismatch`, `crash_loop`. |
 | firewall | 6 | Swamp: `backend_inactive`, `rule_missing`, `rule_mismatch`, `lifecycle_not_active`. |
 | project, instance, schedule, tool, database_connection, database_server, route | 4 / 33 / 11 / 8 / 4 / 9 / 11 | No host read. (`instance.workspace_lease` may come from Gateway task lease records; not traced.) `planReads` adds no read for these families, so the report checks 0 resources. The old agent commands (`doctor.inspect-project`, `-production-instance`, `-schedule`, `-private-route`, `-public-route`, `-application-urls`, `-custom-proxy`) exist only in `apps/gateway/resources/agent/frozen-commands.json`. |
 
 ### Reads Swamp makes today (the `planReads` list)
+
+Each row is one SSH read that `planReads` plans for a Node.
 
 | Read | argv | Root? |
 | --- | --- | --- |
@@ -87,6 +94,8 @@ Live log streams (`logs/*`: journal, Laravel log, Docker) run while someone watc
 So the files named in the brief (`health.rs`, `caddy_observation.rs`, `metrics_*`, `service_metrics`, `firewall/inventory.rs`) are command-mode code. The strip pass can reuse their parsers, but they are not part of the continuous stream.
 
 ### Where the Gateway stores it
+
+The Gateway keeps the observer stream in a short-lived cache.
 
 - `AgentViewSubscriber` (`php artisan orbit:agent-view`, one WebSocket to Reverb) feeds `AgentChannelState::apply`, which validates events: `MaxUnits` 4096, `MaxWorkspaces` 64, unit names must match `orbit-process-N-name`, status `[a-z][a-z-]{0,31}`.
 - `CacheAgentStateView` writes a file cache under `ORBIT_HOME/cache/agent-view`, key `agent-view.node.{id}`: `received_at`, `agent_at`, `sequence`, `docker`, `units`, `workspaces`, `logs`. TTL is 60 s (`NodeTtlSeconds`).
@@ -153,17 +162,29 @@ Command mode is different. It starts through SSH as the managed `orbit` user wit
 
 ### How the observer can read ufw without acting
 
-- **A sudo rule does not fit this unit.** The agent is already root, so it needs no sudo. `NoNewPrivileges=yes` stops any setuid gain. A sudoers line such as `orbit-agent ALL=(root) NOPASSWD: /usr/sbin/ufw status numbered` would work only if the observer moved to a dedicated unprivileged user. That change would also remove its access to `docker.sock`, root-owned logs and `orbit`-owned checkouts. Not recommended.
-- **Recommended: one capability.** Set `CapabilityBoundingSet=CAP_NET_ADMIN` and `AmbientCapabilities=CAP_NET_ADMIN`, and run only the fixed argv `/usr/sbin/ufw status numbered`. `ufw` reads `/etc/ufw/*.rules` and `ufw.conf` as root, and asks `iptables` about the live chains, which needs `CAP_NET_ADMIN`. The agent code sends no argument from the Gateway, so it cannot change a rule. The capability itself could change rules, so "observer only" stays a code and review rule, as it is now for the whole binary. **Verify before building:** run the unit with an empty set on a Node and check whether `ufw status numbered` fails. If it succeeds with no capability, keep the set empty.
-- **Fallback without a capability.** Parse `/etc/ufw/ufw.conf` (`ENABLED`) and `/etc/ufw/user.rules` / `user6.rules` as root. This reports configured rules, not kernel state, so a rule that was removed from the kernel but not the file would pass. The agent already separates "stored" from "live" (`native.rs` `stored()`), so the Gateway would show only "stored".
-- **Alternative: a separate root helper unit** (a systemd timer) that writes `ufw status numbered` to `/run/orbit/ufw-status` for the agent to read. It adds a second privileged unit, and the agent would report the file's mtime as `observed_at`. Not preferred.
-- Keep the existing bounds when reusing `native.rs`: stdout 1 MiB, stderr 64 KiB, 30 s timeout, `ufw` absent = backend `absent`, non-zero exit = unverifiable.
-- IPv4 only: `inspection-result.ts` drops `(v6)` rows and sets `family: "v4"`; the new parser must keep that rule or doctor changes its result.
+Four options exist. One capability is the recommended one.
+
+**A sudo rule does not fit this unit.** The agent is already root, so it needs no sudo. `NoNewPrivileges=yes` stops any setuid gain. A sudoers line such as `orbit-agent ALL=(root) NOPASSWD: /usr/sbin/ufw status numbered` works only for a dedicated unprivileged user. That user would lose access to `docker.sock`, root-owned logs and `orbit`-owned checkouts. Not recommended.
+
+**Recommended: one capability.** Set `CapabilityBoundingSet=CAP_NET_ADMIN` and `AmbientCapabilities=CAP_NET_ADMIN`. Run only the fixed argv `/usr/sbin/ufw status numbered`. `ufw` reads `/etc/ufw/*.rules` and `ufw.conf` as root. It asks `iptables` about the live chains, which needs `CAP_NET_ADMIN`. The agent sends no argument from the Gateway, so it cannot change a rule. The capability itself could change rules, so "observer only" stays a code and review rule, as it is now for the whole binary.
+
+Verify before building: run the unit with an empty set on a Node and check whether `ufw status numbered` fails. If it succeeds with no capability, keep the set empty.
+
+**Fallback without a capability.** Parse `/etc/ufw/ufw.conf` (`ENABLED`) and `/etc/ufw/user.rules` / `user6.rules` as root. This reports configured rules, not kernel state. A rule removed from the kernel but not from the file would pass. The agent already separates "stored" from "live" (`native.rs` `stored()`), so the Gateway would show only "stored".
+
+**Alternative: a separate root helper unit.** A systemd timer writes `ufw status numbered` to `/run/orbit/ufw-status` for the agent to read. The agent reports the file's mtime as `observed_at`. It adds a second privileged unit. Not preferred.
+
+Keep two rules whichever option is built:
+
+- Keep the existing bounds of `native.rs`: stdout 1 MiB, stderr 64 KiB, 30 s timeout. Absent `ufw` is backend `absent`; a non-zero exit is unverifiable.
+- IPv4 only: `inspection-result.ts` drops `(v6)` rows and sets `family: "v4"`. The new parser must keep that rule or doctor changes its result.
 
 ## 5. Notes for the strip pass
 
+These notes are for whoever builds the observer pass.
+
 1. Widen the report schema from "unit name → status" to typed facts, each with `observed_at` set by the agent (Gateway `received_at` stays the freshness clock). Chunking limits (`PUSHER_FRAME_LIMIT`) apply.
-2. The Gateway store needs retention for the last good observation. The 60 s TTL turns a stale fact into "missing", which cannot be told from "never observed". Pick: keep the value and mark stale, or keep TTL and call both "unverifiable". The decision text says the second is acceptable.
+2. The Gateway store needs to keep the last good observation. With the 60 s TTL, a stale fact looks unobserved. Calling both "unverifiable" is allowed.
 3. `firewall:live:list` and `orbit doctor` become GET-only readers. The `firewall:inspect` command is removed; an on-demand refresh would ask the agent for a snapshot (`Route::Snapshot` already exists in the observer loop).
 4. The `doctor.inspect-*` agent commands and the SSH reads in `planReads` are removed together with the comparison move (row 25). Do not delete `inspect-*` command code before the observations in rows 16–24 exist or are dropped on purpose.
 5. Facts that need credentials (row 23) do not fit "agent observes host state" and need a separate decision.
