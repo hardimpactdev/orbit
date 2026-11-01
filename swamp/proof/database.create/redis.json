@@ -1,0 +1,100 @@
+{
+  "kind": "database.create",
+  "workflow": "operation-database-create",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": null,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-managed-redis-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=redis",
+        "--port=63971",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:create",
+      "proof-db-redis-${proof.run}",
+      "--server=proof-managed-redis-${proof.run}",
+      "--database=0",
+      "--pattern=proof:*",
+      "--allow=get",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "server_id": "${capture.server_id}",
+    "connection_id": "${match.positive_int}",
+    "driver": "redis",
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "create",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "validate-index",
+      "job": "actions",
+      "step": "action_11_valkey_index",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "probe-acl-user",
+      "job": "actions",
+      "step": "action_12_valkey_user",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "create-acl-user",
+      "job": "actions",
+      "step": "action_13_valkey_set_user",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "save-acl",
+      "job": "actions",
+      "step": "action_14_valkey_save",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-lifecycle/parity.py",
+      "create",
+      "proof-db-redis-${proof.run}",
+      "redis",
+      "63971",
+      "${topology.app-dev.wireguard_ip}",
+      "--server=proof-managed-redis-${proof.run}",
+      "--node-id=${topology.app-dev.node_id}"
+    ],
+    "cases": [
+      "managed-connection-projected",
+      "hashed-restricted-valkey-acl",
+      "duplicate-slug-refused",
+      "in-use-server-refused-with-records-intact"
+    ]
+  }
+}
