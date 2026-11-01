@@ -166,7 +166,7 @@ The CLI follows the operation with the shared operation display. It accepts `--i
 
 The MCP tool `tasks-worker` takes the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
 
-To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling native provision ends the group `cancelled`; it does not claim VM removal. Group cancellation keeps the existing rule for an unreachable Node without a possibly running worker: end the group, keep the workspace, and request removal assistance. A worker stop must be confirmed first.
+To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling native provision ends the group `cancelled`; it does not claim VM removal. Only after the provider confirms power-off may cancellation end the group while retaining its offline workspace and requesting removal assistance. Otherwise preservation and removal must succeed. Missing or stale observations do not authorize skipping them. A worker stop must be confirmed first.
 
 #### Start a group worker
 
@@ -1142,8 +1142,8 @@ Cancel uses forced [Instance removal](/reference/instance-removal), including Pr
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
 - **VM task settling without a pull request.** The first cancel queues the push and returns `tasks.push_failed` with `Cancel again in a minute.` A later cancel finds the push done and ends the task.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
-- **Node unreachable.** Cancel ends the task and keeps its Instance attached. It requests `removal_failure` assistance with `Workspace removal failed: The Node is unreachable.`
-- **Retry after an unreachable Node.** Once the Node returns, direct cancel and the sweep push eligible approved commits before removal. A failed or pending push keeps the workspace.
+- **Confirmed VM power-off.** Cancel ends the task and keeps its Instance attached after the provider confirms power-off. It requests `removal_failure` assistance. Missing or stale Node observations do not permit this shortcut.
+- **Retry after power-off.** Once the VM is available, cancel retries preservation and removal. A failed or pending push keeps the workspace.
 - **Removal refused.** Cancel returns the error and keeps the task. The task requests `removal_failure` assistance in every status.
 
 Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
