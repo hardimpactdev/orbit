@@ -26,7 +26,7 @@ export type FootprintAction = (
 /** Closed native composition; these names select code-owned system programs, never agent commands. */
 export function footprintLocalActions(
     invoke: SystemTransport = localSystemCommand,
-    scripts?: { php: string; footprint: string },
+    scripts?: { php: string; footprint: string; preparation?: string },
 ): FootprintAction {
     const program = async (
         source: string,
@@ -67,6 +67,7 @@ export function footprintLocalActions(
                     call.input,
                     program,
                     signal,
+                    scripts?.preparation,
                 );
             case "php.configure-runtime":
                 return await php(
