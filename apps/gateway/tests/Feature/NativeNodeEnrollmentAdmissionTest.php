@@ -200,3 +200,20 @@ it('admits a provisional role with parent tools and pending target pins without 
         ->and($intent['role_bindings'][$role->value]['runtime_material']['vault'])->toBe('orbit-control-inputs')
         ->and(json_encode($intent, JSON_THROW_ON_ERROR))->not->toContain('PRIVATE KEY', 'identityContent', 'worker_token');
 })->with([RoleName::Database, RoleName::AppDev, RoleName::AppProd, RoleName::Metrics, RoleName::WebSocket]);
+
+it('captures every requested role after reserving the complete assignment set', function (): void {
+    $operation = app(AdmitNodeEnrollmentOperationAction::class)->execute(new ProvisionNodeData(
+        name: 'multi-role-enrollment', publicSshHost: '192.0.2.240', wireguardIp: '10.44.0.240',
+        roles: [RoleName::AppProd, RoleName::Metrics, RoleName::WebSocket],
+        tld: 'multi-role.test', tldProvided: true, expectedSshHostFingerprint: 'SHA256:'.str_repeat('A', 43),
+    ));
+    $node = Node::query()->where('name', 'multi-role-enrollment')->sole();
+    $intent = $operation->input['intent'];
+    expect(array_column($intent['roles'], 'role'))->toBe(['app-prod', 'metrics', 'websocket'])
+        ->and($node->roles()->where('status', LifecycleStatus::Provisioning)->count())->toBe(3)
+        ->and(array_column($intent['role_certificates']['leaves'], 'scope'))->toBe(['role-metrics', 'role-websocket'])
+        ->and($intent['tools']['javascript'])->not->toBeNull()
+        ->and($intent['roles'][1]['runtime']['fleet'])->toContainEqual(['node_id' => $node->id,
+            'agent_sha256' => $intent['roles'][1]['agent_sha256'], 'address' => '10.44.0.240',
+            'name' => $node->name, 'selected' => true, 'caddy' => false, 'fpm' => true, 'hosts' => [], 'instance_ids' => []]);
+});
