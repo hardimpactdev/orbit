@@ -69,10 +69,11 @@ it('records shared terminal output without re-reading the current render', funct
     $operation = app(NativeCaddyPublicationProjection::class)->apply($this->operation, [
         'run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
         'started_at' => '2026-10-31T13:00:00Z', 'finished_at' => '2026-10-31T13:00:01Z',
-        'result' => ['ready' => true, 'result' => 'unchanged', 'version' => str_repeat('a', 32)],
+        'result' => ['ready' => true, 'result' => 'unchanged', 'version' => str_repeat('a', 32), 'password' => 'private-caddy-result-sentinel'],
     ]);
     expect($operation->status)->toBe(OperationStatus::Succeeded)
         ->and($operation->result)->toBe(['ready' => true, 'result' => 'unchanged', 'version' => str_repeat('a', 32)])
+        ->and(json_encode($operation->fresh()->toArray(), JSON_THROW_ON_ERROR))->not->toContain('private-caddy-result-sentinel')
         ->and($this->agents->calls)->toBe([]);
 });
 
