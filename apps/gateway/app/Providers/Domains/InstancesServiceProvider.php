@@ -22,6 +22,7 @@ use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
+use App\Domain\Instances\InstanceOperationAlerts;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Instances\ProductionInstanceProvisioner;
@@ -53,11 +54,17 @@ use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
+use App\Models\Operation;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
 final class InstancesServiceProvider extends ServiceProvider
 {
+    public function boot(): void
+    {
+        Operation::updated(static fn (Operation $operation) => app(InstanceOperationAlerts::class)->changed($operation));
+    }
+
     /** @var array<class-string, class-string> */
     public array $bindings = [
         InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,
