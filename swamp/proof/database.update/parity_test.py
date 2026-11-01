@@ -124,5 +124,19 @@ class UpdateParityTest(unittest.TestCase):
             self.assertNotIn("private", str(error.exception))
 
 
+class FixtureContractTests(unittest.TestCase):
+    def test_current_fixture_contract(self):
+        for path in Path(__file__).parent.glob("*.json"):
+            with self.subTest(path=path):
+                fixture = json.loads(path.read_text())
+                self.assertEqual(fixture["topology"], ["app-dev+database"])
+                self.assertEqual(fixture["request"]["operation"], "$.id")
+                self.assertNotIn("secrets", fixture)
+                self.assertNotIn("target_setup", fixture)
+                self.assertIsNone(fixture["queue_timeout_seconds"])
+                for call in [fixture["request"], *fixture["prepare"]]:
+                    self.assertFalse(any("--password" in arg for arg in call["argv"]))
+
+
 if __name__ == "__main__":
     unittest.main()

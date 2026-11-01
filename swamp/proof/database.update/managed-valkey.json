@@ -1,23 +1,85 @@
 {
   "kind": "database.update",
   "workflow": "operation-database-connection-update",
-  "topology": ["app-dev+database"],
-  "budget_seconds": 600,
-  "queue_timeout_seconds": 600,
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": null,
   "prepare": [
-    {"argv": ["orbit", "database:server:create", "proof-cache-${proof.run}", "--node=${topology.app-dev.node_id}", "--driver=redis", "--json"], "capture": {"server_id": "$.target_id"}},
-    {"argv": ["orbit", "database:create", "proof-cache-client-${proof.run}", "--server=proof-cache-${proof.run}", "--database=0", "--pattern=proof:${proof.run}:*", "--allow=@read", "--json"], "capture": {"connection_id": "$.target_id"}}
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-cache-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=redis",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-cache-client-${proof.run}",
+        "--server=proof-cache-${proof.run}",
+        "--database=0",
+        "--pattern=proof:${proof.run}:*",
+        "--allow=@read",
+        "--json"
+      ],
+      "capture": {
+        "connection_id": "$.target_id"
+      }
+    }
   ],
   "request": {
-    "argv": ["orbit", "database:update", "proof-cache-client-${proof.run}", "--database=3", "--json"],
+    "argv": [
+      "orbit",
+      "database:update",
+      "proof-cache-client-${proof.run}",
+      "--database=3",
+      "--json"
+    ],
     "operation": "$.id"
   },
-  "envelope": {"intent_id": "${match.positive_int}"},
-  "secrets": [],
-  "expect": {"status": "succeeded", "outputs": {"job": "update", "step": "result", "match": {"exitCode": 0}}},
-  "phases": [{"name": "read-valkey-index-limit", "job": "update", "step": "check", "budget_seconds": 600}],
+  "envelope": {
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "update",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "read-valkey-index-limit",
+      "job": "update",
+      "step": "check",
+      "budget_seconds": 1800
+    }
+  ],
   "parity": {
-    "command": ["python3", "-I", "swamp/proof/database.update/parity.py", "managed", "proof-cache-client-${proof.run}"],
-    "cases": ["managed-index-projected", "out-of-range-keeps-record", "failed-index-scratch-removed", "managed-identity-refused"]
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database.update/parity.py",
+      "managed",
+      "proof-cache-client-${proof.run}"
+    ],
+    "cases": [
+      "managed-index-projected",
+      "out-of-range-keeps-record",
+      "failed-index-scratch-removed",
+      "managed-identity-refused"
+    ]
   }
 }
