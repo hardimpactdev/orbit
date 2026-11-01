@@ -1,10 +1,8 @@
 """Migrated family source must never select an effect-Node worker."""
-import shutil
 import unittest
 from pathlib import Path
 
 import yaml
-from native_harness import NativeTestCase
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = (
@@ -68,23 +66,8 @@ class MigratedWorkerRetirement(unittest.TestCase):
     def test_retired_issuer_workflows_and_proxy_behavior_are_absent(self):
         for name in ('node-proxy-workers-setup', 'node-proxy-preflight', 'node-worker-enroll', 'node-worker-rotation'):
             self.assertFalse((ROOT / 'workflows' / f'workflow-{name}.yaml').exists())
-        for name in ('proxy.ts', 'proxy-install.ts', 'proxy-runtime.ts'):
+        for name in ('proxy.ts', 'proxy-install.ts', 'proxy-runtime.ts', 'rotation.ts'):
             self.assertFalse((ROOT / 'extensions/behaviors/node-worker' / name).exists())
-
-
-class RetiredLifecycleNative(NativeTestCase):
-    def test_retired_type_cannot_create_an_enrollment_model(self):
-        source = ROOT / 'extensions/behaviors'
-        target = self.repo / 'extensions/behaviors/node-worker'
-        target.mkdir(parents=True)
-        shutil.copy(source / 'node-worker/rotation.ts', target)
-        library = self.repo / 'extensions/behaviors/operations/_lib'
-        library.mkdir(parents=True)
-        shutil.copy(source / 'operations/_lib/local-worker.ts', library)
-        result = self.cli('behavior', 'create', '@nckrtl/node-worker-lifecycle', 'retired-worker', success=False)
-        if 'auth_gate_blocked' in result.stdout + result.stderr:
-            self.skipTest('isolated native fixture needs an existing Swamp account credential')
-        self.assertIn('Unknown behavior type: @nckrtl/node-worker-lifecycle', result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,0 @@
-{
-  "kinds": [
-    "conn.gateway_sessions_revoke"
-  ],
-  "workflow": "operation-conn-direct"
-}
