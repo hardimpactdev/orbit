@@ -8,13 +8,16 @@ intent and projects the terminal result; the workflows make no Gateway callback.
 The SSH timeout and agent envelope preserve each frozen command’s existing
 execution budget.
 
-The agent source is frozen. Under the explicit Orchestrator boundary decision,
-these roots invoke existing agent commands over SSH. Settings separates account
-lookup from storage preparation. Converge separates pinned binary staging and
-installation, account lookup, captured footprint actions and non-rotating agent
-configuration. Caddy and network children reuse their native family workflows.
-The agent's existing transaction locks stay inside its commands; no new host
-lock, transport or retry mechanism is added.
+The agent source is frozen. Its existing configure command removes an installed
+per-Node worker service when the observer-only configuration omits that worker.
+Source publication performs no such action; live execution requires the owner’s
+active-work and retirement coordination. Under the explicit Orchestrator
+boundary decision, these roots invoke existing agent commands over SSH. Settings
+separates account lookup from storage preparation. Converge separates pinned
+binary staging and installation, account lookup, captured footprint actions and
+non-rotating agent configuration. Caddy and network children reuse their native
+family workflows. The agent's existing transaction locks stay inside its
+commands; no new host lock, transport or retry mechanism is added.
 
 Rekey uses the unfinished, bound Node convergence intent. `agent.configure`
 generates the secret on the Node, where it stays. Only its SHA-256 verifier is

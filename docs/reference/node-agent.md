@@ -8,6 +8,7 @@ covers:
   - apps/gateway/{app/Infrastructure/AgentCommands/**,database/migrations/2027_01_02_000000_add_agent_failed_pin_to_nodes.php}
   - apps/gateway/app/{Http/Controllers/Api/AgentRealtimeController,Actions/Gateway/BootstrapGatewayAction}.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
+  - apps/gateway/app/{Domain/Nodes/{NodeAgentRekey*,NodeConverge*,NodeSettingsProjection},Actions/Nodes/StartNodeConvergeAction,Console/Commands/RekeyNodeAgentCommand}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
