@@ -6,7 +6,6 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Models\Activity;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 
 /*
@@ -18,8 +17,6 @@ require dirname(__DIR__, 2).'/bootstrap.php';
 
 $app = require Application::inferBasePath().'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
-
-Artisan::call('migrate', ['--force' => true]);
 
 $activity = Activity::query()->create([
     'log_name' => 'commands',
