@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Facades\DB;
@@ -60,9 +61,12 @@ final readonly class UpdateDatabaseConnectionAction
             if ($nodeId === null) {
                 throw new ResourceOperationException('database.node_unavailable', 'A worker Node is required for this update.', 422);
             }
+            $node = Node::query()->findOrFail($nodeId);
+            $ssh = ['host' => $node->wireguard_ip, 'user' => $node->user,
+                'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key) ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
             $input = $validateIndex
-                ? ['validate_index' => true, 'host' => $server->node->wireguard_ip, 'port' => $server->port, 'index' => $proposed->database]
-                : ['validate_index' => false];
+                ? ['validate_index' => true, 'host' => $server->node->wireguard_ip, 'port' => $server->port, 'index' => $proposed->database, 'ssh' => $ssh]
+                : ['validate_index' => false, 'ssh' => $ssh];
 
             return $this->operations->execute('database.update', 'database_connection', $locked->id, $nodeId,
                 [], ['database-apply' => ['name' => 'database.update', 'input' => [...$input, 'password' => $validateIndex ? $server->root_password : ''], 'protected' => ['password']]],

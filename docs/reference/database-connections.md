@@ -84,6 +84,8 @@ Deletion returns `database_connection.required_by_ai_router` (409) while [AI rou
 
 A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. A connection update returns a `database.update` Operation. Proposed attributes remain encrypted until native validation succeeds; failure leaves the record unchanged. Valkey index limits are checked on the server Node.
 
+The workflow receives the captured endpoint, proposed index and SSH identity as public intent. A placed step on209 uses official SSH and the official Valkey CLI to read the server limit. Its admin password comes from a named execution copy in Swamp vaults. An update that only changes the record skips SSH and secret resolution. The shared terminal subscriber applies a successful patch once.
+
 An update to the configured cache for AI router returns `operation.kind_unavailable` until the AI-router workflow can compose native reconvergence. This also applies when the extension switch is off but configured state remains. The Gateway does not update the record and silently leave the collector with old credentials.
 
 ## Inspect a registered connection

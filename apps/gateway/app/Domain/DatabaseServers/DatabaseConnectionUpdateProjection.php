@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
@@ -25,9 +26,18 @@ final readonly class DatabaseConnectionUpdateProjection implements DirectOperati
         if ($id === null || $operation->kind !== 'database.update' || $operation->target_type !== 'database_connection') {
             throw new ResourceOperationException('database.update_intent_invalid', 'The update belongs to another Connection or Node.', 422);
         }
-        $input = DatabaseExecutionIntent::recorded($id)->payload['commands']['database-apply']['input'];
+        $intent = DatabaseExecutionIntent::recorded($id);
+        $input = $intent->payload['commands']['database-apply']['input'];
+        $copies = [];
+        if ($input['validate_index']) {
+            $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-update-intent-'.$intent->id];
+            if (! $operation->status->terminal()) {
+                $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'], json_encode(['password' => $input['password']], JSON_THROW_ON_ERROR));
+            }
+            $copies['connection_update'] = $copy;
+        }
 
-        return array_intersect_key($input, array_flip(['validate_index', 'host', 'port', 'index']));
+        return ['intent' => array_intersect_key($input, array_flip(['validate_index', 'host', 'port', 'index', 'ssh'])), 'execution_secrets' => $copies];
     }
 
     public function apply(Operation $operation, array $data): Operation

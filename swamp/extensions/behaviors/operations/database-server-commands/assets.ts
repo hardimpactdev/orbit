@@ -138,6 +138,59 @@ export const behavior = {
                 return value;
             },
         },
+        update_result: {
+            description:
+                "Shape a public index validation or record-only result",
+            arguments: z.object({
+                record_only: z.boolean(),
+                stdout: z.string(),
+                exit_code: z.number().int(),
+            }).strict(),
+            execute: async (
+                args: {
+                    record_only: boolean;
+                    stdout: string;
+                    exit_code: number;
+                },
+                ctx: Context,
+            ) => {
+                const Schema = z.union([
+                    z.object({ backend: z.literal("active") }).strict(),
+                    z.object({
+                        error_code: z.enum([
+                            "database.index_invalid",
+                            "database.server_command_failed",
+                        ]),
+                    }).strict(),
+                ]);
+                let result: z.infer<typeof Schema> = {
+                    error_code: "database.server_command_failed",
+                };
+                if (args.record_only) {
+                    result = { backend: "active" };
+                } else {
+                    try {
+                        const parsed = Schema.safeParse(
+                            JSON.parse(args.stdout),
+                        );
+                        if (
+                            parsed.success &&
+                            (args.exit_code === 0 && "backend" in parsed.data ||
+                                args.exit_code === 1 &&
+                                    "error_code" in parsed.data)
+                        ) result = parsed.data;
+                    } catch {
+                        /* Missing or malformed output is a bounded failure. */
+                    }
+                }
+                const value = {
+                    stdout: JSON.stringify(result) + "\n",
+                    exitCode: "backend" in result ? 0 : 1,
+                };
+                await ctx.writeResource("result", "result", value);
+                return value;
+            },
+        },
         plan: {
             description:
                 "Select native container replacement branches from one public observation",

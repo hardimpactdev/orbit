@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\DatabaseServers\DatabaseConnectionUpdateProjection;
 use App\Domain\Extensions\ExtensionStore;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
@@ -19,8 +20,8 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     config(['swamp.run_token' => 'fake.token']);
     $this->runId = 'e1589ed9-996b-4c9c-aa75-7749ef519210';
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-connection-update', 'runId' => $this->runId]]];
+    $socket = $this->socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => $sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-connection-update', 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->server = DatabaseServer::query()->create(['slug' => 'cache', 'driver' => 'redis', 'node_id' => $this->node->id, 'port' => 6379, 'tag' => '8.1', 'root_password' => 'private-admin-sentinel', 'status' => 'active']);
     $this->connection = DatabaseConnection::query()->create(['slug' => 'cache-client', 'driver' => 'redis', 'database_server_id' => $this->server->id, 'node_id' => $this->node->id, 'host' => $this->node->wireguard_ip, 'port' => 6379, 'database' => '0', 'username' => 'cache', 'password' => 'private-client-sentinel']);
@@ -31,14 +32,20 @@ function update_callback(string $runId, string $status, array $result = []): arr
     return ['run_id' => $runId, 'status' => $status, 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => $result, 'error_code' => $result['error_code'] ?? null];
 }
 
-it('records an update without mutating the connection and exposes only declared root material', function (): void {
+it('records an update without mutating the connection and starts full public inputs with a named execution copy', function (): void {
     $response = $this->patchJson('/api/v1/database-connections/cache-client', ['database' => '3'])->assertAccepted()->assertJsonPath('data.kind', 'database.update');
     $operation = Operation::query()->findOrFail($response->json('data.id'));
     expect($operation->node_id)->toBe($this->node->id)->and($this->connection->fresh()->database)->toBe('0');
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.index', '3')->assertDontSee('private-admin-sentinel')->assertDontSee('private-client-sentinel');
-    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertJsonPath('data.password', 'private-admin-sentinel')->assertDontSee('private-client-sentinel');
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.index', '3')->assertDontSee('private-admin-sentinel')->assertDontSee('private-client-sentinel');
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $copy = collect($this->socket->sent)->firstWhere('type', 'vault.put');
+    expect($copy['payload']['key'])->toBe('database-update-intent-'.$operation->input['intent_id']);
+    expect(json_decode($copy['payload']['value'], true))->toBe(['password' => 'private-admin-sentinel']);
+    $start = collect($this->socket->sent)->firstWhere('type', 'workflow.run');
+    expect($start['payload']['inputs']['intent'])->toMatchArray(['validate_index' => true, 'host' => $this->node->wireguard_ip, 'port' => 6379, 'index' => '3', 'ssh' => ['host' => $this->node->wireguard_ip, 'user' => 'orbit', 'host_keys' => []]]);
+    expect(json_encode($start))->not->toContain('private-admin-sentinel', 'private-client-sentinel');
     $this->postJson($path.'/result', update_callback($this->runId, 'succeeded', ['backend' => 'active', 'password' => 'discarded-native-secret']))->assertOk()->assertDontSee('discarded-native-secret');
     expect($this->connection->fresh()->database)->toBe('3')->and($operation->fresh()->result)->toBe(['backend' => 'active']);
 });
@@ -57,7 +64,10 @@ it('keeps proposed passwords encrypted and projects immutable record-only update
     $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
     expect($intent->getRawOriginal('payload'))->not->toContain('proposed-private-sentinel')->and($connection->fresh()->password)->toBe('old-private');
     $path = '/api/v1/direct-operations/'.$id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['validate_index' => false])->assertDontSee('proposed-private-sentinel');
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.validate_index', false)->assertDontSee('proposed-private-sentinel');
+    expect(collect($this->socket->sent)->where('type', 'vault.put'))->toHaveCount(0);
+    $start = collect($this->socket->sent)->firstWhere('type', 'workflow.run');
+    expect(json_encode($start['payload']['inputs']['execution_secrets']))->toBe('{}');
     $this->postJson($path.'/result', update_callback($this->runId, 'succeeded', ['backend' => 'active']))->assertOk();
     expect($connection->fresh()->password)->toBe('proposed-private-sentinel')->and($connection->fresh()->host)->toBe('192.0.2.81');
     $connection->update(['host' => '192.0.2.82']);
@@ -96,4 +106,17 @@ it('preserves disjoint patches when two admitted updates finish in sequence', fu
     }
 
     expect($connection->refresh()->host)->toBe('192.0.2.81')->and($connection->username)->toBe('updated');
+});
+
+it('retains the admitted SSH identity and does not synchronize a finished intent', function (): void {
+    $id = $this->patchJson('/api/v1/database-connections/cache-client', ['database' => '3'])->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    $this->node->update(['user' => 'later_account']);
+    $view = app(DatabaseConnectionUpdateProjection::class)->input($operation);
+    expect($view['intent']['ssh']['user'])->toBe('orbit');
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->postJson('/api/v1/direct-operations/'.$id.'/result', update_callback($this->runId, 'succeeded', ['backend' => 'active']))->assertOk();
+    $before = count($this->socket->sent);
+    app(DatabaseConnectionUpdateProjection::class)->input($operation->fresh());
+    expect(count($this->socket->sent))->toBe($before);
 });
