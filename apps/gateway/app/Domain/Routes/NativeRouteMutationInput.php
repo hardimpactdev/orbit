@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Analytics\AnalyticsRoutePlan;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -33,7 +34,7 @@ final readonly class NativeRouteMutationInput
      * @return array{route_mutations:array<string,mixed>,participant_node_ids:list<int>,certificates:list<array<string,mixed>>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
     public function capture(array $previous, array $desired, array $staged, array $forwardPrior,
-        Collection $beforeSites, Collection $candidateSites, array $extraNodeIds, Closure $render): array
+        Collection $beforeSites, Collection $candidateSites, array $extraNodeIds, Closure $render, ?NodeEnrollmentCandidate $enrollment = null): array
     {
         $domains = array_values(array_unique([...array_column($previous, 'domain'), ...array_column($desired, 'domain')]));
         $addressNodes = $candidateSites->filter(static fn (DevelopmentSite $site): bool => $beforeSites->first(static fn (DevelopmentSite $before): bool => $before->addressKey() === $site->addressKey()) != $site)->pluck('nodeId')->all();
@@ -62,7 +63,9 @@ final readonly class NativeRouteMutationInput
             $node = Node::query()->findOrFail($nodeId);
             $before = app(NativeRoutePublicationInput::class)->snapshot($node, $beforeSites);
             $forward = $render(fn (): array => [
-                ...app(NativeCaddyPublicationInput::class)->connectionForNode($node),
+                ...($enrollment?->nodeId === $nodeId
+                    ? app(NativeCaddyPublicationInput::class)->connectionForCandidate($node, $enrollment)
+                    : app(NativeCaddyPublicationInput::class)->connectionForNode($node)),
                 'prepared' => app(NativeRoutePublicationInput::class)->snapshot($node, $preparedSites),
                 'withdrawn' => app(NativeRoutePublicationInput::class)->snapshot($node, $withdrawnSites),
                 'after' => app(NativeRoutePublicationInput::class)->snapshot($node, $afterSites),
@@ -70,8 +73,10 @@ final readonly class NativeRouteMutationInput
             $participants[] = ValidatedData::integer($forward['control_node_id']);
             $serves = in_array($nodeId, $addressNodes, true) || $beforeSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))
                 || $afterSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true));
-            $publications[] = ['index' => $index, 'node_id' => $nodeId, 'user' => $node->user, 'serves_routes' => $serves,
-                ...$forward, 'before' => $before, 'restore_connection' => app(NativeCaddyPublicationInput::class)->connectionForNode($node)['connection']];
+            $restoreConnection = $forward['host_keys'] === null ? $forward['connection']
+                : app(NativeCaddyPublicationInput::class)->connectionForNode($node)['connection'];
+            $publications[] = ['index' => $index, 'node_id' => $nodeId, 'user' => ValidatedData::string(ValidatedData::object($forward['connection'])['nodeUser']), 'serves_routes' => $serves,
+                ...$forward, 'before' => $before, 'restore_connection' => $restoreConnection];
         }
         $captureId = bin2hex(random_bytes(8));
         $secrets = [];
@@ -102,7 +107,8 @@ final readonly class NativeRouteMutationInput
         foreach ($nodeIds as $nodeId) {
             $node = Node::query()->findOrFail($nodeId);
             $prior = $lanPolicy->forSites($node, $beforeSites);
-            $desired = $lanPolicy->forSites($node, $afterSites);
+            $desired = $enrollment === null ? $lanPolicy->forSites($node, $afterSites)
+                : app(RouteRenderContext::class)->renderEnrollment($enrollment, fn (): array => $lanPolicy->forSites($node, $afterSites));
             $union = array_values(array_unique([...$prior, ...$desired], SORT_REGULAR));
             if ($union === []) {
                 continue;
@@ -179,6 +185,7 @@ final readonly class NativeRouteMutationInput
         $publications = array_map(static function (array $row) use ($mode): array {
             if ($mode === 'restore') {
                 $row['connection'] = $row['restore_connection'];
+                $row['user'] = ValidatedData::string(ValidatedData::object($row['restore_connection'])['nodeUser']);
             }
             unset($row['restore_connection']);
 
