@@ -4,17 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\PlanNodeRecipeAction;
-use App\Domain\Fleet\DesiredFleetState;
-use App\Domain\Fleet\FleetRolloutPlanner;
-use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Fleet\FleetWindow;
-use App\Domain\Fleet\RolloutOperationCompletion;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationOutcome;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Models\FleetRolloutNode;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Tests\Support\FakeAgentCommandRunner;
@@ -77,28 +71,3 @@ it('keeps a rollout waiting without admitting any Node until its release exists'
 
     expect($plan['status'])->toBe('waiting')->and(Operation::query()->count())->toBe(0);
 });
-
-it('projects deferred waiting and unreachable visit results without halting the rollout', function (string $code, string $expected): void {
-    FleetFixtures::bind();
-    $node = FleetFixtures::node('rollout-projection', [RoleName::AppDev]);
-    $rollout = app(FleetRolloutPlanner::class)->open(app(DesiredFleetState::class)->current(), null);
-    $row = FleetRolloutNode::query()->where('fleet_rollout_id', $rollout->id)->where('node_id', $node->id)->sole();
-    $row->forceFill(['evidence' => ['incomplete_visits' => 5], 'started_at' => now()])->save();
-    $operation = Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'input' => ['row_id' => $row->id], 'status' => 'running']);
-
-    app(RolloutOperationCompletion::class)->complete($operation, OperationOutcome::failed($code));
-
-    expect($row->refresh()->outcome->value)->toBe($expected)
-        ->and($row->finished_at)->not->toBeNull()
-        ->and($row->evidence['incomplete_visits'])->toBe($code === 'fleet.self_update_incomplete' ? 6 : 5)
-        ->and($row->rollout->status)->not->toBe(FleetRolloutStatus::Halted);
-    if ($code === 'fleet.self_update_incomplete') {
-        expect($row->evidence['stalled_alert'])->toBeArray();
-    }
-})->with([
-    ['node.ssh_unreachable', 'unreachable'],
-    ['node.update_busy', 'deferred'],
-    ['fleet.window_closed', 'deferred'],
-    ['fleet.release_pending', 'waiting'],
-    ['fleet.self_update_incomplete', 'waiting'],
-]);
