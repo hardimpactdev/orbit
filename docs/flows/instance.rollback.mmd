@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, single-swamp-node (@swamp/ssh from 209), F9 rollback phases; DECISIONS round 2 (port with deploy, fix php_input/runtime_definitions, admit instead of refuse) + R4.
+  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS 4 / R1-R4 (process.stop shape), round 2 (admit instead of refuse; php_input and runtime_definitions as inputs), 3 (rollback removes the auto-deploy schedule); rule 7 (reload over restart, restart_on_deploy only). docs/reference/deployments.md#roll-back.
   %% status: draft
+  %% command: instance:rollback
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -9,26 +10,115 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as app-prod Node<br/>reached over ssh
-  CLI->>GW: instance:rollback<br/>{instance: 42, release: r12}
-  Note over GW: Check release, admit it<br/>lock Instance, task #5133
+  participant N as app-prod Node<br/>Node 12 over ssh
+  CLI->>GW: instance:rollback 42<br/>--release=20261030T101500Z
+  %%> Command:
+  %%> - `orbit instance:rollback 42 --release=20261030T101500Z`
+  %%> - syntax: `<instance> --release=NAME [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Instance, and one retained release name from `instance:release:list 42`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Check release, admit<br/>Instance 42 locked · task #5151
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Instance 42 is a production Instance; else `deployment_config.unavailable`
+  %%> - Instance 42 retains release `20261030T101500Z`; else `rollback.release_not_retained` and nothing changes
+  %%> - no started operation holds Instance 42; else `operation.target_busy`
+  %%> Wins over:
+  %%> - a deploy that no worker has started; it ends `cancelled` with `operation.superseded`
+  %%> Freezes:
+  %%> - `php_input`: the PHP runtime and pool of Instance 42
+  %%> - `runtime_definitions`: its Process and Schedule definitions
+  %%> - the account `orbit-app-7` and its home
+  %%> Result:
+  %%> - deployment 89 recorded as a running rollback; task #5151 recorded with the full intent
+  %%> - automatic deployment pauses, and its schedule is removed
   GW->>SW: Start run, full intent<br/>php_input, runtime_definitions
-  GW-->>CLI: 202 Accepted<br/>operation #5133
-  SW->>N: Read current and target<br/>@swamp/ssh · target must exist
-  SW->>N: Switch current release<br/>atomic swap, receipt must match
-  opt Instance has PHP
-    SW->>N: Refresh PHP-FPM<br/>converge, OPcache reset in 30 s
+  %%> What it does:
+  %%> - starts one run of `operation-instance-rollback` on Swamp serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the release name, `php_input` and `runtime_definitions`
+  %%> Not included:
+  %%> - no GitHub token and no `.env`: a rollback fetches nothing and writes no environment
+  %%> Budget:
+  %%> - 900 s
+  GW-->>CLI: 202 Accepted<br/>task #5151
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task until it ends
+  SW->>N: Find retained release<br/>@swamp/ssh · read only
+  %%> How:
+  %%> - Swamp reaches Node 12 over `@swamp/ssh` from 209, with `command/shell` steps
+  %%> What it does:
+  %%> - reads the current selection
+  %%> - checks again that the release exists under `releases/`, records this repository, and keeps its web root inside it
+  %%> Why again:
+  %%> - a deploy's cleanup can remove the release after the request; then `rollback.release_invalid`
+  SW->>N: Activate release<br/>atomic swap of current
+  %%> What it does:
+  %%> - checks each served web root and its `.env` links in the release, and adds a missing link
+  %%> - replaces the `current` link with one atomic rename
+  %%> Cancel:
+  %%> - a cancel before this step stops the rollback; after it, the rollback finishes
+  opt Instance serves PHP
+    SW->>N: Refresh PHP cache<br/>FPM graceful reload · OPcache
+    %%> What it does:
+    %%> - converges the dedicated PHP-FPM pool from `php_input`
+    %%> - reloads it gracefully, so running requests finish; then resets OPcache and waits for it
+    %%> When a restart is needed:
+    %%> - only when the pool's runtime itself differs, such as the PHP version
   end
-  SW->>N: Restart Processes<br/>restart_on_deploy only
-  alt all steps succeed
-    SW-->>GW: Run succeeded<br/>selected release, commit
-    Note over GW: Record rollback deploy<br/>block old commits, pause auto
+  SW->>N: Restart Processes<br/>restart_on_deploy · reload first
+  %%> What it does:
+  %%> - installs `runtime_definitions`, in the `process.create` and `schedule.create` shape
+  %%> - for each running Process with `restart_on_deploy`: reload when the Process allows it, else restart
+  %%> Not included:
+  %%> - Processes without `restart_on_deploy`, and stopped Processes, stay as they are
+  %%> - no deploy step, no Git fetch, no database change
+  SW->>N: Check the selection<br/>current → target · Processes up
+  %%> What it does:
+  %%> - reads `current` back and checks it selects `20261030T101500Z`
+  %%> - checks that each restarted Process is active
+  alt all steps pass
+    N-->>SW: release, commit
+    %%> Returns:
+    %%> - the selected release, its commit, and the restarted Processes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the rollback<br/>block old commit · task succeeded
+    %%> Result:
+    %%> - deployment 89 succeeds with the release and its commit
+    %%> - the commit it moved away from is blocked for automatic deploys
+    %%> - automatic deployment stays paused until `instance:update 42 --auto-deploy=true`
+    %%> - task #5151 succeeds
   else a step fails
     N--xSW: exit ≠ 0 or timeout
-    SW--xGW: Run failed<br/>failed_step, read-back selection
-    Note over GW: Record failed rollback<br/>block commits, pause auto
+    %%> When:
+    %%> - the release is gone, a check or reload fails, SSH fails, or 900 s run out
+    SW--xGW: Run failed<br/>failed_step, selected release
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    %%> - which release `current` selects now
+    Note over GW: Record failed rollback<br/>selection kept · task failed
+    %%> Result:
+    %%> - deployment 89 is marked failed; task #5151 fails
+    %%> - the old commit is still blocked, and automatic deployment stays paused
+    %%> On the Node:
+    %%> - a failure before activation keeps the old selection
+    %%> - a failure after it keeps the rollback release selected
+    %%> - Orbit restores no data; you own application recovery
+    %%> Retry:
+    %%> - run the same command again after a fix; it is a new task and safe to repeat
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5133
+    CLI->>GW: operation:show #5151
+    %%> What it does:
+    %%> - asks for the task's status until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
