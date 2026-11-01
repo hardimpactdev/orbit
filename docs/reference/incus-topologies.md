@@ -110,7 +110,7 @@ Until native Gateway bootstrap supplies a CA, acquisition creates a disposable R
 
 Composition prepares Swamp beside the test Gateway, with its own data and credentials. Preparation installs assets and settings without starting services. The explicit start stage starts serve and its worker and waits for readiness. It reads the runtime version and checksum from `swamp/extensions/behaviors/node-worker/config.ts`, installs the official binary and the official extensions pinned in `swamp/extensions/models/upstream_extensions.json`, and loads the mounted worktree's definitions into a private sandbox at `/home/orbit/.orbit/swamp/repository`.
 
-That lock is the only pin source; the loaded copy replaces what native pulls write. Serve starts with `--club-api-key-file`, and CLI calls read `SWAMP_API_KEY_FILE`. The worker enrolls as `orbit-node-209` with `node=209`; workflows keep their normal placement and use official SSH to reach the topology Nodes. Swamp starts before `gateway:release:adopt`, whose Caddy handoff runs on it. The datastore, local-encryption vaults, tokens, TLS certificate and SSH identity belong only to that topology.
+That lock is the only pin source; the loaded copy replaces what native pulls write. Serve starts with `--club-api-key-file`, and CLI calls read `SWAMP_API_KEY_FILE`. The worker enrolls as `orbit-node-209` with `node=209`; workflows keep their normal placement and use official SSH to reach the topology Nodes. Swamp starts before the mounted Gateway services are configured. The datastore, local-encryption vaults, tokens, TLS certificate and SSH identity belong only to that topology.
 
 Set `ORBIT_E2E_SWAMP_CLUB_TOKEN_FILE` to an owned mode-0600 file containing the sandbox collective token. The harness sends its contents only on guest-exec stdin. It never stores the token in topology state or evidence. A missing file refuses acquisition with `e2e.swamp_club_credential_missing`; an unsafe file refuses with `e2e.swamp_club_credential_invalid`. Do not use a production credential.
 
@@ -124,7 +124,7 @@ Read native history through the existing harness, replacing `RUN_ID` with the ad
 bin/e2e-topology exec TASK-58 gateway --argv='["env","SWAMP_HOME=/home/orbit/.orbit/swamp/home","SWAMP_CONFIG_DIR=/home/orbit/.orbit/swamp/config","swamp","workflow","history","get","RUN_ID","--repo-dir","/home/orbit/.orbit/swamp/repository","--server","wss://localhost:19470","--token-file","/home/orbit/.orbit/swamp/credentials/operator","--ca-cert","/home/orbit/.orbit/swamp/tls/cert.pem","--json"]'
 ```
 
-The mounted PR source stays at `/home/orbit/orbit`. The topology Gateway uses a separate release layout at `/home/orbit/runtime/current/apps/gateway`. Acquisition migrates its fresh database, seeds fixture records, and installs the PR through the existing release runner. Seeded active Node and role records describe fixture intent; the readiness probes must prove their actual services. The harness does not call `orbit:bootstrap`.
+The disposable topology Gateway runs from `/home/orbit/orbit/apps/gateway`. After migrations and fixture seeding, the harness uses the canonical Gateway certificate, checkout access, PHP-FPM, and Node Caddy renderers to start its services. The release runner is not part of this installation. The read-only native preparation inspection of a fresh local commit refused with `gateway.release_layout_missing` because the shared release repository and environment did not exist. Proof receipts record `gateway_install: mounted_source` and `release_runner_exercised: false`. No production GitHub App credential is supplied.
 
 Before the first migration, `converge-gateway.sh prerequisites` checks that Caddy and dnsmasq are installed. A missing package refuses with `e2e.gateway_prerequisite_missing` and names it. Add missing prerequisites to the base image recipe; the harness does not install them during acquisition. Every topology Node, including the Gateway, remains a VM copy of `node-template`.
 
@@ -140,8 +140,10 @@ Every Node keeps the template's root disk, which has the size of the base image'
 | --- | --- |
 | `reserve` | Under the host lock `topology-create`, counts the declared VMs against the budget, picks a network slot, creates the network, and [creates every guest](#create-the-guests) |
 | `start` | Starts every guest and waits for its agent and its address. VMs also wait for cloud-init and a stable boot ID before composition. |
-| `bootstrap.gateway` | Prepares the worktree's Gateway `.env`, runs the Gateway and VPN programs, then runs `orbit:bootstrap` at the Gateway's address |
-| `enroll.<node>` | Enrolls each workload Node in catalog order with `orbit:node-provision`, through the guest script `converge-node.sh` |
+| `prepare.gateway` | Prepares the mounted Gateway environment, migrates the fresh database, and creates its disposable CA |
+| `fixture.enrollment` | Seeds the topology records from observed public identities, then configures fixture WG and trust |
+| `start.swamp` | Starts the topology serve and worker |
+| `configure.gateway` | Configures Gateway services from the mounted PR using canonical certificate, checkout, FPM and Caddy components |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
 | `roles.<node>` | From the operator, uses `orbit cluster:router:set <cluster> <node> --json` for a declared Router, and `orbit node:role:add <node> <role> --json` for other extra roles. These commands follow their Operation to terminal. `ingress` first puts the Node in its own Cluster. |
 | `readiness` | Runs the readiness probes |
@@ -156,9 +158,7 @@ Every Node keeps the template's root disk, which has the size of the base image'
 
 A copy can override only the devices of the template, which has its root disk and nothing else, so the NIC and the mount are added after the copy.
 
-`bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env`, writes the Gateway encryption key to the guest's `/home/orbit/.orbit/gateway.app-key` with `bin/gateway-app-key` when it is absent, and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
-
-For each workload Node, `enroll.<node>` authorizes the Gateway SSH key and reads the Node's host key. It passes the Node's roles, WireGuard address, and host key fingerprint to `orbit:node-provision`. Enrollment is serial, because it writes the Gateway's SQLite store.
+`prepare.gateway` writes the mounted Gateway path into its `.env`, creates its encryption key with `bin/gateway-app-key`, and applies migrations. Fixture enrollment creates the VM-local CA and WG configuration described above.
 
 An `ingress` entry needs Cluster membership, and a Cluster holds one ingress Node. So the operator creates the Cluster `e2e-<node>` for that Node and adds the Node to it before it adds the role.
 

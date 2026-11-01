@@ -187,80 +187,28 @@ describe('Gateway convergence', function () {
             ]);
     });
 
-    it('adopts the captured full commit through the normal runner without replacing the mount', function () {
+    it('configures the mounted Gateway without invoking a release runner', function (): void {
         $fixture = guestScriptFixture('converge-gateway.sh', [
             'sudo' => GUEST_SUDO_STUB,
-            'php' => <<<'BASH'
-                printf '%s %s %s\n' "$PWD" "$ORBIT_GATEWAY_CHECKOUT" "$*" >> '__ROOT__/commands'
-                [[ "$*" != *gateway:release:prepare* || -z "${PREPARE_FAIL:-}" ]]
-                BASH,
+            'php' => 'printf "%s %s %s\\n" "$PWD" "$ORBIT_GATEWAY_CHECKOUT" "$*" >> "__ROOT__/commands"; printf "fixture caddy\\n"',
+            'mktemp' => '/usr/bin/mktemp "__ROOT__/caddy.XXXXXX"',
+            'caddy' => 'printf "caddy %s\\n" "$*" >> "__ROOT__/commands"; exit "${CADDY_EXIT:-0}"',
+            'install' => 'printf "install %s\\n" "$*" >> "__ROOT__/commands"',
+            'systemctl' => 'printf "systemctl %s\\n" "$*" >> "__ROOT__/commands"',
         ]);
-        mkdir("{$fixture['home']}/runtime/current/apps/gateway", 0700, true);
-        $sha = str_repeat('b', 40);
 
-        expect(runGuestScript($fixture, ['adopt', $sha])->getExitCode())->toBe(0)
-            ->and(commandLog($fixture))->toBe([
-                "{$fixture['home']}/runtime/current/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:adopt --commit={$sha} --no-interaction",
-            ])
-            ->and(is_link($fixture['home'].'/orbit'))->toBeFalse();
-    });
-
-    it('checks out the committed runtime from a private bundle and copies dependencies without replacing mounted source', function (): void {
-        $fixture = guestScriptFixture('converge-gateway.sh', [
-            'sudo' => GUEST_SUDO_STUB,
-            'chown' => 'exit 0',
-            'install' => 'mkdir -p "${@: -1}"',
-        ]);
-        $checkout = $fixture['home'].'/orbit';
-        foreach (['apps/gateway', 'apps/cli', 'packages/php-sdk'] as $project) {
-            mkdir($checkout.'/'.$project.'/vendor', 0700, true);
-            file_put_contents($checkout.'/'.$project.'/vendor/autoload.php', '<?php // '.$project);
-            file_put_contents($checkout.'/'.$project.'/source.php', '<?php // committed source');
-        }
-        file_put_contents($checkout.'/.gitignore', "vendor/\n.env\n");
-        file_put_contents($checkout.'/apps/gateway/.env', "ORBIT_HOME=/home/orbit/.orbit\nORBIT_GATEWAY_CHECKOUT=/old/checkout\n");
-        foreach ([['init', '-q', '-b', 'fixture'], ['add', '.'], ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@invalid', 'commit', '-qm', 'Fixture']] as $argv) {
-            (new Process(['git', '-C', $checkout, ...$argv]))->mustRun();
-        }
-        $head = new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']);
-        $head->mustRun();
-        $sha = trim($head->getOutput());
-        (new Process(['git', '-C', $checkout, 'bundle', 'create', $fixture['state'].'/gateway-source.bundle', 'HEAD']))->mustRun();
-
-        $result = runGuestScript($fixture, ['runtime', $sha]);
+        $result = runGuestScript($fixture, ['configure-mounted']);
 
         expect($result->getExitCode())->toBe(0, $result->getErrorOutput())
-            ->and(is_dir($fixture['home'].'/runtime/current/.git'))->toBeTrue()
-            ->and(is_link($checkout))->toBeFalse()
-            ->and(file_exists($fixture['state'].'/gateway-source.bundle'))->toBeFalse()
-            ->and(file_get_contents($checkout.'/apps/gateway/.env'))->toContain('ORBIT_GATEWAY_CHECKOUT=/old/checkout');
-        $runtimeHead = new Process(['git', '-C', $fixture['home'].'/runtime/current', 'rev-parse', 'HEAD']);
-        $runtimeHead->mustRun();
-        expect(trim($runtimeHead->getOutput()))->toBe($sha)
-            ->and(file_get_contents($fixture['home'].'/runtime/current/apps/gateway/.env'))->toContain('ORBIT_GATEWAY_CHECKOUT='.$fixture['home'].'/runtime/current/apps/gateway')
-            ->not->toContain('/old/checkout');
-        foreach (['apps/gateway', 'apps/cli', 'packages/php-sdk'] as $project) {
-            expect(file_get_contents($fixture['home'].'/runtime/current/'.$project.'/vendor/autoload.php'))->toBe('<?php // '.$project);
-        }
+            ->and(json_decode($result->getOutput(), true))->toBe(['gateway_install' => 'mounted_source', 'release_runner_exercised' => false])
+            ->and(commandLog($fixture)[0])->toBe("{$fixture['home']}/orbit/apps/gateway {$fixture['home']}/orbit/apps/gateway /usr/local/bin/topology-gateway-services.php")
+            ->and(implode("\n", commandLog($fixture)))->not->toContain('gateway:release:', 'runtime/current')
+            ->and(array_slice(commandLog($fixture), -2))->toBe(['systemctl enable --now php8.5-fpm caddy', 'systemctl reload caddy']);
+
+        $failed = runGuestScript($fixture, ['configure-mounted'], ['CADDY_EXIT' => '1']);
+        expect($failed->getExitCode())->toBe(1)
+            ->and($failed->getOutput())->toBe('');
     });
-
-    it('propagates normal adoption refusal without configuring services', function () {
-        $fixture = guestScriptFixture('converge-gateway.sh', [
-            'sudo' => GUEST_SUDO_STUB,
-            'php' => "printf '%s\\n' \"\$*\" >> '__ROOT__/commands'\nexit 1",
-        ]);
-        mkdir("{$fixture['home']}/runtime/current/apps/gateway", 0700, true);
-        $sha = str_repeat('c', 40);
-
-        expect(runGuestScript($fixture, ['adopt', $sha])->getExitCode())->toBe(1)
-            ->and(commandLog($fixture))->toBe(["artisan gateway:release:adopt --commit={$sha} --no-interaction"]);
-    });
-
-    it('refuses an uncaptured release revision before invoking the runner', function (string $revision) {
-        $fixture = guestScriptFixture('converge-gateway.sh', ['sudo' => GUEST_SUDO_STUB, 'php' => 'exit 99']);
-
-        expect(runGuestScript($fixture, ['adopt', $revision])->getExitCode())->toBe(64);
-    })->with(['main', 'abcd1234', str_repeat('A', 40), str_repeat('a', 39)]);
 
     it('keeps every guest script valid Bash', function () {
         $resources = dirname(__DIR__, 3).'/resources';
