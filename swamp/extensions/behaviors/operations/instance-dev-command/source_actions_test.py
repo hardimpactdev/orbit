@@ -2,11 +2,12 @@
 import importlib.util
 import json
 import os
-from pathlib import Path
 import pwd
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 HERE = Path(__file__).parent
 
@@ -47,7 +48,7 @@ class SourceActions(unittest.TestCase):
         return {'source_identity': str(info.st_dev)+':'+str(info.st_ino), 'source_digest': 'a'*64, 'source_commit': self.commit, 'common_repository_path': str(self.path)}
 
     def value(self):
-        return {'member': self.member, 'capture': self.capture(), 'force': False, 'removal_id': '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6'}
+        return {'member': self.member, 'capture': self.capture(), 'admitted_paths': [str(self.path)], 'force': False, 'removal_id': '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6'}
 
     def test_clean_published_checkout_verifies_and_finalizes(self):
         value = self.value()
@@ -66,6 +67,27 @@ class SourceActions(unittest.TestCase):
         self.git('commit', '-qam', 'unpublished')
         self.commit = self.git('rev-parse', 'HEAD').strip()
         with self.assertRaises(ValueError): self.verify(self.value())
+
+    def test_git_fetch_refuses_configured_transport_command_with_private_token(self):
+        marker = self.root/'credential-observed'
+        shim = self.root/'ssh-probe.py'
+        shim.write_text('from pathlib import Path\nPath(' + repr(str(marker)) + ').write_text("ran")\n')
+        self.git('config','url.ssh://fixture.invalid/.insteadOf','https://github.com/')
+        self.git('config','core.sshCommand',sys.executable+' '+str(shim))
+        script = Path(__file__).parent.parent/'instance-source-command/scripts/fetch.py'
+        answer = subprocess.run([sys.executable,str(script),str(self.path),'https://github.com/example/project.git'],input=json.dumps({'github_token':'FAKE_NOT_A_CREDENTIAL'}),text=True,capture_output=True,check=False)
+        self.assertNotEqual(answer.returncode,0)
+        self.assertFalse(marker.exists())
+        self.assertNotIn('FAKE_NOT_A_CREDENTIAL',answer.stdout+answer.stderr)
+
+    def test_new_unadmitted_worktree_refuses_before_common_repository_removal(self):
+        value = self.value()
+        survivor = self.path.with_name('unadmitted')
+        self.git('worktree', 'add', '--detach', str(survivor), self.commit)
+        with self.assertRaises(ValueError):
+            self.verify(value)
+        self.assertTrue((survivor/'tracked').is_file())
+        self.assertTrue((self.path/'.git').is_dir())
 
     def test_replaced_inode_is_refused_even_when_forced(self):
         value = self.value()
@@ -112,6 +134,14 @@ class SourceActions(unittest.TestCase):
         self.path.rename(quarantine)
         self.assertTrue(self.finalize(value)['ready'])
         self.assertFalse(quarantine.exists())
+
+    def test_retained_capture_verifies_after_owned_quarantine(self):
+        value = self.value()
+        receipt = self.root / ('.orbit-removal-'+value['removal_id']+'-17.json')
+        receipt.write_text(json.dumps({'instance_id':17,'removal_id':value['removal_id'],'source_digest':'a'*64,'identity':value['capture']['source_identity']}))
+        self.path.rename(self.path.with_name(self.path.name+'.orbit-removing-'+value['removal_id']))
+        self.assertTrue(self.verify(value)['ready'])
+        self.assertTrue(self.finalize(value)['ready'])
 
     def test_foreign_quarantine_is_not_deleted(self):
         value = self.value()

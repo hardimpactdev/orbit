@@ -19,7 +19,9 @@ def publish(value):
     descriptor, temporary = tempfile.mkstemp(prefix='.env.orbit-', dir=directory)
     try:
         with os.fdopen(descriptor, 'wb') as stream:
-            stream.write(content); stream.flush(); os.fsync(stream.fileno())
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
         os.chmod(temporary, 0o600)
         os.replace(temporary, target)
     finally:

@@ -4,9 +4,22 @@ export const Step = z.object({ status: z.string(), outputs: Public.optional() })
     .passthrough();
 type Steps = Record<string, z.infer<typeof Step>>;
 export function createResult(intent: Record<string, unknown>, steps: Steps) {
+    if (intent.already_active === true) {
+        return {
+            ready: true,
+            stdout: JSON.stringify({
+                ready: true,
+                instance_id: intent.instance_id,
+                already_active: true,
+            }),
+        };
+    }
     const success = (name: string) => steps[name]?.status === "succeeded";
     const source = success("source-result")
         ? steps["source-result"].outputs
+        : undefined;
+    const seeded = success("env-capture")
+        ? steps["env-capture"].outputs
         : undefined;
     const environment = success("env-write") && success("env-capture")
         ? steps["env-capture"].outputs
@@ -26,13 +39,14 @@ export function createResult(intent: Record<string, unknown>, steps: Steps) {
     const commands = z.array(Public).parse(intent.setup_commands);
     if (
         !failure &&
-        commands.some((_, index) => !success("finish-setup-" + index))
+        commands.some((_, index) => !success("finish-setup-" + index + "-0"))
     ) failure = "setup";
     const result = {
         instance_id: intent.instance_id,
         ready: failure === undefined,
         name_converted_from: intent.name_converted_from ?? null,
         ...(source ? { source } : {}),
+        ...(seeded ? { environment_seeded_keys: seeded.keys } : {}),
         ...(environment ? { environment_keys: environment.keys } : {}),
         ...(requirements && success("vp-result") &&
                 steps["vp-result"].outputs?.ready === true

@@ -1,12 +1,12 @@
 """Real e459 graph and official SSH methods, confined to a disposable local binary seam."""
 import json
 import os
-from pathlib import Path
 import pwd
 import shutil
 import subprocess
 import sys
 import unittest
+
 import yaml
 from native_harness import ROOT, NativeTestCase
 
@@ -57,7 +57,7 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.cli('vault','put','orbit-control-inputs','environment',json.dumps({'values':{'STORED':'stored-private-sentinel'},'name':'Fixture','framework_key':None}))
         self.cli('vault','put','orbit-control-inputs','git',json.dumps({'github_token':None}))
         ssh = {'identity_file':str(self.identity),'target':{'host':'node.invalid','port':22,'user':pwd.getpwuid(os.geteuid()).pw_name,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
-        self.input = {'operation_id':71,'node_id':9,'kind':'instance.create','execution_secrets':{'environment':{'vault':'orbit-control-inputs','key':'environment'},'git_read':{'vault':'orbit-control-inputs','key':'git'}},'intent':{'instance_id':17,'instance_name':'proof','ssh_execution':ssh,'source':{'root':str(self.host/'apps'),'checkout':str(self.application),'user':ssh['target']['user'],'repository':'https://github.com/example/project.git','prepare_id':'admitted-prepare','seed_repository':None},'resolve':{'instance_name':'proof','default_branch':'main','branch_override':'main','seed_commit':None,'network':True,'protocols':['https']},'checkout':str(self.application),'application':str(self.application),'project_type':'node-package','entry_point':'artisan','php_versions':['8.4'],'skip_profile':False,'retained_source':{'branch':'main','commit':commit,'php_version':None,'laravel':False},'setup_commands':[],'vp_setup':None,'environment_output':{'vault':'orbit-control-inputs','key':'instance-create-environment-result-71'},'execution_references_json':'{}'}}
+        self.input = {'operation_id':71,'node_id':9,'kind':'instance.create','execution_secrets':{'environment':{'vault':'orbit-control-inputs','key':'environment'},'git_read':{'vault':'orbit-control-inputs','key':'git'}},'intent':{'instance_id':17,'instance_name':'proof','already_active':False,'ssh_execution':ssh,'source':{'root':str(self.host/'apps'),'checkout':str(self.application),'user':ssh['target']['user'],'repository':'https://github.com/example/project.git','prepare_id':'admitted-prepare','seed_repository':None},'resolve':{'instance_name':'proof','default_branch':'main','branch_override':'main','seed_commit':None,'network':True,'protocols':['https']},'checkout':str(self.application),'application':str(self.application),'project_type':'node-package','entry_point':'artisan','php_versions':['8.4'],'skip_profile':False,'retained_source':{'branch':'main','commit':commit,'php_version':None,'laravel':False},'setup_commands':[],'vp_setup':None,'environment_output':{'vault':'orbit-control-inputs','key':'instance-create-environment-result-71'},'execution_references_json':'{}'}}
 
     def git(self,*args):
         return subprocess.run(['git','-C',str(self.application),*args],check=True,capture_output=True,text=True).stdout
@@ -84,7 +84,7 @@ class InstanceDevelopmentNative(NativeTestCase):
             digest=hashlib.sha256(command.encode()).hexdigest()
             self.input['intent']['setup_commands'].append({'index':index,'name':'step-'+str(index),'command_digest':digest,'timeout_seconds':30,'secret_field':field})
             self.input['execution_secrets'][field]={'vault':'orbit-control-inputs','key':field}
-            self.cli('vault','put','orbit-control-inputs',field,json.dumps({'command':command,'sha256':digest,'directory':str(self.application),'instance_id':17,'instance_name':'proof'}))
+            self.cli('vault','put','orbit-control-inputs',field,json.dumps({'command':command,'sha256':digest,'directory':str(self.application),'instance_id':17,'instance_name':'proof','seed_path':'','seed_commit':''}))
 
     def test_setup_commands_run_in_order_with_private_stdin(self):
         self.setup_commands(['printf private-setup-sentinel; touch .git/first','test -f .git/first; touch .git/second'])
@@ -92,10 +92,19 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.assertEqual(history['status'],'succeeded');self.assertTrue((self.application/'.git/second').is_file())
         self.assertNotIn('private-setup-sentinel',json.dumps(history))
 
+    def test_active_create_does_not_repeat_setup_or_environment_write(self):
+        self.input['intent']['already_active'] = True
+        self.setup_commands(['touch .git/should-not-run'])
+        (self.application/'.env').write_text('preserve-active')
+        history = self.run_create()
+        self.assertEqual(history['status'], 'succeeded')
+        self.assertFalse((self.application/'.git/should-not-run').exists())
+        self.assertEqual((self.application/'.env').read_text(), 'preserve-active')
+
     def test_failed_setup_skips_later_command_and_fresh_root_converges(self):
-        self.setup_commands(['test -f .git/allow','touch .git/second'])
+        self.setup_commands(['test -f .git/allow','touch .git/second','touch .git/third'])
         history=self.run_create(False)
-        self.assertEqual(history['status'],'failed');self.assertFalse((self.application/'.git/second').exists())
+        self.assertEqual(history['status'],'failed');self.assertFalse((self.application/'.git/second').exists());self.assertFalse((self.application/'.git/third').exists())
         (self.application/'.git/allow').touch()
         self.input['operation_id']=72
         self.input['intent']['environment_output']['key']='instance-create-environment-result-72'
@@ -131,6 +140,59 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
         history=json.loads(self.cli('workflow','history','get',run['id']).stdout)
         result=json.loads(next(step for step in history['jobs'][0]['steps'] if step['name']=='remove-result')['outputs']['stdout'])
         self.assertTrue(result['removed']);self.assertEqual(result['source_inspection']['members'][0]['instance_id'],17)
+    def test_two_members_each_run_seventeen_ordered_teardown_commands(self):
+        import hashlib
+        sibling = self.application.with_name('sibling')
+        self.git('worktree','add','-qb','sibling',str(sibling))
+        member = dict(self.input['intent']['members'][0],instance_id=18,checkout_path=str(sibling),source_layout='worktree',branch='sibling')
+        self.input['intent']['members'].append(member)
+        log = self.host/'teardown-observed'
+        for owner, directory in [(17,self.application),(18,sibling)]:
+            for index in range(17):
+                field = 'teardown_' + str(owner) + '_' + str(index)
+                command = 'printf done\\n >> ' + str(log)
+                self.input['intent']['teardown_commands'].append({'index':index,'secret_field':field,'timeout_seconds':30,'name':'step-'+str(index)})
+                self.input['execution_secrets'][field] = {'vault':'orbit-control-inputs','key':field}
+                self.cli('vault','put','orbit-control-inputs',field,json.dumps({'command':command,'sha256':hashlib.sha256(command.encode()).hexdigest(),'directory':str(directory),'instance_id':owner,'instance_name':str(owner),'seed_path':'','seed_commit':''}))
+        run = json.loads(self.cli('workflow','run','operation-instance-destroy','--input',json.dumps(self.input)).stdout)
+        self.assertEqual(run['status'],'succeeded')
+        self.assertEqual(log.read_text().count('done'),34)
+        self.assertFalse(sibling.exists())
+        self.assertFalse(self.application.exists())
+
+    def test_destroy_composes_real_owned_sqlite_child_before_source_removal(self):
+        import sqlite3
+        self.copy_behaviors('operations/database-server-commands')
+        database = self.application/'owned.sqlite'
+        with sqlite3.connect(database) as connection:
+            connection.execute('CREATE TABLE proof(value)')
+        workflow = yaml.safe_load((ROOT/'workflows/workflow-database-owned-sqlite-remove.yaml').read_text())
+        workflow = json.loads(json.dumps(workflow).replace('/tmp/orbit-db-owned-', str(self.control)+'/db-owned-').replace('/run/credentials/orbit-node-worker.service/proxy-ssh-identity',str(self.identity)))
+        for job in workflow['jobs']:
+            job.pop('target', None)
+            for step in job['steps']:
+                step.pop('target', None)
+                if step['task'].get('behaviorType') == '@swamp/ssh':
+                    step['task']['globalArgs'].update(sshBinary=str(self.repo/'ssh'),scpBinary=str(self.repo/'scp'))
+        (self.repo/'workflows/workflow-sqlite.yaml').write_text(yaml.safe_dump(workflow,sort_keys=False))
+        self.input['intent']['direct_destroy']['database']['sqlite'] = [{'connection_id':23,'node_id':9,'checkout':str(self.application),'path':str(database)}]
+        run = json.loads(self.cli('workflow','run','operation-instance-destroy','--input',json.dumps(self.input)).stdout)
+        self.assertEqual(run['status'], 'succeeded')
+        self.assertFalse(database.exists())
+        self.assertFalse(self.application.exists())
+
+    def test_nonforce_fresh_root_recovers_original_removed_checkout_receipt(self):
+        run = json.loads(self.cli('workflow','run','operation-instance-destroy','--input',json.dumps(self.input)).stdout)
+        history = json.loads(self.cli('workflow','history','get',run['id']).stdout)
+        result = json.loads(next(step for step in history['jobs'][0]['steps'] if step['name']=='remove-result')['outputs']['stdout'])
+        self.input['operation_id'] = 72
+        self.input['intent']['force'] = False
+        self.input['intent']['source_capture'] = result['source_inspection']
+        run = json.loads(self.cli('workflow','run','operation-instance-destroy','--input',json.dumps(self.input)).stdout)
+        self.assertEqual(run['status'], 'succeeded')
+        self.assertFalse(self.application.exists())
+
+    test_active_create_does_not_repeat_setup_or_environment_write=None
     test_full_create_keeps_environment_private_and_empty_vp_setup_valid=None
     test_setup_commands_run_in_order_with_private_stdin=None
     test_failed_setup_skips_later_command_and_fresh_root_converges=None

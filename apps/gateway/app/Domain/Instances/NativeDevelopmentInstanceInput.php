@@ -41,7 +41,9 @@ final readonly class NativeDevelopmentInstanceInput
             $sha = hash('sha256', ValidatedData::string($step['command']));
             $commands[] = ['index' => $index, 'name' => $step['name'], 'command_digest' => $sha, 'timeout_seconds' => $step['timeout_seconds'], 'secret_field' => $field];
             $copies[$field] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-create-'.$operation->id.'-setup-'.$index, json_encode([
-                'command' => $step['command'], 'sha256' => $sha, 'directory' => $plan['application'], 'instance_id' => $instance->id, 'instance_name' => $instance->name,
+                'command' => $step['command'], 'sha256' => $sha, 'directory' => $plan['checkout'], 'instance_id' => $instance->id, 'instance_name' => $instance->name,
+                'seed_path' => $instance->seed_path !== $instance->checkout_path ? ($instance->seed_path ?? '') : '',
+                'seed_commit' => $instance->seed_path !== $instance->checkout_path ? ($instance->seed_commit ?? '') : '',
             ], JSON_THROW_ON_ERROR));
         }
 

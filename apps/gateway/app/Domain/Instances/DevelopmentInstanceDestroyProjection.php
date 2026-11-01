@@ -38,14 +38,14 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         $commands = [];
         foreach (InstanceLifecycleInput::members($programs) as $member) {
             $instance = Instance::query()->findOrFail(ValidatedData::integer($member['instance_id']));
-            foreach (InstanceLifecycleInput::members(['members' => $member['steps']]) as $step) {
+            foreach (InstanceLifecycleInput::members(['members' => $member['steps']]) as $position => $step) {
                 $index = count($commands);
                 $field = 'teardown_'.$index;
                 $sha = hash('sha256', ValidatedData::string($step['command']));
-                $commands[] = ['index' => $index, 'secret_field' => $field, 'timeout_seconds' => $step['timeout_seconds'], 'name' => $step['name']];
+                $commands[] = ['index' => $position, 'secret_field' => $field, 'timeout_seconds' => $step['timeout_seconds'], 'name' => $step['name']];
                 $secrets[$field] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-destroy-'.$operation->id.'-teardown-'.$index, json_encode([
                     'command' => $step['command'], 'sha256' => $sha, 'directory' => $instance->checkout_path,
-                    'instance_id' => $instance->id, 'instance_name' => $instance->name,
+                    'instance_id' => $instance->id, 'instance_name' => $instance->name, 'seed_path' => '', 'seed_commit' => '',
                 ], JSON_THROW_ON_ERROR));
             }
         }

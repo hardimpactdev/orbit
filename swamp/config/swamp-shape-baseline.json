@@ -872,26 +872,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "secret-output",
-      "count": 2,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -2277,15 +2257,6 @@
         "workload/served",
         "workload/served-assets",
         "workload/served-command"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-instance-destroy.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 2,
-      "evidence": [
-        "cleanup/cleanup-${{ self.member.node_id }}",
-        "databases/database-${{ self.work.key }}"
       ]
     },
     {

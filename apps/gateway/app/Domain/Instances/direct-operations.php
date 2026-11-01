@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\AutomaticDeployActivityProjection;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
-use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
-use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
+use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRenameResult;
-use App\Domain\Instances\NativeInstanceProvisioningProjection;
 use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
@@ -34,7 +33,11 @@ return [
     'instance.create' => ['workflow' => 'operation-instance-create', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceCreateProjection::class,
         'github_token_issuer' => InstanceGitHubReadTokens::class,
-        'terminal_result' => ['job' => 'create', 'step' => 'finish-result'],
+        'terminal_result' => ['job' => 'create', 'step' => 'finish-result', 'captures' => [
+            'source' => ['job' => 'prepare', 'step' => 'source-result'],
+            'environment_seeded_keys' => ['job' => 'prepare', 'step' => 'env-capture', 'field' => 'keys'],
+            'vp_environment' => ['job' => 'vp-install', 'step' => 'vp-result', 'field' => 'runtime'],
+        ]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-(?:git-operation-|create-environment-(?:input-|result-)|create-)[1-9][0-9]*(?:-setup-[0-9]+)?$']]],
     'instance.sync_environment' => [
         'workflow' => 'operation-instance-environment',
@@ -45,7 +48,7 @@ return [
     'instance.destroy' => ['workflow' => 'operation-instance-destroy', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceDestroyProjection::class,
         'github_token_issuer' => InstanceGitHubReadTokens::class,
-        'terminal_result' => ['job' => 'destroy', 'step' => 'remove-result'],
+        'terminal_result' => ['job' => 'destroy', 'step' => 'remove-result', 'captures' => ['source_inspection' => ['job' => 'destroy', 'step' => 'destroy-inspect']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-(?:git-operation-[1-9][0-9]*|destroy-[1-9][0-9]*-teardown-[0-9]+)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']]],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'source', 'step' => 'result'], 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [

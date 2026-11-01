@@ -24,9 +24,11 @@ inputs:
         properties:
           vault:
             type: string
-            const: orbit-control-inputs
+            enum:
+              - orbit-control-inputs
           key:
             type: string
+            pattern: '^[a-z][a-z0-9_.-]{0,254}$'
         required:
           - vault
           - key
@@ -42,6 +44,14 @@ jobs:
   - name: prepare
     target: orbit-node-209
     steps:
+      - name: prepare-admitted
+        target: orbit-node-209
+        guard: '${{ inputs.intent.already_active }}'
+        task:
+          type: assert
+          expr: 'true'
+          severity: high
+          message: The Instance is already active.
       - name: create-local-directory
         target: orbit-node-209
         task:
@@ -53,10 +63,17 @@ jobs:
             run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
             env:
               ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-" + run.id }}'
+        dependsOn:
+          - step: prepare-admitted
+            condition:
+              type: succeeded
       - name: create-mint-assets
         target: orbit-node-209
         dependsOn:
           - step: create-local-directory
+            condition:
+              type: succeeded
+          - step: prepare-admitted
             condition:
               type: succeeded
         task:
@@ -70,6 +87,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: create-mint-assets
+            condition:
+              type: succeeded
+          - step: prepare-admitted
             condition:
               type: succeeded
         task:
@@ -98,6 +118,9 @@ jobs:
           - step: create-mint
             condition:
               type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
       - name: source-prepare-read
         target: orbit-node-209
         dependsOn:
@@ -107,6 +130,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -137,6 +163,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -153,6 +182,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         guard: '${{ !steps["source-prepared"].outputs.created || (inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null) }}'
         task:
           type: behavior
@@ -181,6 +213,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         guard: '${{ !steps["source-prepared"].outputs.created || !(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null) }}'
         task:
           type: behavior
@@ -212,6 +247,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -231,6 +269,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -250,6 +291,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -268,6 +312,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         guard: '${{ steps["source-origin-read"].outputs.stdout != "" }}'
         task:
           type: behavior
@@ -297,6 +344,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -324,6 +374,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -344,6 +397,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -363,6 +419,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -379,6 +438,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -400,6 +462,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -421,6 +486,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         guard: '${{ !inputs.intent.resolve.network || (inputs.intent.retained_source != null) }}'
         task:
           type: behavior
@@ -446,6 +514,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -475,6 +546,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -492,6 +566,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         guard: '${{ inputs.intent.retained_source != null }}'
         task:
           type: behavior
@@ -524,6 +601,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -552,6 +632,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -569,6 +652,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -588,6 +674,9 @@ jobs:
               conditions:
                 - type: succeeded
                 - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -604,6 +693,9 @@ jobs:
           - step: source-result
             condition:
               type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -618,6 +710,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: env-template-asset
+            condition:
+              type: succeeded
+          - step: prepare-admitted
             condition:
               type: succeeded
         task:
@@ -647,6 +742,9 @@ jobs:
           - step: env-template
             condition:
               type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -664,6 +762,9 @@ jobs:
           - step: env-copy
             condition:
               type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-create-environment'
@@ -671,7 +772,8 @@ jobs:
           methodName: capture
           inputs:
             path: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
-            env: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
+            env:
+              ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
             profile: '${{ steps["source-result"].outputs }}'
             reference: '${{ inputs.intent.environment_output }}'
             directory: '${{ inputs.intent.application }}'
@@ -679,6 +781,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: env-capture
+            condition:
+              type: succeeded
+          - step: prepare-admitted
             condition:
               type: succeeded
         task:
@@ -693,6 +798,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: env-write-assets
+            condition:
+              type: succeeded
+          - step: prepare-admitted
             condition:
               type: succeeded
         task:
@@ -710,6 +818,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: env-scripts-copy
+            condition:
+              type: succeeded
+          - step: prepare-admitted
             condition:
               type: succeeded
         task:
@@ -732,6 +843,14 @@ jobs:
         condition:
           type: succeeded
     steps:
+      - name: vp-capture-admitted
+        target: orbit-node-209
+        guard: '${{ inputs.intent.already_active }}'
+        task:
+          type: assert
+          expr: 'true'
+          severity: high
+          message: The Instance is already active.
       - name: vp-local-directory
         target: orbit-node-209
         task:
@@ -743,10 +862,17 @@ jobs:
             run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
             env:
               ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-"+run.id }}'
+        dependsOn:
+          - step: vp-capture-admitted
+            condition:
+              type: succeeded
       - name: vp-project-asset
         target: orbit-node-209
         dependsOn:
           - step: vp-local-directory
+            condition:
+              type: succeeded
+          - step: vp-capture-admitted
             condition:
               type: succeeded
         task:
@@ -763,6 +889,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: vp-project-asset
+            condition:
+              type: succeeded
+          - step: vp-capture-admitted
             condition:
               type: succeeded
         task:
@@ -792,6 +921,9 @@ jobs:
           - step: vp-project
             condition:
               type: succeeded
+          - step: vp-capture-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -809,6 +941,9 @@ jobs:
           - step: vp-private-copy
             condition:
               type: succeeded
+          - step: vp-capture-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
@@ -823,6 +958,14 @@ jobs:
         condition:
           type: succeeded
     steps:
+      - name: vp-install-admitted
+        target: orbit-node-209
+        guard: '${{ inputs.intent.already_active }}'
+        task:
+          type: assert
+          expr: 'true'
+          severity: high
+          message: The Instance is already active.
       - name: vp-manager-assets
         target: orbit-node-209
         task:
@@ -835,12 +978,19 @@ jobs:
         forEach: &ref_0
           item: runtime
           in: >-
-            ${{ steps["vp-requirements"].outputs.manager_required ? (steps["vp-requirements"].outputs.runtime == null ? [] :
-            [steps["vp-requirements"].outputs.runtime]) : [] }}
+            ${{ inputs.intent.already_active ? [] : (inputs.intent.already_active ? [] : (steps["vp-requirements"].outputs.manager_required ?
+            (steps["vp-requirements"].outputs.runtime == null ? [] : [steps["vp-requirements"].outputs.runtime]) : [])) }}
+        dependsOn:
+          - step: vp-install-admitted
+            condition:
+              type: succeeded
       - name: vp-manager
         target: orbit-node-209
         dependsOn:
           - step: vp-manager-assets
+            condition:
+              type: succeeded
+          - step: vp-install-admitted
             condition:
               type: succeeded
         task:
@@ -875,6 +1025,9 @@ jobs:
           - step: vp-manager
             condition:
               type: always
+          - step: vp-install-admitted
+            condition:
+              type: succeeded
         task:
           type: assert
           expr: >-
@@ -886,6 +1039,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: vp-manager-ready
+            condition:
+              type: succeeded
+          - step: vp-install-admitted
             condition:
               type: succeeded
         task:
@@ -903,11 +1059,16 @@ jobs:
               VP_HOME: '${{ self.runtime.store }}'
         forEach: &ref_1
           item: runtime
-          in: '${{ steps["vp-requirements"].outputs.runtime == null ? [] : [steps["vp-requirements"].outputs.runtime] }}'
+          in: >-
+            ${{ inputs.intent.already_active ? [] : (inputs.intent.already_active ? [] : (inputs.intent.already_active ? [] : (inputs.intent.already_active ? []
+            : (inputs.intent.already_active ? [] : (steps["vp-requirements"].outputs.runtime == null ? [] : [steps["vp-requirements"].outputs.runtime]))))) }}
       - name: vp-cli-ready
         target: orbit-node-209
         dependsOn:
           - step: vp-cli
+            condition:
+              type: succeeded
+          - step: vp-install-admitted
             condition:
               type: succeeded
         task:
@@ -923,6 +1084,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: vp-cli-ready
+            condition:
+              type: succeeded
+          - step: vp-install-admitted
             condition:
               type: succeeded
         task:
@@ -952,6 +1116,9 @@ jobs:
           - step: vp-install
             condition:
               type: succeeded
+          - step: vp-install-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -973,6 +1140,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: vp-inventory
+            condition:
+              type: succeeded
+          - step: vp-install-admitted
             condition:
               type: succeeded
         task:
@@ -1011,6 +1181,9 @@ jobs:
           - step: vp-verify
             condition:
               type: always
+          - step: vp-install-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
@@ -1029,6 +1202,14 @@ jobs:
         condition:
           type: always
     steps:
+      - name: create-admitted
+        target: orbit-node-209
+        guard: '${{ inputs.intent.already_active }}'
+        task:
+          type: assert
+          expr: 'true'
+          severity: high
+          message: The Instance is already active.
       - name: finish-prepared
         target: orbit-node-209
         task:
@@ -1036,10 +1217,17 @@ jobs:
           expr: '"vp-result" in steps && steps["vp-result"].status == "succeeded" && steps["vp-result"].outputs.ready == true'
           severity: high
           message: Instance preparation did not finish.
+        dependsOn:
+          - step: create-admitted
+            condition:
+              type: succeeded
       - name: finish-setup-assets
         target: orbit-node-209
         dependsOn:
           - step: finish-prepared
+            condition:
+              type: succeeded
+          - step: create-admitted
             condition:
               type: succeeded
         task:
@@ -1054,6 +1242,9 @@ jobs:
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-assets
+            condition:
+              type: succeeded
+          - step: create-admitted
             condition:
               type: succeeded
         task:
@@ -1083,14 +1274,14 @@ jobs:
         dependsOn:
           - step: finish-setup-copy
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-3-" + run.id }}'
+          behaviorName: '${{ "ids-finish-3-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1099,25 +1290,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>0?inputs.intent.setup_commands[0].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>0?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[0].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[0].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=0 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==0)) }}'
       - name: finish-setup-1
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-0
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-4-" + run.id }}'
+          behaviorName: '${{ "ids-finish-4-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1126,25 +1318,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>1?inputs.intent.setup_commands[1].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>1?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[1].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[1].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=1 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==1)) }}'
       - name: finish-setup-2
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-1
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-5-" + run.id }}'
+          behaviorName: '${{ "ids-finish-5-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1153,25 +1346,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>2?inputs.intent.setup_commands[2].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>2?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[2].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[2].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=2 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==2)) }}'
       - name: finish-setup-3
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-2
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-6-" + run.id }}'
+          behaviorName: '${{ "ids-finish-6-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1180,25 +1374,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>3?inputs.intent.setup_commands[3].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>3?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[3].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[3].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=3 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==3)) }}'
       - name: finish-setup-4
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-3
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-7-" + run.id }}'
+          behaviorName: '${{ "ids-finish-7-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1207,25 +1402,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>4?inputs.intent.setup_commands[4].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>4?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[4].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[4].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=4 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==4)) }}'
       - name: finish-setup-5
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-4
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-8-" + run.id }}'
+          behaviorName: '${{ "ids-finish-8-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1234,25 +1430,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>5?inputs.intent.setup_commands[5].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>5?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[5].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[5].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=5 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==5)) }}'
       - name: finish-setup-6
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-5
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-9-" + run.id }}'
+          behaviorName: '${{ "ids-finish-9-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1261,25 +1458,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>6?inputs.intent.setup_commands[6].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>6?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[6].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[6].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=6 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==6)) }}'
       - name: finish-setup-7
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-6
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-10-" + run.id }}'
+          behaviorName: '${{ "ids-finish-10-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1288,25 +1486,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>7?inputs.intent.setup_commands[7].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>7?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[7].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[7].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=7 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==7)) }}'
       - name: finish-setup-8
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-7
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-11-" + run.id }}'
+          behaviorName: '${{ "ids-finish-11-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1315,25 +1514,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>8?inputs.intent.setup_commands[8].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>8?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[8].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[8].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=8 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==8)) }}'
       - name: finish-setup-9
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-8
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-12-" + run.id }}'
+          behaviorName: '${{ "ids-finish-12-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1342,25 +1542,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>9?inputs.intent.setup_commands[9].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>9?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[9].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[9].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=9 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==9)) }}'
       - name: finish-setup-10
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-9
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-13-" + run.id }}'
+          behaviorName: '${{ "ids-finish-13-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1369,25 +1570,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>10?inputs.intent.setup_commands[10].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>10?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[10].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[10].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=10 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==10)) }}'
       - name: finish-setup-11
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-10
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-14-" + run.id }}'
+          behaviorName: '${{ "ids-finish-14-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1396,25 +1598,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>11?inputs.intent.setup_commands[11].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>11?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[11].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[11].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=11 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==11)) }}'
       - name: finish-setup-12
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-11
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-15-" + run.id }}'
+          behaviorName: '${{ "ids-finish-15-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1423,25 +1626,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>12?inputs.intent.setup_commands[12].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>12?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[12].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[12].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=12 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==12)) }}'
       - name: finish-setup-13
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-12
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-16-" + run.id }}'
+          behaviorName: '${{ "ids-finish-16-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1450,25 +1654,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>13?inputs.intent.setup_commands[13].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>13?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[13].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[13].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=13 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==13)) }}'
       - name: finish-setup-14
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-13
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-17-" + run.id }}'
+          behaviorName: '${{ "ids-finish-17-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1477,25 +1682,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>14?inputs.intent.setup_commands[14].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>14?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[14].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[14].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=14 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==14)) }}'
       - name: finish-setup-15
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-14
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-18-" + run.id }}'
+          behaviorName: '${{ "ids-finish-18-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1504,25 +1710,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>15?inputs.intent.setup_commands[15].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>15?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[15].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[15].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=15 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==15)) }}'
       - name: finish-setup-16
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-15
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-19-" + run.id }}'
+          behaviorName: '${{ "ids-finish-19-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1531,25 +1738,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>16?inputs.intent.setup_commands[16].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>16?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[16].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[16].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=16 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==16)) }}'
       - name: finish-setup-17
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-16
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-20-" + run.id }}'
+          behaviorName: '${{ "ids-finish-20-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1558,25 +1766,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>17?inputs.intent.setup_commands[17].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>17?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[17].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[17].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=17 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==17)) }}'
       - name: finish-setup-18
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-17
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-21-" + run.id }}'
+          behaviorName: '${{ "ids-finish-21-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1585,25 +1794,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>18?inputs.intent.setup_commands[18].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>18?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[18].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[18].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=18 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==18)) }}'
       - name: finish-setup-19
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-18
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-22-" + run.id }}'
+          behaviorName: '${{ "ids-finish-22-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1612,25 +1822,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>19?inputs.intent.setup_commands[19].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>19?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[19].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[19].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=19 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==19)) }}'
       - name: finish-setup-20
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-19
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-23-" + run.id }}'
+          behaviorName: '${{ "ids-finish-23-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1639,25 +1850,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>20?inputs.intent.setup_commands[20].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>20?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[20].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[20].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=20 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==20)) }}'
       - name: finish-setup-21
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-20
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-24-" + run.id }}'
+          behaviorName: '${{ "ids-finish-24-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1666,25 +1878,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>21?inputs.intent.setup_commands[21].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>21?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[21].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[21].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=21 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==21)) }}'
       - name: finish-setup-22
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-21
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-25-" + run.id }}'
+          behaviorName: '${{ "ids-finish-25-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1693,25 +1906,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>22?inputs.intent.setup_commands[22].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>22?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[22].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[22].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=22 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==22)) }}'
       - name: finish-setup-23
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-22
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-26-" + run.id }}'
+          behaviorName: '${{ "ids-finish-26-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1720,25 +1934,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>23?inputs.intent.setup_commands[23].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>23?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[23].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[23].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=23 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==23)) }}'
       - name: finish-setup-24
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-23
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-27-" + run.id }}'
+          behaviorName: '${{ "ids-finish-27-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1747,25 +1962,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>24?inputs.intent.setup_commands[24].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>24?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[24].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[24].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=24 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==24)) }}'
       - name: finish-setup-25
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-24
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-28-" + run.id }}'
+          behaviorName: '${{ "ids-finish-28-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1774,25 +1990,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>25?inputs.intent.setup_commands[25].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>25?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[25].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[25].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=25 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==25)) }}'
       - name: finish-setup-26
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-25
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-29-" + run.id }}'
+          behaviorName: '${{ "ids-finish-29-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1801,25 +2018,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>26?inputs.intent.setup_commands[26].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>26?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[26].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[26].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=26 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==26)) }}'
       - name: finish-setup-27
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-26
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-30-" + run.id }}'
+          behaviorName: '${{ "ids-finish-30-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1828,25 +2046,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>27?inputs.intent.setup_commands[27].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>27?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[27].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[27].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=27 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==27)) }}'
       - name: finish-setup-28
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-27
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-31-" + run.id }}'
+          behaviorName: '${{ "ids-finish-31-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1855,25 +2074,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>28?inputs.intent.setup_commands[28].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>28?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[28].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[28].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=28 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==28)) }}'
       - name: finish-setup-29
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-28
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-32-" + run.id }}'
+          behaviorName: '${{ "ids-finish-32-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1882,25 +2102,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>29?inputs.intent.setup_commands[29].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>29?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[29].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[29].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=29 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==29)) }}'
       - name: finish-setup-30
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-29
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-33-" + run.id }}'
+          behaviorName: '${{ "ids-finish-33-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1909,25 +2130,26 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>30?inputs.intent.setup_commands[30].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>30?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[30].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[30].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=30 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==30)) }}'
       - name: finish-setup-31
         target: orbit-node-209
         dependsOn:
           - step: finish-setup-30
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
+          - step: create-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-34-" + run.id }}'
+          behaviorName: '${{ "ids-finish-34-" + run.id + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_6
           inputs:
@@ -1936,12 +2158,13 @@ jobs:
               - /usr/bin/python3
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ size(inputs.intent.setup_commands)>31?inputs.intent.setup_commands[31].timeout_seconds:60 }}'
-            stdin: >-
-              ${{
-              size(inputs.intent.setup_commands)>31?vault.get(inputs.execution_secrets[inputs.intent.setup_commands[31].secret_field].vault,inputs.execution_secrets[inputs.intent.setup_commands[31].secret_field].key):""
-              }}
-        guard: '${{ size(inputs.intent.setup_commands)<=31 || steps.exists(key,steps[key].status=="failed") }}'
+            timeoutSec: '${{ self.command.timeout_seconds }}'
+            env:
+              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
+            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        forEach:
+          item: command
+          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==31)) }}'
       - name: finish-result
         target: orbit-node-209
         dependsOn:

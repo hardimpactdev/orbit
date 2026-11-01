@@ -11,14 +11,19 @@ from pathlib import Path
 
 def observe(value):
     member = value['member']
-    if value.get('retained') is not None:
-        return {'instance_id':member['instance_id'],'origin_required':False}
     path = Path(member['checkout_path'])
+    if value.get('retained') is not None:
+        captured = next(row for row in value['retained']['members'] if row['instance_id'] == member['instance_id'])
+        if path.exists() or path.is_symlink():
+            info = path.lstat()
+            if path.is_symlink() or not path.is_dir() or str(info.st_dev)+':'+str(info.st_ino) != captured['source_identity'] or info.st_uid != os.geteuid():
+                raise ValueError('instance.removal_conflict')
+        return {'instance_id':member['instance_id'],'origin_required':path.exists() and bool(captured['source_commit'])}
     account = pwd.getpwuid(os.geteuid())
     if account.pw_name != member['user'] or path.is_symlink() or path.resolve() != path:
         raise ValueError('instance.source_ownership_mismatch')
     def git(arguments, check=True):
-        result = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', str(path), *arguments], stdin=subprocess.DEVNULL, capture_output=True, env={'HOME': account.pw_dir, 'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'})
+        result = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', str(path), *arguments], stdin=subprocess.DEVNULL, capture_output=True, check=False, env={'HOME': account.pw_dir, 'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'})
         if check and result.returncode:
             raise ValueError('instance.source_git_failed')
         return result.stdout.rstrip(b'\n')

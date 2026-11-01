@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Data\Instances\CreateInstanceData;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
-use App\Domain\Instances\NativeInstanceProvisioningProjection;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'Native source', 'slug' => 'native-source',
@@ -124,44 +126,41 @@ it('refuses an unavailable create before reserving a new Instance', function ():
     expect(Instance::query()->count())->toBe($before);
 });
 
-it('projects native source and success without Gateway step receipts', function (): void {
+it('projects source and environment from the bound native terminal only and is idempotent', function (): void {
     $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
-    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
-    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance',
-        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued',
-        'input' => [...$this->input, 'direct_provisioning' => $plan], 'state' => ['swamp_run_id' => $run]]);
-    $projection = app(NativeInstanceProvisioningProjection::class);
-    $callback = ['run_id' => $run, 'status' => 'running', 'started_at' => now()->toIso8601String(),
-        'error_code' => null, 'result' => ['phase' => 'source', 'branch' => 'proof', 'commit' => str_repeat('a', 40),
-            'php_version' => null, 'laravel' => false]];
-    $projection->apply($operation, $callback);
-    expect($this->instance->refresh()->status)->toBe(InstanceState::SourceResolved)
-        ->and($this->instance->starting_commit)->toBe(str_repeat('a', 40))
-        ->and($projection->input($operation)['environment_plan'])->toMatchArray(['user' => 'orbit', 'node_id' => $this->node->id]);
-
-    $projection->apply($operation, [...$callback, 'status' => 'succeeded', 'finished_at' => now()->toIso8601String(),
-        'result' => ['instance_id' => $this->instance->id, 'ready' => true, 'name_converted_from' => null]]);
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'vault.read-secret', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => '{"values":{"APP_NAME":"Private project","MODE":"development"}}']]]];
+    config(['swamp.run_token' => 'fixture.token']);
+    app()->instance(WebSocketClient::class, $socket);
+    $result = ['instance_id' => $this->instance->id, 'ready' => true, 'source' => ['branch' => 'proof', 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false], 'environment_seeded_keys' => ['APP_NAME', 'MODE'], 'environment_keys' => ['APP_NAME', 'MODE'], 'vp_environment' => null];
+    $data = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result];
+    $projection = app(DevelopmentInstanceCreateProjection::class);
+    $projection->apply($operation, $data);
     expect($this->instance->refresh()->status)->toBe(InstanceState::Active)
+        ->and($this->instance->starting_commit)->toBe(str_repeat('a', 40))
         ->and($this->instance->first_setup_pending)->toBeFalse()
+        ->and($this->instance->environment_owned_keys)->toBe(['APP_NAME', 'MODE'])
         ->and($operation->refresh()->status->value)->toBe('succeeded');
+    $projection->apply($operation, $data);
+    expect($socket->sent)->toHaveCount(1);
 });
 
-it('retains native VP checking pins before installation and records the final runtime status', function (): void {
+it('retains source and VP pins after setup failure for a fresh normal admission', function (): void {
     $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
-    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance',
-        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued',
-        'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
-    $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '0.3.3', 'node_version' => '24.22.0',
-        'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null];
-    $projection = app(NativeInstanceProvisioningProjection::class);
-    $callback = ['run_id' => $run, 'status' => 'running', 'started_at' => now()->toIso8601String(),
-        'error_code' => null, 'result' => ['phase' => 'vp', 'environment' => $runtime, 'runtime_status' => 'checking']];
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
+    $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '0.3.3', 'node_version' => '24.22.0', 'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null];
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.create_setup_failed', 'result' => ['ready' => false, 'source' => ['branch' => 'proof', 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false], 'vp_environment' => $runtime, 'failed_step' => 'setup']]);
+    expect($this->instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+        ->and($this->instance->first_setup_pending)->toBeTrue()
+        ->and($this->instance->getAttribute('vp_environment')['status'])->toBe('active');
+    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
+    expect($plan['retained_source']['commit'])->toBe(str_repeat('a', 40));
+});
 
-    $projection->apply($operation, $callback);
-
-    expect($this->instance->refresh()->getAttribute('vp_environment'))->toMatchArray([
-        ...$runtime, 'status' => 'checking', 'checkout_path' => $this->instance->checkout_path]);
-    $projection->apply($operation, [...$callback, 'result' => [...$callback['result'], 'runtime_status' => 'active']]);
-    expect($this->instance->refresh()->getAttribute('vp_environment')['status'])->toBe('active')
-        ->and($this->instance->getAttribute('vp_environment')['previous'])->toBeNull();
+it('refuses incomplete success without activating the Instance', function (): void {
+    $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
+    expect(fn () => app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'result' => ['instance_id' => $this->instance->id, 'ready' => true]]))->toThrow(ResourceOperationException::class);
+    expect($this->instance->refresh()->status)->toBe(InstanceState::Reserved);
 });

@@ -1,6 +1,5 @@
 """Verify one observed checkout and its publication before any source removal."""
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,11 +23,15 @@ def verify(value):
         raise ValueError('instance.removal_conflict')
     def git(args):
         return subprocess.run(['/usr/bin/git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(path),*args], stdin=subprocess.DEVNULL,capture_output=True,text=True,check=True).stdout.strip()
+    if captured['source_commit']:
+        live = git(['worktree', 'list', '--porcelain', '-z']).split('\0')
+        admitted = set(value['admitted_paths'])
+        if any(row.startswith('worktree ') and row[9:] not in admitted for row in live):
+            raise ValueError('instance.worktree_inventory_changed')
     if captured['source_commit'] and git(['rev-parse','HEAD']) != captured['source_commit']:
         raise ValueError('instance.removal_conflict')
-    if not value['force'] and not member['failed_creation']:
-        if git(['status','--porcelain','--untracked-files=all']) or git(['rev-list','--count','HEAD','--not','--remotes=origin']) != '0':
-            raise ValueError('instance.unpublished_content')
+    if not value['force'] and not member['failed_creation'] and (git(['status','--porcelain','--untracked-files=all']) or git(['rev-list','--count','HEAD','--not','--remotes=origin']) != '0'):
+        raise ValueError('instance.unpublished_content')
     return {'ready': True}
 
 

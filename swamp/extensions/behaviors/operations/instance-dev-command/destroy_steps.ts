@@ -132,9 +132,13 @@ export function destroySteps(): Fields[] {
         ),
     }, {
         forEach: { item: "member", in: e(intent + ".members") },
-        guard: e(intent + ".force || self.member.failed_creation"),
+        guard: e(
+            intent +
+                '.force || self.member.failed_creation || !steps["destroy-observed-"+string(self._index)].outputs.origin_required',
+        ),
     });
     a.script("verify", "verify_source", {
+        admitted_paths: e(intent + ".members.map(member,member.checkout_path)"),
         member: e("self.member"),
         capture: e(
             o("inspect") +
@@ -254,40 +258,41 @@ export function destroySteps(): Fields[] {
                 "-B",
                 e('"/tmp/orbit-instance-"+run.id+"/run_project_step.py"'),
             ],
-            timeoutSec: e(
-                "size(" + intent + ".teardown_commands)>" + index + "?" +
-                    intent + ".teardown_commands[" + index +
-                    "].timeout_seconds:60",
-            ),
+            timeoutSec: e("self.command.timeout_seconds"),
             stdin: e(
-                "size(" + intent + ".teardown_commands)>" + index +
-                    "?vault.get(inputs.execution_secrets[" + intent +
-                    ".teardown_commands[" + index +
-                    "].secret_field].vault,inputs.execution_secrets[" + intent +
-                    ".teardown_commands[" + index + '].secret_field].key):""',
+                "vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key)",
             ),
         }, {
-            guard: e(
-                "size(" + intent + ".teardown_commands)<=" + index +
-                    ' || steps.exists(key,steps[key].status=="failed")',
-            ),
-        });
-        a.steps.at(-1)!.dependsOn = [{
-            step: index
-                ? "destroy-teardown-" + (index - 1)
-                : "destroy-step-copy",
-            condition: {
-                type: "or",
-                conditions: [{ type: "succeeded" }, { type: "skipped" }],
+            forEach: {
+                item: "command",
+                in: e(
+                    intent +
+                        ".teardown_commands.filter(command,command.index==" +
+                        index + ")",
+                ),
             },
-        }];
+            dependsOn: [{
+                step: index
+                    ? "destroy-teardown-" + (index - 1)
+                    : "destroy-step-copy",
+                condition: { type: "succeeded" },
+            }],
+        });
     }
     a.metadata("teardown-ready", "require_actions", {
-        names: e(
-            intent +
-                '.teardown_commands.map(command,"destroy-teardown-"+string(command.index))',
+        names: Array.from(
+            { length: 32 },
+            (_, index) => "destroy-teardown-" + index,
         ),
-        counts: e(intent + ".teardown_commands.map(command,1)"),
+        counts: Array.from(
+            { length: 32 },
+            (_, index) =>
+                e(
+                    "size(" + intent +
+                        ".teardown_commands.filter(command,command.index==" +
+                        index + "))",
+                ),
+        ),
         steps: e("steps"),
     });
     a.steps.at(-1)!.dependsOn = [
@@ -349,6 +354,54 @@ export function destroySteps(): Fields[] {
         const list = intent + '.members.filter(member,member.source_layout=="' +
             layout + '")';
         const suffix = layout + "-source";
+        end.metadata(
+            suffix + "-verify-asset",
+            "read",
+            {
+                action: "verify_source",
+                input: {
+                    admitted_paths: e(
+                        intent + ".members.map(member,member.checkout_path)",
+                    ),
+                    member: e("self.member"),
+                    capture: e(
+                        o("inspect") +
+                            ".members.filter(row,row.instance_id==self.member.instance_id)[0]",
+                    ),
+                    removal_id: e(intent + ".removal_id"),
+                    force: e(intent + ".force"),
+                },
+            },
+            "@nckrtl/instance-dev-command",
+            {
+                forEach: { item: "member", in: e(list) },
+                dependsOn: [{ step: prior, condition: { type: "succeeded" } }],
+            },
+        );
+        end.sshAction(suffix + "-verify", "script", {
+            interpreter: "python3",
+            script: e(
+                'steps["remove-' + suffix +
+                    '-verify-asset-"+string(self._index)].outputs.script_body',
+            ),
+        }, { forEach: { item: "member", in: e(list) } });
+        end.metadata(
+            suffix + "-verified",
+            "require_actions",
+            {
+                names: ["remove-" + suffix + "-verify"],
+                counts: [e("size(" + list + ")")],
+                steps: e("steps"),
+            },
+            "@nckrtl/instance-dev-command",
+            {
+                dependsOn: [{
+                    step: "remove-" + suffix + "-verify",
+                    condition: { type: "always" },
+                }, { step: prior, condition: { type: "succeeded" } }],
+            },
+        );
+        prior = "remove-" + suffix + "-verified";
         end.metadata(
             suffix + "-asset",
             "read",

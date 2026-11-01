@@ -18,7 +18,7 @@ if token:
     for index, (key, content) in enumerate(entries):
         environment["GIT_CONFIG_KEY_" + str(index)] = key
         environment["GIT_CONFIG_VALUE_" + str(index)] = content
-settings = ["core.hooksPath=/dev/null", "core.fsmonitor=false", "credential.helper=", "protocol.ext.allow=never", "http.followRedirects=false"]
+settings = ["core.hooksPath=/dev/null", "core.fsmonitor=false", "credential.helper=", "protocol.allow=never", "protocol.https.allow=always", "core.sshCommand=false", "core.alternateRefsCommand=", "http.followRedirects=false"]
 args = ["git", *[part for setting in settings for part in ("-c", setting)], "-C", checkout,
         "fetch", "--quiet", "--no-tags", "--prune", "--", repository, "+refs/heads/*:refs/remotes/origin/*"]
 # Git errors may include a credential from a configured remote helper. Keep them on the host.

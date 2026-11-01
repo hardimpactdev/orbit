@@ -61,7 +61,9 @@ export const behavior = {
                 "Capture one private template into native vault output; return names and keys only",
             arguments: z.object({
                 path: z.string(),
-                env: z.string().meta({ sensitive: true }),
+                env: z.object({
+                    ORBIT_ENVIRONMENT: z.string().meta({ sensitive: true }),
+                }),
                 profile: z.object({ laravel: z.boolean() }).passthrough(),
                 reference: Ref,
                 directory: z.string(),
@@ -69,7 +71,7 @@ export const behavior = {
             execute: async (
                 args: {
                     path: string;
-                    env: string;
+                    env: { ORBIT_ENVIRONMENT: string };
                     profile: { laravel: boolean };
                     reference: z.infer<typeof Ref>;
                     directory: string;
@@ -83,7 +85,7 @@ export const behavior = {
                 ) throw new Error("env.configuration_invalid");
                 const result = assemble(
                     await Deno.readTextFile(args.path),
-                    JSON.parse(args.env),
+                    JSON.parse(args.env.ORBIT_ENVIRONMENT),
                     args.profile,
                 );
                 await ctx.vaultService.put(

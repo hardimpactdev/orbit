@@ -33,7 +33,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $result = ValidatedData::object($data['result'] ?? []);
             $instance = app(InstanceLifecycleState::class)->instance($operation);
-            if ($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true || ($result['instance_id'] ?? null) !== $instance->id || ! isset($result['source'], $result['environment_keys']) || ! array_key_exists('vp_environment', $result))) {
+            if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
+                return $this->direct->project($operation, $data, $result);
+            }
+            if ($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true || ($result['instance_id'] ?? null) !== $instance->id || ! isset($result['source'], $result['environment_keys'], $result['environment_seeded_keys']) || ! array_key_exists('vp_environment', $result))) {
                 throw new ResourceOperationException('instance.result_invalid', 'Native creation did not prove its complete terminal result.');
             }
             if (! $operation->status->terminal()) {
@@ -43,13 +46,22 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                         'branch' => ValidatedData::string($source['branch']), 'starting_commit' => ValidatedData::string($source['commit']),
                         'selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel'],
                         ...(($operation->input['seed_commit'] ?? null) !== null ? ['source_layout' => InstanceSourceLayout::Worktree] : [])]);
-                    if (isset($result['environment_keys'])) {
+                    if (isset($result['environment_seeded_keys'])) {
                         $reference = NativeDevelopmentInstanceInput::environmentOutput($operation);
                         $private = ValidatedData::object(json_decode(app(SwampVaultExecutionCopy::class)->readSecret($reference['vault'], $reference['key']), true, flags: JSON_THROW_ON_ERROR));
                         $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance->refresh(), true, createOperationId: $operation->id);
                         $values = ValidatedData::stringMap($private['values']);
                         app(InstanceEnvironmentStore::class)->putMany($context, $values, 'create');
-                        $instance->update(['environment_owned_keys' => array_keys($values)]);
+                        if (isset($result['environment_keys'])) {
+                            $keys = ValidatedData::stringList($result['environment_keys']);
+                            $actualKeys = array_keys($values);
+                            sort($keys);
+                            sort($actualKeys);
+                            if ($keys !== $actualKeys) {
+                                throw new ResourceOperationException('instance.result_invalid', 'The native environment keys do not match their private output.');
+                            }
+                            $instance->forceFill(['environment_owned_keys' => $actualKeys])->save();
+                        }
                     }
                     if (is_array($result['vp_environment'] ?? null)) {
                         app(InstanceVpEnvironmentMaterial::class)->recordReference($instance, ValidatedData::string($operation->input['checkout']), VpEnvironment::fromArray($result['vp_environment']), 'active');

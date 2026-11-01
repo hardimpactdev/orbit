@@ -66,9 +66,11 @@ export function createPreparationSteps(): Fields[] {
     });
     env.metadata("capture", "capture", {
         path: e(remote),
-        env: e(
-            "vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key)",
-        ),
+        env: {
+            ORBIT_ENVIRONMENT: e(
+                "vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key)",
+            ),
+        },
         profile: e('steps["source-result"].outputs'),
         reference: e(intent + ".environment_output"),
         directory: e(intent + ".application"),
@@ -120,30 +122,30 @@ export function createCompletionSteps(): Fields[] {
                 "-B",
                 e('"/tmp/orbit-instance-"+run.id+"/run_project_step.py"'),
             ],
-            timeoutSec: e(
-                "size(" + intent + ".setup_commands)>" + index + "?" + intent +
-                    ".setup_commands[" + index + "].timeout_seconds:60",
-            ),
+            timeoutSec: e("self.command.timeout_seconds"),
+            env: {
+                VP_HOME: e(
+                    'steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store',
+                ),
+            },
             stdin: e(
-                "size(" + intent + ".setup_commands)>" + index +
-                    "?vault.get(inputs.execution_secrets[" + intent +
-                    ".setup_commands[" + index +
-                    "].secret_field].vault,inputs.execution_secrets[" + intent +
-                    ".setup_commands[" + index + '].secret_field].key):""',
+                "vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key)",
             ),
         }, {
-            guard: e(
-                "size(" + intent + ".setup_commands)<=" + index +
-                    ' || steps.exists(key,steps[key].status=="failed")',
-            ),
-        });
-        end.steps.at(-1)!.dependsOn = [{
-            step: index ? "finish-setup-" + (index - 1) : "finish-setup-copy",
-            condition: {
-                type: "or",
-                conditions: [{ type: "succeeded" }, { type: "skipped" }],
+            forEach: {
+                item: "command",
+                in: e(
+                    intent + ".setup_commands.filter(command,command.index==" +
+                        index + ")",
+                ),
             },
-        }];
+            dependsOn: [{
+                step: index
+                    ? "finish-setup-" + (index - 1)
+                    : "finish-setup-copy",
+                condition: { type: "succeeded" },
+            }],
+        });
     }
     end.metadata(
         "result",

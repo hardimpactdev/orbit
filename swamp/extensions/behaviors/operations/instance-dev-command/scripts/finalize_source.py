@@ -32,7 +32,9 @@ def finalize(value):
             raise ValueError('instance.removal_conflict')
         descriptor=os.open(receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
         with os.fdopen(descriptor,'w') as stream:
-            json.dump(expected,stream);stream.flush();os.fsync(stream.fileno())
+            json.dump(expected,stream)
+            stream.flush()
+            os.fsync(stream.fileno())
         rootfd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(rootfd)

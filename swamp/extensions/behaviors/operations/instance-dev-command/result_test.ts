@@ -42,13 +42,13 @@ Deno.test("create requires every ordered setup action and actual VP verification
         "env-capture": done(),
         "vp-requirements": done({ runtime: {} }),
         "vp-result": done({ ready: true }),
-        "finish-setup-0": done(),
+        "finish-setup-0-0": done(),
     };
     assertEquals(createResult(intent, steps).ready, true);
     assertEquals(
         createResult(intent, {
             ...steps,
-            "finish-setup-0": { status: "skipped" },
+            "finish-setup-0-0": { status: "skipped" },
         }).ready,
         false,
     );

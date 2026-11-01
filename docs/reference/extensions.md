@@ -190,3 +190,7 @@ Each plug-in point is a typed interface. It states what an extension may change 
 Routes and migrations load on every install. The Gateway caches its routes, and the OpenAPI document and the MCP tools are generated from them. Loading them from a database switch would make those artifacts and the schema depend on runtime state.
 
 An extension is not a Composer package, a separate process, or something to install at runtime. Nothing outside this repository installs one, so a package for each extension would add lock file and tooling churn for no gain.
+
+### Public captures at native termination
+
+A native family may declare `terminal_result.captures` beside its fixed terminal step. Each named capture selects one fixed job and step, and optionally one output field. The shared terminal reader includes only successful selected outputs from the same bound run. Existing terminal fields take precedence. This preserves public source and environment-key facts when cancellation skips the final aggregate. Private values remain in their named vault output; no family history reader or progress callback runs.

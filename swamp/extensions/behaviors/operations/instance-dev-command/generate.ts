@@ -9,8 +9,8 @@ import { expression as e } from "../instance-vp-command/native_steps.ts";
 const reference = {
     type: "object",
     properties: {
-        vault: { type: "string", const: "orbit-control-inputs" },
-        key: { type: "string" },
+        vault: { type: "string", enum: ["orbit-control-inputs"] },
+        key: { type: "string", pattern: "^[a-z][a-z0-9_.-]{0,254}$" },
     },
     required: ["vault", "key"],
     additionalProperties: false,
@@ -29,7 +29,9 @@ export function workflow(kind: "create" | "destroy") {
             message: "The development Instance action did not complete.",
         },
     });
-    return {
+    const result: Record<string, unknown> & {
+        jobs: { name: string; steps: Record<string, unknown>[] }[];
+    } = {
         id: kind === "create"
             ? "c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a"
             : "10c1e646-19cd-4527-8be5-01f524976346",
@@ -78,6 +80,39 @@ export function workflow(kind: "create" | "destroy") {
             ]
             : [{ name: kind, target: "orbit-node-209", steps }],
     };
+    if (kind === "create") {
+        for (const job of result.jobs) {
+            const name = job.name + "-admitted";
+            for (const step of job.steps) {
+                if (step.name === "finish-result" || step.name === "accepted") {
+                    continue;
+                }
+                if (step.forEach) {
+                    const loop = step.forEach as { in: string };
+                    loop.in = e(
+                        "inputs.intent.already_active ? [] : (" +
+                            loop.in.slice(3, -3).trim() + ")",
+                    );
+                }
+                step.dependsOn = [
+                    ...((step.dependsOn as Record<string, unknown>[]) ?? []),
+                    { step: name, condition: { type: "succeeded" } },
+                ];
+            }
+            job.steps.unshift({
+                name,
+                target: "orbit-node-209",
+                guard: e("inputs.intent.already_active"),
+                task: {
+                    type: "assert",
+                    expr: "true",
+                    severity: "high",
+                    message: "The Instance is already active.",
+                },
+            });
+        }
+    }
+    return result;
 }
 if (import.meta.main) {
     for (const kind of ["create", "destroy"] as const) {
