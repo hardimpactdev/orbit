@@ -5,14 +5,10 @@ cluster.router_unset
 conn.gateway_sessions_revoke
 database.clone
 database.destroy_owned
-database.read
 database.sqlite_cleanup
 database.sqlite_export
 database.sqlite_seed
-database.write
 database_server.close
-database_server.create
-database_server.destroy
 fleet.cli_converge
 fleet.docker_migrate
 gateway.swamp_load
@@ -37,9 +33,6 @@ node.worker_known_hosts
 observation.maintain
 process.install_instance_definitions
 process.restart_instance
-project.detect
-project.observe
-project.routine
 route.caddy_converge
 route.lan_remove
 route.private_dns_publish
@@ -63,7 +56,6 @@ tasks.maintenance_finish
 tasks.park
 tasks.script
 tasks.turn
-tool.manager_converge
 websocket.app_create
 websocket.app_destroy
 websocket.app_rotate
