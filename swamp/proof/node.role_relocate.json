@@ -1,0 +1,447 @@
+{
+  "kind": "node.role_relocate",
+  "workflow": "operation-node-role-relocate-direct",
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "envelope": {
+    "intent": {
+      "target": {
+        "schema_version": 1,
+        "node_id": "${proof.target.node_id}",
+        "assignment_id": 2,
+        "created": false,
+        "role": "websocket",
+        "user": "${proof.target.user}",
+        "agent_sha256": "bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa",
+        "prerequisites": {
+          "releases": [
+            "resolute"
+          ],
+          "packages": [
+            "caddy",
+            "composer",
+            "git",
+            "openssl",
+            "php-curl",
+            "php-xml"
+          ],
+          "apps_directory": false,
+          "composer_home": false
+        },
+        "ssh": {
+          "control_node_id": "${proof.control.node_id}",
+          "identity_file": "${proof.control.identity_file}",
+          "public_key": "${proof.control.public_key}",
+          "target": {
+            "name": "target",
+            "host": "${proof.target.host}",
+            "user": "${proof.target.user}",
+            "port": "${proof.target.port}",
+            "host_keys": "${proof.target.host_keys}"
+          }
+        },
+        "caddy": {
+          "node_id": "${proof.target.node_id}",
+          "user": "${proof.target.user}",
+          "caddy": {
+            "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+            "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+            "listen_addresses": [],
+            "unserved": true
+          },
+          "control_node_id": "${proof.control.node_id}",
+          "host_keys": "${proof.target.host_keys}",
+          "connection": {
+            "nodeHost": "${proof.target.host}",
+            "nodeUser": "${proof.target.user}",
+            "nodePort": "${proof.target.port}",
+            "nodeIdentityFile": "${proof.control.identity_file}",
+            "become": true
+          }
+        },
+        "caddy_package": {
+          "release": "2.11.7",
+          "amd64_sha512": "47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9",
+          "minimum_version": "2.9.0"
+        },
+        "firewall": {
+          "desired": [
+            [
+              "ufw",
+              "allow",
+              "in",
+              "on",
+              "orbit",
+              "to",
+              "${proof.target.host}",
+              "comment",
+              "orbit:wireguard-members"
+            ]
+          ],
+          "remove": [
+            [
+              "ufw",
+              "--force",
+              "delete",
+              "allow",
+              "in",
+              "proto",
+              "tcp",
+              "to",
+              "any",
+              "port",
+              "22",
+              "comment",
+              "orbit:public-ssh-recovery"
+            ],
+            [
+              "ufw",
+              "--force",
+              "delete",
+              "allow",
+              "in",
+              "on",
+              "orbit",
+              "proto",
+              "tcp",
+              "to",
+              "${proof.target.host}",
+              "port",
+              "22",
+              "comment",
+              "orbit:vpn-ssh"
+            ]
+          ]
+        },
+        "footprint": {
+          "schema_version": 1,
+          "node_id": "${proof.target.node_id}",
+          "agent_sha256": "bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa",
+          "force_artifacts": false,
+          "first_visit": false,
+          "artifacts": [
+            {
+              "name": "agent",
+              "digest": "9980885eccae2389f9e67ad9df5b7beceed3fb2a80ae3f2a7447f8ac6782924e",
+              "required": true,
+              "repair": false
+            }
+          ],
+          "payloads": {
+            "agent": {
+              "configuration": "gateway_url = \"https://127.0.0.1:9\"\n",
+              "certificate": "public fixture root",
+              "unit": "# Managed by Orbit: agent\n[Unit]\nDescription=Orbit Node agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart=/usr/local/bin/orbit-agent\nRestart=always\nRestartSec=2\nUser=root\nGroup=root\nCapabilityBoundingSet=\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nMemoryMax=128M\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n\n[Install]\nWantedBy=multi-user.target\n",
+              "checkouts": [],
+              "user": "${proof.target.user}",
+              "apps_root": null,
+              "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-x86_64"
+            }
+          },
+          "network": null,
+          "refusal": null
+        },
+        "cli": {
+          "user": "${proof.target.user}",
+          "release": {
+            "version": "0.4681.0",
+            "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64",
+            "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          "profile": "{}\n",
+          "skip_reason": null,
+          "plan_error": null
+        },
+        "metrics_fleet": null,
+        "runtime": {
+          "role": "websocket",
+          "node_id": "${proof.target.node_id}",
+          "assignment_id": 2,
+          "agent_sha256": "bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa",
+          "material": {
+            "$secret": "node.role_runtime",
+            "id": 2
+          },
+          "user": "${proof.target.user}",
+          "install_path": "/opt/orbit/websocket",
+          "repository": "https://github.com/hardimpactdev/orbit-reverb.git",
+          "ref": "f15545c04a30ef26cf3a11dd675668ced217f394",
+          "port": "${proof.target.port}"
+        },
+        "certificates": {
+          "leaves": [
+            {
+              "node_id": "${proof.target.node_id}",
+              "scope": "role-websocket",
+              "domain": "reverb.orbit",
+              "version": "b7530caf3de5cf41",
+              "root_hash": "671c843178478c3fc89988ad8c1b9d1e56b2dc79e4022f22defa16e9997255a0"
+            }
+          ],
+          "withdrawals": []
+        },
+        "publications": [
+          {
+            "node_id": "${proof.target.node_id}",
+            "control_node_id": "${proof.control.node_id}",
+            "host_keys": "${proof.target.host_keys}",
+            "connection": {
+              "nodeHost": "${proof.target.host}",
+              "nodeUser": "${proof.target.user}",
+              "nodePort": "${proof.target.port}",
+              "nodeIdentityFile": "${proof.control.identity_file}",
+              "become": true
+            },
+            "before": {
+              "caddy": {
+                "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+                "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+                "listen_addresses": [],
+                "unserved": true,
+                "blocks": []
+              },
+              "php": null,
+              "dns": null,
+              "certificate_scopes": []
+            },
+            "after": {
+              "caddy": {
+                "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: websocket reverb.orbit\n# Managed by Orbit: websocket\nreverb.orbit {\n    bind ${proof.target.host}\n    @orbit_outside not remote_ip ${proof.target.host}/24\n    abort @orbit_outside\n    tls /etc/caddy/orbit-websocket-cert-current/reverb.pem /etc/caddy/orbit-websocket-cert-current/reverb.key\n    handle /internal/* {\n        @gateway remote_ip ${proof.target.host}\n        handle @gateway {\n            reverse_proxy 127.0.0.1:8790\n        }\n        respond 403\n    }\n    handle {\n        reverse_proxy 127.0.0.1:8790\n    }\n}\n",
+                "version": "428287d8d0e533652a1e95ad39fe9c2f",
+                "listen_addresses": [
+                  "${proof.target.host}"
+                ],
+                "unserved": false,
+                "blocks": [
+                  {
+                    "source": "websocket",
+                    "name": "reverb.orbit",
+                    "block": "# orbit: websocket reverb.orbit\n# Managed by Orbit: websocket\nreverb.orbit {\n    bind ${proof.target.host}\n    @orbit_outside not remote_ip ${proof.target.host}/24\n    abort @orbit_outside\n    tls /etc/caddy/orbit-websocket-cert-current/reverb.pem /etc/caddy/orbit-websocket-cert-current/reverb.key\n    handle /internal/* {\n        @gateway remote_ip ${proof.target.host}\n        handle @gateway {\n            reverse_proxy 127.0.0.1:8790\n        }\n        respond 403\n    }\n    handle {\n        reverse_proxy 127.0.0.1:8790\n    }\n}\n"
+                  }
+                ]
+              },
+              "php": null,
+              "dns": null,
+              "certificate_scopes": []
+            }
+          }
+        ]
+      },
+      "source": {
+        "schema_version": 1,
+        "node_id": "${proof.target.node_id}",
+        "assignment_id": 2,
+        "role": "websocket",
+        "ssh": {
+          "control_node_id": "${proof.control.node_id}",
+          "identity_file": "${proof.control.identity_file}",
+          "public_key": "${proof.control.public_key}",
+          "target": {
+            "name": "target",
+            "host": "${proof.target.host}",
+            "user": "${proof.target.user}",
+            "port": "${proof.target.port}",
+            "host_keys": "${proof.target.host_keys}"
+          }
+        },
+        "publications": [
+          {
+            "node_id": "${proof.target.node_id}",
+            "control_node_id": "${proof.control.node_id}",
+            "host_keys": "${proof.target.host_keys}",
+            "connection": {
+              "nodeHost": "${proof.target.host}",
+              "nodeUser": "${proof.target.user}",
+              "nodePort": "${proof.target.port}",
+              "nodeIdentityFile": "${proof.control.identity_file}",
+              "become": true
+            },
+            "before": {
+              "caddy": {
+                "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+                "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+                "listen_addresses": [],
+                "unserved": true,
+                "blocks": []
+              },
+              "php": null,
+              "dns": null
+            },
+            "after": {
+              "caddy": {
+                "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+                "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+                "listen_addresses": [],
+                "unserved": true,
+                "blocks": []
+              },
+              "php": null,
+              "dns": null
+            }
+          }
+        ],
+        "stop_units": [
+          {
+            "ssh": {
+              "control_node_id": "${proof.control.node_id}",
+              "identity_file": "${proof.control.identity_file}",
+              "public_key": "${proof.control.public_key}",
+              "target": {
+                "name": "target",
+                "host": "${proof.target.host}",
+                "user": "${proof.target.user}",
+                "port": "${proof.target.port}",
+                "host_keys": "${proof.target.host_keys}"
+              }
+            },
+            "input": {
+              "unit": "orbit-websocket.service"
+            }
+          }
+        ],
+        "remove_footprints": [],
+        "reload_units": [
+          {
+            "ssh": {
+              "control_node_id": "${proof.control.node_id}",
+              "identity_file": "${proof.control.identity_file}",
+              "public_key": "${proof.control.public_key}",
+              "target": {
+                "name": "target",
+                "host": "${proof.target.host}",
+                "user": "${proof.target.user}",
+                "port": "${proof.target.port}",
+                "host_keys": "${proof.target.host_keys}"
+              }
+            },
+            "input": []
+          }
+        ],
+        "remove_units": [
+          {
+            "ssh": {
+              "control_node_id": "${proof.control.node_id}",
+              "identity_file": "${proof.control.identity_file}",
+              "public_key": "${proof.control.public_key}",
+              "target": {
+                "name": "target",
+                "host": "${proof.target.host}",
+                "user": "${proof.target.user}",
+                "port": "${proof.target.port}",
+                "host_keys": "${proof.target.host_keys}"
+              }
+            },
+            "input": {
+              "unit": "orbit-websocket.service"
+            }
+          }
+        ],
+        "stop_containers": [],
+        "remove_containers": [],
+        "firewall": [],
+        "certificates": [
+          {
+            "ssh": {
+              "control_node_id": "${proof.control.node_id}",
+              "identity_file": "${proof.control.identity_file}",
+              "public_key": "${proof.control.public_key}",
+              "target": {
+                "name": "target",
+                "host": "${proof.target.host}",
+                "user": "${proof.target.user}",
+                "port": "${proof.target.port}",
+                "host_keys": "${proof.target.host_keys}"
+              }
+            },
+            "input": {
+              "scope": "role-websocket"
+            }
+          }
+        ],
+        "ci_host": []
+      },
+      "withdrawal_grace_seconds": 31
+    },
+    "execution_secrets": {
+      "observer": {
+        "vault": "orbit-control-inputs",
+        "key": "node-role-1-observer"
+      },
+      "runtime_material": {
+        "vault": "orbit-control-inputs",
+        "key": "node-role-1-runtime_material"
+      }
+    },
+    "operation_id": "${proof.operation_id}",
+    "kind": "node.role_relocate",
+    "node_id": "${proof.target.node_id}"
+  },
+  "secrets": [
+    {
+      "vault": "orbit-control-inputs",
+      "key": "node-role-1-observer",
+      "value": "generate:hex32"
+    },
+    {
+      "vault": "orbit-control-inputs",
+      "key": "node-role-1-runtime_material",
+      "value": "file:node.role_relocate/runtime-material.json"
+    }
+  ],
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "ready": true,
+        "target_completed": true,
+        "source_completed": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "target-prerequisites",
+      "job": "target",
+      "step": "packages",
+      "budget_seconds": 60
+    },
+    {
+      "name": "target-contribution",
+      "job": "target",
+      "step": "role_result",
+      "budget_seconds": 10
+    },
+    {
+      "name": "dns-withdrawal-grace",
+      "job": "source",
+      "step": "source_grace",
+      "budget_seconds": 35
+    },
+    {
+      "name": "source-publication",
+      "job": "source",
+      "step": "source_publication",
+      "budget_seconds": 30
+    },
+    {
+      "name": "source-runtime-cleanup",
+      "job": "source",
+      "step": "source_cleanup",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/node.role_relocate/parity.py"
+    ],
+    "cases": [
+      "same-admitted-assignment",
+      "target-role-runtime-ready",
+      "source-withdrawal-after-target"
+    ]
+  }
+}

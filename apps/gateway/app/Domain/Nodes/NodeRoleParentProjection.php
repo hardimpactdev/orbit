@@ -42,6 +42,12 @@ final readonly class NodeRoleParentProjection implements DirectOperationProjecti
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
             $result = ValidatedData::object($data['result'] ?? []);
+            $target = ValidatedData::object($result['target'] ?? []);
+            $result['target_completed'] ??= ($target['role_proven'] ?? false) === true
+                && ($target['runtime_proven'] ?? false) === true && ($target['certificates_proven'] ?? false) === true
+                && ($target['publication_proven'] ?? false) === true;
+            $result['source_completed'] ??= (ValidatedData::object($result['source_cleanup'] ?? [])['role_removed'] ?? false) === true;
+            $result['target_rollback_completed'] ??= (ValidatedData::object($result['target_rollback'] ?? [])['role_removed'] ?? false) === true;
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal) {
                 return $projected;
@@ -49,7 +55,7 @@ final readonly class NodeRoleParentProjection implements DirectOperationProjecti
             $snapshot = ValidatedData::object($operation->input['_role']);
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $snapshot['role'])->firstOrFail();
             $target = ValidatedData::object($result['target'] ?? []);
-            if (($result['target_completed'] ?? false) === true) {
+            if ($result['target_completed'] === true) {
                 $assignment->markConvergenceActive();
                 $footprint = ValidatedData::object($target['footprint']);
                 app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($snapshot['footprint']), $footprint, NodeFootprintProjection::artifacts($footprint));
@@ -73,7 +79,10 @@ final readonly class NodeRoleParentProjection implements DirectOperationProjecti
                     }
                 }
             }
-            if ($operation->kind === 'node.role_relocate' && ($result['source_completed'] ?? false) === true) {
+            if ($operation->kind === 'node.role_add' && $result['target_rollback_completed'] === true) {
+                NodeRoleRemovalProjection::recordCleanup($snapshot);
+            }
+            if ($operation->kind === 'node.role_relocate' && $result['source_completed'] === true) {
                 $transfer = ValidatedData::object($operation->input['_relocate']);
                 NodeRoleRemovalProjection::recordCleanup(ValidatedData::object($transfer['source']), true);
                 $certificates = ValidatedData::object($transfer['certificates']);

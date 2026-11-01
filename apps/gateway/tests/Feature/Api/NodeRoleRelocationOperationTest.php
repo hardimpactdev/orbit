@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NodeRoleParentProjection;
-use App\Infrastructure\AgentView\WebSocketClient;
-use Tests\Support\FakeRoutePublicationSocket;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
@@ -14,7 +12,9 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {

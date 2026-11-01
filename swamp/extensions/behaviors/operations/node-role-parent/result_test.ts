@@ -19,7 +19,7 @@ Deno.test("target success followed by source failure keeps the exact target fact
     const result = parentResult({
         kind: "node.role_relocate",
         steps: {
-            target_role_result: {
+            role_result: {
                 status: "succeeded",
                 outputs: target,
             },
@@ -37,13 +37,13 @@ Deno.test("successful source cleanup needs its native receipt", () => {
         const result = parentResult({
             kind: "node.role_relocate",
             steps: {
-                target_role_result: {
+                role_result: {
                     status: "succeeded",
                     outputs: target,
                 },
                 source_cleanup: {
                     status: "succeeded",
-                    outputs: { role_removed: value },
+                    outputs: { result: { role_removed: value } },
                 },
             },
         });
@@ -54,7 +54,7 @@ Deno.test("a failed target cannot report completed source or role", () => {
     const result = parentResult({
         kind: "node.role_add",
         steps: {
-            target_role_result: {
+            role_result: {
                 status: "succeeded",
                 outputs: {
                     ...target,

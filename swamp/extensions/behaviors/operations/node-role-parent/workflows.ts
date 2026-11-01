@@ -41,7 +41,7 @@ export function parentWorkflow(relocate = false) {
         }],
     };
     const target = roleConvergeSteps(
-        "target",
+        "",
         "inputs.intent.target",
         globals,
         undefined,
@@ -51,16 +51,68 @@ export function parentWorkflow(relocate = false) {
     target.push({
         name: "target_proven",
         ...placed,
-        dependsOn: on("target_role_result"),
+        dependsOn: on("role_result"),
         task: {
             type: "assert",
             severity: "high",
             message: "The target must be ready before source withdrawal",
             expr:
-                "steps.target_role_result.outputs.role_proven && steps.target_role_result.outputs.runtime_proven && steps.target_role_result.outputs.certificates_proven && steps.target_role_result.outputs.publication_proven",
+                "steps.role_result.outputs.role_proven && steps.role_result.outputs.runtime_proven && steps.role_result.outputs.certificates_proven && steps.role_result.outputs.publication_proven",
         },
     });
     const jobs: Fields[] = [{ name: "target", steps: target }];
+    if (!relocate) {
+        jobs.push({
+            name: "rollback",
+            dependsOn: [{ job: "target", condition: { type: "always" } }],
+            steps: [{
+                name: "target_rollback",
+                ...placed,
+                guard: ex(
+                    '!(inputs.intent.target.role == "websocket" && inputs.intent.target.created && steps.exists(k,k == "runtime-0" && steps[k].status == "succeeded") && !steps.exists(k,k == "publication-0" && steps[k].status == "succeeded"))',
+                ),
+                task: {
+                    type: "workflow",
+                    workflowIdOrName: "node-role-remove",
+                    inputs: {
+                        operation_id: ex("inputs.operation_id"),
+                        node_id: ex("inputs.node_id"),
+                        kind,
+                        execution_secrets: {},
+                        offline: false,
+                        intent: {
+                            schema_version: 1,
+                            node_id: ex("inputs.node_id"),
+                            assignment_id: ex(
+                                "inputs.intent.target.assignment_id",
+                            ),
+                            role: "websocket",
+                            ssh: ex("inputs.intent.target.ssh"),
+                            publications: [],
+                            stop_units: [{
+                                ssh: ex("inputs.intent.target.ssh"),
+                                input: { unit: "orbit-websocket.service" },
+                            }],
+                            remove_units: [{
+                                ssh: ex("inputs.intent.target.ssh"),
+                                input: { unit: "orbit-websocket.service" },
+                            }],
+                            reload_units: [{
+                                ssh: ex("inputs.intent.target.ssh"),
+                                input: {},
+                            }],
+                            remove_footprints: [],
+                            stop_containers: [],
+                            remove_containers: [],
+                            firewall: [],
+                            certificates: [],
+                            ci_host: [],
+                        },
+                    },
+                },
+            }],
+        });
+    }
     if (relocate) {
         const source: Fields[] = [{
             name: "source_grace",

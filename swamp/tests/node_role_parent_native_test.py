@@ -16,6 +16,9 @@ class RoleParentNative(database.DatabaseRoleNative):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('operations/node-role-parent', 'operations/node-removal-command')
+        certificates = self.repo/'extensions/behaviors/operations/certificates/scripts'
+        certificates.mkdir(parents=True)
+        shutil.copy(ROOT/'extensions/behaviors/operations/certificates/scripts/role_paths.py', certificates)
         shutil.copytree(ROOT/'extensions/behaviors/operations/routes/mutation-command',
                         self.repo/'extensions/behaviors/operations/routes/mutation-command')
         policy = self.repo/'extensions/behaviors/operations/routes/publication-command'
@@ -41,6 +44,8 @@ class RoleParentNative(database.DatabaseRoleNative):
         self.input['kind'] = 'node.role_add'
         self.input['intent'] = {'target': self.input['intent']}
         self.input['intent']['target']['created'] = True
+        binary = self.repo/'fixture-ssh'
+        binary.write_text(binary.read_text().replace('if not body:', "if 'REMOVAL_INPUT' in body:finish('remove_runtime',{})\nif not body:"))
         self.timings = []
 
     def run_parent(self, success=True):
@@ -91,7 +96,7 @@ export const behavior={type:"@nckrtl/role-supplier-fixture",version:"2026.11.01.
                       caddy_package={'release': '2.11.1', 'minimum_version': '2.10.2', 'amd64_sha512': 'a'*128},
                       certificates={'leaves': [{'node_id': 5, 'scope': 'role-websocket', 'domain': 'reverb.orbit',
                                                 'version': 'a'*16, 'root_hash': 'b'*64}], 'withdrawals': []},
-                      publications=[], firewall={'desired': [], 'remove': []})
+                      publications=[], firewall={'desired': [['ufw', 'allow', 'in', 'on', 'orbit', 'to', '10.44.0.5', 'comment', 'orbit:wireguard-members']], 'remove': []})
         self.input['execution_secrets']['runtime_material'] = copy.deepcopy(self.input['execution_secrets']['observer'])
         source = {'schema_version': 1, 'node_id': 6, 'assignment_id': 17, 'role': 'websocket', 'ssh': target['ssh'],
                   **{name: [] for name in ['publications', 'stop_units', 'remove_footprints', 'reload_units', 'remove_units',
@@ -107,6 +112,23 @@ export const behavior={type:"@nckrtl/role-supplier-fixture",version:"2026.11.01.
         steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
         self.assertEqual(steps['source_grace']['status'], 'succeeded')
         self.assertEqual(steps['source_cleanup']['status'], 'succeeded')
+
+    def test_new_websocket_runtime_is_removed_after_later_publication_failure(self):
+        for created in [True, False]:
+            with self.subTest(created=created):
+                self.prepare_move()
+                self.input['kind'] = 'node.role_add'
+                self.input['intent']['target']['created'] = created
+                path = self.repo/'workflows/workflow-node-role-publication.yaml'
+                flow = yaml.safe_load(path.read_text())
+                flow['jobs'] = [{'name': 'fixture', 'steps': [{'name': 'refused', 'task': {'type': 'assert', 'expr': 'false', 'message': 'Publication failure after runtime activation'}}]}]
+                path.write_text(yaml.safe_dump(flow, sort_keys=False))
+                history, result = self.run_parent(False)
+                steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+                self.assertEqual(steps['runtime-0']['status'], 'succeeded')
+                self.assertFalse(result['ready'])
+                self.assertEqual(result['target_rollback_completed'], created)
+                self.assertEqual(steps['target_rollback']['status'], 'succeeded' if created else 'skipped')
 
     def test_target_failure_skips_source_even_when_contribution_is_returned(self):
         self.prepare_move()

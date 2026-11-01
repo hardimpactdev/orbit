@@ -1345,12 +1345,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/routes/router-preparation.ts",
-      "rule": "inline-script",
-      "count": 100,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/cache_fill_direct.ts",
       "rule": "gateway-http",
       "count": 3,

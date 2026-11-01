@@ -57,7 +57,10 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-role-add-direct',
     'projection' => NodeRoleParentProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'result', 'step' => 'result', 'captures' => [
+        'target' => ['job' => 'target', 'step' => 'role_result'],
+        'target_rollback' => ['job' => 'rollback', 'step' => 'target_rollback', 'field' => 'result'],
+    ]],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-[0-9]+-(observer|runtime_material)$']],
 ], 'node.role_converge' => [
     'workflow' => 'operation-node-role-converge-209',
@@ -70,7 +73,10 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-role-relocate-direct',
     'projection' => NodeRoleParentProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'result', 'step' => 'result', 'captures' => [
+        'target' => ['job' => 'target', 'step' => 'role_result'],
+        'source_cleanup' => ['job' => 'source', 'step' => 'source_cleanup', 'field' => 'result'],
+    ]],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-[0-9]+-(observer|runtime_material)$']],
 ], 'node.role_remove' => [
     'workflow' => 'operation-node-role-remove-direct',

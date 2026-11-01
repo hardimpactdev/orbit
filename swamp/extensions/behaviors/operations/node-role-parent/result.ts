@@ -11,7 +11,7 @@ const Args = z.object({
 export function parentResult(raw: unknown) {
     const { kind, steps } = Args.parse(raw);
     const parsed = RoleConvergeContribution.safeParse(
-        steps.target_role_result?.outputs,
+        steps.role_result?.outputs,
     );
     const target = parsed.success ? parsed.data : null;
     const target_completed = target !== null && target.role_proven &&
@@ -19,14 +19,24 @@ export function parentResult(raw: unknown) {
         target.publication_proven;
     const source_completed = kind === "node.role_relocate" &&
         steps.source_cleanup?.status === "succeeded" &&
-        steps.source_cleanup.outputs?.role_removed === true;
-    const ready = target_completed &&
+        z.object({ role_removed: z.literal(true) }).passthrough().safeParse(
+            steps.source_cleanup.outputs?.result,
+        ).success;
+    const target_rollback_completed =
+        steps.target_rollback?.status === "succeeded" &&
+        z.object({ role_removed: z.literal(true) }).passthrough().safeParse(
+            steps.target_rollback.outputs?.result,
+        ).success;
+    const rollback_failed = steps.target_rollback?.status === "failed";
+    const ready = !rollback_failed && target_completed &&
         (kind === "node.role_add" || source_completed);
     const failure = Object.entries(steps).find(([, step]) =>
         ["failed", "cancelled"].includes(step.status)
     );
     const error_code = ready
         ? undefined
+        : rollback_failed
+        ? "websocket.rollback_failed"
         : !target_completed
         ? target?.error_code ?? "node_role.convergence_failed"
         : "node_role.source_cleanup_failed";
@@ -34,6 +44,7 @@ export function parentResult(raw: unknown) {
         ready,
         target_completed,
         source_completed,
+        target_rollback_completed,
         target,
         ...(!ready
             ? {

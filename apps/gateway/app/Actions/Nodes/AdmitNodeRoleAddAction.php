@@ -9,6 +9,7 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NodeRoleParentInput;
+use App\Domain\Nodes\NodeRoleIntent;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
@@ -43,9 +44,6 @@ final readonly class AdmitNodeRoleAddAction
                 throw new ResourceOperationException('operation.kind_unavailable', 'This role requires its implemented native contribution on209.', 422);
             }
             $this->assign->preflight($node, $role);
-            if (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1) {
-                throw new ResourceOperationException('node.agent_rekey_required', 'The role needs the existing recorded Node agent identity.', 409);
-            }
             $existing = $node->roles()->where('role', $role)->first();
             if ($existing !== null && ! ($role === RoleName::Ingress && $existing->status === LifecycleStatus::Active)) {
                 throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
@@ -55,6 +53,9 @@ final readonly class AdmitNodeRoleAddAction
                 lockKey: OperationStore::lockKey('node', $node->id));
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
+            }
+            if (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1) {
+                throw new ResourceOperationException('node.agent_rekey_required', 'The role needs the existing recorded Node agent identity.', 409);
             }
             $assignment = $this->assign->execute($node, $role);
             $created = $assignment->wasRecentlyCreated;
@@ -66,7 +67,8 @@ final readonly class AdmitNodeRoleAddAction
             $this->store->change($operation, ['input' => [...$operation->input,
                 '_role' => $captured['snapshot'], 'native_role' => $captured['intent'],
                 'intent' => ['target' => $captured['intent']], 'execution_secrets' => $copies,
-                'participant_node_ids' => $captured['participant_node_ids']]]);
+                'participant_node_ids' => $captured['participant_node_ids']],
+                'state' => [...$operation->state, 'role_intent' => NodeRoleIntent::capture($assignment, $created)]]);
 
             return $operation;
         });

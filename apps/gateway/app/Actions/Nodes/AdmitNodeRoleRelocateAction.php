@@ -10,6 +10,7 @@ use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleParentInput;
+use App\Domain\Nodes\NodeRoleIntent;
 use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleSettings;
@@ -59,14 +60,18 @@ final readonly class AdmitNodeRoleRelocateAction
                 $previous = Operation::query()->where('kind', 'node.role_relocate')->where('node_id', $target->id)
                     ->where('input->_relocate->assignment_id', $assignment->id)->where('input->_relocate->source_node_id', $source->id)
                     ->whereKeyNot($operation->id)->latest('id')->first();
-                if ($previous === null || ! isset($previous->input['_relocate']['source_before'], $previous->input['_relocate']['source'], $previous->input['intent']['source'])) {
+                $priorTransfer = $previous === null ? [] : ValidatedData::object($previous->input['_relocate'] ?? []);
+                $priorIntent = $previous === null ? [] : ValidatedData::object($previous->input['intent'] ?? []);
+                if ($previous === null || ! isset($priorTransfer['source_before'], $priorTransfer['source'], $priorIntent['source'])) {
                     throw new ResourceOperationException('operation.kind_unavailable', 'This transfer has no captured native source state; its original outcome must be settled first.', 422);
                 }
-                $transfer = ValidatedData::object($previous->input['_relocate']);
+                $roleIntent = ValidatedData::object($previous->state['role_intent']);
+                $transfer = $priorTransfer;
                 $before = RouteExecutionProof::objects($transfer['source_before']);
                 $sourceSnapshot = ValidatedData::object($transfer['source']);
-                $sourceIntent = ValidatedData::object(ValidatedData::object($previous->input['intent'])['source']);
+                $sourceIntent = ValidatedData::object($priorIntent['source']);
             } else {
+                $roleIntent = NodeRoleIntent::capture($assignment, false, $target);
                 $before = $removal->publications($source, $role);
                 $sourceSnapshot = ['node_id' => $source->id, 'role' => $role->value, 'assignment_id' => $assignment->id,
                     'runtime' => app(NodeRoleRuntimeInput::class)->removal($source, $role)];
@@ -106,7 +111,8 @@ final readonly class AdmitNodeRoleRelocateAction
                 'intent' => ['target' => $captured['intent'], 'source' => $sourceIntent,
                     'withdrawal_grace_seconds' => $role === RoleName::WebSocket ? PrivateDnsAnswerExpiry::WithdrawalGraceSeconds : 0],
                 'execution_secrets' => $copies,
-                'participant_node_ids' => array_values(array_unique([...$captured['participant_node_ids'], $source->id, ...array_map(static fn (array $member): int => ValidatedData::integer($member['node_id']), $after)]))]]);
+                'participant_node_ids' => array_values(array_unique([...$captured['participant_node_ids'], $source->id, ...array_map(static fn (array $member): int => ValidatedData::integer($member['node_id']), $after)]))],
+                'state' => [...$operation->state, 'role_intent' => $roleIntent]]);
 
             return $operation;
         });
