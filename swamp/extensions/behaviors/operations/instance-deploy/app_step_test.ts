@@ -329,25 +329,20 @@ Deno.test("changed current command refuses before sudo and unknown local failure
   );
 });
 
-Deno.test("an interrupted running list refuses replay before another sudo effect", async () => {
+Deno.test("a list the Gateway already marked running executes its admitted steps", async () => {
   const f = fixture("running");
-  await assertRejects(
-    () =>
-      setupDirect(() => f.http, () => {
-        throw new Error("must not repeat script");
-      }).methods.run.execute(args, ctx),
-    Error,
-    "instance.step_execution_unconfirmed",
-  );
-  assertEquals(f.effects, []);
-  assertEquals(f.projections.length, 1);
-  assertEquals(f.projections[0].status, "failed");
-  assertEquals(f.projections[0].result, {
-    instance_id: 12,
-    outcome: "unconfirmed",
-    error_code: "instance.step_execution_unconfirmed",
-    failed_step: null,
-  });
+  const result = await setupDirect(() => f.http, (admitted) => {
+    f.effects.push(admitted.name);
+    return Promise.resolve({
+      exit_code: 0,
+      timed_out: false,
+      output_tail: "",
+      truncated: false,
+    });
+  }).methods.run.execute(args, ctx);
+  assertEquals(result, { status: "succeeded" });
+  assertEquals(f.effects, ["install", "build"]);
+  assertEquals(f.projections.at(-1)?.status, "succeeded");
 });
 
 Deno.test("development deploy commands use only the Project before-activation list", async () => {

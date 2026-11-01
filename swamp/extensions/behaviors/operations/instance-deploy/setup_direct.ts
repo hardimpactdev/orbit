@@ -74,22 +74,8 @@ export function setupDirect(
                 current.id !== args.operation_id ||
                 current.kind !== args.kind || current.node_id !== args.node_id
               ) throw new Error("instance.step_not_admitted");
-              if (current.status === "running") {
-                const at = new Date().toISOString();
-                await gateway.project({
-                  status: "failed",
-                  started_at: at,
-                  finished_at: at,
-                  error_code: "instance.step_execution_unconfirmed",
-                  result: {
-                    instance_id: current.input.instance_id,
-                    outcome: "unconfirmed",
-                    error_code: "instance.step_execution_unconfirmed",
-                    failed_step: null,
-                  },
-                });
-                throw new Error("instance.step_execution_unconfirmed");
-              }
+              // StartSwampRun marks the Operation running before the native run starts,
+              // so running is the normal first state. Terminal status stops replays.
               return raw;
             },
             project: (body: Record<string, unknown>) => {
