@@ -1,5 +1,4 @@
 import { CliInstallInput, CliInstallResult } from "../fleet/cli_install.ts";
-import { CliInstallProgram } from "../fleet/cli_install_program.ts";
 import { NETWORK_PROGRAM } from "../node/network_native_program.ts";
 import { z } from "npm:zod@4.4.3";
 const Path = z.string().startsWith("/").max(4096);
@@ -64,7 +63,7 @@ type Context = {
 /** Read and shape public assets only. All effects run in official SSH steps. */
 export const behavior = {
     type: "@nckrtl/node-role-converge-command",
-    version: "2026.10.31.1",
+    version: "2026.11.01.2",
     resources: {
         cli: {
             schema: CliInstallResult,
@@ -95,9 +94,12 @@ export const behavior = {
             ) => {
                 const input = CliInstallInput.parse(args);
                 const result = {
-                    script_body: CliInstallProgram.replace(
+                    script_body: (await Deno.readTextFile(
+                        ctx.extensionFile("scripts/cli.py"),
+                    )).replace(
                         "json.load(sys.stdin)",
-                        "json.loads(" + JSON.stringify(JSON.stringify(input)) +
+                        "json.loads(" +
+                            JSON.stringify(JSON.stringify(input)) +
                             ")",
                     ),
                 };

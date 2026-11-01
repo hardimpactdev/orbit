@@ -48,11 +48,13 @@ final readonly class AdmitNodeRecipeAction
         }
 
         return DB::transaction(function () use ($node, $input, $triggeredBy, $requestId, $buildId): Operation {
-            $operation = $this->start->execute('fleet.recipe', 'node', $node->id, $node->id, $input, $triggeredBy, $requestId);
+            $operation = $this->start->execute('fleet.recipe', 'node', $node->id, $node->id, $input, $triggeredBy, $requestId, lockKey: 'recipe:node:'.$node->id);
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
             $settings = $node->settings ?? [];
+            $settings['machine_recipe_attempt'] = ['operation_id' => $operation->id, 'identity' => $input['identity'],
+                'snapshot' => $input['snapshot'], 'status' => 'unverified', 'started_at' => now()->toIso8601String()];
             $pins = ValidatedData::stringMap($input['incus_hold']);
             if ($pins !== []) {
                 $fingerprint = hash('sha256', json_encode($pins, JSON_THROW_ON_ERROR));

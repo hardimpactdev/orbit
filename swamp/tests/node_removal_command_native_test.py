@@ -24,8 +24,8 @@ class NodeRemovalNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('operations/node-removal-command', 'operations/node-role-converge-command')
-        for file in ('fleet/cli_install.ts', 'fleet/cli_install_program.ts', 'node/network_native_program.ts', '_lib/node-commands.ts'):
+        self.copy_behaviors('operations', 'node-worker', 'automatic-deploy')
+        for file in ('fleet/cli_install.ts', 'node/network_native_program.ts', '_lib/node-commands.ts'):
             dest = self.repo / 'extensions/behaviors/operations' / file
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / 'extensions/behaviors/operations' / file, dest)
@@ -43,7 +43,7 @@ class NodeRemovalNative(NativeTestCase):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(target, destination)
                 dependencies(target)
-        dependencies(ROOT / 'extensions/behaviors/operations/node-role-converge-command/assets.ts')
+        dependencies(ROOT / 'extensions/behaviors/operations/fleet-recipe/observer_assets.ts')
         dependencies(ROOT / 'extensions/behaviors/operations/node-removal-command/assets.ts')
         self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
         self.audit = self.repo / 'ssh-audit'
