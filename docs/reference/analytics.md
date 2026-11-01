@@ -88,7 +88,7 @@ The native Node footprint publishes Plausible's four ClickHouse files as root wi
 
 `logs.xml` keeps only `query_log`, for 30 days, and turns off ClickHouse's other system log tables. To diagnose ClickHouse itself, use its console log and `query_log`. Tables that ClickHouse wrote earlier keep their data. Orbit does not drop them.
 
-The selected ClickHouse Process must already mount these files read-only at the listed container paths. The current native footprint publishes the files but does not add or validate those mounts, replace the container, or restart ClickHouse. After a file changes, restart the Process through its normal Process operation so ClickHouse reads it. Each restart drops Plausible's ClickHouse connection until ClickHouse is back.
+The selected ClickHouse Process must already mount these files read-only at the listed container paths. The current native footprint publishes the files but does not add or validate those mounts, replace the container, or restart ClickHouse. Missing mount reconciliation and automatic restart are a known gap in native role convergence. After a file changes, restart the Process through its normal Process operation so ClickHouse reads it. Each restart drops Plausible's ClickHouse connection until ClickHouse is back.
 
 To publish the configuration to an existing install, converge the role again with the same two Processes, then restart ClickHouse if any file changed:
 
