@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 final readonly class AnalyticsUpdateProjection implements DirectOperationProjection
@@ -20,7 +21,7 @@ final readonly class AnalyticsUpdateProjection implements DirectOperationProject
 
     public function input(Operation $operation): array
     {
-        return $operation->input;
+        return ['intent' => Arr::except($operation->input, ['execution_secrets']), 'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation

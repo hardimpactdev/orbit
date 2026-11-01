@@ -210,7 +210,9 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Session cleanup
 
-Pairing revocation captures its exact pairing IDs, client labels, link IDs and T3 URL at admission. All native steps run on Node 209. The Gateway sends the existing admin session through the shared execution-copy helper; workflow input holds only the vault and key names. Swamp reads the T3 session list, selects the admitted labels, checks each selected session again, and revokes each session and pairing link in a separate native step. It preserves the current admin and every other label. A failed read is a failure, never an empty inventory. The fixed terminal result projects only the admitted pairings.
+Pairing revocation captures its exact pairing IDs, client labels, link IDs and T3 URL at admission. Each session child uses its own native run identity, so concurrent sessions do not share behavior definitions. All native steps run on Node 209.
+
+The Gateway sends the existing admin session through the shared execution-copy helper; workflow input holds only the vault and key names. Swamp reads the T3 session list, selects the admitted labels, checks each selected session again, and revokes each session and pairing link in a separate native step. It preserves the current admin and every other label. A failed read is a failure, never an empty inventory. The fixed terminal result projects only the admitted pairings.
 
 Steps make no Gateway calls.
 

@@ -1,26 +1,468 @@
 id: 04baf3d5-926d-4d03-8157-e1302a08360c
 name: operation-analytics-update-direct
-description: Update the pinned Plausible image under one native Node scope.
+description: Update Plausible through native initialization and shared Process workflows on209.
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [analytics.update] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: analytics.update
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        environment:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^process-create-operation-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - environment
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: node
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    writes: true
-    steps:
-      - name: apply
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/analytics-update-direct"
-          behaviorName: '${{ "analytics-runtime-node-" + string(inputs.node_id) }}'
-          methodName: apply
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: update
+  steps:
+  - name: plan
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/analytics-runtime'
+      behaviorName: ${{ "analytics-runtime-" + run.id }}
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: process-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/process-command-assets'
+      behaviorName: ${{ "analytics-process-assets-" + run.id }}
+      methodName: read
+      inputs:
+        control:
+          process_id: ${{ inputs.intent.process_id }}
+          runtime: docker
+          name: ${{ inputs.intent.before.container }}
+          on_demand: false
+          vite: null
+          expected_spec: ${{ inputs.intent.after.spec }}
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+  - name: directory
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "analytics-runtime-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        name: directory
+        hosts:
+        - target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - ${{ "/tmp/orbit-analytics-" + run.id }}
+        - ${{ "/tmp/orbit-analytics-" + run.id + "/process" }}
+        sudo: false
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+  - name: copy
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        name: scripts
+        hosts:
+        - target
+        direction: to
+        src: ${{ steps.plan.outputs.directory }}
+        dst: ${{ "/tmp/orbit-analytics-" + run.id }}
+        recursive: true
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+  - name: copy-process
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: copy
+      globalArgs:
+        name: ${{ "analytics-runtime-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        name: scripts
+        hosts:
+        - target
+        direction: to
+        src: ${{ steps["process-assets"].outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-analytics-" + run.id + "/process" }}
+        recursive: true
+    dependsOn:
+    - step: copy
+      condition:
+        type: succeeded
+    - step: process-assets
+      condition:
+        type: succeeded
+  - name: inspect
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        name: inspect
+        hosts:
+        - target
+        argv:
+        - /usr/bin/docker
+        - --host=unix:///var/run/docker.sock
+        - container
+        - inspect
+        - --format
+        - '{{ index .Config.Labels "orbit.managed" }}{{ printf "\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\n" }}{{ index
+          .Config.Labels "orbit.process.id" }}{{ printf "\n" }}{{ index .Config.Labels "orbit.process.spec" }}{{ printf "\n" }}{{.State.Status}}'
+        - ${{ inputs.intent.before.container }}
+        sudo: true
+    dependsOn:
+    - step: copy-process
+      condition:
+        type: succeeded
+  - name: observation
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/analytics-runtime'
+      behaviorName: ${{ "analytics-runtime-" + run.id }}
+      methodName: observe
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps.inspect.outputs.stdout }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+  - name: createdb
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        name: createdb
+        hosts:
+        - target
+        argv:
+        - /usr/bin/python3
+        - ${{ "/tmp/orbit-analytics-" + run.id + "/scripts/initialize.py" }}
+        - createdb
+        - ${{ steps.plan.outputs.definition_json }}
+        - ${{ run.id }}
+        sudo: true
+        stdin: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
+    dependsOn:
+    - step: observation
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: succeeded
+    guard: ${{ !steps.observation.outputs.replace }}
+  - name: migrate
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        name: migrate
+        hosts:
+        - target
+        argv:
+        - /usr/bin/python3
+        - ${{ "/tmp/orbit-analytics-" + run.id + "/scripts/initialize.py" }}
+        - migrate
+        - ${{ steps.plan.outputs.definition_json }}
+        - ${{ run.id }}
+        sudo: true
+        stdin: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
+    dependsOn:
+    - step: createdb
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: succeeded
+    guard: ${{ !steps.observation.outputs.replace }}
+  - name: reinspect
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "analytics-runtime-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        name: reinspect
+        hosts:
+        - target
+        argv:
+        - /usr/bin/docker
+        - --host=unix:///var/run/docker.sock
+        - container
+        - inspect
+        - --format
+        - '{{ index .Config.Labels "orbit.managed" }}{{ printf "\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\n" }}{{ index
+          .Config.Labels "orbit.process.id" }}{{ printf "\n" }}{{ index .Config.Labels "orbit.process.spec" }}{{ printf "\n" }}{{.State.Status}}'
+        - ${{ inputs.intent.before.container }}
+        sudo: true
+    dependsOn:
+    - step: migrate
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: succeeded
+  - name: recheck
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/analytics-runtime'
+      behaviorName: ${{ "analytics-runtime-" + run.id }}
+      methodName: observe
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps.reinspect.outputs.stdout }}
+    dependsOn:
+    - step: reinspect
+      condition:
+        type: succeeded
+  - name: remove
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-destroy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.destroy
+        intent:
+          control: ${{ steps.plan.outputs.control }}
+          ssh_execution: ${{ inputs.intent.ssh_execution }}
+        execution_secrets: {}
+    dependsOn:
+    - step: recheck
+      condition:
+        type: succeeded
+    guard: ${{ !steps.recheck.outputs.replace }}
+  - name: install
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.create
+        intent: ${{ steps.plan.outputs.after }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn:
+    - step: remove
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: succeeded
+    guard: ${{ !steps.recheck.outputs.replace }}
+  - name: health
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        name: health
+        hosts:
+        - target
+        argv:
+        - /usr/bin/env
+        - ${{ "ORBIT_PROCESS_CONTROL=" + steps["process-assets"].outputs.control_json }}
+        - ${{ "ORBIT_PROCESS_HEALTH_URL=" + inputs.intent.health_url }}
+        - /usr/bin/python3
+        - ${{ "/tmp/orbit-analytics-" + run.id + "/process/scripts/check_health.py" }}
+        sudo: true
+    dependsOn:
+    - step: install
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: observation
+      condition:
+        type: succeeded
+  - name: recover-remove
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-destroy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.destroy
+        intent:
+          control: ${{ steps.plan.outputs.control }}
+          ssh_execution: ${{ inputs.intent.ssh_execution }}
+        execution_secrets: {}
+    dependsOn:
+    - step: health
+      condition:
+        type: always
+    - step: install
+      condition:
+        type: always
+    - step: remove
+      condition:
+        type: always
+    guard: ${{ !("recheck" in steps && steps.recheck.status == "succeeded" && steps.recheck.outputs.replace && (("remove" in steps && steps.remove.status
+      == "failed") || ("install" in steps && steps.install.status == "failed") || ("health" in steps && steps.health.status == "failed"))) }}
+  - name: recover-install
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.create
+        intent: ${{ steps.plan.outputs.before }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn:
+    - step: recover-remove
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: printf '%s\n' "$ORBIT_ANALYTICS_RESULT"
+        env:
+          ORBIT_ANALYTICS_RESULT: '${{ ("health" in steps && steps.health.status == "succeeded") ? "{\"ready\":true,\"version\":\"" + inputs.intent.version
+            + "\",\"previous_version\":\"" + inputs.intent.previous_version + "\"}" : "{\"error_code\":\"analytics.update_failed\",\"rolled_back\":"
+            + string((!("remove" in steps) || steps.remove.status == "skipped" || ("recover-install" in steps && steps["recover-install"].status
+            == "succeeded"))) + "}" }}'
+    dependsOn:
+    - step: health
+      condition:
+        type: always
+    - step: recover-install
+      condition:
+        type: always
+  - name: status
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "analytics-status-" + run.id }}
+      methodName: execute
+      inputs:
+        run: test "$ORBIT_ANALYTICS_READY" = true
+        env:
+          ORBIT_ANALYTICS_READY: ${{ string(("health" in steps && steps.health.status == "succeeded")) }}
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded

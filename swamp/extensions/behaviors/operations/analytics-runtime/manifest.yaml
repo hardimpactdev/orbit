@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: "@nckrtl/analytics-runtime"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public Plausible runtime metadata and one initialization action.
+behaviors:
+  - operations/analytics-runtime/mod.ts
+additionalFiles:
+  - scripts/initialize.py
