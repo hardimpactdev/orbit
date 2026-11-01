@@ -1387,6 +1387,7 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
@@ -1415,9 +1416,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-0-0" in steps && steps["finish-setup-0-0"].status == "succeeded" && steps["finish-setup-0-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==1)) }}'
@@ -1443,9 +1446,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-1-0" in steps && steps["finish-setup-1-0"].status == "succeeded" && steps["finish-setup-1-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==2)) }}'
@@ -1471,9 +1476,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-2-0" in steps && steps["finish-setup-2-0"].status == "succeeded" && steps["finish-setup-2-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==3)) }}'
@@ -1499,9 +1506,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-3-0" in steps && steps["finish-setup-3-0"].status == "succeeded" && steps["finish-setup-3-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==4)) }}'
@@ -1527,9 +1536,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-4-0" in steps && steps["finish-setup-4-0"].status == "succeeded" && steps["finish-setup-4-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==5)) }}'
@@ -1555,9 +1566,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-5-0" in steps && steps["finish-setup-5-0"].status == "succeeded" && steps["finish-setup-5-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==6)) }}'
@@ -1583,9 +1596,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-6-0" in steps && steps["finish-setup-6-0"].status == "succeeded" && steps["finish-setup-6-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==7)) }}'
@@ -1611,9 +1626,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-7-0" in steps && steps["finish-setup-7-0"].status == "succeeded" && steps["finish-setup-7-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==8)) }}'
@@ -1639,9 +1656,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-8-0" in steps && steps["finish-setup-8-0"].status == "succeeded" && steps["finish-setup-8-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==9)) }}'
@@ -1667,9 +1686,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-9-0" in steps && steps["finish-setup-9-0"].status == "succeeded" && steps["finish-setup-9-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==10)) }}'
@@ -1695,9 +1716,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-10-0" in steps && steps["finish-setup-10-0"].status == "succeeded" && steps["finish-setup-10-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==11)) }}'
@@ -1723,9 +1746,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-11-0" in steps && steps["finish-setup-11-0"].status == "succeeded" && steps["finish-setup-11-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==12)) }}'
@@ -1751,9 +1776,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-12-0" in steps && steps["finish-setup-12-0"].status == "succeeded" && steps["finish-setup-12-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==13)) }}'
@@ -1779,9 +1806,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-13-0" in steps && steps["finish-setup-13-0"].status == "succeeded" && steps["finish-setup-13-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==14)) }}'
@@ -1807,9 +1836,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-14-0" in steps && steps["finish-setup-14-0"].status == "succeeded" && steps["finish-setup-14-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==15)) }}'
@@ -1835,9 +1866,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-15-0" in steps && steps["finish-setup-15-0"].status == "succeeded" && steps["finish-setup-15-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==16)) }}'
@@ -1863,9 +1896,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-16-0" in steps && steps["finish-setup-16-0"].status == "succeeded" && steps["finish-setup-16-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==17)) }}'
@@ -1891,9 +1926,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-17-0" in steps && steps["finish-setup-17-0"].status == "succeeded" && steps["finish-setup-17-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==18)) }}'
@@ -1919,9 +1956,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-18-0" in steps && steps["finish-setup-18-0"].status == "succeeded" && steps["finish-setup-18-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==19)) }}'
@@ -1947,9 +1986,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-19-0" in steps && steps["finish-setup-19-0"].status == "succeeded" && steps["finish-setup-19-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==20)) }}'
@@ -1975,9 +2016,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-20-0" in steps && steps["finish-setup-20-0"].status == "succeeded" && steps["finish-setup-20-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==21)) }}'
@@ -2003,9 +2046,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-21-0" in steps && steps["finish-setup-21-0"].status == "succeeded" && steps["finish-setup-21-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==22)) }}'
@@ -2031,9 +2076,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-22-0" in steps && steps["finish-setup-22-0"].status == "succeeded" && steps["finish-setup-22-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==23)) }}'
@@ -2059,9 +2106,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-23-0" in steps && steps["finish-setup-23-0"].status == "succeeded" && steps["finish-setup-23-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==24)) }}'
@@ -2087,9 +2136,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-24-0" in steps && steps["finish-setup-24-0"].status == "succeeded" && steps["finish-setup-24-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==25)) }}'
@@ -2115,9 +2166,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-25-0" in steps && steps["finish-setup-25-0"].status == "succeeded" && steps["finish-setup-25-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==26)) }}'
@@ -2143,9 +2196,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-26-0" in steps && steps["finish-setup-26-0"].status == "succeeded" && steps["finish-setup-26-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==27)) }}'
@@ -2171,9 +2226,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-27-0" in steps && steps["finish-setup-27-0"].status == "succeeded" && steps["finish-setup-27-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==28)) }}'
@@ -2199,9 +2256,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-28-0" in steps && steps["finish-setup-28-0"].status == "succeeded" && steps["finish-setup-28-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==29)) }}'
@@ -2227,9 +2286,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-29-0" in steps && steps["finish-setup-29-0"].status == "succeeded" && steps["finish-setup-29-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==30)) }}'
@@ -2255,9 +2316,11 @@ jobs:
               - '-B'
               - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
             timeoutSec: '${{ self.command.timeout_seconds }}'
+            okExitCodes: any
             env:
               VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
+        guard: '${{ !("finish-setup-30-0" in steps && steps["finish-setup-30-0"].status == "succeeded" && steps["finish-setup-30-0"].outputs.exitCode == 0) }}'
         forEach:
           item: command
           in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==31)) }}'

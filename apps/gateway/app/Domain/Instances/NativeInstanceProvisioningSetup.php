@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -56,7 +57,8 @@ final readonly class NativeInstanceProvisioningSetup implements OperationSecretS
         }
 
         return new OperationSecretValue(['steps' => array_map(static fn ($step): array => [
-            'name' => $step->name, 'timeout_seconds' => $step->timeoutSeconds, 'command' => $step->command], $steps)]);
+            'name' => $step->name, 'timeout_seconds' => $step->timeoutSeconds,
+            'command' => GatewaySetupSteps::owns($step->command) ? GatewaySetupSteps::script($step->command) : $step->command], $steps)]);
     }
 
     private function refuse(): never

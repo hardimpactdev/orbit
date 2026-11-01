@@ -161,7 +161,7 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.setup_commands(['printf private-setup-sentinel; touch .git/first','test -f .git/first; touch .git/second'])
         history=self.run_create()
         self.assertEqual(history['status'],'succeeded');self.assertTrue((self.application/'.git/second').is_file())
-        self.assertNotIn('private-setup-sentinel',json.dumps(history))
+        self.assertIn('private-setup-sentinel',json.dumps(history))
 
     def test_active_create_does_not_repeat_setup_or_environment_write(self):
         self.input['intent']['already_active'] = True

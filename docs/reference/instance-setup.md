@@ -18,6 +18,8 @@ A Project stores two ordered lists of named commands: setup steps and teardown s
 
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
+Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each setup action retains its exit code and the last 4 KiB of stdout and stderr, with stored environment values redacted. A nonzero exit still fails create.
+
 Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps). A Project's [development deploy steps](/reference/deployments#development-deploy-steps) are a third, independent list. Setup and teardown do not run that list.
 
 Each step is one database row with a name, a command string, a timeout, and a position. Orbit writes no script into the checkout. The lists belong to the Project, and no Instance keeps a copy. Explicit `instance:setup` admission records the current list digest. A configuration change before execution refuses the admitted list; start a new Operation to use the new configuration.

@@ -42,7 +42,7 @@ Deno.test("create requires every ordered setup action and actual VP verification
         "env-capture": done(),
         "vp-requirements": done({ runtime: {} }),
         "vp-result": done({ ready: true }),
-        "finish-setup-0-0": done(),
+        "finish-setup-0-0": done({ exitCode: 0 }),
     };
     assertEquals(createResult(intent, steps).ready, true);
     assertEquals(
@@ -55,6 +55,13 @@ Deno.test("create requires every ordered setup action and actual VP verification
     assertEquals(
         createResult(intent, { ...steps, "vp-result": { status: "skipped" } })
             .ready,
+        false,
+    );
+    assertEquals(
+        createResult(intent, {
+            ...steps,
+            "finish-setup-0-0": done({ exitCode: 127 }),
+        }).ready,
         false,
     );
 });

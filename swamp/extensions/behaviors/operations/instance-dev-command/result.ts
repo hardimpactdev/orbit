@@ -39,7 +39,11 @@ export function createResult(intent: Record<string, unknown>, steps: Steps) {
     const commands = z.array(Public).parse(intent.setup_commands);
     if (
         !failure &&
-        commands.some((_, index) => !success("finish-setup-" + index + "-0"))
+        commands.some((_, index) => {
+            const step = steps["finish-setup-" + index + "-0"];
+            return !success("finish-setup-" + index + "-0") ||
+                step.outputs?.exitCode !== 0;
+        })
     ) failure = "setup";
     const result = {
         instance_id: intent.instance_id,

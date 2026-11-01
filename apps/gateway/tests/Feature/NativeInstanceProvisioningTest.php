@@ -11,6 +11,8 @@ use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Operations\OperationSecretValue;
+use App\Domain\Projects\GatewaySetupSteps;
+use App\Domain\Projects\LifecycleStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
@@ -86,6 +88,20 @@ it('resolves exact Project setup programs only in the existing private material 
     expect($value)->toBeInstanceOf(OperationSecretValue::class)->and($value->value)->toBe(['steps' => [
         ['name' => 'prepare', 'timeout_seconds' => 30, 'command' => $command],
     ]])->and(json_encode($value))->toBe('"[REDACTED]"');
+    $step->update(['command' => 'printf changed']);
+    expect(fn () => app(NativeInstanceProvisioningSetup::class)->resolve($operation, $this->instance->id, '', 'setup_programs'))
+        ->toThrow(ResourceOperationException::class);
+});
+
+it('expands Gateway owned setup commands through the canonical supplier after validating their original identity', function (): void {
+    $step = ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'position' => 0,
+        'name' => 'ci-caches', 'command' => LifecycleStep::ImportCiCaches, 'timeout_seconds' => 60]);
+    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
+    $operation = new Operation(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->node->id, 'input' => [...$this->input, 'direct_provisioning' => $plan]]);
+    $value = app(NativeInstanceProvisioningSetup::class)->resolve($operation, $this->instance->id, '', 'setup_programs');
+    expect($value->value['steps'][0]['command'])->toBe(GatewaySetupSteps::script(LifecycleStep::ImportCiCaches))
+        ->and($plan['setup']['steps'][0]['command_digest'])->toBe(hash('sha256', LifecycleStep::ImportCiCaches));
     $step->update(['command' => 'printf changed']);
     expect(fn () => app(NativeInstanceProvisioningSetup::class)->resolve($operation, $this->instance->id, '', 'setup_programs'))
         ->toThrow(ResourceOperationException::class);
