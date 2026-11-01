@@ -5,10 +5,15 @@
 //! A unit change is two calls, so the Gateway can record a pending activation between them: `process.stage-unit`
 //! writes a candidate that `systemd-analyze verify` accepts, and `process.activate-unit` publishes it with a backup
 //! of the unit it replaces, reloads systemd, sets the desired state, and restores the previous unit when that fails.
+//! `process.converge-container` changes a container in one call: it creates a candidate beside the current
+//! container, renames that one to a rollback name that records whether it ran, renames the candidate in, and undoes
+//! the change when a step fails. A later call finishes or undoes a change that a lost connection interrupted.
+
 #[path = "process_doctor.rs"]
 pub(super) mod doctor;
 
 use super::caddy::chown;
+use super::health::{self, HealthInput};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use crate::logs::{journalctl, valid_docker_container, valid_journal_unit};
@@ -50,6 +55,8 @@ command_errors! {
         Invalid { check: String } => "process.invalid", "The Process request does not pass its checks.";
         NameCollision { step: String, artifact: String, output: Output } => "process.name_collision", "An artifact with the Process's name is not the Process's own.";
         NotFound { step: String } => "process.not_found", "The Process has no runtime artifact.";
+        SpecChanged {} => "process.spec_changed", "The current container differs from the admitted replacement.";
+        HealthFailed { restored: bool } => "process.health_failed", "The container did not pass its readiness check.";
         StartFailed { step: String, restored: bool, output: Output } => "process.start_failed", "The Process did not start.";
         StopFailed { step: String, restored: bool, output: Output } => "process.stop_failed", "The Process did not stop.";
         RestartFailed { step: String, output: Output } => "process.restart_failed", "The Process did not restart.";
@@ -120,6 +127,9 @@ fn recovery_required(step: String, output: Output) -> ProcessError {
 /// The programs a command runs: `systemctl`, `systemd-analyze`, and `docker`. Tests answer for them.
 pub trait Programs {
     fn run(&mut self, program: &str, arguments: &[&str]) -> Output;
+    fn sleep(&mut self, delay: Duration) {
+        std::thread::sleep(delay);
+    }
 }
 
 /// The most of each stream a failed step keeps.
@@ -188,6 +198,14 @@ pub enum Desired {
 
 /// A container's ownership labels, spec label, and running state on one line each.
 const INSPECT_FORMAT: &str = r#"{{ index .Config.Labels "orbit.managed" }}{{ printf "\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\n" }}{{ index .Config.Labels "orbit.process.id" }}{{ printf "\n" }}{{ index .Config.Labels "orbit.process.spec" }}{{ printf "\n" }}{{ .State.Running }}"#;
+
+/// An owned container: its spec label, whether it runs, and the inspection that showed it.
+#[derive(Debug, Clone)]
+struct Container {
+    spec: String,
+    running: bool,
+    output: Output,
+}
 
 fn docker_not_found(output: &Output) -> bool {
     !output.ok()
@@ -286,7 +304,7 @@ impl<P: Programs> Node<P> {
         name: &str,
         step: &str,
         fail: Fail,
-    ) -> Result<Option<()>, ProcessError> {
+    ) -> Result<Option<Container>, ProcessError> {
         let output = self.docker(&["container", "inspect", "--format", INSPECT_FORMAT, name]);
         if docker_not_found(&output) {
             return Ok(None);
@@ -297,7 +315,7 @@ impl<P: Programs> Node<P> {
         let text = output.stdout.trim().to_string();
         let mut fields = text.splitn(5, '\n');
         let mut field = || fields.next().unwrap_or("").to_string();
-        let (managed, kind, owner, _spec, running) = (field(), field(), field(), field(), field());
+        let (managed, kind, owner, spec, running) = (field(), field(), field(), field(), field());
         if managed != "true" || kind != "process" || owner != process_id.to_string() {
             return Err(ProcessError::NameCollision {
                 step: step.into(),
@@ -305,11 +323,16 @@ impl<P: Programs> Node<P> {
                 output,
             });
         }
-        match running.as_str() {
-            "true" | "false" => {}
+        let running = match running.as_str() {
+            "true" => true,
+            "false" => false,
             _ => return Err(fail(step.into(), output)),
         };
-        Ok(Some(()))
+        Ok(Some(Container {
+            spec,
+            running,
+            output,
+        }))
     }
 
     fn owned(
@@ -840,6 +863,591 @@ pub fn activate<P: Programs>(
     Ok(Activated { backup_left })
 }
 
+#[derive(schemars::JsonSchema, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Mount {
+    /// An absolute host path binds it; a name mounts that volume.
+    pub source: String,
+    pub target: String,
+    pub read_only: bool,
+}
+
+#[derive(schemars::JsonSchema, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContainerInput {
+    pub process_id: u64,
+    pub container: String,
+    pub desired: Desired,
+    /// The hash of the Process's container definition, kept as the `orbit.process.spec` label.
+    pub spec: String,
+    pub image: String,
+    pub command: Vec<String>,
+    /// `no`, `on-failure`, `always`, or `unless-stopped`.
+    pub restart: String,
+    pub working_directory: Option<String>,
+    pub ports: Vec<String>,
+    pub mounts: Vec<Mount>,
+    /// Goes to `docker container create` through a root-only file, never an argument.
+    pub environment: BTreeMap<String, String>,
+    /// Verify readiness before releasing the Process lock or removing the rollback container.
+    #[serde(default)]
+    pub health: Option<HealthInput>,
+    /// Refuse replacing a newer or missing runtime; the desired spec is accepted for replay.
+    #[serde(default)]
+    pub expected_spec: Option<String>,
+    /// Compare the canonical running state too, except during rollback recovery.
+    #[serde(default)]
+    pub expected_running: Option<bool>,
+}
+
+fn check_container(input: &ContainerInput) -> Result<(), ProcessError> {
+    check_name(Runtime::Docker, input.process_id, &input.container)?;
+    let image_ok = input
+        .image
+        .bytes()
+        .next()
+        .is_some_and(|b| b.is_ascii_alphanumeric())
+        && input
+            .image
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._/:@-".contains(&b));
+    let checks = [
+        (
+            input
+                .expected_spec
+                .as_ref()
+                .is_none_or(|spec| spec.len() == 64 && spec.bytes().all(|b| b.is_ascii_hexdigit())),
+            "the expected spec is a SHA-256",
+        ),
+        (
+            input.health.as_ref().is_none_or(|h| {
+                input.desired == Desired::Running
+                    && health::valid(&h.url)
+                    && (1..=90).contains(&h.attempts)
+                    && h.interval_seconds <= 2
+            }),
+            "readiness is a bounded HTTP check for a running container",
+        ),
+        (image_ok, "the image is a reference"),
+        (!input.command.is_empty(), "the command has an argument"),
+        (
+            ["no", "on-failure", "always", "unless-stopped"].contains(&input.restart.as_str()),
+            "the restart policy is known",
+        ),
+        (
+            input.spec.len() == 64 && input.spec.bytes().all(|b| b.is_ascii_hexdigit()),
+            "the spec is a SHA-256",
+        ),
+        (
+            input
+                .working_directory
+                .as_deref()
+                .is_none_or(|directory| directory.starts_with('/')),
+            "the working directory is absolute",
+        ),
+        (
+            input.environment.iter().all(|(name, value)| {
+                name.bytes()
+                    .next()
+                    .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                    && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                    && !value.contains(['\0', '\r', '\n'])
+            }),
+            "the environment has names and single-line values",
+        ),
+        (
+            input.mounts.iter().all(|mount| {
+                [&mount.source, &mount.target]
+                    .iter()
+                    .all(|part| !part.is_empty() && !part.contains([',', '=', '\0']))
+                    && mount.target.starts_with('/')
+            }),
+            "each mount has a source and an absolute target",
+        ),
+    ];
+    match checks.iter().find(|(ok, _)| !ok) {
+        Some((_, check)) => Err(invalid(check)),
+        None => Ok(()),
+    }
+}
+
+/// The state that recovery leaves: whether a change is complete, and the owned canonical and candidate containers.
+struct Recovered {
+    complete: bool,
+    canonical: Option<Container>,
+    candidate: Option<Container>,
+}
+
+fn rollback_runs(rollback: &str) -> bool {
+    rollback.ends_with("-rollback-running")
+}
+
+struct Converge<'a, P> {
+    node: &'a mut Node<P>,
+    input: &'a ContainerInput,
+    name: String,
+    candidate: String,
+    ready_verified: bool,
+}
+
+struct Readiness<'a, P>(&'a mut P);
+
+impl<P: Programs> health::Host for Readiness<'_, P> {
+    fn curl(&mut self, arguments: &[&str]) -> bool {
+        let mut args = vec!["-q"];
+        args.extend_from_slice(arguments);
+        self.0.run("/usr/bin/curl", &args).ok()
+    }
+
+    fn sleep(&mut self, delay: Duration) {
+        self.0.sleep(delay);
+    }
+}
+
+impl<P: Programs> Converge<'_, P> {
+    fn inspect(&mut self, name: &str, step: &str) -> Result<Option<Container>, ProcessError> {
+        self.node
+            .owned_container(self.input.process_id, name, step, converge_failed)
+    }
+
+    fn running_desired(&self) -> bool {
+        self.input.desired == Desired::Running
+    }
+
+    fn run(&mut self, arguments: &[&str]) -> Output {
+        self.node.docker(arguments)
+    }
+
+    fn must(&mut self, arguments: &[&str], step: &str, fail: Fail) -> Result<(), ProcessError> {
+        self.node.must("docker", arguments, step, fail).map(|_| ())
+    }
+
+    fn ready(&mut self) -> Result<(), ProcessError> {
+        if self.ready_verified {
+            return Ok(());
+        }
+        if let Some(input) = &self.input.health {
+            health::wait(&mut Readiness(&mut self.node.programs), input)
+                .map_err(|_| ProcessError::HealthFailed { restored: false })?;
+        }
+        self.ready_verified = true;
+        Ok(())
+    }
+
+    fn converge(&mut self) -> Result<(), ProcessError> {
+        let state = self.recover()?;
+        if state.complete {
+            let Some(canonical) = state.canonical else {
+                return Err(ProcessError::RecoveryRequired {
+                    step: "inspect-container".into(),
+                    reason: "no_canonical".into(),
+                    output: Output::default(),
+                });
+            };
+            self.desired_state(&canonical)?;
+            return self.ready();
+        }
+        let name = self.name.clone();
+        let candidate = self.candidate.clone();
+        let create = if state.canonical.is_none() {
+            name.clone()
+        } else {
+            candidate.clone()
+        };
+        self.remove_candidate(state.candidate.as_ref())?;
+        self.create(&create)?;
+        let Some(canonical) = state.canonical else {
+            let created = self.inspect(&name, "verify-container")?;
+            return match created {
+                Some(created) if created.spec == self.input.spec => {
+                    self.desired_state(&created)?;
+                    self.ready()
+                }
+                created => Err(ProcessError::CandidateInvalid {
+                    step: "verify-container".into(),
+                    artifact: name,
+                    output: created.map(|c| c.output).unwrap_or_default(),
+                }),
+            };
+        };
+        let created = self.inspect(&candidate, "verify-candidate-container")?;
+        match created {
+            Some(created) if created.spec == self.input.spec => self.publish(&canonical),
+            created => {
+                self.remove_candidate(created.as_ref())?;
+                Err(ProcessError::CandidateInvalid {
+                    step: "verify-candidate-container".into(),
+                    artifact: candidate,
+                    output: created.map(|c| c.output).unwrap_or_default(),
+                })
+            }
+        }
+    }
+
+    fn recover(&mut self) -> Result<Recovered, ProcessError> {
+        let name = self.name.clone();
+        let candidate = self.candidate.clone();
+        let mut canonical = self.inspect(&name, "inspect-container")?;
+        let running_rollback = format!("{name}-rollback-running");
+        let stopped_rollback = format!("{name}-rollback-stopped");
+        let running_state = self.inspect(&running_rollback, "inspect-rollback-container")?;
+        let stopped_state = self.inspect(&stopped_rollback, "inspect-rollback-container")?;
+        let mut candidate_state = self.inspect(&candidate, "inspect-candidate-container")?;
+        if let Some(expected) = &self.input.expected_spec {
+            let previous = running_state.as_ref().or(stopped_state.as_ref());
+            if previous.is_some_and(|state| &state.spec != expected)
+                || canonical
+                    .as_ref()
+                    .is_some_and(|state| &state.spec != expected && state.spec != self.input.spec)
+                || (previous.is_none()
+                    && canonical.as_ref().is_some_and(|state| {
+                        self.input
+                            .expected_running
+                            .is_some_and(|expected| state.running != expected)
+                    }))
+                || (canonical.is_none() && previous.is_none())
+            {
+                return Err(ProcessError::SpecChanged {});
+            }
+        }
+        if let (Some(running), Some(_)) = (&running_state, &stopped_state) {
+            return Err(ProcessError::RecoveryRequired {
+                step: "inspect-rollback-container".into(),
+                reason: "ambiguous_rollback".into(),
+                output: running.output.clone(),
+            });
+        }
+        let rollback = if running_state.is_some() {
+            running_rollback
+        } else {
+            stopped_rollback
+        };
+        if let Some(rollback_state) = running_state.or(stopped_state) {
+            canonical = Some(self.recover_rollback(
+                &rollback,
+                canonical,
+                candidate_state,
+                rollback_state,
+            )?);
+            candidate_state = self.inspect(&candidate, "inspect-candidate-container")?;
+        }
+        if let Some(current) = &canonical {
+            if current.spec == self.input.spec {
+                self.remove_candidate(candidate_state.as_ref())?;
+                return Ok(Recovered {
+                    complete: true,
+                    canonical,
+                    candidate: None,
+                });
+            }
+        }
+        if canonical.is_none() {
+            if let Some(waiting) = &candidate_state {
+                if waiting.spec == self.input.spec {
+                    self.must(
+                        &["container", "rename", &candidate, &name],
+                        "recover-candidate-container",
+                        converge_failed,
+                    )?;
+                    return Ok(Recovered {
+                        complete: true,
+                        canonical: candidate_state,
+                        candidate: None,
+                    });
+                }
+            }
+        }
+        Ok(Recovered {
+            complete: false,
+            canonical,
+            candidate: candidate_state,
+        })
+    }
+
+    fn recover_rollback(
+        &mut self,
+        rollback: &str,
+        canonical: Option<Container>,
+        candidate_state: Option<Container>,
+        rollback_state: Container,
+    ) -> Result<Container, ProcessError> {
+        let candidate = self.candidate.clone();
+        let Some(canonical) = canonical else {
+            if candidate_state.is_some_and(|state| state.running) {
+                let stop = self.run(&["container", "stop", &candidate]);
+                if !stop.ok() {
+                    return Err(recovery_required("stop-recovery-candidate".into(), stop));
+                }
+            }
+            self.restore_rollback_runtime(rollback)?;
+            return Ok(Container {
+                running: rollback_runs(rollback),
+                ..rollback_state
+            });
+        };
+        if canonical.spec != self.input.spec {
+            return Err(ProcessError::RecoveryRequired {
+                step: "inspect-rollback-container".into(),
+                reason: "ambiguous_rollback".into(),
+                output: rollback_state.output,
+            });
+        }
+        if let Some(waiting) = candidate_state {
+            return Err(ProcessError::RecoveryRequired {
+                step: "inspect-rollback-container".into(),
+                reason: "ambiguous_candidate".into(),
+                output: waiting.output,
+            });
+        }
+        if self.running_desired() && !canonical.running {
+            self.rollback_published(rollback)?;
+            return Ok(Container {
+                running: rollback_runs(rollback),
+                ..rollback_state
+            });
+        }
+        let name = self.name.clone();
+        if !self.running_desired() && canonical.running {
+            self.must(&["container", "stop", &name], "stop", stop_failed)?;
+        }
+        if self.ready().is_err() {
+            self.rollback_published(rollback)?;
+            return Err(ProcessError::HealthFailed { restored: true });
+        }
+        self.must(
+            &["container", "rm", "--force", rollback],
+            "finalize-rollback-container",
+            converge_failed,
+        )?;
+        Ok(Container {
+            running: self.running_desired(),
+            ..canonical
+        })
+    }
+
+    fn remove_candidate(&mut self, state: Option<&Container>) -> Result<(), ProcessError> {
+        if state.is_none() {
+            return Ok(());
+        }
+        let candidate = self.candidate.clone();
+        self.must(
+            &["container", "rm", "--force", &candidate],
+            "remove-candidate-container",
+            converge_failed,
+        )
+    }
+
+    /// Writes the environment to a root-only file for `docker container create`, and deletes it afterwards.
+    fn create(&mut self, name: &str) -> Result<(), ProcessError> {
+        let step = "create-container";
+        let scratch = &self.node.scratch;
+        let file = scratch.join(format!(
+            "process-environment-{:016x}",
+            rand::random::<u64>()
+        ));
+        let written = fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(scratch)
+            .and_then(|()| {
+                let mut out = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&file)?;
+                for (variable, value) in &self.input.environment {
+                    writeln!(out, "{variable}={value}")?;
+                }
+                out.sync_all()
+            });
+        if let Err(error) = written {
+            let _ = fs::remove_file(&file);
+            return Err(converge_failed(step.into(), Output::io(&error)));
+        }
+        let input = self.input;
+        let environment = file.display().to_string();
+        let owner = format!("orbit.process.id={}", input.process_id);
+        let spec = format!("orbit.process.spec={}", input.spec);
+        let mounts: Vec<String> = input
+            .mounts
+            .iter()
+            .map(|mount| {
+                let kind = if mount.source.starts_with('/') {
+                    "bind"
+                } else {
+                    "volume"
+                };
+                let rendered = format!(
+                    "type={kind},source={},target={}",
+                    mount.source, mount.target
+                );
+                if mount.read_only {
+                    format!("{rendered},readonly")
+                } else {
+                    rendered
+                }
+            })
+            .collect();
+        let mut arguments: Vec<&str> = vec![
+            "container",
+            "create",
+            "--env-file",
+            &environment,
+            "--name",
+            name,
+            "--label",
+            "orbit.managed=true",
+            "--label",
+            "orbit.container.kind=process",
+            "--label",
+            &owner,
+            "--label",
+            &spec,
+            "--restart",
+            &input.restart,
+        ];
+        if let Some(directory) = &input.working_directory {
+            arguments.extend(["--workdir", directory]);
+        }
+        for port in &input.ports {
+            arguments.extend(["--publish", port]);
+        }
+        for mount in &mounts {
+            arguments.extend(["--mount", mount]);
+        }
+        arguments.push(&input.image);
+        arguments.extend(input.command.iter().map(String::as_str));
+        let created = self.node.docker(&arguments);
+        let _ = fs::remove_file(&file);
+        if created.ok() {
+            Ok(())
+        } else {
+            Err(converge_failed(step.into(), created))
+        }
+    }
+
+    fn desired_state(&mut self, state: &Container) -> Result<(), ProcessError> {
+        let name = self.name.clone();
+        match (self.running_desired(), state.running) {
+            (true, false) => self.must(&["container", "start", &name], "start", start_failed),
+            (false, true) => self.must(&["container", "stop", &name], "stop", stop_failed),
+            _ => Ok(()),
+        }
+    }
+
+    fn publish(&mut self, previous: &Container) -> Result<(), ProcessError> {
+        let name = self.name.clone();
+        let candidate = self.candidate.clone();
+        let rollback = if previous.running {
+            format!("{name}-rollback-running")
+        } else {
+            format!("{name}-rollback-stopped")
+        };
+        let stage = self.run(&["container", "rename", &name, &rollback]);
+        if !stage.ok() {
+            self.remove_candidate_after_failure()?;
+            return Err(activation_failed("stage-rollback-container".into(), stage));
+        }
+        if previous.running {
+            let stop = self.run(&["container", "stop", &rollback]);
+            if !stop.ok() {
+                self.restore_rollback(&rollback)?;
+                return Err(activation_failed("stop-previous-container".into(), stop));
+            }
+        }
+        let activation = self.run(&["container", "rename", &candidate, &name]);
+        if !activation.ok() {
+            self.restore_rollback(&rollback)?;
+            return Err(activation_failed("activate-container".into(), activation));
+        }
+        if self.running_desired() {
+            let start = self.run(&["container", "start", &name]);
+            if !start.ok() {
+                self.rollback_published(&rollback)?;
+                return Err(ProcessError::StartFailed {
+                    step: "start".into(),
+                    restored: true,
+                    output: start,
+                });
+            }
+        }
+        if self.ready().is_err() {
+            self.rollback_published(&rollback)?;
+            return Err(ProcessError::HealthFailed { restored: true });
+        }
+        let finalize = self.run(&["container", "rm", "--force", &rollback]);
+        if finalize.ok() {
+            return Ok(());
+        }
+        self.rollback_published(&rollback)?;
+        Err(activation_failed("finalize-container".into(), finalize))
+    }
+
+    fn restore_rollback(&mut self, rollback: &str) -> Result<(), ProcessError> {
+        self.restore_rollback_runtime(rollback)?;
+        self.remove_candidate_after_failure()
+    }
+
+    fn restore_rollback_runtime(&mut self, rollback: &str) -> Result<(), ProcessError> {
+        let name = self.name.clone();
+        let state = if rollback_runs(rollback) {
+            self.run(&["container", "start", rollback])
+        } else {
+            self.run(&["container", "stop", rollback])
+        };
+        if !state.ok() {
+            return Err(recovery_required("restore-container-state".into(), state));
+        }
+        let restore = self.run(&["container", "rename", rollback, &name]);
+        if !restore.ok() {
+            return Err(recovery_required("restore-container".into(), restore));
+        }
+        Ok(())
+    }
+
+    fn rollback_published(&mut self, rollback: &str) -> Result<(), ProcessError> {
+        let name = self.name.clone();
+        let candidate = self.candidate.clone();
+        let unpublish = self.run(&["container", "rename", &name, &candidate]);
+        if !unpublish.ok() {
+            return Err(recovery_required("unpublish-container".into(), unpublish));
+        }
+        let stop = self.run(&["container", "stop", &candidate]);
+        if !stop.ok() {
+            return Err(recovery_required("stop-candidate-container".into(), stop));
+        }
+        self.restore_rollback(rollback)
+    }
+
+    fn remove_candidate_after_failure(&mut self) -> Result<(), ProcessError> {
+        let candidate = self.candidate.clone();
+        let cleanup = self.run(&["container", "rm", "--force", &candidate]);
+        if !cleanup.ok() && !docker_not_found(&cleanup) {
+            return Err(recovery_required(
+                "remove-candidate-container".into(),
+                cleanup,
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub fn converge_container<P: Programs>(
+    node: &mut Node<P>,
+    input: &ContainerInput,
+) -> Result<Done, ProcessError> {
+    check_container(input)?;
+    Converge {
+        node,
+        input,
+        name: input.container.clone(),
+        candidate: format!("{}-candidate", input.container),
+        ready_verified: false,
+    }
+    .converge()
+    .map(|()| Done {})
+}
+
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogsInput {
@@ -1039,6 +1647,17 @@ process_command!(
     Activated,
     |input: &ActivateInput| activate(&mut Node::system(), input),
     |input: &ActivateInput| Some(format!("process:{}", input.process_id))
+);
+process_command!(
+    ConvergeContainer,
+    "process.converge-container",
+    "Create or replace a Process's container and set its desired state.",
+    true,
+    900,
+    ContainerInput,
+    Done,
+    |input: &ContainerInput| converge_container(&mut Node::system(), input),
+    |input: &ContainerInput| Some(format!("process:{}", input.process_id))
 );
 process_command!(
     ReadLogs,
