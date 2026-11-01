@@ -275,6 +275,7 @@ it('renders the full enrollment candidate only after actual capture and restores
         ->and($forward['after']['php']['account_user'])->toBe('newuser')
         ->and($forward['before']['php']['account_user'])->toBe('orbit')
         ->and($forward['connection']['nodeUser'])->toBe('newuser')->and($forward['user'])->toBe('newuser')
+        ->and($forward['connection']['become'])->toBeTrue()
         ->and($restore['connection']['nodeUser'])->toBe('orbit')->and($restore['user'])->toBe('orbit')
         ->and($capture['route_mutations']['forward']['certificates'][0]['user'])->toBe('newuser')
         ->and($capture['route_mutations']['restore']['certificates'][0]['user'])->toBe('orbit')
