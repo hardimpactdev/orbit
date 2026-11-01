@@ -396,6 +396,7 @@ pub fn all() -> Vec<Entry> {
         entry::<processes::RemoveProcess>(),
         entry::<processes::StageUnit>(),
         entry::<processes::ActivateUnit>(),
+        entry::<processes::ConvergeContainer>(),
         entry::<processes::ReadLogs>(),
         entry::<dev_certificates::RequestLeaf>(),
         entry::<dev_certificates::PublishLeaf>(),

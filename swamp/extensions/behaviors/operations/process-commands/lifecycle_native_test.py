@@ -217,7 +217,7 @@ p.write_text(json.dumps(s))
         reply = self.cli(
             "workflow",
             "run",
-            "operation-process-" + kind,
+            "operation-process-" + ("create" if kind == "update" else kind),
             "--stdin",
             input=json.dumps(self.inputs),
             success=success,
@@ -262,6 +262,22 @@ p.write_text(json.dumps(s))
             "restart", [x[0] for x in json.loads(self.state.read_text())["calls"]]
         )
 
+    def test_update_reuses_native_convergence_and_preserves_process_identity(self):
+        self.run_lifecycle()
+        self.inputs["operation_id"] = 18
+        self.save_state(calls=[])
+        install = self.inputs["intent"]["installation"]
+        install["unit"] = self.content.replace("30", "45")
+        install["content_hash"] = hashlib.sha256(install["unit"].encode()).hexdigest()
+        self.run_lifecycle("update")
+        self.assertEqual(self.run["status"], "succeeded")
+        self.assertEqual(self.unit.read_text(), install["unit"])
+        self.assertTrue(self.current()["active"])
+        self.assertEqual([c[0] for c in json.loads(self.state.read_text())["calls"]].count("restart"), 1)
+        self.save_state(calls=[])
+        self.run_lifecycle("update")
+        self.assertNotIn("restart", [c[0] for c in json.loads(self.state.read_text())["calls"]])
+
     def test_stopped_intent_handles_activating_service(self):
         self.unit.write_text(self.content)
         self.drift(active="activating", enabled=True)
@@ -304,6 +320,12 @@ p.write_text(json.dumps(s))
         self.state.write_text(json.dumps(state))
 
     def test_environment_copy_is_delivered_by_stdin_without_history_or_argv_leak(self):
+        self.verify_environment_copy("create")
+
+    def test_update_environment_copy_uses_its_own_key_without_history_or_argv_leak(self):
+        self.verify_environment_copy("update")
+
+    def verify_environment_copy(self, kind):
         secret = "lifecycle-native-private-" + os.urandom(12).hex()
         content = '# Orbit Process 17\nTOKEN="' + secret + '"\n'
         digest = hashlib.sha256(content.encode()).hexdigest()
@@ -320,17 +342,17 @@ p.write_text(json.dumps(s))
             "vault",
             "put",
             "orbit-control-inputs",
-            "process-create-operation-17",
+            "process-" + kind + "-operation-17",
             input=content,
         )
         self.secrets = (secret,)
         self.inputs["execution_secrets"] = {
             "environment": {
                 "vault": "orbit-control-inputs",
-                "key": "process-create-operation-17",
+                "key": "process-" + kind + "-operation-17",
             }
         }
-        self.run_lifecycle()
+        self.run_lifecycle(kind)
         self.assertEqual(self.environment_path.read_text(), content)
         self.assertEqual(self.environment_path.stat().st_mode & 0o777, 0o600)
         self.assert_private_absent(
@@ -366,6 +388,7 @@ p.write_text(json.dumps(s))
                 )
                 state = json.loads(state_path.read_text())
                 state["docker"] = {"present": True, "state": "created", "body": body}
+                state["creates"] = state.get("creates", 0) + 1
                 state_path.write_text(json.dumps(state))
                 raw = json.dumps({"Id": "e" * 64}).encode()
                 handler.send_response(201)
@@ -390,6 +413,7 @@ p.write_text(json.dumps(s))
             + """import json,sys
 from pathlib import Path
 p=Path(STATE);s=json.loads(p.read_text());a=sys.argv[2:];d=s.setdefault('docker',{'present':False})
+s.setdefault('docker_calls',[]).append(a)
 if a[:2]==['image','inspect']:print('image-present')
 elif a[:2]==['container','ls']:
  if d['present']:print(NAME)
@@ -429,7 +453,7 @@ p.write_text(json.dumps(s))
                 "restart": "no",
                 "working_directory": "/work",
                 "ports": [],
-                "mounts": [],
+                "mounts": [{"source": "proof-volume", "target": "/data", "read_only": False}],
             },
         }
         self.run_lifecycle()
@@ -439,6 +463,27 @@ p.write_text(json.dumps(s))
         self.assertEqual(state["body"]["Cmd"], ["echo", "ok"])
         self.assertEqual(state["body"]["WorkingDir"], "/work")
         self.run_lifecycle()
+        self.assertEqual(json.loads(self.state.read_text())["creates"], 1)
+        install = self.inputs["intent"]["installation"]
+        install["spec"] = "b" * 64
+        install["definition"].update(image="example:2", command=["echo", "updated"])
+        self.inputs["operation_id"] = 18
+        self.run_lifecycle("update")
+        state = json.loads(self.state.read_text())
+        self.assertEqual(state["creates"], 2)
+        self.assertEqual(state["docker"]["state"], "running")
+        self.assertEqual(state["docker"]["body"]["Image"], "example:2")
+        self.assertEqual(state["docker"]["body"]["Cmd"], ["echo", "updated"])
+        self.assertEqual(state["docker"]["body"]["Labels"]["orbit.process.id"], "17")
+        self.assertEqual(state["docker"]["body"]["HostConfig"]["Mounts"][0]["Source"], "proof-volume")
+        removals = [call for call in state["docker_calls"] if call[:2] == ["container", "rm"]]
+        self.assertEqual(removals, [["container", "rm", "orbit-process-17-proof"]])
+        self.run_lifecycle("update")
+        self.assertEqual(json.loads(self.state.read_text())["creates"], 2)
+        install.update(spec="c" * 64, desired="stopped")
+        self.run_lifecycle("update")
+        self.assertEqual(json.loads(self.state.read_text())["docker"]["state"], "exited")
+        self.assertEqual(json.loads(self.state.read_text())["creates"], 3)
         self.inputs["intent"].pop("installation")
         self.run_lifecycle("destroy")
         self.run_lifecycle("destroy")

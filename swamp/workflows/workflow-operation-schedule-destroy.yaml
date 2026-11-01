@@ -101,7 +101,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/file'
-          behaviorName: ${{ "schedule-remove_files-" + string(inputs.operation_id) }}
+          behaviorName: ${{ "schedule-remove_files-" + string(inputs.operation_id) + "-" + string(self._index) }}
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}

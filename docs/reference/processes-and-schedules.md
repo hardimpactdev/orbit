@@ -186,7 +186,7 @@ The parent captures the saved definition through `ProcessOperationAdmission::inp
 
 A runtime switch returns HTTP 422 (`process.option_invalid`) if it would discard an omitted field. For example, switching Docker to systemd requires explicit `image: null`, `ports: []`, and `volumes: []` for populated Docker fields. The SDK uses `clearImage: true` for an explicit null image and `clearWorkingDirectory: true` for an explicit null directory.
 
-The Gateway validates the new specification before changing the runtime, holds the same admission and runtime locks as other Process operations, and verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
+The Gateway validates and stores the new specification, then starts the same Node209 cfgmgmt/SSH convergence workflow as create. Its inputs contain the public unit or Docker definition; only environment values use the named `process-update-operation-{id}` execution copy. The shared terminal reader projects completion without an intent, private-material or result callback. Swamp verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
 
 Update does not delete named volumes, but replacing a container discards its writable layer. Follow [Move data before removing an override](#move-data-before-removing-an-override) before replacing a stateful container; preserving its ID and links is not a backup.
 
@@ -225,9 +225,9 @@ The Route stays active through an allowed update, without certificate or firewal
 
 Updating the Gateway record and changing a remote runtime are not one atomic transaction. The Gateway validates the request and acquires the operation locks before accepting new intent. Invalid input, an admission failure, or a detected ownership conflict before acceptance leaves the stored specification and runtime unchanged. Once accepted, the new specification and an incomplete convergence state are persisted before remote changes begin. The desired state remains unchanged. A later runtime failure does not roll the specification back or restore the old container layer.
 
-The Gateway records pending systemd activation before publishing changed bytes, and clears that intent only after reload and desired-state activation succeed. It also records the successfully activated unit hash. Pending activation requires reload and activation on retry even when published bytes and service state match. Legacy Processes without a hash or pending activation remain untouched when their unit bytes and desired state match; upgrading does not restart them. A lost activation response can cause one extra restart of a pending update, but cannot falsely complete it. Explicit restart always activates the service, also when the unit is unchanged and active.
+The Gateway records pending systemd activation before publishing changed bytes, and clears that intent only after reload and desired-state activation succeed. It also records the successfully activated unit hash. Pending activation requires reload and activation on retry even when published bytes and service state match. A lost activation response can cause one extra restart of a pending update, but cannot falsely complete it. Explicit restart always activates the service, also when the unit is unchanged and active.
 
-Only a completed runtime convergence marks the update successful. A handled failure records the failed step and error code and returns failure. If the Gateway crashes after saving intent, its stored specification remains the recovery source; an incomplete update is not treated as successfully applied. A crash can leave the old runtime, a partially changed runtime, or the new runtime running before completion was recorded. Inspect the Process and retry after the lock is available; do not infer completion from a cached runtime status alone.
+Only the native terminal acceptance marks the update successful. A failed native run records its error on the Operation and keeps applied changes; detailed failed-step evidence stays in native history. If the Gateway crashes after saving intent, its stored specification remains the recovery source; an incomplete update is not treated as successfully applied. A crash can leave the old runtime, a partially changed runtime, or the new runtime running before completion was recorded. Inspect the Process and retry after the lock is available; do not infer completion from a cached runtime status alone.
 
 When an update switches runtime kind, the Gateway also saves which old runtime needs removal. An interrupted retry removes that owned footprint before converging the saved specification. Updating a systemd Process without a runtime switch does not require Docker to be installed.
 
@@ -249,17 +249,17 @@ The Gateway holds the admission lock while it records intent. The Process Operat
 
 Create, update, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock. Lifecycle commands that contend for the Instance lifecycle lock return `instance.lifecycle_busy` (409, with `details.outcome` set to `busy`); retry after the other lifecycle operation finishes.
 
-Systemd replacement installs a checked candidate unit and restores the earlier unit when activation fails. Docker replacement keeps or restores the earlier container.
+Direct create and update converge through official cfgmgmt and SSH. A failure leaves applied changes in place. Repeat the normal create or update request to converge; there is no hand-written rollback chain.
 
 ## On the Node
 
-Direct Process create and destroy use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
+Direct Process create, update and destroy use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
 
 Some shared paths still have other callers:
 
 | Path | Remaining caller |
 | --- | --- |
-| Per-Node `operation-process-control` and `operation-process-update` | Start/restart and update. Create/destroy are excluded from their admitted kinds. |
+| Per-Node `operation-process-control` | Start/restart. Create/update/destroy use the Node209 convergence and removal workflows. |
 | Native `processAction` and Process installer | Instance transfer, deployment, rollback, definition installation, Node role and Analytics work. Transfer retirement still uses the local remove action. |
 | Gateway `bootstrapCollector` and agent unit stage/activate | AI-router collector convergence. |
 | Gateway synchronous removal and agent `process.remove` | AI-router teardown/rename and Node-role dependent cleanup. |
@@ -397,9 +397,9 @@ Four internal callers still require synchronous bootstrap completion: AI Router 
 
 ### Native Process update
 
-Ordinary Process update records the changed definition and starts one native installation run. It preserves omitted fields, validates route listeners, and retains the prior desired state. The native steps prepare Vite traffic when needed, publish Caddy in the same root, remove its admitted artifact from the previous runtime, install the private definition and check readiness. The Gateway projects the final bounded result. Its last leaf Process executor, readiness command and receipt checks are removed, along with the old per-field private sources. The fixed `process.installation` callback supplies the admitted definition. Rollback is a revert PR.
+Ordinary Process update records the changed definition and uses the same `operation-process-create` convergence workflow as creation, on Node209. It preserves omitted fields, validates route listeners, and retains the prior desired state. The Gateway supplies the full public unit or Docker definition; only environment bytes use an Operation-scoped execution copy. There is no direct-update private-material callback or agent prerequisite.
 
-Process updates run in `operation-process-update` on the admitted Node. The Gateway records the requested specification and projects the native outcome. It does not execute an update or record executor steps.
+Native steps prepare Vite traffic when needed, publish Caddy in the same root, remove the admitted artifact from a previous runtime, and converge the saved definition. Official cfgmgmt writes the systemd unit and applies boot policy and desired state. A changed Docker specification pulls the new image before stopping and removing the exact owned container, then recreates it with the same Process identity and named-volume mounts. An unchanged specification reuses the container. Removal does not delete volumes. Failed convergence keeps applied changes; repeat a normal update to converge. The Gateway projects only the native terminal result.
 
 ### Placed Process command components
 

@@ -345,3 +345,18 @@ p.write_text(json.dumps(s))
             model = json.loads(self.cli('model', 'get', name).stdout)
             names.append(model['name'])
         self.assertEqual(len(set(names)), 2)
+
+    def test_destroy_file_fanout_uses_one_model_per_path(self):
+        self.run_lifecycle()
+        self.run_lifecycle("destroy")
+        paths = []
+        names = []
+        for index in range(4):
+            name = "schedule-remove_files-" + str(self.inputs["operation_id"]) + "-" + str(index)
+            model = json.loads(self.cli("model", "get", name).stdout)
+            names.append(model["name"])
+            paths.append(model["globalArguments"]["path"])
+        self.assertEqual(len(set(names)), 4)
+        self.assertEqual(len(set(paths)), 4)
+        self.assertFalse(self.unit("timer").exists())
+        self.assertFalse(self.unit("service").exists())

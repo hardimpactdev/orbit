@@ -1,11 +1,11 @@
 id: 689cad3b-d90c-49fe-bf2f-5ed0974a32ec
 name: operation-process-create
-description: Converge one Process through official cfgmgmt and SSH on209.
+description: Create or update one Process through official cfgmgmt and SSH on209.
 vaults:
 - orbit-control-inputs
-inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [process.create]},
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [process.create, process.update]},
     intent: {type: object}, execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]},
-          key: {type: string, pattern: '^process-create-operation-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}}, required: [operation_id,
+          key: {type: string, pattern: '^process-(create|update)-operation-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}}, required: [operation_id,
     node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
 - name: process
@@ -281,9 +281,33 @@ jobs:
           pull " + (has(inputs.intent.installation.definition) ? inputs.intent.installation.definition.image : "unused") }}', notIf: '${{ "docker --host=unix:///var/run/docker.sock
           image inspect " + (has(inputs.intent.installation.definition) ? inputs.intent.installation.definition.image : "unused") }}'}
       inputs: {}
-  - name: container
+  - name: stop-replaced
     target: orbit-node-209
     dependsOn: [{step: pull, condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.control.runtime != "docker" || !steps.observation.outputs.present || steps.observation.outputs.spec == inputs.intent.installation.spec }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
+      inputs: {name: stop-replaced, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', ORBIT_PROCESS_OPERATION=stop,
+          /usr/bin/python3, '${{ "/tmp/orbit-process-" + run.id + "/scripts/control.py" }}'], sudo: true}
+  - name: remove-replaced
+    target: orbit-node-209
+    dependsOn: [{step: stop-replaced, condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.control.runtime != "docker" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
+      inputs: {name: remove-replaced, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', /usr/bin/python3,
+          '${{ "/tmp/orbit-process-" + run.id + "/scripts/remove_container.py" }}'], sudo: true}
+  - name: container
+    target: orbit-node-209
+    dependsOn: [{step: pull, condition: {type: succeeded}}, {step: remove-replaced, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "docker" || !inputs.intent.installation.has_environment }}
     task:
       type: behavior
@@ -296,7 +320,7 @@ jobs:
           vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'}
   - name: container-public
     target: orbit-node-209
-    dependsOn: [{step: pull, condition: {type: succeeded}}]
+    dependsOn: [{step: pull, condition: {type: succeeded}}, {step: remove-replaced, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "docker" || inputs.intent.installation.has_environment }}
     task:
       type: behavior
