@@ -79,7 +79,7 @@ final readonly class NodeRoleRelocateInput
             'publication' => app(NodeRolePublicationInput::class)->capture($target, $assignment->role, $source),
             'source_node_id' => $source->id, 'target_node_id' => $target->id,
             'target' => $this->target->capture($target, $assignment, false),
-            'certificates' => app(NodeRoleCertificateInput::class)->capture($target, $assignment->role, $source),
+            'certificates' => app(NodeRoleCertificateInput::class)->captureForExecution($target, $assignment->role, $source),
             'metrics_fleet' => app(NodeRoleMetricsInput::class)->capture($assignment),
             'source' => $this->source->capture($source, $ghost, desiredAssignment: $assignment),
             'withdrawal_grace_seconds' => $assignment->role === RoleName::WebSocket ? PrivateDnsAnswerExpiry::WithdrawalGraceSeconds : 0];

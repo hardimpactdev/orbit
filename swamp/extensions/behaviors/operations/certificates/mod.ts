@@ -3,7 +3,6 @@ import { DirectArgs } from "../_lib/direct-input.ts";
 import { certificateActions } from "./actions.ts";
 import { signCertificateBatch, SigningLeaf } from "./signing.ts";
 import { RoleLeaf } from "./role-input.ts";
-import { roleCertificateActions } from "./role-actions.ts";
 import {
   Applied,
   Leaf,
@@ -61,7 +60,6 @@ export function certificates(
   ) =>
     | ReturnType<typeof signCertificateBatch>
     | Promise<ReturnType<typeof signCertificateBatch>> = signCertificateBatch,
-  roleActions?: ReturnType<typeof roleCertificateActions>,
 ) {
   const output = async (ctx: Context, spec: string, value: unknown) => ({
     dataHandles: [await ctx.writeResource(spec, spec, { [spec]: value })],
@@ -175,47 +173,6 @@ export function certificates(
             value,
           );
           return value;
-        },
-      },
-      roleRequest: {
-        description:
-          "Prepare a fixed role pair key locally and return only its public CSR",
-        arguments: Args.extend({ leaf: RoleLeaf }),
-        execute: async (
-          args: ArgsType & { leaf: z.infer<typeof RoleLeaf> },
-          ctx: Context,
-        ) => {
-          target(args, args.leaf);
-          const request = await (roleActions ?? roleCertificateActions(ctx.extensionFile)).request(args.leaf, ctx.signal);
-          if ("error_code" in request) throw new Error(request.error_code);
-          return output(ctx, "request", request);
-        },
-      },
-      rolePublish: {
-        description:
-          "Publish a signed fixed role pair using only the key on this effect Node",
-        arguments: Args.extend({
-          leaf: RoleLeaf,
-          request: Request,
-          signed: Signed,
-        }),
-        execute: async (
-          args: ArgsType & {
-            leaf: z.infer<typeof RoleLeaf>;
-            request: z.infer<typeof Request>;
-            signed: z.infer<typeof Signed>;
-          },
-          ctx: Context,
-        ) => {
-          target(args, args.leaf);
-          const applied = await (roleActions ?? roleCertificateActions(ctx.extensionFile)).publish(
-            args.leaf,
-            args.request,
-            args.signed,
-            ctx.signal,
-          );
-          if ("error_code" in applied) throw new Error(applied.error_code);
-          return output(ctx, "applied", applied);
         },
       },
       requestAll: {

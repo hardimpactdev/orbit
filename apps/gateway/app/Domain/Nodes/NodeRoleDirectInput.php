@@ -52,7 +52,7 @@ final readonly class NodeRoleDirectInput
                     'architecture' => MachineArchitecture::normalize($node->architecture), 'user' => $node->user,
                     'materialize' => $this->managers->input($node, $manager)['materialize'] ?? null], [ToolManagerName::Vp, ToolManagerName::Composer]) : [],
             'publication' => app(NodeRolePublicationInput::class)->capture($node, $role),
-            'certificates' => app(NodeRoleCertificateInput::class)->capture($node, $role),
+            'certificates' => app(NodeRoleCertificateInput::class)->captureForExecution($node, $role),
             'metrics_fleet' => app(NodeRoleMetricsInput::class)->capture($assignment),
             'gateway_dns' => $role === RoleName::Gateway && ($dns = app(GatewayPrivateDnsResolver::class)->vpnDnsAddress(app(VpnSettings::class))) !== null
                 ? ['operation' => 'converge', 'address' => $dns, 'domain' => app(VpnSettings::class)->domain()] : null,
