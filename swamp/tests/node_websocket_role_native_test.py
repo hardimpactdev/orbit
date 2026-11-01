@@ -27,6 +27,9 @@ class WebSocketNative(NativeTestCase):
         shutil.copy(ROOT/'extensions/behaviors/operations/routes/caddy-input.ts', routes)
         self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
         self.unit=self.host/'orbit-websocket.service'
+        for asset in (self.repo/'extensions/behaviors/operations/fleet-recipe').rglob('*'):
+            if asset.suffix in ['.py','.ts']:
+                asset.write_text(asset.read_text().replace('/etc/systemd/system/orbit-websocket.service',str(self.unit)).replace('/var/lib/orbit/role-file-snapshots',str(self.host/'snapshots')))
         self.user=pwd.getpwuid(os.getuid()).pw_name
         self.unit_before='# Managed by Orbit.\nUser='+self.user+'\nold unit\n'
         self.unit.write_text(self.unit_before)
@@ -41,17 +44,20 @@ class WebSocketNative(NativeTestCase):
         binary=self.repo/'ssh-fixture'
         binary.write_text('#!'+sys.executable+'\n'+fixture.read_text().replace('FIXTURE_ROOT = None','FIXTURE_ROOT = '+repr(str(self.host))))
         binary.chmod(0o700)
+        scp=self.repo/'scp-fixture'
+        scp.write_text('#!'+sys.executable+'\nimport shutil,sys\nfrom pathlib import Path\nsrc=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(":",1)[1]);shutil.copytree(src,dst,dirs_exist_ok=True)\n')
+        scp.chmod(0o700)
         flow=yaml.safe_load((ROOT/'workflows/workflow-node-role-websocket.yaml').read_text())
         def rewrite(value):
             if isinstance(value,dict):
                 return {k:rewrite(v) for k,v in value.items() if k!='target'}
             if isinstance(value,list):return [rewrite(v) for v in value]
-            if isinstance(value,str):return value.replace('/etc/systemd/system/orbit-websocket.service',str(self.unit))
+            if isinstance(value,str):return value.replace('/etc/systemd/system/orbit-websocket.service',str(self.unit)).replace('/tmp/orbit-websocket-',str(self.host/'stage-'))
             return value
         flow=rewrite(flow)
         for step in flow['jobs'][0]['steps']:
             task=step['task']
-            if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
+            if task.get('behaviorType')=='@swamp/ssh':task['globalArgs'].update(sshBinary=str(binary),scpBinary=str(scp))
         (self.repo/'workflows/workflow-node-role-websocket.yaml').write_text(yaml.safe_dump(flow,sort_keys=False))
         self.listener=socket.socket();self.listener.bind(('127.0.0.1',0));self.listener.listen(32)
         self.addCleanup(self.listener.close)
@@ -97,17 +103,17 @@ class WebSocketNative(NativeTestCase):
         self.assertEqual(self.unit.read_text(),self.unit_before)
         self.assertTrue(json.loads(self.state.read_text())['active'])
         steps={s['name']:s for j in history['jobs'] for s in j['steps']}
-        self.assertEqual(steps['websocket_recover']['status'],'succeeded')
-        self.assertEqual(steps['result']['status'],'skipped')
+        self.assertEqual(steps['restore']['status'],'succeeded')
+        self.assertEqual(steps['result']['outputs']['completed'],False)
         managed=[p for p in self.previous.parent.iterdir() if p.name.startswith('release.')]
         self.assertEqual(len(managed),2, 'Retain the captured prior and failed candidate for same-child resume')
         self.failure.unlink()
         # Retrying only activation must never accept the restored old release.
-        unsafe=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','websocket_restart',success=False).stdout)
+        unsafe=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','verify',success=False).stdout)
         self.assertEqual(unsafe['id'],history['id'])
         self.assertEqual(self.install.resolve(),self.previous)
         # Republish from the native unit step, retaining the original before snapshot.
-        resumed=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','websocket_unit_assets').stdout)
+        resumed=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','activation').stdout)
         self.assertEqual(resumed['id'],history['id'])
         self.assertEqual(resumed['status'],'succeeded')
         self.assertNotEqual(self.install.resolve(),self.previous)
@@ -117,13 +123,13 @@ class WebSocketNative(NativeTestCase):
         self.failure.write_text('cleanup')
         history=self.run_runtime(False)
         steps={s['name']:s for j in history['jobs'] for s in j['steps']}
-        self.assertEqual(steps['result']['status'],'skipped')
+        self.assertEqual(steps['result']['outputs']['completed'],False)
         current=self.install.resolve()
         self.assertNotEqual(current,self.previous)
         actions=[json.loads(row)['action'] for row in self.audit.read_text().splitlines()]
         restarts=actions.count('restart')
         self.failure.unlink()
-        resumed=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','websocket_cleanup_assets').stdout)
+        resumed=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','cleanup').stdout)
         self.assertEqual(resumed['id'],history['id'])
         self.assertEqual(resumed['status'],'succeeded')
         self.assertEqual(self.install.resolve(),current)

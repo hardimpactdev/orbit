@@ -1,7 +1,12 @@
 import { stringify } from "jsr:@std/yaml@1.0.12";
-import { roleActionSteps } from "../node-role-command/steps.ts";
-import { roleWebSocketSteps } from "./websocket_steps.ts";
+type Fields = Record<string, unknown>;
 const ex = (s: string) => "${{ " + s + " }}";
+const on = (step: string, type = "succeeded") => ({
+    step,
+    condition: { type },
+});
+const status = (name: string) =>
+    `("${name}" in steps ? steps["${name}"].status : "skipped")`;
 export function websocketWorkflow() {
     const globals = {
         name: ex('"websocket-"+run.id'),
@@ -17,30 +22,143 @@ export function websocketWorkflow() {
             transport: { hostKeys: ex("inputs.ssh.target.host_keys") },
         }],
     };
-    const steps = [
-        ...roleActionSteps(
-            "account",
-            "account",
-            '{"user":inputs.runtime.user}',
-            globals,
-        ),
-        ...roleWebSocketSteps(
-            "websocket",
-            "inputs.runtime",
-            globals,
-            "vault.get(inputs.material.vault,inputs.material.key)",
-            "account",
-            "account",
-        ),
+    const staging = ex('"/tmp/orbit-websocket-"+run.id');
+    const steps: Fields[] = [{
+        name: "assets",
+        task: {
+            type: "behavior",
+            behaviorType: "@nckrtl/node-role-runtime-assets",
+            behaviorName: ex('"websocket-assets-"+run.id'),
+            methodName: "bundle",
+            inputs: { runtime: ex("inputs.runtime"), run_id: ex("run.id") },
+        },
+    }, {
+        name: "prepare_assets",
+        dependsOn: [on("assets")],
+        writes: true,
+        task: {
+            type: "behavior",
+            behaviorType: "@swamp/ssh",
+            behaviorName: globals.name,
+            methodName: "exec",
+            globalArgs: globals,
+            inputs: {
+                hosts: "name:target",
+                argv: [
+                    "/usr/bin/timeout",
+                    "30",
+                    "/usr/bin/mkdir",
+                    "-p",
+                    staging,
+                ],
+            },
+        },
+    }, {
+        name: "copy_assets",
+        dependsOn: [on("prepare_assets")],
+        writes: true,
+        task: {
+            type: "behavior",
+            behaviorType: "@swamp/ssh",
+            behaviorName: globals.name,
+            methodName: "copy",
+            globalArgs: globals,
+            inputs: {
+                hosts: "name:target",
+                src: ex('steps.assets.outputs.scripts_directory+"/."'),
+                dst: staging,
+                direction: "to",
+                recursive: true,
+            },
+        },
+    }];
+    const budgets: Record<string, number> = {
+        account: 30,
+        checkout: 120,
+        dependencies: 300,
+        environment: 60,
+        unit: 30,
+        activation: 45,
+        verify: 15,
+        restore: 60,
+        cleanup: 30,
+    };
+    const forward = [
+        "account",
+        "checkout",
+        "dependencies",
+        "environment",
+        "unit",
+        "activation",
+        "verify",
     ];
-    for (const step of steps) step.allowFailure = true;
+    function phase(name: string, dependencies: Fields[], guard?: string) {
+        const argv: unknown[] = [
+            "/usr/bin/timeout",
+            String(budgets[name]),
+            "/usr/bin/env",
+            ex('"ORBIT_ROLE_INPUT="+steps.assets.outputs.input_json'),
+        ];
+        if (name !== "account") {
+            argv.push(ex('"ORBIT_ROLE_ACCOUNT="+steps.account.outputs.stdout'));
+        }
+        if (name === "cleanup") {
+            argv.push(
+                ex(
+                    '"ORBIT_ROLE_RETAIN_CANDIDATE="+string(' +
+                        status("activation") +
+                        ' in ["succeeded","failed","cancelled"])',
+                ),
+            );
+        }
+        argv.push(
+            "/usr/bin/python3",
+            "-B",
+            ex('"/tmp/orbit-websocket-"+run.id+"/phase_' + name + '.py"'),
+        );
+        steps.push({
+            name,
+            writes: true,
+            dependsOn: dependencies,
+            ...(guard ? { guard: ex(guard) } : {}),
+            task: {
+                type: "behavior",
+                behaviorType: "@swamp/ssh",
+                behaviorName: globals.name,
+                methodName: "exec",
+                globalArgs: globals,
+                inputs: {
+                    hosts: "name:target",
+                    sudo: true,
+                    argv,
+                    ...(name === "environment"
+                        ? {
+                            stdin: ex(
+                                "vault.get(inputs.material.vault,inputs.material.key)",
+                            ),
+                        }
+                        : {}),
+                },
+            },
+        });
+    }
+    for (const [index, name] of forward.entries()) {
+        phase(name, [on(index ? forward[index - 1] : "copy_assets")]);
+    }
+    phase(
+        "restore",
+        [on("activation", "always"), on("verify", "always")],
+        status("account") + ' != "succeeded" || !(' + status("activation") +
+            ' in ["failed","cancelled"] || ' + status("verify") +
+            ' in ["failed","cancelled"])',
+    );
+    phase("cleanup", [
+        ...forward.map((s) => on(s, "always")),
+        on("restore", "always"),
+    ], status("account") + ' != "succeeded"');
     steps.push({
         name: "result",
-        target: "orbit-node-209",
-        dependsOn: ["websocket", "websocket_cleanup"].map((step) => ({
-            step,
-            condition: { type: "succeeded" },
-        })),
+        dependsOn: steps.map((s) => on(String(s.name), "always")),
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/node-role-runtime-assets",
@@ -49,21 +167,29 @@ export function websocketWorkflow() {
             inputs: {
                 node_id: ex("inputs.runtime.node_id"),
                 assignment_id: ex("inputs.runtime.assignment_id"),
+                statuses: Object.fromEntries(
+                    [...forward, "restore", "cleanup"].map(
+                        (name) => [name, ex(status(name))],
+                    ),
+                ),
             },
         },
     });
     steps.push({
         name: "proven",
-        target: "orbit-node-209",
-        dependsOn: [{ step: "result", condition: { type: "always" } }],
+        dependsOn: [on("result")],
         task: {
             type: "assert",
-            expr:
-                '"result" in steps && steps["result"].status == "succeeded" && steps["result"].outputs.completed',
+            expr: "steps.result.outputs.completed",
             severity: "high",
-            message: "WebSocket runtime must complete after recovery settles",
+            message: "Every required WebSocket phase must complete",
         },
     });
+    for (const step of steps) {
+        step.target = "orbit-node-209";
+        step.queueTimeout = 30;
+        if (step.name !== "proven") step.allowFailure = true;
+    }
     return {
         id: "b5f10569-2322-44e2-8c42-312374dc2b1d",
         name: "node-role-websocket",

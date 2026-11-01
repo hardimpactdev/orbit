@@ -40,7 +40,9 @@ Owning add and relocation parents can capture a supported contribution after rec
 
 WebSocket uses visible source, Composer, private environment, release/unit validation, service activation, listener observation, restoration and release cleanup actions. A source or validation failure before cutover leaves the running service untouched. Cleanup keeps the current and captured prior releases after success. A failed cutover retains its candidate for same-child resume; a failed pre-cutover candidate is removed. Its complete captured PHP/Caddy/DNS catalogs use the canonical Route children. The Gateway records certificate and serving state from terminal outputs. AppDev, AppProd and Analytics remain on their existing paths.
 
-After activation failure the child restores its prior unit and release. Resume the same failed child from `websocket_unit_assets` to republish the admitted unit/link and activate the candidate. Retrying only restart/listener cannot prove completion: readiness checks the exact admitted release link and unit as well as the service and socket. The original before snapshot remains cached upstream of this native resume point.
+The WebSocket child resolves its public script bundle once, then executes account, checkout, dependencies, environment, unit, activation and verify as one script-file action per legacy phase. Each action uses official pinned SSH exec under coreutils `timeout`; every step has `queueTimeout: 30`. The terminal supplier receives only named phase statuses. It never receives the whole native context.
+
+After activation failure the child restores its prior unit and release. Resume the same failed child from `activation` to republish the admitted unit/link and activate the candidate. Retrying only `verify` cannot prove completion: readiness checks the exact admitted release link and unit as well as the service and socket. The original before snapshot remains cached upstream. Cleanup can resume separately without restarting the service. Phase limits are account30s, checkout120s, dependencies300s, environment60s, unit30s, activation45s, verify15s, restore60s and cleanup30s. F10 target-VM measurement remains required before accepting an F8 run budget.
 
 ## Retained caller boundary
 
@@ -59,3 +61,12 @@ the next intended consumers of those duties after their canonical PHP,
 Composer and JavaScript prerequisites are ported. Metrics must consume its
 owning lane's native runtime contribution. These future consumers are not
 claimed as migrated here.
+
+AppProd port work follows the legacy phases: resolve the managed account,
+install the canonical Caddy package and role prerequisites, install the pinned
+JavaScript runtime, order and publish Caddy, then apply the role firewall.
+The PHP build uses the recipe installer rather than generic APT PHP aliases.
+Composer refuses a foreign scope; JavaScript uses the existing Fleet recipe
+policy, including NodeSource and Corepack retirement. Native parity runs must
+measure the p95 before selecting the F8 run budget and queue timeout. This work
+does not activate AppProd until the complete contribution passes those checks.

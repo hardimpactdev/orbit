@@ -32,8 +32,17 @@ def control(argv):
 
 
 source=body
+if '/usr/bin/env' in command:
+    index=command.index('/usr/bin/env')+1
+    while index<len(command) and '=' in command[index]:
+        key,value=command[index].split('=',1);os.environ[key]=value;index+=1
+if '/usr/bin/mkdir' in command:
+    Path(command[-1]).mkdir(parents=True,exist_ok=True);raise SystemExit(0)
 if '/usr/bin/python3' in command and '-c' in command:
     source=command[command.index('-c')+1]
+elif '/usr/bin/python3' in command:
+    script=Path(command[-1]);sys.path.insert(0,str(script.parent));source=script.read_text()
+    if script.name=='phase_cleanup.py':log('cleanup')
 if source:
     if '\ndef cleanup(data):' in source:log('cleanup')
     source=source.replace('/etc/systemd/system/orbit-websocket.service',str(root/'orbit-websocket.service')).replace('/var/lib/orbit/role-file-snapshots',str(root/'snapshots'))
@@ -41,6 +50,14 @@ if source:
     def run(argv,**kwargs):
         if '/usr/bin/systemctl' in argv:
             return subprocess.CompletedProcess(argv,control(argv))
+        if '/usr/bin/git' in argv:
+            log('git')
+            if 'checkout' in argv:
+                release=Path(argv[argv.index('-C')+1]);(release/'artisan').write_text('fixture');(release/'vendor').mkdir(exist_ok=True)
+            return subprocess.CompletedProcess(argv,0)
+        for binary,action in [('/usr/bin/composer','composer'),('/usr/bin/php','artisan_verify'),('/usr/bin/systemd-analyze','unit_verify')]:
+            if binary in argv:
+                log(action);return subprocess.CompletedProcess(argv,0)
         return original_run(argv,**kwargs)
     subprocess.run=run
     sys.stdin=io.StringIO(body if source!=body else '')
