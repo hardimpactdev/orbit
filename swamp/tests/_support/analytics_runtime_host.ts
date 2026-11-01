@@ -71,6 +71,10 @@ async function execute(
         state.state = "created";
     } else if (command.includes("container stop")) state.state = "exited";
     else if (command.includes("container rm")) {
+        // Removal must also remove the container's anonymous volumes.
+        if (!command.includes("container rm --volumes ")) {
+            fail("fixture.anonymous_volumes_kept");
+        }
         state.calls.push("remove");
         state.present = false;
         state.state = "absent";

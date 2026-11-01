@@ -33,6 +33,23 @@ class RemovalScripts(unittest.TestCase):
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
             self.assertEqual(list(target.parent.glob('.orbit-revoke-*')), [])
 
+    def test_role_container_removal_also_removes_anonymous_volumes(self):
+        m = module('remove_container')
+        name = 'orbit-metrics-grafana'
+        for action, expected in (
+            ('stop', ['/usr/bin/docker', 'container', 'stop', '--', name]),
+            ('rm', ['/usr/bin/docker', 'container', 'rm', '--volumes', '--', name]),
+        ):
+            calls = []
+
+            def run(argv, **_kwargs):
+                calls.append(argv)
+                return types.SimpleNamespace(returncode=0, stdout=name + '\n')
+
+            with patch.object(m.subprocess, 'run', side_effect=run):
+                m.remove({'name': name, 'action': action})
+            self.assertEqual(calls[-1], expected)
+
     def test_no_footprint_delete_until_all_units_inactive(self):
         m = module('remove_footprint')
         with tempfile.TemporaryDirectory() as root:

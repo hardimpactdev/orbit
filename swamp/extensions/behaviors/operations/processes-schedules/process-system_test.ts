@@ -821,28 +821,62 @@ Deno.test("before-replacement refusal keeps the prior running server in place", 
   });
   assertEquals(host.mutations(), []);
 });
-Deno.test("ephemeral container removal requests anonymous volume deletion only after ownership validation", async () => {
-  const host = new Host();
-  host.containers.set(container, {
+Deno.test("every Docker container removal also removes its anonymous volumes", async () => {
+  const removals = (host: Host) =>
+    host.calls.filter((call) =>
+      call.program === "/usr/bin/docker" && call.args[1] === "rm"
+    ).map((call) => call.args);
+  const rm = (name: string) => [
+    "container",
+    "rm",
+    "--force",
+    "--volumes",
+    name,
+  ];
+  const owned = (spec: string, running: boolean) => ({
     owner: 7,
-    spec: "a".repeat(64),
-    running: false,
+    spec,
+    running,
   });
+  const input = dockerInput();
+
+  // Replacement removes the old canonical, staged as rollback, once ready.
+  let host = new Host();
+  host.containers.set(container, owned("a".repeat(64), true));
+  assertEquals(await host.invoke("process.converge-container", input), {});
+  assertEquals(removals(host), [rm(container + "-rollback-running")]);
+
+  // A stale candidate beside a current canonical is cleaned up.
+  host = new Host();
+  host.containers.set(container, owned(input.spec, true));
+  host.containers.set(container + "-candidate", owned("a".repeat(64), false));
+  assertEquals(await host.invoke("process.converge-container", input), {});
+  assertEquals(removals(host), [rm(container + "-candidate")]);
+
+  // A recovered publication removes the leftover rollback once ready.
+  host = new Host();
+  host.containers.set(container, owned(input.spec, true));
+  host.containers.set(
+    container + "-rollback-running",
+    owned("a".repeat(64), false),
+  );
+  assertEquals(await host.invoke("process.converge-container", input), {});
+  assertEquals(removals(host), [rm(container + "-rollback-running")]);
+
+  // Process removal removes every owned slot after ownership validation.
+  host = new Host();
+  host.containers.set(container, owned("a".repeat(64), false));
+  host.containers.set(container + "-candidate", owned("a".repeat(64), false));
   assertEquals(
     await host.invoke("process.remove", {
       process_id: 7,
       runtime: "docker",
       name: container,
       vite: null,
-      anonymous_volumes: true,
     }),
     {},
   );
-  assert(
-    host.calls.some((call) =>
-      call.program === "/usr/bin/docker" && call.args.includes("--volumes")
-    ),
-  );
+  assertEquals(removals(host), [rm(container + "-candidate"), rm(container)]);
 });
 
 Deno.test("failed piped write cleanup can be replayed and owned temporary removed with its Process", async () => {

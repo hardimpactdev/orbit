@@ -172,7 +172,7 @@ jobs:
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "docker --host=unix:///var/run/docker.sock container
-          rm " + inputs.intent.control.name }}'}
+          rm --volumes " + inputs.intent.control.name }}'}
       inputs: {}
   - name: cleanup
     target: orbit-node-209

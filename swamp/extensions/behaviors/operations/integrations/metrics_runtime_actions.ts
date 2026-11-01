@@ -226,7 +226,7 @@ export function metricsRuntimeActions(deps: MetricsRuntimeDeps = {}) {
   };
   const removeContainer = (resource: string) =>
     execute(
-      ["container", "rm", "--force", "--", resource],
+      ["container", "rm", "--force", "--volumes", "--", resource],
       "container_remove_failed",
     );
   const rename = (from: string, to: string) =>

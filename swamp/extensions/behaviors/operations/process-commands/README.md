@@ -86,7 +86,7 @@ Hibernation stop uses control only. It must preserve boot policy and recorded de
 | inspect_script | Observe present, state and spec with optional expected-spec pinning. |
 | verify_script | Check selected runtime state once. |
 | check_health_script | Check public ORBIT_PROCESS_HEALTH_URL once; no retry/poll loop. |
-| remove_container_script | Remove one inactive owned slot; optional ORBIT_PROCESS_ANONYMOUS_VOLUMES=true applies only to it. |
+| remove_container_script | Remove one inactive owned slot with `--volumes`: its anonymous volumes go, named volumes stay. |
 
 Create uses the fixed /var/run/docker.sock endpoint and sends private JSON in the HTTP request body. No command or environment value appears in argv. Labels remain orbit.managed=true, orbit.container.kind=process, Process ID and spec.
 

@@ -39,7 +39,6 @@ const Activate = z.object({
   required_mount_paths: RequiredMountPaths.default([]),
 }).strict();
 const Remove = Artifact.extend({
-  anonymous_volumes: z.boolean().optional(),
   vite: z.object({ path: Path, instance_id: Id }).strict().nullable(),
 });
 const Container = z.object({
@@ -716,7 +715,7 @@ class ProcessSystem {
             "container",
             "rm",
             "--force",
-            ...(input.anonymous_volumes ? ["--volumes"] : []),
+            "--volumes",
             artifact,
           ],
           "process.remove_failed",
@@ -887,7 +886,7 @@ class ProcessSystem {
     const candidate = `${input.container}-candidate`;
     if (await this.container(input.process_id, candidate)) {
       await this.docker(
-        ["container", "rm", "--force", candidate],
+        ["container", "rm", "--force", "--volumes", candidate],
         "process.recovery_required",
       );
     }
@@ -955,7 +954,7 @@ class ProcessSystem {
             await this.rollbackDocker(input, rollback);
             throw error;
           }
-          await this.docker(["container", "rm", "--force", rollback]);
+          await this.docker(["container", "rm", "--force", "--volumes", rollback]);
           readyVerified = true;
           canonical = { ...canonical, running: input.desired === "running" };
         }
@@ -1035,7 +1034,7 @@ class ProcessSystem {
       await this.desired(input, created);
       await this.ready(input);
       await this.docker(
-        ["container", "rm", "--force", rollback],
+        ["container", "rm", "--force", "--volumes", rollback],
         "process.activation_failed",
       );
     } catch (error) {
