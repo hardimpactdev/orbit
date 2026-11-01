@@ -131,6 +131,15 @@ it('protects allocations committed between the ownership capture queries', funct
         ->and($operation->input['scope']['max_task_vm_id'])->toBeLessThan($allocated->id);
 });
 
+it('freezes the admitted sweep expiry in the full public envelope', function (): void {
+    $this->freezeTime();
+    $operation = directSweepAdmit();
+    $expiry = now()->addSeconds(300)->getTimestamp();
+    expect($operation->input['deadline_at'])->toBe($expiry);
+    $this->travel(6)->minutes();
+    expect(app(DirectOperation::class)->workflowInputs($operation)['intent']['deadline_at'])->toBe($expiry);
+});
+
 it('retires only expired nonrunning build intent before native dispatch', function (): void {
     $running = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id]);
     $recent = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => 'failed']);

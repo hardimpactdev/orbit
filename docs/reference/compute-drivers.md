@@ -780,7 +780,9 @@ Host sweeps use independent Operations, so one failed host does not block anothe
 
 Admission captures live VM names and the highest allocated VM and build IDs before native inventory. New allocations remain outside that cleanup scope.
 
-The provider script removes VM instances before selecting their orphan topology volumes, and verifies VM absence before deleting a volume. Allocation always creates a new VM row; a later claim therefore has an ID above the captured maximum. Every nondestroyed row present at admission is protected, including provisioning and failed rows. Steps need no later Gateway ownership read. Cleanup and resume compete for the same build fence: cleanup blocks resume, and a successful resume prevents a stale sweep from deleting the builder or smoke VM. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
+The provider script removes VM instances before selecting their orphan topology volumes, and verifies VM absence before deleting a volume. Allocation always creates a new VM row; a later claim therefore has an ID above the captured maximum. Every nondestroyed row present at admission is protected, including provisioning and failed rows. Steps need no later Gateway ownership read.
+
+Cleanup and resume compete for the same build fence: cleanup blocks resume, and a successful resume prevents a stale sweep from deleting the builder or smoke VM. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
 
 ### Incus provider
 
