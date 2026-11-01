@@ -20,7 +20,7 @@ Native create passes stored environment values as a JSON object, including `{}` 
 
 Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each setup action keeps its exit code and a stderr tail for failure diagnosis. Command stdout is never kept.
 
-It reads `.env` values the way phpdotenv does, including multi-line quoted values and inline comments. The runner first normalizes invalid UTF-8, so dropped bytes can never join pieces into a secret. It then redacts every known secret value in one pass across the whole captured stderr. Known secrets are stored environment values and secret-named variables.
+It reads `.env` values the way phpdotenv does, including multi-line quoted values, escapes and inline comments. The runner first normalizes invalid UTF-8, so dropped bytes can never join pieces into a secret. It then redacts every known secret value in one pass across the whole captured stderr. Known secrets are stored environment values and secret-named variables.
 
 It then keeps the last 4 KiB and redacts that tail again. It drops a first line that may start mid-value, and drops any line that still holds an 8-byte fragment of a secret. It keeps only whole lines, at most 4 KiB in total. A nonzero exit still fails create.
 

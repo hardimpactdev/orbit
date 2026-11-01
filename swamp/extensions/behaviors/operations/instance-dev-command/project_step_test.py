@@ -140,6 +140,21 @@ class ProjectStep(unittest.TestCase):
             output = json.loads(self.run_step(path, 'printf "login failed for password=hunter2\\n" >&2; exit 7').stdout)
             self.assertNotIn('hunter2', output['stderr'])
 
+    def test_tab_form_feed_and_vertical_tab_escapes_are_read_like_phpdotenv(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text('DB_PASSWORD="1234567\\t7654321"\nAPI_SECRET="pw\\f12\\v34"\n')
+            output = json.loads(self.run_step(path, 'printf "1234567\\t7654321\\npw\\f12\\v34\\n" >&2; exit 7').stdout)
+            self.assertNotIn('1234567', output['stderr'])
+            self.assertNotIn('pw', output['stderr'])
+
+    def test_unquoted_value_ends_at_a_hash_without_a_space(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text('DB_PASSWORD=abcdefg#hijklmn\n')
+            output = json.loads(self.run_step(path, 'printf "login failed for abcdefg\\n" >&2; exit 7').stdout)
+            self.assertNotIn('abcdefg', output['stderr'])
+
     def test_redacts_escaped_terminal_quotes_and_truncates_unicode_by_bytes(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
             path = Path(folder)

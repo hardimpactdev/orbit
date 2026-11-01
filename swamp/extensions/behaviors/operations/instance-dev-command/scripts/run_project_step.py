@@ -8,12 +8,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-ESCAPES = {'n': '\n', 'r': '\r', '\\': '\\', '"': '"', '$': '$'}
+ESCAPES = {'n': '\n', 'r': '\r', 't': '\t', 'f': '\f', 'v': '\v', '\\': '\\', '"': '"', '$': '$'}
 
 
 def unescape(value: str) -> str:
-    # The canonical writer escapes these five characters in double-quoted values.
-    return re.sub(r'\\([nr\\"$])', lambda match: ESCAPES[match[1]], value)
+    # phpdotenv reads these escapes in double-quoted values.
+    return re.sub(r'\\([nrtfv\\"$])', lambda match: ESCAPES[match[1]], value)
 
 
 def closing_quote(text: str, quote: str) -> int:
@@ -54,7 +54,8 @@ def dotenv_secrets(text: str) -> set[str]:
             for item in (inner, unescape(inner) if quote == '"' else inner):
                 found.update([item, *item.splitlines(), *re.split(r'\r\n|\n|\r', item)])
         else:
-            found.add(re.split(r'\s+#', value, maxsplit=1)[0].strip())  # inline comment on an unquoted value
+            # phpdotenv ends an unquoted value at any whitespace or '#'.
+            found.add(re.split(r'[\s#]', value, maxsplit=1)[0])
     found.discard('')
     return found
 
