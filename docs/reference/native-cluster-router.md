@@ -25,7 +25,7 @@ Certificate signing and decoding steps use a control-worker target alone. Retain
 
 ## Proof budget and phase order
 
-The approved proof budget for each Router set or unset is 3,600 seconds. Admission waits until that budget is live in the Gateway; an earlier source helper or the 30-minute no-history default does not establish acceptance. This is a provisional policy budget: no full successful Router run has supplied a p95.
+The approved proof budget for each Router set or unset is 3,900 seconds. Admission waits until that budget is live in the Gateway; an earlier source helper or the 30-minute no-history default does not establish acceptance. #2359 derives this provisional budget from op 6592: 2,417 seconds × 1.5, rounded up to the next five minutes. No full successful Router run has supplied a p95.
 
 Op 6592 took 2,417.179 seconds including restoration; its forward phase took 1,345.582 seconds and restoration 944.722 seconds. Its 119 probe observations had a queue-inclusive p95 of 654 seconds and maximum 707 seconds. These are failed-run observations, not SSH execution times or a successful p95.
 

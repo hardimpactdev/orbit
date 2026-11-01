@@ -6,7 +6,7 @@
     "spare+router",
     "spare-2+router"
   ],
-  "budget_seconds": 3600,
+  "budget_seconds": 3900,
   "queue_timeout_seconds": 600,
   "prepare": [
     {
