@@ -170,7 +170,7 @@
       "argv": [
         "python3",
         "-I",
-        "tests/socket_observer.py",
+        "swamp/proof/websocket.app_rotate/tests/socket_observer.py",
         "start",
         "${capture.subject_key}",
         "${capture.unrelated_key}"

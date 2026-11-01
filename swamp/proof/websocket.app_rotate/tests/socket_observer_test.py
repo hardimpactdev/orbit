@@ -143,8 +143,9 @@ class SocketObserverTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 observer.host("check", "run")
 
-    def test_fixture_hook_executes_from_the_kind_directory_before_admission(self):
+    def test_fixture_hook_executes_from_the_worktree_root_before_admission(self):
         kind_dir = Path(__file__).parents[1]
+        worktree_root = kind_dir.parents[2]
         fixture = json.loads(Path(str(kind_dir) + ".json").read_text())
         argv = [
             part.replace("${capture.subject_key}", "subject-public-key").replace(
@@ -185,7 +186,7 @@ print(json.dumps(result))
             )
             completed = subprocess.run(
                 argv,
-                cwd=kind_dir,
+                cwd=worktree_root,
                 env=environment,
                 capture_output=True,
                 text=True,
