@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { AdoptInput, Facts, Observation, queryScript, repositoryError } from "./adopt.ts";
 import { homebrewRemovalBlock } from "./adopt_homebrew.ts";
-import { safeVersion, ToolRefusal } from "./contract.ts";
+import { repositoryJson, safeVersion, ToolRefusal } from "./contract.ts";
 export const RemoveInput = AdoptInput.safeExtend({ intent_only: z.boolean() });
 type Input = z.infer<typeof RemoveInput>;
 const Public = z.record(z.string(), z.unknown());
@@ -70,7 +70,7 @@ export const behavior = {
                         ? source.replace("REMOVE_INPUT = None", "REMOVE_INPUT = json.loads(" + encoded + ")")
                         : source.replace("QUERY_INPUT = None", "QUERY_INPUT = " + encoded);
                 }
-                const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: JSON.stringify(args.input.repository) }; await ctx.writeResource("assets", "assets", result); return result;
+                const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: repositoryJson(args.input) }; await ctx.writeResource("assets", "assets", result); return result;
             },
         },
         observe: {

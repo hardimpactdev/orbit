@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { Input, safeVersion, ToolRefusal, validateConstraint, verifyInstalled } from "./contract.ts";
+import { Input, repositoryJson, safeVersion, ToolRefusal, validateConstraint, verifyInstalled } from "./contract.ts";
 import { homebrewBlock } from "./adopt_homebrew.ts";
 
 export const AdoptInput = Input.omit({ materialize: true, intent_only: true }).extend({
@@ -93,7 +93,7 @@ export const behavior = {
             arguments: z.object({ input: AdoptInput }),
             execute: async ({ input }: { input: z.infer<typeof AdoptInput> }, ctx: Context) => {
                 const script_body = await queryScript(input, ctx);
-                const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: JSON.stringify(input.repository) };
+                const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: repositoryJson(input) };
                 await ctx.writeResource("assets", "assets", result);
                 return result;
             },

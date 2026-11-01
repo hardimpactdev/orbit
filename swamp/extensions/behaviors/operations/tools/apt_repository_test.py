@@ -13,7 +13,8 @@ SPEC.loader.exec_module(repo)
 
 DEFINITION = {'name': 'vendor', 'uris': ['https://packages.example.test/apt'],
               'suites': ['preview'], 'components': ['main'], 'architectures': ['amd64'],
-              'signing_key': {'url': 'https://packages.example.test/key.gpg', 'fingerprint': 'A' * 40}}
+              'signing_key': {'url': 'https://packages.example.test/key.gpg', 'fingerprint': 'A' * 40},
+              'packages': ['vendor-cli']}
 
 
 class RepositoryTest(unittest.TestCase):
@@ -27,7 +28,7 @@ class RepositoryTest(unittest.TestCase):
         self.definition = copy.deepcopy(DEFINITION)
 
     def prepare(self):
-        with patch.object(repo, 'fetch', side_effect=[b'-----BEGIN PGP SIGNED MESSAGE-----\nrelease', b'key']), \
+        with patch.object(repo, 'fetch', side_effect=lambda url, _: b'-----BEGIN PGP SIGNED MESSAGE-----\nrelease' if url.endswith('/InRelease') else b'key'), \
                 patch.object(repo, 'verified_key', return_value=b'verified key'), \
                 patch.object(repo, 'command') as command:
             repo.prepare(self.definition, self.root)
@@ -35,7 +36,7 @@ class RepositoryTest(unittest.TestCase):
 
     def test_deb822_and_scoped_refresh_are_repeatable_and_keep_other_sources(self):
         call = self.prepare()
-        source, keyring = repo.paths(self.definition, self.root)
+        source, keyring, _pin = repo.paths(self.definition, self.root)
         self.assertEqual(source.read_text(), 'Types: deb\nURIs: https://packages.example.test/apt\nSuites: preview\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/orbit-vendor.gpg\n')
         self.assertEqual(keyring.read_bytes(), b'verified key')
         self.assertEqual(source.stat().st_mode & 0o777, 0o644)
@@ -59,7 +60,7 @@ class RepositoryTest(unittest.TestCase):
     def test_unpublished_suite_leaves_previous_source_key_and_other_sources_unchanged(self):
         self.prepare()
         self.definition['suites'] = ['stable']
-        source, keyring = repo.paths(self.definition, self.root)
+        source, keyring, _pin = repo.paths(self.definition, self.root)
         previous = source.read_bytes(), keyring.read_bytes(), self.other.read_bytes()
         with patch.object(repo, 'fetch', side_effect=OSError('404')):
             with self.assertRaises(repo.Refusal) as error:
@@ -78,7 +79,7 @@ class RepositoryTest(unittest.TestCase):
 
     def test_failed_refresh_restores_existing_source_and_key_for_retry(self):
         self.prepare()
-        source, keyring = repo.paths(self.definition, self.root)
+        source, keyring, _pin = repo.paths(self.definition, self.root)
         previous = source.read_bytes(), keyring.read_bytes()
         self.definition['suites'] = ['stable']
         with patch.object(repo, 'fetch', side_effect=[b'-----BEGIN PGP SIGNED MESSAGE-----\nrelease', b'new key']), \
@@ -92,7 +93,7 @@ class RepositoryTest(unittest.TestCase):
 
     def test_final_reference_cleanup_retries_after_partial_and_completed_cleanup(self):
         self.prepare()
-        source, keyring = repo.paths(self.definition, self.root)
+        source, keyring, _pin = repo.paths(self.definition, self.root)
         source.unlink()
         repo.cleanup(self.definition, self.root)
         repo.cleanup(self.definition, self.root)
@@ -100,7 +101,7 @@ class RepositoryTest(unittest.TestCase):
         self.assertEqual(self.other.read_text(), 'distribution source\n')
 
     def test_source_symlink_is_refused_before_publishing_key(self):
-        source, keyring = repo.paths(self.definition, self.root)
+        source, keyring, _pin = repo.paths(self.definition, self.root)
         source.symlink_to(self.other)
         with self.assertRaises(repo.Refusal):
             self.prepare()
@@ -151,6 +152,51 @@ class RepositoryTest(unittest.TestCase):
                 with self.assertRaises(repo.Refusal):
                     repo.validate(definition)
 
+
+    def test_pin_limits_the_vendor_origin_to_its_declared_packages_above_the_distribution(self):
+        self.definition.update(uris=['https://packages.example.test/apt', 'https://mirror.example.test/apt'],
+                               packages=['vendor-tool', 'vendor-cli'])
+        self.prepare()
+        _source, _keyring, pin = repo.paths(self.definition, self.root)
+        self.assertEqual(pin, self.root / 'etc/apt/preferences.d/orbit-vendor.pref')
+        self.assertEqual(pin.read_text(), (
+            'Package: vendor-cli vendor-tool\nPin: origin "packages.example.test"\nPin-Priority: 990\n\n'
+            'Package: *\nPin: origin "packages.example.test"\nPin-Priority: 1\n\n'
+            'Package: vendor-cli vendor-tool\nPin: origin "mirror.example.test"\nPin-Priority: 990\n\n'
+            'Package: *\nPin: origin "mirror.example.test"\nPin-Priority: 1\n'))
+        self.assertEqual(pin.stat().st_mode & 0o777, 0o644)
+
+    def test_pin_is_published_before_the_source_and_restored_when_refresh_fails(self):
+        self.prepare()
+        source, _keyring, pin = repo.paths(self.definition, self.root)
+        previous = pin.read_bytes()
+        self.definition['packages'] = ['vendor-cli', 'vendor-agent']
+        written = []
+        original = repo.write
+        with patch.object(repo, 'fetch', side_effect=[b'-----BEGIN PGP SIGNED MESSAGE-----\nrelease', b'key']), \
+                patch.object(repo, 'verified_key', return_value=b'verified key'), \
+                patch.object(repo, 'write', side_effect=lambda path, data, root: (written.append(path), original(path, data, root))), \
+                patch.object(repo, 'command', side_effect=subprocess.CalledProcessError(100, 'apt-get')), \
+                self.assertRaises(repo.Refusal):
+            repo.prepare(self.definition, self.root)
+        self.assertLess(written.index(pin), written.index(source))
+        self.assertEqual(pin.read_bytes(), previous)
+
+    def test_cleanup_removes_the_pin_and_adoption_requires_it(self):
+        self.prepare()
+        source, keyring, pin = repo.paths(self.definition, self.root)
+        pin.unlink()
+        with patch.object(repo, 'verified_key'), self.assertRaises(repo.Refusal) as error:
+            repo.adopt(self.definition, self.root)
+        self.assertEqual(error.exception.code, 'tool.repository_adoption_mismatch')
+        self.prepare()
+        repo.cleanup(self.definition, self.root)
+        self.assertEqual([path.exists() for path in (source, keyring, pin)], [False, False, False])
+
+    def test_invalid_or_duplicate_package_names_are_rejected(self):
+        for packages in (['Vendor'], ['vendor cli'], ['a\nPin-Priority: 1001'], ['vendor', 'vendor'], 'vendor'):
+            with self.subTest(packages=packages), self.assertRaises(repo.Refusal):
+                repo.validate({**DEFINITION, 'packages': packages})
 
 if __name__ == '__main__':
     unittest.main()

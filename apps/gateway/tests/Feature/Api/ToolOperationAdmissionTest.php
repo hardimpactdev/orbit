@@ -340,9 +340,12 @@ it('rejects repository definitions for non apt managers', function (): void {
 
 it('shares repository intent updates and cleans up only the final Tool reference', function (): void {
     $repository = signedToolRepository();
-    foreach (['hello', 'world'] as $package) {
+    foreach (['hello' => ['hello'], 'world' => ['hello', 'world']] as $package => $pinned) {
         $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => $package, 'repository' => $repository])->assertAccepted();
-        finishSignedToolOperation(Operation::query()->latest('id')->firstOrFail());
+        $install = Operation::query()->latest('id')->firstOrFail();
+        expect($install->input['repository_packages'])->toBe($pinned)
+            ->and(app(ToolIntentProjection::class)->input($install)['intent']['repository_packages'])->toBe($pinned);
+        finishSignedToolOperation($install);
     }
     $first = Tool::query()->where('package', 'hello')->sole();
     $second = Tool::query()->where('package', 'world')->sole();
@@ -352,17 +355,18 @@ it('shares repository intent updates and cleans up only the final Tool reference
     $this->postJson('/api/v1/tools/'.$first->id.'/update', ['repository' => $repository])->assertAccepted();
     $update = Operation::query()->latest('id')->firstOrFail();
     expect($update->input['repository'])->toBe($repository);
+    expect($update->input['repository_packages'])->toBe(['hello', 'world']);
     finishSignedToolOperation($update);
     $this->getJson('/api/v1/tools/'.$second->id)->assertOk()->assertJsonPath('data.repository.suites', ['stable']);
 
     $this->deleteJson('/api/v1/tools/'.$first->id)->assertAccepted();
     $remove = Operation::query()->latest('id')->firstOrFail();
-    expect($remove->input['remove_repository'])->toBeFalse();
+    expect($remove->input['remove_repository'])->toBeFalse()->and($remove->input['repository_packages'])->toBe(['world']);
     finishSignedToolOperation($remove);
     expect(AptRepository::query()->count())->toBe(1);
     $this->deleteJson('/api/v1/tools/'.$second->id)->assertAccepted();
     $remove = Operation::query()->latest('id')->firstOrFail();
-    expect($remove->input['remove_repository'])->toBeTrue();
+    expect($remove->input['remove_repository'])->toBeTrue()->and($remove->input['repository_packages'])->toBe([]);
     finishSignedToolOperation($remove);
     expect(AptRepository::query()->count())->toBe(0)->and(Tool::query()->count())->toBe(0);
 });

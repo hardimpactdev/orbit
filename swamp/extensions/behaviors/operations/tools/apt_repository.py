@@ -54,7 +54,7 @@ def validate(repository):
     if (
         not isinstance(repository, dict)
         or set(repository)
-        - {"name", "uris", "suites", "components", "architectures", "signing_key"}
+        - {"name", "uris", "suites", "components", "architectures", "signing_key", "packages"}
         or not re.fullmatch(
             r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", repository.get("name", "")
         )
@@ -85,6 +85,17 @@ def validate(repository):
                 value,
             ):
                 refuse("invalid")
+    packages = repository.get("packages", [])
+    if (
+        not isinstance(packages, list)
+        or len(packages) > 256
+        or len(set(packages)) != len(packages)
+        or any(
+            not isinstance(p, str) or not re.fullmatch(r"[a-z0-9][a-z0-9+.-]{0,254}", p)
+            for p in packages
+        )
+    ):
+        refuse("invalid")
     key = repository.get("signing_key")
     if (
         not isinstance(key, dict)
@@ -99,8 +110,10 @@ def validate(repository):
 
 def paths(repository, root=Path("/")):
     name = "orbit-" + repository["name"]
-    return root / ("etc/apt/sources.list.d/" + name + ".sources"), root / (
-        "etc/apt/keyrings/" + name + ".gpg"
+    return (
+        root / ("etc/apt/sources.list.d/" + name + ".sources"),
+        root / ("etc/apt/keyrings/" + name + ".gpg"),
+        root / ("etc/apt/preferences.d/" + name + ".pref"),
     )
 
 
@@ -115,6 +128,21 @@ def render(repository):
         lines.append("Architectures: " + " ".join(repository["architectures"]))
     lines.append("Signed-By: " + str(paths(repository)[1]))
     return "\n".join(lines) + "\n"
+
+
+def render_pin(repository):
+    # The vendor origin may serve only its declared packages, at a priority above the
+    # distribution so same-named distribution packages never replace them. Every other
+    # package from that origin stays below any installed or distribution version.
+    blocks = []
+    for host in dict.fromkeys(urlsplit(uri).hostname for uri in repository["uris"]):
+        if repository.get("packages"):
+            blocks.append(
+                "Package: " + " ".join(sorted(repository["packages"]))
+                + '\nPin: origin "' + host + '"\nPin-Priority: 990\n'
+            )
+        blocks.append('Package: *\nPin: origin "' + host + '"\nPin-Priority: 1\n')
+    return "\n".join(blocks)
 
 
 def command(argv, **kwargs):
@@ -210,18 +238,20 @@ def prepare(repository, root=Path("/")):
     except (OSError, ValueError):
         refuse("unavailable")
     key = verified_key(downloaded, repository["signing_key"]["fingerprint"])
-    source, keyring = paths(repository, root)
-    # The apt directory exists on every apt Node; only Orbit's keyring directory may be new.
-    safe_path(keyring.parent, root, directory=True)
-    keyring.parent.mkdir(mode=0o755, exist_ok=True)
-    safe_path(source, root)
-    safe_path(keyring, root)
+    source, keyring, pin = paths(repository, root)
+    # The apt directory exists on every apt Node; only Orbit's keyring and preference directories may be new.
+    for directory in (keyring.parent, pin.parent):
+        safe_path(directory, root, directory=True)
+        directory.mkdir(mode=0o755, exist_ok=True)
+    for path in (source, keyring, pin):
+        safe_path(path, root)
     previous = [
         (path, path.read_bytes() if path.exists() else None)
-        for path in (keyring, source)
+        for path in (keyring, pin, source)
     ]
     try:
         write(keyring, key, root)
+        write(pin, render_pin(repository).encode(), root)
         write(source, render(repository).encode(), root)
         try:
             command(
@@ -256,9 +286,9 @@ def cleanup(repository, root=Path("/")):
 
 
 def adopt(repository, root=Path("/")):
-    source, keyring = paths(repository, root)
+    source, keyring, pin = paths(repository, root)
     try:
-        if source.read_text() != render(repository):
+        if source.read_text() != render(repository) or pin.read_text() != render_pin(repository):
             refuse("adoption_mismatch")
         verified_key(keyring.read_bytes(), repository["signing_key"]["fingerprint"])
     except FileNotFoundError:

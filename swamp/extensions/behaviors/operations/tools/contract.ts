@@ -23,9 +23,14 @@ export const Input = z.object({
   intent_only: z.boolean().default(false),
   repository: Repository.nullable().default(null),
   remove_repository: z.boolean().default(false),
+  repository_packages: z.array(z.string().regex(/^[a-z0-9][a-z0-9+.-]{0,254}$/)).max(256).default([]),
   materialize: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 export type ToolInput = z.infer<typeof Input>;
+/** The repository script gets the shared definition plus the packages its apt preference admits. */
+export function repositoryJson(input: { repository: z.infer<typeof Repository> | null; repository_packages: string[] }): string {
+  return JSON.stringify(input.repository ? { ...input.repository, packages: input.repository_packages } : null);
+}
 export type Result = Record<string, unknown>;
 export class ToolRefusal extends Error {
   constructor(readonly code: string, readonly result: Result = {}) {

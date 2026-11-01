@@ -99,8 +99,13 @@ final readonly class StartToolOperationAction
                     $tool->update(['apt_repository_id' => $repositoryRecord->id]);
                 }
                 $repository = $repositoryRecord?->definition;
-                $removeRepository = $verb === 'remove' && $repositoryRecord !== null
-                    && ! Tool::query()->where('apt_repository_id', $repositoryRecord->id)->where('id', '!=', $tool?->id)->exists();
+                // The repository's apt preference admits exactly the packages of the Tools that reference it.
+                $repositoryPackages = $repositoryRecord === null ? [] : Tool::query()
+                    ->where('apt_repository_id', $repositoryRecord->id)
+                    ->when($tool !== null, static fn ($query) => $query->whereKeyNot($tool?->id))->pluck('package')
+                    ->when($verb !== 'remove', static fn ($packages) => $packages->push($package))
+                    ->unique()->sort()->values()->all();
+                $removeRepository = $verb === 'remove' && $repositoryRecord !== null && $repositoryPackages === [];
 
                 $intentOnly = $roleOwned || ($verb === 'remove' && $repository === null && $tool?->status === ToolStatus::Failed
                     && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
@@ -110,6 +115,7 @@ final readonly class StartToolOperationAction
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint,
                     'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
+                    'repository_packages' => $repositoryPackages,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
                     'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,

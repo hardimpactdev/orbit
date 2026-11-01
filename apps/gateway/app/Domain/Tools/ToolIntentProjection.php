@@ -30,7 +30,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     public function input(Operation $operation): array
     {
         return ['intent' => ['kind' => $operation->kind, ...array_intersect_key($operation->input, array_flip([
-            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'setup', 'repository', 'remove_repository',
+            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'setup', 'repository', 'remove_repository', 'repository_packages',
         ]))], 'ssh' => $operation->input['ssh']];
     }
 
