@@ -7,14 +7,10 @@ conn.pairing_create
 conn.pairing_revoke
 database.clone
 database.destroy_owned
-database.read
 database.sqlite_cleanup
 database.sqlite_export
 database.sqlite_seed
-database.write
 database_server.close
-database_server.create
-database_server.destroy
 fleet.cli_converge
 fleet.docker_migrate
 fleet.peer_dns

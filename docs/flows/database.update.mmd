@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS R1 (record-only: no run), R3 (server key by name), refuse with no server, always-run cleanup.
+  %% Target design: ADR 0244 task, DECISIONS R1 (record-only update starts no run), R2-R4, 5 (swamp role SSH identity), round 2 bugs (refuse with no server, server admin password by its own vault key, cleanup on pass or fail).
   %% status: draft
+  %% command: database:update
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -9,27 +10,107 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as DB server Node<br/>reached over ssh
-  CLI->>GW: database:update<br/>{connection: cache, database: 3}
-  Note over GW: Validate, seal the patch<br/>no server → server_required
-  opt record-only change
-    Note over GW: Write the row, no run<br/>R1 · broadcast DatabaseUpdated
-    GW-->>CLI: 200 Updated<br/>no task
-  end
-  GW->>SW: Start run, full intent<br/>…-database-connection-update
-  GW-->>CLI: 202 Accepted<br/>task #5122
-  SW->>N: Copy action scripts<br/>@swamp/ssh · swamp role identity
-  SW->>N: Check index fits server<br/>vault.get server key by name
-  Note over SW: Remove /tmp scripts<br/>always-run step, pass or fail
-  alt index check passes
-    SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Apply sealed patch<br/>broadcast DatabaseUpdated
-  else index check fails
-    N--xSW: exit 1, step output
-    SW--xGW: Run failed<br/>database.server_command_failed
-    Note over GW: Connection unchanged<br/>task failed
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5122
-    GW-->>CLI: status + result
+  participant N as Node 12<br/>services-valkey
+  CLI->>GW: database:update cache<br/>--database=3
+  %%> Command:
+  %%> - `orbit database:update cache --database=3`
+  %%> - syntax: `<slug> [--driver=DRIVER] [--node=NODE] [--host=HOST] [--port=PORT] [--database=NAME] [--path=PATH] [--username=USER] [--password=SECRET] [--idempotency-key=KEY]`
+  %%> Input:
+  %%> - the connection slug, and at least one field to replace
+  %%> - `--node=` with an empty value clears the Node association
+  %%> Not included:
+  %%> - the keys already stored on attached Instances; run `instance:database:add` again, then `env:sync`
+  Note over GW: Validate the change<br/>connection cache · Valkey index
+  %%> Requirements:
+  %%> - the fields fit the driver (`validation.failed`)
+  %%> - a managed connection keeps its identity and credentials (`database.server_connection_managed`); on a Valkey server only the index may change
+  %%> - an attached Instance stays on the same Node as the connection
+  %%> Decides:
+  %%> - a change that needs a live check runs on its Database server's Node only: today, a new index on a managed Valkey server
+  %%> - every other change is record-only
+  %%> Refuses:
+  %%> - a change that needs a live check on a connection without a Database server (`database.server_required`)
+  %%> - a run never targets the Gateway Node
+  alt record-only change
+    Note over GW: Write the change<br/>R1: no run · DatabaseUpdated
+    %%> When:
+    %%> - any change that needs no live check, for example a new password on a registered external database
+    %%> Result:
+    %%> - connection `cache` is updated, its password encrypted
+    %%> - no task and no Swamp run start (R1); nothing changes on any Node
+    GW-->>CLI: 200 Updated<br/>connection cache
+    %%> What you get:
+    %%> - the updated record at once; there is nothing to follow
+  else new index on a Valkey server
+    Note over GW: Hold the change<br/>task #5122 · lock services-valkey
+    %%> Result:
+    %%> - the change is recorded in task #5122; connection `cache` keeps its current values
+    %%> - no other change runs on `services-valkey`; the Gateway holds one lock per Database server
+    GW->>SW: Start run, full intent<br/>…-database-connection-update
+    %%> What it does:
+    %%> - starts one Swamp run of `operation-database-connection-update` on serve (Node 209)
+    %%> Inputs:
+    %%> - the requested index 3, and the server's WireGuard address and port
+    %%> - the vault key name `database-server-5-admin`; the admin password itself never enters the intent
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    GW-->>CLI: 202 Accepted<br/>task #5122
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5122
+    %%> How:
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+    %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
+    %%> What it does:
+    %%> - copies the shipped script into `/tmp/orbit-database-update-5122`
+    SW->>N: Check the index fits<br/>CONFIG GET databases
+    %%> What it does:
+    %%> - reads the live server's database count and checks that index 3 is below it
+    %%> How:
+    %%> - the step reads the admin password with `vault.get` and passes it on standard input
+    %%> Not included:
+    %%> - no write on the server; the index is a client setting
+    SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5122
+    %%> When:
+    %%> - always, after the check, whether it passed or failed
+    %%> What it does:
+    %%> - removes `/tmp/orbit-database-update-5122`, so no scripts stay on Node 12
+    %%> If it fails:
+    %%> - the task result does not change; the directory holds no secrets
+    alt index fits
+      N-->>SW: 16 databases
+      %%> Returns:
+      %%> - the server's database count; index 3 fits
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Apply the change<br/>index 3 · task succeeded
+      %%> Result:
+      %%> - connection `cache` records index 3
+      %%> - task #5122 succeeds
+    else index too high or check fails
+      N--xSW: out of range or exit ≠ 0
+      %%> When:
+      %%> - index 3 is not below the server's count, or SSH or the Valkey login fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code, for example `validation.failed`
+      Note over GW: Keep the connection<br/>task failed · rerun after a fix
+      %%> Result:
+      %%> - connection `cache` keeps its old index
+      %%> - task #5122 fails, with the change it held
+      %%> On the Node:
+      %%> - nothing changed; the check only reads
+      %%> Retry:
+      %%> - run the command again with a valid index; it is a new task
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5122
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
   end

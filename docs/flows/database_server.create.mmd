@@ -1,0 +1,139 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, single-swamp-node, DECISIONS R1-R4 (root password by vault key), docs/reference/database-servers.md. Valkey adoption (--process, --connection) removed.
+  %% status: draft
+  %% command: database:server:create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: database:server:create<br/>app-mysql --node=12 --driver=mysql
+  %%> Command:
+  %%> - `orbit database:server:create app-mysql --node=12 --driver=mysql`
+  %%> - syntax: `<slug> --node=NODE [--driver=mysql|pgsql|redis] [--tag=TAG] [--port=PORT] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the slug of the Database server as the argument, lowercase kebab, at most 63 characters
+  %%> - the Node, and optionally the driver, the image tag and the port
+  %%> Defaults:
+  %%> - driver `mysql`; a `redis` server runs Valkey
+  %%> - tag `8.4` for mysql, `18` for pgsql, `8.1` for redis
+  %%> - port `3306`, `5432` or `6379`
+  %%> Not included:
+  %%> - adopting an existing Valkey Process with `--process` and `--connection`; both adoptions are done, so the option is removed
+  Note over GW: Validate, record server<br/>app-mysql: provisioning · #5150
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active Linux Node with Docker and a WireGuard address
+  %%> - no other Database server has the slug, or this is the same request again (then it continues)
+  %%> - no other Process on Node 12 publishes port 3306
+  %%> - no removal of app-mysql is unfinished
+  %%> What it does:
+  %%> - generates the root password and stores it encrypted on the Database server record
+  %%> - records the Docker Node Process `app-mysql` with image `mysql:8.4` and volume `orbit-app-mysql-data`
+  %%> - takes the lock for app-mysql, so no database change runs on it at the same time
+  %%> Result:
+  %%> - Database server app-mysql recorded with status provisioning
+  %%> - task #5150 recorded with the full intent
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Store the root password<br/>vault orbit-control-inputs
+  %%> What it does:
+  %%> - writes an execution copy of the root password to the Swamp vault, under the key `database-server-create-intent-5150`
+  %%> Why:
+  %%> - the password never enters the intent, the run inputs, the Process record or a command argument (R3)
+  %%> - steps read it with `vault.get` and pass it on standard input
+  GW->>SW: Start run, full intent<br/>operation-database-server-create
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - driver, image, port, container name and volume
+  %%> - the private bindings: Node 12's WireGuard address, and its LAN address when it has one
+  %%> - the vault key name of the password, never the value
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5150
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Pull the image<br/>@swamp/ssh · docker pull
+  %%> How:
+  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> What it does:
+  %%> - pulls `mysql:8.4`; an image that is already present is kept
+  opt driver is redis
+    SW->>N: Write the ACL file<br/>/data/users.acl in the volume
+    %%> What it does:
+    %%> - writes one line for the user `default` with the SHA-256 hash of the admin password, through a short-lived container that mounts the volume
+    %%> - the file comes on standard input; it holds only hashes
+    %%> Why:
+    %%> - Valkey starts only from this file; without it Valkey refuses to start, so a damaged server stays closed
+    %%> Repair:
+    %%> - on an active Valkey server, the same command rebuilds the file from the records, with every ACL user
+  end
+  SW->>N: Start the container<br/>docker run · first-start password
+  %%> What it does:
+  %%> - starts `app-mysql` with the volume and the port bound only on the private addresses
+  %%> - for mysql and pgsql: passes `MYSQL_ROOT_PASSWORD` or `POSTGRES_PASSWORD` once, from the vault through standard input
+  %%> - for redis: no environment; Valkey runs with `--aclfile /data/users.acl`
+  %%> Never:
+  %%> - binds `0.0.0.0`, an IPv6 wildcard or a public address
+  SW->>N: Wait until healthy<br/>docker health event
+  %%> What it does:
+  %%> - reads Docker's first health event for the container
+  %%> - healthy goes on; unhealthy or an exit fails the step
+  %%> Why:
+  %%> - Docker owns the probe; the run's time budget bounds the wait
+  SW->>N: Check the admin login<br/>mysql client in the container
+  %%> What it does:
+  %%> - logs in as root over TCP inside the container, with the password on standard input
+  %%> - for redis: logs in as `default`
+  %%> Why:
+  %%> - only the final server accepts this login, so the next step never recreates a container that is still initializing
+  opt driver is mysql or pgsql
+    SW->>N: Remove the first-start env<br/>recreate container, same volume
+    %%> What it does:
+    %%> - recreates `app-mysql` without the password variable; the data volume keeps the password
+    %%> - checks the root login again
+    %%> Result:
+    %%> - the password is absent from the container environment and `docker inspect`
+  end
+  alt every step succeeds
+    N-->>SW: healthy, login works
+    %%> Returns:
+    %%> - the container is healthy and the admin login works
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>app-mysql: active · task succeeded
+    %%> Result:
+    %%> - Database server app-mysql becomes active, and its Process runs
+    %%> - task #5150 succeeds
+    %%> - `database:create --server=app-mysql` can now create databases on it
+  else a step fails
+    N--xSW: exit ≠ 0 or unhealthy
+    %%> When:
+    %%> - the pull fails, the container does not become healthy, or the admin login fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code, such as `database.server_start_failed`
+    Note over GW: Mark the server failed<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - Database server app-mysql is marked failed, with the failed step
+    %%> - task #5150 fails
+    %%> On the Node:
+    %%> - the container and the volume stay as they are; there is no rollback
+    %%> - that is safe: a rerun reuses the recorded password, Process and volume
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task and continues from the current state
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5150
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

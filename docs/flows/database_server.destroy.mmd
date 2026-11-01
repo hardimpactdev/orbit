@@ -1,0 +1,108 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, single-swamp-node, DECISIONS R1 (record-only change starts no run), R2, R4. Same shape as tool.remove.
+  %% status: draft
+  %% command: database:server:destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: database:server:destroy<br/>app-mysql --force
+  %%> Command:
+  %%> - `orbit database:server:destroy app-mysql --force`
+  %%> - syntax: `<slug> [--force] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the slug of the Database server as the argument
+  %%> Confirmation:
+  %%> - without `--force`, the CLI asks first; the default is No
+  %%> - a JSON or non-interactive call without `--force` returns `database.confirmation_required`
+  Note over GW: Validate, mark removing<br/>app-mysql · task #5160
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, which runs app-mysql
+  %%> - no Database connection points to app-mysql (`database.server_in_use`)
+  %%> - no database create, user change or other task runs on app-mysql (`database.server_busy`)
+  %%> What it does:
+  %%> - takes the lock for app-mysql and marks it removing, so new databases on it are refused
+  %%> Result:
+  %%> - task #5160 recorded with the full intent
+  alt the server has no Process
+    Note over GW: Delete only the record<br/>R1: no run, nothing on a Node
+    %%> When:
+    %%> - a create failed before it recorded the Process
+    %%> Result:
+    %%> - the Database server record is deleted; task #5160 succeeds at once
+    GW-->>CLI: Server removed<br/>nothing on Node 12
+    %%> What you get:
+    %%> - the result at once; there is nothing to follow
+  else a Process runs it
+    GW->>SW: Start run, full intent<br/>operation-database-server-destroy
+    %%> What it does:
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the Process and its container names, including the candidate and original names a create can leave
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    %%> Not included:
+    %%> - credentials; removal needs no database login
+    GW-->>CLI: 202 Accepted<br/>task #5160
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Inspect the containers<br/>@swamp/ssh · docker inspect
+    %%> How:
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+    %%> What it does:
+    %%> - checks every container name of the Process before it changes anything
+    %%> - a container that is already gone counts as removed
+    SW->>N: Stop and remove them<br/>docker stop · docker rm
+    %%> What it does:
+    %%> - stops and removes each container that is present
+    %%> Not removed:
+    %%> - the volume `orbit-app-mysql-data`, so the data survives
+    SW->>N: Check they are gone<br/>docker inspect
+    %%> What it does:
+    %%> - checks no container of the Process is left
+    alt containers are gone
+      N-->>SW: no container left
+      %%> Returns:
+      %%> - the check passed for every container name
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Delete server + Process<br/>volume stays · task succeeded
+      %%> Result:
+      %%> - the Database server and Process records are deleted
+      %%> - task #5160 succeeds
+      %%> On the Node:
+      %%> - the volume `orbit-app-mysql-data` stays; remove it by hand when its data must go
+      %%> - a new server with the same slug finds the old volume
+    else a step fails
+      N--xSW: exit ≠ 0
+      %%> When:
+      %%> - SSH fails, or Docker refuses to stop or remove a container
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code
+      Note over GW: Mark the server failed<br/>records kept · rerun after a fix
+      %%> Result:
+      %%> - Database server app-mysql and its Process stay recorded, marked failed
+      %%> - task #5160 fails
+      %%> On the Node:
+      %%> - containers removed before the failure stay removed; there is no rollback
+      %%> - that is safe: a rerun inspects again and skips containers that are gone
+      %%> Retry:
+      %%> - run the same command again after fixing the cause; it is a new task
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5160
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  end
