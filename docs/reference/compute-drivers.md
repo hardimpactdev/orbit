@@ -372,6 +372,8 @@ A live PPA would be a second owner of Git, and an exact APT version alone does n
 
 ## Task VMs
 
+Incus task VM provision and resume wait for `Running` after their single start request. The host reads only the admitted project and VM once per second, under a literal 120-second timeout over official SSH from 209. A failed read, missing or foreign VM, or unsupported terminal state fails without another start. This restores the legacy stopped-state grace before enrollment.
+
 Swamp requests review parking through `tasks.park`. A parked row reports unknown power until the provider confirms stopped. A wake invalidates that confirmation. Gateway resource observation refreshes parked power in every group status and never starts or stops a VM.
 
 A `task_vm.destroy` Operation cannot be cancelled after its exact `provider-delete` child has succeeded with a proven deletion step. The Gateway returns `operation.cancel_refused` before changing cancellation flags or descendants. Destruction must finish or resume to remove the VM’s Node and workspace records. Before provider deletion succeeds, the Operation remains cancellable.
@@ -1579,5 +1581,3 @@ Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Us
 The former lifecycle and standalone Incus admissions for Task VMs return `operation.kind_unavailable` (409) before reading a host or recording an Operation. Standalone enrollment uses `StartTaskVmEnrollmentOperationAction`; provision parents compose the same native lower steps directly. The old enrollment job and runtime transport/contract registrations are removed. Private material for the model router requires the admitted top-level router Node to equal the private binding owner and the configured issuer owner.
 
 Admission holds the existing model-router teardown lock through its outer database transaction, including the router-ready check and model-key reservation. Teardown sees every committed reservation before it can disable the router. This admission fence does not replace the shared native behavior lock that serializes API-key list changes.
-
-Incus task VM provision and resume wait for `Running` after their single start request. The host reads only the admitted project and VM once per second, under a literal 120-second timeout over official SSH from 209. A failed read, missing or foreign VM, or unsupported terminal state fails without another start. This restores the legacy stopped-state grace before enrollment.
