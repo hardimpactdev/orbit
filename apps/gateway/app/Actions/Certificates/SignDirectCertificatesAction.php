@@ -86,7 +86,10 @@ final readonly class SignDirectCertificatesAction
             'route.update' => $restoring
                 ? ['route_update.route_mutations.restore.certificates']
                 : ['route_update.route_mutations.forward.prepare_certificates', 'route_update.route_mutations.forward.certificates'],
-            'route.create', 'route.converge', 'route.target_set', 'cluster.router_set', 'cluster.router_unset' => ['certificates'],
+            'route.target_set' => $restoring
+                ? ['route_target.route_mutations.restore.certificates']
+                : ['route_target.preparation.certificates', 'route_target.route_mutations.forward.certificates'],
+            'route.create', 'route.converge', 'cluster.router_set', 'cluster.router_unset' => ['certificates'],
             'analytics.enable', 'analytics.disable' => ['tracking.certificates'],
             'metrics.enable' => ['certificates.leaves'],
             'node.role_add', 'node.role_converge' => ['_role.certificates.leaves'],

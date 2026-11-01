@@ -2220,16 +2220,10 @@
     {
       "file": "extensions/behaviors/operations/routes/target-set.ts",
       "rule": "gateway-http",
-      "count": 6,
+      "count": 1,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/target-set.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/routes/target-unset.ts",

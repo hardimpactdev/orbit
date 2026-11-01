@@ -3,6 +3,7 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 import {
     ingressWorkflow,
     mutationWorkflow,
+    targetWorkflow,
     updateWorkflow,
 } from "./workflow.ts";
 import { workloadWorkflow } from "../../instance-route-workload/workflow.ts";
@@ -10,6 +11,7 @@ Deno.test("checked-in Route update workflows match their native composition fact
     for (
         const workflow of [
             updateWorkflow(),
+            targetWorkflow(),
             mutationWorkflow("forward"),
             mutationWorkflow("restore"),
             ingressWorkflow(),
@@ -33,6 +35,7 @@ Deno.test("Route update reuses its existing children with one209selector and pha
     for (
         const workflow of [
             updateWorkflow(),
+            targetWorkflow(),
             mutationWorkflow("forward"),
             mutationWorkflow("restore"),
             ingressWorkflow(),

@@ -1,14 +1,16 @@
 ---
 title: "Native Route targets"
-description: "Admitted target changes and reusable cutover and rollback steps."
+description: "Immutable target proposals with native publication and terminal association changes."
 ---
 
 # Native Route targets
 
-The Gateway records a target proposal, original associations and immutable participant Nodes. It starts one native Swamp root. Swamp prepares certificates, workload access, PHP and firewall rules, commits the association change, then publishes current Caddy and DNS state. A failure restores the admitted associations before it restores publication and removes staged artifacts.
+The Gateway freezes the target proposal, original associations, workload permissions and the full Route publication catalogs before it starts one native Swamp root on Node209. It keeps stored associations and serving markers unchanged while the run prepares and publishes the proposed state. The shared native terminal reader applies a successful proposal in one database transaction.
 
-Only the root posts state transitions and the terminal result. Effect Nodes read their own fresh public view. Protected environment contents stay inside the existing Node-bound private callback. Admission records the configured Node user; the worker resolves the actual account home and group locally. No Gateway account lookup, child Operation or agent action is used.
+The root reuses the Route mutation and Instance workload children for certificates, Caddy, PHP, DNS, environment writes and shared firewall tuples. It prepares workload staging sites and verifies their TLS endpoints from the admitted Routers before changing Router pools, keeps old sites through DNS grace, then selects the final certificates and removes obsolete contributions. Every host action uses the admitted SSH target and stored host pins. Environment values use named execution copies resolved by the existing native environment child; public intent contains only vault and key names.
 
-Instance transfer can reuse the native `routes/target-set.ts` lower. Its parent owns the Instance placement transaction and calls the Route-owned capture, cutover, rollback and retirement helpers in the same root. A transfer that has cut over recovers forward; pre-cutover rollback retains the source Route rows.
+A failed forward phase restores the immutable prior publication and workload plans. The terminal result distinguishes proved restoration from an unknown selected state. Failed and cancelled runs never commit proposed associations. No effect step fetches current intent or posts progress to the Gateway.
 
-The native Instance removal lower owns detached Instance deletion. Until that lower is composed, a target proposal with `remove: true` returns `route.target_cleanup_unavailable` before it reserves or changes any associations. Reassignment and singular development binding remain available.
+Singular development binding and an already completed target proposal require no host work. A destructive disposition with `remove: true` returns `route.target_cleanup_unavailable` before it reserves or changes associations until the native Instance removal lower is composed. An earlier committed target transition requires its owning root's recovery; a fresh full-input target root does not adopt an old execution plan.
+
+Instance transfer retains its separately owned target helpers until that parent is converted. It does not change the standalone target root's input or terminal projection contract.
