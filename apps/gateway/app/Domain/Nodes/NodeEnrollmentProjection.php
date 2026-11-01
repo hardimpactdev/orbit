@@ -77,6 +77,12 @@ final readonly class NodeEnrollmentProjection implements DirectOperationProjecti
                 }
                 $node->save();
                 $this->roles($operation, $intent, $result, $node);
+                if (is_array($intent['footprint'] ?? null) && is_array($result['footprint'] ?? null)) {
+                    $footprint = ValidatedData::object($result['footprint']);
+                    app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($intent['footprint']), $footprint,
+                        NodeFootprintProjection::artifacts($footprint));
+                }
+                $this->cli($node, ValidatedData::object($result['cli'] ?? []));
             } elseif (! $restored || ($stored['existed'] ?? false) !== true) {
                 $node->update(['status' => LifecycleStatus::Failed, 'failed_step' => $restored ? 'node-add' : 'node-rollback',
                     'error_code' => $restored ? ($projected->error_code ?? 'node.enrollment_failed') : 'node.reprovision_rollback_failed']);
@@ -128,12 +134,17 @@ final readonly class NodeEnrollmentProjection implements DirectOperationProjecti
                 app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($snapshot['footprint']), $footprint,
                     NodeFootprintProjection::artifacts($footprint));
             }
-            $cli = ValidatedData::object($receipt['cli'] ?? []);
-            if (($cli['error_code'] ?? null) === 'cli.foreign_binary') {
-                app(NodeCliState::class)->markForeign($node);
-            } elseif (($cli['outcome'] ?? null) !== 'skipped' && $cli !== []) {
-                app(NodeCliState::class)->clear($node);
-            }
+            $this->cli($node, ValidatedData::object($receipt['cli'] ?? []));
+        }
+    }
+
+    /** @param array<string,mixed> $receipt */
+    private function cli(Node $node, array $receipt): void
+    {
+        if (($receipt['error_code'] ?? null) === 'cli.foreign_binary') {
+            app(NodeCliState::class)->markForeign($node);
+        } elseif (($receipt['outcome'] ?? null) !== 'skipped' && ! isset($receipt['error_code']) && $receipt !== []) {
+            app(NodeCliState::class)->clear($node);
         }
     }
 

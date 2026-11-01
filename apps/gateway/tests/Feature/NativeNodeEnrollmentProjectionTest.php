@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\NodeFootprint;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use Tests\Support\Fleet\FleetFixtures;
@@ -120,4 +121,15 @@ it('rolls back terminal identity and Operation projection if Route recording fai
         expect($this->node->refresh()->attributesToArray())->toBe($this->before)
             ->and($this->operation->refresh()->status)->toBe(OperationStatus::Running);
     }
+});
+
+it('records a roleless footprint only from the native terminal contribution', function (): void {
+    $input = $this->operation->input;
+    $input['intent']['footprint'] = ['node_id' => $this->node->id, 'agent_sha256' => str_repeat('c', 64),
+        'artifacts' => [['name' => 'agent', 'digest' => 'admitted-observer-digest']], 'payloads' => []];
+    $this->operation->update(['input' => $input]);
+    expect(NodeFootprint::query()->exists())->toBeFalse();
+    app(NodeEnrollmentProjection::class)->apply($this->operation, [...$this->data, 'result' => [...$this->result,
+        'footprint' => ['footprint_proven' => true, 'artifacts' => [['name' => 'agent', 'status' => 'applied']]]]]);
+    expect(NodeFootprint::query()->sole()->artifacts)->toBe(['agent' => 'admitted-observer-digest']);
 });
