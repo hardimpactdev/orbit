@@ -6,6 +6,25 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
+
+
+def repository_identity(origin):
+    """The canonical source identity accepts HTTPS and Git SSH spelling."""
+    if origin.startswith('git@'):
+        match = re.fullmatch(r'git@([^:/\s]+):([^\s]+)', origin)
+        if not match:
+            raise ValueError('instance.source_identity_invalid')
+        host, path = match.groups()
+    else:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in ('https', 'ssh') or not parsed.hostname or parsed.password or parsed.query or parsed.fragment or parsed.username not in (None, 'git'):
+            raise ValueError('instance.source_identity_invalid')
+        host, path = parsed.hostname, parsed.path
+    path = path.strip('/').removesuffix('.git').rstrip('/')
+    if not path:
+        raise ValueError('instance.source_identity_invalid')
+    return host.lower() + '/' + path
 
 
 def source(value, material):
@@ -40,7 +59,7 @@ def source(value, material):
     branch = value["resolve"].get("branch_override") or (
         value["resolve"]["default_branch"] if value["instance_name"] == "default" else value["instance_name"])
     if seed and not target.exists():
-        if Path(seed).is_symlink() or git("config", "--get", "remote.origin.url", directory=seed) != repository:
+        if Path(seed).is_symlink() or repository_identity(git("config", "--get", "remote.origin.url", directory=seed)) != repository_identity(repository):
             raise ValueError("instance.source_identity_invalid")
         if not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}(?:[a-f0-9]{24})?", commit):
             raise ValueError("instance.source_identity_invalid")
@@ -48,7 +67,7 @@ def source(value, material):
     elif not (target / ".git" / "HEAD").exists() and not (target / ".git").is_file():
         git("init", "--quiet")
     origin = git("config", "--get", "remote.origin.url", allow_empty=True)
-    if origin and origin != repository:
+    if origin and repository_identity(origin) != repository_identity(repository):
         raise ValueError("instance.source_identity_invalid")
     if not origin:
         git("remote", "add", "origin", repository)

@@ -71,6 +71,12 @@ class LegacyCreatePhases(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'instance.source_identity_changed'):
             self.create()
 
+    def test_equivalent_git_ssh_origin_preserves_seed_identity(self):
+        self.git('remote', 'set-url', 'origin', 'git@github.com:example/project.git')
+        result = self.create()
+        self.assertEqual(result['commit'], self.commit)
+        self.assertEqual(self.git('config', '--get', 'remote.origin.url'), 'git@github.com:example/project.git')
+
     def test_foreign_origin_refuses_before_new_worktree(self):
         self.git('remote', 'set-url', 'origin', 'https://github.com/foreign/project.git')
         module('prepare').prepare(self.value)
