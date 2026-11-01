@@ -187,7 +187,7 @@ describe('Gateway convergence', function () {
             ]);
     });
 
-    it('prepares the captured full commit through the normal runner without replacing the mount', function () {
+    it('adopts the captured full commit through the normal runner without replacing the mount', function () {
         $fixture = guestScriptFixture('converge-gateway.sh', [
             'sudo' => GUEST_SUDO_STUB,
             'php' => <<<'BASH'
@@ -198,9 +198,9 @@ describe('Gateway convergence', function () {
         mkdir("{$fixture['home']}/runtime/current/apps/gateway", 0700, true);
         $sha = str_repeat('b', 40);
 
-        expect(runGuestScript($fixture, ['prepare-release', $sha])->getExitCode())->toBe(0)
+        expect(runGuestScript($fixture, ['adopt', $sha])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
-                "{$fixture['home']}/runtime/current/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:prepare {$sha} --no-interaction",
+                "{$fixture['home']}/runtime/current/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:adopt --commit={$sha} --no-interaction",
             ])
             ->and(is_link($fixture['home'].'/orbit'))->toBeFalse();
     });
@@ -268,7 +268,7 @@ describe('Gateway convergence', function () {
     it('refuses an uncaptured release revision before invoking the runner', function (string $revision) {
         $fixture = guestScriptFixture('converge-gateway.sh', ['sudo' => GUEST_SUDO_STUB, 'php' => 'exit 99']);
 
-        expect(runGuestScript($fixture, ['prepare-release', $revision])->getExitCode())->toBe(64);
+        expect(runGuestScript($fixture, ['adopt', $revision])->getExitCode())->toBe(64);
     })->with(['main', 'abcd1234', str_repeat('A', 40), str_repeat('a', 39)]);
 
     it('keeps every guest script valid Bash', function () {

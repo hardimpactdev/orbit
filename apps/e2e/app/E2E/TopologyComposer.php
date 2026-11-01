@@ -72,8 +72,6 @@ final readonly class TopologyComposer
         $steps['fixture.enrollment'] = true;
         StageTimer::run($progress, 'runtime.gateway', fn () => $this->runtime->prepare($target, $worktree, $commit));
         $steps['runtime.gateway'] = true;
-        StageTimer::run($progress, 'configure.gateway', fn () => $this->run('configure.gateway', $gateway, 'converge-gateway.sh', ['configure']));
-        $steps['configure.gateway'] = true;
 
         StageTimer::run($progress, 'fixture.network', fn () => $this->network->converge($target, $input['nodes']));
         StageTimer::run($progress, 'fixture.trust', function () use ($target, $gateway): void {
@@ -97,10 +95,10 @@ final readonly class TopologyComposer
         });
         StageTimer::run($progress, 'start.swamp', fn () => $this->swamp->start($target));
         $steps['start.swamp'] = true;
-        StageTimer::run($progress, 'prepare-release.gateway', fn () => $this->run('prepare-release.gateway', $gateway, 'converge-gateway.sh', ['prepare-release', $commit]));
-        StageTimer::run($progress, 'deploy-release.gateway', fn () => $this->run('deploy-release.gateway', $gateway, 'converge-gateway.sh', ['deploy-release', $commit]));
+        StageTimer::run($progress, 'adopt.gateway', fn () => $this->run('adopt.gateway', $gateway, 'converge-gateway.sh', ['adopt', $commit]));
+        StageTimer::run($progress, 'configure.gateway', fn () => $this->run('configure.gateway', $gateway, 'converge-gateway.sh', ['configure']));
         StageTimer::run($progress, 'services.gateway', fn () => $this->run('services.gateway', $gateway, 'converge-gateway.sh', ['services']));
-        $steps['deploy-release.gateway'] = true;
+        $steps['adopt.gateway'] = true;
 
         StageTimer::run($progress, 'enroll.operator', function () use ($gatewayAddress, $instances): void {
             $this->run('enroll.operator', $instances['operator'], 'converge-operator.sh', ['configure-cli', $gatewayAddress]);

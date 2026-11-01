@@ -76,11 +76,10 @@ case ${1-} in
     "${orbit_env[@]}" sed -i '/^ORBIT_GATEWAY_CHECKOUT=/d' "$runtime_gateway/.env"
     "${orbit_env[@]}" bash -c 'printf "ORBIT_GATEWAY_CHECKOUT=%s\n" "$1" >>"$1/.env"' orbit-e2e "$runtime_gateway"
     ;;
-  prepare-release|deploy-release)
+  adopt)
     [[ $# -eq 2 && "$2" =~ ^[0-9a-f]{40}$ ]] || exit 64
     cd "$runtime_gateway"
-    action=${1%-release}
-    "${orbit_env[@]}" env ORBIT_GATEWAY_CHECKOUT="$runtime_gateway" php artisan "gateway:release:$action" "$2" --no-interaction
+    "${orbit_env[@]}" env ORBIT_GATEWAY_CHECKOUT="$runtime_gateway" php artisan gateway:release:adopt --commit="$2" --no-interaction
     ;;
   configure)
     [[ $# -eq 1 ]] || exit 64

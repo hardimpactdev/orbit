@@ -52,6 +52,8 @@ final class AcquireCommand extends E2ECommand
             $this->outputJson(
                 [
                     'state' => 'acquired',
+                    'gateway_install' => 'adopt',
+                    'release_runner_exercised' => true,
                     'issue' => $request->issue,
                     'attempt_id' => $topology->attempt->value,
                     'worktree' => $request->worktree,
