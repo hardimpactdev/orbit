@@ -258,6 +258,13 @@ class FixtureTests(unittest.TestCase):
                     self.assertEqual(call["argv"][0], "orbit")
                     self.assertFalse(any("--password" in arg for arg in call["argv"]))
                 self.assertEqual(value["queue_timeout_seconds"], flow.get("queueTimeout"))
+                self.assertIs(type(value["budget_seconds"]), int)
+                self.assertIs(type(value["queue_timeout_seconds"]), int)
+                self.assertLess(0, value["queue_timeout_seconds"])
+                self.assertLess(value["queue_timeout_seconds"], value["budget_seconds"])
+                self.assertTrue(all(type(phase["budget_seconds"]) is int and
+                                    0 < phase["budget_seconds"] <= value["budget_seconds"]
+                                    for phase in value["phases"]))
                 for selected in [*value["phases"], value["expect"]["outputs"]]:
                     job = next(j for j in flow["jobs"] if j["name"] == selected["job"])
                     self.assertIn(selected["step"], [step["name"] for step in job["steps"]])

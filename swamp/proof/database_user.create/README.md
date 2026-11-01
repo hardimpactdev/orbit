@@ -8,6 +8,20 @@ F9 follows `6291bb036:apps/gateway/app/Actions/DatabaseConnections/CreateDatabas
 
 Parity checks exact Operation, server, Connection and Node identities, native/public result equality and the projected public user privileges. An official SQL client in the owned container uses the Node's published private endpoint. An incorrect password must fail before the generated password authenticates; container loopback trust cannot prove this. MySQL grants must be exactly global USAGE plus the escaped database grant, without a grant option. PostgreSQL users must have no elevated role attributes. Readers must receive the expected INSERT permission refusal; writers insert one owned row. An owner query verifies rows. Temporary user-action files must be absent.
 
-These are draft fixtures with no topology receipt, native timing sample or measured F8 budget. D's canonical API runner in #2314 must be present before execution; no local API transport substitutes for it. The 1,800-second ceiling is the unmeasured default; null queue timeout records the workflow's absent explicit value. Replication, username conflicts, grant replacement and failure-recovery topology variants remain pending. One-shot teardown owns the servers, databases, users and volumes; persistent topologies keep them until `down`. Connection 47 and historical target-v2 cleanup are excluded.
+These are draft fixtures with no topology receipt or measured native p95. D's canonical API runner in #2314 must be present before execution; no local API transport substitutes for it. The user budget below comes from current-path Operation 6533 and the existing shared F8 policy. Replication, username conflicts, grant replacement and failure-recovery topology variants remain pending. One-shot teardown owns the servers, databases, users and volumes; persistent topologies keep them until `down`. Connection 47 and historical target-v2 cleanup are excluded.
 
 Run checker tests with `python3 -I swamp/proof/database_user.create/parity_test.py`. They exercise local parsers and private-file handling without allocating infrastructure or admitting an Operation. All fixtures stay draft until their individual D receipts.
+
+## Budget binding
+
+These fixtures are stacked on #2404 at `aa7604ea772b629d074ad8587de36932defc49ae`, whose explicit workflow queue timeout is 30 seconds. Test that staged product source with the canonical #2314 runner (lane 25's branch until it reaches main). Every fixture records queue 30, strictly below its run budget. No workflow or shared Operations regression is changed here. #2404 and these drafts wait for D's receipts; no topology run is implied.
+
+The saved Gateway succeeded-list snapshot is from 2026-11-01 14:40:14Z. Samples belong to the current SSH execution paths below. The existing policy applies `max(60, ceil(longest_seconds * 1.5 / 60) * 60)`; no current-shape success in this snapshot uses 1800. Raw values are shown separately. This caller-visible snapshot is not complete 14-day native history, and zero selected successes does not prove no historical success. These are kind-wide budgets, not engine-specific or p95 measurements.
+
+| Kind | Current execution path | Successes | Longest seconds | Raw × 1.5 | Budget seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `database_user.create` | #2179/c4c3dd985a | 1 | 15 | 22.5 | 60 |
+
+Earlier-shape Operations excluded: 5544.
+
+Each phase ceiling is capped at the kind budget. Those ceilings are not additive and are not measured phase budgets. Supplementary parity calls retain their bounded transport timeout. The source classification and raw values come from `evidence/database-queue-timeouts-current-shape-fixture-budgets.json` in the execution evidence directory; the same table is recorded in #2404.

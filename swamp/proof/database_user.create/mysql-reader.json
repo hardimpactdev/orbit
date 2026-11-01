@@ -4,8 +4,8 @@
   "topology": [
     "app-dev+database"
   ],
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": null,
+  "budget_seconds": 60,
+  "queue_timeout_seconds": 30,
   "secrets": [
     {
       "name": "user_password",
@@ -99,19 +99,19 @@
       "name": "ensure-user",
       "job": "user",
       "step": "apply",
-      "budget_seconds": 1800
+      "budget_seconds": 60
     },
     {
       "name": "replace-grants",
       "job": "user",
       "step": "grant",
-      "budget_seconds": 1800
+      "budget_seconds": 60
     },
     {
       "name": "cleanup-scratch",
       "job": "user",
       "step": "cleanup",
-      "budget_seconds": 1800
+      "budget_seconds": 60
     }
   ],
   "parity": {
