@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Architecture",
+      "order": 35,
+      "pages": ["swamp/diagrams/instance-destroy"]
+    }
+  ]
+}
