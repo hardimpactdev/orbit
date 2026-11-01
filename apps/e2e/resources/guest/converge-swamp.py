@@ -111,11 +111,15 @@ def load_source():
     # Native runs create models too. Replace only source definitions, never their generated models.
     inventory = ROOT / 'source-files.json'
     previous = set(json.loads(inventory.read_text())) if inventory.exists() else set()
+    # extension pull owns this lockfile, including the installed versions and checksums.
+    managed = {'extensions/models/upstream_extensions.json'}
+    previous -= managed
     current = {}
     for name in ('extensions', 'models', 'workflows'):
         for source in (SOURCE / name).rglob('*'):
-            if source.is_file() and '__pycache__' not in source.parts:
-                current[str(source.relative_to(SOURCE))] = source
+            relative = str(source.relative_to(SOURCE))
+            if source.is_file() and '__pycache__' not in source.parts and relative not in managed:
+                current[relative] = source
     for relative in previous - set(current):
         (REPO / relative).unlink(missing_ok=True)
     for relative, source in current.items():

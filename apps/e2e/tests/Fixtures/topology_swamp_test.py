@@ -34,6 +34,8 @@ class TopologySwampTest(unittest.TestCase):
             for name in ('extensions', 'models', 'workflows', 'config'):
                 (source / name).mkdir(parents=True)
             (source / 'extensions/new.ts').write_text('new source')
+            (source / 'extensions/models').mkdir()
+            (source / 'extensions/models/upstream_extensions.json').write_text('stale committed pins')
             (source / 'config/gateway-workflow-grants.json').write_text(json.dumps({
                 'principal': 'user:orbit-gateway', 'vaults': [
                     {'vault': 'orbit-control-inputs', 'actions': ['read'], 'key_pattern': '^a$'}],
@@ -42,6 +44,10 @@ class TopologySwampTest(unittest.TestCase):
             (repo / 'vaults/local_encryption/uuid.yaml').write_text('name: orbit-control-inputs\n')
             (repo / 'models').mkdir()
             (repo / 'models/generated.yaml').write_text('native model')
+            (repo / 'extensions/models').mkdir(parents=True)
+            native_lock = repo / 'extensions/models/upstream_extensions.json'
+            native_lock.write_text('fresh native pulls and checksums')
+            (root / 'source-files.json').write_text(json.dumps(['extensions/models/upstream_extensions.json']))
             (repo / '.swamp/data').mkdir(parents=True)
             (repo / '.swamp/data/history').write_text('retained')
             with patch.object(module, 'SOURCE', source), patch.object(module, 'REPO', repo), \
@@ -53,6 +59,8 @@ class TopologySwampTest(unittest.TestCase):
             self.assertEqual((repo / '.swamp/data/history').read_text(), 'retained')
             self.assertFalse((repo / 'extensions/new.ts').exists())
             self.assertEqual((repo / 'models/generated.yaml').read_text(), 'native model')
+            self.assertEqual(native_lock.read_text(), 'fresh native pulls and checksums')
+            self.assertNotIn('extensions/models/upstream_extensions.json', json.loads((root / 'source-files.json').read_text()))
             self.assertTrue((repo / 'vaults/local_encryption/uuid.yaml').exists())
 
     def test_local_credential_never_becomes_a_command_argument(self):
