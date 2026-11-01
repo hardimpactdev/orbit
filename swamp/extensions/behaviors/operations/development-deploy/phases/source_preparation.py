@@ -43,19 +43,22 @@ def github_environment(request):
     try:
         query = urllib.request.Request("https://api.github.com/repos/" + repository,
                                        headers={"Accept": "application/vnd.github+json"})
-        with urllib.request.urlopen(query, timeout=30) as response:
+        with urllib.request.build_opener().open(query, timeout=30) as response:
             public = json.load(response)
         require(public.get("private") is False and public.get("full_name", "").lower() == repository.lower())
         return env
     except urllib.error.HTTPError as error:
         require(error.code == 404)
         error.close()
+    operation_id = str(request["operation_id"])
+    if not re.fullmatch("[1-9][0-9]*", operation_id):
+        raise Refused("operation.github_token_unavailable")
     query = urllib.request.Request(
-        "https://gateway.orbit/api/v1/direct-operations/" + str(request["operation_id"]) + "/github-token",
+        "https://gateway.orbit/api/v1/direct-operations/" + operation_id + "/github-token",
         data=json.dumps({"run_id": request["run_id"]}).encode(), method="POST",
         headers={"Content-Type": "application/json", "Accept": "application/json"})
     context = ssl.create_default_context(cafile="/usr/local/share/ca-certificates/orbit-root.crt")
-    with urllib.request.urlopen(query, timeout=30, context=context) as response:
+    with urllib.request.build_opener(urllib.request.HTTPSHandler(context=context)).open(query, timeout=30) as response:
         grant = json.load(response)["data"]["github"]
     require(grant["repository"] == repository and grant["permissions"] == {"contents": "read"},
             "operation.github_token_unavailable")

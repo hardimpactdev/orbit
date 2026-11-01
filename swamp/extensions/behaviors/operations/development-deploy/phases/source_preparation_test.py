@@ -126,7 +126,7 @@ class SourceParity(unittest.TestCase):
         grant = {"data": {"github": {"repository": "acme/private", "permissions": {"contents": "read"},
                                      "token": "ghs_fixture-sentinel"}}}
         missing = urllib.error.HTTPError("https://api.github.com/repos/acme/private", 404, "Not Found", {}, None)
-        with patch("urllib.request.urlopen", side_effect=[missing, io.BytesIO(json.dumps(grant).encode())]):
+        with patch("urllib.request.OpenerDirector.open", side_effect=[missing, io.BytesIO(json.dumps(grant).encode())]):
             env = run_path(str(SCRIPT))["github_environment"]({"intent": self.intent, "operation_id": 1, "run_id": "fixture"})
         env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
         for origin in ("git@github.com:acme/private.git", "ssh://git@github.com/acme/private.git"):
