@@ -109,7 +109,7 @@ export async function tickDevelopment(
   const records = z.array(discovery).parse(
     await request("GET", "/api/v1/instances"),
   );
-  const handles: { name: string }[] = [];
+  const handles = new Map<string, { name: string }>();
   const failures: string[] = [];
   for (const listed of records) {
     if (
@@ -134,7 +134,7 @@ export async function tickDevelopment(
       let saved = JSON.stringify(state);
       const save = async () => {
         if (JSON.stringify(state) === saved) return;
-        handles.push(await ctx.writeResource("development", name, state));
+        handles.set(name, await ctx.writeResource("development", name, state));
         saved = JSON.stringify(state);
       };
       const history = z.array(RowSchema).parse(
@@ -221,7 +221,11 @@ export async function tickDevelopment(
           typeof operation.result?.deployment_id === "number" &&
           history.some((r) => r.id === operation.result?.deployment_id);
         const startFailed = operation.status === "failed" &&
-          ["swamp.start_refused", "swamp.start_unavailable"].includes(
+          [
+            "swamp.start_refused",
+            "swamp.start_unavailable",
+            "swamp.vault_sync_unavailable",
+          ].includes(
             operation.error_code ?? "",
           ) &&
           operation.attempts === 0 && operation.result === null;
@@ -393,5 +397,5 @@ export async function tickDevelopment(
     }
   }
   if (failures.length) throw new Error(failures.join("; "));
-  return handles;
+  return [...handles.values()];
 }
