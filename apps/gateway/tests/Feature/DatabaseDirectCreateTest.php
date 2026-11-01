@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseCreateProjection;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Operation;
@@ -21,8 +23,8 @@ beforeEach(function (): void {
     $this->dbNode->accessibleNodes()->attach($this->gateway);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     config(['swamp.run_token' => 'fake.token']);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-create', 'runId' => $this->runId]]];
+    $socket = $this->socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => $sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-create', 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->finish = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T03:00:00.000Z', 'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['backend' => 'active']];
 });
@@ -36,9 +38,12 @@ it('starts one direct managed create with safe typed intent and no Gateway probe
     expect($operation->state)->toMatchArray(['swamp_run_id' => $this->runId]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $input = $this->getJson($path.'?run_id='.$this->runId)->assertOk()->json('data.input');
+    $input = $this->getJson($path.'?run_id='.$this->runId)->assertOk()->json('data.input.intent');
     expect($input)->toMatchArray(['driver' => $driver, 'username' => 'proof'])->not->toHaveKeys(['sql', 'password', 'payload']);
-    $material = $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $material = json_decode($this->socket->sent[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
+    $inputs = $this->socket->sent[1]['payload']['inputs'];
+    expect($inputs['execution_secrets'])->toBe(['database_create' => ['vault' => 'orbit-control-inputs', 'key' => 'database-create-intent-'.$operation->input['intent_id']]]);
     $connection = DatabaseConnection::query()->sole();
     expect($material['password'])->toBe(SERVER_DATABASE_ROOT_SECRET);
     expect($material['payload']['password'])->toBe($connection->password);
@@ -113,4 +118,24 @@ it('abandons an invalid Valkey index reservation without deleting an ACL user', 
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertConflict();
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->postJson('/api/v1/database-connections', [...$request, 'database' => 15])->assertAccepted();
+});
+
+it('keeps recorded create intent immutable and projects terminal history exactly once', function (): void {
+    $this->postJson('/api/v1/database-connections', ['slug' => 'native-proof', 'server' => $this->server->slug])->assertAccepted();
+    $operation = Operation::query()->sole();
+    $inputs = $this->socket->sent[1]['payload']['inputs'];
+    $this->server->update(['port' => 3333, 'root_password' => 'changed-root-secret']);
+    expect(app(DirectOperation::class)->workflowInputs($operation)['intent'])->toBe($inputs['intent']);
+    $history = ['id' => $this->runId, 'workflowName' => 'operation-database-create', 'status' => 'succeeded', 'inputs' => $inputs,
+        'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
+        'jobs' => [['name' => 'create', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"backend":"active"}']]]]],
+    ];
+    $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
+    config(['swamp.read_token' => 'fake.token']);
+    $selector = app(DirectOperation::class)->definition('database.create')['terminal_result'];
+    $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
+    app(SwampCommandStep::class)->projectTerminal($projected, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
+    expect($projected->status->value)->toBe('succeeded');
+    expect($projected->result)->toBe(['backend' => 'active']);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
 });

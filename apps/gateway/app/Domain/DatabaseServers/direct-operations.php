@@ -29,7 +29,9 @@ return ['database.update' => [
 ], 'database.create' => [
     'workflow' => 'operation-database-create',
     'projection' => DatabaseCreateProjection::class,
-    'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'create', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$']],
 ], 'database_server.destroy' => [
     'workflow' => 'operation-database-server-destroy',
     'projection' => DatabaseServerDestroyProjection::class,

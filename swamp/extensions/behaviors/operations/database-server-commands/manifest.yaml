@@ -6,6 +6,7 @@ license: MIT
 description: Database server command files and public result shaping.
 behaviors:
   - operations/database-server-commands/assets.ts
+  - operations/database-server-commands/create_assets.ts
 additionalFiles:
   - scripts/process.py
   - scripts/server_common.py
@@ -16,3 +17,19 @@ additionalFiles:
   - scripts/user_common.py
   - scripts/user_wal.py
   - scripts/user_apply.py
+  - scripts/create_common.py
+  - scripts/create_sql.py
+  - scripts/create_valkey.py
+  - scripts/sql_probe_user.py
+  - scripts/sql_probe_databases.py
+  - scripts/sql_create_user.py
+  - scripts/sql_authenticate.py
+  - scripts/mysql_grant.py
+  - scripts/sql_create_database.py
+  - scripts/valkey_index.py
+  - scripts/valkey_user.py
+  - scripts/valkey_set_user.py
+  - scripts/valkey_save.py
+  - scripts/postgres_revoke_database.py
+  - scripts/postgres_revoke_schema.py
+  - scripts/postgres_grant_schema.py

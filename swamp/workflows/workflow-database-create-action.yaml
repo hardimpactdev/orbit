@@ -1,0 +1,66 @@
+id: e494d214-54c7-496f-9294-c70876e95167
+name: database-create-action
+description: One database creation action; typed output and native failure gate preserve its result.
+writes: true
+vaults: [orbit-control-inputs]
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.create]}
+    intent: {type: object}
+    intent_json: {type: string}
+    execution_secrets: {type: object, properties: {database_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-create-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_create], additionalProperties: false}
+    action: {type: string, enum: [sql_probe_user, sql_probe_databases, sql_create_user, sql_authenticate, mysql_grant, sql_create_database, postgres_revoke_database, postgres_revoke_schema, postgres_grant_schema, valkey_index, valkey_user, valkey_set_user, valkey_save]}
+    item: {type: object}
+  required: [operation_id, node_id, kind, intent, intent_json, execution_secrets, action, item]
+  additionalProperties: false
+jobs:
+- name: action
+  target: orbit-node-209
+  steps:
+  - name: item
+    <<: &placed {target: orbit-node-209}
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-create-command-assets'
+      behaviorName: ${{ "database-create-item-" + run.id }}
+      methodName: item
+      inputs: {item: '${{ inputs.item }}'}
+  - name: execute
+    dependsOn: [{step: item, condition: {type: succeeded}}]
+    <<: *placed
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-create-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "database-create-" + string(inputs.operation_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}
+        hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) + "/" + inputs.action + ".py" }}', '${{ inputs.intent_json }}', '${{ steps.item.outputs.json }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_create.vault, inputs.execution_secrets.database_create.key) }}
+        okExitCodes: [0, 1]
+  - name: result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: execute, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-create-command-assets'
+      behaviorName: ${{ "db-create-result-" + run.id }}
+      methodName: action_result
+      inputs:
+        stdout: '${{ has(steps.execute.outputs) && has(steps.execute.outputs.stdout) ? steps.execute.outputs.stdout : "" }}'
+        exit_code: '${{ has(steps.execute.outputs) && has(steps.execute.outputs.exitCode) ? steps.execute.outputs.exitCode : -1 }}'
+  - name: accept_result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database creation action failed.}
