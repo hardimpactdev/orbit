@@ -131,7 +131,7 @@ PLAN F8 requires a budget for every kind. A port PR without one fails review.
 | Item | Rule |
 | --- | --- |
 | Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live runs when they exist, otherwise native harness runs. State the sample size. |
-| Run budget | Set it from the measured p95 with headroom, not a guess. `instance.create` targets under 10 s with a 60 s budget. |
+| Run budget | Set it from the measured p95 with headroom, not a guess. PLAN sets the `instance.create` policy: under 10 s, budget 60 s. That is a target, not measured proof. |
 | Timeout at start | The Gateway passes the budget as the Swamp run timeout at start. Lane 16 owns the shared field; add no family timer. |
 | Expiry | The run ends and the Operation fails with `operation.timed_out` plus F1 error detail. Nothing waits past the budget. |
 | `queueTimeout` | Set it per kind in the workflow so a step fails fast when no worker is free. Keep it well below the run budget. |
