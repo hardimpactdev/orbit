@@ -24,7 +24,7 @@ class SqliteNative(DatabaseCommands):
  fail=unittest.TestCase.fail
  def setUp(self):
   super().setUp()
-  self.prepare_commands(['workflow-database-sqlite-export.yaml','workflow-database-sqlite-seed.yaml','workflow-database-sqlite-action.yaml','workflow-operation-database-sqlite-export.yaml','workflow-operation-database-sqlite-seed.yaml','workflow-operation-database-sqlite-seed-abandon.yaml','workflow-operation-database-cleanup.yaml'])
+  self.prepare_commands(['workflow-database-sqlite-export.yaml','workflow-database-sqlite-seed.yaml','workflow-database-sqlite-action.yaml','workflow-operation-database-sqlite-export.yaml','workflow-operation-database-sqlite-seed.yaml','workflow-operation-database-cleanup.yaml'])
   for name in ('sqlite_input.ts','cleanup_contract.ts'):shutil.copy(ROOT/'extensions/behaviors/operations/database'/name,self.repo/'extensions/behaviors/operations/database'/name)
   fake=self.repo/'fixture-ssh';fake.write_text('#!'+sys.executable+'\n'+'''import json,os,shlex,subprocess,sys,time
 from pathlib import Path
@@ -56,7 +56,7 @@ else:shutil.copy2(source,target)
   for name in ('sqlite_target_cleanup','sqlite_source_cleanup'):
    subprocess.run(['/usr/bin/sudo','-n','--','/usr/bin/python3','-B',str(script/(name+'.py')),json.dumps(self.intent)],capture_output=True,text=True)
  def run_kind(self,kind,success=True,flags=()):
-  self.public['kind']=kind;name={'database.sqlite_export':'operation-database-sqlite-export','database.sqlite_seed':'operation-database-sqlite-seed','database.sqlite_seed_abandon':'operation-database-sqlite-seed-abandon','database.sqlite_cleanup':'operation-database-cleanup'}[kind]
+  self.public['kind']=kind;name={'database.sqlite_export':'operation-database-sqlite-export','database.sqlite_seed':'operation-database-sqlite-seed','database.sqlite_cleanup':'operation-database-cleanup'}[kind]
   self.cli('workflow','validate',name);run=reply(self.cli('workflow','run',name,'--input',json.dumps(self.public),*flags,success=success).stdout);self.assertNotIn('private-sqlite-native-sentinel',json.dumps(self.history(run)));return run
  def action_names(self):return[x['action']for x in self.calls()]
  def test_cleanup_absent_clone_uses_no_vault_and_returns_absent(self):
@@ -69,8 +69,6 @@ else:shutil.copy2(source,target)
   self.assertFalse(Path(self.source_desc['snapshot_path']).exists())
  def test_failed_install_cleans_source_and_incoming_without_success(self):
   self.state.write_text(json.dumps({'fail':'sqlite_target_install'}));run=self.run_kind('database.sqlite_seed',False);self.assertIn('sqlite_target_recover',self.action_names());self.assertIn('sqlite_source_cleanup',self.action_names());self.assertFalse((self.target/'db.sqlite').exists());self.assertFalse(Path(self.target_desc['state_dir']).exists());self.assertNotEqual(self.outcome(run).get('backend'),'active')
- def test_abandon_cleans_both_attempts_and_preserves_installed_database(self):
-  self.run_kind('database.sqlite_seed');inode=(self.target/'db.sqlite').stat().st_ino;run=self.run_kind('database.sqlite_seed_abandon');self.assertEqual(self.outcome(run),{'backend':'absent'});self.assertEqual((self.target/'db.sqlite').stat().st_ino,inode);self.assertFalse(Path(self.target_desc['state_dir']).exists())
  def test_source_refusal_has_no_target_effect(self):
   self.state.write_text(json.dumps({'fail':'sqlite_source_export'}));run=self.run_kind('database.sqlite_seed',False);self.assertNotIn('sqlite_target_prepare',self.action_names());self.assertNotEqual(self.outcome(run).get('backend'),'active')
 

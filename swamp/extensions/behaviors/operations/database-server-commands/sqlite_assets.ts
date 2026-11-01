@@ -4,7 +4,6 @@ import { CleanupInput } from "../database/cleanup_contract.ts";
 const Kind = z.enum([
     "database.sqlite_export",
     "database.sqlite_seed",
-    "database.sqlite_seed_abandon",
     "database.sqlite_cleanup",
 ]);
 const Action = z.enum([
@@ -187,12 +186,6 @@ export const behavior = {
                     if (
                         raw.kind === "database.sqlite_export" &&
                         a.startsWith("target_")
-                    ) throw Error("database.sqlite_intent_invalid");
-                    if (
-                        raw.kind === "database.sqlite_seed_abandon" &&
-                        !["check", "target_cleanup", "source_cleanup"].includes(
-                            a,
-                        )
                     ) throw Error("database.sqlite_intent_invalid");
                     if (a === "cleanup") {
                         throw Error("database.sqlite_intent_invalid");
@@ -378,10 +371,7 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 let result: Record<string, unknown> = {
-                    backend: [
-                            "database.sqlite_cleanup",
-                            "database.sqlite_seed_abandon",
-                        ].includes(args.kind)
+                    backend: args.kind === "database.sqlite_cleanup"
                         ? "absent"
                         : "active",
                 };
