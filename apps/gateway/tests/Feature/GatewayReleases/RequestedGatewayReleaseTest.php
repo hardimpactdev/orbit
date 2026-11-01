@@ -14,6 +14,21 @@ afterEach(function (): void {
 });
 
 describe('gateway:release:run', function (): void {
+    it('pauses an interrupted native publication without allowing a blind rollback retry', function (): void {
+        $this->pipeline->adopt();
+        $this->pipeline->automation()->enable();
+        $sha = $this->pipeline->fixture->commit('Interrupted native publication');
+        $record = GatewayRelease::query()->create(['requested' => $sha, 'sha' => $sha, 'release_id' => substr($sha, 0, 12),
+            'trigger' => 'rollback', 'outcome' => 'running', 'duration_ms' => 0,
+            'phases' => ['swamp' => ['outcome' => 'preparing', 'attempt_id' => 'retained-native-custody']]]);
+
+        $this->pipeline->lock()->run(fn () => $this->pipeline->recorder()->settle($record));
+
+        expect($record->refresh()->outcome)->toBe('interrupted')->and($record->retryable)->toBeFalse()
+            ->and($record->phases['swamp']['attempt_id'])->toBe('retained-native-custody')
+            ->and($this->pipeline->automation()->pause())->toMatchArray(['reason' => 'interrupted', 'record' => $record->id]);
+    });
+
     it('runs a queued deploy in the unit and records each step on the same record', function (): void {
         $this->pipeline->adopt();
         $sha = $this->pipeline->fixture->commit('Requested');

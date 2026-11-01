@@ -15,6 +15,7 @@ use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
@@ -439,6 +440,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             $recorder,
             $builder,
             Config::integer('orbit.gateway_releases.keep'),
+            app(GatewayReleaseSwampLoad::class),
         );
     }
 }

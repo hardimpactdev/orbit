@@ -201,14 +201,16 @@ final readonly class GatewayReleaseRecorder
         $snapshot = is_array($phases['snapshot'] ?? null) ? ($phases['snapshot']['outcome'] ?? null) : null;
         $migrate = is_array($phases['migrate'] ?? null) ? ($phases['migrate']['outcome'] ?? null) : null;
 
-        return $snapshot === 'snapshotted' || ($migrate !== null && $migrate !== 'skipped') || array_key_exists('switch', $phases);
+        return $snapshot === 'snapshotted' || ($migrate !== null && $migrate !== 'skipped') || array_key_exists('switch', $phases)
+            || array_key_exists('swamp', $phases);
     }
 
     private function interrupt(GatewayRelease $record, string $message): void
     {
         $record->forceFill([
             'outcome' => GatewayRelease::Interrupted,
-            'retryable' => $record->commit() === null || $this->retry->retryable('gateway.release_interrupted', (string) $record->commit(), $record->id),
+            'retryable' => ! array_key_exists('swamp', $record->phases)
+                && ($record->commit() === null || $this->retry->retryable('gateway.release_interrupted', (string) $record->commit(), $record->id)),
             'error_code' => 'gateway.release_interrupted',
             'message' => $message,
         ])->save();

@@ -8,6 +8,7 @@ use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseObserver;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\RoleName;
@@ -79,6 +80,7 @@ final class GatewayReleaseFixture
     /** A fresh fixture; an adopted one already serves a prepared release of its first commit. */
     public static function create(bool $adopted = false): self
     {
+        app()->instance(GatewayReleaseSwampLoad::class, new FakeGatewayReleaseSwampLoad);
         $fixture = new self;
         if ($adopted) {
             $fixture->select($fixture->prepared($fixture->commit('Adopted release')));

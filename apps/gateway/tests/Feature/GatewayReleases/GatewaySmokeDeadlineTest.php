@@ -66,7 +66,7 @@ it('switches back when the release smoke command runs past its limit', function 
         $record = GatewayRelease::query()->firstOrFail();
 
         expect($exception->errorCode)->toBe('gateway.release_smoke_timeout')
-            ->and($record->outcome)->toBe('switched_back')
+            ->and($record->outcome)->toBe('paused')
             ->and($record->phases['smoke']['error_code'])->toBe('gateway.release_smoke_timeout')
             ->and($record->phases['smoke']['timeout_seconds'])->toBe(1)
             ->and($fixture->layout->currentReleaseId())->toBe($first);

@@ -9,6 +9,7 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Models\GatewayRelease;
@@ -45,6 +46,7 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
         private int $keptReleases,
+        private GatewayReleaseSwampLoad $swamp,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
     ) {}
 
@@ -75,6 +77,10 @@ final readonly class GatewayReleasePromoter
             }
 
             $this->recorder->progress($record, $phases, $sha);
+
+            $step = 'swamp';
+            $phases['swamp'] = $this->swamp->load($sha, $record);
+            $this->recorder->progress($record, $phases);
 
             if (! $finalize) {
                 $step = 'switch';
@@ -174,7 +180,14 @@ final readonly class GatewayReleasePromoter
     ): never {
         $outcome = 'failed';
         $cleanupPaused = ($scheduled['cleanup_paused'] ?? false) === true;
+        $storedSwamp = $record?->fresh()?->phases['swamp'] ?? null;
+        if (is_array($storedSwamp)) {
+            $phases['swamp'] = $storedSwamp;
+        }
         $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
+        if ($exception->step === 'swamp' && is_array($storedSwamp)) {
+            $phases['swamp'] = [...$storedSwamp, ...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
+        }
         $switched = $previous !== $id && $this->layout->currentReleaseId() === $id;
         $this->recorder->progress($record, $phases);
 
@@ -211,6 +224,12 @@ final readonly class GatewayReleasePromoter
                     sha: $sha,
                 );
             }
+        }
+
+        if (isset($phases['swamp']) || $exception->step === 'swamp') {
+            $outcome = 'paused';
+            $phases['pause'] = [...(is_array($phases['pause'] ?? null) ? $phases['pause'] : []), 'outcome' => 'paused',
+                'current' => $this->layout->currentReleaseId(), 'native_publication_requires_inspection' => true];
         }
 
         $this->record($this->result(

@@ -11,6 +11,7 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
@@ -46,6 +47,45 @@ afterEach(function (): void {
 });
 
 describe('gateway:release:deploy', function (): void {
+    it('requires pinned native publication under the release lock before switching Gateway code', function (): void {
+        $source = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Native and Gateway together');
+        $native = app(GatewayReleaseSwampLoad::class);
+        $native->during = function (string $pinned, ?GatewayRelease $record) use ($source, $sha): void {
+            expect($pinned)->toBe($sha)->and($record?->sha)->toBe($sha)
+                ->and($this->fixture->layout->currentReleaseId())->toBe($source)
+                ->and($record?->phases['configuration']['outcome'])->toBe('cached');
+            expect(fn () => new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock')->run(static fn (): bool => true))
+                ->toThrow(GatewayReleaseException::class);
+        };
+        $order = new ReleaseSteps;
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+
+        $result = $action->execute($sha);
+
+        expect($native->calls)->toHaveCount(1)->and($result->phases['swamp'])->toBe(['outcome' => 'verified', 'sha' => $sha]);
+    });
+
+    it('pauses before switching on uncertain native publication even without migrations', function (): void {
+        $source = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Native verification mismatch');
+        $this->fixture->builder()->prepare($sha);
+        app(GatewayReleaseSwampLoad::class)->during = static function (string $sha, ?GatewayRelease $record): never {
+            $record->forceFill(['phases' => [...$record->phases, 'swamp' => ['outcome' => 'preparing', 'attempt_id' => 'exact-uncertain-attempt']]])->saveOrFail();
+            throw new GatewayReleaseException('swamp', 'gateway.release_swamp_load_unverified', 'Native receipt is not verified.');
+        };
+        $order = new ReleaseSteps;
+        $action = release_rollback($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+
+        expect(release_failure(fn () => $action->execute(substr($sha, 0, 12)))->step)->toBe('swamp');
+        $record = GatewayRelease::query()->latest('id')->firstOrFail();
+        expect($this->fixture->layout->currentReleaseId())->toBe($source)
+            ->and($record->outcome)->toBe('paused')->and($record->retryable)->toBeFalse()
+            ->and($record->phases['swamp']['error_code'])->toBe('gateway.release_swamp_load_unverified')
+            ->and($record->phases['swamp']['attempt_id'])->toBe('exact-uncertain-attempt')
+            ->and($order->steps)->toBe([]);
+    });
+
     it('switches to the release only after prepare, verifies, then publishes the web app before smoke', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Second release');
@@ -88,7 +128,7 @@ describe('gateway:release:deploy', function (): void {
         expect($exception->errorCode)->toBe('gateway.release_verify_failed')
             ->and($exception->step)->toBe('verify')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            ->and($record->outcome)->toBe('switched_back')
+            ->and($record->outcome)->toBe('paused')
             ->and($record->migrations_ran)->toBeFalse()
             ->and($order->steps)->toBe([
                 'handoff:'.substr($sha, 0, 12),
@@ -154,7 +194,7 @@ describe('gateway:release:deploy', function (): void {
         $record = GatewayRelease::query()->first();
 
         expect($exception->errorCode)->toBe('gateway.release_smoke_failed')
-            ->and($record->outcome)->toBe('switched_back')
+            ->and($record->outcome)->toBe('paused')
             ->and($record->migrations_ran)->toBeFalse()
             ->and($record->phases['smoke'])->toBe([
                 'report' => ['passed' => false, 'failed_checks' => ['web']],
@@ -475,7 +515,7 @@ describe('gateway:release:deploy', function (): void {
             ->and($exception->step)->toBe('handoff')
             ->and($exception->getMessage())->toContain('ran out of memory')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            ->and($record->outcome)->toBe('switched_back')
+            ->and($record->outcome)->toBe('paused')
             ->and($record->error_code)->toBe('gateway.release_unexpected_failure')
             ->and($order->steps)->toBe(['handoff:'.substr($sha, 0, 12), 'web:restore', 'handoff:'.$first])
             ->and(Activity::query()->value('status'))->toBe('failed');
@@ -741,7 +781,7 @@ describe('gateway:release:deploy', function (): void {
         $record = GatewayRelease::query()->sole();
 
         expect($exception->errorCode)->toBe('gateway.release_switch_back_failed')
-            ->and($record->outcome)->toBe('failed')
+            ->and($record->outcome)->toBe('paused')
             ->and($record->phases['switch_back']['outcome'])->toBe('failed')
             ->and($record->retryable)->toBeFalse()
             ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
@@ -776,7 +816,7 @@ describe('gateway:release:deploy', function (): void {
             'handoff:'.substr($sha, 0, 12), 'verify', 'schedule:'.substr($sha, 0, 12),
             'web:restore', 'handoff:'.$first, 'schedule:'.$first,
         ])
-            ->and(GatewayRelease::query()->sole()->outcome)->toBe('switched_back');
+            ->and(GatewayRelease::query()->sole()->outcome)->toBe('paused');
     });
 
     it('keeps the previous release when pruning, also when it is the oldest one', function (): void {
@@ -946,6 +986,7 @@ function release_deployer(
             $recorder,
             $builder,
             $keptReleases ?? Config::integer('orbit.gateway_releases.keep'),
+            app(GatewayReleaseSwampLoad::class),
         ),
         $recorder,
         new GatewayReleaseGuard($fixture->layout, $fixture->releaseCommands()),
@@ -980,6 +1021,7 @@ function release_rollback(
             $recorder,
             $builder,
             Config::integer('orbit.gateway_releases.keep'),
+            app(GatewayReleaseSwampLoad::class),
         ),
         $recorder,
     );

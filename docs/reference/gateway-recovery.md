@@ -125,6 +125,14 @@ If the caller dies, an operator inspects the exact checkpoint, receipt, source a
 
 The accepted hot reload on pinned e459 is recorded in `evidence/batch-9c2a850f-load-20261101/accepted-load-receipt.json` in the operator workspace. It matched the exposed definitions checked in that receipt without restarting. B1, Lab 4223, remains a known failure mode: every load still checks its changed definitions and pauses on a mismatch. Official `workflow.get` omits some placement and `forEach` fields. Unchanged workflows receive identity checks, not a new full definition proof. Extension version equality does not prove bundle bytes or helper freshness. No full extension registry equality is claimed.
 
+### Require native publication before the Gateway switch
+
+The release runner publishes the prepared commit's `swamp/` before switching Gateway code. The load owner installs the pinned entry and stops the former merge publisher before this gate goes live. The gate checks the same running release record, invokes the fixed entry through existing pinned SSH to Node 209, and validates the source, runtime, manifest and workflow receipt. It checks the configured Gateway run token against the prepared commit's exact intended grants, then acknowledges that receipt. A missing entry, refused query, mismatched receipt or uncertain call pauses the release with the old Gateway live. It does not retry a native mutation automatically.
+
+The release record keeps the verified native receipt and configured-token check separately. A held release also passes native publication before its code switch. A finalize operation rechecks publication for its exact target. A failed load can leave native definitions ahead of the Gateway; the pause records that split state for operator recovery. Swamp-only changes require the normal Gateway release inputs and web artifact, so the same release owns both trees.
+
+Before the remote call, the runner saves the attempt identity. It saves the prepared native receipt before checking the configured token. A failure or dead process retains this evidence and pauses automation. Once native publication starts, a later Gateway failure also pauses, even without migrations. The existing code switch-back can keep the previous Gateway live; it does not undo native publication. The operator inspects the recorded split state and fixes forward.
+
 ### Prepare a release
 
 The observer is frozen at the published delivery in `apps/gateway/resources/agent/frozen-manifest.json`. Prepare resolves the Gateway commit independently and verifies that fixed delivery's manifest, checksums and provenance. It never waits for the Gateway commit's CLI release or for new agent builds. The desired fleet state keeps the same agent commit and binary digests. Changing agent source does not change the delivered agent.
