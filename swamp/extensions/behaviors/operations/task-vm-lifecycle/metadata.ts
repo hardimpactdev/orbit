@@ -15,7 +15,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
-    version: "2026.11.01.3",
+    version: "2026.11.01.6",
     resources: {
         api_assets: {
             lifetime: "infinite",
@@ -37,6 +37,7 @@ export const behavior = {
                 input_json: z.string(),
                 script: z.string(),
                 observe_argv: z.array(z.string()),
+                start_script: z.string(),
                 action_argv: z.array(z.string()),
             }),
             lifetime: "infinite",
@@ -148,6 +149,11 @@ export const behavior = {
                         await ctx.writeResource("input", "input", {
                             input_json: JSON.stringify({ ...intent, action }),
                             script: ctx.extensionFile("scripts/upcloud.py"),
+                            start_script: await Deno.readTextFile(
+                                ctx.extensionFile(
+                                    "scripts/incus_start_wait.py",
+                                ),
+                            ),
                             observe_argv: [
                                 ...prefix,
                                 "list",

@@ -228,8 +228,9 @@ jobs:
       globalArgs: *id001
       inputs:
         hosts: name:target
-        argv: ${{ steps.input.outputs.observe_argv }}
+        argv: '${{ inputs.action == "start" ? ["timeout", "120", "/usr/bin/python3", "-I", "-c", steps.input.outputs.start_script, inputs.intent.vm.project, inputs.intent.name] : steps.input.outputs.observe_argv }}'
         timeoutSec: 180
+    queueTimeout: 10
     guard: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: before

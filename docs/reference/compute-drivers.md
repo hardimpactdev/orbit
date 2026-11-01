@@ -374,6 +374,8 @@ A live PPA would be a second owner of Git, and an exact APT version alone does n
 
 ## Task VMs
 
+Incus task VM provision and resume wait for `Running` after their single start request. The host reads only the admitted project and VM once per second, under a literal 120-second timeout over official SSH from 209. A failed read, missing or foreign VM, or unsupported terminal state fails without another start. This restores the legacy stopped-state grace before enrollment.
+
 Task VM enrollment runs bootstrap verification as the admitted managed user. It checks that user’s account, observer checksum and passwordless sudo after the root-only preparation phases. Task provision uses a 30-second default queue allowance; explicit step limits still apply.
 
 Swamp requests review parking through `tasks.park`. A parked row reports unknown power until the provider confirms stopped. A wake invalidates that confirmation. Gateway resource observation refreshes parked power in every group status and never starts or stops a VM.
