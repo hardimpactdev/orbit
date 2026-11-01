@@ -1,0 +1,141 @@
+{
+  "kind": "database_user.create",
+  "workflow": "operation-database-user-create",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": null,
+  "secrets": [
+    {
+      "name": "user_password",
+      "value": "generate:hex32"
+    }
+  ],
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-user-mysql-writer-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=mysql",
+        "--port=33482",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-user-mysql-writer-${proof.run}",
+        "--server=proof-user-mysql-writer-${proof.run}",
+        "--database=proof_users",
+        "--json"
+      ],
+      "capture": {
+        "connection_id": "$.input.connection_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:query",
+        "proof-user-mysql-writer-${proof.run}",
+        "CREATE TABLE proof_rows (id integer PRIMARY KEY, label varchar(64) NOT NULL)",
+        "--write",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:query",
+        "proof-user-mysql-writer-${proof.run}",
+        "INSERT INTO proof_rows (id,label) VALUES (1,'before')",
+        "--write",
+        "--json"
+      ]
+    }
+  ],
+  "request": {
+    "api": {
+      "method": "POST",
+      "path": "/api/v1/database-connections/proof-user-mysql-writer-${proof.run}/users",
+      "body": {
+        "username": "proof_writer",
+        "password": "${secret.user_password}",
+        "read_only": false,
+        "replication": false
+      }
+    },
+    "operation": "$.data.id"
+  },
+  "envelope": {
+    "connection_id": "${capture.connection_id}",
+    "driver": "mysql",
+    "database": "proof_users",
+    "username": "proof_writer",
+    "read_only": false,
+    "replication": false,
+    "known_user": false,
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "user",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "ensure-user",
+      "job": "user",
+      "step": "apply",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "replace-grants",
+      "job": "user",
+      "step": "grant",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "cleanup-scratch",
+      "job": "user",
+      "step": "cleanup",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database_user.create/parity.py",
+      "mysql",
+      "writer",
+      "proof-user-mysql-writer-${proof.run}",
+      "proof-user-mysql-writer-${proof.run}",
+      "--connection-id=${capture.connection_id}",
+      "--server-id=${capture.server_id}",
+      "--node-id=${topology.app-dev.node_id}",
+      "--port=33482",
+      "--ip=${topology.app-dev.wireguard_ip}"
+    ],
+    "cases": [
+      "exact-user-operation-native-public-result",
+      "projected-user-grants",
+      "generated-password-authenticates",
+      "actual-sql-grants-and-write-policy",
+      "independent-owner-readback",
+      "private-client-and-scratch-cleanup"
+    ]
+  }
+}
