@@ -505,3 +505,13 @@ it('covers every bounded Tool write phase with a provisional budget', function (
     // Repository 180 s + candidate 120 s + mutation 900 s must fit inside the kind budget (ADR 0242).
     expect(OperationRunBudgets::seconds(budgetOperation($kind, ['input' => []])))->toBe(1500)->toBeGreaterThan(180 + 120 + 900);
 })->with(['tool.install', 'tool.update']);
+
+it('pins the full provision path budget when fast Incus history would shrink the cloud parent', function (string $provider): void {
+    $operation = budgetOperation('task_vm.provision', ['input' => ['provider' => $provider]]);
+    $history = $operation->replicate();
+    $history->forceFill(['status' => OperationStatus::Succeeded, 'lock_key' => null,
+        'input' => ['provider' => 'incus'], 'started_at' => now()->subMinutes(2), 'finished_at' => now()->subMinute()])->save();
+
+    expect(OperationRunBudgets::seconds($operation))->toBe(3900);
+    expect(OperationRunBudgets::deadline($operation)?->equalTo(now()->addSeconds(3900)))->toBeTrue();
+})->with(['incus', 'upcloud']);

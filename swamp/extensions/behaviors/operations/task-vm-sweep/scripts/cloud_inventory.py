@@ -3,7 +3,7 @@ import json
 import sys
 import urllib.error
 
-from upcloud import api
+from upcloud_api import api
 
 
 def inventory():

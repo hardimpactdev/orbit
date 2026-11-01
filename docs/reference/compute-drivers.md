@@ -1380,7 +1380,11 @@ These alternatives were also rejected:
 Swamp waits for owned image-builder and orphan servers to stop before requesting deletion, then observes their absence. The native orphan sweep verifies the recorded name, label and stopped state and calls UpCloud directly. Image build cleanup still uses its retained Gateway delete primitive until the owning image root moves. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
 
 
-When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before.
+When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. UpCloud creation observes provider state until `started` in one phase bounded by a 240-second coreutils timeout, with a fixed three-second interval. `maintenance` and `stopped` are nonterminal during that wait. Request failures and bad terminal states fail immediately; a missing server (HTTP 404) fails as `task_vm.provider_server_missing`. Creation and start are not retried. Every provider invocation also has its own literal timeout; HTTP requests have a ten-second bound inside the shortest fifteen-second phase.
+
+Standalone `task_vm.provision` has a 3,900-second budget. It covers the legacy provider, SSH preparation, enrollment and rollback ceilings (375 + 600 + 1,500 + 900 = 3,375 seconds) below the 5,400-second serve ceiling. Replace this derived budget with history × 1.5 once UpCloud provisions succeed.
+
+The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before.
 
 An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
 

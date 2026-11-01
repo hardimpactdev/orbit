@@ -20,6 +20,8 @@ class UpCloudProviderNative(NativeTestCase):
         self.token, self.private = 'UPCloud_secret_fixture_3f31c', '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture-secret-host-key\n-----END OPENSSH PRIVATE KEY-----'
         self.exists, self.state, self.lost_create, self.foreign = False, 'stopped', False, False
         self.calls, self.create_documents = [], []
+        self.detail_states = []
+        self.address_only_when_started = False
         self.omit_list_labels, self.wrong_detail_uuid, self.wrong_detail_image = False, False, False
         owner = self
 
@@ -36,7 +38,7 @@ class UpCloudProviderNative(NativeTestCase):
                 return {'uuid': owner.provider_id, 'title': 'tvm-42', 'hostname': 'tvm-42', 'state': owner.state,
                         'labels': {'label': [{'key': 'orbit-task-vm', 'value': '43' if owner.foreign else '42'}, {'key': 'orbit-task-vm-image', 'value': owner.image}]},
                         'storage_devices': {'storage_device': [{'type': 'disk', 'storage': '3476acd6-23c5-4f77-baf8-56d812e6fbb4'}]},
-                        'ip_addresses': {'ip_address': [{'access': 'public', 'family': 'IPv4', 'address': '93.184.216.34'}]},
+                        'ip_addresses': {'ip_address': [] if owner.address_only_when_started and owner.state != 'started' else [{'access': 'public', 'family': 'IPv4', 'address': '93.184.216.34'}]},
                         'user_data': owner.private, 'root_password': owner.token}
 
             def do_GET(self):
@@ -50,6 +52,10 @@ class UpCloudProviderNative(NativeTestCase):
                     if owner.omit_list_labels:
                         row.pop('labels')
                     return self.answer(200, {'servers': {'server': [row] if owner.exists else []}})
+                if owner.detail_states:
+                    owner.state = owner.detail_states.pop(0)
+                if owner.state == 'missing':
+                    return self.answer(404, {})
                 row = self.row()
                 if owner.wrong_detail_image:
                     row['labels']['label'][1]['value'] = 'foreign-image'
@@ -82,7 +88,7 @@ class UpCloudProviderNative(NativeTestCase):
         self.addCleanup(thread.join)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        script = self.repo / 'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py'
+        script = self.repo / 'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py'
         script.write_text(script.read_text().replace('https://api.upcloud.com/1.3', f'http://127.0.0.1:{server.server_port}/1.3'))
         for name in ('task-vm-provider-upcloud', 'task-vm-provider-power'):
             value = yaml.safe_load((ROOT / f'workflows/workflow-{name}.yaml').read_text())
@@ -108,6 +114,12 @@ class UpCloudProviderNative(NativeTestCase):
         inputs = {'operation_id': 7005, 'node_id': 14, 'kind': 'tasks.provision', 'intent': self.intent, 'execution_secrets': self.copies}
         run = json.loads(self.cli('workflow', 'run', 'task-vm-provider-upcloud', '--input', json.dumps(inputs), success=success).stdout)
         history = json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
+        print('UPCLOUD-PROVIDER-NATIVE-DURATION ' + json.dumps({
+            'fixture_only': True,
+            **{key: run.get(key) for key in ('id', 'status', 'startedAt', 'completedAt', 'duration')},
+            'phases': [{key: step.get(key) for key in ('name', 'status', 'startedAt', 'completedAt', 'duration')}
+                       for job in history['jobs'] for step in job['steps']],
+        }), flush=True)
         return run, history
 
     def test_create_and_lost_response_observation_never_duplicate_and_never_expose_bootstrap(self):
@@ -124,6 +136,52 @@ class UpCloudProviderNative(NativeTestCase):
         self.assertEqual(config['users'][0]['ssh_authorized_keys'], [self.public])
         self.create()
         self.assertEqual(len(self.create_documents), 1)
+        self.assert_private_absent()
+
+    def test_new_server_maintenance_without_address_waits_until_started_without_duplicate_mutation(self):
+        self.address_only_when_started = True
+        self.detail_states = ['maintenance', 'maintenance', 'started']
+        run, history = self.create()
+        self.assertEqual(run['status'], 'succeeded')
+        self.assertEqual(len(self.create_documents), 1)
+        self.assertFalse(any(path.endswith('/start') for method, path in self.calls if method == 'POST'))
+        self.assertGreaterEqual(sum(method == 'GET' and '?label=' not in path and not path.endswith('/plan') for method, path in self.calls), 3)
+        self.assertEqual(history['jobs'][0]['steps'][-1]['outputs']['running'], True)
+        self.assert_private_absent()
+
+    def test_server_disappearing_during_start_poll_fails_without_another_read_or_write(self):
+        self.detail_states = ['maintenance', 'missing']
+        run, history = self.create(False)
+        self.assertEqual(run['status'], 'failed')
+        self.assertEqual(len(self.create_documents), 1)
+        self.assertFalse(any(path.endswith('/start') for method, path in self.calls if method == 'POST'))
+        self.assertEqual(sum(method == 'GET' and path == '/1.3/server/' + self.provider_id for method, path in self.calls), 2)
+        self.assertEqual(next(step for step in history['jobs'][0]['steps'] if step['name'] == 'observe')['status'], 'failed')
+        self.assert_private_absent()
+
+    def test_bad_start_state_fails_without_another_create_or_start(self):
+        self.detail_states = ['maintenance', 'error']
+        run, history = self.create(False)
+        self.assertEqual(run['status'], 'failed')
+        self.assertEqual(len(self.create_documents), 1)
+        self.assertFalse(any(path.endswith('/start') for method, path in self.calls if method == 'POST'))
+        self.assertEqual(next(step for step in history['jobs'][0]['steps'] if step['name'] == 'observe')['status'], 'failed')
+        self.assert_private_absent()
+
+    def test_start_phase_timeout_fails_without_retrying_the_mutation(self):
+        self.detail_states = ['maintenance']
+        path = self.repo / 'workflows/workflow-task-vm-provider-upcloud.yaml'
+        source = path.read_text()
+        self.assertEqual(source.count('timeout 240 '), 1, 'The shortened fixture phase must replace its real bound exactly once')
+        path.write_text(source.replace('timeout 240 ', 'timeout 1 '))
+        run, history = self.create(False)
+        self.assertEqual(run['status'], 'failed')
+        self.assertEqual(len(self.create_documents), 1)
+        self.assertFalse(any(path.endswith('/start') for method, path in self.calls if method == 'POST'))
+        phase = next(step for step in history['jobs'][0]['steps'] if step['name'] == 'observe')
+        self.assertEqual(phase['status'], 'failed')
+        self.assertRegex(phase['error'], r'\bcode 124\b')
+        print('UPCLOUD-TIMEOUT-BOUNDARY ' + json.dumps({'run_id': run['id'], 'phase': phase['name'], 'duration_ms': phase['duration'], 'error': phase['error'], 'fixture_phase_seconds': 1, 'harness_seconds': self.native_timeout}), flush=True)
         self.assert_private_absent()
 
     def test_foreign_label_refuses_before_create_or_power(self):

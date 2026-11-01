@@ -1,0 +1,98 @@
+{
+  "observed_at": "2026-11-01T15:20:11.227919+00:00",
+  "kind": "task_vm.provision",
+  "scope": "Source-only derived-budget audit; no paid provider, credentials, admission or history measurement",
+  "status": "approved_legacy_ceiling_derivation",
+  "explicit_run_budget_seconds": 3900,
+  "derivation_label": "derived from legacy UpCloud phase ceilings; not a native-history measurement",
+  "formula": "375 + 600 + 1500 + 900 = 3375; F-approved budget 3900 includes 525 seconds of headroom",
+  "provider_phase_timeouts_seconds": {
+    "list": 15,
+    "plans": 15,
+    "create": 45,
+    "discover": 15,
+    "inspect": 15,
+    "start": 15,
+    "observe": 240
+  },
+  "provider_parallel_phases": [
+    "list",
+    "plans"
+  ],
+  "provider_literal_critical_path_seconds": 345,
+  "provider_approved_allowance_seconds": 375,
+  "ssh_preparation_approved_allowance_seconds": 600,
+  "queue_source_inventory": {
+    "operation-task-vm-provision": {
+      "steps": 2,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": null
+    },
+    "task-vm-provision": {
+      "steps": 9,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": null
+    },
+    "task-vm-provider-upcloud": {
+      "steps": 12,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": 10
+    },
+    "task-vm-enrollment": {
+      "steps": 52,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": null
+    },
+    "task-vm-ssh-prepare": {
+      "steps": 12,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": null
+    },
+    "task-vm-model-issue": {
+      "steps": 8,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": null
+    },
+    "task-vm-runtime": {
+      "steps": 24,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": null
+    },
+    "task-vm-model-revoke": {
+      "steps": 8,
+      "calls": 1,
+      "workflow_queue_timeout_seconds": null
+    },
+    "task-vm-provider-power": {
+      "steps": 11,
+      "calls": 3,
+      "workflow_queue_timeout_seconds": null
+    }
+  },
+  "serve_ceiling": {
+    "seconds": 5400,
+    "value": "90m",
+    "authority": "F current budget decision",
+    "budget_fits": true,
+    "headroom_seconds": 1500,
+    "config_changed": false
+  },
+  "removal_condition": "replace with history \u00d7 1.5 once UpCloud provisions succeed",
+  "native_history_measurement": false,
+  "new_admissions": 0,
+  "live_helper_invoked": false,
+  "legacy_phase_ceiling_seconds": {
+    "provider": 375,
+    "ssh_preparation": 600,
+    "enrollment": 1500,
+    "rollback": 900
+  },
+  "legacy_ceiling_sum_seconds": 3375,
+  "headroom_seconds": 525,
+  "follow_ups": [
+    "The 1500/900 values were legacy Gateway job ceilings, not enforced literal bounds on the current enrollment and rollback native phases.",
+    "SSH preparation currently has seven 180-second client bounds plus a 30-second verification bound; its approved 600-second aggregate allowance is not enforced by those independent client bounds.",
+    "Enrollment/runtime effects include SSH calls without explicit phase timeouts.",
+    "160 steps times 10 seconds was a planning queue reserve; most child workflows do not yet declare that queueTimeout."
+  ]
+}

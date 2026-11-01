@@ -118,7 +118,7 @@ const Intent = z.object({
 }).passthrough();
 export const behavior = {
     type: "@nckrtl/task-vm-sweep-input",
-    version: "2026.11.01.1",
+    version: "2026.11.01.5",
     resources: {
         assets: {
             lifetime: "infinite",

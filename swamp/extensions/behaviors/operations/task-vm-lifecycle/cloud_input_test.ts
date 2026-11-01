@@ -181,3 +181,30 @@ Deno.test("cloud UUID and owner are proven by detail after label-less discovery"
         cloudObservation(intent, JSON.stringify({ server: listed }), uuid)
     );
 });
+
+Deno.test("pre-start observation may lack an address but settled receipt requires one", () => {
+    const pending = {
+        ...row(),
+        state: "maintenance",
+        ip_addresses: { ip_address: [] },
+    };
+    assertEquals(
+        cloudObservation(intent, JSON.stringify({ server: pending }), uuid)
+            .address,
+        null,
+    );
+    assertThrows(() =>
+        cloudResult(intent, JSON.stringify({ server: pending }), uuid)
+    );
+    assertThrows(() =>
+        cloudResult(
+            intent,
+            JSON.stringify({ server: { ...pending, state: "started" } }),
+            uuid,
+        )
+    );
+    assertEquals(
+        cloudResult(intent, JSON.stringify({ server: row() }), uuid).address,
+        "93.184.216.34",
+    );
+});

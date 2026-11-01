@@ -15,7 +15,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
-    version: "2026.11.01.3",
+    version: "2026.11.01.7",
     resources: {
         api_assets: {
             lifetime: "infinite",
@@ -63,7 +63,7 @@ export const behavior = {
                 "Resolve the canonical UpCloud API library on this worker",
             arguments: z.object({}).strict(),
             async execute(_args: Record<string, never>, ctx: Context) {
-                const path = ctx.extensionFile("scripts/upcloud.py");
+                const path = ctx.extensionFile("scripts/upcloud_api.py");
                 return {
                     dataHandles: [
                         await ctx.writeResource("api_assets", "api_assets", {
@@ -147,7 +147,7 @@ export const behavior = {
                     dataHandles: [
                         await ctx.writeResource("input", "input", {
                             input_json: JSON.stringify({ ...intent, action }),
-                            script: ctx.extensionFile("scripts/upcloud.py"),
+                            script: ctx.extensionFile("scripts/upcloud_api.py"),
                             observe_argv: [
                                 ...prefix,
                                 "list",

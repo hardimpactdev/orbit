@@ -47,6 +47,10 @@ final class OperationRunBudgets
         'node.role_add' => 2700,
         'task_vm.destroy' => 2700,
         'task_vm.image_build' => 2400,
+        // F-approved legacy ceilings: 375 s provider + 600 s SSH + 1500 s enrollment + 900 s rollback = 3375 s.
+        // 3900 s covers that path below serve's 5400 s ceiling; missing SSH phase bounds are a follow-up.
+        // Replace with history x 1.5 once UpCloud provisions succeed.
+        'task_vm.provision' => 3900,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,

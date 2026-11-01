@@ -94,7 +94,7 @@ export function cloudObservation(
             uuid: z.uuid(),
             title: z.string(),
             hostname: z.string(),
-            state: z.enum(["started", "stopped"]),
+            state: z.enum(["started", "stopped", "maintenance"]),
             labels: z.object({
                 label: z.array(
                     z.object({ key: z.string(), value: z.string() }),
@@ -124,12 +124,17 @@ export function cloudObservation(
     const addresses = row.ip_addresses.ip_address.filter((v) =>
         v.access === "public" && v.family === "IPv4"
     );
-    if (addresses.length !== 1) {
+    if (
+        addresses.length !== 1 &&
+        !(row.state !== "started" && addresses.length === 0)
+    ) {
         throw new Error("task_vm.provider_identity_invalid");
     }
     const observed = {
         provider_id: row.uuid,
-        address: z.ipv4().parse(addresses[0].address),
+        address: addresses.length === 0
+            ? null
+            : z.ipv4().parse(addresses[0].address),
         image_fingerprint: intent.image_fingerprint,
         state: row.state,
         storage_tier: null,
@@ -153,7 +158,7 @@ export function cloudResult(raw: unknown, stdout: string, providerId: string) {
 /** Public intent, a shipped script path and a typed provider receipt only. */
 export const behavior = {
     type: "@nckrtl/task-vm-cloud-input",
-    version: "2026.11.01.2",
+    version: "2026.11.01.5",
     resources: {
         choice: {
             schema: z.object({
@@ -168,7 +173,7 @@ export const behavior = {
         observation: {
             schema: z.object({
                 provider_id: z.uuid(),
-                address: z.ipv4(),
+                address: z.ipv4().nullable(),
                 image_fingerprint: z.string(),
                 state: z.string(),
                 storage_tier: z.null(),
@@ -178,7 +183,11 @@ export const behavior = {
             garbageCollection: 10,
         },
         input: {
-            schema: z.object({ input_json: z.string(), script: z.string() }),
+            schema: z.object({
+                input_json: z.string(),
+                script: z.string(),
+                wait_script: z.string(),
+            }),
             lifetime: "infinite",
             garbageCollection: 10,
         },
@@ -254,6 +263,9 @@ export const behavior = {
                             ),
                             script: ctx.extensionFile(
                                 "scripts/upcloud_create.py",
+                            ),
+                            wait_script: ctx.extensionFile(
+                                "scripts/upcloud.py",
                             ),
                         }),
                     ],
