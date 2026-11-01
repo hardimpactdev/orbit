@@ -12,17 +12,16 @@ final readonly class OperationRunBudgets
 {
     private const int DefaultSeconds = 300;
 
-    /** A number is a fixed budget; a field name selects a server-captured admission budget. */
     /**
-     * Fixed budgets are the 14-day p95 of successful runs, rounded up to the next five minutes (F8).
-     * Kinds without a successful run carry a provisional value until one is measured.
+     * A number is a fixed budget; a field name selects a server-captured admission budget. Fixed budgets are the
+     * 14-day p95 of successful runs, rounded up to the next five minutes. A kind without a successful run carries a
+     * marked provisional value until one is measured.
      */
     private const array SecondsByKind = [
         'instance.create' => 'run_budget_seconds',
         'certificate.converge' => 1200,
         'cluster.router_set' => 2700, // provisional: no successful run yet
         'cluster.router_unset' => 2700, // provisional: no successful run yet
-        'node.add' => 4500,
         'node.converge' => 3900,
         'node.network_converge' => 1500,
         'node.prepare_php_packages' => 3600,
