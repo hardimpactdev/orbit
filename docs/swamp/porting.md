@@ -23,7 +23,7 @@ A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` 
 
 Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
-Never use production serve or a 209 login for a port. A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even under a "retire" or "remove" title (#2257, #2259). A change only to Gateway files, even one that changes a public projection, needs Gateway tests that fail without it, a docs update and lane 26 review, not a topology run. Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so. Each kind keeps a [proof file](#test-layout).
+Never use production serve or a 209 login for a port. A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even under a "retire" or "remove" title (#2257, #2259). So does a Gateway change to a kind's admission, intent or workflow inputs, vault pushes, token minting, signing or terminal projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and lane 26 review. Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so. Each kind keeps a [proof file](#test-layout).
 
 ### Translate a legacy command
 
