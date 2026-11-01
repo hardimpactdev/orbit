@@ -129,3 +129,44 @@ it('rejects a candidate for another actual Node before rendering any footprint',
         ->toThrow(ResourceOperationException::class, 'The footprint candidate must name the actual reserved Node.');
     expect(app(RouteRenderContext::class)->nodeId())->toBeNull();
 });
+
+it('captures peer DNS for a provisional planned-role Node before its public key is prepared', function (): void {
+    FleetFixtures::node('pending-peer-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('pending-peer', [RoleName::Database], managed: false, status: LifecycleStatus::Provisioning);
+    $node->roles()->update(['status' => LifecycleStatus::Provisioning]);
+    $node->update(['architecture' => null, 'wireguard_ip' => null, 'wireguard_public_key' => null]);
+    $before = $node->fresh()->getAttributes();
+    $rolesBefore = $node->roles()->get()->toArray();
+    $capture = app(NodeConvergeInput::class)->captureFootprint($node, footprintCandidate($node, ['architecture' => null]));
+    $peer = collect($capture['artifacts'])->firstWhere('name', 'peer-dns');
+
+    expect($peer)->not->toBeNull()
+        ->and($peer['digest'])->toMatch('/\A[0-9a-f]{64}\z/D')
+        ->and($capture['network']['peer_dns'])->toBe(['dns_server' => '10.44.0.200', 'public_key' => null, 'domains' => ['next.internal', 'orbit']])
+        ->and($capture['refusal'])->toBeNull()
+        ->and(app(PeerDnsPolicy::class)->manages($node))->toBeFalse()
+        ->and(app(NodeFootprint::class)->expected($node)->artifacts)->not->toHaveKey('peer-dns')
+        ->and($node->fresh()->getAttributes())->toBe($before)
+        ->and($node->roles()->get()->toArray())->toBe($rolesBefore);
+});
+
+it('limits pending peer DNS eligibility to its own Linux candidate and real peer roles', function (): void {
+    $node = FleetFixtures::node('scoped-peer', [RoleName::Database], managed: false, status: LifecycleStatus::Provisioning);
+    $other = FleetFixtures::node('unrelated-peer', [RoleName::Database], managed: false, status: LifecycleStatus::Provisioning);
+    $roleless = FleetFixtures::node('scoped-roleless', managed: false, status: LifecycleStatus::Provisioning);
+    $vpn = FleetFixtures::node('scoped-vpn', [RoleName::Vpn], managed: false, status: LifecycleStatus::Provisioning);
+    $gateway = FleetFixtures::node('scoped-gateway', [RoleName::Gateway], managed: false, status: LifecycleStatus::Provisioning);
+    $context = app(RouteRenderContext::class);
+    $policy = app(PeerDnsPolicy::class);
+    $context->renderEnrollment(footprintCandidate($node), function () use ($node, $other, $roleless, $vpn, $gateway, $context, $policy): void {
+        expect($policy->manages($node))->toBeTrue()->and($policy->manages($other))->toBeFalse();
+        $context->renderEnrollment(footprintCandidate($node, ['platform' => 'macos']),
+            fn () => expect($policy->manages($node))->toBeFalse());
+        foreach ([$roleless, $vpn, $gateway] as $excluded) {
+            $context->renderEnrollment(footprintCandidate($excluded),
+                fn () => expect($policy->manages($excluded))->toBeFalse());
+        }
+        expect($policy->manages($node))->toBeTrue();
+    });
+    expect($policy->manages($node))->toBeFalse();
+});

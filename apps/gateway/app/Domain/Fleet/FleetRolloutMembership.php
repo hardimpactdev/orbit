@@ -6,8 +6,10 @@ namespace App\Domain\Fleet;
 
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\TaskVm;
@@ -106,30 +108,36 @@ final readonly class FleetRolloutMembership
 
     /**
      * Why the rollout leaves the Node out, or null when it is in the rollout set.
+     * An enrollment candidate captures desired CLI input before native verification;
+     * fleet selection always uses the stored Node without this argument.
      *
      * @return 'sandbox'|'inactive'|'platform'|'unmanaged'|'gateway'|'roleless'|'foreign_cli'|null
      */
-    public function exclusion(Node $node): ?string
+    public function exclusion(Node $node, ?NodeEnrollmentCandidate $candidate = null): ?string
     {
+        if ($candidate !== null && $candidate->nodeId !== $node->id) {
+            throw new ResourceOperationException('node.cli_input_invalid', 'The CLI candidate must name the actual reserved Node.', 422);
+        }
         if (TaskVm::forNode($node) instanceof TaskVm) {
             return 'sandbox';
         }
 
-        if ($node->status !== LifecycleStatus::Active) {
+        if ($candidate === null && $node->status !== LifecycleStatus::Active) {
             return 'inactive';
         }
 
-        if ($node->platform !== 'linux') {
+        if (($candidate === null ? $node->platform : $candidate->platform) !== 'linux') {
             return 'platform';
         }
 
-        if (! $this->eligibility->allows($node)) {
+        if ($candidate === null && ! $this->eligibility->allows($node)) {
             return 'unmanaged';
         }
 
         $roles = $node->roles;
 
-        if ($roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::Gateway) || $this->servingHost->is($node)) {
+        $serving = $candidate === null ? $this->servingHost->is($node) : $this->servingHost->nodeId() === $node->id;
+        if ($roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::Gateway) || $serving) {
             return 'gateway';
         }
 

@@ -23,14 +23,17 @@ final readonly class PeerDnsPolicy
 
     public function manages(Node $node): bool
     {
-        return $node->platform === 'linux'
-            && $node->status === LifecycleStatus::Active
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        $admitted = $candidate?->nodeId === $node->id;
+
+        return ($admitted ? $candidate->platform : $node->platform) === 'linux'
             && $node->roles->isNotEmpty()
             && ! $node->roles->contains('role', RoleName::Vpn)
             && ! $node->roles->contains('role', RoleName::Gateway)
-            && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
-            && is_string($node->wireguard_public_key) && $node->wireguard_public_key !== ''
-            && is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '';
+            && ($admitted || ($node->status === LifecycleStatus::Active
+                && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
+                && is_string($node->wireguard_public_key) && $node->wireguard_public_key !== ''
+                && is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== ''));
     }
 
     public function server(Node $node, ?string $vpnAddress = null): string
