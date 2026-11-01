@@ -557,14 +557,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/firewall/inspection.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/cli_install_program.ts",
       "rule": "custom-control",
       "count": 5,

@@ -1,12 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import {
-  DirectArgs,
-  directOperation,
-  DirectOperationCancelled,
-  GatewayOperation,
-  Globals,
-} from "../_lib/direct.ts";
+import { DirectOperationCancelled } from "../_lib/direct.ts";
 import {
   readRuntime,
   runtimeReadProgram,
@@ -14,12 +7,9 @@ import {
 import { FirewallProgram } from "../routes/firewall-program.ts";
 import { type NodeCommand, run } from "../_lib/node-commands.ts";
 
+// Retained Route-convergence helper only; firewall.inspect uses inspection-result.ts.
 const ResultLimit = 256 * 1024;
 const RowLimit = 512;
-const Args = DirectArgs.extend({
-  kind: z.literal("firewall.inspect"),
-  node_id: z.number().int().positive(),
-});
 const Shape = z.object({
   comment: z.string(),
   action: z.enum(["allow", "deny"]),
@@ -37,14 +27,6 @@ const Snapshot = z.object({
   live: z.array(Shape).max(RowLimit),
   observed_at: z.iso.datetime(),
 }).strict();
-const Refusal = z.object({
-  error_code: z.enum([
-    "firewall.inspection_too_large",
-    "firewall.inspection_unavailable",
-  ]),
-}).strict();
-const Outcome = z.union([Snapshot, Refusal]);
-type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 type Local = (argv: string[], signal?: AbortSignal) => Promise<string>;
 class InspectionTooLarge extends Error {
   constructor() {
@@ -136,37 +118,3 @@ export async function inspectFirewall(
   }
 }
 
-export function firewallInspection(
-  makeHttp = (ctx: Context) =>
-    gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  local: Local = lockedFirewallLocal,
-) {
-  return {
-    type: "@nckrtl/firewall-inspection",
-    version: "2026.10.31.1",
-    globalArguments: Globals,
-    methods: {
-      inspect: {
-        description:
-          "Inspect the admitted Node's live firewall under its writer lock",
-        arguments: Args,
-        execute: async (args: z.infer<typeof Args>, ctx: Context) =>
-          await directOperation(
-            args,
-            new GatewayOperation(makeHttp(ctx), args),
-            (raw) => {
-              const input = z.object({ node_id: z.literal(args.node_id) })
-                .strict().parse(raw);
-              if (input.node_id !== args.node_id) {
-                throw new Error("firewall.inspection_unavailable");
-              }
-              return inspectFirewall(local, ctx.signal);
-            },
-            (result) => Outcome.parse(result),
-            ctx.signal,
-          ),
-      },
-    },
-  };
-}
-export const behavior = firewallInspection();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Firewall;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -23,6 +24,6 @@ final readonly class StartFirewallInspectionAction
         app(DirectOperation::class)->writer('firewall.inspect');
 
         return $this->operations->execute('firewall.inspect', 'node_firewall', $node->id, $node->id,
-            ['node_id' => $node->id, 'caller_node_id' => $caller?->id], 'operator', $requestId);
+            ['node_id' => $node->id, 'caller_node_id' => $caller?->id, 'intent' => app(FirewallInspectionInput::class)->capture($node)], 'operator', $requestId);
     }
 }

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -14,7 +15,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 beforeEach(function (): void {
     $gateway = Node::query()->create(['name' => 'inspection-gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
-    $this->node = Node::query()->create(['name' => 'inspection-node', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'status' => 'active']);
+    $this->node = Node::query()->create(['name' => 'inspection-node', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB', 'status' => 'active']);
     $this->node->accessibleNodes()->attach($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->agents = new FakeAgentCommandRunner;
@@ -30,7 +31,7 @@ beforeEach(function (): void {
 function firewall_inspection_operation(Node $node, string $runId, array $result = [], string $status = 'running'): Operation
 {
     return Operation::query()->create(['kind' => 'firewall.inspect', 'target_type' => 'node_firewall', 'target_id' => $node->id,
-        'node_id' => $node->id, 'status' => $status, 'input' => ['node_id' => $node->id], 'result' => $result,
+        'node_id' => $node->id, 'status' => $status, 'input' => ['node_id' => $node->id, 'intent' => app(FirewallInspectionInput::class)->capture($node)], 'result' => $result,
         'state' => ['swamp_run_id' => $runId]]);
 }
 
@@ -42,18 +43,23 @@ it('starts one placed native inspection without reading the agent or changing na
 
     $response->assertAccepted()->assertJsonPath('data.kind', 'firewall.inspect');
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect($operation->input)->toBe(['node_id' => $this->node->id, 'caller_node_id' => $this->node->id])
+    expect($operation->input['intent']['ssh']['target']['host'])->toBe($this->node->wireguard_ip)
+        ->and($operation->input['intent']['ssh']['target']['host_keys'])->toBe(['ssh-ed25519 '.$this->node->ssh_host_key])
+        ->and($operation->input['intent']['expected'])->not->toBeEmpty()
         ->and($operation->state['swamp_run_id'])->toBe($this->runId)
         ->and($this->agents->calls)->toBe([])
         ->and($this->socket->sent)->toHaveCount(1)
+        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['intent'])
+        ->and(json_encode($this->socket->sent[0]['payload']['inputs']['execution_secrets']))->toBe('{}')
         ->and($this->node->firewallRules()->count())->toBe(0);
 });
 
 it('projects only typed public snapshot fields and reads them without queuing work', function (): void {
     $operation = firewall_inspection_operation($this->node, $this->runId);
     $path = '/api/v1/direct-operations/'.$operation->id;
+    $view = ['name' => 'unmanaged-web', 'comment' => 'unmanaged-web', 'action' => 'allow', 'source' => '192.0.2.5', 'destination' => 'any', 'port' => '443', 'protocol' => 'tcp', 'interface' => null, 'family' => 'v4', 'match' => 'unmanaged'];
     $body = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T10:00:00.000Z', 'finished_at' => '2026-10-31T10:00:01.000Z',
-        'result' => ['backend' => 'active', 'observed_at' => '2026-10-31T10:00:01.000Z', 'live' => [[...$this->shape, 'private' => 'sentinel-private']], 'password' => 'sentinel-private']];
+        'result' => ['backend' => 'active', 'observed_at' => '2026-10-31T10:00:01.000Z', 'live' => [[...$this->shape, 'private' => 'sentinel-private']], 'password' => 'sentinel-private', 'comparison' => ['live' => [[...$view, 'private' => 'sentinel-private']], 'missing' => []]]];
     $this->postJson($path.'/result', $body)->assertOk()->assertJsonMissing(['password' => 'sentinel-private']);
     $this->postJson($path.'/result', $body)->assertOk();
 
@@ -81,7 +87,7 @@ it('does not hide a newer failed inspection behind an older successful snapshot'
 });
 
 it('keeps backend state and observation time for an inactive native snapshot', function (): void {
-    firewall_inspection_operation($this->node, $this->runId, ['backend' => 'inactive', 'observed_at' => '2026-10-31T10:00:01.000Z', 'live' => []], 'succeeded');
+    firewall_inspection_operation($this->node, $this->runId, ['backend' => 'inactive', 'observed_at' => '2026-10-31T10:00:01.000Z', 'live' => [], 'comparison' => ['live' => [], 'missing' => []]], 'succeeded');
 
     $this->getJson('/api/v1/nodes/'.$this->node->id.'/live-firewall-rules')->assertOk()
         ->assertJsonPath('data.backend_status', 'inactive')->assertJsonPath('data.observed_at', '2026-10-31T10:00:01.000Z')->assertJsonPath('data.live', []);
@@ -105,4 +111,11 @@ it('preserves the explicit native size refusal without recording a partial snaps
     ])->assertOk();
     expect($operation->fresh()->error_code)->toBe('firewall.inspection_too_large')
         ->and($operation->fresh()->result)->toBe(['error_code' => 'firewall.inspection_too_large']);
+});
+
+it('refuses missing stored host pins before admitting any native work', function (): void {
+    $this->node->update(['ssh_host_key' => null]);
+    $this->postJson('/api/v1/nodes/'.$this->node->id.'/firewall-inspection')->assertStatus(503)
+        ->assertJsonPath('error.code', 'swamp.ssh_target_unavailable');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 });
