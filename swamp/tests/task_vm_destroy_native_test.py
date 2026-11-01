@@ -1,12 +1,14 @@
 """Actual Incus power + canonical Node-removal graphs; model HTTP is a public fixture seam."""
 import json
+import os
+import pwd
+import runpy
 import shutil
-import sys
 import uuid
-
-import yaml
+from pathlib import Path
 
 import task_vm_lifecycle_native_test as lifecycle
+import yaml
 from native_harness import ROOT
 
 
@@ -81,6 +83,35 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         deleted=next(i for i,call in enumerate(calls) if 'delete' in call.get('argv',[]))
         self.assertLess(revoked,deleted)
         self.assertTrue(all('/usr/bin/incus' in call['argv'] for call in calls if 'argv' in call))
+
+    def test_tasks_cancel_destroys_the_owned_vm_club_file_and_preserves_other_guests(self):
+        delivery = runpy.run_path(str(ROOT / 'extensions/behaviors/operations/task-repository/scripts/proof_club.py'))
+        self.assertEqual(delivery['DESTINATION'], Path('/home/orbit/.config/swamp/club-api-key'))
+        material = os.urandom(32).hex().encode()
+        credential = self.guest / delivery['DESTINATION'].relative_to('/home/orbit')
+        delivery['store'](material, pwd.getpwuid(os.getuid()).pw_name, credential)
+        self.assertEqual(credential.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(credential.stat().st_uid, os.getuid())
+        other = self.repo / 'other-guest/.config/swamp/club-api-key'
+        other.parent.mkdir(parents=True)
+        other.write_bytes(b'other-guest-owned-material')
+
+        # The provider fixture deletes its backing guest filesystem only on the real Incus delete command.
+        ssh = self.repo / 'ssh'
+        source = ssh.read_text().replace('import json,shlex,subprocess,sys', 'import json,shlex,shutil,subprocess,sys')
+        before = "elif action=='delete':value['exists']=False"
+        self.assertIn(before, source)
+        source = source.replace(before, "elif action=='delete':\n                value['exists']=False\n                shutil.rmtree(" + repr(str(self.guest)) + ")")
+        ssh.write_text(source)
+
+        self.envelope['intent']['removal']['task_vm_guest'] = True
+        self.assert_ending_parent('tasks.cancel')
+        self.assertFalse(credential.exists())
+        self.assertFalse(self.guest.exists())
+        self.assertEqual(other.read_bytes(), b'other-guest-owned-material')
+        # The private guest file was legitimate until deletion; now all retained history/data must be clean.
+        self.secrets = (material.decode(),)
+        self.assert_private_absent()
 
     def test_absence_still_requires_model_and_node_cleanup(self):
         self.state.write_text(json.dumps({'status':'Stopped','exists':False,'volumes':['tvm-42-topology-seed','tvm-43-topology-seed']}))

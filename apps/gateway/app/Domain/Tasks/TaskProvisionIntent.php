@@ -65,7 +65,7 @@ final readonly class TaskProvisionIntent
             if ($project->task_workspace_routed || $project->processDefinitions()->exists() || $project->scheduleDefinitions()->exists()) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace publication and runtime definitions need their native parent steps.', 503);
             }
-            $proof = $project->id === 62 && $project->slug === 'swamp-proof';
+            $proof = $project->id === 62;
             $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
             if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
                 throw new ResourceOperationException('tasks.proof_credential_unavailable', 'The proof Project requires its Gateway-held sandbox club credential before placement.', 503);
