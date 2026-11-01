@@ -1,12 +1,12 @@
 manifestVersion: 1
 name: "@nckrtl/node-worker-assets"
-version: 2026.10.31.4
+version: 2026.11.01.1
 visibility: private
 license: MIT
 description: Public worker unit and script assets for the sole Swamp Node209.
 behaviors:
   - operations/node-worker-assets/assets.ts
 additionalFiles:
-  - operations/node-worker-assets/scripts/write_known_hosts.py
-  - operations/node-worker-assets/scripts/preflight.py
-  - operations/node-worker-assets/scripts/worker_check.py
+  - scripts/write_known_hosts.py
+  - scripts/preflight.py
+  - scripts/worker_check.py
