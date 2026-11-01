@@ -48,7 +48,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: exec
-      globalArgs: &id002
+      globalArgs: &id001
         name: ${{ inputs.ssh.name }}
         transport: ${{ inputs.ssh.transport }}
         hosts: ${{ inputs.ssh.hosts }}
@@ -73,7 +73,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: copy
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         src: ${{ steps.assets.outputs.scripts_directory }}
@@ -95,7 +95,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -134,12 +134,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign-" + run.id }}'
+      behaviorName: ${{ "certificate-sign-" + run.id }}
       methodName: execute
       inputs:
-        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
+        run: /usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"
         env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps.assets.outputs.scripts_directory + "/sign.py" }}'
+          ORBIT_CERTIFICATE_SIGN_SCRIPT: ${{ steps.assets.outputs.scripts_directory + "/sign.py" }}
           ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
           ORBIT_CERTIFICATE_RUN_ID: ${{ inputs.parent_run_id }}
           ORBIT_CERTIFICATE_MODE: single
@@ -170,6 +170,35 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
+  - name: verify-pair
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ inputs.ssh.name }}
+      methodName: exec
+      globalArgs:
+        name: ${{ inputs.ssh.name }}
+        transport: ${{ inputs.ssh.transport }}
+        hosts: ${{ inputs.ssh.hosts }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
+        - ${{ "ORBIT_CERTIFICATE_SIGNED=" + steps["signed-info"].outputs.signed_json }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_verify.py" }}
+        sudo: true
+    dependsOn:
+    - step: signed-info
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
   - name: publish
     target: orbit-node-209
     writes: true
@@ -178,7 +207,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -190,12 +219,9 @@ jobs:
         - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_publish.py" }}
         sudo: true
     dependsOn:
-    - step: signed-info
+    - step: verify-pair
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: succeeded
   - name: activate
     target: orbit-node-209
     writes: true
@@ -204,7 +230,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -216,6 +242,31 @@ jobs:
     - step: publish
       condition:
         type: succeeded
+  - name: cleanup-key
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ inputs.ssh.name }}
+      methodName: exec
+      globalArgs:
+        name: ${{ inputs.ssh.name }}
+        transport: ${{ inputs.ssh.transport }}
+        hosts: ${{ inputs.ssh.hosts }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_cleanup.py" }}
+        sudo: true
+    dependsOn:
+    - step: activate
+      condition:
+        type: succeeded
   - name: cleanup-assets
     target: orbit-node-209
     writes: true
@@ -224,7 +275,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ inputs.ssh.name }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -232,7 +283,7 @@ jobs:
         - -rf
         - ${{ "/tmp/orbit-role-certificate-" + run.id }}
     dependsOn:
-    - step: activate
+    - step: cleanup-key
       condition:
         type: succeeded
   - name: result

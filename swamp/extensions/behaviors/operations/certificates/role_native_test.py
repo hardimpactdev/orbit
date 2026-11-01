@@ -100,24 +100,26 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
                 "/tmp/orbit-role-certificate-", str(self.fixture / "role-staging-")
             )
         )
-        self.globals = dict(
-            name="role-fixture",
-            sshBinary=str(fake),
-            transport=dict(
-                kind="ssh", user="orbit", identityFile=str(self.fixture / "identity")
-            ),
-            hosts=[
-                dict(
-                    name="target",
-                    address="fixture",
-                    transport=dict(
-                        hostKeys=[
+        self.globals = {
+            "name": "role-fixture",
+            "sshBinary": str(fake),
+            "transport": {
+                "kind": "ssh",
+                "user": "orbit",
+                "identityFile": str(self.fixture / "identity"),
+            },
+            "hosts": [
+                {
+                    "name": "target",
+                    "address": "fixture",
+                    "transport": {
+                        "hostKeys": [
                             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEV4aXN0aW5nUGlubmVkSG9zdElkZW50aXR5UHVibGlj"
                         ]
-                    ),
-                )
+                    },
+                }
             ],
-        )
+        }
         (self.fixture / "identity").write_text("synthetic identity never used")
         self.leaf = {
             k: v
@@ -180,32 +182,32 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
             step.pop("target")
             step.pop("labels", None)
         steps.append(
-            dict(
-                name="verify",
-                dependsOn=[dict(step="cert", condition=dict(type="succeeded"))],
-                task=dict(
-                    type="assert",
-                    expr='steps.cert.outputs.result.ready && steps.cert.outputs.result.node_id == 9 && steps.cert.outputs.result.scope == "role-metrics"',
-                    message="role child readiness",
-                    severity="high",
-                ),
-            )
+            {
+                "name": "verify",
+                "dependsOn": [{"step": "cert", "condition": {"type": "succeeded"}}],
+                "task": {
+                    "type": "assert",
+                    "expr": 'steps.cert.outputs.result.ready && steps.cert.outputs.result.node_id == 9 && steps.cert.outputs.result.scope == "role-metrics"',
+                    "message": "role child readiness",
+                    "severity": "high",
+                },
+            }
         )
-        parent = dict(
-            id="2a354750-5e1f-4a68-a950-bf8050ae3759",
-            name="role-parent-fixture",
-            inputs=dict(
-                type="object",
-                properties=dict(
-                    operation_id=dict(type="integer"),
-                    node_id=dict(type="integer"),
-                    kind=dict(type="string"),
-                    leaf=dict(type="object"),
-                    ssh=dict(type="object"),
-                ),
-            ),
-            jobs=[dict(name="parent", steps=steps)],
-        )
+        parent = {
+            "id": "2a354750-5e1f-4a68-a950-bf8050ae3759",
+            "name": "role-parent-fixture",
+            "inputs": {
+                "type": "object",
+                "properties": {
+                    "operation_id": {"type": "integer"},
+                    "node_id": {"type": "integer"},
+                    "kind": {"type": "string"},
+                    "leaf": {"type": "object"},
+                    "ssh": {"type": "object"},
+                },
+            },
+            "jobs": [{"name": "parent", "steps": steps}],
+        }
         (self.repo / "workflows/workflow-role-parent-fixture.yaml").write_text(
             yaml.safe_dump(parent, sort_keys=False)
         )
@@ -243,6 +245,10 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         self.assertEqual("failed", states["activate"])
         self.assertNotEqual("succeeded", states["result"])
         self.assertNotIn("restore", states)
+        self.assertNotEqual("succeeded", states["cleanup-key"])
+        pending = self.target / "role-keys" / self.leaf["scope"] / "fedcba9876543210"
+        self.assertTrue((pending / "key.pem").is_file())
+        self.assertTrue((pending / "cert.pem").is_file())
         return result
 
     def test_failed_activation_stays_failed_and_native_resume_retries_only_activation(
@@ -263,6 +269,11 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         )
         self.assertEqual("succeeded", resumed["status"])
         self.assertEqual(2, len(self.signs))
+        self.assertFalse(
+            (
+                self.target / "role-keys" / self.leaf["scope"] / "fedcba9876543210"
+            ).exists()
+        )
         self.assertEqual(pair, {p.name: p.read_bytes() for p in self.current.iterdir()})
 
     def test_fresh_admission_activates_current_pair_after_interrupted_activation(self):
