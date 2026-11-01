@@ -139,3 +139,61 @@ Deno.test("source result requires every ordered setup step before exposing the i
   });
   assertEquals("result_json" in receipt, false);
 });
+
+Deno.test("proof club descriptors never enter the canonical VM child input", async () => {
+  const { behavior } = await import("./provision.ts");
+  const resource: Record<string, unknown>[] = [];
+  await behavior.methods.vm_inputs.execute({
+    execution_secrets: {
+      proof_club: {
+        vault: "orbit-control-inputs",
+        key: "swamp-proof-club-api-key",
+      },
+      git_authorization: {
+        vault: "orbit-control-inputs",
+        key: "task-provision-git-10",
+      },
+      pi: { vault: "orbit-control-inputs", key: "task-vm-pi-token-10" },
+    },
+  }, {
+    extensionFile: () => "unused",
+    writeResource: (_spec, _name, value) => {
+      resource.push(value as Record<string, unknown>);
+      return Promise.resolve({});
+    },
+  });
+  assertEquals(resource, [{
+    execution_secrets: {
+      pi: { vault: "orbit-control-inputs", key: "task-vm-pi-token-10" },
+    },
+  }]);
+});
+
+Deno.test("proof provision requires private delivery before group readiness but preserves observed VM facts on refusal", () => {
+  const input = { ...intent, project_id: 62, proof_club_required: true };
+  const steps = {
+    vm: { status: "succeeded", outputs: { result: vm } },
+    guest: { status: "succeeded" },
+    source: {
+      status: "succeeded",
+      outputs: {
+        result: {
+          source: {
+            branch: "task-30",
+            commit: "a".repeat(40),
+            php_version: null,
+            laravel: false,
+          },
+          analysis_base: null,
+        },
+      },
+    },
+    proof_club: { status: "failed" },
+  };
+  const refused = result(input, steps);
+  assertEquals(refused.failed_step, "proof_club");
+  assertEquals(refused.ready, true); // VM facts only; error prevents successful group/source projection.
+  assertEquals("source" in refused, false);
+  steps.proof_club.status = "succeeded";
+  assertEquals(result(input, steps).error_code, undefined);
+});

@@ -30,7 +30,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|task-provision-git-[1-9][0-9]*)$
+            pattern: ^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|task-provision-git-[1-9][0-9]*|swamp-proof-club-api-key)$
         required:
         - vault
         - key
@@ -102,6 +102,44 @@ jobs:
         execution_secrets: '${{ "git_authorization" in inputs.execution_secrets ? {"git_authorization":inputs.execution_secrets.git_authorization}
           : {} }}'
         workspace: ${{ steps.guest.outputs.workspace }}
+  - name: proof_club
+    target: orbit-node-209
+    queueTimeout: 10
+    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || !has(inputs.execution_secrets.proof_club) }}
+    dependsOn:
+    - step: source
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-proof-club-"+run.id }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-proof-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '30'
+        - sudo
+        - -n
+        - python3
+        - -I
+        - -c
+        - ${{ steps.guest.outputs.proof_script }}
+        - ${{ inputs.intent.workspace.user }}
+        stdin: ${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}
   - name: shape_result
     target: orbit-node-209
     task:
@@ -120,6 +158,9 @@ jobs:
       condition:
         type: always
     - step: source
+      condition:
+        type: always
+    - step: proof_club
       condition:
         type: always
   - name: result
