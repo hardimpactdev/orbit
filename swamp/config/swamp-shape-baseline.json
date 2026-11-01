@@ -1233,24 +1233,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/processes-schedules/instance_native_support.py",
-      "rule": "ruff.E402",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/instance_native_support.py",
-      "rule": "ruff.F401",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/instance_native_support.py",
-      "rule": "ruff.I001",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
       "rule": "gateway-http",
       "count": 2,
