@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROLES = {"database", "ingress", "app-prod", "websocket"}
+ROLES = {"database", "ingress", "app-prod", "app-dev", "websocket"}
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -81,12 +81,12 @@ active('orbit-agent.service')
 for path in ['/etc/orbit/agent/config.toml','/etc/orbit/agent/ca.pem']:
  require(pathlib.Path(path).is_file(),'observer-public-file-missing')
 if role=='database':command(['/usr/bin/docker','--version'])
-if role in ['ingress','app-prod','websocket']:
+if role in ['ingress','app-prod','app-dev','websocket']:
  active('caddy.service')
  command(['/usr/bin/caddy','validate','--config','/etc/caddy/Caddyfile','--adapter','caddyfile'])
  expected=data['caddy_content']
  require(pathlib.Path('/etc/caddy/Caddyfile').read_text()==expected,'caddy-catalog-differs')
-if role=='app-prod':
+if role in ['app-prod','app-dev']:
  for version in intent['php']['versions']:
   command(['/usr/bin/php'+version,'--version'])
  command(['/usr/bin/composer','--version','--no-ansi'])
@@ -124,6 +124,11 @@ def role_certificate(intent):
         "root": str(directory / "root-ca.pem"),
         "root_hash": leaves[0]["root_hash"],
     }
+
+
+def target_node(role):
+    require(role in ROLES, "unsupported-role-variant")
+    return "app-dev" if role == "app-dev" else "app-prod"
 
 
 def target_publication(intent):
@@ -171,20 +176,20 @@ def main(role):
     # Keep the target check below argv limits; recipe archives and full public
     # admission plans are checked through the operator, not sent to the Node.
     target_intent = {key: intent[key] for key in ["role", "agent_sha256"]}
-    if role == "app-prod":
+    if role in ["app-prod", "app-dev"]:
         target_intent["php"] = {"versions": intent["php"]["versions"]}
     if role == "websocket":
         target_intent["runtime"] = {
             key: intent["runtime"][key] for key in ["install_path", "ref", "port"]
         }
     descriptor = {"intent": target_intent}
-    if role in ["ingress", "app-prod", "websocket"]:
+    if role in ["ingress", "app-prod", "app-dev", "websocket"]:
         descriptor["caddy_content"] = target_publication(intent)
     if role == "websocket":
         descriptor["certificate"] = role_certificate(intent)
     observed = topology_command(
         prefix,
-        "app-prod",
+        target_node(role),
         ["sudo", "-n", "python3", "-I", "-c", HOST_CHECK, json.dumps(descriptor)],
     )
     require(

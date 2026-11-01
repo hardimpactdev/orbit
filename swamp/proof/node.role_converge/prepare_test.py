@@ -56,6 +56,13 @@ class Preparation(unittest.TestCase):
         self.assertNotIn("node:role:remove", [call[0] for call in self.calls])
         self.assertNotIn("node:role:add", [call[0] for call in self.calls])
 
+    def test_existing_app_dev_assignment_needs_no_role_mutation(self):
+        self.role = "app-dev"
+        result = PREPARE.prepare("app-dev", 7, self.cli)
+        self.assertEqual(result, {"role": "app-dev", "node_id": 7, "assignment_id": 1})
+        self.assertNotIn("node:role:remove", [call[0] for call in self.calls])
+        self.assertNotIn("node:role:add", [call[0] for call in self.calls])
+
     def test_failed_removal_does_not_assign_target_role(self):
         self.failure = "remove"
         with self.assertRaisesRegex(ValueError, "prepare-role-removal-failed"):

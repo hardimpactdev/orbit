@@ -52,6 +52,22 @@ class RoleParity(unittest.TestCase):
             "result": self.result,
         }
 
+    def test_app_dev_uses_its_own_topology_node_and_real_cli(self):
+        fixture = json.loads((ROOT / "app-dev.json").read_text())
+        self.assertEqual(PARITY.target_node("app-dev"), "app-dev")
+        self.assertEqual(fixture["topology"], ["app-dev"])
+        self.assertEqual(fixture["request"]["argv"][2], "${topology.app-dev.node_id}")
+        self.assertEqual(fixture["request"]["argv"][3:5], ["app-dev", "--converge"])
+        self.assertEqual(
+            fixture["before_request"][0]["argv"][2],
+            "swamp/proof/node.role_converge/prepare.py",
+        )
+        self.assertEqual(fixture["budget_seconds"], 1800)
+        for role in ["database", "ingress", "app-prod", "websocket"]:
+            self.assertEqual(PARITY.target_node(role), "app-prod")
+        with self.assertRaisesRegex(ValueError, "unsupported-role-variant"):
+            PARITY.target_node("gateway")
+
     def test_valid_receipt_preserves_real_assignment(self):
         self.assertEqual(
             PARITY.public_receipt(self.operation, "database", self.result), self.intent
