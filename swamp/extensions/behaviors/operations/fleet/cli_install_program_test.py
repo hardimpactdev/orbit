@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-PROGRAM = Path(__file__).with_name('cli_install_program.ts').read_text().split('String.raw`', 1)[1].rsplit('`;', 1)[0]
+PROGRAM = (Path(__file__).parents[1] / 'fleet-recipe/scripts/cli.py').read_text()
 
 
 class CliInstallPolicy(unittest.TestCase):

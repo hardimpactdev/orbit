@@ -132,6 +132,8 @@ class RecipeNative(NativeTestCase):
         self.assertIn('node.private-dns-health',self.calls())
         self.assertNotIn('delivery',self.calls())
         self.assertIn('node.private-dns-restore',self.calls())
+        self.assertIn('/usr/bin/systemctl stop orbit-private-dns.service',self.calls())
+        self.assertIn('/usr/bin/systemctl disable orbit-private-dns.socket',self.calls())
 
     def test_refusal_before_first_host_effect(self):
         self.intent['footprint']['refusal']='node.footprint_failed'

@@ -35,7 +35,7 @@ const execute = async (
         throw new Error("Synthetic uncertain effect");
     }
     let result: unknown = { ready: true, changed: false };
-    if (command === "node.private-dns-validate") result = {ready: !state.dnsValidationInvalid, before:{commands:[],records:null,catalog:null}, ...(state.dnsValidationInvalid ? {error_code:"node.private_dns_invalid"} : {})};
+    if (command === "node.private-dns-validate") result = {ready: !state.dnsValidationInvalid, before:{commands:[["/usr/bin/systemctl","stop","orbit-private-dns.service"],["/usr/bin/systemctl","disable","orbit-private-dns.socket"]],records:null,catalog:null}, ...(state.dnsValidationInvalid ? {error_code:"node.private_dns_invalid"} : {})};
     else if (command === "node.private-dns-health") result = {ready: !state.dnsInvalid, ...(state.dnsInvalid ? {error_code:"node.private_dns_failed"} : {})};
     else if (command === "caddy-validation") result = { valid: !state.caddyInvalid };
     else if (command === "caddy-package") result = { caddy_installed: true };
