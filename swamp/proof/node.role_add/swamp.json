@@ -1,0 +1,118 @@
+{
+  "kind": "node.role_add",
+  "workflow": "operation-node-role-add-direct",
+  "topology": [
+    "spare"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [],
+  "request": {
+    "argv": [
+      "orbit",
+      "node:role:add",
+      "${topology.spare.node_id}",
+      "swamp",
+      "--idempotency-key=proof-swamp-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "node_id": "${topology.spare.node_id}",
+    "intent": {
+      "target": {
+        "node_id": "${topology.spare.node_id}",
+        "assignment_id": "${match.positive_int}",
+        "role": "swamp",
+        "created": true
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "ready": true,
+        "target_completed": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "account",
+      "job": "role",
+      "step": "account",
+      "budget_seconds": 30
+    },
+    {
+      "name": "install",
+      "job": "role",
+      "step": "install",
+      "budget_seconds": 330
+    },
+    {
+      "name": "checkout",
+      "job": "role",
+      "step": "checkout",
+      "budget_seconds": 30
+    },
+    {
+      "name": "configuration",
+      "job": "role",
+      "step": "configuration",
+      "budget_seconds": 30
+    },
+    {
+      "name": "release-load-install",
+      "job": "role",
+      "step": "release_load",
+      "budget_seconds": 90
+    },
+    {
+      "name": "units",
+      "job": "role",
+      "step": "units",
+      "budget_seconds": 30
+    },
+    {
+      "name": "firewall",
+      "job": "role",
+      "step": "firewall",
+      "budget_seconds": 30
+    },
+    {
+      "name": "activation",
+      "job": "role",
+      "step": "activation",
+      "budget_seconds": 120
+    },
+    {
+      "name": "verify",
+      "job": "role",
+      "step": "verify",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/node.role_add/swamp_parity.py"
+    ],
+    "cases": [
+      "recorded-singleton-assignment",
+      "official-binary-pin",
+      "serve-worker-and-tls-units",
+      "tls-pair-custody",
+      "separate-native-state",
+      "canonical-release-load-entry"
+    ]
+  },
+  "limitations": [
+    "source-only: Gateway role registration/admission and target publication integration pending; not a runnable receipt yet",
+    "prepared checkout and Gateway credential/certificate delivery required before activation"
+  ]
+}

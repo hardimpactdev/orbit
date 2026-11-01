@@ -1,0 +1,18 @@
+manifestVersion: 1
+name: "@nckrtl/node-swamp-role-assets"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public Swamp-role installation and configuration phases.
+behaviors:
+  - operations/swamp-role/assets.ts
+additionalFiles:
+  - scripts/common.py
+  - scripts/account.py
+  - scripts/install.py
+  - scripts/checkout.py
+  - scripts/configuration.py
+  - scripts/release_load.py
+  - scripts/units.py
+  - scripts/activation.py
+  - scripts/verify.py

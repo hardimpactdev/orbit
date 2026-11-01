@@ -1,17 +1,17 @@
 # Swamp role contribution
 
-This contribution is under construction. No role admission or workflow calls it
-yet. The owning role factory will expose it after the full topology proof.
+Source-only F14 draft. `SwampRole` defines the singleton and `swampRoleConvergeSteps`
+exports its bounded native contribution. Gateway registration and parent admission
+are pending. No live assignment, load or registry change is authorized.
 
-The install phase uses the official binary pin and memory floor from
-`node-worker/config.ts`. It checks the account-independent host prerequisites
-before writing, stages the download beside the destination, verifies its length
-and SHA-256, then replaces the binary. A repeated install keeps matching bytes.
-The native caller must bound the phase with coreutils `timeout` and an explicit
-`queueTimeout`, like the other role phases.
+The install pin, memory floor, primary worker unit and checker come from the
+existing canonical worker suppliers. Eight script-file phases use official SSH,
+coreutils deadlines and explicit queue timeouts. One official cfgmgmt firewall
+step admits the captured Services proxy to TCP 9417. Assets resolve once.
 
-The remaining contribution must preserve separate source, datastore and vault
-custody. Vault values are supplied by the Gateway. It must use the F2 release
-load entry, without installing the retired merge-time loader. Neither this
-source nor the recorded setup authorizes a production Serve restart, role
-assignment or relocation.
+The caller supplies a prepared exact-SHA source checkout, pinned SSH globals,
+Gateway-owned credentials and the orbit-owned 0600 Serve TLS pair. `activate:false`
+prepares public files without starting services. The exact F2 installer publishes
+the load entry and performs no load or restart. Vault values stay out of this
+bundle and the image. Authoritative Services publication and relocation remain
+parent-owned. See `docs/reference/swamp-node-role.md` for open integration gates.
