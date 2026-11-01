@@ -176,7 +176,7 @@ The retained Gateway builder runs one build at a time for each Node. A second bu
 
 ### How a build is pushed
 
-The retained Gateway builder still calls the retired `caddy.publish` command through `AgentCommandRunner`. This path cannot publish with the current agent contract. The following describes that old path, not native publication: it sends the rendered configuration, its digest, and its listen addresses to the agent. The Rust agent owns validation, backups, publication, reload, and pruning. The runner selects local execution on the Gateway and pinned SSH on other Nodes. The mutation runs in its own systemd service, outside the Gateway service's filesystem sandbox. The agent runs these stages:
+The retained Gateway builder still calls `caddy.publish`, which the current agent contract does not contain, through `AgentCommandRunner`. This path cannot publish with the current agent contract. The following describes that old path, not native publication: it sends the rendered configuration, its digest, and its listen addresses to the agent. The Rust agent owns validation, backups, publication, reload, and pruning. The runner selects local execution on the Gateway and pinned SSH on other Nodes. The mutation runs in its own systemd service, outside the Gateway service's filesystem sandbox. The agent runs these stages:
 
 | Stage | Work |
 | --- | --- |
@@ -214,7 +214,7 @@ The retained Gateway builder does not publish a new file when validation fails. 
 
 While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. An invalid `task_vms.swamp_host` also refuses a build at stage `render`. No other task VM value affects a build.
 
-In the retired agent publication path, a failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
+In the agent publication path described above, a failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 
 One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A certificate file that someone removed by hand fails validation, for example. Converge the role or Route that owns the site again to publish the certificate.
 
