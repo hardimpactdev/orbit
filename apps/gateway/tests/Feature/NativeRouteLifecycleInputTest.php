@@ -9,8 +9,10 @@ use App\Domain\Routes\NativeRouteLifecycleInput;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteTargetInput;
 use App\Domain\Routes\RouteEnvironmentMaterialSource;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -108,7 +110,7 @@ it('deletes or withdraws only at native terminal success', function (string $kin
     if ($status === 'succeeded' && $kind === 'route.destroy') {
         expect($route->fresh())->toBeNull();
     } else {
-        expect($route->fresh()->status->value)->toBe($status === 'succeeded' ? 'retiring' : ($status === 'failed' ? 'failed' : 'active'))
+        expect($route->fresh()->status->value)->toBe($status === 'succeeded' ? 'retiring' : 'active')
             ->and($route->fresh()->sites_published)->toBe($status !== 'succeeded')
             ->and($route->targets()->count())->toBe(1);
     }
@@ -201,3 +203,49 @@ it('preserves the target supplier workload TLS site during shared preparation', 
     expect($publication['before']['content'])->toContain('source.target.test')->not->toContain('pool.target.test')
         ->and($publication['after']['content'])->toContain('source.target.test', 'pool.target.test', 'app-instance-'.$this->instances['new']->id.'-hostname-change');
 });
+
+it('probes only staged private workload TLS and verifies the public listener after publication', function (bool $colocated): void {
+    $ingress = $this->nodes[$colocated ? 'old' : 'new'];
+    $ingress->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $ingress->cluster_id]);
+    $route = $this->routes['pool'];
+    $route->update(['status' => 'pending', 'sites_published' => false, 'publication' => 'public']);
+
+    $capture = app(NativeRouteLifecycleInput::class)->capture($route->fresh(), []);
+
+    $checks = $capture['intent']['preparation']['probes'];
+    expect(array_column(array_column($checks, 'probe'), 'address'))->toBe($colocated ? [] : [$this->nodes['old']->wireguard_ip])
+        ->and($capture['intent']['verifications'][0]['probe'])->toMatchArray(['address' => $ingress->wireguard_ip, 'port' => 443, 'domain' => $route->domain])
+        ->and($route->fresh()->sites_published)->toBeFalse();
+    $published = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $ingress->id);
+    expect($published['after']['caddy']['content'])->toContain($route->domain)->not->toContain('/orbit-certificates/route-'.$route->id.'-ingress/');
+})->with(['Ingress is the target' => true, 'separate Ingress' => false]);
+
+it('keeps a published public Route visible after failed removal and restoration', function (bool $process): void {
+    $ingress = $this->nodes['new'];
+    $ingress->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $ingress->cluster_id]);
+    $route = $this->routes['pool'];
+    if ($process) {
+        $owner = $this->nodes['old'];
+        $owner->update(['lan_ip' => null]);
+        $service = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $owner->id, 'name' => 'restored-service',
+            'runtime' => 'docker', 'runtime_config' => ['ports' => [$owner->wireguard_ip.':8095:80/tcp']], 'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
+        $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $ingress->cluster_id, 'domain' => 'restore-process.example.test',
+            'publication' => 'public', 'provenance' => 'explicit', 'status' => 'pending']);
+        $route->customProxy()->create(['node_id' => $owner->id, 'process_id' => $service->id, 'upstream' => 'http://'.$owner->wireguard_ip.':8095']);
+    }
+    $route->update(['status' => 'active', 'sites_published' => true, 'publication' => 'public', 'replacement_step' => RouteReplacementStep::IngressFirewall]);
+    $sites = app(DevelopmentSiteRepository::class);
+    $before = $sites->all()->where('domain', $route->domain)->map(fn ($site): string => $site->addressKey())->sort()->values()->all();
+    $capture = app(NativeRouteLifecycleInput::class)->capture($route->fresh(), [], true);
+    $operation = lifecycle_operation($route, $capture, 'route.destroy');
+
+    lifecycle_project($operation, NativeRouteRemovalProjection::class, 'failed');
+
+    expect($before)->not->toBeEmpty()
+        ->and($operation->fresh()->result['restored'])->toBeTrue()
+        ->and($route->fresh()->status->value)->toBe('active')
+        ->and($route->fresh()->sites_published)->toBeTrue()
+        ->and($operation->fresh()->error_code)->toBe('route.lifecycle_failed')
+        ->and($route->fresh()->error_code)->toBeNull()
+        ->and($sites->all()->where('domain', $route->domain)->map(fn ($site): string => $site->addressKey())->sort()->values()->all())->toBe($before);
+})->with(['Instance site' => false, 'Process proxy' => true]);

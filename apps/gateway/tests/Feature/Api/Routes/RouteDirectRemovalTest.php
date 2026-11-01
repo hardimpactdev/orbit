@@ -84,7 +84,7 @@ it('admits complete withdrawal before dispatch and keeps targets until the nativ
 it('keeps rows and associations when a native withdrawal fails', function (): void {
     $operation = app(AdmitRouteOperationAction::class)->destroy($this->route);
     app(NativeRouteRemovalProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'error_code' => 'route.withdrawal_failed', 'result' => []]);
-    expect($this->route->fresh()->status)->toBe(RouteStatus::Failed)
+    expect($this->route->fresh()->status)->toBe(RouteStatus::Pending)
         ->and($this->route->targets()->count())->toBe(1)
         ->and($operation->fresh()->status)->toBe(OperationStatus::Failed);
 });

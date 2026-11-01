@@ -65,8 +65,6 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
                     DB::afterCommit(static fn () => app(RecordEventBroadcaster::class)->broadcast(RecordEventType::RouteDeleted, $row['route_id'], ['id' => $row['route_id'], 'domain' => $row['domain']]));
                 }
             }
-        } elseif ($operation->status === OperationStatus::Failed) {
-            Route::query()->whereKey($operation->target_id)->update(['status' => RouteStatus::Failed, 'failed_step' => 'withdrawal', 'error_code' => $operation->error_code]);
         }
 
         return $operation;

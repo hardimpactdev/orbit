@@ -52,7 +52,8 @@ final readonly class NativeRoutePreparationInput
             $router = array_find($publications, static fn (array $publication): bool => $publication['node_id'] === $routerId);
             foreach (RouteExecutionProof::objects($row['intent']['workloads']) as $member) {
                 $instanceId = ValidatedData::integer($member['instance_id']);
-                if ($member['node_id'] === $routerId || ! in_array($instanceId, $preparedIds, true)) {
+                if ($member['node_id'] === $routerId || ! in_array($instanceId, $preparedIds, true)
+                    || ! $workloadSites->contains(static fn (DevelopmentSite $site): bool => $site->nodeId === $member['node_id'] && $site->domain === $row['domain'])) {
                     continue;
                 }
                 if ($router === null) {
