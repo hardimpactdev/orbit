@@ -1,0 +1,114 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R2-R4 and 5, single-swamp-node + light-boxes-use-swamp-ssh, node-wireguard-change-keeps-public-ssh. docs/reference/wireguard-endpoints.md.
+  %% status: draft
+  %% command: node:network:converge
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane H icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>WireGuard peer
+  participant H as vpn Node 1<br/>WireGuard hub
+  CLI->>GW: node:network:converge 12<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - `orbit node:network:converge 12`
+  %%> - syntax: `<node> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node, by ID or name; no keys, scripts or placement options
+  %%> What it does:
+  %%> - brings Node 12's WireGuard peer, resolver and peer trust in line with its saved network policy
+  %%> - publishes the current peer list on the hub
+  Note over GW: Validate, capture policy<br/>task #5170 · Node + hub lock
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active, managed Linux Node with a WireGuard address and a public SSH address
+  %%> - no other network change runs for Node 12 or the hub; the Gateway holds one lock for each and waits briefly for a busy one
+  %%> Builds:
+  %%> - the peer config without a private key: address, hub endpoint and public key, DNS server and domains
+  %%> - the hub peer list, and the WireGuard trust rule for Node 12
+  %%> Result:
+  %%> - task #5170 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-node-network
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the peer config, the hub peer list and the resolver policy
+  %%> - the addresses and SSH host keys of Node 12 and Node 1; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5170
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Save config, prepare key<br/>@swamp/ssh · public SSH address
+  %%> How:
+  %%> - Swamp reaches Node 12 over its public SSH address, not WireGuard, so a tunnel change cannot cut the session
+  %%> What it does:
+  %%> - saves the current peer config and resolver settings as a backup
+  %%> - creates a key pair only when none exists; the private key never leaves Node 12
+  %%> Returns:
+  %%> - the public key
+  SW->>H: Update the peer on the hub<br/>backup · wg syncconf · wg show
+  %%> How:
+  %%> - over SSH from 209 with `@swamp/ssh`; Node 1 has no Swamp binary and no worker
+  %%> What it does:
+  %%> - the same hub steps as `node:wireguard-hub:converge`: save the config, write the peers, `wg syncconf`, check `wg show`
+  %%> - every other peer and the `[Interface]` section stay as they are; the tunnel does not restart
+  SW->>N: Write and apply the peer<br/>wg syncconf · enable wg-quick
+  %%> What it does:
+  %%> - writes the peer config and loads it into the running tunnel with `wg syncconf`; it starts the tunnel only when it is down
+  %%> - enables the tunnel at boot
+  SW->>N: Trust WireGuard peers<br/>@swamp/cfgmgmt/firewall apply
+  %%> What it does:
+  %%> - adds Orbit's managed ufw rule that trusts the WireGuard member range; an identical rule is left as it is
+  SW->>N: Set the resolver policy<br/>resolvectl dns · domain
+  %%> What it does:
+  %%> - sends only Orbit names to VPN DNS on the tunnel link; other names keep the normal uplink
+  %%> - clears an old Orbit DNS setting on the uplink and keeps the uplink usable
+  SW->>N: Check tunnel and DNS<br/>handshake · resolve gateway.orbit
+  %%> What it does:
+  %%> - checks a recent handshake with the hub, and that `gateway.orbit` resolves through the tunnel
+  %%> - checks that an outside name still resolves through the uplink
+  alt the check passes
+    N-->>SW: tunnel and DNS ok
+    %%> Returns:
+    %%> - the public key and the applied resolver policy
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the result<br/>public key · task succeeded
+    %%> Result:
+    %%> - Node 12's public key and network policy are recorded as applied
+    %%> - task #5170 succeeds
+  else a step or the check fails
+    N--xSW: exit ≠ 0 or no handshake
+    %%> When:
+    %%> - a write, apply, firewall or resolver step fails, or the check finds no handshake or no DNS answer
+    SW->>N: Restore the saved config<br/>peer config · resolver
+    %%> What it does:
+    %%> - puts the saved peer config and resolver settings back and loads them, then checks the old tunnel works
+    %%> - the hub is restored the same way when its step ran
+    %%> Why:
+    %%> - Node 12 returns to the last network that worked
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed, its error code, and whether the restore passed
+    Note over GW: Mark the network failed<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - task #5170 fails; the recorded public key stays the old one
+    %%> On the Node:
+    %%> - a new key pair stays on Node 12 and is reused by a rerun; the firewall rule stays, which is harmless
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5170
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
