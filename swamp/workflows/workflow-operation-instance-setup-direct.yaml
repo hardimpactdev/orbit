@@ -1,6 +1,5 @@
 id: dea5d024-3c16-4eb7-a576-2fda63a93872
 name: operation-instance-setup-direct
-queueTimeout: 30
 description: Admitted Project setup and teardown run with sudo on the exact Node.
 vaults: []
 inputs:

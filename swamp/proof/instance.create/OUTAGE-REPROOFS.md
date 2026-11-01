@@ -1,6 +1,6 @@
 # Instance outage re-proofs
 
-Run these fixtures after lane 25 validates `bin/swamp-proof up`, before the source-setup and database-migration proofs for #2327. They use normal Gateway admission in an isolated app-dev topology. The accompanying F8 change sets only the two workflows’ queue timeouts.
+Run these fixtures after lane 25 validates `bin/swamp-proof up`, before the source-setup and database-migration proofs for #2327. They use normal Gateway admission in an isolated app-dev topology. The F8 source change lives separately in [#2411](https://github.com/hardimpactdev/orbit/pull/2411), head `32c139aca5ca4132e29d91d1bb075564a9917a32`. This branch contains fixtures only.
 
 Use this order from D's `re-proof-owed.md` plan. Select each variant explicitly; alphabetical all-variant execution has a different order.
 
@@ -25,9 +25,9 @@ The macro fixture sends literal `@orbit/ci-caches` to the Gateway. The canonical
 
 Stage main, plus at most one small F8 compliance PR as D permits. These selectors target the expanded outage workflow, before #2327's grouped setup rewrite. Do not use #2327 to close the outage rows. Recheck selectors if a required fix changes the workflow.
 
-Both workflows declare `queueTimeout: 30`, inherited by their steps. This is D’s worker-wait policy, separate from the run budget. Create fixtures use the PLAN F8 60-second budget. The setup fixture uses 64 seconds: the longest success in the two retained native success samples is 42.499 seconds (Operation 6798, run `e90c20c8-f551-476e-8b2a-50814e033a83`), multiplied by 1.5 and rounded up. The other retained success is 2.528 seconds (Operation 5570, run `30116b61-fd94-414c-95f0-f3a5e95d5f0e`). These two samples do not establish a p95 or a fleet-wide maximum. The proof must meet its budget; there is no runner exception.
+The separate F8 source PR declares `queueTimeout: 30` on both workflows, inherited by their steps. The fixtures expect that source value; they do not add it themselves. This is D’s worker-wait policy, separate from the run budget. Create fixtures use the PLAN F8 60-second budget. The setup fixture uses 64 seconds. The normal `orbit operation:list --kind=instance.run_steps --status=succeeded` query returned 14 successes, with one after #2335’s running-list change: Operation 6798 (started 2026-11-01 14:03:58Z, finished 14:04:40Z). Its retained native run `e90c20c8-f551-476e-8b2a-50814e033a83` took 42.499 seconds (14:03:59.528Z–14:04:42.027Z), so ceil(42.499 × 1.5) is 64 seconds. Older-shape successes are excluded. This is one retained sample, not a p95 or a fleet-wide maximum; it predates #2391’s Vite permission relaxation, which leaves the workflow graph and step-list shape unchanged. The proof must meet its budget; there is no runner exception.
 
-The fixture contract added `limitations` on 2026-11-01 at 14:08Z. The harness must accept and copy that field before these variants run. No receipt is claimed by local tests.
+The fixture contract added `limitations` on 2026-11-01 at 14:08Z. Lane 25’s runner supports it in #2314 at `9a438741`, copying it into the receipt. No receipt is claimed by local tests.
 
 Run fixture tests without a topology:
 
