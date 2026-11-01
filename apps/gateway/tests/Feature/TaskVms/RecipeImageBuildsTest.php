@@ -7,6 +7,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -15,10 +16,13 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -210,4 +214,51 @@ it('keeps superseded and cancelled attempt ownership readable for native cleanup
     $this->getJson($path.$query)->assertOk()->assertJsonPath('data.status', 'cancelled');
     TaskVmImageBuild::query()->whereKey($op->target_id)->increment('attempt');
     $this->getJson($path.$query)->assertStatus(422)->assertJsonPath('error.code', 'operation.execution_forbidden');
+});
+
+it('fences resume once sweep cleanup owns a failed builder or smoke', function (string $suffix): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $operation->update(['status' => OperationStatus::Failed]);
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    DB::table('task_vm_image_builds')->where('id', $build->id)->update(['updated_at' => now()->subHours(25)]);
+    expect(TaskVmHostAudit::claimBuildCleanup($build->hostNode, $build->builder_vm_name.$suffix))->toBeTrue();
+    expect(fn () => app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id))
+        ->toThrow(TaskVmException::class, 'unclaimed failed build');
+    expect($build->fresh()->cleanup_started_at)->not->toBeNull();
+    $this->assertDatabaseCount('operations', 1);
+})->with(['builder' => '', 'smoke' => '-smoke']);
+
+it('rejects a stale sweep claim when a fresh image attempt wins first', function (): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $old = $build->builder_vm_name;
+    $operation->update(['status' => OperationStatus::Failed]);
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    DB::table('task_vm_image_builds')->where('id', $build->id)->update(['updated_at' => now()->subHours(25)]);
+    app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id);
+    expect($build->fresh()->attempt)->toBe(2);
+    foreach ([$old, $old.'-smoke'] as $name) {
+        expect(TaskVmHostAudit::claimBuildCleanup($build->hostNode, $name))->toBeFalse();
+    }
+    expect($build->fresh()->cleanup_started_at)->toBeNull();
+});
+
+it('rejects stale resume after sweep claims the captured failed row', function (): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $operation->update(['status' => OperationStatus::Failed]);
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    DB::table('task_vm_image_builds')->where('id', $build->id)->update(['updated_at' => now()->subHours(25)]);
+    $claimed = false;
+    DB::listen(function (QueryExecuted $query) use ($build, &$claimed): void {
+        if (! $claimed && str_starts_with($query->sql, 'select * from "task_vm_image_builds"') && str_contains($query->sql, '"cleanup_started_at" is null')) {
+            $claimed = true;
+            expect(TaskVmHostAudit::claimBuildCleanup($build->hostNode, $build->builder_vm_name))->toBeTrue();
+        }
+    });
+    expect(fn () => app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id))
+        ->toThrow(TaskVmException::class, 'Another command claimed');
+    expect($claimed)->toBeTrue()->and($build->fresh()->attempt)->toBe(1);
+    $this->assertDatabaseCount('operations', 1);
 });

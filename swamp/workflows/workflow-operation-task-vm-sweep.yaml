@@ -72,6 +72,9 @@ inputs:
           additionalProperties: false
         ssh_execution:
           type: object
+        deadline_at:
+          type: integer
+          minimum: 1
       required:
       - node_id
       - provider
@@ -80,6 +83,7 @@ inputs:
       - image_cutoff
       - running_stamps
       - scope
+      - deadline_at
       additionalProperties: false
     execution_secrets:
       type: object
@@ -134,7 +138,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
-  - name: format
+  - name: result
     target: orbit-node-209
     dependsOn:
     - step: incus
@@ -146,28 +150,11 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-format-"+run.id }}
+      behaviorName: ${{ "swp-result-"+run.id }}
       methodName: result
       inputs:
         provider: ${{ inputs.intent.provider }}
         steps: ${{ steps }}
-  - name: result
-    target: orbit-node-209
-    dependsOn:
-    - step: format
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "swp-result-"+run.id }}
-      methodName: execute
-      inputs:
-        run: 'printf ''%s\n'' "$RESULT"
-
-          '
-        env:
-          RESULT: ${{ steps.format.outputs.result_json }}
   - name: accepted
     target: orbit-node-209
     dependsOn:
@@ -176,7 +163,7 @@ jobs:
         type: succeeded
     task:
       type: assert
-      expr: steps.format.outputs.ready == true
+      expr: steps.result.outputs.ready == true
       severity: high
       message: Task VM sweep did not complete.
-queueTimeout: 60
+queueTimeout: 10

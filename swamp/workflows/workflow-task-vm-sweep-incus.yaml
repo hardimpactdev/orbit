@@ -1,6 +1,6 @@
 id: bf32f147-daa5-451f-af8c-2ae4eb680071
 name: task-vm-sweep-incus
-description: Sweep the captured incus inventory through native cleanup children.
+description: Sweep the captured incus inventory in one bounded provider phase.
 vaults: []
 inputs:
   type: object
@@ -54,21 +54,32 @@ jobs:
       behaviorName: ${{ "swp-assets-"+run.id }}
       methodName: assets
       inputs:
-        scope: ${{ inputs.intent.scope }}
-  - name: incus-inventory
+        intent: ${{ inputs.intent }}
+  - name: sweep
     target: orbit-node-209
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "swp-incus-inventory-"+run.id }}
-      methodName: script
+      behaviorName: ${{ "swp-sweep-"+run.id }}
+      methodName: exec
       inputs:
         hosts: name:target
-        interpreter: python3
         sudo: true
-        script: ${{ steps.assets.outputs.script_body }}
-      globalArgs: &id001
-        name: ${{ "swp-host-"+run.id }}
+        argv:
+        - timeout
+        - --signal=TERM
+        - --kill-after=5s
+        - 220s
+        - python3
+        - -I
+        - -c
+        - ${{ steps.assets.outputs.script_body }}
+        stdin: ${{ steps.assets.outputs.input_json }}
+        okExitCodes:
+        - 0
+        - 1
+      globalArgs:
+        name: ${{ "swp-sweep-"+run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -83,138 +94,4 @@ jobs:
     - step: assets
       condition:
         type: succeeded
-  - name: plan
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-plan-"+run.id }}
-      methodName: plan
-      inputs:
-        intent: ${{ inputs.intent }}
-        report: true
-        stdout: ${{ steps["incus-inventory"].outputs.stdout }}
-    dependsOn:
-    - step: incus-inventory
-      condition:
-        type: succeeded
-  - name: incus-instance-remove
-    target: orbit-node-209
-    dependsOn:
-    - step: plan
-      condition:
-        type: succeeded
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-sweep-incus-cleanup
-      inputs:
-        scope: ${{ inputs.intent.scope }}
-        resources: ${{ steps.plan.outputs.instances }}
-        ssh_execution: ${{ inputs.intent.ssh_execution }}
-  - name: incus-after-instances
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "swp-incus-after-instances-"+run.id }}
-      methodName: script
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps.assets.outputs.script_body }}
-      globalArgs: *id001
-    dependsOn:
-    - step: incus-instance-remove
-      condition:
-        type: succeeded
-  - name: volume-plan
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-volume-plan-"+run.id }}
-      methodName: plan
-      inputs:
-        intent: ${{ inputs.intent }}
-        stdout: ${{ steps["incus-after-instances"].outputs.stdout }}
-    dependsOn:
-    - step: incus-after-instances
-      condition:
-        type: succeeded
-  - name: incus-volume-remove
-    target: orbit-node-209
-    dependsOn:
-    - step: volume-plan
-      condition:
-        type: succeeded
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-sweep-incus-cleanup
-      inputs:
-        scope: ${{ inputs.intent.scope }}
-        resources: ${{ steps["volume-plan"].outputs.volumes }}
-        ssh_execution: ${{ inputs.intent.ssh_execution }}
-  - name: incus-after
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "swp-incus-after-"+run.id }}
-      methodName: script
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps.assets.outputs.script_body }}
-      globalArgs: *id001
-    dependsOn:
-    - step: incus-volume-remove
-      condition:
-        type: succeeded
-  - name: after-plan
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-after-plan-"+run.id }}
-      methodName: plan
-      inputs:
-        intent: ${{ inputs.intent }}
-        stdout: ${{ steps["incus-after"].outputs.stdout }}
-    dependsOn:
-    - step: incus-after
-      condition:
-        type: succeeded
-  - name: format
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-format-"+run.id }}
-      methodName: terminal
-      inputs:
-        observed_names: ${{ steps["after-plan"].outputs.observed_names }}
-        deleted_names: ${{ steps.plan.outputs.instances.map(r,r.name) + steps["volume-plan"].outputs.volumes.map(r,r.name) }}
-    dependsOn:
-    - step: after-plan
-      condition:
-        type: succeeded
-  - name: result
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "swp-result-"+run.id }}
-      methodName: execute
-      inputs:
-        run: 'printf ''%s\n'' "$RESULT"
-
-          '
-        env:
-          RESULT: ${{ steps.format.outputs.result_json }}
-    dependsOn:
-    - step: format
-      condition:
-        type: succeeded
-queueTimeout: 60
+queueTimeout: 10

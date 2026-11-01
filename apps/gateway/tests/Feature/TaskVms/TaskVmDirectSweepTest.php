@@ -10,18 +10,25 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\UpCloudApi;
+use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -131,6 +138,15 @@ it('protects allocations committed between the ownership capture queries', funct
         ->and($operation->input['scope']['max_task_vm_id'])->toBeLessThan($allocated->id);
 });
 
+it('freezes the admitted sweep expiry in the full public envelope', function (): void {
+    $this->freezeTime();
+    $operation = directSweepAdmit();
+    $expiry = now()->addSeconds(300)->getTimestamp();
+    expect($operation->input['deadline_at'])->toBe($expiry);
+    $this->travel(6)->minutes();
+    expect(app(DirectOperation::class)->workflowInputs($operation)['intent']['deadline_at'])->toBe($expiry);
+});
+
 it('retires only expired nonrunning build intent before native dispatch', function (): void {
     $running = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id]);
     $recent = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => 'failed']);
@@ -204,3 +220,84 @@ it('settles cancellation and interruption without inventing a missing observatio
     expect($operation->fresh()->status)->toBe($status === 'interrupted' ? OperationStatus::Failed : OperationStatus::Cancelled)
         ->and($operation->fresh()->lock_key)->toBeNull()->and($vm->fresh()->state)->toBe(TaskVmState::Ready);
 })->with(['cancelled', 'interrupted']);
+
+it('admits other active hosts independently when one native host fails', function (): void {
+    $other = $this->host->replicate();
+    $other->fill(['name' => 'sweep-other', 'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '192.0.2.10'])->save();
+    $inactive = $this->host->replicate();
+    $inactive->fill(['name' => 'sweep-inactive', 'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '192.0.2.11', 'status' => LifecycleStatus::Failed])->save();
+    TaskVmSettingsBuilder::bind(['hosts' => array_map(TaskVmSettingsBuilder::host(...), [$this->host->id, $other->id, $inactive->id])]);
+    app()->call([new SweepTaskVmHosts, 'handle']);
+    $operations = Operation::query()->where('kind', 'task_vm.sweep_host')->orderBy('id')->get();
+    expect($operations->pluck('node_id')->all())->toBe([$this->host->id, $other->id]);
+    app(TaskVmSweepProjection::class)->apply($operations[0], ['run_id' => $operations[0]->state['swamp_run_id'], 'status' => 'failed',
+        'started_at' => '2026-10-31T00:00:00Z', 'finished_at' => '2026-10-31T00:00:01Z',
+        'result' => ['error_code' => 'operation.native_failed'], 'error_code' => 'operation.native_failed']);
+    directSweepProject($operations[1]);
+    expect($operations[0]->fresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operations[1]->fresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('admits no Incus sweep while task VMs are disabled', function (): void {
+    app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => app(TaskVmSettings::class)->hosts]));
+    app()->call([new SweepTaskVmHosts, 'handle']);
+    $this->assertDatabaseCount('operations', 0);
+    expect($this->socket->sent)->toBe([]);
+});
+
+it('captures only ready or parked records whose group has been absent for an hour', function (): void {
+    $this->freezeTime();
+    $ready = directSweepVm('ready', '10.44.0.129');
+    $parked = directSweepVm('parked', '10.44.0.130');
+    $young = directSweepVm('ready', '10.44.0.131');
+    $provisioning = directSweepVm('provisioning', '10.44.0.132');
+    TaskVm::query()->whereKey([$ready->id, $parked->id, $provisioning->id])->update(['updated_at' => now()->subMinutes(61)]);
+    TaskVm::query()->whereKey($young->id)->update(['updated_at' => now()->subMinutes(59)]);
+
+    $operation = directSweepAdmit();
+
+    expect($operation->input['stray_vm_ids'])->toBe([$ready->id, $parked->id]);
+    expect($ready->fresh()->state)->toBe(TaskVmState::Ready);
+    expect($parked->fresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('reports only old canonical task VM Nodes without a live record without probing or deleting them', function (): void {
+    $this->freezeTime();
+    $nodes = [];
+    foreach (['tvm-41', 'tvm-42', 'tvm-template-box', 'tvm-43'] as $offset => $name) {
+        $node = $this->host->replicate();
+        $node->fill(['name' => $name, 'wireguard_ip' => '10.44.0.'.(141 + $offset), 'public_ssh_host' => '192.0.2.'.(141 + $offset)])->save();
+        Node::query()->whereKey($node->id)->update(['created_at' => now()->subMinutes($offset === 3 ? 14 : 16)]);
+        $nodes[] = $node;
+    }
+    [$stray, $live] = $nodes;
+    directSweepVm('ready', '10.44.0.129')->update(['node_id' => $live->id]);
+    Log::spy();
+
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    expect(array_map(fn (Node $node): int => $node->id, TaskVmHostAudit::strayNodes()))->toBe([$stray->id]);
+    Log::shouldHaveReceived('warning')->with('A task VM Node has no live task VM record.', ['node_id' => $stray->id, 'name' => 'tvm-41'])->once();
+    $this->assertModelExists($stray);
+});
+
+it('captures ended groups only after both group and VM have been unchanged for an hour', function (TaskGroupStatus $status, int $groupAge, bool $expected): void {
+    $this->freezeTime();
+    $project = Project::query()->create(['name' => 'Sweep proof', 'slug' => 'sweep-proof', 'repository_url' => 'https://github.com/acme/sweep.git', 'default_branch' => 'main']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Sweep boundary', 'brief' => 'Sweep boundary', 'status' => $status, 'orchestration' => 'external']);
+    $vm = directSweepVm('parked', '10.44.0.129');
+    $vm->update(['group_id' => $group->id]);
+    TaskVm::query()->whereKey($vm->id)->update(['updated_at' => now()->subMinutes(61)]);
+    Task::query()->withoutGlobalScopes()->whereKey($group->id)->update(['updated_at' => now()->subMinutes($groupAge)]);
+
+    $operation = directSweepAdmit();
+
+    expect($operation->input['stray_vm_ids'])->toBe($expected ? [$vm->id] : []);
+    expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+})->with([
+    'completed' => [TaskGroupStatus::Completed, 61, true],
+    'cancelled' => [TaskGroupStatus::Cancelled, 61, true],
+    'failed' => [TaskGroupStatus::Failed, 61, true],
+    'recently ended' => [TaskGroupStatus::Completed, 59, false],
+    'still open' => [TaskGroupStatus::WaitingForReview, 61, false],
+]);

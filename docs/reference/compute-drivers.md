@@ -680,11 +680,11 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state. 
+The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state.
 
-Provider children isolate SSH and vault inputs. Native cleanup children iterate a completed plan, then the root publishes one result. A provider or SSH failure never supplies a missing-VM observation. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection. 
+Provider children isolate SSH and vault inputs. One bounded script per provider performs inventory, selection, cleanup and final observation. The first deletion failure stops the rest of that host’s work, including volume cleanup, missing-VM observation and stray reporting. Other hosts have independent Operations and continue. The root publishes the public result directly. A provider or SSH failure never supplies a missing-VM observation. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection.
 
-Each sweep workflow has a 60-second worker queue timeout. Its execution budget is 300 seconds, allowing for the existing 180-second Incus deletion timeout; the shared start path does not yet pass that budget to Swamp.
+Each sweep workflow has a 10-second worker queue timeout. Its execution budget is 300 seconds. The selected provider phase runs under coreutils `timeout` for 220 seconds with a five-second kill grace; the sum fits the budget independently of orphan count. Admission also records an expiry, checked before any deletion and after its provider identity read. The shared start path does not yet pass the run budget to Swamp.
 
 The native run checks that the host's Incus project exists with `incus project show`. It then compares the instance names with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
@@ -778,7 +778,11 @@ A failed recipe build does not retry because the Gateway restarts or releases co
 
 Host sweeps use independent Operations, so one failed host does not block another host. The Gateway reads ownership and reports strays. Swamp deletes only the admitted owned orphans. Incus uses official SSH from 209; UpCloud uses the existing provider API helper and a shared vault execution copy. Active and recent failed builders remain protected.
 
-Admission captures live VM names and the highest allocated VM and build IDs before native inventory. New allocations remain outside that cleanup scope. Native cleanup removes VM instances before selecting their orphan topology volumes, and verifies VM absence before deleting a volume. Cleanup and resume compete for the same build fence: cleanup blocks resume, and a successful resume prevents a stale sweep from deleting the builder or smoke VM. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
+Admission captures live VM names and the highest allocated VM and build IDs before native inventory. New allocations remain outside that cleanup scope.
+
+The provider script removes VM instances before selecting their orphan topology volumes, and verifies VM absence before deleting a volume. Allocation always creates a new VM row; a later claim therefore has an ID above the captured maximum. Every nondestroyed row present at admission is protected, including provisioning and failed rows. Steps need no later Gateway ownership read.
+
+Cleanup and resume compete for the same build fence: cleanup blocks resume, and a successful resume prevents a stale sweep from deleting the builder or smoke VM. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
 
 ### Incus provider
 
