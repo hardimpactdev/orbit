@@ -3,7 +3,7 @@
   "workflow": "operation-instance-create",
   "topology": "app-dev",
   "budget_seconds": 60,
-  "queue_timeout_seconds": 30,
+  "queue_timeout_seconds": 10,
   "request": {
     "argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "proof-${proof.run}", "--root=source-setup", "--branch=main", "--json"],
     "operation": "$.id"
