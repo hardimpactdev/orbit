@@ -65,15 +65,17 @@ class ScriptActions(unittest.TestCase):
             "-subj",
             "/CN=disposable CA",
         )
-        self.leaf = dict(
-            node_id=9,
-            user="orbit",
-            scope="route-7-router",
-            domain="shop.test",
-            version="0123456789abcdef",
-            root_hash=hashlib.sha256((self.root / "ca.pem").read_bytes()).hexdigest(),
-            agent_sha256="a" * 64,
-        )
+        self.leaf = {
+            "node_id": 9,
+            "user": "orbit",
+            "scope": "route-7-router",
+            "domain": "shop.test",
+            "version": "0123456789abcdef",
+            "root_hash": hashlib.sha256(
+                (self.root / "ca.pem").read_bytes()
+            ).hexdigest(),
+            "agent_sha256": "a" * 64,
+        }
 
     def signed(self):
         result = request.request(self.leaf)
@@ -98,12 +100,12 @@ class ScriptActions(unittest.TestCase):
             "-extfile",
             extensions,
         )
-        return dict(
-            certificate_base64=base64.b64encode(certificate).decode(),
-            root_certificate_base64=base64.b64encode(
+        return {
+            "certificate_base64": base64.b64encode(certificate).decode(),
+            "root_certificate_base64": base64.b64encode(
                 (self.root / "ca.pem").read_bytes()
             ).decode(),
-        )
+        }
 
     def publish(self):
         signed = self.signed()
@@ -152,11 +154,15 @@ class ScriptActions(unittest.TestCase):
         key = root / "versions/0123456789abcdef.candidate/key.pem"
         before = key.read_bytes()
         with patch.dict(os.environ, ORBIT_CERTIFICATE_SIGNED=json.dumps(signed)):
-            with patch.object(
-                publish.grp, "getgrnam", side_effect=KeyError("fixture interruption")
+            with (
+                patch.object(
+                    publish.grp,
+                    "getgrnam",
+                    side_effect=KeyError("fixture interruption"),
+                ),
+                self.assertRaises(KeyError),
             ):
-                with self.assertRaises(KeyError):
-                    publish.publish(self.leaf)
+                publish.publish(self.leaf)
             publish.publish(self.leaf)
         self.assertEqual(before, (root / "current/key.pem").read_bytes())
 
@@ -185,20 +191,42 @@ class ScriptActions(unittest.TestCase):
             {"load_folders": [str(caddy.parent)]},
         ):
             raw = json.dumps({"apps": {"tls": {"certificates": certificates}}}).encode()
-            with patch.object(
-                remove.subprocess, "run", return_value=SimpleNamespace(stdout=raw)
+            with (
+                patch.object(
+                    remove.subprocess, "run", return_value=SimpleNamespace(stdout=raw)
+                ),
+                self.assertRaisesRegex(ValueError, "certificate.in_use"),
             ):
-                with self.assertRaisesRegex(ValueError, "certificate.in_use"):
-                    remove.remove(scope)
-            self.assertTrue((root / "current/key.pem").exists())
-        with patch.object(
-            remove.subprocess,
-            "run",
-            side_effect=subprocess.CalledProcessError(1, "caddy"),
-        ):
-            with self.assertRaises(subprocess.CalledProcessError):
                 remove.remove(scope)
+            self.assertTrue((root / "current/key.pem").exists())
+        with (
+            patch.object(
+                remove.subprocess,
+                "run",
+                side_effect=subprocess.CalledProcessError(1, "caddy"),
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            remove.remove(scope)
         self.assertTrue((caddy / "current/key.pem").exists())
+
+    def test_removal_refuses_invalid_account_or_home_before_reading_caddy(self):
+        self.publish()
+        _, root, caddy = local.account(self.leaf)
+        key = (root / "current/key.pem").read_bytes()
+        for data, code in (
+            ({**self.leaf, "user": "orbit;id"}, "certificate.account_invalid"),
+            ({**self.leaf, "home": "/different"}, "certificate.home_mismatch"),
+        ):
+            with (
+                self.subTest(code=code),
+                patch.object(remove.subprocess, "run") as command,
+            ):
+                with self.assertRaisesRegex(ValueError, code):
+                    remove.remove({**data, "in_use": False})
+                command.assert_not_called()
+            self.assertEqual(key, (root / "current/key.pem").read_bytes())
+            self.assertTrue((caddy / "current/cert.pem").is_file())
 
     def test_wrong_root_or_domain_never_publishes_a_pair(self):
         signed = self.signed()
