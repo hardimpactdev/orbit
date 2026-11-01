@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\NativeRouteMutationPlan;
 use App\Domain\Routes\NativeRouteNodeMutationInput;
@@ -12,12 +13,14 @@ use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Setting;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -74,6 +77,69 @@ it('keeps recorded domains and captures address changes even without Route mutat
     $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->gateway->id);
     expect($publication['after']['dns']['records'])->toContain('host-record=development.snapshot.old.test,10.44.0.41')
         ->and($publication['before']['dns']['records'])->toContain('host-record=development.snapshot.old.test,10.44.0.31');
+});
+
+it('keeps an enrollment role site only in prospective Route publications before terminal certificate markers', function (): void {
+    $this->node->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $plan = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket);
+    $stored = $this->node->fresh()->getAttributes();
+    $settings = Setting::query()->get()->toArray();
+    $candidate = new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'new.test', roleCertificates: $plan);
+
+    $input = $this->capture->capture($this->node, $candidate, null);
+
+    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($publication['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit');
+    foreach (['prepared', 'withdrawn', 'after'] as $phase) {
+        expect($publication[$phase]['caddy']['content'])->toContain('# orbit: websocket reverb.orbit', '10.44.0.41');
+    }
+    $dns = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->gateway->id);
+    expect($dns['after']['dns']['records'])->toContain('host-record=reverb.orbit,10.44.0.41')
+        ->and($dns['before']['dns']['records'])->not->toContain('host-record=reverb.orbit,10.44.0.41');
+    $restore = collect($input['route_mutations']['restore']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($restore['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit')
+        ->and($this->node->fresh()->getAttributes())->toBe($stored)
+        ->and(Setting::query()->get()->toArray())->toBe($settings)
+        ->and(app(CaddySiteCertificates::class)->published($this->node->id, 'websocket'))->toBeFalse()
+        ->and(app(RouteRenderContext::class)->nodeId())->toBeNull()
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('retains stored role certificates in before while applying captured withdrawal only to prospective publications', function (): void {
+    $this->node->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    app(CaddySiteCertificates::class)->record($this->node->id, 'websocket');
+    $plan = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket, removing: true);
+    $candidate = new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'new.test', roleCertificates: $plan);
+
+    $input = $this->capture->capture($this->node, $candidate, null);
+
+    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($publication['before']['caddy']['content'])->toContain('# orbit: websocket reverb.orbit');
+    foreach (['prepared', 'withdrawn', 'after'] as $phase) {
+        expect($publication[$phase]['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit');
+    }
+    expect(app(CaddySiteCertificates::class)->published($this->node->id, 'websocket'))->toBeTrue();
+});
+
+it('restores certificate and address render scopes when prospective publication capture fails', function (): void {
+    $this->node->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $plan = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket);
+    $this->node->update(['ssh_host_key' => null]);
+    $candidate = new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'new.test', roleCertificates: $plan);
+    $context = app(RouteRenderContext::class);
+    $outer = ['leaves' => [['node_id' => $this->gateway->id, 'scope' => 'role-analytics']], 'withdrawals' => []];
+
+    $context->renderRoleCertificates($outer, function () use ($candidate, $context): void {
+        expect(fn () => $this->capture->capture($this->node, $candidate, null))->toThrow(ResourceOperationException::class);
+        expect($context->roleCertificatePublished($this->gateway->id, 'analytics'))->toBeTrue()
+            ->and($context->roleCertificatePublished($this->node->id, 'websocket'))->toBeNull();
+    });
+
+    expect(app(CaddySiteCertificates::class)->published($this->node->id, 'websocket'))->toBeFalse()
+        ->and($context->nodeId())->toBeNull()
+        ->and($context->roleCertificatePublished($this->gateway->id, 'analytics'))->toBeNull()
+        ->and(Route::query()->count())->toBe(1)
+        ->and($this->route->fresh()->replaced_by_route_id)->toBeNull();
 });
 
 it('refuses discovery inside a prospective context or for a different actual Node', function (): void {
