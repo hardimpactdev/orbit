@@ -1,5 +1,6 @@
 id: 5cbf1292-9922-444b-9225-fb2b682111f7
 name: cluster-router-probe
+queueTimeout: 30
 description: >-
   Verify one admitted workload TLS endpoint from the candidate Router through
   official SSH.

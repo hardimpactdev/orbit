@@ -1,5 +1,6 @@
 id: 38e1a160-f17b-4d31-b77c-36dfd78ed570
 name: operation-analytics-enable-direct
+queueTimeout: 30
 description: Manage one Plausible site then publish captured tracking Routes through official SSH from209.
 vaults:
 - orbit-control-inputs

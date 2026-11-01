@@ -1,5 +1,6 @@
 id: 52388dd6-34fb-43c3-b25b-936f56e96bec
 name: operation-websocket-registry
+queueTimeout: 30
 description: Confirm an admitted WebSocket registry change through current Reverb reports.
 vaults: []
 inputs:
