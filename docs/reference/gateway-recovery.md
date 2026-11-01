@@ -115,7 +115,7 @@ Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit reposito
 
 The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume. The step never restarts serve or a worker.
 
-A new workflow also needs a grant for the Gateway principal on serve. `swamp/config/gateway-workflow-grants.json` lists them. Create a missing grant with `swamp access grant create --subject user:orbit-gateway --allow run,read --on workflow:<name>` before the release that starts the workflow.
+A new workflow also needs a grant for the Gateway principal on serve. `swamp/config/gateway-workflow-grants.json` lists them. Create a missing grant with `swamp access grant create --subject user:orbit-gateway --allow run,read --on workflow:<name>`, then run `swamp access reload`, before the release that starts the workflow. Serve reads grants only on that reload; without it the start fails with `swamp.start_refused`.
 
 ### Prepare a release
 
