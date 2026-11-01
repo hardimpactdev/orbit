@@ -16,7 +16,9 @@ At migration baseline `6291bb036`, `UpdateDatabaseConnectionAction` validates th
 
 ## Budget binding
 
-These fixtures are stacked on #2404 at `aa7604ea772b629d074ad8587de36932defc49ae`, whose explicit workflow queue timeout is 30 seconds. Test that staged product source with the canonical #2314 runner (lane 25's branch until it reaches main). Every fixture records queue 30, strictly below its run budget. No workflow or shared Operations regression is changed here. #2404 and these drafts wait for D's receipts; no topology run is implied.
+The reviewed #2404 workflow source is `aa7604ea772b629d074ad8587de36932defc49ae`, with queue timeout 30.
+
+This draft is based on its actual merge `c44798d264d0a551d0aebc7c6b838a60e8eee670`; the database workflows and catalog match that reviewed source. No receipt or runtime acceptance is inferred from the merge. Test that staged product source with the canonical #2314 runner (lane 25's branch until it reaches main). Every fixture records queue 30, strictly below its run budget. No workflow or shared Operations regression is changed here. These drafts still wait for D's individual receipts; no topology run is implied.
 
 The saved Gateway succeeded-list snapshot is from 2026-11-01 14:40:14Z. Samples belong to the current SSH execution paths below. The existing policy applies `max(60, ceil(longest_seconds * 1.5 / 60) * 60)`; no current-shape success in this snapshot uses 1800. Raw values are shown separately. This caller-visible snapshot is not complete 14-day native history, and zero selected successes does not prove no historical success. These are kind-wide budgets, not engine-specific or p95 measurements.
 
