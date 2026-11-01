@@ -16,7 +16,7 @@ Work through these steps in order before you fill the template.
 3. **Map each group to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature). Prefer an official model (`@swamp/ssh`, `@swamp/cfgmgmt`) over a script. Record what you checked for the PR body.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Every secret becomes a `{vault, key}` descriptor under `execution_secrets`.
 5. **Order refusals before effects.** A read step and a typed decision step feed a native `assert` step. It refuses before the first write, as the #2266 branch check does.
-6. **Write the result.** One result step prints one public JSON object. Declare it as `terminal_result`. Name the failed step and a public `error_code` on failure.
+6. **Write the result and budget.** One result step prints one public JSON object, with the failed step and an `error_code` on failure. Set the [time budget](#set-the-time-budget).
 7. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
 8. **Delete the old path in the same PR.** Remove the executor, its tests, scripts and callbacks, and its `swamp-shape-baseline.json` rows.
 
@@ -31,6 +31,7 @@ id: REPLACE_WORKFLOW_UUID
 name: operation-REPLACE_KIND
 description: REPLACE_ACTION_GROUP
 vaults: [orbit-control-inputs]
+queueTimeout: REPLACE_QUEUE_SECONDS
 inputs:
   type: object
   properties:
@@ -123,6 +124,19 @@ Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOpera
 | [ ] | Declare one fixed terminal selector. The shared subscriber and `projectTerminal` read the exact native run's history and invoke the family projector. |
 | [ ] | Settle the Operation from native status and public outputs. Project F1 failure details for any failed step. |
 
+## Set the time budget
+
+PLAN F8 requires a budget for every kind. A port PR without one fails review.
+
+| Item | Rule |
+| --- | --- |
+| Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live runs when they exist, otherwise native harness runs. State the sample size. |
+| Run budget | Set it from the measured p95 with headroom, not a guess. `instance.create` targets under 10 s with a 60 s budget. |
+| Timeout at start | The Gateway passes the budget as the Swamp run timeout at start. Lane 16 owns the shared field; add no family timer. |
+| Expiry | The run ends and the Operation fails with `operation.timed_out` plus F1 error detail. Nothing waits past the budget. |
+| `queueTimeout` | Set it per kind in the workflow so a step fails fast when no worker is free. Keep it well below the run budget. |
+| Step count | Use fewer, larger steps. Each placed step adds scheduling and SSH overhead. Split only at a resume point, a Node change or a guard. |
+
 ## Test layout
 
 Put each test where its project's CI runs it.
@@ -193,6 +207,8 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | A failure-reporter job or POST `/failure` | The Gateway already projects native status | Delete it |
 | Dereferencing outputs of a failed or skipped step | CEL fails with `No such key` and hides the first error | Depend on `or [succeeded, skipped]` and guard on prior failure |
 | Strict format checks on a third-party token | GitHub stateless tokens contain dots; the check refused a valid mint | Check only documented properties: length, scope, expiry |
+| One step per command | Each step adds scheduling and SSH overhead and blows the budget | One step per action group |
+| A kind without a measured p95 and run budget | Runs can wait for minutes, as op 6639 did | [Set the time budget](#set-the-time-budget) |
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault, `vaults: []` when none |
 | A secret in `run:`, argv, workflow inputs or `set -x` | Run history and `ps` expose it | `env` from `vault.get`, then stdin or a 0600 file |
 | Copying the GitHub App or CA key into a vault | Root-of-trust keys stay in the Gateway | The two exact POST mint and sign primitives |
@@ -210,6 +226,7 @@ Continue ports in the approved shape while live admission proof is pending. Use 
 - [ ] Delete the old executor, embedded script strings and obsolete callbacks in the same PR.
 - [ ] Delete CLI, SDK and docs paths that served only the old executor. Leave `apps/agent` alone.
 - [ ] Report Orbit app/test net lines and Swamp lines separately.
+- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. Without them the review fails.
 
 Check the completed port and report what the evidence proves.
 
@@ -220,13 +237,13 @@ Check the completed port and report what the evidence proves.
 
 ## Changelog
 
-One line per lesson, newest first, with the PR it came from.
+Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 
-- v1 manual cross-reference: Swamp has no step retry key; the template names resume, guards, concurrency and method locks. `command/shell` takes `workingDir` and `timeout`.
-- v1 reference check: `node.bootstrap_probe` sets `target` and `labels` together; placement now points to `firewall.inspect`.
-- #2266 instance create: refuse a precondition (`instance.branch_in_use`) with a read, a typed decision and an `assert` before the first write.
-- #2266 instance create: skip later steps after a failure and never read a skipped step's outputs; report the first failed step.
-- #2266 instance create: accept documented third-party token formats; GitHub stateless tokens contain dots.
-- #2266 instance create: op 6636 left no stderr for the failed step; every failing step needs the F1 output.
-- Conformance ledger, 384 findings to 2026-11-01: placement, shared model names, embedded scripts, many-action behaviors, Gateway callbacks and vault lists are the most frequent defects.
-- #2268 template v0 by lane 17: workflow, Gateway checklist, seven decisions, F1 slot.
+| Source, newest first | Lesson |
+| --- | --- |
+| PLAN F8 | Every kind declares a measured p95, a run budget passed as the Swamp run timeout, and a per-kind `queueTimeout`; fewer, larger steps. |
+| v1 manual and reference check | Swamp has no step retry key. `command/shell` takes `workingDir` and `timeout`. Copy placement from `firewall.inspect`; `node.bootstrap_probe` sets both selectors. |
+| #2266 instance create | Refuse a precondition (`instance.branch_in_use`) with a read, a typed decision and an `assert` before the first write. |
+| #2266 instance create | Accept documented third-party token formats; GitHub stateless tokens contain dots. |
+| #2266 instance create | Op 6636 had no readable error: later steps read skipped outputs, and the failed step left no stderr. Guard on prior failure, read no skipped outputs, and use the F1 output. |
+| Conformance ledger, 384 findings to 2026-11-01 | Placement, shared model names, embedded scripts, many-action behaviors, Gateway callbacks and vault lists are the most frequent defects. |

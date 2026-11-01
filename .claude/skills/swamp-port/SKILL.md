@@ -28,6 +28,7 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 - **Control flow:** `dependsOn` with `condition`, `forEach` with a per-item `behaviorName`, `guard`, `allowFailure`, `concurrency`, inherited `queueTimeout`, native resume. No loops, sleeps, lock files or receipts. Swamp has no step retry key. Never read outputs of a failed or skipped step.
 - **Errors (F1):** every failing step runs through lane 16's shared F1 wrapper so its step name and the last 4 KB of redacted stderr reach `operation:show`. Never add a family wrapper.
 - **Result:** one result step prints one public JSON object. A refusal prints `{"error_code":"family.code"}` and exits nonzero. Declare it as `terminal_result` in the Gateway.
+- **Time budget (F8):** measure the kind's p95 from native history. Set a run budget from it, such as 60 s for `instance.create`; the Gateway passes it as the run timeout through lane 16's shared field. Set `queueTimeout` per kind. Use fewer, larger steps; each one adds scheduling and SSH overhead.
 - **Gateway:** validate and record immutable intent at admission, start with shared `StartSwampRun`, push changed secrets with `SwampCommandStep::executionCopy`, project through the family projector. No callbacks, holds, pollers or retries.
 - **Delete** the old executor, its tests, its embedded scripts, its callbacks, and the CLI, SDK and docs paths that served only it, in the same PR. Do not touch `apps/agent`. Remove the kind's rows from `swamp/config/swamp-shape-baseline.json`.
 
@@ -38,10 +39,11 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 - Gateway Pest tests for admission, identity, inputs envelope and projection, run with a file path or `--filter`.
 - The shape gate and placement lint.
 - Report Orbit app and test net lines and Swamp lines separately.
+- State the measured p95, its sample, the run budget and `queueTimeout` in the PR body.
 
 ## Review a kind PR
 
-Lane 26 reviews every kind PR against the [PR and review checklist](../../../docs/swamp/porting.md#pr-and-review-checklist) and the [anti-patterns](../../../docs/swamp/porting.md#anti-patterns). Report PASS, or each deviation as `file:line`, the rule broken, and the native replacement. Keep source conformance separate from CI, served-source uptake and live evidence.
+Lane 26 reviews every kind PR against the [PR and review checklist](../../../docs/swamp/porting.md#pr-and-review-checklist) and the [anti-patterns](../../../docs/swamp/porting.md#anti-patterns). A kind PR without a measured p95 and a run budget fails review. Report PASS, or each deviation as `file:line`, the rule broken, and the native replacement. Keep source conformance separate from CI, served-source uptake and live evidence.
 
 ## Improve this skill
 
