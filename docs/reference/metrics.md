@@ -29,7 +29,7 @@ The role runs two containers on the Metrics Node and two units on each selected 
 
 Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
 
-The Gateway sends the rendered configuration and role assignment to `metrics.runtime`. Under one Node-local lock, Rust verifies ownership of the configuration, both containers, recovery containers, and volumes before it changes them. Rust owns image pins, container arguments, separate service hashes, publication, health checks, and rollback. A failed replacement restores the prior containers and configuration. Once both replacements are healthy, a recovery-container cleanup failure keeps the new configuration and reports `metrics.container_cleanup_failed`. Dashboard changes do not replace Grafana; its file provider reloads them. `metrics.runtime-health` observes container health, and `metrics.credentials` verifies or changes the Grafana password through its authenticated API. Passwords travel only in protected command input.
+The role lifecycle uses the native Metrics runtime lower. It checks ownership of the configuration, containers and volumes before changing them. The lower owns container arguments and specification hashes. The exporter preference workflow uses the same Prometheus image pin to validate configuration, then restarts the existing container. A failed replacement by the lower restores the prior runtime. After healthy replacement, a cleanup failure preserves the new runtime and reports `metrics.container_cleanup_failed`. Grafana's file provider reloads dashboard changes without replacing the container. Credential verification and reset use Grafana's authenticated API.
 
 The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
 
@@ -62,7 +62,7 @@ Convergence has fixed time limits.
 
 Convergence pulls an image only when the Metrics Node lacks it. When an image is missing and Docker does not answer, convergence fails with `metrics.docker_unavailable` and names the Node. Start Docker and converge again.
 
-Orbit replaces a container only when its configuration changes. A change to the selected exporters replaces Prometheus and interrupts open queries. Grafana keeps running and reloads dashboard files without a restart. A password reset uses Grafana's API and replaces no container.
+Role and fleet convergence replace a container only when its configuration changes. Exporter preference changes publish the validated configuration and restart the existing Prometheus container. Both interrupt open queries. Grafana keeps running and reloads dashboard files without a restart. A password reset uses Grafana's API and replaces no container.
 
 ## Relocate
 
@@ -85,15 +85,21 @@ A Node can host an exporter only when the Gateway manages it. The Node must be a
 | any | Not eligible | Not selected |
 | any | The Metrics Node, when eligible | Selected |
 
-`orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` store the preference. Nothing else writes one: adding or adopting a Node stores no preference. Preferences survive role changes and a disabled Metrics role. The Gateway checks eligibility before it stores an enabled preference or starts remote work.
+`orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` return an accepted native Operation and store the desired preference. Node 209 runs the official cfgmgmt package, fetch, file, systemd and firewall models. The captured public intent fixes the target, SSH identity, unit configuration, source-scoped port rules and complete Prometheus configuration. Steps read no Gateway state. Admission refuses a second active exporter change for the same Metrics owner before writing its preference.
 
-A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. The UFW rule `orbit:metrics-node-exporter` allows the Metrics Node to reach the port.
+The workflow validates a candidate Prometheus configuration, publishes it and restarts the existing container through the official cfgmgmt container model. It verifies exporter endpoints and Prometheus readiness once. A failed run retains desired preference, public configuration and native history for server-backed resume from the failed step. It creates no container replacement, rollback journal or Grafana credential copy.
+
+These commands store the preference. Nothing else writes one: adding or adopting a Node stores no preference. Preferences survive role changes and a disabled Metrics role. The Gateway checks eligibility before it stores an enabled preference or starts remote work.
+
+A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. Explicit exporter changes use the official firewall model to allow the Metrics Node source address to reach the port.
 
 The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add` except the enrollment of a task VM, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
 
-The Gateway selects the fleet and sends the Node and Metrics IPv4 addresses to `metrics.node-exporter` and `metrics.cadvisor`. Each agent command snapshots, converges, removes, or restores one exporter under Node-local exporter and firewall locks. Rust owns configuration, package or binary installation, service control, firewall ownership checks, and verification. A failed change restores the prior configuration, service state, and firewall source before returning its error. Fleet rollback passes the snapshots back to the commands; cAdvisor restoration reinstalls its pinned binary when removal deleted it. The Gateway sends no configuration source or executable arguments.
+Explicit exporter changes use the native preference workflow. It captures the selected Node and complete scrape configuration, then uses official cfgmgmt for packages, downloads, files and systemd state. Canonical PHP monitor and Caddy children converge service metrics. In each step, the official firewall model manages one port rule for the Metrics source address with its defaults. Prometheus candidate validation precedes publication and restart of the existing container.
 
-The node exporter and cAdvisor ports are open to every WireGuard peer, not only to the Metrics Node. Each Node keeps the rule `orbit:wireguard-members`, which admits every member on its WireGuard address, and no deny rule guards ports 9100 and 9102. WireGuard membership is the security boundary, so this is intended.
+Node role and fleet reconciliation use the native Metrics exporter lowers. They receive captured Node and Metrics addresses, snapshot exporter state and manage packages, binaries, units and exact firewall rules under the existing host locks. Their recovery restores captured configuration, services and firewall sources. Explicit exporter preference Operations use the placed workflow above.
+
+Exporter listeners bind to the WireGuard address. Explicit exporter changes use the trusted WireGuard membership boundary: the broader `orbit:wireguard-members` allow still admits other peers, including to FPM port 9114. Source-scoped exporter allows do not override that rule. The official firewall model neither inserts deny rules ahead of member rules nor removes older interface-specific service rules. Existing Node and role convergence retains those older rules. See [service metrics](/reference/service-metrics#private-access) for Caddy access checks.
 
 ### Exporter degradation
 
@@ -105,7 +111,7 @@ An exporter reconcile failure does not demote an active Node or fail `node:add`;
 
 The node exporter reports systemd unit state, but not the CPU and memory of each unit. So each selected Node also runs cAdvisor `v0.60.5`. Orbit verifies its SHA-256 checksum before install. cAdvisor reads cgroups, so it covers systemd and Docker Processes. `GET /api/v1/processes` reads CPU and memory from it.
 
-cAdvisor runs as the static binary `/usr/local/bin/orbit-cadvisor` under `orbit-cadvisor.service`, with `Restart=always`. The UFW rule `orbit:metrics-cadvisor` allows the Metrics Node to reach port 9102. Enabling or disabling the exporter on a Node does the same to cAdvisor. Disabling removes the unit, the rule, and the binary.
+cAdvisor runs as the static binary `/usr/local/bin/orbit-cadvisor` under `orbit-cadvisor.service`, with `Restart=always`. The source-scoped firewall rule allows the Metrics Node to reach port 9102. Enabling or disabling the exporter on a Node does the same to cAdvisor. Disabling removes the unit, the source-scoped rule, and the binary. Older rules tied to an interface stay under Node and role convergence ownership.
 
 cAdvisor collects only CPU and memory. Its flags disable every other metric kind and drop Docker container labels, because an unfiltered cAdvisor adds thousands of series per Node. A Docker Process's series uses its container name, `orbit-process-{id}-{name}`. A systemd Process's series uses its unit name, `orbit-process-{id}-{name}.service`. A Process without a series reports null CPU and memory, never zero.
 
