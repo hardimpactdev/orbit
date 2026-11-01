@@ -61,6 +61,44 @@ class RepositoryServiceTest(unittest.TestCase):
                 run.assert_not_called()
                 self.assertEqual(unit.read_text(), '[Service]\nExecStart=/foreign\n')
 
+    def dpkg(self, *versions):
+        """dpkg-query answers in order; None means not installed."""
+        answers = iter(versions)
+        def query(argv, **kwargs):
+            self.assertEqual(argv[:2], ['dpkg-query', '-W'])
+            version = next(answers)
+            return subprocess.CompletedProcess(argv, 0 if version else 1,
+                                               'install ok installed ' + version if version else '', '')
+        return patch.object(module.subprocess, 'run', side_effect=query)
+
+    def test_missing_fcgiwrap_installs_the_exact_pin_without_recommends(self):
+        with self.dpkg(None, module.FCGIWRAP), patch.object(module.os, 'access', return_value=True), \
+             patch.object(module, 'run') as run:
+            module.ensure_fcgiwrap()
+        self.assertEqual([call.args[0] for call in run.call_args_list], [
+            ['apt-get', 'update'],
+            ['apt-get', 'install', '-y', '--no-install-recommends', 'fcgiwrap=1.1.0-16build3'],
+        ])
+        self.assertEqual(run.call_args.kwargs['env']['DEBIAN_FRONTEND'], 'noninteractive')
+
+    def test_pinned_fcgiwrap_is_not_reinstalled(self):
+        with self.dpkg(module.FCGIWRAP, module.FCGIWRAP), patch.object(module.os, 'access', return_value=True), \
+             patch.object(module, 'run') as run:
+            module.ensure_fcgiwrap()
+        run.assert_not_called()
+
+    def test_other_fcgiwrap_version_refuses_without_changing_it(self):
+        with self.dpkg('1.1.0-99', '1.1.0-99'), patch.object(module, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'e2e.fixture_repository_fcgiwrap_version_mismatch'):
+                module.ensure_fcgiwrap()
+        run.assert_not_called()
+
+    def test_fixture_caddy_keeps_state_out_of_the_product_caddy_home(self):
+        unit = module.units()['swamp-proof-repositories.service']
+        self.assertIn('StateDirectory=swamp-proof-repositories', unit)
+        self.assertIn('XDG_DATA_HOME=/var/lib/swamp-proof-repositories', unit)
+        self.assertNotIn('/var/lib/caddy', unit)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -10,5 +10,5 @@ it('keeps repository serving isolated from product Caddy and refuses conflicting
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-        ->and($process->getErrorOutput())->toContain('Ran 4 tests', 'OK');
+        ->and($process->getErrorOutput())->toContain('Ran 8 tests', 'OK');
 });
