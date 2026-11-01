@@ -8,10 +8,11 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.destroy]}
+    kind: {type: string, enum: [database.destroy, database.destroy_owned]}
+    scope: {type: string, pattern: '^(single|server-[1-9][0-9]*)$'}
     intent: {type: object}
-    execution_secrets: {type: object, properties: {database_destroy: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-destroy-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_destroy], additionalProperties: false}
-  required: [operation_id, node_id, kind, intent, execution_secrets]
+    execution_secrets: {type: object, properties: {database_destroy: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-(destroy-intent-[1-9][0-9]*|destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*)$'}}, required: [vault, key], additionalProperties: false}}, required: [database_destroy], additionalProperties: false}
+  required: [operation_id, node_id, kind, scope, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: prepare
@@ -27,10 +28,10 @@ jobs:
   - name: directory
     <<: *placed
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-destroy-" + string(inputs.operation_id) }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "database-destroy-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
         hosts: name:server
-        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
   - name: copy
     <<: *placed
     dependsOn: [{step: assets, condition: {type: succeeded}}, {step: directory, condition: {type: succeeded}}]
@@ -40,7 +41,7 @@ jobs:
       inputs:
         hosts: name:server
         src: ${{ steps.assets.outputs.directory + "/." }}
-        dst: ${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}
+        dst: '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}'
         direction: to
         recursive: true
   - name: inventory
@@ -52,7 +53,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', inventory, '{}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', inventory, '{}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: inventory_checked
@@ -83,7 +84,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', ownership, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', ownership, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: ownership_checked
@@ -99,7 +100,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', fence, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', fence, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: fence_checked
@@ -115,7 +116,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', blockers, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', blockers, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: acl_snapshot
@@ -126,7 +127,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_snapshot, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_snapshot, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: safe
@@ -144,11 +145,11 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.databases : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      behaviorName: ${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_database, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_database, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: databases_removed
@@ -166,11 +167,11 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      behaviorName: ${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_user, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_user, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: acl_remove
@@ -180,11 +181,11 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      behaviorName: ${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_remove, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_remove, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: users_removed
@@ -200,7 +201,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_save, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_save, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: persisted
@@ -219,7 +220,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', restore, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', restore, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: acl_restore
@@ -229,11 +230,11 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      behaviorName: ${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: acl_restore_save
@@ -244,7 +245,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore_save, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore_save, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
         stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
         okExitCodes: [0, 1]
   - name: cleanup_checked
@@ -272,7 +273,7 @@ jobs:
       <<: *ssh
       inputs:
         hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
   - name: accept_result
     <<: *placed
     writes: false

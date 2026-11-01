@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
+use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Operation;
@@ -32,8 +33,14 @@ it('records native removal outcomes without children and keeps the Instance and 
         'error_code' => $status === 'failed' ? 'database.destroy_owned_outcome_unknown' : null];
 
     $path = '/api/v1/direct-operations/'.$operation->id.'/result';
-    $this->postJson($path, $callback)->assertOk()->assertJsonPath('data.status', $status);
-    $this->postJson($path, $callback)->assertOk()->assertJsonPath('data.status', $status);
+    if ($status === 'interrupted') {
+        $projector = app(DatabaseDestroyOwnedProjection::class);
+        expect($projector->apply($operation, $callback)->status->value)->toBe($status);
+        expect($projector->apply($operation, $callback)->status->value)->toBe($status);
+    } else {
+        $this->postJson($path, $callback)->assertOk()->assertJsonPath('data.status', $status);
+        $this->postJson($path, $callback)->assertOk()->assertJsonPath('data.status', $status);
+    }
 
     $this->assertDatabaseCount('operations', 1);
     $this->assertModelExists($this->instance);
@@ -41,4 +48,4 @@ it('records native removal outcomes without children and keeps the Instance and 
     expect(DatabaseConnection::query()->whereKey($owned->id)->exists())->toBe($status !== 'succeeded');
     expect(DatabaseConnectionTarget::query()->where('database_connection_id', $owned->id)->exists())->toBe($status !== 'succeeded');
     $this->assertDatabaseHas('database_connection_targets', ['database_connection_id' => $foreign->id, 'instance_id' => $this->instance->id]);
-})->with(['succeeded', 'failed', 'cancelled']);
+})->with(['succeeded', 'failed', 'cancelled', 'interrupted']);

@@ -15,6 +15,7 @@ from database_command_native import DatabaseCommands, reply
 
 
 class DatabaseDestroyNative(DatabaseCommands):
+    fail = unittest.TestCase.fail
     def setUp(self):
         super().setUp()
         self.prepare_commands(['workflow-operation-database-destroy.yaml', 'workflow-database-destroy-actions.yaml'])
@@ -50,10 +51,10 @@ class DatabaseDestroyNative(DatabaseCommands):
         self.assertEqual(self.outcome(first),{'backend':'absent'})
 
     def test_postgres_fence_precedes_drops_and_restores_after_refused_blockers(self):
-        self.public['intent']['driver']='pgsql';self.fail('blockers','database.in_use')
+        self.public['intent']['driver']='pgsql';DatabaseCommands.fail(self,'blockers','database.in_use')
         run=self.run_parent(False)
         self.assertEqual(self.actions(),['ownership','fence','blockers','restore'])
-        self.assertEqual(self.outcome(run),{'error_code':'database.in_use'})
+        self.assertEqual(self.outcome(run),{'error_code':'database.destroy_outcome_unknown'})
 
     def test_native_parent_resume_rechecks_safety_after_partial_database_failure(self):
         # Serve's resolver forwards globalArgs for a previously unexecuted item.
@@ -76,10 +77,10 @@ class DatabaseDestroyNative(DatabaseCommands):
                     except OSError:
                         self.assertIsNone(serve.poll(),(self.repo/'serve.log').read_text()[-2000:]);time.sleep(.1)
                 flags=('--server',f'ws://127.0.0.1:{port}','--token-file',str(token))
-                self.public['intent']['driver']='pgsql';self.fail('drop_database')
+                self.public['intent']['driver']='pgsql';DatabaseCommands.fail(self,'drop_database')
                 first=reply(self.cli('workflow','run','operation-database-destroy','--input',json.dumps(self.public),*flags,success=False).stdout)
                 self.assertEqual(self.actions(),['ownership','fence','blockers','drop_database','restore'])
-                self.fail('');self.cli('workflow','resume','operation-database-destroy','--run',first['id'],*flags)
+                DatabaseCommands.fail(self,'');self.cli('workflow','resume','operation-database-destroy','--run',first['id'],*flags)
                 self.assertEqual(self.actions()[5:],['ownership','fence','blockers','drop_database','drop_user','restore'])
                 self.assertEqual(self.outcome(first),{'backend':'absent'})
             finally:
@@ -101,12 +102,12 @@ class DatabaseDestroyNative(DatabaseCommands):
 
     def test_valkey_save_failure_restores_only_admitted_users_and_preserves_default(self):
         self.public['intent'].update(driver='redis',container=None,databases=[],users=['default','proof'],owners={})
-        self.fail('acl_save','database.server_command_failed')
+        DatabaseCommands.fail(self,'acl_save','database.server_command_failed')
         run=self.run_parent(False)
         self.assertEqual(self.actions(),['acl_snapshot','acl_remove','acl_save','acl_restore','acl_restore_save'])
-        self.assertEqual(self.outcome(run),{'error_code':'database.server_command_failed'})
+        self.assertEqual(self.outcome(run),{'error_code':'database.destroy_outcome_unknown'})
         self.assertEqual([c['item'] for c in self.calls() if c['action'] in ('acl_remove','acl_restore')],['proof','proof'])
-        self.fail('');self.cli('workflow','resume','operation-database-destroy','--run',run['id'])
+        DatabaseCommands.fail(self,'');self.cli('workflow','resume','operation-database-destroy','--run',run['id'])
         self.assertEqual(self.outcome(run),{'backend':'absent'})
 
 

@@ -10,6 +10,7 @@ use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
+use App\Models\Node;
 
 /** Admission for one native DAG, including databases on other Nodes and SQLite files.
  * @phpstan-type Server array{server_id:int,node_id:int,intent:array<string,mixed>}
@@ -25,12 +26,23 @@ final readonly class DropOwnedDatabasesAction
         $passwords = $snapshot['passwords'];
         unset($snapshot['passwords']);
         $readerNodes = array_values(array_unique(array_column($snapshot['servers'], 'node_id')));
+        foreach (['servers', 'sqlite'] as $field) {
+            foreach ($snapshot[$field] as $index => $row) {
+                $node = Node::query()->findOrFail($row['node_id']);
+                $ssh = ['host' => $node->wireguard_ip, 'user' => $node->user,
+                    'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key) ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
+                if ($field === 'servers') {
+                    $snapshot[$field][$index]['intent']['ssh'] = $ssh;
+                } else {
+                    $snapshot[$field][$index]['ssh'] = $ssh;
+                }
+            }
+        }
 
         return $this->operations->prepare('database.destroy_owned', 'instance', $owner->id, $owner->node_id,
             [...$snapshot,
-                'private_bindings' => ['payload' => ['owner_node_id' => $owner->node_id, 'read_node_ids' => $readerNodes, 'write_node_ids' => []]],
                 'participant_node_ids' => array_values(array_unique([$owner->node_id, ...$readerNodes]))],
-            ['database-apply' => ['name' => 'database.destroy_owned', 'input' => ['participant_passwords' => $passwords], 'protected' => ['payload']]],
+            ['database-apply' => ['name' => 'database.destroy_owned', 'input' => ['participant_passwords' => $passwords]]],
             ['delete_connections' => $snapshot['connection_ids']]);
     }
 
