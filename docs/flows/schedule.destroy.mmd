@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design from ADR 0244: native Swamp schedules, nothing installed on the Node; DECISIONS R1-R3.
+  %% Target design: ADR 0244 native Swamp schedules, nothing installed on Nodes; DECISIONS Schedules (Nick 2026-11-02), R1-R3.
   %% status: draft
+  %% command: schedule:destroy
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,20 +11,69 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: schedule:destroy<br/>{schedule: 7f3c…}
-  Note over GW: Mark Schedule removing<br/>no new fire is recorded
-  GW->>SW: Remove the trigger<br/>trigger removal frame (TBD)
-  alt removal confirmed
-    SW-->>GW: trigger gone
-    GW->>SW: Empty the command key<br/>vault: schedule-command-7f3c…
+  CLI->>GW: schedule:destroy 7f3c…<br/>Schedule UUID · --yes
+  %%> Command:
+  %%> - `orbit schedule:destroy 7f3c9a2e-41d0-4b8a-9c11-2f6e0d5b7a10 --yes`
+  %%> - syntax: `<schedule> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the UUID of the Schedule, or a definition name with `--project`
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI asks first; the default is No
+  %%> - without a terminal, or with `--json`, `--yes` is required
+  %%> With `--project`:
+  %%> - only the Project Schedule definition is deleted (R1); Instance copies stay
+  Note over GW: Validate, mark removing<br/>Schedule 7f3c… · Instance 42
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, which runs Instance 42
+  %%> - Schedule 7f3c… exists; a failed or disabled Schedule can be destroyed too
+  %%> Result:
+  %%> - Schedule 7f3c… is marked removing; the trigger is removed next
+  %%> - there is no Node work, so no run starts (R1)
+  %%> Not refused:
+  %%> - a running fire no longer blocks destroy; `schedule.run_active` is gone
+  GW->>SW: Remove the trigger<br/>workflow trigger removal
+  %%> What it does:
+  %%> - removes the native Swamp schedule trigger from serve (Node 209)
+  %%> When:
+  %%> - skipped when the Schedule is disabled and has no trigger
+  alt Swamp confirms
+    SW-->>GW: trigger removed
+    %%> Returns:
+    %%> - the trigger is gone; serve starts no new fire
     Note over GW: Delete the Schedule<br/>its tasks stay as history
+    %%> Result:
+    %%> - Schedule 7f3c…'s record is deleted
+    %%> - its tasks stay, so past fires remain visible
+    %%> Vault key:
+    %%> - the command's vault key is removed now, or after a running fire ends
     GW-->>CLI: Schedule destroyed<br/>204 No Content
-  else Swamp does not confirm
-    SW--xGW: no confirmation
-    Note over GW: Keep Schedule removing<br/>repeat destroy to converge
+    %%> What you get:
+    %%> - the result at once; there is nothing to follow
+  else Swamp refuses or is down
+    SW--xGW: no confirmation<br/>refused or unreachable
+    %%> When:
+    %%> - serve on 209 does not answer
+    Note over GW: Keep Schedule removing<br/>rerun the same destroy
+    %%> Result:
+    %%> - Schedule 7f3c… stays recorded, marked removing
+    %%> - the trigger may still be set; a fire it starts still runs and is recorded as a task
+    %%> Retry:
+    %%> - run the same command again; removing a trigger that is gone is safe
     GW--xCLI: 503 removal unconfirmed<br/>swamp.schedule_publish_unavailable
+    %%> Returns:
+    %%> - the error code; the Schedule stays removing
   end
   opt a fire is still running
     SW->>N: Finish the running fire<br/>@swamp/ssh, own timeout
-    GW->>SW: Read the final run<br/>shared run reader
+    %%> What it does:
+    %%> - the fire that already started runs to its end, within the Schedule's timeout
+    %%> Why:
+    %%> - stopping a command halfway can leave the application in a worse state
+    SW-->>GW: Run finished<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the fire<br/>task #5141 · trigger: schedule
+    %%> Result:
+    %%> - the fire's task records its result, although the Schedule is gone
+    %%> - then the command's vault key is removed
   end

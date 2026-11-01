@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design from ADR 0244: native Swamp schedules, nothing installed on the Node.
+  %% Target design: ADR 0244 native Swamp schedules, nothing installed on Nodes; DECISIONS Schedules (Nick 2026-11-02), R1.
   %% status: draft
+  %% command: schedule:enable
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,16 +11,74 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: schedule:enable<br/>{schedule: 7f3c…}
-  Note over GW: Mark the Schedule enabled<br/>calendar, command, budget
+  CLI->>GW: schedule:enable 7f3c…<br/>Schedule UUID
+  %%> Command:
+  %%> - `orbit schedule:enable 7f3c9a2e-41d0-4b8a-9c11-2f6e0d5b7a10`
+  %%> - syntax: `<schedule> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the UUID of the Schedule, as `schedule:list` shows it
+  %%> When:
+  %%> - after `schedule:create --no-start`, or for a copy that production preparation created disabled
+  %%> Disable:
+  %%> - there is no `schedule:disable` command or kind today
+  %%> - disable is the same flow in reverse: the Gateway removes the trigger and records `disabled`, with no run and no Node work (R1)
+  %%> - a fire that already started finishes, and its result is still recorded
+  Note over GW: Validate the Schedule<br/>Schedule 7f3c… · Instance 42
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, which runs Instance 42
+  %%> - Schedule 7f3c… is active, not failed or removing
+  %%> - Instance 42 is still on Node 12
+  %%> Already enabled:
+  %%> - the trigger is set again; enable is idempotent
   GW->>SW: Publish the trigger<br/>workflow.trigger.set
-  SW-->>GW: trigger active
-  GW-->>CLI: Schedule enabled<br/>next fire 03:00
+  %%> What it does:
+  %%> - sets the native Swamp schedule trigger on serve (Node 209) for `task-command-run`
+  %%> - there is no Node work, so no run starts (R1)
+  %%> Inputs:
+  %%> - the calendar and the full intent recorded at create
+  %%> - the command's vault key name, never the command
+  alt Swamp confirms
+    SW-->>GW: trigger set<br/>next fire 03:00
+    %%> Returns:
+    %%> - the trigger is active, with its next fire time
+    Note over GW: Record result<br/>desired state: enabled
+    %%> Result:
+    %%> - Schedule 7f3c… is recorded as enabled, only after Swamp confirms
+    GW-->>CLI: Schedule enabled<br/>next fire 03:00
+    %%> What you get:
+    %%> - the result at once; there is nothing to follow
+  else Swamp refuses or is down
+    SW--xGW: no confirmation<br/>refused or unreachable
+    %%> When:
+    %%> - serve on 209 does not answer, or refuses the trigger
+    Note over GW: Keep the prior state<br/>desired state: disabled
+    %%> Result:
+    %%> - Schedule 7f3c… stays disabled; nothing changed
+    %%> Retry:
+    %%> - run the same command again; it is safe
+    GW--xCLI: 503 publish unavailable<br/>swamp.schedule_publish_unavailable
+    %%> Returns:
+    %%> - the error code; the Schedule is unchanged
+  end
   loop each calendar fire
-    Note over SW: serve fires a root run<br/>task-command-run
+    Note over SW: Start a root run<br/>task-command-run
+    %%> What it does:
+    %%> - serve fires the trigger and starts one root run on 209
+    %%> - the run has the Schedule's timeout as its time budget
     SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
+    %%> How:
+    %%> - checks the user and the working directory on Node 12
+    %%> - reads the command with `vault.get` and sends it on stdin
+    %%> Runs as:
+    %%> - the Schedule's user, in its working directory, with its shell
     N-->>SW: exit code, output
-    GW->>SW: Read new runs<br/>shared run reader
-    SW-->>GW: run started / finished
-    Note over GW: Record the task<br/>trigger: schedule
+    %%> Returns:
+    %%> - the exit code; the output stays in the Swamp step
+    SW-->>GW: Run finished<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the fire<br/>task #5141 · trigger: schedule
+    %%> Result:
+    %%> - each fire becomes a task, with trigger `schedule`
+    %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set
   end
