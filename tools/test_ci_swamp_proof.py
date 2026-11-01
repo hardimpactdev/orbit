@@ -558,6 +558,19 @@ class RequestSequenceTest(unittest.TestCase):
         self.assertEqual(result['fixture_repositories'], 'separate-caddy')
         self.assertEqual(result['github_token_path'], 'not_exercised')
 
+    def test_mounted_source_refusal_and_acquisition_limits_survive_in_the_kind_receipt(self):
+        refusal = {'error_code': 'gateway.release_web_build_unavailable', 'step': 'web',
+                   'message': 'GitHub Actions artifact read unavailable.'}
+        self.state.update(gateway_install='mounted_source', release_runner_exercised=False,
+                          adopt_refusal=refusal, limitations=[refusal])
+        self.fixture['limitations'] = ['fixture enrollment only']
+        result, _, _ = self.execute()
+        self.assertTrue(result['proof_pass'])
+        self.assertEqual(result['gateway_install'], 'mounted_source')
+        self.assertIs(result['release_runner_exercised'], False)
+        self.assertEqual(result['adopt_refusal'], refusal)
+        self.assertEqual(result['limitations'], [refusal, 'fixture enrollment only'])
+
     def test_private_api_request_preserves_operation_identity_and_scoped_parity_material(self):
         self.fixture.update(secrets=[{'name': 'password', 'value': 'generate:hex32'}], limitations=['fixture enrollment only'])
         self.fixture['request'] = {'api': {'method': 'POST', 'path': '/api/v1/proof', 'body': {'password': '${secret.password}'}},
@@ -737,6 +750,68 @@ class AcquisitionReadinessTest(unittest.TestCase):
                     self.assertEqual(instance['gateway_install'], 'adopt')
                     self.assertEqual(instance['workload_roles'], 'recorded_not_converged')
                     self.assertTrue(instance['workload_roles_reason'])
+                else:
+                    with self.assertRaises(proof.ProofError):
+                        sessions.bootstrap(Mock(), {'node': {'user': 'orbit'}}, instance, b'bundle')
+                    self.assertFalse(instance.get('ready', False))
+
+    def test_mounted_source_requires_the_exact_web_refusal_and_both_live_readiness_reads(self):
+        state = {'issue': 'TASK-42', 'commit': 'c' * 40, 'vm': {'group_id': 42}, 'nodes': ['app-dev']}
+        refusal = {'error_code': 'gateway.release_web_build_unavailable', 'step': 'web',
+                   'message': 'GitHub Actions artifact read unavailable.'}
+        record = {'source': {'host_sha': state['commit'], 'guest_sha': state['commit'], 'dirty': False, 'mounted': True},
+                  'verification': {'passed': True}}
+        acquired = {'state': 'acquired', 'issue': state['issue'], 'topology': record,
+                    'gateway_install': 'mounted_source', 'release_runner_exercised': False,
+                    'adopt_refusal': refusal, 'limitations': [refusal]}
+        for wrong in (None, 'code', 'step', 'message', 'missing_refusal', 'runner_true', 'runner_zero', 'runner_missing',
+                      'install', 'worker', 'ready', 'sandbox_command', 'gateway_command', 'host_sha', 'guest_sha',
+                      'dirty', 'unmounted', 'verification'):
+            instance, observed = copy.deepcopy(state), copy.deepcopy(acquired)
+            sandbox = {'ready': True, 'worker': 'orbit-node-209'}
+            # Real status succeeds, but there is deliberately no adopted release.
+            gateway = {'release': None, 'release_sha': None}
+            if wrong in ('code', 'step', 'message'):
+                field = {'code': 'error_code', 'step': 'step', 'message': 'message'}[wrong]
+                observed['adopt_refusal'][field] = None
+            elif wrong == 'missing_refusal':
+                del observed['adopt_refusal']
+            elif wrong in ('runner_true', 'runner_zero'):
+                observed['release_runner_exercised'] = True if wrong == 'runner_true' else 0
+            elif wrong == 'runner_missing':
+                del observed['release_runner_exercised']
+            elif wrong == 'install':
+                observed['gateway_install'] = 'adopt'
+            elif wrong in ('worker', 'ready'):
+                sandbox[wrong] = False
+            elif wrong in ('host_sha', 'guest_sha'):
+                observed['topology']['source'][wrong] = 'd' * 40
+            elif wrong == 'dirty':
+                observed['topology']['source']['dirty'] = True
+            elif wrong == 'unmounted':
+                observed['topology']['source']['mounted'] = False
+            elif wrong == 'verification':
+                observed['topology']['verification']['passed'] = False
+            def command(_guest, _user, argv, *args, observed=observed, **kwargs):
+                if argv[0] == 'stat':
+                    return b'600:orbit'
+                return json.dumps(observed).encode() if 'acquire' in argv else b''
+            observations = [sandbox, gateway]
+            if wrong == 'sandbox_command':
+                observations[0] = proof.ProofError('Native verify failed')
+            elif wrong == 'gateway_command':
+                observations[1] = proof.ProofError('Gateway access refused')
+            with self.subTest(wrong=wrong), patch.object(sessions, 'user_call', side_effect=command), \
+                 patch.object(sessions, 'harness_json', side_effect=observations) as readiness:
+                if wrong is None:
+                    sessions.bootstrap(Mock(), {'node': {'user': 'orbit'}}, instance, b'bundle')
+                    self.assertTrue(instance['ready'])
+                    self.assertEqual(instance['gateway_install'], 'mounted_source')
+                    self.assertIs(instance['release_runner_exercised'], False)
+                    self.assertEqual(instance['adopt_refusal'], refusal)
+                    self.assertEqual(instance['limitations'], [refusal])
+                    self.assertEqual(instance['gateway_status'], gateway)
+                    self.assertEqual([call.args[3] for call in readiness.call_args_list], ['gateway', 'operator'])
                 else:
                     with self.assertRaises(proof.ProofError):
                         sessions.bootstrap(Mock(), {'node': {'user': 'orbit'}}, instance, b'bundle')

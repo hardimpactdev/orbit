@@ -122,9 +122,20 @@ def bootstrap(guest, control, state, bundle):
     state.update(worktree=worktree, user=user, topology_record=record)
     sandbox = harness_json(guest, user, state, 'gateway', ['sudo', '-n', '/usr/local/bin/converge-swamp.py', 'verify'])
     gateway = harness_json(guest, user, state, 'operator', ['orbit', 'gateway:status', '--json'])
-    if sandbox.get('ready') is not True or sandbox.get('worker') != 'orbit-node-209' or gateway.get('release_sha') != state['commit'] or not gateway.get('release'):
-        raise ProofError('Topology Gateway release or isolated native worker is unconfirmed.')
-    state.update(gateway_install='adopt', gateway_status=gateway, sandbox_verified=sandbox, ready=True, ready_at=utc(), **WORKLOAD_ROLES)
+    if sandbox.get('ready') is not True or sandbox.get('worker') != 'orbit-node-209':
+        raise ProofError('Topology isolated native worker is unconfirmed.')
+    install = acquired.get('gateway_install', 'adopt')
+    refusal = acquired.get('adopt_refusal')
+    limitations = acquired.get('limitations', [])
+    if not isinstance(limitations, list):
+        raise ProofError('Topology acquisition limitations must be a list.')
+    if install == 'mounted_source':
+        if acquired.get('release_runner_exercised') is not False or not isinstance(refusal, dict) or refusal.get('error_code') != 'gateway.release_web_build_unavailable' or refusal.get('step') != 'web' or not isinstance(refusal.get('message'), str):
+            raise ProofError('Topology mounted-source installation lacks the approved web-artifact refusal.')
+    elif install != 'adopt' or gateway.get('release_sha') != state['commit'] or not gateway.get('release'):
+        raise ProofError('Topology Gateway release is unconfirmed.')
+    state.update(gateway_install=install, release_runner_exercised=install == 'adopt', adopt_refusal=refusal,
+                 limitations=limitations, gateway_status=gateway, sandbox_verified=sandbox, ready=True, ready_at=utc(), **WORKLOAD_ROLES)
     return state
 
 

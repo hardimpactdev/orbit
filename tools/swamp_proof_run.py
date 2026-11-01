@@ -262,8 +262,9 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
                    swamp_commit=state['commit'], swamp_version=pins(topology.root)['version'],
                    topology=state['topology'], topology_version=state['topology_version'], nodes=state['nodes'],
                    seed=state['vm']['seed'], seed_provenance=state.get('seed_provenance'), vm=dict(state['vm']), gateway_install=state.get('gateway_install'),
+                   release_runner_exercised=state.get('release_runner_exercised'), adopt_refusal=state.get('adopt_refusal'),
                    gateway_status=state.get('gateway_status'), sandbox_verified=state.get('sandbox_verified'), destroyed=False,
-                   limitations=fixture.get('limitations', []), **WORKLOAD_ROLES)
+                   limitations=[*state.get('limitations', []), *fixture.get('limitations', [])], **WORKLOAD_ROLES)
     receipt.update(enrollment='fixture-set', topology_ca='fixture-set', fixture_repositories='separate-caddy', github_token_path='not_exercised')
     save()
     try:
