@@ -7,8 +7,6 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/{FirewallRulesController,FleetFirewallRulesController}.php
   - apps/gateway/app/Http/Requests/Firewall/**
   - apps/gateway/database/migrations/2027_01_09_120022_identify_firewall_rules_by_tuple.php
-  - swamp/extensions/behaviors/operations/firewall/**
-  - swamp/workflows/workflow-operation-firewall-direct.yaml
 ---
 
 Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it needs for public SSH recovery, WireGuard member trust, and each role. Those rules carry an `orbit:` prefix. The rule `orbit:wireguard-members` admits every WireGuard member on the Node's WireGuard address, as [private network trust](/reference/routes#private-network-trust) describes. The `firewall` family adds operator rules beside them, each identified by its port, protocol, and source on one Node.
