@@ -47,8 +47,9 @@
   "parity": [
     "swamp/proof/firewall/check.py",
     "+25/tcp DENY 192.0.2.10 # orbit spam host",
-    "+25/udp DENY 192.0.2.10",
     "+25/tcp ALLOW Anywhere",
-    "+25/udp ALLOW Anywhere"
+    "+25/udp DENY 192.0.2.10 # orbit spam host",
+    "+25/udp ALLOW Anywhere",
+    "+25/tcp (v6) ALLOW Anywhere (v6)"
   ]
 }
