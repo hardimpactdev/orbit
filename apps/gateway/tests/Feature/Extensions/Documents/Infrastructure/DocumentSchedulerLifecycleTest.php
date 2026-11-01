@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
+use Orbit\Extensions\Documents\Infrastructure\CleanupSchedulerSession;
 use Orbit\Extensions\Documents\Models\ProjectDocumentCleanup;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Tests\Support\DocumentSchedulerFixture;
@@ -93,35 +94,34 @@ it('preserves an explicit pause until a live worker resumes', function (): void 
 })->skip('Quarantined: live pause/resume worker exceeded 2s in full-suite slice16; restore after this multi-tick fixture is bounded');
 
 it('fences the stale token of a dead worker from a standalone child', function (): void {
-    deletion_provider($this, ['restored' => 'preserved body', 'next' => 'next body', 'paused' => 'preserve after pause']);
-    foreach (['restored', 'next', 'paused'] as $key) {
-        ProjectDocumentCleanup::query()->create(['storage_key' => $key, 'next_attempt_at' => now()]);
-    }
-    deletion_resume();
+    deletion_provider($this, ['restart' => 'preserve after death']);
+    $pending = ProjectDocumentCleanup::query()->create(['storage_key' => 'restart', 'next_attempt_at' => now()]);
     deletion_scheduler_clock('2030-01-01T00:00:01Z');
     $consumer = deletion_scheduler();
     try {
         deletion_scheduler_start($consumer);
         deletion_resume();
-        $generationBeforeDeath = app(CleanupGate::class)->status()->generation;
-        expect(deletion_scheduler_tick($consumer, '2030-01-01T00:25:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $generationBeforeDeath]);
-        expect(array_column(deletion_requests(), 'path'))->toBe(['/fixture-bucket/restored', '/fixture-bucket/next', '/fixture-bucket/paused']);
-
         $staleToken = file_get_contents($this->deletionHome.'/runtime/scheduler.session');
+        $variable = CleanupSchedulerSession::ENVIRONMENT_VARIABLE;
+        $previous = getenv($variable);
+        putenv($variable.'='.$staleToken);
+        try {
+            expect(app(CleanupSchedulerSession::class)->isRecurringTick())->toBeTrue();
+        } finally {
+            putenv($previous === false ? $variable : $variable.'='.$previous);
+        }
         $consumer->process->signal(SIGKILL);
         try {
             $consumer->process->wait();
         } catch (ProcessSignaledException) {
             // The session file cannot stand in for the daemon's lifetime lock.
         }
-        deletion_bucket(['restart' => 'preserve after death']);
-        $afterDeath = ProjectDocumentCleanup::query()->create(['storage_key' => 'restart', 'next_attempt_at' => now()]);
         deletion_scheduler_clock('2030-01-01T00:30:00Z');
         $standalone = deletion_scheduler('schedule:run', $staleToken);
         expect($standalone->process->run())->toBe(0, $standalone->process->getErrorOutput());
         expect(app(CleanupGate::class)->status()->state)->toBe('paused');
-        expect($afterDeath->fresh()->pending)->toBeTrue();
-        expect(deletion_requests())->toHaveCount(3);
+        expect($pending->fresh()->pending)->toBeTrue();
+        expect(deletion_requests())->toBe([]);
     } finally {
         $consumer->process->stop(0);
     }
@@ -139,7 +139,7 @@ it('pauses recurring children after a daemon restart until resumed', function ()
         deletion_scheduler_start($consumer);
         deletion_resume();
         $generationBeforeDeath = app(CleanupGate::class)->status()->generation;
-        // Earlier deletions are setup here; the separate death proof dispatches them through the old worker.
+        // Earlier deletions are setup here; the successive-child proof dispatches them through a live worker.
         deletion_work();
         expect(array_column(deletion_requests(), 'path'))->toBe(['/fixture-bucket/restored', '/fixture-bucket/next', '/fixture-bucket/paused']);
         $consumer->process->signal(SIGKILL);
