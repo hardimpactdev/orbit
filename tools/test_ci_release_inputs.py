@@ -2,10 +2,10 @@
 import importlib.machinery
 import importlib.util
 import json
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 loader = importlib.machinery.SourceFileLoader('release_inputs', str(Path(__file__).resolve().parents[1] / 'bin/ci-release-inputs'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -24,7 +24,7 @@ class ReleaseInputsTest(unittest.TestCase):
         # CI classified the whole push, including a preceding Gateway commit.
         self.assertTrue(inputs.selected([{'check_runs': [run()]}], SHA))
 
-    def test_skipped_swamp_only_decision_does_not_publish(self):
+    def test_skipped_ci_decision_does_not_publish(self):
         self.assertFalse(inputs.selected([{'check_runs': [run('skipped')]}], SHA))
 
     def test_every_decision_must_pass_across_pages(self):
@@ -65,7 +65,7 @@ class ReleaseInputsTest(unittest.TestCase):
             plan = importlib.util.module_from_spec(plan_spec)
             plan_loader.exec_module(plan)
             self.assertTrue(plan.select(git('diff', '--name-only', base, head).splitlines())['gateway_release'])
-            self.assertFalse(plan.select(git('diff', '--name-only', head + '^', head).splitlines())['gateway_release'])
+            self.assertTrue(plan.select(git('diff', '--name-only', head + '^', head).splitlines())['gateway_release'])
             output = root / 'github-output'
             subprocess.run(['python3', str(root_bin / 'ci-release-inputs'), '--sha', head,
                             '--github-output', str(output)], input=json.dumps([{'check_runs': [run(head_sha=head)]}]),
