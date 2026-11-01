@@ -66,7 +66,10 @@ else:
     data={}
     argv=shlex.split(command)
     action='restart' if 'restart' in argv else 'late' if '/usr/bin/false' in argv else 'exec'
-with Path(CALLS).open('a') as stream: stream.write(json.dumps({'action':action,'input':data})+'\\n')
+with Path(CALLS).open('a') as stream: stream.write(json.dumps({'action':action,'input':data,'argv':sys.argv[1:]})+'\\n')
+if any(arg.endswith('@10.44.0.3') for arg in sys.argv):
+    port=sys.argv[sys.argv.index('-p')+1] if '-p' in sys.argv else '22'
+    if port!='22':raise SystemExit(255)
 failure=Path(FAILURE)
 if failure.exists() and failure.read_text()==action:
     failure.unlink()
@@ -191,7 +194,7 @@ if body: print(json.dumps(result))
         for step in generated:
             self.assertEqual(step.pop("target"), "orbit-node-209")
             if "labels" in step:
-                self.assertIn("hub",step["name"])
+                self.assertIn("hub", step["name"])
                 self.assertEqual(step.pop("labels"), {"node": "209"})
             task = step["task"]
             if task["behaviorType"] == "@swamp/ssh":
@@ -260,6 +263,19 @@ if body: print(json.dumps(result))
         )
         self.assertEqual(publication["after"]["name"], "candidate")
         self.assertEqual(publication["after"]["public_key"], "A" * 43 + "=")
+
+    def test_public_forwarded_port_does_not_replace_the_private_ssh_port(self):
+        self.input["intent"]["bootstrap"]["target"]["port"] = 2222
+        history, calls = self.run_parent()
+        self.assertEqual(history["status"], "succeeded")
+        public = next(row for row in calls if row["action"] == "snapshot")
+        private = next(
+            row
+            for row in calls
+            if any(arg.endswith("@10.44.0.3") for arg in row["argv"])
+        )
+        self.assertEqual(public["argv"][public["argv"].index("-p") + 1], "2222")
+        self.assertEqual(private["argv"][private["argv"].index("-p") + 1], "22")
 
     def test_network_failure_restores_peer_and_prior_hub_before_cleanup(self):
         history, calls = self.run_parent(failure="restart")

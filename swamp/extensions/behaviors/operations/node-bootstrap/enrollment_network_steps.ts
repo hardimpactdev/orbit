@@ -145,6 +145,7 @@ export function enrollmentNetworkForwardSteps(
             methodName: "exec",
             globalArgs: {
                 ...context.globalArgs,
+                transport: { ...context.globalArgs.transport, port: 22 },
                 hosts: [{
                     name: "peer",
                     address: expr(
