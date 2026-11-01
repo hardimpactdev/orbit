@@ -165,7 +165,7 @@ it('reads the existing canonical admitted leaf containers for every issuing fami
     ['route.create', 'route_lifecycle.preparation.certificates'], ['route.target_set', 'route_target.preparation.certificates'], ['cluster.router_set', 'certificates'],
     ['analytics.enable', 'tracking.certificates'], ['node.role_add', '_role.certificates.leaves'],
     ['node.role_converge', '_role.certificates.leaves'], ['node.role_relocate', '_relocate.certificates.leaves'],
-    ['node.remove', '_removal.restore_certificates'], ['instance.transfer', 'route_transfer.target.certificates'],
+    ['node.remove', '_removal.restore_certificates'], ['instance.transfer', 'route_publication.route_mutations.forward.certificates'],
 ]);
 
 it('rechecks the original live intent after signing before releasing a public bundle', function (): void {

@@ -13,6 +13,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
@@ -65,14 +66,14 @@ it('admits complete withdrawal before dispatch and keeps targets until the nativ
         ->and($this->route->fresh()->status)->toBe(RouteStatus::Pending)
         ->and($this->route->targets()->count())->toBe(1);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.node_id', $this->node->id)
-        ->assertJsonPath('data.input.intent.route_id', $this->route->id)
-        ->assertJsonPath('data.input.intent.removal', true);
+    $this->getJson($path.'?run_id='.$this->runId)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    expect(app(NativeRouteRemovalProjection::class)->input($operation)['intent'])->toMatchArray(['route_id' => $this->route->id, 'removal' => true]);
     Event::fake([RecordBroadcast::class]);
     $terminal = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true, 'retained_on_nodes' => []]];
-    $this->postJson($path.'/result', $terminal)->assertOk();
-    $this->postJson($path.'/result', $terminal)->assertOk();
+    $this->postJson($path.'/result', $terminal)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    expect($this->route->targets()->count())->toBe(1)->and($operation->fresh()->status)->toBe(OperationStatus::Running);
+    app(NativeRouteRemovalProjection::class)->apply($operation, $terminal);
+    app(NativeRouteRemovalProjection::class)->apply($operation, $terminal);
     expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded);
     expect(Event::dispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteDeleted))->toHaveCount(1);
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteDeleted && $event->id === $this->route->id);
@@ -82,7 +83,7 @@ it('admits complete withdrawal before dispatch and keeps targets until the nativ
 
 it('keeps rows and associations when a native withdrawal fails', function (): void {
     $operation = app(AdmitRouteOperationAction::class)->destroy($this->route);
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'error_code' => 'route.withdrawal_failed', 'result' => []])->assertOk();
+    app(NativeRouteRemovalProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'error_code' => 'route.withdrawal_failed', 'result' => []]);
     expect($this->route->fresh()->status)->toBe(RouteStatus::Failed)
         ->and($this->route->targets()->count())->toBe(1)
         ->and($operation->fresh()->status)->toBe(OperationStatus::Failed);
@@ -90,7 +91,7 @@ it('keeps rows and associations when a native withdrawal fails', function (): vo
 
 it('projects withdrawal without deleting the owning Route', function (): void {
     $operation = app(NativeRouteRemovalAdmission::class)->start('route.withdraw', $this->route);
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
+    app(NativeRouteRemovalProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true]]);
     expect($this->route->fresh()->status)->toBe(RouteStatus::Retiring)
         ->and($this->route->targets()->count())->toBe(1);
 });
@@ -151,10 +152,10 @@ it('rolls back withdrawal and starts no native root when the execution copy is n
 
 it('keeps captured rows when cancellation is recorded and rejects a later conflicting success', function (): void {
     $operation = app(AdmitRouteOperationAction::class)->destroy($this->route);
-    $path = '/api/v1/direct-operations/'.$operation->id.'/result';
     $result = ['run_id' => $this->runId, 'status' => 'cancelled', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => []];
-    $this->postJson($path, $result)->assertOk();
-    $this->postJson($path, [...$result, 'status' => 'succeeded', 'result' => ['ready' => true]])->assertConflict();
+    app(NativeRouteRemovalProjection::class)->apply($operation, $result);
+    expect(fn () => app(NativeRouteRemovalProjection::class)->apply($operation, [...$result, 'status' => 'succeeded', 'result' => ['ready' => true]]))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.completion_conflict'));
     expect($operation->fresh()->status)->toBe(OperationStatus::Cancelled)
         ->and($this->route->targets()->count())->toBe(1);
 });

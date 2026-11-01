@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Models\Route;
@@ -13,9 +14,14 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Stored serving state follows the native terminal observation only. */
-final readonly class NativeRouteConvergenceProjection implements DirectOperationProjection
+final readonly class NativeRouteConvergenceProjection implements DirectOperationProjection, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
+
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
 
     public function input(Operation $operation): array
     {

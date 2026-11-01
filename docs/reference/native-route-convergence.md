@@ -9,6 +9,6 @@ Route removal freezes the same actual BEFORE catalog and a catalog without the s
 
 Offline removal uses native, pinned official SSH readiness. Unreachable effect Nodes retain explicit cleanup residue; unavailable private DNS still blocks withdrawal. A clock or a failed native step does not establish cleanup.
 
-Every action uses the admitted target, approved control identity and stored host pins. Environment contents use names-only execution copies read by the existing native environment child. The Gateway signs only public CSRs for the exact admitted forward or restore phase and projects terminal output through the shared reader. Steps do not fetch intent or report progress to the Gateway. No agent action runs.
+Every action uses the admitted target, approved control identity and stored host pins. Environment contents use names-only execution copies read by the existing native environment child. The Gateway signs only public CSRs for the exact admitted forward or restore phase and projects terminal output through the shared reader. Steps do not fetch intent or report progress to the Gateway. Create and removal Operations reject executor callbacks; only the shared native reader projects their terminal result. No agent action runs.
 
 See [Routes](/reference/routes) and [Operations](/reference/operations) for the public command contracts.

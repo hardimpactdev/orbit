@@ -8,6 +8,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Models\Route;
@@ -15,9 +16,14 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Fresh caller views and minimal terminal projection; no execution receipts. */
-final readonly class NativeRouteRemovalProjection implements DirectOperationProjection
+final readonly class NativeRouteRemovalProjection implements DirectOperationProjection, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
+
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
 
     public function input(Operation $operation): array
     {
