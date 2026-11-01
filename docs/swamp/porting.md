@@ -17,7 +17,7 @@ Porting happens in a production-equivalent dev topology, never against productio
 4. **Port** in your beast worktree with the [translation steps](#translate-a-legacy-command) and the template.
 5. **Run** the whole path in the topology as often as you need: request, admission, Swamp, Nodes and projection. Read full stderr and step timings.
 6. **Write the receipt** with the final run (`bin/swamp-proof receipt`) once parity passes within budget (F8). The PR carries it. Then run `bin/swamp-proof down`.
-7. **Review and merge.** Lane 26 reviews and records lessons, and the sub-orchestrator merges. One live check after the load confirms it landed.
+7. **Review and merge.** Lane 26 reviews; an outage fix gets a sub-orchestrator review instead. The sub-orchestrator merges. Lane 26 records lessons. A live check confirms the load.
 
 A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet.
 
