@@ -72,7 +72,7 @@ jobs:
               type: always
         forEach:
           item: part
-          in: '${{ inputs.intent.effectful ? inputs.intent.preparation.certificates : [] }}'
+          in: "${{ inputs.intent.effectful ? inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope) : [] }}"
         guard: '${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}'
         task:
           type: workflow
@@ -82,14 +82,7 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             intent:
-              leaf: '${{ self.part }}'
-              control_node_id: 209
-              connection: >-
-                ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id ==
-                self.part.node_id)[0].connection }}
-              host_keys: >-
-                ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id ==
-                self.part.node_id)[0].host_keys }}
+              {"leaves":"${{ inputs.intent.preparation.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":209,"connection":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
             execution_secrets: {}
             parent_run_id: '${{ run.id }}'
             restoring: false
@@ -368,11 +361,7 @@ jobs:
           inputs:
             effectful: '${{ inputs.intent.effectful }}'
             failure_code: route.target_set_failed
-            preparation_counts: >-
-              ${{ inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates),
-              "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy":
-              size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes)} :
-              {} }}
+            preparation_counts: "${{ inputs.intent.effectful ? {\"prepare-certificates\": size(inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)), \"prepare-lan\": size(inputs.intent.preparation.lan), \"prepare-caddy\": size(inputs.intent.preparation.publications), \"prepare-probe\": size(inputs.intent.preparation.probes)} : {} }}"
             route_id: '${{ inputs.intent.route_id }}'
             result_route_id: '${{ inputs.intent.result_route_id }}'
             workload_count: '${{ size(inputs.intent.workloads) }}'

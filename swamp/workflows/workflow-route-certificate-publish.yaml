@@ -1,6 +1,7 @@
 id: ae3bff71-8b73-4cad-8ef4-e8f206492c43
 name: route-certificate-publish
-description: Canonical leaf request, parent-bound sign, publish, trust and inspect as native actions.
+description: 'One affected Node: staged assets, public CSR batch, root-bound signing and per-leaf proof through
+  one official SSH connection.'
 vaults: []
 inputs:
   type: object
@@ -20,8 +21,6 @@ inputs:
     intent:
       type: object
       properties:
-        leaf:
-          type: object
         control_node_id:
           type: integer
           const: 209
@@ -32,8 +31,18 @@ inputs:
           items:
             type: string
           minItems: 1
+        node_id:
+          type: integer
+          minimum: 1
+        leaves:
+          type: array
+          items:
+            type: object
+          minItems: 1
+          maxItems: 256
       required:
-      - leaf
+      - node_id
+      - leaves
       - control_node_id
       - connection
       - host_keys
@@ -57,25 +66,21 @@ jobs:
     target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorType: '@nckrtl/node-certificate-assets'
       behaviorName: ${{ "route-cert-assets-" + run.id }}
       methodName: read
       inputs:
-        node_id: ${{ inputs.intent.leaf.node_id }}
-        intent: ${{ inputs.intent.leaf }}
+        node_id: ${{ inputs.intent.node_id }}
+        leaves: ${{ inputs.intent.leaves }}
   - name: prepare-assets
     target: orbit-node-209
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-prepare-assets-" + run.id }}
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: ${{ "route-ssh-" + inputs.parent_run_id + "-" + string(inputs.intent.node_id) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -94,16 +99,16 @@ jobs:
         - -m
         - '0700'
         - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: copy-assets
-    target: orbit-node-209
     dependsOn:
-    - step: prepare-assets
+    - step: assets
       condition:
         type: succeeded
+  - name: copy-assets
+    target: orbit-node-209
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-copy-assets-" + run.id }}
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -112,22 +117,27 @@ jobs:
         dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
         direction: to
         recursive: true
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
   - name: request
     target: orbit-node-209
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-request-" + run.id }}
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
       methodName: exec
       globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
-        - env
-        - ${{ 'ORBIT_CERTIFICATE_INPUT=' + string(steps.assets.outputs.input_json) }}
         - /usr/bin/python3
         - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/request.py" }}
+        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
+        - request
+        - ${{ "/tmp/orbit-route-" + run.id + "/requests.json" }}
+        stdin: ${{ steps.assets.outputs.input_json }}
         sudo: true
     dependsOn:
     - step: copy-assets
@@ -137,14 +147,31 @@ jobs:
     target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorType: '@nckrtl/node-certificate-assets'
       behaviorName: ${{ "route-cert-request-info-" + run.id }}
-      methodName: decodeRequest
+      methodName: requests
       inputs:
-        leaf: ${{ inputs.intent.leaf }}
+        leaves: ${{ inputs.intent.leaves }}
         stdout: ${{ steps.request.outputs.stdout }}
     dependsOn:
     - step: request
+      condition:
+        type: succeeded
+  - name: copy-requests
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-route-" + run.id + "/requests.json" }}
+        dst: ${{ "/tmp/orbit-route-" + run.id + "-requests.json" }}
+        direction: from
+    dependsOn:
+    - step: request-info
       condition:
         type: succeeded
   - name: sign
@@ -152,32 +179,31 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign-" + run.id }}'
+      behaviorName: ${{ "certificate-sign-" + run.id }}
       methodName: execute
       inputs:
-        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
+        run: /usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"
         env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps.assets.outputs.scripts_directory + "/sign.py" }}'
+          ORBIT_CERTIFICATE_SIGN_SCRIPT: ${{ steps.assets.outputs.scripts_directory + "/sign.py" }}
           ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
           ORBIT_CERTIFICATE_RUN_ID: ${{ inputs.parent_run_id }}
-          ORBIT_CERTIFICATE_MODE: single
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["request-info"].outputs.request_json }}
-          ORBIT_CERTIFICATE_LEAF: ${{ steps.assets.outputs.input_json }}
+          ORBIT_CERTIFICATE_MODE: node
+          ORBIT_CERTIFICATE_REQUESTS_FILE: ${{ "/tmp/orbit-route-" + run.id + "-requests.json" }}
           ORBIT_CERTIFICATE_RESTORING: ${{ string(inputs.restoring) }}
     dependsOn:
-    - step: request-info
+    - step: copy-requests
       condition:
         type: succeeded
   - name: signature
     target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorType: '@nckrtl/node-certificate-assets'
       behaviorName: ${{ "route-cert-signature-" + run.id }}
-      methodName: decodeSigned
+      methodName: signed
       inputs:
-        leaf: ${{ inputs.intent.leaf }}
-        request: ${{ steps["request-info"].outputs.request }}
+        leaves: ${{ inputs.intent.leaves }}
+        requests: ${{ steps["request-info"].outputs.requests }}
         stdout: ${{ steps.sign.outputs.stdout }}
     dependsOn:
     - step: sign
@@ -188,18 +214,17 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-publish-" + run.id }}
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
       methodName: exec
       globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
-        - env
-        - ${{ 'ORBIT_CERTIFICATE_INPUT=' + string(steps.assets.outputs.input_json) }}
-        - ${{ 'ORBIT_CERTIFICATE_SIGNED=' + string(steps.signature.outputs.signed_json) }}
         - /usr/bin/python3
         - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/publish.py" }}
+        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
+        - publish
+        stdin: ${{ steps.signature.outputs.publish_json }}
         sudo: true
     dependsOn:
     - step: signature
@@ -210,17 +235,17 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-trust-" + run.id }}
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
       methodName: exec
       globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
-        - env
-        - ${{ 'ORBIT_CERTIFICATE_INPUT=' + string(steps.assets.outputs.input_json) }}
         - /usr/bin/python3
         - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/trust.py" }}
+        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
+        - trust
+        stdin: ${{ steps.assets.outputs.input_json }}
         sudo: true
     dependsOn:
     - step: publish
@@ -231,18 +256,17 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-inspect-" + run.id }}
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
       methodName: exec
       globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
-        - env
-        - ${{ 'ORBIT_CERTIFICATE_EXPECT_PRESENT=' + string('true') }}
-        - ${{ 'ORBIT_CERTIFICATE_INPUT=' + string(steps.assets.outputs.input_json) }}
         - /usr/bin/python3
         - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/inspect.py" }}
+        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
+        - inspect
+        stdin: ${{ steps.assets.outputs.input_json }}
         sudo: true
     dependsOn:
     - step: trust
@@ -250,14 +274,10 @@ jobs:
         type: succeeded
   - name: cleanup-assets
     target: orbit-node-209
-    dependsOn:
-    - step: inspect
-      condition:
-        type: always
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-cleanup-assets-" + run.id }}
+      behaviorName: ${{ "route-node-ssh-" + run.id }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -266,20 +286,39 @@ jobs:
         - /usr/bin/rm
         - -rf
         - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: result
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-cert-result-" + run.id }}
-      methodName: certificateResult
-      inputs:
-        leaf: ${{ inputs.intent.leaf }}
-        stdout: ${{ steps.inspect.outputs.stdout }}
     dependsOn:
     - step: inspect
       condition:
         type: succeeded
+  - name: cleanup-requests
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-cert-cleanup-requests-" + run.id }}
+      methodName: execute
+      inputs:
+        run: /usr/bin/rm -f -- "$ORBIT_CERTIFICATE_REQUESTS_FILE"
+        env:
+          ORBIT_CERTIFICATE_REQUESTS_FILE: ${{ "/tmp/orbit-route-" + run.id + "-requests.json" }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-certificate-assets'
+      behaviorName: ${{ "route-cert-result-" + run.id }}
+      methodName: result
+      inputs:
+        leaves: ${{ inputs.intent.leaves }}
+        stdout: ${{ steps.inspect.outputs.stdout }}
+    dependsOn:
     - step: cleanup-assets
+      condition:
+        type: succeeded
+    - step: cleanup-requests
       condition:
         type: succeeded

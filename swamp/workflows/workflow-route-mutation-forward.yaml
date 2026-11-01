@@ -50,7 +50,7 @@ jobs:
   - name: forward_prepare_certificates
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.prepare_certificates }}
+      in: "${{ inputs.intent.route_mutations.forward.prepare_certificates.filter(item,inputs.intent.route_mutations.forward.prepare_certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope) }}"
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn: []
     task:
@@ -61,12 +61,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          leaf: ${{ self.part }}
-          control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          {"leaves":"${{ inputs.intent.route_mutations.forward.prepare_certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":209,"connection":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: false
@@ -296,7 +291,7 @@ jobs:
   - name: forward_live_certificates
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.certificates }}
+      in: "${{ inputs.intent.route_mutations.forward.certificates.filter(item,inputs.intent.route_mutations.forward.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope) }}"
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}
@@ -316,12 +311,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          leaf: ${{ self.part }}
-          control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          {"leaves":"${{ inputs.intent.route_mutations.forward.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":209,"connection":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: false
@@ -534,7 +524,7 @@ jobs:
         stage: ${{ self.stage }}
         mode: forward
         required:
-          forward_prepare_certificates: ${{ size(inputs.intent.route_mutations.forward.prepare_certificates) }}
+          forward_prepare_certificates: "${{ size(inputs.intent.route_mutations.forward.prepare_certificates.filter(item,inputs.intent.route_mutations.forward.prepare_certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)) }}"
           forward_php: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}
           forward_lan: ${{ size(inputs.intent.route_mutations.forward.lan) }}
           forward_ingress: ${{ size(inputs.intent.route_mutations.forward.ingress) }}
@@ -547,7 +537,7 @@ jobs:
             != null && p.before.dns.digest != p.after.dns.digest) ? [{}] : []) }}'
           forward_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
             }}
-          forward_live_certificates: ${{ size(inputs.intent.route_mutations.forward.certificates) }}
+          forward_live_certificates: "${{ size(inputs.intent.route_mutations.forward.certificates.filter(item,inputs.intent.route_mutations.forward.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)) }}"
           forward_live_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
             }}
           forward_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null))
