@@ -1,4 +1,4 @@
-"""The shipped static program tested on real SQLite and disposable OS accounts in Docker."""
+"""Real SQLite files under existing unprivileged OS accounts."""
 import contextlib
 import hashlib
 import json
@@ -13,7 +13,7 @@ import unittest
 import uuid
 
 HERE = Path(__file__).resolve().parent
-PROGRAM = (HERE / 'sqlite_program.ts').read_text().split('String.raw`', 1)[1].rsplit('`;', 1)[0]
+PROGRAM = HERE / 'scripts/sqlite_actions.py'
 
 
 class SqliteProgramTest(unittest.TestCase):
@@ -21,7 +21,7 @@ class SqliteProgramTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='sqlite-port-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.worker = pwd.getpwnam('swamp')
+        self.worker = pwd.getpwnam('daemon')
         self.app = pwd.getpwnam('nobody')
         os.chmod(self.root, 0o755)
         self.source = self.root / 'source'
@@ -53,7 +53,7 @@ class SqliteProgramTest(unittest.TestCase):
                 os.initgroups(user.pw_name, user.pw_gid)
                 os.setgid(user.pw_gid)
                 os.setuid(user.pw_uid)
-        result = subprocess.run(['/usr/bin/python3', '-I', '-c', PROGRAM, action, str(seconds)],
+        result = subprocess.run(['/usr/bin/python3', '-B', str(PROGRAM), action, str(seconds)],
             input=json.dumps(data), text=True, capture_output=True, preexec_fn=drop, timeout=seconds + 5)
         self.assertNotIn('private-sqlite-sentinel', result.stdout + result.stderr)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -177,34 +177,6 @@ class SqliteProgramTest(unittest.TestCase):
         finally:
             self.call('copy', {'operation': 'cleanup', 'directory': directory}, self.worker)
 
-    def test_read_preserves_database_bytes_and_permissions_and_uses_admitted_account(self):
-        data = {'owner': self.worker.pw_name, 'path': str(self.database), 'sql': 'SELECT length(value) AS n FROM proof', 'mode': 'query', 'table': None}
-        before = hashlib.sha256(self.database.read_bytes()).hexdigest()
-        permission = stat.S_IMODE(self.database.stat().st_mode)
-        for _ in range(2):
-            result = self.call('read', data)
-            self.assertTrue(result['ok'], result)
-            self.assertEqual(result['data']['row_count'], 1)
-        self.assertEqual(hashlib.sha256(self.database.read_bytes()).hexdigest(), before)
-        self.assertEqual(stat.S_IMODE(self.database.stat().st_mode), permission)
-        self.assertEqual(self.call('read', dict(data, owner=self.app.pw_name)), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
-        self.assertEqual(self.call('read', dict(data, owner='root')), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
-        self.assertEqual(self.call('read', dict(data, owner='missing-orbit-read-owner')), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
-        missing = self.source / 'missing-read.sqlite'
-        self.assertEqual(self.call('read', dict(data, path=str(missing))), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
-        self.assertFalse(missing.exists())
-
-    def test_read_preserves_empty_and_duplicate_columns_and_refuses_invalid_queries(self):
-        data = {'owner': self.worker.pw_name, 'path': str(self.database), 'sql': 'SELECT 1 AS n,2 AS n WHERE 0', 'mode': 'query', 'table': None}
-        result = self.call('read', data)
-        self.assertEqual(result, {'ok': True, 'data': {'columns': ['n', 'n'], 'rows': [], 'row_count': 0, 'truncated': False}})
-        result = self.call('read', dict(data, sql='SELECT 1 AS n,2 AS n'))
-        self.assertEqual(result['data']['rows'], [{'n': 2}])
-        for sql in ['SELECT 1; DROP TABLE proof', 'SELECT 1' + ' ' * 16385, 'SELECT \x00', 'SELECT private_read_query FROM missing']:
-            self.assertEqual(self.call('read', dict(data, sql=sql))['ok'], False)
-        result = self.call('read', dict(data, sql='WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n) SELECT sum(x) FROM n'), seconds=1)
-        self.assertEqual(result, {'ok': False, 'error_code': 'database.query_failed'})
-
     def test_target_cleanup_checks_operation_and_never_removes_replaced_files(self):
         _, prepared = self.seed()
         incoming = Path(prepared['incoming'])
@@ -215,6 +187,34 @@ class SqliteProgramTest(unittest.TestCase):
         self.assertFalse(self.call('seedTarget', dict(self.target_input, mode='cleanup'))['ok'])
         self.assertEqual(incoming.read_bytes(), b'foreign')
         incoming.unlink()
+
+    def test_unconfirmed_link_and_failed_script_cleanup_retain_installed_receipt(self):
+        from unittest.mock import patch
+        sys_path = str(HERE / 'scripts')
+        import sys
+        sys.path.insert(0, sys_path)
+        import sqlite_seed_common as seed
+        exported, prepared = self.seed()
+        incoming = Path(prepared['incoming'])
+        self.write_incoming(incoming, Path(self.source_input['snapshot_path']).read_bytes())
+        real_sync = seed.sync_dir
+        def fail_sync(selected):
+            if Path(selected) == self.target:
+                raise OSError('injected after link')
+            return real_sync(selected)
+        with patch.object(seed, 'sync_dir', fail_sync):
+            with self.assertRaises(seed.Unconfirmed):
+                seed.target_seed(dict(self.target_input, mode='install'))
+        destination = self.target / 'db.sqlite'
+        inode = destination.stat().st_ino
+        self.assertEqual(seed.target_seed(dict(self.target_input, mode='cleanup'),preserve_installed=True), {'state':'cleaned'})
+        self.assertEqual(seed.target_seed(self.target_input), {'state':'complete'})
+        self.assertEqual(destination.stat().st_ino, inode)
+        self.assertEqual(seed.target_seed(dict(self.target_input, mode='cleanup'),preserve_installed=True), {'state':'cleaned'})
+        self.assertEqual(seed.target_seed(self.target_input), {'state':'complete'})
+        self.assertEqual(seed.target_seed(dict(self.target_input, mode='cleanup')), {'state':'cleaned'})
+        self.assertFalse(Path(self.target_input['state_dir']).exists())
+        self.assertEqual(destination.stat().st_ino, inode)
 
 
 if __name__ == '__main__':

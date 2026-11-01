@@ -6,16 +6,46 @@ namespace App\Domain\DatabaseServers;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseExecutionIntent;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Bounded public cleanup intent and result; native Swamp owns execution. */
-final readonly class DatabaseCleanupProjection implements DirectOperationProjection
+final readonly class DatabaseCleanupProjection implements DirectOperationProjection, DirectOperationPublicView
 {
     /** @return array<string, mixed> */
     public function input(Operation $operation): array
+    {
+        $cleanup = $this->descriptor($operation);
+        $node = Node::query()->findOrFail($operation->node_id);
+        if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
+            $this->invalid();
+        }
+
+        return ['intent' => ['cleanup' => $cleanup, 'source_ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
+            'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]], 'execution_secrets' => []];
+    }
+
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    {
+        if ($operation->node_id !== $callerNodeId) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'This Node does not own the SQLite cleanup.', 403);
+        }
+    }
+
+    public function publicInput(Operation $operation, int $callerNodeId): array
+    {
+        $this->assertPublicParticipant($operation, $callerNodeId);
+
+        return $this->descriptor($operation);
+    }
+
+    /** @return array<string,mixed> */
+    private function descriptor(Operation $operation): array
     {
         $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id'] ?? null);
         $command = $intent->payload['commands']['database-apply'] ?? null;

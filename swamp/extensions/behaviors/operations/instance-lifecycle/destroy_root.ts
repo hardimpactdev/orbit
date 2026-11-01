@@ -1,3 +1,4 @@
+import { sqliteFileInvoke } from "../database/sqlite_local.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { DirectArgs, GatewayOperation, Globals } from "../_lib/direct.ts";
@@ -61,6 +62,7 @@ const Current = z.object({
 });
 type ArgsType = z.infer<typeof Args>;
 type Context = {
+  extensionFile(path: string): string;
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
   writeResource(
@@ -113,7 +115,7 @@ export function destroyRoot(
   }
   return {
     type: "@nckrtl/instance-destroy",
-    version: "2026.10.31.2",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     resources: {
       plan: {
@@ -234,6 +236,8 @@ export function destroyRoot(
             value.input.direct_destroy.database,
             gateway,
             ctx.signal,
+            undefined,
+            sqliteFileInvoke(ctx.extensionFile("database-server-commands/scripts/sqlite_actions.py")),
           );
         },
       },

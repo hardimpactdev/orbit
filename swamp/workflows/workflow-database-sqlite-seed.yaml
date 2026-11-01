@@ -1,0 +1,232 @@
+id: a4b7d7cf-a0cb-4436-97c3-ef7f201f4759
+name: database-sqlite-seed
+description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
+writes: true
+vaults: []
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [database.sqlite_seed]}, intent: {type: object},
+    execution_secrets: {type: object, additionalProperties: false}}, required: [operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
+jobs:
+- name: sqlite
+  target: orbit-node-209
+  steps:
+  - name: intent
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: read
+      inputs: {kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', action: check, run_id: '${{ run.id }}'}
+  - name: export
+    target: orbit-node-209
+    dependsOn:
+    - {step: intent, condition: {type: succeeded}}
+    task:
+      type: workflow
+      workflowIdOrName: database-sqlite-action
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
+          }}', action: source_export}
+  - name: snapshot
+    target: orbit-node-209
+    dependsOn:
+    - {step: export, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: snapshot
+      inputs: {stdout: '${{ steps.export.outputs.result.stdout }}', exit_code: '${{ steps.export.outputs.result.exitCode }}'}
+  - name: prepare_target
+    target: orbit-node-209
+    dependsOn:
+    - {step: snapshot, condition: {type: succeeded}}
+    task:
+      type: workflow
+      workflowIdOrName: database-sqlite-action
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
+          }}', action: target_prepare, snapshot: '${{ steps.snapshot.outputs.ref }}'}
+  - name: prepared
+    target: orbit-node-209
+    dependsOn:
+    - {step: prepare_target, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: prepared
+      inputs: {stdout: '${{ steps.prepare_target.outputs.result.stdout }}', exit_code: '${{ steps.prepare_target.outputs.result.exitCode }}'}
+  - name: transfer_dir
+    target: orbit-node-209
+    dependsOn:
+    - {step: prepared, condition: {type: succeeded}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dbsc-" + run.id }}
+      methodName: execute
+      inputs: {run: 'umask 077
+
+          mkdir -p -- /tmp/orbit-sqlite-transfer-${{ run.id }}'}
+    guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
+  - name: download
+    target: orbit-node-209
+    dependsOn:
+    - {step: transfer_dir, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbss-" + run.id }}
+      globalArgs: {name: '${{ "dbss-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+        hosts: [{name: server, address: '${{ inputs.intent.source_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.source_ssh.host_keys }}'}}]}
+      methodName: copy
+      inputs: {hosts: 'name:server', src: '${{ steps.intent.outputs.source_path }}', dst: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', direction: from}
+    guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
+  - name: verify
+    target: orbit-node-209
+    dependsOn:
+    - {step: download, condition: {type: succeeded}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dbsc-" + run.id }}
+      methodName: execute
+      inputs: {run: 'python3 -B ${{ steps.intent.outputs.directory + "/sqlite_verify_snapshot.py" }} ${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }} ${{ steps.snapshot.outputs.json
+          }}'}
+    guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
+  - name: artifact
+    target: orbit-node-209
+    dependsOn:
+    - {step: verify, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: artifact
+      inputs: {path: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', run_id: '${{ run.id }}'}
+    guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
+  - name: upload
+    target: orbit-node-209
+    dependsOn:
+    - {step: artifact, condition: {type: succeeded}}
+    - {step: prepared, condition: {type: succeeded}}
+    guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbst-" + run.id }}
+      globalArgs: {name: '${{ "dbst-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+        hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
+      methodName: copy
+      inputs: {hosts: 'name:server', src: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', dst: '${{ steps.prepared.outputs.incoming }}', direction: to}
+  - name: install
+    target: orbit-node-209
+    dependsOn:
+    - {step: prepared, condition: {type: succeeded}}
+    - {step: upload, condition: {type: always}}
+    guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state == "complete" || (steps.prepared.outputs.state == "ready" && (!has(steps.upload)
+      || steps.upload.status != "succeeded")) }}
+    task:
+      type: workflow
+      workflowIdOrName: database-sqlite-action
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
+          }}', action: target_install, snapshot: '${{ steps.snapshot.outputs.ref }}'}
+  - name: cleanup_target
+    target: orbit-node-209
+    dependsOn:
+    - {step: intent, condition: {type: always}}
+    - {step: export, condition: {type: always}}
+    - {step: snapshot, condition: {type: always}}
+    - {step: prepare_target, condition: {type: always}}
+    - {step: prepared, condition: {type: always}}
+    - {step: transfer_dir, condition: {type: always}}
+    - {step: download, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    - {step: artifact, condition: {type: always}}
+    - {step: upload, condition: {type: always}}
+    - {step: install, condition: {type: always}}
+    guard: ${{ steps.intent.status != "succeeded" || (has(steps.install) && steps.install.status == "succeeded") || (has(steps.prepared) && steps.prepared.status == "succeeded" && steps.prepared.outputs.state
+      == "complete") }}
+    task:
+      type: workflow
+      workflowIdOrName: database-sqlite-action
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
+          }}', action: target_recover}
+  - name: cleanup_source
+    target: orbit-node-209
+    dependsOn:
+    - {step: intent, condition: {type: always}}
+    - {step: export, condition: {type: always}}
+    - {step: snapshot, condition: {type: always}}
+    - {step: prepare_target, condition: {type: always}}
+    - {step: prepared, condition: {type: always}}
+    - {step: transfer_dir, condition: {type: always}}
+    - {step: download, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    - {step: artifact, condition: {type: always}}
+    - {step: upload, condition: {type: always}}
+    - {step: install, condition: {type: always}}
+    - {step: cleanup_target, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: database-sqlite-action
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
+          }}', action: source_cleanup}
+  - name: cleanup_transfer
+    target: orbit-node-209
+    dependsOn:
+    - {step: intent, condition: {type: always}}
+    - {step: export, condition: {type: always}}
+    - {step: snapshot, condition: {type: always}}
+    - {step: prepare_target, condition: {type: always}}
+    - {step: prepared, condition: {type: always}}
+    - {step: transfer_dir, condition: {type: always}}
+    - {step: download, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    - {step: artifact, condition: {type: always}}
+    - {step: upload, condition: {type: always}}
+    - {step: install, condition: {type: always}}
+    - {step: cleanup_target, condition: {type: always}}
+    - {step: cleanup_source, condition: {type: always}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dbsc-" + run.id }}
+      methodName: execute
+      inputs: {run: 'rm -rf -- /tmp/orbit-sqlite-transfer-${{ run.id }}'}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - {step: intent, condition: {type: always}}
+    - {step: export, condition: {type: always}}
+    - {step: snapshot, condition: {type: always}}
+    - {step: prepare_target, condition: {type: always}}
+    - {step: prepared, condition: {type: always}}
+    - {step: transfer_dir, condition: {type: always}}
+    - {step: download, condition: {type: always}}
+    - {step: verify, condition: {type: always}}
+    - {step: artifact, condition: {type: always}}
+    - {step: upload, condition: {type: always}}
+    - {step: install, condition: {type: always}}
+    - {step: cleanup_target, condition: {type: always}}
+    - {step: cleanup_source, condition: {type: always}}
+    - {step: cleanup_transfer, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: result
+      inputs: {kind: '${{ inputs.kind }}', expected: '${{ has(steps.prepared) && steps.prepared.status == "succeeded" && steps.prepared.outputs.state == "complete" ? ["export","prepare_target","cleanup_source","cleanup_transfer"]
+          : has(steps.prepared) && steps.prepared.status == "succeeded" && steps.prepared.outputs.state == "resume" ? ["export","prepare_target","install","cleanup_source","cleanup_transfer"]
+          : ["export","prepare_target","verify","artifact","install","cleanup_source","cleanup_transfer"] }}', steps: '${{ steps }}'}
+  - name: accept_result
+    target: orbit-node-209
+    dependsOn:
+    - {step: result, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: SQLite work did not complete.
