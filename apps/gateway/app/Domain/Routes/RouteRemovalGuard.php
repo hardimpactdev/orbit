@@ -11,7 +11,6 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 
 final readonly class RouteRemovalGuard
@@ -38,21 +37,17 @@ final readonly class RouteRemovalGuard
         }
     }
 
-    public function assertNodeRemovable(Node $node): void
+    /** @param list<int> $removingRouteIds Validated by the owning workspace policy. */
+    public function assertNodeRemovable(Node $node, array $removingRouteIds = []): void
     {
-        $referenced =
-            $node->scopedRoutes()->exists()
-            || $node->generatedRoutes()->exists()
-            || RouteCustomProxy::query()->where('node_id', $node->id)->exists()
-            || RouteTarget::query()
-                ->whereHas(
-                    'instance',
-                    static fn ($query) => $query->where('node_id', $node->id),
-                )
-                ->exists();
+        $references = Route::query()->whereNotIn('id', $removingRouteIds)->where(static fn ($query) => $query
+            ->where('node_id', $node->id)->orWhere('generation_basis_node_id', $node->id)->orWhere('transition_node_id', $node->id)
+            ->orWhereHas('customProxy', static fn ($proxy) => $proxy->where('node_id', $node->id))
+            ->orWhereHas('targets.instance', static fn ($target) => $target->where('node_id', $node->id)));
+        $referenced = $references->exists();
 
         if ($referenced) {
-            if (Route::query()->where('status', RouteStatus::Active)->where(static function ($query) use ($node): void {
+            if ((clone $references)->where('status', RouteStatus::Active)->where(static function ($query) use ($node): void {
                 $query
                     ->where('node_id', $node->id)
                     ->orWhereHas('customProxy', static fn ($proxy) => $proxy->where('node_id', $node->id))
@@ -70,12 +65,13 @@ final readonly class RouteRemovalGuard
         }
     }
 
-    public function assertRoleRemovable(Node $node, RoleName $role): void
+    /** @param list<int> $removingRouteIds Validated by the owning workspace policy. */
+    public function assertRoleRemovable(Node $node, RoleName $role, array $removingRouteIds = []): void
     {
         if (
             ($role === RoleName::AppDev
             || $role === RoleName::AppProd)
-            && RouteTarget::query()->whereHas(
+            && RouteTarget::query()->whereNotIn('route_id', $removingRouteIds)->whereHas(
                 'instance',
                 static fn ($query) => $query->where('node_id', $node->id),
             )->exists()

@@ -1,7 +1,6 @@
 id: 8ba8f6c9-0a5e-44da-9710-4bde40935894
 name: operation-task-cancel
-description: Captured Tasks ending DAG on 209; retain records until complete native
-  cleanup.
+description: Captured Tasks ending DAG on 209; retain records until complete native cleanup.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -47,9 +46,59 @@ jobs:
 - name: cancel
   target: orbit-node-209
   steps:
+  - name: inspect
+    target: orbit-node-209
+    guard: ${{ inputs.intent.instance_id == null || size(inputs.intent.teardown) == 0 }}
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ "provider_input" in inputs.intent ? inputs.intent.provider_input : {} }}'
+        execution_secrets: '${{ "provider" in inputs.intent && inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
+          : {} }}'
+        action: inspect
+  - name: withdraw
+    target: orbit-node-209
+    dependsOn:
+    - step: inspect
+      condition: &id001
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: workflow
+      workflowIdOrName: route-mutation-withdraw
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ size(inputs.intent.workspace_routes) == 0 ? {} : inputs.intent.workspace_routes[0]
+          }}'
+        execution_secrets: {}
+        parent_run_id: ${{ run.id }}
+    guard: ${{ size(inputs.intent.workspace_routes) == 0 }}
+  - name: withdrawn
+    target: orbit-node-209
+    dependsOn:
+    - step: withdraw
+      condition: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "workspace-routes-withdrawn-" + run.id }}
+      methodName: execute
+      inputs:
+        run: timeout 5 test "$WITHDRAWN" = true
+        env:
+          WITHDRAWN: ${{ string(size(inputs.intent.workspace_routes) == 0 || steps.withdraw.outputs.result.ready)
+            }}
   - name: teardown
     target: orbit-node-209
-    guard: ${{ size(inputs.intent.teardown) == 0 }}
+    guard: ${{ size(inputs.intent.teardown) == 0 || !steps.inspect.outputs.result.running }}
     task:
       type: workflow
       workflowIdOrName: task-workspace-teardown
@@ -59,9 +108,13 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn:
+    - step: withdrawn
+      condition:
+        type: succeeded
   - name: vm
     target: orbit-node-209
-    guard: ${{ inputs.intent.instance_id == null }}
+    guard: ${{ inputs.intent.task_vm_id == null }}
     task:
       type: workflow
       workflowIdOrName: task-vm-destroy
@@ -73,11 +126,10 @@ jobs:
         execution_secrets: ${{ inputs.execution_secrets }}
     dependsOn:
     - step: teardown
+      condition: *id001
+    - step: withdrawn
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: succeeded
   - name: result
     target: orbit-node-209
     task:
@@ -86,19 +138,16 @@ jobs:
       behaviorName: ${{ "task-cancel-result-"+run.id }}
       methodName: execute
       inputs:
-        run: "python3 - <<'PYTHON'\nimport json\nimport os\n\nvm = json.loads(os.environ[\"\
-          VM\"])\nprint(\n    json.dumps(\n        {\n            \"group_id\": int(os.environ[\"\
-          GROUP\"]),\n            \"instance_id\": json.loads(os.environ[\"INSTANCE\"\
-          ]),\n            \"cleanup_complete\": vm.get(\"destroyed\") is True\n \
-          \           and vm.get(\"cleanup_complete\") is True\n            if vm\n\
-          \            else True,\n            \"vm\": vm,\n        }\n    )\n)\n\
-          PYTHON\n"
+        run: "python3 - <<'PYTHON'\nimport json\nimport os\n\nvm = json.loads(os.environ[\"VM\"])\nprint(\n\
+          \    json.dumps(\n        {\n            \"group_id\": int(os.environ[\"GROUP\"]),\n       \
+          \     \"instance_id\": json.loads(os.environ[\"INSTANCE\"]),\n            \"cleanup_complete\"\
+          : vm.get(\"destroyed\") is True\n            and vm.get(\"cleanup_complete\") is True\n    \
+          \        if vm\n            else True,\n            \"vm\": vm,\n        }\n    )\n)\nPYTHON\n"
         env:
           GROUP: ${{ string(inputs.intent.group_id) }}
           INSTANCE: '${{ inputs.intent.instance_id == null ? "null" : string(inputs.intent.instance_id)
             }}'
-          VM: '${{ inputs.intent.instance_id == null ? "{}" : steps.vm.outputs.result.result_json
-            }}'
+          VM: '${{ inputs.intent.task_vm_id == null ? "{}" : steps.vm.outputs.result.result_json }}'
     dependsOn:
     - step: vm
       condition:
@@ -106,3 +155,9 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
+    - step: withdrawn
+      condition:
+        type: succeeded
+    - step: teardown
+      condition: *id001
+queueTimeout: 60

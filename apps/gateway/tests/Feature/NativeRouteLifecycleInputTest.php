@@ -289,3 +289,20 @@ it('captures prospective public WebSocket handlers without changing stored bindi
             ->and($part['after']['certificate_scopes'])->toBe($part['before']['certificate_scopes']);
     }
 })->with(['attach' => false, 'detach' => true]);
+
+it('withdraws Router Caddy and DNS while excluding the workspace Node that will be deleted', function (): void {
+    $route = $this->routes['pool'];
+    $guest = $this->nodes['old'];
+
+    $capture = app(NativeRouteLifecycleInput::class)->capture($route, [], removing: true, deletedWorkloadNodeId: $guest->id);
+
+    $forward = $capture['intent']['route_mutations']['forward'];
+    $router = collect($forward['publications'])->firstWhere('node_id', $this->nodes['router']->id);
+    expect(array_column($forward['publications'], 'node_id'))->not->toContain($guest->id)
+        ->and($router['before']['caddy']['content'])->toContain($route->domain)
+        ->and($router['after']['caddy']['content'])->not->toContain($route->domain)
+        ->and($forward['url_writes'])->toBe([])
+        ->and($forward['prepare_certificates'])->toBe([])
+        ->and(array_column($forward['cleanup'], 'node_id'))->toContain($this->nodes['router']->id)->not->toContain($guest->id)
+        ->and($capture['execution_secrets'])->toBe([]);
+});

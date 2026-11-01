@@ -16,6 +16,7 @@ use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -25,7 +26,7 @@ final readonly class NodeRemovalInput
     /** @param array<string,mixed> $snapshot
      * @return array<string,mixed>
      */
-    public function capture(array $snapshot): array
+    public function capture(array $snapshot, ?Instance $removingWorkspace = null): array
     {
         $node = Node::query()->findOrFail(ValidatedData::integer($snapshot['node_id']));
         $ssh = app(SwampSshExecutionInput::class);
@@ -33,11 +34,12 @@ final readonly class NodeRemovalInput
         $machineDeleted = ($snapshot['machine_deleted'] ?? false) === true;
         $roles = $node->roles()->orderBy('id')->lockForUpdate()->get();
         $before = [];
+        $removingRoutes = $removingWorkspace === null ? [] : app(NodeRemovalPolicy::class)->workspaceRouteIds($node, $removingWorkspace);
         foreach ($roles as $role) {
             if (! $machineDeleted && in_array($role->status, [LifecycleStatus::Provisioning, LifecycleStatus::Removing], true)) {
                 throw new ResourceOperationException('node.role_busy', 'Wait for the active role operation before removing this Node.', 409);
             }
-            app(RouteRemovalGuard::class)->assertRoleRemovable($node, $role->role);
+            app(RouteRemovalGuard::class)->assertRoleRemovable($node, $role->role, $removingRoutes);
             $before[$role->id] = $nativeRoles->publications($node, $role->role, $machineDeleted);
         }
         foreach ($roles as $role) {

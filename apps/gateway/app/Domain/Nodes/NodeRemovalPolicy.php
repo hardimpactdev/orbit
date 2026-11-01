@@ -29,14 +29,7 @@ final readonly class NodeRemovalPolicy
         }
         $this->schedules->assertNodeRemovable($node);
         if ($removingWorkspace !== null) {
-            $vm = TaskVm::forNode($node->id);
-            $group = $vm?->group;
-            if ($group === null || ! $group->isTopLevel() || $removingWorkspace->node_id !== $node->id
-                || $removingWorkspace->task_workspace_owner_id !== $group->id || $removingWorkspace->project_id !== $group->project_id
-                || $removingWorkspace->task_workspace_routed
-                || ($group->taskable_id !== null && ($group->taskable_type !== TaskableType::Instance || $group->taskable_id !== $removingWorkspace->id))) {
-                throw $this->conflict('task_vm.workspace_mismatch', 'Cleanup requires the exact plain workspace owned by this VM group and Project.');
-            }
+            $this->workspaceRouteIds($node, $removingWorkspace);
         }
         $instances = $node->instances();
         if ($removingWorkspace !== null) {
@@ -69,9 +62,9 @@ final readonly class NodeRemovalPolicy
         }
     }
 
-    public function resources(Node $node, bool $offline): void
+    public function resources(Node $node, bool $offline, ?Instance $removingWorkspace = null): void
     {
-        $this->routes->assertNodeRemovable($node);
+        $this->routes->assertNodeRemovable($node, $removingWorkspace === null ? [] : $this->workspaceRouteIds($node, $removingWorkspace));
         if ($node->firewallRules()->exists()) {
             throw $this->conflict('node.has_firewall_rules', 'The Node still owns firewall rules.');
         }
@@ -94,6 +87,34 @@ final readonly class NodeRemovalPolicy
             && WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
             throw $this->conflict('websocket.runtime_shutdown_required', 'Stop every Reverb process or confirm an unreachable Node with --offline --force.');
         }
+    }
+
+    /** Only the exact group-owned workspace and its exclusive Project Routes may leave with this VM.
+     * @return list<int>
+     */
+    public function workspaceRouteIds(Node $node, Instance $workspace): array
+    {
+        $vm = TaskVm::forNode($node->id);
+        $group = $vm?->group;
+        if ($group === null || ! $group->isTopLevel() || $workspace->node_id !== $node->id
+            || $workspace->task_workspace_owner_id !== $group->id || $workspace->project_id !== $group->project_id
+            || ($group->taskable_id !== null && ($group->taskable_type !== TaskableType::Instance || $group->taskable_id !== $workspace->id))) {
+            throw $this->conflict('task_vm.workspace_mismatch', 'Cleanup requires the exact workspace owned by this VM group and Project.');
+        }
+        $routes = $workspace->routes()->with('targets')->get();
+        if ($routes->count() > 1) {
+            throw $this->conflict('task_vm.workspace_mismatch', 'Cleanup requires at most one exclusive workspace Route.');
+        }
+        foreach ($routes as $route) {
+            if (! $workspace->task_workspace_routed || $route->project_id !== $workspace->project_id
+                || $route->targets->count() !== 1 || $route->targets->sole()->instance_id !== $workspace->id
+                || $route->customProxy()->exists() || $route->hasPlacementTransition()
+                || $route->replaces_route_id !== null || $route->replaced_by_route_id !== null) {
+                throw $this->conflict('task_vm.workspace_mismatch', 'Cleanup refuses shared, foreign or transitioning workspace Routes.');
+            }
+        }
+
+        return array_values($routes->map(static fn (Route $route): int => $route->id)->all());
     }
 
     /** @return list<array<string,mixed>> */

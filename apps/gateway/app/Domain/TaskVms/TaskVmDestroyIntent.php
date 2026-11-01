@@ -9,6 +9,9 @@ use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalPolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRouteLifecycleInput;
+use App\Domain\Routes\NativeRouteRemovalIntent;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskFinalReview;
@@ -16,8 +19,8 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Route;
 use App\Models\TaskVm;
+use Illuminate\Database\Eloquent\Collection;
 
 /** Immutable same-VM cleanup intent; no provider or guest effect at admission. */
 final readonly class TaskVmDestroyIntent
@@ -41,26 +44,29 @@ final readonly class TaskVmDestroyIntent
         }
 
         return [...$this->captureCleanup($vm, $workspace), 'instance_id' => $workspace->id,
+            'workspace_routed' => $workspace->task_workspace_routed,
             'project_id' => $workspace->project_id, 'checkout_path' => $workspace->checkout_path];
     }
 
     /** Read-only revalidation of the admitted parent before dispatch.
      * @param  array<string,mixed>  $captured
      */
-    public function ownedForWorkspace(TaskVm $vm, Instance $instance, array $captured, int $operationId): TaskVm
+    public function ownedForWorkspace(TaskVm $vm, ?Instance $instance, array $captured, int $operationId): TaskVm
     {
         $vm = TaskVm::query()->findOrFail($vm->id);
-        $workspace = Instance::query()->findOrFail($instance->id);
+        $workspace = $instance === null ? null : Instance::query()->findOrFail($instance->id);
         $operation = Operation::query()->find($operationId);
         $this->assertCaptured($vm, $captured);
         if (! $operation instanceof Operation || $operation->status->terminal()
             || ! in_array($operation->kind, ['tasks.cancel', 'tasks.maintenance_finish'], true)
             || $operation->target_type !== 'task_group' || $operation->target_id !== $vm->group_id
             || $operation->node_id !== ($captured['node_id'] ?? null)
-            || ($captured['instance_id'] ?? null) !== $workspace->id
-            || ($captured['project_id'] ?? null) !== $workspace->project_id
-            || ($captured['checkout_path'] ?? null) !== $workspace->checkout_path
-            || $vm->node_id === null || $workspace->node_id !== $vm->node_id) {
+            || ($captured['instance_id'] ?? null) !== $workspace?->id
+            || ($workspace !== null && ($captured['project_id'] ?? null) !== $workspace->project_id)
+            || ($captured['checkout_path'] ?? null) !== $workspace?->checkout_path
+            || ($captured['workspace_routed'] ?? null) !== $workspace?->task_workspace_routed
+            || $vm->group_id !== $operation->target_id
+            || ($workspace !== null && ($vm->node_id === null || $workspace->node_id !== $vm->node_id))) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The ending parent no longer owns its admitted VM and workspace.', 422);
         }
         if ($this->executor($vm)->id !== $operation->node_id) {
@@ -69,6 +75,16 @@ final readonly class TaskVmDestroyIntent
         $this->guestIdentity($vm);
         $this->preserved($vm);
         $this->available($vm, $workspace, $operation);
+        $routes = $workspace?->routes()->orderBy('routes.id')->get() ?? new Collection;
+        $capturedRoutes = RouteExecutionProof::objects($captured['workspace_routes'] ?? []);
+        if ($routes->modelKeys() !== array_column($capturedRoutes, 'route_id')) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Workspace Routes changed after cleanup admission.', 422);
+        }
+        foreach ($routes as $index => $route) {
+            if ($route->domain !== ($capturedRoutes[$index]['domain'] ?? null)) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'Workspace Route identity changed after admission.', 422);
+            }
+        }
 
         return $vm;
     }
@@ -81,8 +97,20 @@ final readonly class TaskVmDestroyIntent
         $host = $this->executor($vm);
         $this->guestIdentity($vm);
         $node = $vm->node;
+        $workspaceRoutes = [];
+        if ($workspace !== null && $node instanceof Node) {
+            $routeIds = app(NodeRemovalPolicy::class)->workspaceRouteIds($node, $workspace);
+            foreach ($workspace->routes()->whereIn('routes.id', $routeIds)->orderBy('routes.id')->get() as $route) {
+                $capture = app(NativeRouteLifecycleInput::class)->capture($route, [], removing: true, deletedWorkloadNodeId: $node->id);
+                if ($capture['execution_secrets'] !== []) {
+                    throw new \LogicException('Deleted workspace withdrawal must not write guest environment material.');
+                }
+                $workspaceRoutes[] = [...$capture['intent'], 'domain' => $route->domain];
+                app(NativeRouteRemovalIntent::class)->beginWithdrawal($route);
+            }
+        }
         $snapshot = $node instanceof Node ? app(NodeRemovalPlan::class)->build($node, offline: true, machineDeleted: true) : null;
-        $removal = $snapshot === null ? null : app(NodeRemovalInput::class)->capture($snapshot);
+        $removal = $snapshot === null ? null : app(NodeRemovalInput::class)->capture($snapshot, $workspace);
         $model = null;
         if ($vm->model_key !== null) {
             $gateway = Node::query()->where('status', LifecycleStatus::Active)
@@ -92,7 +120,7 @@ final readonly class TaskVmDestroyIntent
         $provider = $this->provider->capture($vm);
 
         return ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'guest_node_id' => $vm->node_id,
-            'group_id' => $vm->group_id, 'name' => $vm->name, 'wireguard_ip' => $vm->wireguard_ip,
+            'workspace_routes' => $workspaceRoutes, 'group_id' => $vm->group_id, 'name' => $vm->name, 'wireguard_ip' => $vm->wireguard_ip,
             'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'model_key_required' => $vm->model_key !== null,
             'model_intent' => $model['intent'] ?? null, 'node_removal' => $snapshot, 'removal' => $removal['intent'] ?? null,
             ...$provider, 'execution_secrets' => [...$provider['execution_secrets'], ...($model['execution_secrets'] ?? [])]];
@@ -189,16 +217,7 @@ final readonly class TaskVmDestroyIntent
     {
         if ($vm->node instanceof Node) {
             app(NodeRemovalPolicy::class)->protected($vm->node, $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole(), $workspace);
-            app(NodeRemovalPolicy::class)->resources($vm->node, offline: true);
-        }
-        $instances = Instance::query()->where('node_id', $vm->node_id);
-        if ($workspace !== null) {
-            $instances->whereKeyNot($workspace->id);
-        }
-        if ($vm->node_id !== null && ($instances->exists()
-            || Route::query()->where(static fn ($q) => $q->where('node_id', $vm->node_id)->orWhere('generation_basis_node_id', $vm->node_id)
-                ->orWhere('transition_node_id', $vm->node_id)->orWhereHas('targets.instance', static fn ($q) => $q->where('node_id', $vm->node_id)))->exists())) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Remove the owning workspace and Route through their native parent before deleting this VM.', 409);
+            app(NodeRemovalPolicy::class)->resources($vm->node, offline: true, removingWorkspace: $workspace);
         }
     }
 }

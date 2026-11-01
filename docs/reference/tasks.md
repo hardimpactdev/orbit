@@ -168,7 +168,11 @@ The MCP tool `tasks-worker` takes the enrollment token as an argument, so it rea
 
 To stop a waiting provision, use `tasks:cancel`. Cancellation first requests cancellation of an existing native group Operation and refuses while that Operation remains active. A fresh keyed request then admits one `tasks.cancel` Operation.
 
-Its native ending DAG runs captured teardown commands through pinned SSH from Node 209 and composes the canonical TaskVM destroy child. The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed or interrupted cleanup retains the records for recovery; it does not mark the group cancelled. A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
+Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. A stopped VM skips guest teardown. The exact group, Project and VM must own the workspace. At most one Route may target it; that Route must belong to the same Project and target only that workspace. Shared or foreign Routes refuse cancellation. Route withdrawal must succeed before VM deletion.
+
+The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed or interrupted cleanup retains the records for recovery; it does not mark the group cancelled. A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
+
+A completed group with an owned residual VM or workspace uses this same cleanup and stays `completed`; a completed group with neither returns `tasks.not_cancellable`. A VM without a group uses `task_vm.destroy`.
 
 #### Start a group worker
 
