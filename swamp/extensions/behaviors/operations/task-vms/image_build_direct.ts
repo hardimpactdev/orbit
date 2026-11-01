@@ -334,9 +334,15 @@ export function imageBuildDirect(
   };
   return {
     type: "@nckrtl/task-vm-image-build",
-    version: "2026.10.31.6",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     resources: {
+      result: {
+        description: "Public completion output for shared terminal projection",
+        schema: z.object({ stdout: z.string() }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
       failure: {
         description: "Sanitized failure retained until owned VM cleanup",
         schema: z.object({ error_code: z.string() }),
@@ -501,6 +507,9 @@ export function imageBuildDirect(
                     "completion",
                     result,
                   ),
+                  await ctx.writeResource("result", "result", {
+                    stdout: JSON.stringify(result),
+                  }),
                 ],
               };
             }

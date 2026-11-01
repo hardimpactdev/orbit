@@ -11,12 +11,15 @@ use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationRunBudgets;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -238,3 +241,42 @@ it('admits the TaskVM guest token boundary only from records and worker selectio
     expect($selected)->toBe($target === 'selected');
     expect($captured['intent']['task_vm_guest'])->toBe(str_starts_with($target, 'guest'));
 })->with(['ordinary', 'selected', 'host', 'guest', 'guest-selected-config']);
+
+it('holds node removal admission after expiry until exact native terminal settlement', function (): void {
+    $this->freezeSecond();
+    FleetFixtures::bind();
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 fixture-bootstrap-public');
+    app()->instance(SshKeyProvider::class, $keys);
+    $caller = $this->markAsGateway(FleetFixtures::node('removal-held-caller'));
+    $node = FleetFixtures::node('removal-held-node', [RoleName::Database]);
+    $node->update(['wireguard_public_key' => null]);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture.fake', 'swamp.read_token' => 'fixture.read',
+        'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+    $operation = app(RemoveNodeAction::class)->start($node, $caller, true, true);
+    $this->travel(OperationRunBudgets::seconds($operation) + 1)->seconds();
+    app(ExpireOperationAction::class)->execute($operation->fresh());
+
+    expect(fn () => app(RemoveNodeAction::class)->start($node->fresh(), $caller, true, true))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect($node->fresh()->status)->toBe(LifecycleStatus::Failed);
+    $this->assertDatabaseCount('operations', 1);
+    $history = new FakeRoutePublicationSocket;
+    $definition = app(DirectOperation::class)->definition('node.remove');
+    $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => $definition['workflow'], 'status' => 'succeeded',
+        'completedAt' => now()->toISOString(),
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+    ]]]];
+    app()->instance(WebSocketClient::class, $history);
+
+    app(SwampCommandStep::class)->projectTerminal($operation->fresh(), ['id' => $operation->state['swamp_run_id']], $definition['terminal_result']);
+
+    expect($operation->fresh()->lock_key)->toBeNull()->and($operation->fresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->fresh()->error_code)->toBe('operation.timed_out');
+    $this->assertModelExists($node);
+    app()->instance(WebSocketClient::class, $socket);
+    expect(app(RemoveNodeAction::class)->start($node->fresh(), $caller, true, true)->id)->not->toBe($operation->id);
+});

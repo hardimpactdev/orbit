@@ -1,6 +1,7 @@
 id: 878a384f-8b8a-4066-bd17-dcad8eac3e86
 name: operation-task-vm-image-build
 tags: {}
+queueTimeout: 30
 jobs:
 - name: admission
   target: ${{ "orbit-node-" + string(inputs.node_id) }}

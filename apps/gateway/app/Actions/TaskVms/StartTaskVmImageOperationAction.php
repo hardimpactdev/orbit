@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Operations\OperationStore;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -50,6 +51,6 @@ final readonly class StartTaskVmImageOperationAction
             'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'pi_artifact' => $pi === null ? null : ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location, 'sha256' => $pi->digest],
             'pi_artifact_file' => ['$secret' => 'task_vm.image_artifact', 'id' => $build->id],
             'prune' => $this->pruning->input($build),
-        ], 'task-vm-image', null);
+        ], 'task-vm-image', null, lockKey: OperationStore::lockKey('task_vm_image', $build->id));
     }
 }
