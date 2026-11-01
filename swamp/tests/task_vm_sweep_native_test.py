@@ -193,15 +193,19 @@ raise SystemExit(result.returncode)
         self.assertEqual(run['status'],'failed')
         self.assertFalse(any(method=='DELETE' for method,_ in self.cloud_calls))
 
-    def test_one_proven_deletion_refusal_still_observes_the_host_and_processes_other_orphans(self):
+    def test_first_deletion_failure_skips_the_rest_of_that_host(self):
         self.refuse.write_text('tvm-6')
         state=json.loads(self.state.read_text());state['instances'].append('tvm-5');state['volumes'].append('tvm-5-topology-seed');self.state.write_text(json.dumps(state))
+        before=self.state.read_text()
         _,history=self.run_sweep(False)
         result=json.loads(next(s for s in history['jobs'][0]['steps'] if s['name']=='result')['outputs']['stdout'])
         self.assertFalse(result['ready'])
-        self.assertIn('tvm-6',result['observed_names'])
-        self.assertEqual(set(result['deleted_names']),{'tvm-5','tvm-image-16','tvm-5-topology-seed'})
-        self.assertIn('tvm-6-topology-seed',json.loads(self.state.read_text())['volumes'])
+        self.assertNotIn('observed_names',result)
+        self.assertEqual(self.state.read_text(),before)
+        calls=[json.loads(line) for line in self.calls.read_text().splitlines()]
+        self.assertEqual(calls[-1],['--project','tasks','delete','--force','--','tvm-6'])
+        self.assertEqual(sum('delete' in args for args in calls),1)
+        self.assertFalse(any('volume' in args and 'delete' in args for args in calls))
 
     def test_an_expired_admitted_sweep_performs_no_deletion(self):
         self.inputs['intent']['deadline_at']=1

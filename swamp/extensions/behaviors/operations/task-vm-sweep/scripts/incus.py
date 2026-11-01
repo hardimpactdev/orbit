@@ -96,43 +96,33 @@ def sweep(intent, run=query):
     run(['project', 'show', '--', scope['project']])
     observed = instances()
     volumes()  # All required inventories must succeed before the first write.
-    report_strays(intent, run)
-    deleted, failed = [], False
+    deleted = []
     for name in observed:
         if not orphan_instance(scope, name):
             continue
-        try:
-            active(intent)
-            present = name in instances()
-            active(intent)
-            if present:
-                run([*prefix, 'delete', '--force', '--', name])
-            if name in instances():
-                raise ValueError('delete refused')
-            deleted.append(name)
-        except ERRORS:
-            failed = True
-    observed = instances()  # A refused item must not skip fresh observation or volume cleanup.
+        active(intent)
+        present = name in instances()
+        active(intent)
+        if present:
+            run([*prefix, 'delete', '--force', '--', name])
+        if name in instances():
+            raise ValueError('delete refused')
+        deleted.append(name)
     for row in volumes():
         match = re.fullmatch(r'(tvm-[0-9]+)-topology-seed', row['name'])
         if row['type'] != 'custom' or not match or excluded(scope, row['name']) or not orphan_vm(scope, match[1]):
             continue
-        try:
-            active(intent)
-            present = match[1] in instances()
-            active(intent)
-            if present:
-                continue
-            run([*prefix, 'storage', 'volume', 'delete', scope['pool'], row['name']])
-            if any(item['name'] == row['name'] for item in volumes()):
-                raise ValueError('delete refused')
-            deleted.append(row['name'])
-        except ERRORS:
-            failed = True
-    result = {'ready': not failed, 'observed_names': instances(), 'deleted_names': deleted}
-    if failed:
-        result.update(error_code='task_vm.host_command_failed')
-    return result
+        active(intent)
+        present = match[1] in instances()
+        active(intent)
+        if present:
+            continue
+        run([*prefix, 'storage', 'volume', 'delete', scope['pool'], row['name']])
+        if any(item['name'] == row['name'] for item in volumes()):
+            raise ValueError('delete refused')
+        deleted.append(row['name'])
+    report_strays(intent, run)
+    return {'ready': True, 'observed_names': instances(), 'deleted_names': deleted}
 
 
 if __name__ == '__main__':

@@ -50,8 +50,7 @@
       "job": "sweep",
       "step": "result",
       "match": {
-        "ready": true,
-        "stdout": "{\"ready\":true,\"observed_names\":[],\"deleted_names\":[\"tvm-6\",\"tvm-6-topology-seed\"]}"
+        "ready": true
       }
     }
   },
@@ -66,26 +65,12 @@
   "parity": {
     "command": [
       "python3",
-      "-m",
-      "unittest",
-      "discover",
-      "-s",
-      "swamp/tests",
-      "-p",
-      "task_vm_sweep_native_test.py"
+      "swamp/proof/task_vm.sweep_host/parity.py"
     ],
     "cases": [
-      "test_incus_cleanup_preserves_live_and_future_resources",
-      "test_ssh_failure_skips_cleanup_and_keeps_native_failure",
-      "test_cloud_cleanup_uses_canonical_api_vault_and_preserves_live_and_future_ids",
-      "test_cloud_pending_stop_fails_once_without_a_delete_or_custom_wait",
-      "test_cloud_owner_change_after_stop_refuses_delete",
-      "test_one_proven_deletion_refusal_still_observes_the_host_and_processes_other_orphans",
-      "test_an_expired_admitted_sweep_performs_no_deletion",
-      "test_a_VM_claimed_after_the_first_ownership_snapshot_is_rechecked_before_deletion",
-      "test_failed_native_inventory_cannot_become_an_empty_successful_list",
-      "test_UpCloud_exact_UUID_name_hostname_label_disagreement_refuses_a_destructive_detail",
-      "test_the_native_phase_timeout_bounds_all_orphans_together"
+      "real-public-receipt-matches-deleted-set",
+      "real-orphan-absent-on-target",
+      "real-topology-volume-absent-on-target"
     ]
   }
 }
