@@ -43,10 +43,11 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 - The shape gate and placement lint.
 - Report Orbit app and test net lines and Swamp lines separately.
 - State the measured p95, its sample, the run budget and `queueTimeout` in the PR body.
+- F10: a behavior-changing kind attaches a proof receipt from `bin/swamp-proof <kind>`. It runs the kind end to end through real Swamp on 209 against a disposable task VM, with the F9 parity tests and the F8 budget. Sub-orchestrator B owns the tool. Only deletions, docs and tests may fix forward.
 
 ## Review a kind PR
 
-Lane 26 reviews every kind PR against the [PR and review checklist](../../../docs/swamp/porting.md#pr-and-review-checklist) and the [anti-patterns](../../../docs/swamp/porting.md#anti-patterns). A kind PR fails review without a measured p95 and a run budget, with more than about two native steps per legacy call and no written reason, with a redesigned legacy sequence and no written reason, with a `forEach` over same-job step outputs, or with an extra step whose Node change or guard it does not name. Report PASS, or each deviation as `file:line`, the rule broken, and the native replacement. Keep source conformance separate from CI, served-source uptake and live evidence.
+Lane 26 reviews every kind PR against the [PR and review checklist](../../../docs/swamp/porting.md#pr-and-review-checklist) and the [anti-patterns](../../../docs/swamp/porting.md#anti-patterns). A kind PR fails review without a measured p95 and a run budget, without an F10 proof receipt when it changes behavior, with more than about two native steps per legacy call and no written reason, with a redesigned legacy sequence and no written reason, with a `forEach` over same-job step outputs, or with an extra step whose Node change or guard it does not name. Report PASS, or each deviation as `file:line`, the rule broken, and the native replacement. Keep source conformance separate from CI, served-source uptake and live evidence.
 
 ## Improve this skill
 

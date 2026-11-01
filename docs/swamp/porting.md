@@ -222,7 +222,7 @@ Continue ports in the approved shape while live admission proof is pending. Use 
 - [ ] Name the core feature and official extension checked. Use defaults, and record each deviation's measured reason and removal condition in PLAN.
 - [ ] Delete the old executor and everything only it used. Remove baseline rows in the last commit, after the last rebase.
 - [ ] Report Orbit and Swamp net lines separately. Keep the diff under GitHub's 20,000-line limit so the audit can read it.
-- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. Without them the review fails.
+- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing kind attaches its F10 proof receipt from `bin/swamp-proof <kind>`. Without them the review fails.
 
 Check the completed port and report what the evidence proves.
 
@@ -238,12 +238,12 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | Source, newest first | Lesson |
 | --- | --- |
 | #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
+| PLAN F10 | A behavior-changing kind merges only with a proof receipt: real Swamp on 209 against a disposable task VM, F9 parity tests and the F8 budget. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, legacy edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
-| v1 manual and reference check | Swamp has no step retry key. `command/shell` takes `workingDir` and `timeout`. Copy placement from `firewall.inspect`; `node.bootstrap_probe` sets both selectors. |
+| v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
 | Orchestrator, lane 27 diagrams, #2281 | Count native steps against legacy calls; over about two per call needs a reason. #2281 ran about 22 steps for about 6 calls, rewrote a script's source, and stopped after one failed item. |
 | Retro #2261, #2237, #2262, #2271 | TypeScript envelope and decode steps around each SSH call made 66- and 26-step workflows. A nonzero exit without `ignoreExitCode` lost #2271's `error_code`. |
 | Lane 9 create consult | A Node never returns a secret to the Gateway. Generate Gateway-owned secrets at admission; a step returns only public output, such as `.env.example` defaults. |
 | #2266 instance create | Refuse a precondition such as `instance.branch_in_use` before the first write, inside the action script since #2273. Accept documented token formats; GitHub stateless tokens contain dots. |
 | #2266, lane 5 and v2 review on e459 | Later steps read skipped outputs, and a nonzero `command/shell` exit drops all outputs. Use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |
-| Conformance ledger, 384 findings to 2026-11-01 | Placement, shared model names, embedded scripts, many-action behaviors, Gateway callbacks and vault lists are the most frequent defects. |
