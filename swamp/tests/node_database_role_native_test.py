@@ -20,6 +20,11 @@ class DatabaseRoleNative(NativeTestCase):
         routes.mkdir()
         for name in ['caddy-input.ts']:
             shutil.copy(ROOT/'extensions/behaviors/operations/routes'/name,routes)
+        # Unselected children must still be registered with their real public schemas.
+        for name in ['node-role-websocket','node-role-publication','node-role-certificate-publish']:
+            flow=yaml.safe_load((ROOT/('workflows/workflow-'+name+'.yaml')).read_text())
+            flow['jobs']=[{'name':'fixture','steps':[{'name':'result','task':{'type':'assert','expr':'true','severity':'high','message':'Fixture boundary'}}]}]
+            (self.repo/('workflows/workflow-'+name+'.yaml')).write_text(yaml.safe_dump(flow,sort_keys=False))
         self.cli('extension','pull','@swamp/ssh@2026.10.23.1')
         self.audit=self.repo/'calls.jsonl'
         self.failure=self.repo/'fail'
@@ -176,3 +181,51 @@ export const behavior={type:"@nckrtl/role-retained-fixture",version:"2026.11.01.
                     self.assertNotIn('packages',actions);self.assertEqual(result['failed_step'],'caddy-package')
                 if failure not in ['firewall','firewall_prune']:self.assertNotIn('firewall',actions)
                 if failure=='firewall':self.assertNotIn('firewall_prune',actions)
+
+    def test_prefixed_same_parent_factory_consumes_prepared_tools_without_apt(self):
+        source=(ROOT/'extensions/behaviors/operations/node-role-converge-command/root_steps.ts').as_uri()
+        globals_={'name':'prefixed-role','sshBinary':str(self.repo/'fixture-ssh'),'transport':{'kind':'ssh','user':'${{ inputs.intent.candidate.user }}','identityFile':self.input['intent']['ssh']['identity_file'],'port':22},'hosts':[{'name':'target','address':'dev.invalid','transport':{'hostKeys':self.input['intent']['ssh']['target']['host_keys']}}]}
+        program='import {roleConvergeSteps} from '+json.dumps(source)+';console.log(JSON.stringify(roleConvergeSteps("enrolled","inputs.intent.roles[0]",'+json.dumps(globals_)+',undefined,undefined,{preparedToolsExpr:"inputs.prepared",observerDigestExpr:"vault.get(inputs.execution_secrets.observer.vault,inputs.execution_secrets.observer.key)"})));'
+        steps=json.loads(subprocess.run([os.environ.get('DENO_BIN','/tmp/lane4-deno-2.9.8/deno'),'eval',program],check=True,capture_output=True,text=True).stdout)
+        for step in steps:self.assertEqual(step.pop('target'),'orbit-node-209')
+        flow={'id':'5bf93ad5-c08a-4ce5-8856-7ccc992bda2f','name':'same-parent-role','vaults':['orbit-control-inputs'],'inputs':{'type':'object'},'jobs':[{'name':'effects','steps':steps}]}
+        (self.repo/'workflows/workflow-same-parent-role.yaml').write_text(yaml.safe_dump(flow,sort_keys=False))
+        payload={**self.input,'intent':{'roles':[self.input['intent']],'candidate':{'user':'orbit'}},'prepared':{'ready':True,'node_id':5,'packages':['docker.io']}}
+        self.cli('workflow','validate','same-parent-role')
+        run=json.loads(self.cli('workflow','run','same-parent-role','--input',json.dumps(payload)).stdout)
+        history=json.loads(self.cli('workflow','history','get',run['id']).stdout)
+        result=next(s for j in history['jobs'] for s in j['steps'] if s['name']=='enrolled_role_result')['outputs']
+        self.assertTrue(result['role_proven']);self.assertTrue(result['footprint']['footprint_proven'])
+        self.assertNotIn('packages',[json.loads(row)['action'] for row in self.audit.read_text().splitlines()])
+        self.audit.unlink(missing_ok=True)
+        payload['prepared']['node_id']=6
+        refused=json.loads(self.cli('workflow','run','same-parent-role','--input',json.dumps(payload),success=False).stdout)
+        self.assertEqual(refused['status'],'failed')
+        self.assertFalse(self.audit.exists(), 'A wrong-Node prepared receipt must stop every SSH action')
+
+    def test_websocket_runtime_certificate_publication_and_original_root_identity(self):
+        self.ingress()
+        intent=self.input['intent'];intent['role']='websocket'
+        intent['runtime']={'node_id':5,'assignment_id':17,'user':'orbit','install_path':'/opt/orbit/reverb','repository':'https://example.invalid/reverb.git','ref':'b'*40,'port':8080}
+        intent['certificates']={'leaves':[{'node_id':5,'scope':'role-websocket','domain':'reverb.orbit','version':'c'*16,'root_hash':'d'*64}],'withdrawals':[]}
+        intent['publications']=[]
+        self.input['execution_secrets']['runtime_material']={'vault':'orbit-control-inputs','key':'node-role-7-runtime_material'}
+        module=self.repo/'extensions/behaviors/operations/node-role-converge-command/supplier_fixture.ts'
+        module.write_text('''import {z} from "npm:zod@4.4.3";
+export const behavior={type:"@nckrtl/role-supplier-fixture",version:"2026.11.01.1",resources:{result:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},methods:{complete:{description:"Return a typed supplier boundary fixture",arguments:z.object({action:z.string(),parent_run_id:z.string().optional()}),execute:async(args:{action:string;parent_run_id?:string},ctx:{writeResource(s:string,n:string,v:unknown):Promise<unknown>})=>{await Deno.writeTextFile(AUDIT,JSON.stringify(args)+"\\n",{append:true});const result={completed:true,ready:true,node_id:5,scope:"role-websocket",version:"cccccccccccccccc"};await ctx.writeResource("result","result",result);return result;}}}};
+'''.replace('AUDIT',json.dumps(str(self.audit))))
+        for name,action in [('node-role-websocket','runtime'),('node-role-certificate-publish','certificate'),('node-role-publication','publication')]:
+            path=self.repo/('workflows/workflow-'+name+'.yaml')
+            flow=yaml.safe_load(path.read_text())
+            args={'action':action}
+            if action=='certificate':args['parent_run_id']='${{ inputs.parent_run_id }}'
+            flow['jobs']=[{'name':'fixture','steps':[{'name':'result','task':{'type':'behavior','behaviorType':'@nckrtl/role-supplier-fixture','behaviorName':action+'-fixture','methodName':'complete','inputs':args}}]}]
+            path.write_text(yaml.safe_dump(flow,sort_keys=False))
+        _,result=self.run_role()
+        self.assertTrue(result['role_proven']);self.assertTrue(result['runtime_proven']);self.assertTrue(result['publication_proven'])
+        rows=[json.loads(row) for row in self.audit.read_text().splitlines()]
+        calls=[row['action'] for row in rows]
+        self.assertLess(calls.index('runtime'),calls.index('certificate'))
+        self.assertLess(calls.index('certificate'),calls.index('publication'))
+        self.assertLess(calls.index('publication'),calls.index('firewall'))
+        self.assertEqual(next(r for r in rows if r['action']=='certificate')['parent_run_id'],self.last_result['id'])

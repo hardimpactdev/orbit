@@ -1,8 +1,23 @@
 import { CliInstallInput, CliInstallResult } from "../fleet/cli_install.ts";
 import { NETWORK_PROGRAM } from "../node/network_native_program.ts";
 import { z } from "npm:zod@4.4.3";
+export const RoleConvergeIntent = z.object({
+    schema_version: z.literal(1).optional(),
+    node_id: z.number().int().positive(),
+    assignment_id: z.number().int().positive(),
+    role: z.enum(["database", "ingress", "websocket"]),
+    created: z.literal(false).optional(),
+    prerequisites: z.object({
+        packages: z.array(z.string()),
+        releases: z.array(z.string()),
+    }).passthrough(),
+}).passthrough();
+export type RoleConvergeIntent = z.infer<typeof RoleConvergeIntent>;
 const Path = z.string().startsWith("/").max(4096);
+const FileSnapshot = z.object({ path: Path, run_id: z.uuid() }).strict();
 const Inputs = {
+    file_snapshot: FileSnapshot,
+    file_restore: FileSnapshot,
     observer_identity: z.object({}).strict(),
     observer_checkout: z.object({ checkout: Path }).strict(),
     file: z.object({
@@ -11,12 +26,19 @@ const Inputs = {
         owner: z.string().regex(
             /^[a-zA-Z0-9_][a-zA-Z0-9_.-]*:[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/,
         ),
-        content: z.string(),
+        content: z.string().nullable(),
+        material_field: z.literal("websocket_environment").optional(),
         marker: z.string().nullable(),
     }).strict(),
 };
 const Args = z.object({
-    action: z.enum(["file", "observer_identity", "observer_checkout"]),
+    action: z.enum([
+        "file",
+        "observer_identity",
+        "observer_checkout",
+        "file_snapshot",
+        "file_restore",
+    ]),
     input: z.record(z.string(), z.unknown()),
 }).strict();
 export type RoleBaselineAction = keyof typeof Inputs;
@@ -84,6 +106,56 @@ export const behavior = {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        plan: {
+            description:
+                "Validate supported immutable role input before effects",
+            arguments: z.object({ intent: RoleConvergeIntent }).strict(),
+            execute: async (
+                args: { intent: z.infer<typeof RoleConvergeIntent> },
+                ctx: Context,
+            ) => {
+                RoleConvergeIntent.parse(args.intent);
+                const result = { ready: true, changed: false };
+                await ctx.writeResource("result", "result", result);
+                return result;
+            },
+        },
+
+        prepared_tools: {
+            description: "Verify same-Node OS prerequisite coverage",
+            arguments: z.object({
+                node_id: z.number().int().positive(),
+                required_packages: z.array(z.string()),
+                contribution: z.object({
+                    ready: z.literal(true),
+                    node_id: z.number().int().positive(),
+                    packages: z.array(z.string()),
+                }).strict(),
+            }).strict(),
+            execute: async (
+                args: {
+                    node_id: number;
+                    required_packages: string[];
+                    contribution: {
+                        ready: true;
+                        node_id: number;
+                        packages: string[];
+                    };
+                },
+                ctx: Context,
+            ) => {
+                if (
+                    args.node_id !== args.contribution.node_id ||
+                    args.required_packages.some((p) =>
+                        !args.contribution.packages.includes(p)
+                    )
+                ) throw new Error("Incomplete prepared tools");
+                const result = { ready: true, changed: false };
+                await ctx.writeResource("result", "result", result);
+                return result;
+            },
+        },
+
         cli: {
             description:
                 "Bind the canonical CLI installation policy to admitted public input",

@@ -10,7 +10,7 @@ export function roleFirewallSteps(
     dependency: string,
 ): Fields[] {
     const expand = name + "_expand", prune = name + "_prune";
-    const selected = intent + '.role == "ingress"';
+    const selected = intent + '.role in ["ingress","websocket"]';
     const rules = (field: string) =>
         expr(selected + " ? " + intent + ".firewall." + field + " : []");
     const command = (step: string, field: string, prior: string): Fields => {

@@ -152,6 +152,8 @@ except Refused as error:print(json.dumps({'error_code':str(error)}))
 except Exception:print(json.dumps({'unknown':True}))
 `;
 
+export const WebSocketOwnership = program.slice(program.indexOf("def own_paths"), program.indexOf("def execute"));
+
 function validPath(path: string) {
   return /^\/(?:[A-Za-z0-9_.-]+\/){2,}[A-Za-z0-9_.-]+$/.test(path) &&
     !path.split("/").some((p) => p === "." || p === "..");
