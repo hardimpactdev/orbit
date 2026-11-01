@@ -11,13 +11,10 @@ use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Infrastructure\Swamp\SwampScheduledResults;
-use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
-use App\Models\ProblemCollectorState;
 use App\Models\Process;
-use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
@@ -30,14 +27,11 @@ final class OperationsServiceProvider extends ServiceProvider
         foreach (['saved', 'deleted'] as $event) {
             Event::listen('eloquent.'.$event.': *', static function (string $name, array $models): void {
                 $model = $models[0] ?? null;
+                // Collector-only rows (Activity, Task, cursors) refresh with the next terminal, not per commit.
                 if ($model !== null && in_array($model::class, [
-                    Node::class, NodeRole::class, Process::class,
-                    Instance::class, TaskVm::class, Activity::class,
-                    Task::class, ProblemCollectorState::class,
+                    Node::class, NodeRole::class, Process::class, Instance::class, TaskVm::class,
                 ], true)) {
-                    app(ScheduledObservation::class)->invalidate(! in_array($model::class, [
-                        Activity::class, Task::class, ProblemCollectorState::class,
-                    ], true));
+                    app(ScheduledObservation::class)->invalidate();
                 }
             });
         }

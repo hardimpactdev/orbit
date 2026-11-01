@@ -32,27 +32,27 @@ final readonly class ScheduledObservation implements ScheduledResultProjection
         $this->invalidate(bootstrap: true);
     }
 
-    public function invalidate(bool $expectations = true, bool $bootstrap = false): void
+    /** Registry commits start a context only when a channel's expectations hash changes. */
+    public function invalidate(bool $bootstrap = false): void
     {
         if (! is_string(config('swamp.run_token')) || config('swamp.run_token') === '') {
             return;
         }
-        DB::transaction(function () use ($expectations, $bootstrap): void {
+        DB::transaction(function () use ($bootstrap): void {
             $state = $bootstrap ? $this->state() : ProblemCollectorState::query()->lockForUpdate()->orderBy('id')->first();
             if ($state === null || (! $bootstrap && $state->observation === null)) {
                 return;
             }
-            if ($expectations) {
-                $state->observation = [...($state->observation ?? []), 'dirty' => ['fleet' => true, 'horizon' => true]];
-                $state->saveQuietly();
-            }
-            DB::afterCommit(fn () => $this->notify($expectations ? null : 'fleet'));
+            $state->observation = [...($state->observation ?? []), 'dirty' => ['fleet' => true, 'horizon' => true]];
+            $state->saveQuietly();
+            DB::afterCommit(fn () => $this->notify(null, registry: ! $bootstrap));
         });
     }
 
-    public function publish(?string $only = null, bool $force = false): void
+    /** A terminal refreshes collector cursors once per tick; a registry commit compares only expectations. */
+    public function publish(?string $only = null, bool $force = false, bool $registry = false): void
     {
-        $contexts = DB::transaction(function () use ($only, $force): array {
+        $contexts = DB::transaction(function () use ($only, $force, $registry): array {
             $state = $this->state();
             $stored = $state->observation ?? [];
             $revision = ValidatedData::integer($stored['revision'] ?? 0) + 1;
@@ -82,13 +82,14 @@ final readonly class ScheduledObservation implements ScheduledResultProjection
                 $input['nodes'] = $nodes;
                 $intent = ValidatedData::object(app(DoctorExecutionInput::class)->forIntent($input)['intent']);
                 $prior = ValidatedData::object(ValidatedData::object($stored['contexts'] ?? [])[$channel] ?? []);
-                if (! $force && json_encode($prior['intent'] ?? null) === json_encode($intent)
-                    && is_string($prior['captured_at'] ?? null) && Carbon::parse($prior['captured_at'])->greaterThan(now()->subMinutes(30))) {
+                $expectations = hash('sha256', json_encode([$nodeId, $intent['nodes'], $intent['families']], JSON_THROW_ON_ERROR));
+                if (! $force && ($registry ? ($prior['expectations'] ?? null) === $expectations
+                    : json_encode($prior['intent'] ?? null) === json_encode($intent)
+                        && is_string($prior['captured_at'] ?? null) && Carbon::parse($prior['captured_at'])->greaterThan(now()->subMinutes(30)))) {
                     continue;
                 }
                 $contexts[$channel] = ['channel' => $channel, 'revision' => $revision, 'captured_at' => now()->toISOString(),
-                    'node_id' => $nodeId, 'intent' => $intent,
-                    'expectations' => hash('sha256', json_encode([$nodeId, $intent['nodes'], $intent['families']], JSON_THROW_ON_ERROR))];
+                    'node_id' => $nodeId, 'intent' => $intent, 'expectations' => $expectations];
             }
             $state->observation = [...$stored, 'revision' => $revision, 'dirty' => [...ValidatedData::object($stored['dirty'] ?? []), ...array_fill_keys($channels, false)],
                 'contexts' => [...ValidatedData::object($stored['contexts'] ?? []), ...$contexts]];
@@ -142,17 +143,17 @@ final readonly class ScheduledObservation implements ScheduledResultProjection
         });
     }
 
-    private function notify(?string $channel, bool $force = false): void
+    private function notify(?string $channel, bool $force = false, bool $registry = false): void
     {
         try {
             if ($channel !== 'fleet') {
-                $this->publish('horizon', $force);
+                $this->publish('horizon', $force, $registry);
             }
             if ($channel !== 'horizon') {
                 if (GatewayQueueRedis::configured()) {
-                    PublishObservationContext::dispatch('fleet', $force);
+                    PublishObservationContext::dispatch('fleet', $force, $registry);
                 } else {
-                    $this->publish('fleet', $force);
+                    $this->publish('fleet', $force, $registry);
                 }
             }
         } catch (Throwable $exception) {
