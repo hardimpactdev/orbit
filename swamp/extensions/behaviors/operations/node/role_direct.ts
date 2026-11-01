@@ -219,6 +219,8 @@ export function nodeRoleAdd(
           // These applicable dependencies are still held; never perform a partial role and report success.
           const refusal = current.cancel_requested || ctx.signal?.aborted
             ? "operation.cancelled"
+            : args.kind === "node.role_converge" && snapshot.role === "websocket"
+            ? "operation.kind_unavailable"
             : snapshot.footprint.refusal
             ? snapshot.footprint.refusal
             : snapshot.metrics_fleet?.fleet.some((node) =>

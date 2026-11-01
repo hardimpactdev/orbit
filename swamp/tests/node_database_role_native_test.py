@@ -171,7 +171,7 @@ export const behavior={type:"@nckrtl/role-retained-fixture",version:"2026.11.01.
 
     def test_ingress_mandatory_failures_do_not_prove_role_or_run_later_effects(self):
         self.ingress()
-        for failure in ['caddy_package','caddy_validate','firewall','firewall_prune']:
+        for failure in ['caddy_package','packages','caddy_validate','firewall','firewall_prune']:
             with self.subTest(failure=failure):
                 self.audit.unlink(missing_ok=True);self.failure.write_text(failure)
                 _,result=self.run_role(False)
@@ -203,13 +203,32 @@ export const behavior={type:"@nckrtl/role-retained-fixture",version:"2026.11.01.
         self.assertEqual(refused['status'],'failed')
         self.assertFalse(self.audit.exists(), 'A wrong-Node prepared receipt must stop every SSH action')
 
-    def test_websocket_runtime_certificate_publication_and_original_root_identity(self):
+    def websocket(self):
         self.ingress()
         intent=self.input['intent'];intent['role']='websocket'
         intent['runtime']={'node_id':5,'assignment_id':17,'user':'orbit','install_path':'/opt/orbit/reverb','repository':'https://example.invalid/reverb.git','ref':'b'*40,'port':8080}
         intent['certificates']={'leaves':[{'node_id':5,'scope':'role-websocket','domain':'reverb.orbit','version':'c'*16,'root_hash':'d'*64}],'withdrawals':[]}
         intent['publications']=[]
         self.input['execution_secrets']['runtime_material']={'vault':'orbit-control-inputs','key':'node-role-7-runtime_material'}
+
+    def test_websocket_prerequisite_and_publication_failure_preserve_firewall(self):
+        self.websocket()
+        path=self.repo/'workflows/workflow-node-role-publication.yaml'
+        flow=yaml.safe_load(path.read_text())
+        flow['jobs']=[{'name':'fixture','steps':[{'name':'refused','task':{'type':'assert','expr':'false','severity':'high','message':'Admitted publication fixture fails'}}]}]
+        path.write_text(yaml.safe_dump(flow,sort_keys=False))
+        for failure in ['caddy_package','packages','publication']:
+            with self.subTest(failure=failure):
+                self.audit.unlink(missing_ok=True)
+                self.failure.write_text(failure)
+                _,result=self.run_role(False)
+                self.assertFalse(result['role_proven'])
+                actions=[json.loads(row)['action'] for row in self.audit.read_text().splitlines()]
+                self.assertNotIn('firewall',actions)
+                self.assertNotIn('firewall_prune',actions)
+
+    def test_websocket_runtime_certificate_publication_and_original_root_identity(self):
+        self.websocket()
         module=self.repo/'extensions/behaviors/operations/node-role-converge-command/supplier_fixture.ts'
         module.write_text('''import {z} from "npm:zod@4.4.3";
 export const behavior={type:"@nckrtl/role-supplier-fixture",version:"2026.11.01.1",resources:{result:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},methods:{complete:{description:"Return a typed supplier boundary fixture",arguments:z.object({action:z.string(),parent_run_id:z.string().optional()}),execute:async(args:{action:string;parent_run_id?:string},ctx:{writeResource(s:string,n:string,v:unknown):Promise<unknown>})=>{await Deno.writeTextFile(AUDIT,JSON.stringify(args)+"\\n",{append:true});const result={completed:true,ready:true,node_id:5,scope:"role-websocket",version:"cccccccccccccccc"};await ctx.writeResource("result","result",result);return result;}}}};

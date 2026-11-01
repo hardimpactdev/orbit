@@ -35,6 +35,7 @@ source=body
 if '/usr/bin/python3' in command and '-c' in command:
     source=command[command.index('-c')+1]
 if source:
+    if '\ndef cleanup(data):' in source:log('cleanup')
     source=source.replace('/etc/systemd/system/orbit-websocket.service',str(root/'orbit-websocket.service')).replace('/var/lib/orbit/role-file-snapshots',str(root/'snapshots'))
     original_run=subprocess.run
     def run(argv,**kwargs):

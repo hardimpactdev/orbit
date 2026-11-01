@@ -382,13 +382,27 @@ export function roleWebSocketSteps(
         ),
     ]);
     const failure = failed(c.steps.map((s) => String(s.name)));
+    const cutover = `steps.exists(key, ${
+        JSON.stringify([name + "_stop", name + "_unit_command"])
+    }.exists(action, key == action) && steps[key].status in ["succeeded", "failed", "cancelled"])`;
     const restore = roleWebSocketRestoreSteps(
         name + "_recover",
         name,
         runtime,
         globals,
         String(c.steps.at(-1)!.name),
-        `(${failure}) && !(${succeeded(name)})`,
+        `(${failure}) && !(${succeeded(name)}) && (${cutover})`,
     );
-    return [...c.steps, ...restore];
+    const cleanup = runtimeAction(name + "_cleanup", "websocket_cleanup", {
+        install_path: expr(runtime + ".install_path"),
+        release: expr(before + ".release"),
+        previous: expr(before + ".previous"),
+        retain_candidate: expr(`(${succeeded(name)}) || (${cutover})`),
+    }, globals);
+    cleanup[0].dependsOn = [{
+        step: restore.at(-1)!.name,
+        condition: { type: "always" },
+    }];
+    cleanup[0].guard = expr(`!(${succeeded(name + "_before")})`);
+    return [...c.steps, ...restore, ...cleanup];
 }

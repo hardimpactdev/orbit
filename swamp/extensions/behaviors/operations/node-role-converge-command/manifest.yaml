@@ -18,3 +18,4 @@ additionalFiles:
   - runtime_scripts/websocket_link.py
   - runtime_scripts/websocket_observe.py
   - runtime_scripts/websocket_verify.py
+  - runtime_scripts/websocket_cleanup.py

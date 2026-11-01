@@ -64,6 +64,9 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
             $native = $converge && NativeNodeRoleConvergeInput::supports($node, $role);
+            if ($converge && $role === RoleName::WebSocket && ! $native) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'WebSocket convergence requires a supported native role plan.', 422);
+            }
             if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
                 || (! $native && ! app(NodeRolePlacement::class)->allows($node))) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);

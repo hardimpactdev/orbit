@@ -81,29 +81,12 @@ export function roleConvergeSteps(
         ),
         ...(options.preparedToolsExpr
             ? [{
-                name: "packages_assets",
+                name: "packages",
                 ...target,
                 dependsOn: on("observer_install"),
                 task: {
-                    type: "behavior",
-                    behaviorType: "@nckrtl/node-role-converge-command",
-                    behaviorName: qualify("prepared-tools"),
-                    methodName: "prepared_tools",
-                    inputs: {
-                        node_id: ex("inputs.intent.node_id"),
-                        required_packages: ex(
-                            "inputs.intent.prerequisites.packages",
-                        ),
-                        contribution: ex("__PREPARED_TOOLS__"),
-                    },
-                },
-            }, {
-                name: "packages",
-                ...target,
-                dependsOn: on("packages_assets"),
-                task: {
                     type: "assert",
-                    expr: "steps.packages_assets.outputs.ready",
+                    expr: "steps.prepared_admission.outputs.ready",
                     severity: "high",
                     message:
                         "Prepared tools must cover every required OS package",
@@ -116,7 +99,10 @@ export function roleConvergeSteps(
                 "observer_install",
             )),
     ];
-    const packageAsset = steps.find((step) => step.name === "packages_assets")!;
+    const packageAsset = steps.find((step) =>
+        step.name ===
+            (options.preparedToolsExpr ? "packages" : "packages_assets")
+    )!;
     packageAsset.dependsOn = [
         ...on("observer_install"),
         ...on("caddy_package", "always"),
@@ -296,7 +282,9 @@ export function roleConvergeSteps(
         const step of steps.filter((s) => String(s.name).startsWith("firewall"))
     ) {
         step.guard = ex(
-            'steps.exists(k,(k.startsWith("caddy-") || k.startsWith("publication-") || k.startsWith("runtime-") || k.startsWith("certificates-")) && steps[k].status in ["failed","cancelled"])',
+            'steps.packages.status != "succeeded" || ' +
+                '(inputs.intent.role == "ingress" && !("caddy-0" in steps && steps["caddy-0"].status == "succeeded")) || ' +
+                '(inputs.intent.role == "websocket" && !("publication-0" in steps && steps["publication-0"].status == "succeeded"))',
         );
     }
     function action(

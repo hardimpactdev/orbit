@@ -206,3 +206,20 @@ it('admits existing WebSocket convergence with public publications and private e
     expect(app(WebSocketDnsTarget::class)->isServing($node->id))->toBeTrue()
         ->and(app(CaddySiteCertificates::class)->published($node->id, 'websocket'))->toBeTrue();
 });
+
+it('refuses unsupported WebSocket convergence before claims or private copies even when its old worker is selected', function (): void {
+    $node = FleetFixtures::node('reverb-mixed', [RoleName::WebSocket, RoleName::AppDev]);
+    $node->forceFill(['agent_secret_hash' => str_repeat('d', 64)])->save();
+    config(['swamp_workers.nodes' => [$node->id], 'swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    $before = $node->roles()->pluck('status', 'id')->all();
+    $operations = Operation::query()->count();
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::WebSocket, true))
+        ->toThrow(ResourceOperationException::class, 'WebSocket convergence requires a supported native role plan.');
+
+    expect(Operation::query()->count())->toBe($operations)
+        ->and($node->roles()->pluck('status', 'id')->all())->toBe($before)
+        ->and($socket->sent)->toBeEmpty();
+});

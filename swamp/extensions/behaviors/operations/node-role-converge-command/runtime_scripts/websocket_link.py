@@ -15,8 +15,12 @@ def publish(data):
     if os.path.lexists(path) and not path.is_symlink():
         raise ValueError('websocket.runtime_ownership_drift')
     target = data['previous'] if data['restore'] else str(release)
-    if data['restore'] and path.is_symlink() and os.readlink(path) not in (str(release), target):
-        raise ValueError('websocket.runtime_ownership_drift')
+    if data['restore'] and path.is_symlink():
+        current = Path(os.readlink(path))
+        if not current.is_absolute():
+            current = path.parent / current
+        if str(current) not in (str(release), target):
+            raise ValueError('websocket.runtime_ownership_drift')
     temporary = path.with_name('.orbit-role-link-' + release.name)
     try:
         if target is None:
