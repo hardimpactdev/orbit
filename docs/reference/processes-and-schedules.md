@@ -40,6 +40,14 @@ The SDK exposes the mutation's Process or Operation result through `ProcessMutat
 
 Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessData, ProcessTarget)` inside its existing intent transaction, before immutable capture. The target comes from `ProcessTargetResolver` for the stored owner. This action creates or reuses the owned definition with the normal name/specification refusals. It preserves an existing desired state and records a new definition as provisioning. It creates no Operation and runs no runtime or agent call. The parent owns execution and final status projection. Capture itself only reads the admitted record.
 
+### Instance Process definition installation
+
+`process.install_instance_definitions` captures the uninstalled definition copies and sends their full public systemd or Docker definitions to one native parent on Node 209. Native `forEach` runs the existing Process-create child workflow for each member. Official cfgmgmt and pinned SSH perform the installation. Desired running or stopped state is preserved. No member Operation is created, and steps do not read intent or installation material from the Gateway.
+
+Only environment bytes use native execution copies. Each key includes the parent Operation ID and the member Process ID, so members cannot overwrite each other's environment. Public unit content, container definitions, hashes and SSH targets remain workflow inputs. Admission still refuses changed definitions or foreign member ownership before publishing that member's environment.
+
+The shared terminal reader projects the parent result into the captured set. Success marks the set active and records the admitted activation generation. Failure or interruption marks the captured set failed and retains applied files for normal convergence. Cancellation preserves the records. No rollback runs. Restart, deploy and transfer installers keep their separate paths until converted.
+
 ### Transfer installation capture
 
 A transfer captures both Process placements before it starts native execution. `ProcessInstallationBatch::materialForCapture(Instance, ProcessTarget, capture)` renders the existing installation material at either captured target while database ownership remains on the captured origin. It uses the same Process renderers and account placeholders as installation admission. It performs no account discovery or host action. A changed origin Node, checkout, member set or Process specification refuses the snapshot before publication.

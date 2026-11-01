@@ -305,19 +305,13 @@ export async function refreshEnvironmentRuntime(
   const restarted: number[] = [];
   try {
     const prepared = await actions.processes.prepare(
-      "process.restart_instance",
       runtime.processes,
       signal,
     );
     if (!prepared.proceed) throw new Error();
     for (const member of runtime.processes) {
       const result = await actions.processes.apply(
-        "process.restart_instance",
         member,
-        {
-          withPrivateMaterial: () =>
-            Promise.reject(new Error("Unexpected restart material request")),
-        },
         "skipped",
         signal,
       );

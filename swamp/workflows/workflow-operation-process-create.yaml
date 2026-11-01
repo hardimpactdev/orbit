@@ -5,7 +5,7 @@ vaults:
 - orbit-control-inputs
 inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [process.create, process.update]},
     intent: {type: object}, execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]},
-          key: {type: string, pattern: '^process-(create|update)-operation-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}}, required: [operation_id,
+          key: {type: string, pattern: '^process-((create|update)-operation-[1-9][0-9]*|instance-operation-[1-9][0-9]*-member-[1-9][0-9]*)$'}}, required: [vault, key], additionalProperties: false}}}, required: [operation_id,
     node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
 - name: process

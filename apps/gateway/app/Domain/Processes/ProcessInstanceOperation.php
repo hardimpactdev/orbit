@@ -9,6 +9,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -62,16 +63,17 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         $pin = null;
         $members = [];
         foreach ($records as $record) {
-            $pin ??= app(AgentDelivery::class)->pin($instance->node);
+            if ($verb === 'restart') {
+                $pin ??= app(AgentDelivery::class)->pin($instance->node);
+            }
             $input = $this->admission->inputFor($record, $verb);
             if ($input['node_id'] !== $instance->node_id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process is placed on another Node.', 422);
             }
-            $members[] = ['id' => $record->id, 'input' => [...$input, 'agent_sha256' => $pin]];
+            $members[] = ['id' => $record->id, 'input' => [...$input, ...($pin === null ? [] : ['agent_sha256' => $pin])]];
         }
 
-        return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'members' => $members,
-            ...($verb === 'create' ? ['installations' => ['$secret' => 'process.instance_installations', 'id' => $instance->id]] : [])];
+        return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'members' => $members];
     }
 
     /** @return list<array{id:int,input:array<string,mixed>}> */
@@ -104,6 +106,19 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
+        if ($operation->kind === 'process.install_instance_definitions') {
+            $members = [];
+            $copies = [];
+            foreach (self::members($operation) as $member) {
+                $input = app(ProcessLifecycleInput::class)->forInstanceMember($operation, $member);
+                $members[] = ['id' => $member['id'], 'intent' => $input['intent']];
+                if (isset($input['execution_secrets']['environment'])) {
+                    $copies['member_'.$member['id']] = $input['execution_secrets']['environment'];
+                }
+            }
+
+            return ['intent' => ['instance_id' => $operation->target_id, 'members' => $members], 'execution_secrets' => $copies];
+        }
         $members = [];
         $vite = false;
         foreach (self::members($operation) as $member) {
@@ -120,6 +135,10 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if ($operation->kind === 'process.install_instance_definitions') {
+            return $this->applyInstall($operation, $data);
+        }
+
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
             $terminal = $operation->status->terminal();
@@ -138,6 +157,32 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
                         continue;
                     }
                     $outcome = isset($result['error_code']) ? OperationOutcome::failed(ValidatedData::string($result['error_code'])) : OperationOutcome::succeeded(['ready' => true, 'state' => $result['state'] ?? 'unknown']);
+                    $this->completion->complete(self::member($operation, $member), $outcome);
+                }
+            }
+
+            return $projected;
+        });
+    }
+
+    /** @param array<string,mixed> $data */
+    private function applyInstall(Operation $operation, array $data): Operation
+    {
+        return DB::transaction(function () use ($operation, $data): Operation {
+            $operation->refresh();
+            $terminal = $operation->status->terminal();
+            $status = OperationStatus::from(ValidatedData::string($data['status']));
+            $code = ValidatedData::nullableString($data['error_code'] ?? null);
+            $result = $status === OperationStatus::Succeeded ? ['ready' => true] : ($code === null ? [] : ['error_code' => $code]);
+            $projected = $this->direct->project($operation, $data, $result);
+            if (! $terminal && $status->terminal() && $status !== OperationStatus::Cancelled) {
+                foreach (self::members($operation) as $member) {
+                    $outcome = match ($status) {
+                        OperationStatus::Succeeded => OperationOutcome::succeeded(['ready' => true, 'state' => $member['input']['desired'] === 'running' ? 'active' : 'inactive']),
+                        OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
+                        OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
+                        default => throw new \LogicException('A terminal Process installation status is required.'),
+                    };
                     $this->completion->complete(self::member($operation, $member), $outcome);
                 }
             }
