@@ -1,6 +1,6 @@
 ---
 title: "Caddy configuration"
-description: "How the Gateway builds each Node's whole Caddyfile from its database and pushes it in one step, and what happens when a build fails."
+description: "How Orbit renders each Node's Caddyfile, submits native publication, and reports failures."
 covers:
   - apps/gateway/app/Infrastructure/Caddy/**
   - apps/gateway/app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php
@@ -14,11 +14,19 @@ covers:
 
 For a Laravel root of `apps/site/public`, Caddy serves that nested web root, not the application directory or repository root. Development access grants validate `apps/site/public/storage` against `apps/site/storage/app/public`, using the shared [application directory](/reference/projects#application-directory). They grant access to the paths that serving needs without making `.git` public. Root `public` keeps Laravel's storage link at `public/storage` in the repository root.
 
-Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway builds that whole file for one Node from its database and pushes it in one step. No role writes Caddy files on a Node. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
+Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway renders that whole file for one Node from its database. Native publication runs through Swamp on the 209 worker, using official SSH to the target Node. No role writes Caddy files on a Node. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
+
+## Native publication
+
+The manual `orbit:caddy-build` command and the Gateway runtime handoff submit `route.caddy_converge`. The workflow writes the rendered bytes directly to `/etc/caddy/Caddyfile` through official SSH with sudo. It then runs `caddy validate` as the `caddy` user and reloads Caddy only after validation succeeds.
+
+This workflow creates no version directory or backup and does not restore the previous file on failure. If validation or reload fails, the new bytes remain at `/etc/caddy/Caddyfile`; the Operation records the failure. Correct the owning stored intent and submit another publication. A successful command exit means the Operation was submitted, not that publication has completed.
+
+The render rules below apply to native publication too. The version layout, address preflight, publication lock, backups, unchanged-file skip, and recovery behavior described for the retained Gateway builder apply only to that builder. They are not guarantees of `route.caddy_converge`.
 
 ## Published layout
 
-Each build writes one file, `/etc/caddy/orbit-versions/<version>/Caddyfile`, and points `/etc/caddy/Caddyfile` at it. The file starts with an Orbit marker line and Orbit's global options block. Then it lists every site of every role on that Node:
+The retained Gateway builder writes one file, `/etc/caddy/orbit-versions/<version>/Caddyfile`, and points `/etc/caddy/Caddyfile` at it. The file starts with an Orbit marker line and Orbit's global options block. Then it lists every site of every role on that Node:
 
 ```caddy
 # Managed by Orbit: Node Caddy build
@@ -134,7 +142,7 @@ The Swamp exception admits exactly one hostname on port 443. Set `ORBIT_TASK_VMS
 
 Until task VMs are configured, no site has the task VM pair. Setting `swamp_host` also counts as configuring task VMs.
 
-Caddy cannot start with a missing listen address. So every build first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
+Caddy cannot start with a missing listen address. The retained Gateway builder first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
 
 ```text
 The build binds 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.
@@ -164,11 +172,11 @@ The Gateway refuses to remove a certificate that a site in its stored state stil
 
 The `app-dev` role creates the hibernation marker and log directories before it requests a build, because `caddy validate` opens those logs as the `caddy` user. The convergence of `app-dev`, `app-prod`, `router`, and `ingress` first runs the step `caddy-service-ordering`, which calls `caddy.order-after-vpn` through `AgentCommandRunner`, and then builds the Node. The agent publishes the fixed systemd drop-in as root. An unchanged drop-in with an active Caddy service needs no reload or restart; an inactive service is restarted. Unsafe paths fail before mutation. A failed activation restores the prior drop-in and service state, and reports a failed recovery explicitly.
 
-The Gateway runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state, so the last build always renders every committed change. A build that renders the file that is already live changes nothing and does not reload Caddy, so open WebSocket streams stay connected.
+The retained Gateway builder runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state, so the last build always renders every committed change. A build that renders the file that is already live changes nothing and does not reload Caddy, so open WebSocket streams stay connected.
 
 ### How a build is pushed
 
-The Gateway sends the rendered configuration, its digest, and its listen addresses to `caddy.publish` through `AgentCommandRunner`. The Rust agent owns validation, backups, publication, reload, and pruning. The runner selects local execution on the Gateway and pinned SSH on other Nodes. The mutation runs in its own systemd service, outside the Gateway service's filesystem sandbox. The agent runs these stages:
+The retained Gateway builder still calls the retired `caddy.publish` command through `AgentCommandRunner`. This path cannot publish with the current agent contract. The following describes that old path, not native publication: it sends the rendered configuration, its digest, and its listen addresses to the agent. The Rust agent owns validation, backups, publication, reload, and pruning. The runner selects local execution on the Gateway and pinned SSH on other Nodes. The mutation runs in its own systemd service, outside the Gateway service's filesystem sandbox. The agent runs these stages:
 
 | Stage | Work |
 | --- | --- |
@@ -194,7 +202,7 @@ A failed check stops the build before any change. `/run/lock` is a tmpfs, so the
 
 ### When Caddy is absent
 
-A Node without `/usr/bin/caddy` and without a running `caddy` service serves nothing. The build then reports `unchanged` at stage `release` in two cases: the render has no site, or no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging. In every other case a missing Caddy fails the build at stage `release`. A running `caddy` service keeps serving the configuration it loaded, so a missing binary alone never skips the build.
+A Node without `/usr/bin/caddy` and without a running `caddy` service serves nothing. The retained Gateway builder then reports `unchanged` at stage `release` in two cases: the render has no site, or no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging. In every other case a missing Caddy fails the build at stage `release`. A running `caddy` service keeps serving the configuration it loaded, so a missing binary alone never skips the build.
 
 On that skip, the live `/etc/caddy/Caddyfile` can name sites and certificates that the render does not have. So when the bytes behind the live path are not the render, the build moves the live path into `/etc/caddy/orbit-backups/<UTC timestamp>/`. A symlink moves as a symlink, and a regular file moves as a file. A later `systemctl start caddy` then cannot load a removed certificate. The build does not validate, start, or reload Caddy, and it deletes nothing. A live file whose bytes are the render stays in place. When the build cannot move the live path, it fails at stage `release` and leaves the path in place.
 
@@ -202,11 +210,11 @@ The next convergence of a Caddy role on the Node installs Caddy and builds the N
 
 ### When a build fails
 
-A failed build does not publish a new file. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
+The retained Gateway builder does not publish a new file when validation fails. Native publication writes before validation and leaves the new file on failure, as [native publication](#native-publication) describes. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
 
 While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. An invalid `task_vms.swamp_host` also refuses a build at stage `render`. No other task VM value affects a build.
 
-A failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
+In the retired agent publication path, a failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 
 One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A certificate file that someone removed by hand fails validation, for example. Converge the role or Route that owns the site again to publish the certificate.
 
@@ -276,7 +284,7 @@ Repeating any command that publishes one of a Node's sites, such as `orbit node:
 
 ## Replaced configuration
 
-The build replaces a Caddyfile that does not start with its marker line. It never adopts it. The first build on such a Node copies what it replaces to `/etc/caddy/orbit-backups/<UTC timestamp>/`, after the new version passes validation:
+The retained Gateway builder replaces a Caddyfile that does not start with its marker line. It never adopts it. The first build on such a Node copies what it replaces to `/etc/caddy/orbit-backups/<UTC timestamp>/`, after the new version passes validation:
 
 | Live `/etc/caddy/Caddyfile` | Backup |
 | --- | --- |
