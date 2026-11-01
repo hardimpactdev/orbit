@@ -26,6 +26,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
+        scope: single
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
 - name: result

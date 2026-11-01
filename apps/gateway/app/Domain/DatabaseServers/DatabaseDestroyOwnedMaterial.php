@@ -22,7 +22,7 @@ final readonly class DatabaseDestroyOwnedMaterial
                 $serverIds[] = ValidatedData::integer($server['server_id']);
             }
         }
-        if (! in_array($operation->kind, ['database.destroy_owned', 'instance.destroy'], true) || $serverIds === []
+        if ($operation->kind !== 'instance.destroy' || $serverIds === []
             || ! in_array($authenticatedNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
             $this->forbidden();
         }

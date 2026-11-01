@@ -506,26 +506,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/destroy_owned.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/destroy_owned.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/database/destroy_owned.ts",
-      "rule": "secret-output",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/native_effect.ts",
       "rule": "gateway-http",
       "count": 2,
@@ -3024,14 +3004,6 @@
         "workload/served",
         "workload/served-assets",
         "workload/served-command"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-database-destroy-owned.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "effects/remove-${{ self.work.key }}"
       ]
     },
     {

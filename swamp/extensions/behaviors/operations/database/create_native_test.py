@@ -21,6 +21,7 @@ def reply(raw):
 
 
 class CreateNative(DatabaseCommands):
+    fail = unittest.TestCase.fail
     native_timeout = 180
 
     def setUp(self):
@@ -40,7 +41,7 @@ class CreateNative(DatabaseCommands):
         run = self.run_create()
         self.assertEqual([x['action'] for x in self.calls()], ['sql_probe_user', 'sql_probe_databases', 'sql_create_user', 'sql_authenticate', 'mysql_grant', 'mysql_grant', 'mysql_grant', 'sql_create_database', 'sql_create_database'])
         self.assertEqual(self.outcome(run), {'backend': 'active'})
-        records = reply(self.cli('data','query','modelName.startsWith("database-create-action-") && name == "run-exec-server"','--select','modelName').stdout)['results']
+        records = reply(self.cli('data','query','modelName.startsWith("dbc-") && name == "run-exec-server"','--select','modelName').stdout)['results']
         self.assertEqual(len(set(records)), len(self.calls()))
         self.assert_private_absent(json.dumps(self.history(run)))
 
@@ -59,11 +60,11 @@ class CreateNative(DatabaseCommands):
         self.assertEqual([x['action'] for x in self.calls()], ['valkey_index', 'valkey_user', 'valkey_set_user', 'valkey_save'])
         self.assertEqual(self.outcome(run), {'backend': 'active'})
 
-    def test_refusal_before_mutation_and_index_code_survives_failed_child(self):
-        self.fail('sql_probe_databases', 'database.name_conflict')
+    def test_refusal_before_mutation_keeps_unknown_when_failed_child_omits_output(self):
+        DatabaseCommands.fail(self,'sql_probe_databases', 'database.name_conflict')
         run = self.run_create(False)
         self.assertEqual([x['action'] for x in self.calls()], ['sql_probe_user', 'sql_probe_databases'])
-        self.assertEqual(self.outcome(run), {'error_code': 'database.name_conflict'})
+        self.assertEqual(self.outcome(run), {'error_code': 'database.create_outcome_unknown'})
 
     def test_failed_foreach_child_blocks_later_mutations_then_resumes_natively(self):
         # Official e459 forwards new-model globals through serve, but not local CLI resume.
@@ -85,10 +86,10 @@ class CreateNative(DatabaseCommands):
                     except OSError:
                         self.assertIsNone(serve.poll(),(self.repo/'serve.log').read_text()[-2000:]);time.sleep(.1)
                 flags=('--server',f'ws://127.0.0.1:{port}','--token-file',str(token))
-                self.fail('mysql_grant')
+                DatabaseCommands.fail(self,'mysql_grant')
                 run=reply(self.cli('workflow','run','operation-database-create','--input',json.dumps(self.public),*flags,success=False).stdout)
                 self.assertNotIn('sql_create_database',[x['action'] for x in self.calls()])
-                self.fail('')
+                DatabaseCommands.fail(self,'')
                 self.cli('workflow','resume','operation-database-create','--run',run['id'],*flags)
                 self.assertEqual(self.outcome(run),{'backend':'active'})
             finally:

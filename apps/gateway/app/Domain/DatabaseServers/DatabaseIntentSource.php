@@ -47,8 +47,7 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The database intent belongs to another target.', 422);
         }
         $intent = DatabaseExecutionIntent::recorded($id);
-        if ($key === '' && (($operation->kind === 'database.destroy_owned' && $parameter === 'payload')
-                || ($operation->kind === 'instance.destroy' && $parameter === 'database_material'))
+        if ($key === '' && $operation->kind === 'instance.destroy' && $parameter === 'database_material'
             && (app(DirectOperation::class)->definition($operation->kind)['private_material'][$parameter] ?? null) === $this->name()) {
             $caller = (request()->getUserResolver())();
             if (! $caller instanceof Node || app(DirectOperationPrivateBindings::class)->ownerNode($operation, $parameter) !== $intent->node_id) {

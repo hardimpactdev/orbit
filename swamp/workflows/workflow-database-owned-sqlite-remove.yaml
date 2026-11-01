@@ -1,0 +1,78 @@
+id: 3ff714cf-3d11-4b0d-8b07-244817882a2a
+name: database-owned-sqlite-remove
+description: Remove one owned SQLite file under its admitted SSH account, with a typed native result.
+writes: true
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.destroy_owned]}
+    intent: {type: object, properties: {connection_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, checkout: {type: string}, path: {type: string}, ssh: {type: object}}, required: [connection_id, node_id, checkout, path, ssh], additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: remove
+  target: orbit-node-209
+  steps:
+  - name: assets
+    <<: &placed {target: orbit-node-209}
+    writes: false
+    task:
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-owned-sqlite-assets-" + run.id }}'}
+      methodName: read
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: directory
+    <<: *placed
+    task:
+      <<: &ssh
+        type: behavior
+        behaviorType: '@swamp/ssh'
+        behaviorName: '${{ "dbos-" + run.id }}'
+        globalArgs:
+          name: '${{ "dbos-" + run.id }}'
+          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}
+          hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-db-owned-" + run.id }}']}
+  - name: copy
+    <<: *placed
+    dependsOn: [{step: assets, condition: {type: succeeded}}, {step: directory, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: copy
+      inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-db-owned-" + run.id }}', direction: to, recursive: true}
+  - name: remove
+    <<: *placed
+    allowFailure: true
+    dependsOn: [{step: copy, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-db-owned-" + run.id + "/owned_sqlite_remove.py" }}', '${{ steps.assets.outputs.intent_json }}']
+        okExitCodes: [0, 1]
+  - name: result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: assets, condition: {type: always}}, {step: directory, condition: {type: always}}, {step: copy, condition: {type: always}}, {step: remove, condition: {type: always}}]
+    task:
+      <<: *metadata
+      methodName: owned_result
+      inputs: {expected: [remove], steps: '${{ steps }}'}
+  - name: cleanup_files
+    <<: *placed
+    allowFailure: true
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    guard: ${{ steps.result.outputs.exitCode != 0 }}
+    task:
+      <<: *ssh
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-db-owned-" + run.id }}']}
+  - name: accept_result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: result, condition: {type: succeeded}}, {step: cleanup_files, condition: {type: always}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0 && steps.cleanup_files.status == "succeeded", severity: high, message: Owned SQLite removal did not complete.}
