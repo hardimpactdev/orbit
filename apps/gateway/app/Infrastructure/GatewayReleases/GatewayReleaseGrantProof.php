@@ -36,38 +36,66 @@ final readonly class GatewayReleaseGrantProof
                 throw $this->refused();
             }
             $checks = 1;
-            $expectedVaults = [];
+            $expectedScopes = [];
             foreach ($policy['vaults'] as $vault) {
                 if (! is_array($vault) || ! is_string($vault['vault'] ?? null) || ! is_string($vault['key_pattern'] ?? null)) {
                     throw $this->refused();
                 }
                 $condition = "key.matches('".str_replace(['\\', "'"], ['\\\\', "\\'"], $vault['key_pattern'])."')";
                 foreach (['read', 'write'] as $action) {
-                    $expectedVaults[json_encode([$action, 'vault:'.$vault['vault'], $condition], JSON_THROW_ON_ERROR)] = false;
+                    $expectedScopes[json_encode([$action, 'vault:'.$vault['vault'], $condition], JSON_THROW_ON_ERROR)] = false;
                 }
             }
-            foreach ($decisions as $decision) {
-                if (! is_array($decision) || ! is_string($decision['resource'] ?? null)) {
-                    throw $this->refused();
-                }
-                if (! str_starts_with($decision['resource'], 'vault:')) {
-                    continue;
-                }
-                $signature = json_encode([$decision['action'] ?? null, $decision['resource'], $decision['condition'] ?? null], JSON_THROW_ON_ERROR);
-                if (($decision['effect'] ?? null) !== 'allow' || ! array_key_exists($signature, $expectedVaults)
-                    || ! empty($decision['methods']) || ! empty($decision['impliedBy'])) {
-                    throw $this->refused();
-                }
-                $expectedVaults[$signature] = true;
-            }
-            if (in_array(false, $expectedVaults, true)) {
-                throw $this->refused();
-            }
-            $checks += count($expectedVaults);
             foreach ($policy['workflows'] as $workflow) {
                 if (! is_array($workflow) || ! is_string($workflow['workflow'] ?? null) || ! is_array($workflow['actions'] ?? null)) {
                     throw $this->refused();
                 }
+                foreach ($workflow['actions'] as $action) {
+                    if (! in_array($action, ['read', 'run', 'write'], true)) {
+                        throw $this->refused();
+                    }
+                    $expectedScopes[json_encode([$action, 'workflow:'.$workflow['workflow'], null], JSON_THROW_ON_ERROR)] = false;
+                }
+            }
+            $directGrants = [];
+            $implied = [];
+            foreach ($decisions as $decision) {
+                if (! is_array($decision) || ! is_string($decision['resource'] ?? null)
+                    || ! is_string($decision['grantId'] ?? null) || $decision['grantId'] === ''
+                    || ($decision['effect'] ?? null) !== 'allow' || ! empty($decision['methods'])) {
+                    throw $this->refused();
+                }
+                if (isset($decision['impliedBy'])) {
+                    $implied[] = $decision;
+
+                    continue;
+                }
+                $signature = json_encode([$decision['action'] ?? null, $decision['resource'], $decision['condition'] ?? null], JSON_THROW_ON_ERROR);
+                if (! array_key_exists($signature, $expectedScopes)) {
+                    throw $this->refused();
+                }
+                $expectedScopes[$signature] = true;
+                $directGrants[$decision['grantId']][$signature] = true;
+            }
+            foreach ($implied as $decision) {
+                $action = $decision['action'] ?? null;
+                $origin = match ($action) {
+                    'approve', 'signal' => 'run',
+                    'tag' => 'write',
+                    default => null,
+                };
+                $signature = json_encode([$origin, $decision['resource'], $decision['condition'] ?? null], JSON_THROW_ON_ERROR);
+                if ($origin === null || $decision['impliedBy'] !== $origin
+                    || ($inventory[$action.'RequiresExplicitGrant'] ?? null) !== false
+                    || ! isset($directGrants[$decision['grantId']][$signature])) {
+                    throw $this->refused();
+                }
+            }
+            if (in_array(false, $expectedScopes, true)) {
+                throw $this->refused();
+            }
+            $checks += count($expectedScopes);
+            foreach ($policy['workflows'] as $workflow) {
                 foreach (['read', 'run', 'write'] as $action) {
                     $reply = $this->query(['action' => $action, 'resource' => 'workflow:'.$workflow['workflow']], $deadline);
                     $this->decision($reply, $action, 'workflow:'.$workflow['workflow'], in_array($action, $workflow['actions'], true));
@@ -81,7 +109,7 @@ final readonly class GatewayReleaseGrantProof
             }
 
             return ['principal' => 'user:orbit-gateway', 'checks' => $checks, 'checked_at' => now()->toIso8601String(),
-                'mode' => 'configured_token_allow_deny_and_exact_vault_conditions'];
+                'mode' => 'configured_token_allow_deny_and_exact_manifest_scopes'];
         } catch (Throwable) {
             throw $this->refused();
         } finally {

@@ -37,14 +37,23 @@ beforeEach(function (): void {
     $this->socket->reply = static function (array $request): array {
         $payload = (array) $request['payload'];
         if ($payload === []) {
-            $rows = array_map(static fn (string $action): array => ['action' => $action, 'resource' => 'vault:orbit-control-inputs',
+            $rows = array_map(static fn (string $action): array => ['grantId' => 'vault-grant', 'action' => $action, 'resource' => 'vault:orbit-control-inputs',
                 'effect' => 'allow', 'condition' => "key.matches('^test-[0-9]+$')"], ['read', 'write']);
+            foreach (['read', 'run'] as $action) {
+                $rows[] = ['grantId' => 'workflow-grant', 'action' => $action, 'resource' => 'workflow:operation-test', 'effect' => 'allow'];
+            }
+            foreach (['approve', 'signal'] as $action) {
+                $rows[] = ['grantId' => 'workflow-grant', 'action' => $action, 'resource' => 'workflow:operation-test', 'effect' => 'allow', 'impliedBy' => 'run'];
+            }
+            $rows[] = ['grantId' => 'vault-grant', 'action' => 'tag', 'resource' => 'vault:orbit-control-inputs',
+                'effect' => 'allow', 'condition' => "key.matches('^test-[0-9]+$')", 'impliedBy' => 'write'];
         } else {
             $allowed = $payload['resource'] === 'workflow:operation-test' && in_array($payload['action'], ['run', 'read'], true);
             $rows = [['action' => $payload['action'], 'resource' => $payload['resource'], 'effect' => $allowed ? 'allow' : 'deny']];
         }
 
-        return [['id' => $request['id'], 'type' => 'access.can-i', 'payload' => ['principal' => 'user:orbit-gateway', 'decisions' => $rows]]];
+        return [['id' => $request['id'], 'type' => 'access.can-i', 'payload' => ['principal' => 'user:orbit-gateway', 'decisions' => $rows,
+            'approveRequiresExplicitGrant' => false, 'signalRequiresExplicitGrant' => false, 'tagRequiresExplicitGrant' => false]]];
     };
     $this->requests = [];
     $this->changePrepared = $this->changeAccepted = null;
@@ -87,7 +96,7 @@ afterEach(function (): void {
 it('pins one commit proves the configured token and accepts only that receipt', function (): void {
     $result = $this->loader->load($this->sha, $this->record);
 
-    expect($result['outcome'])->toBe('verified')->and($result['configured_token']['checks'])->toBe(10)
+    expect($result['outcome'])->toBe('verified')->and($result['configured_token']['checks'])->toBe(12)
         ->and(array_column($this->requests, 'action'))->toBe(['prepare', 'accept']);
     expect($this->requests[0]['release_sha'])->toBe($this->sha)
         ->and($this->requests[0]['gateway_release_record'])->toBe($this->record->id)
@@ -182,7 +191,7 @@ it('refuses broad or overriding vault authority even when every exact allow exis
     $this->socket->reply = static function (array $request) use ($reply, $effect): array {
         $messages = $reply($request);
         if ((array) $request['payload'] === []) {
-            $messages[0]['payload']['decisions'][] = ['action' => 'write', 'resource' => 'vault:*', 'effect' => $effect];
+            $messages[0]['payload']['decisions'][] = ['grantId' => 'broad-vault-grant', 'action' => 'write', 'resource' => 'vault:*', 'effect' => $effect];
         }
 
         return $messages;
@@ -200,6 +209,62 @@ it('requires the same durable active release before any remote effect', function
     expect($this->requests)->toBe([]);
 })->with(['outcome', 'sha', 'missing']);
 
+it('rejects extra workflow inventory authority even when exact allows and unrelated denial pass', function (string $resource): void {
+    $reply = $this->socket->reply;
+    $this->socket->reply = static function (array $request) use ($reply, $resource): array {
+        $messages = $reply($request);
+        if ((array) $request['payload'] === []) {
+            $messages[0]['payload']['decisions'][] = ['grantId' => 'extra-workflow-grant', 'action' => 'run', 'resource' => $resource, 'effect' => 'allow'];
+        }
+
+        return $messages;
+    };
+
+    expect(fn () => $this->loader->load($this->sha, $this->record))->toThrow(GatewayReleaseException::class);
+    expect(array_column($this->requests, 'action'))->toBe(['prepare']);
+})->with(['workflow:operation-*', 'workflow:operation-unlisted']);
+
+it('accepts exact grants when native policy disables implied actions', function (): void {
+    $reply = $this->socket->reply;
+    $this->socket->reply = static function (array $request) use ($reply): array {
+        $messages = $reply($request);
+        $payload = &$messages[0]['payload'];
+        $payload['approveRequiresExplicitGrant'] = $payload['signalRequiresExplicitGrant'] = $payload['tagRequiresExplicitGrant'] = true;
+        $payload['decisions'] = array_values(array_filter($payload['decisions'], static fn (array $row): bool => ! isset($row['impliedBy'])));
+
+        return $messages;
+    };
+
+    expect($this->loader->load($this->sha, $this->record)['outcome'])->toBe('verified');
+});
+
+it('rejects implied authority without its exact native origin and enabled policy', function (string $fault): void {
+    $reply = $this->socket->reply;
+    $this->socket->reply = static function (array $request) use ($reply, $fault): array {
+        $messages = $reply($request);
+        if ((array) $request['payload'] === []) {
+            foreach ($messages[0]['payload']['decisions'] as &$row) {
+                if (($row['action'] ?? null) !== 'approve') {
+                    continue;
+                }
+                match ($fault) {
+                    'grant' => $row['grantId'] = 'other-grant',
+                    'parent' => $row['impliedBy'] = 'write',
+                    'explicit' => $row['impliedBy'] = null,
+                    'resource' => $row['resource'] = 'workflow:operation-unlisted',
+                    'condition' => $row['condition'] = 'unrelated',
+                    'policy' => $messages[0]['payload']['approveRequiresExplicitGrant'] = true,
+                };
+            }
+        }
+
+        return $messages;
+    };
+
+    expect(fn () => $this->loader->load($this->sha, $this->record))->toThrow(GatewayReleaseException::class);
+    expect(array_column($this->requests, 'action'))->toBe(['prepare']);
+})->with(['grant', 'parent', 'explicit', 'resource', 'condition', 'policy']);
+
 /** Native protocol fixture includes an empty JSON object to cover canonical digest fidelity. */
 function f2PreparedReceipt(array $request, string $manifest): array
 {
@@ -213,7 +278,7 @@ function f2PreparedReceipt(array $request, string $manifest): array
         'extension_audit' => ['checked' => 1, 'matched' => 1, 'mismatches' => []],
         'workflow_inventory' => ['equal' => true, 'disk_count' => 1, 'served_count' => 1, 'scope' => 'all_id_name_pairs'],
         'workflows' => [['equal' => true, 'disk_hash' => 'definition-hash', 'served_hash' => 'definition-hash']],
-        'drain' => ['active_running_run_ids' => ['existing-long-run-is-not-cancelled']]];
+    ];
     $receipt['receipt_hash'] = f2ReceiptDigest($receipt);
 
     return $receipt;

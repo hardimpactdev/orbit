@@ -150,7 +150,7 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
             || ! is_array($audit) || ! is_int($audit['checked'] ?? null) || $audit['checked'] < 1 || $audit['matched'] !== $audit['checked'] || ($audit['mismatches'] ?? null) !== []
             || ! is_array($inventory) || ($inventory['equal'] ?? null) !== true || ! is_int($inventory['disk_count'] ?? null) || $inventory['disk_count'] < 1
             || ($inventory['served_count'] ?? null) !== $inventory['disk_count'] || ($inventory['scope'] ?? null) !== 'all_id_name_pairs'
-            || ! is_array($receipt['workflows'] ?? null) || ! is_array(data_get($receipt, 'drain.active_running_run_ids'))
+            || ! is_array($receipt['workflows'] ?? null)
             || ! is_string($receipt['receipt_hash'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $receipt['receipt_hash']) !== 1) {
             throw $this->refused();
         }

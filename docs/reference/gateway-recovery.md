@@ -113,7 +113,7 @@ A second release enables the entry and retires the separate merge publisher. The
 
 The entry opens the existing host publication lock without creating or following a link. Before taking custody it checks Serve and the clean checkout, fetches the exact admitted SHA, and resolves that commit. The clean checkout must match the accepted native source and runtime. A busy lock or failed preflight changes no native state, leaves no pending marker, and reports `retry_safe: true`.
 
-This entry only hot-reloads. Running Operations, production deploys and QUIET runs do not block it. It neither reads active run history nor drains work. The receipt requires the same Serve process before and after publication, with zero Serve or worker restarts. A mismatch pauses with the old Gateway live. A Serve or worker restart remains a separate operator action under the restart drain fence; this entry cannot request one.
+This entry only hot-reloads. Running Operations do not block it. It neither reads active run history nor drains work. The receipt requires the same Serve process before and after publication, with zero Serve or worker restarts. A mismatch pauses with the old Gateway live. This entry cannot request a Serve or worker restart.
 
 Immediately before checkout it writes the pending marker. Any failure after that point retains the marker and requires inspection. A failed verification can leave Swamp on the new source while the old Gateway stays live. The release pauses and an operator fixes forward; it does not silently reload an old source.
 
@@ -127,7 +127,9 @@ The accepted hot reload on pinned e459 is recorded in `evidence/batch-9c2a850f-l
 
 ### Require native publication before the Gateway switch
 
-The release runner publishes the prepared commit's `swamp/` before switching Gateway code. The load owner installs the pinned entry and stops the former merge publisher before this gate goes live. The gate checks the same running release record, invokes the fixed entry through existing pinned SSH to Node 209, and validates the source, runtime, manifest and workflow receipt. It checks the configured Gateway run token against the prepared commit's exact intended grants, then acknowledges that receipt. A missing entry, refused query, mismatched receipt or uncertain call pauses the release with the old Gateway live. It does not retry a native mutation automatically.
+The release runner publishes the prepared commit's `swamp/` before switching Gateway code. The load owner installs the pinned entry and stops the former merge publisher before this gate goes live. The gate checks the same running release record, invokes the fixed entry through existing pinned SSH to Node 209, and validates the source, runtime, manifest and workflow receipt.
+
+It compares the configured Gateway run token's complete effective grant inventory with the prepared manifest, rejecting wildcard, unlisted or overriding grants. Native implied approve, signal and tag actions must match an exact originating grant and the server’s reported implication policy. The runner also checks exact allow and deny decisions before acknowledging that receipt. A missing entry, refused query, mismatched receipt or uncertain call pauses the release with the old Gateway live. It does not retry a native mutation automatically.
 
 The release record keeps the verified native receipt and configured-token check separately. A held release also passes native publication before its code switch. A finalize operation rechecks publication for its exact target. A failed load can leave native definitions ahead of the Gateway; the pause records that split state for operator recovery. Swamp-only changes require the normal Gateway release inputs and web artifact, so the same release owns both trees.
 

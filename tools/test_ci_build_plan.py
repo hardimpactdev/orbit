@@ -1,8 +1,8 @@
 """Fast CI scope selection protects downstream consumers and explicit skips."""
 import importlib.machinery
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 loader = importlib.machinery.SourceFileLoader('ci_build_plan', str(Path(__file__).resolve().parents[1] / 'bin/ci-build-plan'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
