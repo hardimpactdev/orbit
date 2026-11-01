@@ -10,7 +10,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         assets: {
             schema: z.object({

@@ -123,6 +123,7 @@ export function createCompletionSteps(): Fields[] {
                 e('"/tmp/orbit-instance-"+run.id+"/run_project_step.py"'),
             ],
             timeoutSec: e("self.command.timeout_seconds"),
+            okExitCodes: "any",
             env: {
                 VP_HOME: e(
                     'steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store',
@@ -132,6 +133,17 @@ export function createCompletionSteps(): Fields[] {
                 "vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key)",
             ),
         }, {
+            ...(index
+                ? {
+                    guard: e(
+                        '!("finish-setup-' + (index - 1) +
+                            '-0" in steps && steps["finish-setup-' +
+                            (index - 1) +
+                            '-0"].status == "succeeded" && steps["finish-setup-' +
+                            (index - 1) + '-0"].outputs.exitCode == 0)',
+                    ),
+                }
+                : {}),
             forEach: {
                 item: "command",
                 in: e(
