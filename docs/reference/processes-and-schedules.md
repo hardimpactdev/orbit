@@ -253,20 +253,19 @@ Systemd replacement installs a checked candidate unit and restores the earlier u
 
 ## On the Node
 
-Swamp changes a Process's unit or container only through the [Node agent's](/reference/node-agent#commands) `process.*` commands. Each runs as root and acts only on an artifact with the Process's own marker. The Gateway admits the target and stores intent and receipts. Swamp orders the commands, and the agent makes each change and its rollback in one call.
+Direct Process create and destroy use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
 
-| Command | What it does |
+Some shared paths still have other callers:
+
+| Path | Remaining caller |
 | --- | --- |
-| `process.check-release` | Tells whether the `current` release of a production Instance exists. |
-| `process.status` | Reads `systemctl is-active` or the container state; `absent` without an owned artifact. |
-| `process.control` | Starts, stops, or restarts the owned unit or container. An on-demand `app-dev` host starts a unit without enabling it. |
-| `process.stage-unit` | Reports an unchanged unit with its state, or writes a candidate to `/etc/orbit/systemd-candidates` that `systemd-analyze verify` accepts. |
-| `process.activate-unit` | Publishes the candidate, keeps a backup of the unit it replaces, reloads systemd, and sets the desired state. A failure puts the previous unit and state back. |
-| `process.converge-container` | Creates a candidate container, renames the current one to `-rollback-running` or `-rollback-stopped`, renames the candidate in, and removes the rollback. A failure restores the previous container. |
-| `process.remove` | Removes the owned unit, or the owned container with its candidate and rollback containers. It also removes a Vite+ dev Process's Vite environment file. |
-| `process.logs` | Reads the newest journal entries or container lines, as [Live logs](/reference/live-logs#sources) describes. |
+| Per-Node `operation-process-control` and `operation-process-update` | Start/restart and update. Create/destroy are excluded from their admitted kinds. |
+| Native `processAction` and Process installer | Instance transfer, deployment, rollback, definition installation, Node role and Analytics work. Transfer retirement still uses the local remove action. |
+| Gateway `bootstrapCollector` and agent unit stage/activate | AI-router collector convergence. |
+| Gateway synchronous removal and agent `process.remove` | AI-router teardown/rename and Node-role dependent cleanup. |
+| Agent release/status/control/log commands | Runtime reads, admission and hibernation. |
 
-Swamp records the keyed staging receipt before `process.activate-unit` and reuses successful command receipts after a lost response. A later `process.converge-container` finishes or undoes a container change that a lost response interrupted. The Vite environment file goes only when it carries the Instance marker. A container's environment goes to Docker through a root-only file that the agent deletes after `docker container create`; no argument carries a value.
+The unused Pi bootstrap, synchronous Instance cascade, Swamp agent launcher and agent Docker container convergence command are removed. Docker create/destroy use the Node209 lifecycle workflows; their public definitions and environment delivery do not pass through a Gateway executor. Retained shared callers keep their existing contracts until their owning kind is converted.
 
 ## Project definitions
 

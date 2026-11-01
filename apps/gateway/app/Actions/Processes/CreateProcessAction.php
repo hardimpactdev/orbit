@@ -55,18 +55,8 @@ final readonly class CreateProcessAction
         return $this->bootstrap($data, 'ai-router-collector', ProcessRuntime::Systemd, ['/usr/local/bin/orbit-agent', 'service', 'ai-router-collector']);
     }
 
-    /** @return array{process: Process, created: bool} */
-    public function bootstrapPi(#[SensitiveParameter] AddProcessData $data): array
-    {
-        if (array_slice($data->command, 1, 1) !== ['serve']) {
-            throw new ResourceOperationException('process.bootstrap_invalid', 'Pi bootstrap requires its server command.', 409);
-        }
-
-        return $this->bootstrap($data, 'pi-server', ProcessRuntime::Systemd, $data->command);
-    }
-
     /**
-     * Only the remaining fixed bootstrap callers may execute here until their completion transitions move native.
+     * Only the AI-router collector still uses synchronous installation.
      *
      * @param  list<string>  $command
      * @return array{process: Process, created: bool}

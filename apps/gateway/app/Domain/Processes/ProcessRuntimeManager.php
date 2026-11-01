@@ -11,7 +11,7 @@ interface ProcessRuntimeManager
     /** Refuse a desired-running admission before the Process row or runtime changes. */
     public function assertCanStart(Process $process): void;
 
-    /** Reconcile the runtime artifact under the Process runtime lease. */
+    /** Reconcile the retained systemd collector under the Process runtime lease. */
     public function converge(Process $process): void;
 
     /** Start a Process, publishing development-site awake state only for explicit starts. */

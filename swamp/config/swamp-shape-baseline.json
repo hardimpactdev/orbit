@@ -2092,12 +2092,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/processes-schedules/agent.ts",
-      "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/processes-schedules/create.ts",
       "rule": "gateway-http",
       "count": 1,
