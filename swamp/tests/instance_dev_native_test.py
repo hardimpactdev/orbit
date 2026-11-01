@@ -77,6 +77,17 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.assertTrue(result['ready']);self.assertEqual(result['source']['branch'],'main')
         self.assertIn('stored-private-sentinel',(self.application/'.env').read_text())
 
+    def test_empty_stored_environment_reaches_setup_for_unrouted_monorepo(self):
+        self.cli('vault','put','orbit-control-inputs','environment',json.dumps({'values':{},'name':'Monorepo fixture','framework_key':None}))
+        self.input['intent'].update(project_type='monorepo',skip_profile=True)
+        self.setup_commands(['touch .git/empty-environment-setup'])
+        history=self.run_create()
+        self.assertEqual(history['status'],'succeeded')
+        self.assertTrue((self.application/'.git/empty-environment-setup').is_file())
+        result=json.loads(next(step for step in next(job for job in history['jobs'] if job['name']=='create')['steps'] if step['name']=='finish-result')['outputs']['stdout'])
+        self.assertTrue(result['ready']);self.assertEqual(result['source']['branch'],'main')
+        self.assertNotIn('STORED',(self.application/'.env').read_text())
+
     def test_failed_source_never_dereferences_skipped_commit_or_reports_ready(self):
         self.input['intent']['retained_source'] = None
         self.input['intent']['resolve']['network'] = False
@@ -255,6 +266,7 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
 
     test_active_create_does_not_repeat_setup_or_environment_write=None
     test_full_create_keeps_environment_private_and_empty_vp_setup_valid=None
+    test_empty_stored_environment_reaches_setup_for_unrouted_monorepo=None
     test_setup_commands_run_in_order_with_private_stdin=None
     test_failed_setup_skips_later_command_and_fresh_root_converges=None
 
