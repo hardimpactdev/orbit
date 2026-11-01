@@ -12,7 +12,6 @@ const Action = z.enum([
     "source_cleanup",
     "target_prepare",
     "target_install",
-    "target_cleanup",
     "target_recover",
     "cleanup",
 ]);

@@ -53,8 +53,10 @@ else:shutil.copy2(source,target)
   self.addCleanup(self.clean)
  def clean(self):
   script=ROOT/'extensions/behaviors/operations/database-server-commands/scripts'
-  for name in ('sqlite_target_cleanup','sqlite_source_cleanup'):
-   subprocess.run(['/usr/bin/sudo','-n','--','/usr/bin/python3','-B',str(script/(name+'.py')),json.dumps(self.intent)],capture_output=True,text=True)
+  target={k:v for k,v in self.target_desc.items() if k not in ('node_id','target_instance_id')}
+  target.update(mode='cleanup',expected_size=0,expected_digest='')
+  subprocess.run(['/usr/bin/sudo','-n','--','/usr/bin/python3','-B',str(script/'sqlite_actions.py'),'seedTarget','120'],input=json.dumps(target),capture_output=True,text=True)
+  subprocess.run(['/usr/bin/sudo','-n','--','/usr/bin/python3','-B',str(script/'sqlite_source_cleanup.py'),json.dumps(self.intent)],capture_output=True,text=True)
  def run_kind(self,kind,success=True,flags=()):
   self.public['kind']=kind;name={'database.sqlite_export':'operation-database-sqlite-export','database.sqlite_seed':'operation-database-sqlite-seed','database.sqlite_cleanup':'operation-database-cleanup'}[kind]
   self.cli('workflow','validate',name);run=reply(self.cli('workflow','run',name,'--input',json.dumps(self.public),*flags,success=success).stdout);self.assertNotIn('private-sqlite-native-sentinel',json.dumps(self.history(run)));return run
