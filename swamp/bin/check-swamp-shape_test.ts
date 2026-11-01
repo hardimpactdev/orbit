@@ -116,6 +116,204 @@ async function phaseControls(files: Map<string, string>) {
       f.rule === "custom-control"
     );
 }
+// Frozen provider shape 2ee89ab0c2ad4b6abc37fe83485229ba062a15cf; source analysis only.
+const incusPoll =
+  "\"\"\"Observe one admitted Incus VM until started; the caller supplies a literal timeout.\"\"\"\nimport json\nimport subprocess\nimport sys\nimport time\n\n\ndef observe(project, name):\n    rows = json.loads(subprocess.check_output([\n        '/usr/bin/sudo', '-n', '--', '/usr/bin/incus', '--project', project,\n        'list', '--format', 'json', '--', name,\n    ], text=True, stderr=subprocess.PIPE))\n    if not isinstance(rows, list) or len(rows) != 1:\n        raise SystemExit('task_vm.provider_identity_invalid: expected exactly one Incus VM')\n    row = rows[0]\n    if row.get('name') != name or row.get('type') != 'virtual-machine':\n        raise SystemExit('task_vm.provider_identity_invalid: Incus returned another instance')\n    return row\n\n\ndef wait_started(project, name):\n    while True:\n        row = observe(project, name)\n        state = row['status']\n        if state == 'Running':\n            return [{'name': row['name'], 'type': row['type'], 'status': state}]\n        if state not in ('Stopped', 'Starting'):\n            raise SystemExit('task_vm.not_settled: Incus reached an unsupported start state')\n        time.sleep(1)\n\n\ndef main():\n    try:\n        print(json.dumps(wait_started(sys.argv[1], sys.argv[2])))\n    except (subprocess.CalledProcessError, OSError):\n        print('task_vm.provider_observation_failed: Incus state read failed', file=sys.stderr)\n        return 1\n    except (ValueError, KeyError, IndexError, TypeError):\n        print('task_vm.provider_observation_invalid: invalid Incus state receipt', file=sys.stderr)\n        return 1\n    return 0\n\n\nif __name__ == '__main__':\n    raise SystemExit(main())\n";
+const incusFile = "extensions/behaviors/provider/scripts/incus_wait.py";
+const incusArgv =
+  '${{ inputs.action == "start" ? ["timeout", "120", "/usr/bin/python3", "-I", "-c", steps.input.outputs.start_script, inputs.intent.vm.project, inputs.intent.name] : steps.input.outputs.observe_argv }}';
+function incusFiles(
+  source = incusPoll,
+  argv: unknown = incusArgv,
+  second?: unknown,
+) {
+  const exec = (value: unknown, name: string) => ({
+    name,
+    task: {
+      type: "behavior",
+      behaviorType: "@swamp/ssh",
+      behaviorName: name,
+      methodName: "exec",
+      inputs: { argv: value, timeoutSec: 180 },
+    },
+  });
+  return new Map([
+    [incusFile, source],
+    [
+      "extensions/behaviors/provider/metadata.ts",
+      `export const behavior = {type: '@example/provider', methods: {read: {async execute(_args, ctx) {return {dataHandles: [await ctx.writeResource('input', 'input', {start_script: await Deno.readTextFile(ctx.extensionFile('scripts/incus_wait.py'))})]};}}}};`,
+    ],
+    [
+      "workflows/incus.yaml",
+      JSON.stringify({
+        name: "example",
+        queueTimeout: 10,
+        jobs: [{
+          name: "power",
+          target: "orbit-node-209",
+          steps: [
+            {
+              name: "input",
+              task: {
+                type: "behavior",
+                behaviorType: "@example/provider",
+                behaviorName: "input",
+                methodName: "read",
+                inputs: {},
+              },
+            },
+            exec(argv, "incus-after"),
+            ...(second === undefined ? [] : [exec(second, "another")]),
+          ],
+        }],
+      }),
+    ],
+  ]);
+}
+Deno.test("official SSH proves the shipped Incus list poll under a literal argv timeout", async () => {
+  assertEquals(await phaseControls(incusFiles()), []);
+  assertEquals(
+    await phaseControls(
+      incusFiles(incusPoll, [
+        "timeout",
+        "120",
+        "/usr/bin/python3",
+        "-I",
+        "-c",
+        "${{ steps.input.outputs.start_script }}",
+        "default",
+        "vm",
+      ]),
+    ),
+    [],
+  );
+});
+for (
+  const [name, source] of [
+    [
+      "retried mutation",
+      incusPoll.replace(
+        "'list', '--format', 'json'",
+        "'start', '--format', 'json'",
+      ),
+    ],
+    [
+      "extra mutation",
+      incusPoll.replace(
+        "row = observe(project, name)",
+        "subprocess.check_call(['incus', 'start', name])\n        row = observe(project, name)",
+      ),
+    ],
+    [
+      "shell command",
+      incusPoll.replace("text=True,", "shell=True, text=True,"),
+    ],
+    [
+      "unchecked command",
+      incusPoll.replace(
+        "subprocess.check_output",
+        "subprocess.getoutput",
+      ),
+    ],
+    [
+      "suppressed read failure",
+      incusPoll.replace(
+        "        row = observe(project, name)",
+        "        try:\n            row = observe(project, name)\n        except Exception:\n            row = {'status': 'Starting'}",
+      ),
+    ],
+    [
+      "computed interval",
+      incusPoll.replace("time.sleep(1)", "time.sleep(interval)"),
+    ],
+  ]
+) {
+  Deno.test(`Incus poll rejects ${name}`, async () => {
+    assert((await phaseControls(incusFiles(source))).length > 0);
+  });
+}
+for (
+  const [name, argv, second] of [
+    [
+      "missing timeout",
+      incusArgv.replace('["timeout", "120", ', "["),
+      undefined,
+    ],
+    [
+      "computed timeout",
+      incusArgv.replace('"120"', "inputs.budget"),
+      undefined,
+    ],
+    [
+      "second unbounded invocation",
+      incusArgv,
+      incusArgv.replace('["timeout", "120", ', "["),
+    ],
+    [
+      "unbounded conditional branch",
+      incusArgv.replace(
+        "steps.input.outputs.observe_argv",
+        '["/usr/bin/python3", "-I", "-c", steps.input.outputs.start_script]',
+      ),
+      undefined,
+    ],
+  ]
+) {
+  Deno.test(`Incus argv rejects ${name}`, async () => {
+    assert(
+      (await phaseControls(incusFiles(incusPoll, argv, second))).length >
+        0,
+    );
+  });
+}
+Deno.test("a concatenated conditional branch cannot hide an unbounded body invocation", async () => {
+  const argv = incusArgv.replace(
+    "steps.input.outputs.observe_argv",
+    '["/usr/bin/python3", "-I", "-c", steps.input.outputs.start_script] + []',
+  );
+  assert((await phaseControls(incusFiles(incusPoll, argv))).length > 0);
+});
+for (const builtin of ["isinstance", "len"]) Deno.test(`Incus poll rejects a shadowed ${builtin} guard`, async () => {
+  const source = incusPoll.replace("def observe(", `def ${builtin}(*args):\n    subprocess.check_call(['/usr/bin/incus', 'start', 'vm'])\n    return True\n\ndef observe(`);
+  assert((await phaseControls(incusFiles(source))).length > 0);
+});
+Deno.test("an additional shell use of an SSH script body invalidates its bound", async () => {
+  const files = incusFiles();
+  const workflow = JSON.parse(files.get("workflows/incus.yaml")!);
+  workflow.jobs[0].steps.push({
+    name: "unbounded",
+    task: {
+      type: "behavior",
+      behaviorType: "command/shell",
+      behaviorName: "unbounded",
+      methodName: "execute",
+      inputs: {
+        run: 'python3 -c "$SCRIPT"',
+        env: { SCRIPT: "${{ steps.input.outputs.start_script }}" },
+      },
+    },
+  });
+  files.set("workflows/incus.yaml", JSON.stringify(workflow));
+  assert((await phaseControls(files)).length > 0);
+});
+Deno.test("Incus reads are not admitted by a local shell timeout or another transport", async () => {
+  const files = incusFiles();
+  files.set(
+    "workflows/incus.yaml",
+    phaseWorkflow([`timeout 120 python3 ${incusFile}`]),
+  );
+  assert((await phaseControls(files)).length > 0);
+  const other = incusFiles();
+  other.set(
+    "workflows/incus.yaml",
+    other.get("workflows/incus.yaml")!.replaceAll(
+      '"@swamp/ssh"',
+      '"@example/ssh"',
+    ),
+  );
+  assert((await phaseControls(other)).length > 0);
+});
+
 Deno.test("phase script accepts a literal-bounded external-state poll and a shorter single wait", async () => {
   const files = new Map([
     [

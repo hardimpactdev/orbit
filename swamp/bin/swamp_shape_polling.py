@@ -99,9 +99,10 @@ def source_bindings(tree):
 
 
 class PythonReads:
-    """Prove straight-line GET -> checked response -> state, including wrappers."""
-    def __init__(self, tree, bound, modules=None):
+    """Prove checked external reads and state decoding, including wrappers."""
+    def __init__(self, tree, bound, modules=None, ssh=False):
         self.bound = bound
+        self.ssh = ssh
         self.modules = modules or {}
         self.peers = {}
         self.checked = set()
@@ -127,6 +128,7 @@ class PythonReads:
                 if isinstance(root, ast.Name):
                     import_writes.add(root.id)
         self.imports = {key: value for key, value in self.imports.items() if key not in import_writes}
+        self.shadowed = import_writes | set(self.imports)
         self.functions = {key: values[0] for key, values in self.functions.items() if len(values) == 1 and key not in writes}
 
     def name(self, node):
@@ -178,6 +180,19 @@ class PythonReads:
         if not isinstance(node, ast.Call):
             return None
         called = self.name(node.func)
+        if called == 'json.loads' and len(node.args) == 1 and not node.keywords:
+            data = self.value(node.args[0], values, stack)
+            return data if data and data[0] == 'state' else None
+        if self.ssh and called == 'subprocess.check_output' and len(node.args) == 1 and isinstance(node.args[0], ast.List):
+            argv = node.args[0].elts
+            fixed = {0: '/usr/bin/sudo', 1: '-n', 2: '--', 3: '/usr/bin/incus', 4: '--project', 6: 'list', 7: '--format', 8: 'json', 9: '--'}
+            if (len(argv) == 11 and all(isinstance(argv[index], ast.Constant) and argv[index].value == value for index, value in fixed.items()) and
+                all(isinstance(argv[index], ast.Name) for index in (5, 10)) and
+                len(node.keywords) == 2 and {kw.arg for kw in node.keywords} == {'text', 'stderr'} and
+                any(kw.arg == 'text' and isinstance(kw.value, ast.Constant) and kw.value.value is True for kw in node.keywords) and
+                any(kw.arg == 'stderr' and self.name(kw.value) == 'subprocess.PIPE' for kw in node.keywords)):
+                return ('state', node)
+            return None
         # Arguments may select data, not run another hidden action.
         arguments = [*node.args, *(kw.value for kw in node.keywords if not (called == 'urllib.request.Request' and kw.arg == 'data' and self.value(kw.value, values, stack) == ('literal', None)))]
         if any(isinstance(part, ast.Call) for arg in arguments for part in ast.walk(arg)):
@@ -213,9 +228,6 @@ class PythonReads:
             if base and (base[0] == 'state' and node.func.attr in ('get', 'strip') or
                          base[0] == 'response' and base[1] in self.checked and node.func.attr in ('json', 'read')):
                 return ('state', base[1])
-        if called == 'json.loads' and len(node.args) == 1 and not node.keywords:
-            data = self.value(node.args[0], values, stack)
-            return data if data and data[0] == 'state' else None
         owner = self
         function = self.functions.get(node.func.id) if isinstance(node.func, ast.Name) else None
         if function is None and '.' in called:
@@ -223,7 +235,7 @@ class PythonReads:
             if module in self.modules:
                 if module not in self.peers:
                     peer_tree, peer_bound = self.modules[module]
-                    self.peers[module] = PythonReads(peer_tree, peer_bound, self.modules)
+                    self.peers[module] = PythonReads(peer_tree, peer_bound, self.modules, self.ssh)
                 owner = self.peers[module]
                 function = owner.functions.get(method)
         if function is not None:
@@ -276,11 +288,17 @@ class PythonReads:
                 if statement.orelse or len(statement.body) != 1 or not isinstance(statement.body[0], ast.Raise):
                     return None
                 error = statement.body[0]
-                if not isinstance(error.exc, ast.Call) or not isinstance(error.exc.func, ast.Name) or error.exc.func.id not in ('ValueError', 'RuntimeError') or error.cause is not None or not error.exc.args or any(not isinstance(arg, ast.Constant) or not isinstance(arg.value, str) or not arg.value for arg in error.exc.args):
+                if not isinstance(error.exc, ast.Call) or not isinstance(error.exc.func, ast.Name) or error.exc.func.id not in ('ValueError', 'RuntimeError', 'SystemExit') or error.exc.func.id in self.shadowed or error.cause is not None or not error.exc.args or any(not isinstance(arg, ast.Constant) or not isinstance(arg.value, str) or not arg.value for arg in error.exc.args):
                     return None
                 calls = [part for part in ast.walk(statement.test) if isinstance(part, ast.Call)]
-                if any(not isinstance(call.func, ast.Name) or call.func.id != 'len' or len(call.args) != 1 or call.keywords or not (value := self.value(call.args[0], values, stack)) or value[0] != 'state' for call in calls):
-                    return None
+                for call in calls:
+                    if self.value(call, values, stack) is not None:
+                        continue
+                    if (not isinstance(call.func, ast.Name) or call.func.id not in ('len', 'isinstance') or call.func.id in self.shadowed or call.keywords or
+                        len(call.args) != (2 if call.func.id == 'isinstance' else 1) or
+                        call.func.id == 'isinstance' and (not isinstance(call.args[1], ast.Name) or call.args[1].id != 'list') or
+                        not (value := self.value(call.args[0], values, stack)) or value[0] != 'state'):
+                        return None
             elif isinstance(statement, ast.Expr) and self.status(statement.value, values):
                 continue
             elif isinstance(statement, ast.With) and len(statement.items) == 1 and index == len(statements) - 1:
@@ -299,8 +317,8 @@ class PythonReads:
         return None
 
 
-def python_controls(tree, seconds, bound, context=None):
-    """Only successful external GET observations may select whether to wait again."""
+def python_controls(tree, seconds, bound, context=None, ssh=False):
+    """Only successful external observations may select whether to wait again."""
     if not seconds:
         return set()
     modules = {}
@@ -349,7 +367,7 @@ def python_controls(tree, seconds, bound, context=None):
         # not a name which once held state but has since been overwritten.
         if loop.orelse or not isinstance(loop.body[-1], ast.Expr) or loop.body[-1].value is not sleeps[0]:
             continue
-        proof = PythonReads(tree, bound, modules)
+        proof = PythonReads(tree, bound, modules, ssh)
         values = {}
         good = bad = False
         valid = True
@@ -375,7 +393,7 @@ def python_controls(tree, seconds, bound, context=None):
                     break
                 good |= isinstance(terminal, (ast.Return, ast.Break))
                 readable = (isinstance(terminal, ast.Raise) and isinstance(terminal.exc, ast.Call) and
-                            isinstance(terminal.exc.func, ast.Name) and terminal.exc.func.id in ('RuntimeError', 'ValueError', 'SystemExit') and any(
+                            isinstance(terminal.exc.func, ast.Name) and terminal.exc.func.id in ('RuntimeError', 'ValueError', 'SystemExit') and terminal.exc.func.id not in proof.shadowed and any(
                     isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value.strip()
                     for arg in terminal.exc.args
                 ))
