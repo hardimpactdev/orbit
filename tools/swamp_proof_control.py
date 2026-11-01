@@ -111,8 +111,10 @@ def execute(control, fixtures, topology, receipt, save):
     context.update({'proof.target.' + key: value for key, value in target.items()})
     # Container identity is proof-local, never a manually registered Gateway Node.
     context['proof.target.node_id'] = control['record']['node_id']
-    requests = [{'fixture': fixture, 'envelope': bind(fixture['envelope'], dict(context, **{'proof.start_tag': str(uuid.uuid4())}), datetime.now(UTC))}
-                for fixture in fixtures]
+    requests = []
+    for fixture in fixtures:
+        bound = bind(fixture, dict(context, **{'proof.start_tag': str(uuid.uuid4())}), datetime.now(UTC))
+        requests.append({'fixture': bound, 'envelope': bound['envelope']})
     result = guest.driver('run', {'proofs': requests, 'swamp_commit': commit},
                           timeout=sum(fixture['budget_seconds'] + 180 for fixture in fixtures))
     if 'error' in result:

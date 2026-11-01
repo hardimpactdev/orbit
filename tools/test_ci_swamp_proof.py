@@ -1,5 +1,6 @@
 """F10 tooling: frozen bindings, complete cleanup and truthful proof receipts."""
 import copy
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -23,6 +24,27 @@ class BindingsTest(unittest.TestCase):
         for value in ('${proof.target.password}', '${env.HOME}', '${proof.target.port', 'ssh ${proof.target.host_keys}'):
             with self.subTest(value=value), self.assertRaises(proof.ProofError):
                 proof.bind(value, {'proof.target.host_keys': []}, datetime.now(UTC))
+
+    def test_names_only_secret_keys_bind_to_the_same_admitted_descriptor(self):
+        value = {'envelope': {'execution_secrets': {'material': {'vault': 'orbit-control-inputs', 'key': 'material-${proof.operation_id}'}}},
+                 'secrets': [{'vault': 'orbit-control-inputs', 'key': 'material-${proof.operation_id}', 'value': 'generate:hex32'}]}
+        result = proof.bind(value, {'proof.operation_id': 42}, datetime.now(UTC))
+        self.assertEqual(result['envelope']['execution_secrets']['material']['key'], 'material-42')
+        self.assertEqual(result['secrets'][0]['key'], 'material-42')
+        self.assertEqual(result['secrets'][0]['value'], 'generate:hex32')
+
+    def test_fixture_preflight_accepts_binding_in_vault_key_and_keeps_source_template(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'swamp/proof').mkdir(parents=True)
+            (root / 'swamp/workflows').mkdir()
+            fixture = json.loads((proof.ROOT / 'swamp/proof/firewall.inspect.json').read_text())
+            fixture.pop('target_setup')
+            fixture['secrets'] = [{'vault': 'orbit-control-inputs', 'key': 'material-${proof.operation_id}', 'value': 'generate:hex32'}]
+            fixture['envelope']['execution_secrets'] = {'material': {'vault': 'orbit-control-inputs', 'key': 'material-${proof.operation_id}'}}
+            (root / 'swamp/proof/firewall.inspect.json').write_text(json.dumps(fixture))
+            (root / 'swamp/workflows/inspect.yaml').write_text('name: operation-firewall-inspect\n')
+            self.assertEqual(proof.fixture_for('firewall.inspect', root)['secrets'][0]['key'], 'material-${proof.operation_id}')
 
     def test_fixture_file_cannot_escape_its_kind_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -264,6 +286,6 @@ class ProjectAndTopologyTest(unittest.TestCase):
                 folder = root / 'swamp/proof/topologies/app-dev'
                 folder.mkdir(parents=True)
                 (folder / 'setup.sh').write_text('true')
-                (folder / 'topology.json').write_text(__import__('json').dumps(dict(value, image=bad)))
+                (folder / 'topology.json').write_text(json.dumps(dict(value, image=bad)))
                 with self.subTest(image=bad), self.assertRaises(proof.ProofError):
                     proof.topology_for('app-dev', root)

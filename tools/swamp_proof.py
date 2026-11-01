@@ -94,11 +94,11 @@ def fixture_for(kind, root=ROOT):
     example = {'proof.operation_id': 1, 'proof.start_tag': 'validation'}
     example.update({'proof.control.' + key: value for key, value in {'node_id': 1, 'identity_file': '/tmp/key', 'public_key': 'public'}.items()})
     example.update({'proof.target.' + key: value for key, value in {'node_id': 2, 'name': 'target', 'host': '127.0.0.1', 'user': 'orbit', 'port': 22, 'host_keys': ['public']}.items()})
-    bind(fixture['envelope'], example, datetime.now(UTC))
+    validated = bind(fixture, example, datetime.now(UTC))
     folder = root / 'swamp/proof' / kind
     if fixture.get('target_setup'):
         relative_file(root / 'swamp/proof', fixture['target_setup'])
-    for secret in fixture['secrets']:
+    for secret in validated['secrets']:
         if set(secret) - {'vault', 'key', 'value', 'stage_to_target'} or not {'vault', 'key', 'value'} <= set(secret):
             raise ProofError('Invalid throwaway secret fields.')
         if any(not isinstance(secret[key], str) or not re.fullmatch(r'[a-zA-Z0-9_.-]+', secret[key]) for key in ('vault', 'key')):
