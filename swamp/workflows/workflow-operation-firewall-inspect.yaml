@@ -27,22 +27,3 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             run_id: '${{ run.id }}'
-  - name: native-failure
-    dependsOn:
-      - job: inspection
-        condition: { type: or, conditions: [{type: failed}, {type: skipped}] }
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: native-failure
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/operation-failure'
-          behaviorName: firewall-inspection-failure
-          methodName: report
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'

@@ -19,7 +19,7 @@ it('returns the native Operation immediately and replays admission without consu
     ConnEnvironment::query()->create(['environment_id' => 'native-admission', 'label' => 'proof', 'url' => 'http://dev.test',
         'admin_session' => 'fixture-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-conn-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = static fn (array $request): array => $request['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-conn-pairing-create', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture.shared.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
@@ -36,7 +36,7 @@ it('returns the native Operation immediately and replays admission without consu
 
     $this->assertDatabaseCount('operations', 1);
     expect($pairing->fresh()->credential)->toBe('one-time-sentinel');
-    expect($socket->sent)->toHaveCount(1);
+    expect($socket->sent)->toHaveCount(2);
     $path = '/api/v1/conn/environments/native-admission/pairings/'.$pairing->id;
     $this->getJson($path)->assertOk()->assertJsonPath('data.pairing_url', 'http://dev.test/pair#token=one-time-sentinel');
     $this->getJson($path)->assertConflict();

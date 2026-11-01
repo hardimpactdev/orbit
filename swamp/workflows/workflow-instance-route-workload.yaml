@@ -28,8 +28,6 @@ jobs:
   steps:
   - name: served-assets
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
@@ -45,8 +43,6 @@ jobs:
         input: ${{ self.part }}
   - name: served-command
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
@@ -77,8 +73,6 @@ jobs:
         script: ${{ steps["served-assets-0"].outputs.script_body }}
   - name: served
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
@@ -95,8 +89,6 @@ jobs:
         stdout: ${{ steps["served-command-0"].outputs.stdout }}
   - name: dev-source-assets
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
@@ -115,8 +107,6 @@ jobs:
         input: ${{ self.part }}
   - name: dev-source-command
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
@@ -150,8 +140,6 @@ jobs:
         script: ${{ steps["dev-source-assets-0"].outputs.script_body }}
   - name: dev-source
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
@@ -171,8 +159,6 @@ jobs:
         stdout: ${{ steps["dev-source-command-0"].outputs.stdout }}
   - name: prod-source-assets
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
@@ -194,8 +180,6 @@ jobs:
         input: ${{ {"user":steps["served-0"].outputs.user,"sites":steps["served-0"].outputs.sites} }}
   - name: prod-source-command
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
@@ -232,8 +216,6 @@ jobs:
         script: ${{ steps["prod-source-assets-0"].outputs.script_body }}
   - name: prod-source
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
@@ -256,8 +238,6 @@ jobs:
         stdout: ${{ steps["prod-source-command-0"].outputs.stdout }}
   - name: runtime-identity
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -299,8 +279,6 @@ jobs:
         stdin: ${{ self.part.marker }}
   - name: runtime-pool
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -336,8 +314,6 @@ jobs:
       inputs: {}
   - name: runtime-pool-proof
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -364,8 +340,6 @@ jobs:
         state: ${{ steps["runtime-pool-0"].outputs }}
   - name: runtime-validate
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -413,8 +387,6 @@ jobs:
         - ${{ "/etc/orbit/php-fpm/" + self.part.user + "/generated/php-fpm.conf" }}
   - name: runtime-reload
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -459,8 +431,6 @@ jobs:
         - ${{ "orbit-" + self.part.user + "-php" + self.part.version + "-fpm.service" }}
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - {step: served-assets, condition: {type: always}}
     - {step: served-command, condition: {type: always}}

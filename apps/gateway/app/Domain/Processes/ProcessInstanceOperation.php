@@ -107,7 +107,8 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         $members = [];
         $vite = false;
         foreach (self::members($operation) as $member) {
-            $safe = $this->processes->input(self::member($operation, $member));
+            $view = self::member($operation, $member);
+            $safe = $this->processes->inputFor($view->kind, $view->input, (int) $view->node_id);
             $vite = $vite || isset($safe['vite_plan']) || (is_array($safe['control'] ?? null) && isset($safe['control']['vite_plan']));
             unset($safe['caddy_publication']);
             $members[] = ['id' => $member['id'], 'input' => $safe];

@@ -36,26 +36,6 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-- name: failure-admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: &id001
-    node: ${{ string(inputs.node_id) }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: failed
-  steps:
-  - name: report-admission-failure
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
 - name: effects
   dependsOn:
   - job: admission
@@ -82,25 +62,6 @@ jobs:
         run_id: ${{ run.id }}
         work: ${{ self.work }}
         selected_node_id: '${{ self.work.type == "server" ? self.work.server.node_id : self.work.sqlite.node_id }}'
-- name: failure-effects
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: effects
-    condition:
-      type: failed
-  steps:
-  - name: report-effects-failure
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
 - name: projection
   dependsOn:
   - job: effects

@@ -105,38 +105,6 @@
           "guard": "${{ !steps.admit.outputs.ready }}"
         }
       ]
-    },
-    {
-      "name": "failure_hub",
-      "dependsOn": [
-        {
-          "job": "hub",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "report_hub",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/operation-failure",
-            "behaviorName": "${{ \"node-network-failure-\" + string(inputs.node_id) }}",
-            "methodName": "report",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "node_id": "${{ inputs.node_id }}",
-              "kind": "${{ inputs.kind }}",
-              "run_id": "${{ run.id }}"
-            }
-          }
-        }
-      ]
     }
   ]
 }

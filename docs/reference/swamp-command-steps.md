@@ -86,3 +86,7 @@ Node 209 hosts Serve and all Swamp workers. Converted Node effects use official 
 The descriptor does not prove that a target currently authorizes the existing key. Lane 21 owns that coverage proof and worker retirement. Do not assume fleet-wide SSH `AcceptEnv` or sudo `env_keep`. Public Process control arguments can use official `exec.argv`; secret values must use a documented official delivery method and stay out of argv.
 
 For a public environment variable needed by a root command, use official SSH `exec` with `sudo: true` and argv starting with `/usr/bin/env`, followed by the public `NAME=value` and command arguments. This sets the variable after sudo without SSH environment forwarding or sudo environment preservation. PHP monitoring uses this path for its public `PHP_INI_SCAN_DIR`; secret values remain outside argv.
+
+### Native failure observation
+
+Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. Normal operation reads retain their existing native failure check. A failed or interrupted run without selected public output records `operation.native_failed`. A family that needs a specific public error code writes it in its result step stdout. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.

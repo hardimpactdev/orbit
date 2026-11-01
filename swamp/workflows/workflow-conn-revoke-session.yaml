@@ -69,8 +69,6 @@ jobs:
   steps:
   - name: assets
     target: orbit-node-209
-    labels: &id001
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
@@ -80,7 +78,6 @@ jobs:
         intent: ${{ inputs.intent }}
   - name: inspect
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -104,7 +101,6 @@ jobs:
         type: succeeded
   - name: authorize
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
@@ -119,7 +115,6 @@ jobs:
         type: succeeded
   - name: revoke
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -145,7 +140,6 @@ jobs:
     guard: ${{ steps.authorize.outputs.absent }}
   - name: finish
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'

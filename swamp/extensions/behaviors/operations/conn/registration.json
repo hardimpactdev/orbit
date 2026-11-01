@@ -1,6 +1,5 @@
 {
   "kinds": [
-    "conn.pairing_create",
     "conn.gateway_sessions_revoke"
   ],
   "workflow": "operation-conn-direct"

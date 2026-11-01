@@ -38,8 +38,6 @@ class InstanceRuntimeCase(NativeTestCase):
         base = self.repo / 'extensions/behaviors/operations/processes-schedules'
         source = base / 'instance.ts'
         source.write_text('import {http,invoke} from "./instance_native_fixture.ts";\n' + source.read_text().replace('export const behavior = instanceRuntime();', 'export const behavior = instanceRuntime(() => http, invoke, (name, input, signal) => invoke(name, input, "", signal));'))
-        source = self.repo / 'extensions/behaviors/operations/failure.ts'
-        source.write_text('import {http} from "./processes-schedules/instance_native_fixture.ts";\n' + (ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => http);'))
         source = self.repo / 'extensions/behaviors/operations/routes/publication.ts'
         source.write_text('import {http,caddy} from "../processes-schedules/instance_native_fixture.ts";\n' + source.read_text().replace('export const behavior = publication();', 'export const behavior = publication(() => http, caddy);'))
         for source in (ROOT / 'workflows').glob('workflow-operation-*-instance*.yaml'):

@@ -16,9 +16,6 @@ from native_harness import NativeTestCase
 class SqliteNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text('import { fixtureHttp } from "./database/sqlite_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         self.copy_behaviors('automatic-deploy', 'operations/_lib')
         destination = self.repo / 'extensions/behaviors/operations/database'
         destination.mkdir(parents=True)

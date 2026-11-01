@@ -15,14 +15,14 @@ use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $request['id'], 'event' => [
         'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
     ]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
     $this->node = $this->markAsGateway(Node::query()->create([
         'name' => 'mount-contract', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'mount-consumer',
@@ -37,7 +37,7 @@ it('retains mount requirements on an omitted update and clears them only explici
         ->and(Operation::query()->sole()->input['required_mount_paths'])->toBe($paths);
     $operation = Operation::query()->sole();
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$operation->state['swamp_run_id'])
-        ->assertOk()->assertJsonPath('data.input.installation.required_mount_paths', $paths);
+        ->assertOk()->assertJsonPath('data.input.intent.installation.required_mount_paths', $paths);
     Operation::query()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
     $process->update(['status' => 'active']);
     $this->patchJson('/api/v1/processes/'.$process->id, ['keep_alive' => true])->assertAccepted();

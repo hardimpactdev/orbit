@@ -17,9 +17,6 @@ class CacheNative(NativeTestCase):
         self.native_env["ORBIT_CACHE_TEST_TOKEN"] = token
         self.secrets = (token,)
         self.copy_behaviors("automatic-deploy", "operation-runner", "operations/task-vms", "operations/_lib")
-        failure = self.repo / "extensions/behaviors/operations/failure.ts"
-        shutil.copy(ROOT / "extensions/behaviors/operations/failure.ts", failure)
-        failure.write_text('import {fixtureHttp} from "./task-vms/cache_fill_native_fixture.ts";\n'+failure.read_text().replace("export const behavior = nativeFailure();", "export const behavior = nativeFailure(() => fixtureHttp);"))
         module = self.repo / "extensions/behaviors/operations/task-vms/cache_fill_direct.ts"
         source = module.read_text().replace("export const behavior = cacheFillDirect();", """
 const fixture = cacheFillDirect(() => fixtureHttp, fixtureAction);
@@ -31,7 +28,7 @@ return await fixture.methods.execute.execute(...args);
 """)
         module.write_text('import {fixtureHttp,fixtureAction,engineRefused} from "./cache_fill_native_fixture.ts";\n'+source)
         workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-task-vm-cache-fill.yaml").read_text())
-        self.assertEqual([j["name"] for j in workflow["jobs"]], ["fill", "failure"])
+        self.assertEqual([j["name"] for j in workflow["jobs"]], ["fill"])
         for job in workflow["jobs"]:
             self.assertEqual(job.pop("target"), '${{ "orbit-node-" + string(inputs.node_id) }}')
             self.assertEqual(job.pop("labels"), {"node": '${{ string(inputs.node_id) }}'})
@@ -53,12 +50,12 @@ return await fixture.methods.execute.execute(...args);
         self.assertEqual(state["fills"],1)
         self.assertEqual([p["status"] for p in state["posts"]],["running","running","succeeded"])
 
-    def test_engine_failure_before_fill_closes_existing_queued_root(self):
+    def test_engine_failure_before_fill_retains_native_failure_without_callback(self):
         self.state["engineRefused"] = True
         state = self.run_root(False)
-        self.assertEqual(state["operation"]["status"],"failed")
-        self.assertEqual(state["operation"]["result"],{})
-        self.assertEqual(state["operation"]["error_code"],"operation.native_failed")
+        self.assertEqual(state["operation"]["status"],"queued")
+        self.assertIsNone(state["operation"]["result"])
+        self.assertIsNone(state["operation"].get("error_code"))
         self.assertEqual(state["fills"],0)
 
     def test_lost_fill_reply_settles_failed_without_secret_or_archive_claim(self):

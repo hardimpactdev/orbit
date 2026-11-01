@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
+use Tests\Support\FakeRoutePublicationSocket;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
 uses(ServerDatabaseFixtures::class);
@@ -17,6 +21,13 @@ uses(ServerDatabaseFixtures::class);
 beforeEach(function (): void {
     $this->prepareServerDatabaseFixtures();
     $this->dbNode->update(['architecture' => 'amd64']);
+    $this->runId = 'b30960ef-d7d8-423f-bb66-26e38502e6be';
+    config(['swamp.run_token' => 'fake.token']);
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $sent): array => $sent['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-destroy', 'runId' => $this->runId]]];
+    app()->instance(WebSocketClient::class, $this->socket);
 });
 
 it('admits recorded MySQL identity without an execution receipt or PHP probe', function (): void {
@@ -77,3 +88,38 @@ it('refuses a recorded system name or prefix when rendering native destroy inten
     expect(fn () => app(DatabaseDestroyProjection::class)->input($operation))
         ->toThrow(ResourceOperationException::class, 'System databases');
 })->with([[['mysql'], []], [[], ['s']]]);
+
+it('starts native removal with captured intent and a vault descriptor for each engine', function (string $driver): void {
+    $this->server->update(['driver' => $driver]);
+    $connection = DatabaseConnection::query()->create(['slug' => 'proof', 'driver' => $driver, 'database_server_id' => $this->server->id, 'database' => 'proof', 'username' => 'proof']);
+    $operation = app(DropServerDatabaseAction::class)->execute($connection);
+    $inputs = $this->socket->sent[1]['payload']['inputs'];
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
+    expect($inputs['intent'])->toMatchArray(['driver' => $driver, 'users' => ['proof']])->not->toHaveKeys(['password', 'payload', 'sql']);
+    expect($inputs['execution_secrets']['database_destroy'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'database-destroy-intent-'.$operation->input['intent_id']]);
+    expect(json_decode($this->socket->sent[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['password' => $this->server->root_password]);
+    expect(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain($this->server->root_password);
+    expect(app(DirectOperation::class)->definition('database.destroy'))->not->toHaveKey('private_material');
+    $this->server->update(['port' => 3333, 'root_password' => 'changed-private-root']);
+    expect(app(DirectOperation::class)->workflowInputs($operation))->toEqual($inputs);
+    $this->assertDatabaseHas('database_connections', ['id' => $connection->id]);
+})->with(['mysql', 'pgsql', 'redis']);
+
+it('deletes records once from successful native terminal history', function (): void {
+    $connection = DatabaseConnection::query()->create(['slug' => 'proof', 'driver' => 'mysql', 'database_server_id' => $this->server->id, 'database' => 'proof', 'username' => 'proof']);
+    $operation = app(DropServerDatabaseAction::class)->execute($connection);
+    $inputs = $this->socket->sent[1]['payload']['inputs'];
+    $history = ['id' => $this->runId, 'workflowName' => 'operation-database-destroy', 'status' => 'succeeded', 'inputs' => $inputs,
+        'startedAt' => '2026-11-01T00:30:00Z', 'completedAt' => '2026-11-01T00:30:01Z',
+        'jobs' => [['name' => 'result', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"backend":"absent"}']]]]],
+    ];
+    $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
+    config(['swamp.read_token' => 'fake.token']);
+    $selector = app(DirectOperation::class)->definition('database.destroy')['terminal_result'];
+    $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
+    app(SwampCommandStep::class)->projectTerminal($projected, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
+    expect($projected->status->value)->toBe('succeeded');
+    expect($projected->result)->toBe(['backend' => 'absent']);
+    $this->assertDatabaseMissing('database_connections', ['id' => $connection->id]);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
+});

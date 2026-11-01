@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationCompletion;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
@@ -16,10 +17,12 @@ use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
-    ]]];
+    $this->socket = $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        ]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
 
@@ -39,7 +42,7 @@ it('records Process intent without dispatch or exposing environment bytes', func
         ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
     $operation = Operation::query()->sole();
     expect($operation->node_id)->toBe($this->node->id)
-        ->and($operation->input['installation'])->toBe(['$secret' => 'process.installation', 'id' => Process::query()->sole()->id])
+        ->and($operation->input)->not->toHaveKeys(['installation', 'agent_sha256'])
         ->and(json_encode($operation->toArray()))->not->toContain($secret)
         ->and($response->getContent())->not->toContain($secret)
         ->and(Process::query()->sole()->status->value)->toBe('provisioning');
@@ -78,40 +81,45 @@ it('starts creation directly without the old admission lease or claim contract',
     config(['dependency_detection.services_node_id' => $this->node->id]);
 });
 
-it('returns only admitted public installation input and binds private bytes to the current definition', function (): void {
-    $this->postJson('/api/v1/processes', [...$this->payload, 'environment' => ['PASSWORD' => 'create-private-value']])->assertAccepted();
+it('supplies full public Docker intent and only environment values through a native execution copy', function (): void {
+    $secret = 'create-private-value';
+    $this->postJson('/api/v1/processes', [...$this->payload, 'environment' => ['PASSWORD' => $secret]])->assertAccepted();
     $operation = Operation::query()->sole();
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $query = '?run_id='.$operation->state['swamp_run_id'];
-    $response = $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.installation.process_id', $operation->target_id)
-        ->assertJsonMissingPath('data.input.installation.definition')->assertJsonMissingPath('data.input.installation.content');
-    expect($response->getContent())->not->toContain('create-private-value');
-    $this->getJson($path.'/private-material'.$query)->assertOk()->assertJsonPath('data.installation.definition.environment.PASSWORD', 'create-private-value');
-    $process = Process::query()->sole();
-    $process->update(['runtime_config' => [...$process->runtime_config, 'image' => 'example:changed']]);
-    $this->getJson($path.'/private-material'.$query)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+    $input = $this->getJson($path.$query)->assertOk()->assertDontSee($secret)->json('data.input');
+    expect($input['intent']['installation']['definition']['image'])->toBe('example:1')
+        ->and($input['intent']['installation']['definition']['command'])->toBe(['sleep', '300'])
+        ->and($input['intent']['installation']['definition'])->not->toHaveKey('environment')
+        ->and($input['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'process-create-operation-'.$operation->id]);
+    $puts = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'vault.put'));
+    expect($puts)->toHaveCount(1)
+        ->and(json_decode($puts[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['PASSWORD' => $secret]);
+    $runs = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'workflow.run'));
+    expect($runs)->toHaveCount(1)->and($runs[0]['payload']['workflowIdOrName'])->toBe('operation-process-create')
+        ->and(json_encode($runs[0], JSON_THROW_ON_ERROR))->not->toContain($secret);
+    $this->getJson($path.'/private-material'.$query)->assertUnprocessable();
+    Process::query()->sole()->update(['runtime_config' => [...Process::query()->sole()->runtime_config, 'image' => 'example:changed']]);
+    $this->getJson($path.$query)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
 });
 
-it('captures the real first-visit systemd input with a boolean activation flag', function (): void {
+it('supplies a public first-visit systemd unit with no environment copy when none is needed', function (): void {
     $this->postJson('/api/v1/processes', [
         'target_type' => 'node', 'target_id' => $this->node->id,
         'name' => 'native-first-visit', 'runtime' => 'systemd',
         'command' => ['/usr/bin/sleep', 'infinity'], 'start' => true,
     ])->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($operation->input['activation_pending'])->toBeFalse();
     $input = $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$operation->state['swamp_run_id'])
-        ->assertOk()->assertJsonPath('data.input.installation.activation_pending', false)->json('data.input');
-    expect($input['installation']['content_hash'])->toBe($operation->input['content_hash']);
-    foreach (['control', 'installation'] as $section) {
-        $input[$section]['process_id'] = 12;
-        $input[$section]['agent_sha256'] = str_repeat('a', 64);
-        $input[$section]['name'] = 'orbit-process-12-native-first-visit.service';
-    }
-    $input['installation']['content_hash'] = str_repeat('b', 64);
-    $fixture = json_decode(file_get_contents(base_path('tests/Fixtures/Processes/create-admitted-input.json')), true, flags: JSON_THROW_ON_ERROR);
-    expect($input)->toBe($fixture);
+        ->assertOk()->json('data.input');
+    $installation = $input['intent']['installation'];
+    expect($installation['activation_pending'])->toBeTrue()
+        ->and($installation['has_environment'])->toBeFalse()
+        ->and($installation['unit'])->toContain('X-Orbit-Process-ID='.$operation->target_id, 'ExecStart=')
+        ->and(hash('sha256', $installation['unit']))->toBe($installation['content_hash'])
+        ->and($input['execution_secrets'])->toBe([])
+        ->and($input['intent']['control'])->not->toHaveKey('agent_sha256');
 });
 
 it('starts update directly with only record admission serialization and keeps private definition bytes out of its input', function (): void {
@@ -209,7 +217,7 @@ it('projects explicit stop from one terminal history read without a Gateway resu
             ['name' => 'verify', ...($status === 'succeeded' ? ['outputs' => ['stdout' => '{"ready":true,"state":"exited"}']] : ['status' => 'pending'])],
         ]]],
     ];
-    $socket = new FakeRoutePublicationSocket;
+    $this->socket = $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.read_token' => 'synthetic-native-reader']);
@@ -225,3 +233,57 @@ it('projects explicit stop from one terminal history read without a Gateway resu
     expect($socket->sent[0]['type'])->toBe('workflow.history.get');
     Queue::assertNothingPushed();
 })->with(['succeeded', 'interrupted']);
+
+it('projects lifecycle terminal history and preserves a failed Process for fix forward', function (string $verb, string $status): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
+    $process = Process::query()->sole();
+    $operation = Operation::query()->sole();
+    if ($verb === 'destroy') {
+        $operation->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+        $process->update(['status' => 'active']);
+        $this->deleteJson('/api/v1/processes/'.$process->id)->assertAccepted();
+        $operation = Operation::query()->where('kind', 'process.destroy')->sole();
+    }
+    $run = $operation->state['swamp_run_id'];
+    $history = ['id' => $run, 'workflowName' => 'operation-process-'.$verb, 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => '2026-11-01T00:00:00Z', 'completedAt' => '2026-11-01T00:00:01Z',
+        'jobs' => [['name' => 'process', 'steps' => $status === 'failed' ? [] : [
+            ['name' => 'result', 'outputs' => ['stdout' => $verb === 'destroy' ? '{"ready":true}' : '{"ready":true,"state":"created"}']],
+        ]]],
+    ];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'synthetic-native-reader']);
+    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run, 'status' => $status], ['job' => 'process', 'step' => 'result']);
+    expect($terminal->status->value)->toBe($status)
+        ->and($socket->sent)->toHaveCount(1)
+        ->and($socket->sent[0]['type'])->toBe('workflow.history.get');
+    if ($status === 'failed') {
+        expect($terminal->error_code)->toBe('operation.native_failed')
+            ->and($process->fresh())->not->toBeNull()
+            ->and($process->fresh()->status->value)->toBe($verb === 'destroy' ? 'removing' : 'failed');
+    } elseif ($verb === 'destroy') {
+        expect($process->fresh())->toBeNull();
+    } else {
+        expect($process->fresh()->status->value)->toBe('active');
+    }
+})->with([['create', 'succeeded'], ['create', 'failed'], ['destroy', 'succeeded'], ['destroy', 'failed']]);
+
+it('keeps activation pending until native acceptance records the rendered unit hash', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'activation-proof',
+        'runtime' => 'systemd', 'command' => ['/bin/sleep', '30'], 'start' => true,
+    ])->assertAccepted();
+    $process = Process::query()->sole();
+    $first = Operation::query()->sole();
+    expect($first->input['activation_pending'])->toBeTrue();
+    app(ProcessOperationCompletion::class)->complete($first, OperationOutcome::failed('operation.native_failed'));
+    $retry = app(ProcessOperationAdmission::class)->execute($process->refresh(), 'create');
+    expect($retry->input['activation_pending'])->toBeTrue();
+    app(ProcessOperationCompletion::class)->complete($retry, OperationOutcome::succeeded(['ready' => true, 'state' => 'active']));
+    $compliant = app(ProcessOperationAdmission::class)->execute($process->refresh(), 'create');
+    expect($compliant->input['activation_pending'])->toBeFalse()
+        ->and($process->systemd_activation_hash)->toBe($compliant->input['content_hash']);
+});

@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -29,9 +30,16 @@ final readonly class IssueConnPairingAction
             $pairing = ConnPairing::query()->create(['node_id' => $node->id, 'conn_environment_id' => $environment->id,
                 'client_label' => $node->name.' via Orbit '.Str::lower(Str::random(8))]);
 
-            return $this->operations->execute('conn.pairing_create', 'conn_pairing', $pairing->id, $gateway,
-                ['conn_environment_id' => $environment->id, 'environment' => ['$secret' => 'conn.environment', 'id' => $environment->id],
+            $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-create-'.Str::uuid()];
+            $operation = $this->operations->execute('conn.pairing_create', 'conn_pairing', $pairing->id, $gateway,
+                ['conn_environment_id' => $environment->id, 'intent' => ['url' => $environment->url, 'pairing_id' => $pairing->id, 'label' => $pairing->client_label],
+                    'execution_secrets' => ['admin_session' => $reference],
                     'pairing_ids' => [$pairing->id], 'caller_node_id' => $node->id], 'operator', null);
+            if ($operation->wasRecentlyCreated) {
+                app(SwampCommandStep::class)->executionCopy($reference['vault'], $reference['key'], $environment->admin_session);
+            }
+
+            return $operation;
         });
     }
 

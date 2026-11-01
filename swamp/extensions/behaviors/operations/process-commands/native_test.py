@@ -28,6 +28,7 @@ class NativeProcessFixture(harness.NativeTestCase):
             "process-input.ts",
             "installation-input.ts",
             "required-mount-paths.ts",
+            "container-input.ts",
         ]:
             shutil.copy(
                 ROOT / "extensions/behaviors/operations/processes-schedules" / name,

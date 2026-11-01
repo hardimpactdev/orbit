@@ -24,7 +24,6 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /** Synthetic family exercises the shared HTTP contract without a family-specific relay. */
@@ -296,36 +295,6 @@ describe('fixed primitive transport', function (): void {
     });
 });
 
-describe('native failure callback', function (): void {
-    it('records a fixed failure without family projection or Gateway steps and replays idempotently', function (): void {
-        $fixture = participantIntent($this);
-        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertOk()->assertJsonPath('data.status', 'failed');
-        $operation = $fixture->operation->refresh();
-        expect($operation->error_code)->toBe('operation.native_failed');
-        expect($operation->result)->toBe([]);
-        expect(Schema::hasTable('operation_steps'))->toBeFalse();
-        $sequence = $operation->sequence;
-        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertOk();
-        expect($operation->refresh()->sequence)->toBe($sequence);
-        Http::assertNothingSent();
-    });
-
-    it('refuses foreign participants, mismatched runs and caller-supplied diagnostics', function (): void {
-        $fixture = participantIntent($this);
-        $this->withServerVariables(['REMOTE_ADDR' => $fixture->host->wireguard_ip])->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertForbidden();
-        $this->withServerVariables(['REMOTE_ADDR' => $fixture->root->wireguard_ip])->postJson($fixture->path.'/failure', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92677'])->assertConflict();
-        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run, 'error_code' => 'private.secret'])->assertUnprocessable();
-        expect($fixture->operation->refresh()->status)->toBe(OperationStatus::Queued);
-    });
-
-    it('preserves a committed native success when failure delivery arrives late', function (): void {
-        $fixture = participantIntent($this);
-        $fixture->operation->update(['status' => OperationStatus::Succeeded, 'result' => ['ready' => true]]);
-        $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertOk()->assertJsonPath('data.status', 'succeeded');
-        expect($fixture->operation->refresh()->result)->toBe(['ready' => true]);
-    });
-});
-
 function taskVmParticipant(TestCase $test): object
 {
     $fixture = participantIntent($test);
@@ -373,9 +342,10 @@ it('allows TaskVM secret output only for its admitted writable field and bound r
 
 it('keeps TaskVM participants out of mutations, foreign roots and unrelated Gateway APIs', function (): void {
     $fixture = taskVmParticipant($this);
-    foreach (['result', 'primitive', 'failure'] as $action) {
+    foreach (['result', 'primitive'] as $action) {
         $this->postJson($fixture->path.'/'.$action, ['run_id' => $fixture->run])->assertForbidden();
     }
+    $this->postJson($fixture->path.'/failure', ['run_id' => $fixture->run])->assertNotFound();
     $this->postJson('/api/v1/operations/'.$fixture->operation->id.'/cancel')->assertForbidden();
     $this->getJson('/api/v1/operations')->assertForbidden();
     $this->getJson('/api/v1/gateway/releases')->assertForbidden();

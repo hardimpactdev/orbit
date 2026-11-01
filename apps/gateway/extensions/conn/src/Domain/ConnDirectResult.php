@@ -6,13 +6,11 @@ namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Operations\DirectOperationResultHook;
 use App\Domain\Operations\OperationOutcome;
-use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Carbon;
 use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -35,13 +33,10 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
             && ConnEnvironment::query()->findOrFail($operation->target_id)->cleanup_version !== $operation->input['cleanup_version']) {
             throw new ResourceOperationException('conn.environment_changed', 'The cleanup revision changed.', 409);
         }
-        $pairing = $operation->kind === 'conn.pairing_create' ? $pairings->sole() : null;
 
         return ['action' => substr($operation->kind, 5),
-            'labels' => $operation->kind === 'conn.gateway_sessions_revoke' ? [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL] : $pairings->pluck('client_label')->all(),
-            'links' => $pairings->pluck('pairing_link_id')->filter()->values()->all(),
-            'pairing_id' => $pairing?->id, 'issue_started' => $pairing?->issue_started_at !== null, 'issued' => $pairing !== null && $pairing->credential !== null,
-            'pairing_link_id' => $pairing?->pairing_link_id, 'expires_at' => $pairing?->expires_at?->toIso8601String()];
+            'labels' => [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL],
+            'links' => $pairings->pluck('pairing_link_id')->filter()->values()->all()];
     }
 
     public function validate(Operation $operation, array $result, OperationStatus $status): array
@@ -62,43 +57,7 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
 
             return $result;
         }
-        $store = app(ConnPairingCredentialStore::class);
-        if ($store->ownerId($operation) !== $operation->target_id) {
-            $this->refuse();
-        }
-        $pairing = ConnPairing::query()->lockForUpdate()->findOrFail($operation->target_id);
-        $known = app(ConnOperationSecrets::class)->resolve($operation, ValidatedData::integer($operation->input['conn_environment_id']), '', '')->strings();
-        if ($pairing->credential !== null) {
-            $known[] = $pairing->credential;
-        }
-        foreach ($result as $value) {
-            if (is_string($value) && (strlen($value) > OperationResultFields::MaximumStringBytes
-                || array_any($known, static fn (string $secret): bool => $secret !== '' && str_contains($value, $secret)))) {
-                $this->refuse();
-            }
-        }
-        if ($status === OperationStatus::Running && $result === ['backend' => 'issuing']) {
-            $pairing->forceFill(['issue_started_at' => $pairing->issue_started_at ?? now()])->save();
-
-            return $result;
-        }
-        if (array_diff(array_keys($result), ['backend', 'pairing_id', 'pairing_link_id', 'expires_at']) !== [] || count($result) !== 4
-            || ($result['backend'] ?? null) !== 'issued' || $result['pairing_id'] !== $pairing->id || ! is_string($result['pairing_link_id'])
-            || preg_match('/\A[a-zA-Z0-9_-]{1,1024}\z/D', $result['pairing_link_id']) !== 1 || ! is_string($result['expires_at'])
-            || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})\z/D', $result['expires_at']) !== 1) {
-            $this->refuse();
-        }
-        if ($pairing->issue_started_at === null || ($pairing->pairing_link_id !== null && $pairing->pairing_link_id !== $result['pairing_link_id'])) {
-            $this->refuse();
-        }
-        if ($status === OperationStatus::Succeeded && ($pairing->expires_at === null || $pairing->expires_at->getTimestamp() !== Carbon::parse($result['expires_at'])->getTimestamp())) {
-            $this->refuse();
-        }
-        if ($status === OperationStatus::Running) {
-            $pairing->forceFill(['pairing_link_id' => $result['pairing_link_id'], 'expires_at' => Carbon::parse($result['expires_at'])])->save();
-        }
-
-        return $result;
+        $this->refuse();
     }
 
     public function complete(Operation $operation, OperationOutcome $outcome): void

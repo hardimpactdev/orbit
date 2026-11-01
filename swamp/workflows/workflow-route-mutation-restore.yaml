@@ -1,5 +1,6 @@
 id: f11fa84e-418c-44cf-86d9-a84f46ef0146
 name: route-mutation-restore
+target: orbit-node-209
 description: Canonical Route publications and complete native contribution proof.
 vaults: []
 inputs:
@@ -46,9 +47,6 @@ jobs:
 - name: restore
   steps:
   - name: restore_prepare_certificates
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.certificates }}
@@ -73,9 +71,6 @@ jobs:
         restoring: true
     allowFailure: true
   - name: restore_php
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -101,9 +96,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_lan
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.lan }}
@@ -128,9 +120,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_ingress
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.ingress }}
@@ -156,9 +145,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_urls
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.url_writes }}
@@ -186,9 +172,6 @@ jobs:
           material: ${{ inputs.execution_secrets[self.part.secret_field] }}
     allowFailure: true
   - name: restore_restore_prepare_caddy
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -221,9 +204,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_dns
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.before.dns != null) }}
@@ -254,9 +234,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_dns_grace
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns != null && p.before.dns.digest
@@ -281,9 +258,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_restore_caddy
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -319,9 +293,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_cleanup
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.cleanup }}
@@ -355,9 +326,6 @@ jobs:
         restoring: true
     allowFailure: true
   - name: restore_retire_lan
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.retire_lan }}
@@ -390,9 +358,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_retire_ingress
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.retire_ingress }}
@@ -426,9 +391,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: stage
       in: ${{ [inputs.intent.route_mutations.restore] }}
@@ -448,7 +410,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: restore-result
+      behaviorName: '${{ "restore-result-" + run.id + "-" + string(self._index) }}'
       methodName: result
       inputs:
         stage: ${{ self.stage }}
@@ -473,9 +435,6 @@ jobs:
         outcomes: ${{ steps }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - {step: restore_prepare_certificates, condition: {type: always}}
     - {step: restore_php, condition: {type: always}}

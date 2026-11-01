@@ -1688,7 +1688,16 @@ export function analyzeYaml(
         result.unknown = true;
       }
       for (const rawStep of Array.isArray(job.steps) ? job.steps : []) {
-        const task = object(object(rawStep).task);
+        const step = object(rawStep), task = object(step.task);
+        if (step.forEach && ["behavior", "model_method"].includes(String(task.type))) {
+          const item = String(object(step.forEach).item ?? "_index").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const reference = new RegExp(`(?<![\\w.])self\\s*\\.\\s*(?:_index|${item})\\b`);
+          const name = String(task.behaviorName ?? task.modelIdOrName ?? task.behavior ?? "");
+          const perItem = [...name.matchAll(/\$\{\{([\s\S]*?)\}\}/g)].some((m) =>
+            reference.test(m[1].replace(/\bself\s*\[\s*(['"])([A-Za-z_]\w*)\1\s*\]/g, "self.$2").replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, "").replace(/\/\/[^\r\n]*/g, ""))
+          );
+          if (!perItem) add("foreach-shared-identity", [`${job.name}/${step.name}`]);
+        }
         if (
           ![
             "behavior",
@@ -2381,7 +2390,10 @@ if (import.meta.main) {
     const errors = [
       // The checked-in list still only shrinks. A proved move derives its cap
       // separately and never writes a row at the new path.
-      ...ratchet([], baseline, prior),
+      // Introduce this rule's existing debt from actual base source only; later caps only shrink.
+      ...ratchet([], baseline, { ...prior, entries: [...prior.entries, ...baseEntries.filter((e) =>
+        e.rule === "foreach-shared-identity" && !prior.entries.some((p) => p.file === e.file && p.rule === e.rule)
+      )] }),
       ...ratchet(entries, movedLimits(baseline, moves)),
       ...ratchet(
         entries,

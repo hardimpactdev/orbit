@@ -24,7 +24,9 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
 
     public function input(Operation $operation): array
     {
-        return $this->publicInput($operation, ValidatedData::integer($operation->node_id));
+        return [...array_filter($this->publicInput($operation, ValidatedData::integer($operation->node_id)), static fn (mixed $value): bool => $value !== null),
+            'intent' => ['environment_writes' => $operation->input['route_environment']],
+            'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -40,7 +42,7 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
 
         return [...app(NativeRoutePublicationInput::class)->forNode(Node::query()->findOrFail($callerNodeId)),
             ...app(NativeRouteRemovalPublicInput::class)->forNode($operation, $callerNodeId),
-            'environment_fields' => $operation->input['environment_fields'], 'participant_node_id' => $callerNodeId];
+            'participant_node_id' => $callerNodeId];
     }
 
     public function apply(Operation $operation, array $data): Operation

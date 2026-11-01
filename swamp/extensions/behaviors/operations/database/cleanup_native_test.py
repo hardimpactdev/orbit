@@ -14,9 +14,6 @@ from native_harness import NativeTestCase
 class DatabaseCleanupNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text('import { fixtureHttp } from "./database/cleanup_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
         module = self.repo / 'extensions/behaviors/operations/database/cleanup.ts'
         module.write_text('import {fixtureHttp, fixtureLocal} from "./cleanup_native_fixture.ts";\n' + module.read_text().replace('export const behavior = cleanup();', 'export const behavior = cleanup(() => fixtureHttp, fixtureLocal);'))
@@ -60,14 +57,15 @@ class DatabaseCleanupNative(NativeTestCase):
         self.cli('workflow','resume','operation-database-cleanup','--run',self.run_id,'--from','cleanup')
         self.assertEqual(self.read()['cleanups'],1)
 
-    def test_native_retry_can_repeat_convergent_cleanup_without_a_gateway_receipt(self):
+    def test_unknown_cleanup_outcome_does_not_repeat_after_terminal_failure(self):
         self.state['loseCleanup']=True
         self.save()
         self.run_workflow(success=False)
-        self.cli('workflow','resume','operation-database-cleanup','--run',self.run_id,'--from','cleanup')
+        self.cli('workflow','resume','operation-database-cleanup','--run',self.run_id,'--from','cleanup',success=False)
         state=self.read()
-        self.assertEqual(state['cleanups'],2)
-        self.assertEqual(state['operation']['status'],'succeeded')
+        self.assertEqual(state['cleanups'],1)
+        self.assertEqual(state['operation']['status'],'failed')
+        self.assertEqual(state['operation']['result'], {'error_code':'operation.native_outcome_unknown'})
 
     def test_native_behavior_lock_serializes_two_cleanups_on_the_same_node(self):
         first=self.state.pop('operation')

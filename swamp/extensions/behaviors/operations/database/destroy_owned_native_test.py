@@ -11,9 +11,6 @@ from native_harness import NativeTestCase
 class DatabaseDestroyOwnedNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text('import { fixtureHttp } from "./database/destroy_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
         for module, factory, replace in [('destroy.ts', 'databaseDestroy', '...databaseDestroy()'), ('destroy_owned.ts', 'databaseDestroyOwned', '...databaseDestroyOwned()')]:
             path = self.repo / 'extensions/behaviors/operations/database' / module
@@ -96,12 +93,12 @@ class DatabaseDestroyOwnedNative(NativeTestCase):
         self.owned()
         self.run_parent(owned=True, success=False, wrong_selected_node=True)
         state = self.read()
-        self.assertEqual(state['operation']['status'], 'failed')
+        self.assertEqual(state['operation']['status'], 'running')
         self.assertEqual(state['effects'], 0)
         self.assertFalse(any('private-material' in path for path in state['paths']))
-        self.assertEqual(sum(path.endswith('/failure') for path in state['paths']), 1)
+        self.assertFalse(any(path.endswith('/failure') for path in state['paths']))
 
-    def test_engine_failure_before_plan_or_effect_reports_parent(self):
+    def test_engine_failure_before_plan_or_effect_retains_native_failure(self):
         for job in ['admission', 'effects']:
             with self.subTest(job=job):
                 self.owned()
@@ -110,11 +107,11 @@ class DatabaseDestroyOwnedNative(NativeTestCase):
                 self.state['effects'] = 0
                 self.run_parent(owned=True, success=False, engine_failure=job)
                 state = self.read()
-                self.assertEqual(state['operation']['status'], 'failed')
-                self.assertEqual(state['operation']['error_code'], 'operation.native_failed')
+                self.assertIn(state['operation']['status'], ['queued', 'running'])
+                self.assertIsNone(state['operation'].get('error_code'))
                 self.assertEqual(state['effects'], 0)
                 self.assertFalse(any('private-material' in path for path in state['paths']))
-                self.assertEqual(sum(path.endswith('/failure') for path in state['paths']), 1)
+                self.assertFalse(any(path.endswith('/failure') for path in state['paths']))
 
     def test_owned_lost_projection_resumes_same_root_without_repeating_sql(self):
         self.owned()

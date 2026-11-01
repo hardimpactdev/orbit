@@ -164,7 +164,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: orbit-certificate-signing-http
+      behaviorName: '${{ "certificate-sign-" + run.id }}'
       methodName: execute
       inputs:
         run: |

@@ -132,7 +132,7 @@ Registering again replaces the stored session. The job registers on each server 
 
 ## Pairing and revocation
 
-A device asks the Gateway for a pairing link to one registered T3 server. Swamp invokes the keyed Gateway primitive for `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.
+A device asks the Gateway for a pairing link to one registered T3 server. The native Swamp pairing step sends `POST <url>/api/auth/pairing-token` with its admin session, a unique label, such as `phone via Orbit k3j9x0qa`, and T3's administrative scopes (see below). T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.
 
 The device opens the returned `pairing_url` and pairs as it does today, but without a manual step. The link is one-time and short-lived, so the device pairs right away.
 
@@ -224,15 +224,13 @@ Registration keeps its normal response after it validates and stores the new enc
 
 ## Pairing Operations
 
-Pairing creation returns HTTP 202 with an Operation. The Gateway validates and records intent, starts the native Swamp workflow and returns without waiting. Revocation also returns an Operation. Pairing creation reads the stored environment session through the shared private-material endpoint after the Gateway checks its run, Node and owner. Pairing revocation uses the captured public intent and a vault descriptor described above. It writes the one-time credential through the shared secret-output endpoint to the existing encrypted pairing record, then projects only safe metadata. Pairing revocation and Gateway session cleanup run directly in Swamp.
+Pairing creation returns HTTP 202 with an Operation. The Gateway captures the environment URL, pairing identity and client label, and copies its existing admin session through the shared execution-copy helper. One placed native step on Node 209 calls T3's pairing-token API. Its typed resource marks the issued credential sensitive, so Swamp core stores it in its vault and records only a vault reference. No step reads intent, fetches private input or posts an output to the Gateway.
 
-After the Operation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Read the URL once and open it immediately. The owner-checked read clears the encrypted credential; a second read, an expired pairing, or a read before completion returns HTTP 409. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
+After the shared terminal reader proves success, projection reads the native vault reference through the existing authenticated Swamp connection and checks the pairing owner and stores the credential encrypted in its record. Only public link metadata enters the Operation result. A delivery failure leaves the native credential available for the shared subscriber's next delivery; it does not issue another token.
 
-When a request repeats the same `Idempotency-Key`, it returns HTTP 202 with the existing Operation. It never returns the consumed pairing credential again.
+After the Operation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL once. The owner-checked read clears the encrypted credential. A second read, an expired pairing or a read before completion returns HTTP 409. Another Node cannot read it. Listing pairings never includes it; revocation removes it. Repeating the same admission idempotency key returns the same Operation without consuming the credential.
 
-The family declares `credential` as a secret stored through `conn.pairing.credential`. Its owner check binds the pairing, calling Node and environment, and refuses a revoked pairing or a conflicting credential.
-
-The producer is Swamp's direct pairing behavior. It records safe issue and link metadata before the registered credential store accepts the output. That store checks the pairing, caller and environment, requires the recorded issue and link, and encrypts the value in an ordinary atomic write. It records no execution receipt. Native checkpoints prevent an uncertain retry from minting another link. The existing profile and registration reads remain local Gateway behavior.
+A lost T3 response leaves issuance uncertain. There is no automatic retry, fallback token or issuance ledger. Inspect the native report and establish the external outcome before explicitly retrying a failed issue step or admitting another pairing.
 
 Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations/{operation}` and cancel them at `POST /api/v1/conn/operations/{operation}/cancel`. These endpoints check the original requester, including when a revocation names another Node. They expose no other Operation or Gateway authority.
 
@@ -242,13 +240,9 @@ A failed session-list read ends the revocation Operation with its safe `conn.*` 
 
 ## Direct Swamp writer
 
-`conn.pairing_revoke` starts `operation-conn-pairing-revoke` with full public intent and the shared terminal selector. `conn.pairing_create` and `conn.gateway_sessions_revoke` retain `operation-conn-direct` through their fixed direct declarations. Swamp performs their effects and the Gateway records their public metadata. Rollback reverts the owning PR.
+`conn.pairing_create` starts `operation-conn-pairing-create` with full native inputs and a fixed terminal selector. Pairing revocation uses `operation-conn-pairing-revoke`. Gateway session cleanup retains `operation-conn-direct` and its current-registration checks; that is a separate kind. Existing profile and registration reads remain local Gateway behavior.
 
-Swamp calls T3 directly. For the retained pairing-create and Gateway-cleanup kinds, the Gateway serves shared run-bound private input, stores the one-time output through the existing encrypted credential store and projects safe metadata. No credential enters Operation input, results or step output. Activity records no request body on either shared private path. The PHP issue command, pairing HTTP relay and their receipt tests are removed.
-
-The native issue checkpoint is scoped to the Operation. A resume with a stored credential projects its metadata; an uncertain issue without a saved credential refuses with `conn.pairing_outcome_unknown`. The owner-only pairing read returns the URL once. The retained pairing behavior uses the configured Node identity; no root socket or family credential route is added.
-
-A direct pairing exposes only an `issue_started` boolean from the recorded issue timestamp. A worker that loses its native checkpoint refuses an already started issue instead of minting a second link; a stored credential still recovers completion.
+Core sensitive resources provide protected generated outputs without a new custody protocol. Official core commands and vaults, plus the official extension catalogue, were checked first. There is no official T3 pairing API integration. The single typed HTTP action is needed to validate the provider response and mark the generated credential sensitive before native persistence. There is no custom transport or subscriber.
 
 When a terminal result repeats, Conn returns the recorded result even after the pairing credential has been consumed or revoked. Conn projects bounded public metadata without a Kit execution contract. Native dispatch failures record a safe failure without changing pairing or cleanup state.
 

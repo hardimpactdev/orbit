@@ -36,26 +36,6 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-- name: failure-admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  dependsOn:
-  - job: admission
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
 - name: snapshot
   target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
   labels:

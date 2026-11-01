@@ -6,7 +6,6 @@ use App\Domain\Routes\NativeCaddyPublicationProjection;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteLanRemovalProjection;
-use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteTargetProjection;
 use App\Domain\Routes\NativeRouteUpdateProjection;
@@ -35,7 +34,8 @@ return [
     ],
     ...array_fill_keys(['route.destroy', 'route.withdraw'], [
         'workflow' => 'operation-route-removal', 'projection' => NativeRouteRemovalProjection::class,
-        'private_material' => NativeRouteRemovalAdmission::privateMaterial(),
+        'workflow_inputs' => true,
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-removal-[a-f0-9]{16}-route_environment_[0-9]+$']],
     ]),
     'route.target_unset' => [
         'workflow' => 'operation-route-target-unset', 'writer_config' => 'swamp.direct_writers',

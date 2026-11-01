@@ -16,8 +16,6 @@ class ServerCloseNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy','operations/_lib','operations/database')
-        failure=self.repo/'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import { fixtureHttp } from "./database/server_close_native_fixture.ts";\n'+(ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
         module=self.repo/'extensions/behaviors/operations/database/server_close.ts'
         module.write_text('import { fixtureHttp, fixtureConnect } from "./server_close_native_fixture.ts";\n'+module.read_text().replace('...serverClose()','...serverClose(() => fixtureHttp, fixtureConnect)'))
         workflow=yaml.safe_load((ROOT/'workflows/workflow-operation-database-server-close.yaml').read_text())

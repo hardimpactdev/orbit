@@ -84,6 +84,51 @@ final readonly class SwampVaultExecutionCopy
         }
     }
 
+    /** Read a native schema-sensitive output without putting the value in diagnostics or state. */
+    public function readSecret(string $vault, string $key): string
+    {
+        $address = config('swamp.address');
+        $ca = config('swamp.ca_path');
+        $token = config('swamp.run_token');
+        if (preg_match('/\A[a-z][a-z0-9_-]{0,127}\z/D', $vault) !== 1
+            || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,255}\z/D', $key) !== 1
+            || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '' || ! is_string($token) || $token === '') {
+            throw $this->outputUnavailable();
+        }
+        $id = bin2hex(random_bytes(16));
+        try {
+            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->send(['type' => 'vault.read-secret', 'id' => $id, 'payload' => ['vaultName' => $vault, 'secretKey' => $key]]);
+            $deadline = microtime(true) + 30;
+            while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+                foreach ($this->socket->receive(min(1.0, $remaining)) as $message) {
+                    if (($message['id'] ?? null) !== $id) {
+                        continue;
+                    }
+                    $payload = $message['payload'] ?? null;
+                    $data = is_array($payload) ? ($payload['data'] ?? null) : null;
+                    if (($message['type'] ?? null) !== 'vault.read-secret' || ! is_array($data)
+                        || ($data['vaultName'] ?? null) !== $vault || ($data['secretKey'] ?? null) !== $key
+                        || ($data['vaultType'] ?? null) !== 'local_encryption' || ! is_string($data['value'] ?? null)) {
+                        throw $this->outputUnavailable();
+                    }
+
+                    return $data['value'];
+                }
+            }
+            throw $this->outputUnavailable();
+        } catch (Throwable) {
+            throw $this->outputUnavailable();
+        } finally {
+            $this->socket->close();
+        }
+    }
+
+    private function outputUnavailable(): ResourceOperationException
+    {
+        return new ResourceOperationException('swamp.secret_output_unavailable', 'The native secret output could not be read.', 503);
+    }
+
     private function unavailable(): ResourceOperationException
     {
         return new ResourceOperationException('swamp.vault_sync_unavailable', 'The Swamp execution copy could not be stored.', 503);

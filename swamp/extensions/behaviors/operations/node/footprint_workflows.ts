@@ -257,38 +257,6 @@ export function footprintWorkflow(
       }),
     }],
   });
-  jobs.push({
-    name: "admission_failure",
-    dependsOn: [dependency("admission", "failed")],
-    steps: [{
-      name: "report_admission_failure",
-      task: {
-        type: "behavior",
-        behaviorType: "@nckrtl/operation-failure",
-        behaviorName: expression(
-          '"operation-failure-node-" + string(inputs.node_id)',
-        ),
-        methodName: "report",
-        inputs: arguments_,
-      },
-    }],
-  });
-  jobs.push({
-    name: "failure_callback",
-    dependsOn: [dependency("projection", "failed")],
-    steps: [{
-      name: "report_failure",
-      task: {
-        type: "behavior",
-        behaviorType: "@nckrtl/operation-failure",
-        behaviorName: expression(
-          '"operation-failure-node-" + string(inputs.node_id)',
-        ),
-        methodName: "report",
-        inputs: arguments_,
-      },
-    }],
-  });
   return {
     id: role
       ? relocateRole

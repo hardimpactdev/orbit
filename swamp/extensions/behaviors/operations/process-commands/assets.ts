@@ -1,3 +1,8 @@
+import {
+    LifecycleArgs,
+    LifecycleAssets,
+    lifecycleAssets,
+} from "./lifecycle-input.ts";
 import { z } from "npm:zod@4.4.3";
 import { Input } from "../processes-schedules/process-input.ts";
 import { ProcessInstallation } from "../processes-schedules/installation-input.ts";
@@ -91,8 +96,13 @@ const PublicResult = z.union([
 /** Resolve native additionalFiles and serialize public member inputs; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/process-command-assets",
-    version: "2026.10.31.2",
+    version: "2026.11.01.1",
     resources: {
+        lifecycle: {
+            schema: LifecycleAssets,
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
         result: {
             schema: PublicResult,
@@ -101,6 +111,29 @@ export const behavior = {
         },
     },
     methods: {
+        lifecycle: {
+            description:
+                "Validate the public Process lifecycle intent and resolve shipped scripts",
+            arguments: LifecycleArgs,
+            execute: async (args: z.infer<typeof LifecycleArgs>, ctx: {
+                extensionFile(name: string): string;
+                writeResource(
+                    spec: string,
+                    name: string,
+                    value: unknown,
+                ): Promise<unknown>;
+            }) => {
+                const result = await lifecycleAssets(
+                    args,
+                    ctx.extensionFile("scripts/control.py").replace(
+                        /\/[^/]+$/,
+                        "",
+                    ),
+                );
+                await ctx.writeResource("lifecycle", "lifecycle", result);
+                return result;
+            },
+        },
         read: {
             description:
                 "Resolve reusable Process command files on the placed worker",

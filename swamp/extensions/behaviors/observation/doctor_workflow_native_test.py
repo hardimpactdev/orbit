@@ -20,10 +20,6 @@ class DoctorWorkflowNative(NativeTestCase):
         module.write_text('import {fixtureHttp,fixtureObservation,fixtureLocal} from "./doctor_native_fixture.ts";\n' +
             module.read_text().replace('export const behavior = { ...doctor(), type: "@nckrtl/doctor" };',
                 'export const behavior = { ...doctor(() => fixtureHttp, fixtureObservation, fixtureLocal), type: "@nckrtl/doctor" };'))
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "../observation/doctor_native_fixture.ts";\n' +
-            failure.read_text().replace('export const behavior = nativeFailure();',
-                'export const behavior = nativeFailure(() => fixtureHttp);'))
         # Placement remains checked separately; local harness executes the same jobs and expressions.
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-doctor-inspect.yaml').read_text())
         def unplace(value):

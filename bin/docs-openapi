@@ -652,7 +652,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'operation:direct:failure', 'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 INTERNAL.update({'observation:plan', 'observation:health', 'observation:maintain'})
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
@@ -667,7 +667,6 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
-    'operation:direct:failure': 'Record a native workflow failure',
     'instance:smoke:context': 'Read production smoke context', 'instance:smoke': 'Start production smoke', 'instance:smoke:receipt': 'Read a production smoke receipt',
     'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
@@ -737,7 +736,6 @@ SUMMARIES = {
     'tasks:worker': 'Start a Task group Swamp worker', 'tasks:provision': 'Provision a Task group workspace', 'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
-    'operation:direct:failure': 'Native failed-dependency callback for the bound parent run. Only the root Node may call it. Records operation.native_failed without private material, domain projection or effects; a terminal Operation stays unchanged. Send run_id only.',
     'instance:smoke:failure': 'Atomically records a verified executed failing smoke and permanent SHA block under the Instance writer lock. Requires Gateway access and Idempotency-Key. Does not pause or resume. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
     'instance:smoke:failure:receipt': 'Reads the original caller-bound failure block by request_key. Missing evidence is null. Starts no work.',
     'instance:smoke:rollback': 'Starts the native instance.rollback with caller-bound required Idempotency-Key, recorded permanent failure block, exact expected selection and retained prior smoke-passed target. Rechecks under the writer lock before effects. Never resumes or changes data. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
@@ -1958,7 +1956,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] == 'tasks:worker':
         body_schema['required'] = ['worker']
         body_required = True
-    if route['name'] in ('operation:direct:failure', 'operation:direct:primitive'):
+    if route['name'] == 'operation:direct:primitive':
         body_schema, body_required = direct_run_body(), True
     if route['name'] in ('conn:profile:settings:update', 'conn:profile:settings:patch'):
         body_schema, body_required = conn_settings_body(route['name']), True

@@ -23,8 +23,6 @@ class TransferNative(NativeTestCase):
         module.write_text('import {transferHttp,transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime,fixtureSqlite} from "./transfer_native_fixture.ts";\n'+module.read_text().replace('transferRoot();','transferRoot((_ctx,args)=>transferHttp(args),transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime,fixtureSqlite);'))
         for file,kind in [('routes/publication.ts','@nckrtl/route-publication'),('certificates/mod.ts','@nckrtl/certificates')]:
             (self.repo/'extensions/behaviors/operations'/file).write_text('import {fixtureSharedBehavior} from "../instance-lifecycle/transfer_native_fixture.ts";\nexport const behavior = { ...fixtureSharedBehavior("'+kind+'"), type: "'+kind+'" };\n')
-        failure=self.repo/'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {transferHttp} from "./instance-lifecycle/transfer_native_fixture.ts";\n'+failure.read_text().replace('nativeFailure();','nativeFailure(()=>transferHttp({operation_id:7,kind:"instance.transfer",node_id:9,run_id:""}));'))
         target={'route_id' :1,'mode':'targets','binding_only':False,'noop':False,'recover_forward':False,
                 'prepared':[],'workloads':[],'staging_certificates':[],'live_certificates':[],
                 'certificates':[],'staging_removals':[],'node_ids':[9,17,209],
@@ -67,7 +65,7 @@ class TransferNative(NativeTestCase):
         self.assertTrue(actual['rolled_back'])
         self.assertFalse(actual.get('cutover',False))
         self.assertNotIn('capture',[row['name'] for row in actual['effects']])
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
     def test_cancel_before_cutover_discards_destination_and_preserves_source(self):
         self.state['cancel_at']='materialize'
         actual=self.run_transfer(success=False)
@@ -85,7 +83,7 @@ class TransferNative(NativeTestCase):
         self.assertNotIn('discard-destination',[row['name'] for row in actual['effects']])
         self.assertNotIn('remove-source',[row['name'] for row in actual['effects']])
         self.assertNotIn('restore-runtime',[row['name'] for row in actual['effects']])
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
     def test_partial_source_pause_restores_before_destination_cleanup(self):
         self.state['fail_effect']='pause-runtime'
         actual=self.run_transfer(success=False)
@@ -123,12 +121,12 @@ class TransferNative(NativeTestCase):
         self.assertIn('sqlite-cleanup-source',names)
         self.assertIn('sqlite-cleanup-target',names)
         self.assertNotIn('materialize',names)
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
     def test_sqlite_cleanup_failure_does_not_suppress_other_cleanup_or_report_success(self):
         self.sqlite();self.state['fail_effect']='sqlite-cleanup-source'
         actual=self.run_transfer(success=False)
         names=[row['name'] for row in actual['effects']]
         self.assertIn('sqlite-cleanup-target',names)
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
         self.assertFalse(actual['operation']['result'].get('recovered',False))
 if __name__=='__main__': unittest.main()

@@ -2,7 +2,11 @@
   "version": 2,
   "principal": "user:orbit-gateway",
   "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-create-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^nckrtl-conn-pairing-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}-issue-issued-issued-credential$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^route-removal-[a-f0-9]{16}-route_environment_[0-9]+$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-create-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^database-destroy-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-publish-token-[a-f0-9-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-check-write-[a-f0-9-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-check-read-[a-f0-9-]{36}$", "actions": ["write", "read"]},
@@ -10,6 +14,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-token-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-user-create-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^process-create-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^schedule-run-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-write-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^bootstrap-identity-node-14$", "actions": ["write", "read"]},
@@ -18,6 +23,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]}
   ],
   "workflows": [
+    {"workflow": "operation-conn-pairing-create", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-disable-direct", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-enable-direct", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-update-direct", "actions": ["run", "read"]},
@@ -80,6 +86,8 @@
     {"workflow": "operation-node-worker-known-hosts", "actions": ["run", "read"]},
     {"workflow": "operation-node-wireguard-hub-converge", "actions": ["run", "read"]},
     {"workflow": "operation-observation-maintain", "actions": ["run", "read"]},
+    {"workflow": "operation-process-create", "actions": ["run", "read"]},
+    {"workflow": "operation-process-destroy", "actions": ["run", "read"]},
     {"workflow": "operation-process-control", "actions": ["run", "read"]},
     {"workflow": "operation-process-horizon-handoff", "actions": ["run", "read"]},
     {"workflow": "operation-process-install-instance-definitions", "actions": ["run", "read"]},

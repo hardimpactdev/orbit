@@ -23,8 +23,6 @@ class ConvergenceNative(NativeTestCase):
         (folder / 'publication.ts').write_text('import {publisher} from "./convergence_native_fixture.ts"; export const behavior=publisher();')
         certificate_module = self.repo / 'extensions/behaviors/operations/certificates/mod.ts'
         certificate_module.write_text('import {fixtureHttp,fixtureInvoke} from "../routes/convergence_native_fixture.ts";\n'+certificate_module.read_text().replace('...certificates()', '...certificates(certificateActions(fixtureInvoke))'))
-        failure=self.repo/'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./routes/convergence_native_fixture.ts";\n'+(ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
         for verb in ['create','converge','update']:
             source=yaml.safe_load((ROOT / f'workflows/workflow-operation-route-{verb}.yaml').read_text())
             for job in source['jobs']:

@@ -12,10 +12,8 @@ use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Support\ValidatedData;
-use Illuminate\Support\Facades\DB;
 
-/** Admit public pin publication; coalesce changes while its one native run is unfinished. */
+/** Admit a complete current public pin snapshot for each publication request. */
 final readonly class AdmitWorkerKnownHostsAction implements WorkerKnownHostsPublisher
 {
     public const string Kind = 'node.worker_known_hosts';
@@ -29,22 +27,12 @@ final readonly class AdmitWorkerKnownHostsAction implements WorkerKnownHostsPubl
 
     public function execute(): Operation
     {
-        return DB::transaction(function (): Operation {
-            Node::query()->whereKey(209)->lockForUpdate()->firstOrFail();
-            $latest = Operation::query()->where('kind', self::Kind)->latest('id')->first();
-            if ($latest !== null && ! $latest->status->terminal()) {
-                return $latest;
-            }
-            $intent = $this->input->capture();
-            if ($latest !== null && (ValidatedData::object($latest->input['intent'])['digest'] ?? null) === $intent['digest']) {
-                return $latest;
-            }
+        Node::query()->findOrFail(209);
 
-            // This automatic intent must not inherit the pin caller's HTTP idempotency scope.
-            $idempotency = new OperationIdempotency;
-            $operations = new StartOperationAction(new OperationStore($this->broadcaster, $idempotency), $idempotency);
+        // This automatic intent must not inherit the pin caller's HTTP idempotency scope.
+        $idempotency = new OperationIdempotency;
+        $operations = new StartOperationAction(new OperationStore($this->broadcaster, $idempotency), $idempotency);
 
-            return $operations->execute(self::Kind, 'node', 209, 209, ['intent' => $intent], 'node-pins', null);
-        });
+        return $operations->execute(self::Kind, 'node', 209, 209, ['intent' => $this->input->capture()], 'node-pins', null);
     }
 }
