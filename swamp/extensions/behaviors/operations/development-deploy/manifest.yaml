@@ -1,0 +1,13 @@
+manifestVersion: 1
+name: '@nckrtl/development-deploy'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public development deployment metadata and target-local one-action scripts.
+behaviors:
+- operations/development-deploy/mod.ts
+additionalFiles:
+- scripts/common.py
+- scripts/source.py
+- scripts/app.py
+- scripts/vp.py

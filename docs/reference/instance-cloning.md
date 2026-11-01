@@ -41,7 +41,7 @@ The shared native VP preparation jobs capture the checkout's pinned requirements
 
 The target receives independently encrypted stored candidate values, excluding `DB_*` and candidate WebSocket app credentials. The Gateway publishes the rendered environment as a named vault execution copy. Official SSH resolves it only for the environment write; private values never enter workflow inputs or public results. The file is written atomically with mode `0640`.
 
-The existing scoped GitHub App mint primitive supplies repository read access. Its root key stays in the Gateway. All other steps use captured inputs and native outputs; no step reads intent or reports progress through Gateway HTTP.
+The existing scoped GitHub App mint primitive supplies repository read access. When GitHub reports no App installation for the repository, the descriptor contains no token and Git reads use anonymous access. Authentication and service errors still refuse the read. Its root key stays in the Gateway. All other steps use captured inputs and native outputs; no step reads intent or reports progress through Gateway HTTP.
 
 ### Terminal projection and retries
 

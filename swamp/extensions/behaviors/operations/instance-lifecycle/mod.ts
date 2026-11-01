@@ -13,8 +13,6 @@ import { LifecycleSession } from "./session.ts";
 
 const Kinds = z.enum([
   "instance.rename",
-  "instance.destroy",
-  "instance.create",
   "instance.register",
   "instance.clone",
   "instance.transfer",

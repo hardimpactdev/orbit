@@ -20,17 +20,6 @@ export type SourceSelection = {
   git_read: GitRead;
 };
 export interface DeploySourceLocal {
-  inspectDevelopment(
-    home: DevelopmentHome & { branch: string },
-  ): Promise<{ commit: string }>;
-  resolveDevelopment(
-    home: DevelopmentHome,
-    source: SourceSelection,
-  ): Promise<{ commit: string }>;
-  checkoutDevelopment(
-    home: DevelopmentHome,
-    target: { branch: string; commit: string },
-  ): Promise<{ commit: string }>;
   prepareRelease(
     home: ProductionHome,
     source: SourceSelection & { name: string; shared_paths: string[] },
@@ -388,25 +377,6 @@ export function localDeploySource(options: LocalOptions): DeploySourceLocal {
       "deployment.commit_not_on_branch",
     );
   }
-  async function developmentGuard(home: DevelopmentHome) {
-    const user = await account(home.user), self = +(await run("id", ["-u"]));
-    require(user.uid === self, "deployment.identity_changed");
-    await canonicalDirectory(home.home);
-    const directory = await stat(join(home.home, ".git"));
-    require(
-      directory?.type === "d" && directory.uid === user.uid &&
-        (await stat(home.home))?.uid === user.uid,
-    );
-    require(
-      (await gitRead(home, [
-        "config",
-        "--null",
-        "--get",
-        "remote.origin.url",
-      ])) === `${home.repository}\0`,
-    );
-    require(await gitRead(home, ["rev-parse", "--git-common-dir"]) === ".git");
-  }
   async function layout(home: ProductionHome) {
     await account(home.user);
     require(
@@ -611,141 +581,6 @@ export function localDeploySource(options: LocalOptions): DeploySourceLocal {
     }
   }
   return {
-    async inspectDevelopment(home) {
-      await developmentGuard(home);
-      await branchCheck(home, home.branch);
-      const branch = await git(home.user, home.home, [
-        "symbolic-ref",
-        "--quiet",
-        "--short",
-        "HEAD",
-      ]);
-      require(
-        branch.success && branch.output === home.branch,
-        "deployment.branch_changed",
-      );
-      const commit = await gitRead(home, ["rev-parse", "--verify", "HEAD"]);
-      require(commitValid(commit));
-      return { commit };
-    },
-    async resolveDevelopment(home, source) {
-      await developmentGuard(home);
-      await branchCheck(home, source.branch);
-      const tracking = `refs/remotes/origin/${source.branch}`;
-      const result = await git(
-        home.user,
-        home.home,
-        [
-          "fetch",
-          "--quiet",
-          "--no-tags",
-          "--",
-          home.repository,
-          `+refs/heads/${source.branch}:${tracking}`,
-        ],
-        source.git_read,
-        source.protocols,
-      );
-      require(result.success, "deployment.source_failed");
-      const commit = source.commit ??
-        await gitRead(home, ["rev-parse", "--verify", `${tracking}^{commit}`]);
-      if (source.commit !== null) {
-        await firstParent(home, tracking, source.commit);
-      }
-      require(commitValid(commit));
-      return { commit };
-    },
-    async checkoutDevelopment(home, target) {
-      await developmentGuard(home);
-      await branchCheck(home, target.branch);
-      require(commitValid(target.commit));
-      const directory = await localFilesystem().open(home.home, { read: true });
-      try {
-        try {
-          require(await directory.tryLock(true), "instance.lifecycle_busy");
-        } catch (error) {
-          if (error instanceof LocalDeployError) throw error;
-          throw new LocalDeployError("instance.lifecycle_busy");
-        }
-        const opened = await directory.stat(),
-          named = await Deno.lstat(home.home);
-        require(
-          opened.dev === named.dev && opened.ino === named.ino &&
-            !named.isSymlink,
-        );
-        require(
-          await gitRead(home, [
-            "status",
-            "--porcelain",
-            "--untracked-files=no",
-          ]) === "",
-          "deployment.checkout_dirty",
-        );
-        const local = `refs/heads/${target.branch}`;
-        if (
-          (await git(home.user, home.home, [
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            `${local}^{commit}`,
-          ])).success
-        ) {
-          require(
-            (await git(home.user, home.home, [
-              "merge-base",
-              "--is-ancestor",
-              local,
-              target.commit,
-            ])).success,
-            "deployment.branch_diverged",
-          );
-        }
-        const untracked =
-          (await gitRead(home, ["ls-files", "-z", "--others", "--directory"]))
-            .split("\0").filter(Boolean);
-        for (const raw of untracked) {
-          const entry = raw.replace(/\/$/, ""), slash = entry.lastIndexOf("/");
-          if (slash < 0) continue;
-          require(!entry.startsWith("/") && !entry.split("/").includes(".."));
-          const parent = entry.slice(0, slash);
-          if (
-            await gitRead(home, [
-              "ls-tree",
-              "-d",
-              target.commit,
-              "--",
-              parent,
-            ]) !== ""
-          ) continue;
-          const path = join(home.home, entry), info = await stat(path);
-          if (info?.type === "d") {
-            for (
-              const directory of (await tree(path)).filter((item) =>
-                item.type === "d"
-              )
-            ) await run("chmod", ["u+w", "--", directory.path], home.user);
-            await run("rm", ["-rf", "--", path], home.user);
-          } else if (info) await run("rm", ["--", path], home.user);
-        }
-        await gitRead(home, [
-          "checkout",
-          "--quiet",
-          "--no-track",
-          "-B",
-          target.branch,
-          target.commit,
-        ]);
-        require(
-          await gitRead(home, ["symbolic-ref", "--short", "HEAD"]) ===
-            target.branch,
-        );
-        const commit = await gitRead(home, ["rev-parse", "--verify", "HEAD"]);
-        require(commit === target.commit);
-        return { commit };
-      } finally {
-        directory.close();
-      }
-    },
     async prepareRelease(home, source) {
       await layout(home);
       require(nameValid(source.name));
@@ -993,12 +828,4 @@ export function localDeploySource(options: LocalOptions): DeploySourceLocal {
       return { removed, in_use };
     },
   };
-}
-
-/** Read-only checkout verification for the parent; never invokes an agent action. */
-export async function inspectDevelopment(
-  home: DevelopmentHome & { branch: string },
-  options: LocalOptions,
-): Promise<{ commit: string }> {
-  return await localDeploySource(options).inspectDevelopment(home);
 }

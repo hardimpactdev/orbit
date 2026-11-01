@@ -651,16 +651,10 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
       "rule": "gateway-http",
-      "count": 5,
+      "count": 1,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_local.ts",
@@ -837,96 +831,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-lifecycle/create_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_root.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_steps.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_system.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_teardown.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_teardown.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/instance-lifecycle/mod.ts",
       "rule": "custom-control",
       "count": 2,
@@ -966,26 +870,6 @@
         "/usr/bin/python3",
         "/usr/bin/sudo"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "secret-output",
-      "count": 2,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
@@ -2351,15 +2235,6 @@
         "workload/served",
         "workload/served-assets",
         "workload/served-command"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-instance-destroy.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 2,
-      "evidence": [
-        "cleanup/cleanup-${{ self.member.node_id }}",
-        "databases/database-${{ self.work.key }}"
       ]
     },
     {

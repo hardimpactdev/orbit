@@ -32,7 +32,7 @@ final readonly class SwampCommandStep
 
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector): Operation
     {
@@ -44,6 +44,9 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
         $direct->assertRun($operation, $runId);
+        if (! $direct->usesNativeTerminal($operation)) {
+            return $operation;
+        }
         $operation->refresh();
         if ($operation->status->terminal()) {
             return $operation;
@@ -177,7 +180,7 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string}  $selector
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
@@ -216,6 +219,28 @@ final readonly class SwampCommandStep
             }
         } elseif ($run['status'] === 'succeeded') {
             throw $this->unavailable();
+        }
+
+        foreach ($selector['captures'] ?? [] as $name => $capture) {
+            if (array_key_exists($name, $result)) {
+                continue;
+            }
+            foreach ($jobs as $job) {
+                if (($job['name'] ?? null) !== $capture['job']) {
+                    continue;
+                }
+                foreach ($job['steps'] as $step) {
+                    if (! is_array($step) || ($step['name'] ?? null) !== $capture['step'] || ($step['status'] ?? null) !== 'succeeded' || ! is_array($step['outputs'] ?? null)) {
+                        continue;
+                    }
+                    $outputs = $step['outputs'];
+                    if (! isset($capture['field'])) {
+                        $result[$name] = $outputs;
+                    } elseif (array_key_exists($capture['field'], $outputs)) {
+                        $result[$name] = $outputs[$capture['field']];
+                    }
+                }
+            }
         }
 
         return $result;
