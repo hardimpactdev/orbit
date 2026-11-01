@@ -1,38 +1,39 @@
-"""Publish one signed role certificate beside its existing Node-local key."""
+"""Publish the canonical role pair; all private-key work stays on its Node."""
 
-import grp
 import os
 import shutil
 
 from local import directory, emit, valid_pair
-from role_paths import KEY_ROOT, role_paths
+from role_paths import role_owner, role_paths, role_workspace
 
 
 def publish(leaf):
-    name, current, _ = role_paths(leaf)
-    if valid_pair(
-        current / (name + ".pem"),
-        current / (name + ".key"),
-        current / "root-ca.pem",
-        leaf,
-    ):
-        return {"applied": True}
-    workspace = KEY_ROOT / leaf["scope"] / leaf["version"]
-    if not valid_pair(
-        workspace / "cert.pem", workspace / "key.pem", workspace / "root.pem", leaf
-    ):
-        raise ValueError("certificate.role_pair_invalid")
-    gid = grp.getgrnam("caddy").gr_gid
-    directory(current, 0, gid, 0o750)
-    for source, target in (
-        ("cert.pem", name + ".pem"),
-        ("key.pem", name + ".key"),
-        ("root.pem", "root-ca.pem"),
-    ):
-        path = current / target
-        shutil.copyfile(workspace / source, path)
-        os.chown(path, 0, gid)
-        path.chmod(0o640)
+    certificate, key, root = role_paths(leaf)
+    uid, gid, directory_mode, file_mode = role_owner(leaf)
+    if not valid_pair(certificate, key, root, leaf):
+        workspace = role_workspace(leaf)
+        authority = root if leaf["scope"] == "role-swamp" else workspace / "root.pem"
+        if not valid_pair(
+            workspace / "cert.pem", workspace / "key.pem", authority, leaf
+        ):
+            raise ValueError("certificate.role_pair_invalid")
+        directory(certificate.parent, uid, gid, directory_mode)
+        shutil.copyfile(workspace / "cert.pem", certificate)
+        if leaf["scope"] == "role-swamp":
+            # Publish the staged Node-local key without retaining another copy.
+            os.replace(workspace / "key.pem", key)
+        else:
+            shutil.copyfile(workspace / "key.pem", key)
+            shutil.copyfile(workspace / "root.pem", root)
+    directory(certificate.parent, uid, gid, directory_mode)
+    files = (
+        [certificate, key]
+        if leaf["scope"] == "role-swamp"
+        else [certificate, key, root]
+    )
+    for path in files:
+        os.chown(path, uid, gid)
+        path.chmod(file_mode)
     return {"applied": True}
 
 
