@@ -608,10 +608,10 @@ Deno.test("Route DNS grace uses the general shipped-script rule; its old inline 
   assertEquals(await phaseControls(files), []);
   const changed = new Map(files);
   changed.set(
-    script,
-    files.get(script)!.replace("timeout 35", 'timeout "$BUDGET"'),
+    workflow,
+    files.get(workflow)!.replace("timeout 35", 'timeout "$BUDGET"'),
   );
-  assert(changed.get(script) !== files.get(script));
+  assert(changed.get(workflow) !== files.get(workflow));
   assert((await phaseControls(changed)).length > 0);
   const inline = JSON.stringify({
     name: "route-dns-grace",

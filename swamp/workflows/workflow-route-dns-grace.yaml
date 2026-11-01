@@ -24,7 +24,7 @@ jobs:
       behaviorName: route-dns-grace
       methodName: execute
       inputs:
-        run: bash "$ORBIT_GRACE_SCRIPT"
+        run: timeout 35 bash "$ORBIT_GRACE_SCRIPT"
         env:
           ORBIT_GRACE_SCRIPT: ${{ steps.assets.outputs.grace_script }}
     dependsOn:
