@@ -69,6 +69,32 @@ function policy_source(object $test): MockInterface
     return $github;
 }
 
+/** Seed an existing receipt without admitting a new production deployment. */
+function policy_receipt_operation(object $test, string $key, string $commit, string $command = 'instance:deploy:automatic'): Operation
+{
+    $route = Route::getRoutes()->getByName($command);
+    $start = StartsOperation::forRoute($route);
+
+    return Operation::query()->create([
+        'kind' => 'instance.deploy',
+        'idempotency_key' => $key,
+        'idempotency_fingerprint' => app(OperationRequestFingerprint::class)->make(
+            $test->fixture->caller,
+            $route->getName(),
+            ['instance' => $test->fixture->instance],
+            json_encode(['commit' => $commit], JSON_THROW_ON_ERROR),
+            $start,
+        ),
+        'target_type' => 'instance',
+        'target_id' => $test->fixture->instance->id,
+        'node_id' => $test->fixture->owner->id,
+        'status' => 'queued',
+        'sequence' => 1,
+        'attempts' => 0,
+        'input' => ['caller_node_id' => $test->fixture->caller->id, 'commit' => $commit],
+    ]);
+}
+
 it('requires Gateway authority for every policy contract even with target Node access', function (string $method, string $path): void {
     $caller = Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.222', 'wireguard_ip' => '10.44.0.222', 'user' => 'orbit']);
     $caller->accessibleNodes()->attach($this->fixture->owner->id);
@@ -142,8 +168,7 @@ it('exposes resume and rollback blocks without a tick and explicit history kind'
 });
 
 it('reads exact lost-response receipts and terminal evidence without a new start', function (): void {
-    $this->withHeader('Idempotency-Key', 'auto.lost')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
-    $operation = Operation::query()->sole();
+    $operation = policy_receipt_operation($this, 'auto.lost', $this->sha);
     $lookup = $this->url.'/deploy/automatic/receipt?request_key=auto.lost&commit='.$this->sha;
     $this->getJson($lookup)->assertOk()->assertJsonPath('data.found', true)->assertJsonPath('data.request_key', 'auto.lost')
         ->assertJsonPath('data.operation.id', $operation->id)->assertJsonPath('data.operation.input.caller_node_id', $this->fixture->caller->id)->assertJsonPath('data.deployment', null);
@@ -160,14 +185,14 @@ it('does not admit work for a missing receipt or match another commit or manual 
     $lookup = $this->url.'/deploy/automatic/receipt?request_key=unknown&commit='.$this->sha;
     $this->getJson($lookup)->assertOk()->assertJsonPath('data.found', false)->assertJsonPath('data.operation', null);
     $this->assertDatabaseCount('operations', 0);
-    $this->withHeader('Idempotency-Key', 'unknown')->postJson($this->url.'/deploy', ['commit' => $this->base])->assertAccepted();
+    policy_receipt_operation($this, 'unknown', $this->base, 'instance:deploy');
     $this->getJson($lookup)->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
     $this->getJson($this->url.'/deploy/automatic/receipt?request_key=unknown&commit='.$this->base)->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
     $this->assertDatabaseCount('operations', 1);
 });
 
 it('binds receipt reads to the original caller', function (): void {
-    $this->withHeader('Idempotency-Key', 'auto')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
+    policy_receipt_operation($this, 'auto', $this->sha);
     $caller = Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.222', 'wireguard_ip' => '10.44.0.222', 'user' => 'orbit']);
     $caller->accessibleNodes()->attach($this->fixture->caller->id);
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
@@ -175,7 +200,7 @@ it('binds receipt reads to the original caller', function (): void {
 });
 
 it('preserves worker-lost outcomes with missing deployment evidence', function (): void {
-    $this->withHeader('Idempotency-Key', 'lost.worker')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
+    policy_receipt_operation($this, 'lost.worker', $this->sha);
     Operation::query()->sole()->update(['status' => 'failed', 'error_code' => 'operation.worker_lost']);
     $this->getJson($this->url.'/deploy/automatic/receipt?request_key=lost.worker&commit='.$this->sha)->assertOk()
         ->assertJsonPath('data.operation.error_code', 'operation.worker_lost')->assertJsonPath('data.deployment', null);
@@ -283,7 +308,7 @@ it('keeps policy delivery independent of an Instance deployment lock', function 
 it('requires valid receipt identity and conflicts on a changed automatic commit', function (): void {
     $this->getJson($this->url.'/deploy/automatic/receipt?request_key=bad/key&commit='.$this->sha)->assertUnprocessable();
     $this->getJson($this->url.'/deploy/automatic/receipt?request_key=valid&commit=main')->assertUnprocessable();
-    $this->withHeader('Idempotency-Key', 'auto.commit')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
+    policy_receipt_operation($this, 'auto.commit', $this->sha);
     $this->getJson($this->url.'/deploy/automatic/receipt?request_key=auto.commit&commit='.$this->base)->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
     $this->assertDatabaseCount('operations', 1);
 });
@@ -430,7 +455,7 @@ final class ReceiptAdmissionSettingsController
 }
 
 it('derives receipt fingerprints from the live admission route attribute', function (): void {
-    $this->withHeader('Idempotency-Key', 'settings')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
+    policy_receipt_operation($this, 'settings', $this->sha);
     $route = Route::getRoutes()->getByName('instance:deploy:automatic');
     $route->setAction([...$route->getAction(), 'uses' => ReceiptAdmissionSettingsController::class.'@automatic', 'controller' => ReceiptAdmissionSettingsController::class.'@automatic']);
     $route->flushController();
