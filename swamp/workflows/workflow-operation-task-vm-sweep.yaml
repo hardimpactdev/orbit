@@ -71,9 +71,7 @@ inputs:
           - max_task_vm_id
           additionalProperties: false
         ssh_execution:
-          type:
-          - object
-          - 'null'
+          type: object
       required:
       - node_id
       - provider
@@ -82,7 +80,6 @@ inputs:
       - image_cutoff
       - running_stamps
       - scope
-      - ssh_execution
       additionalProperties: false
     execution_secrets:
       type: object
@@ -137,21 +134,29 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
-  - name: result
+  - name: format
     target: orbit-node-209
     dependsOn:
     - step: incus
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     - step: cloud
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-sweep-input'
+      behaviorName: ${{ "swp-format-"+run.id }}
+      methodName: result
+      inputs:
+        provider: ${{ inputs.intent.provider }}
+        steps: ${{ steps }}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: format
+      condition:
+        type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
@@ -162,4 +167,16 @@ jobs:
 
           '
         env:
-          RESULT: '${{ inputs.intent.provider == "incus" ? steps.incus.outputs.result.stdout : steps.cloud.outputs.result.stdout }}'
+          RESULT: ${{ steps.format.outputs.result_json }}
+  - name: accepted
+    target: orbit-node-209
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: steps.format.outputs.ready == true
+      severity: high
+      message: Task VM sweep did not complete.
+queueTimeout: 60

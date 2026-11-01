@@ -20,6 +20,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -114,6 +115,20 @@ it('freezes ownership before dispatch and excludes post-admission IDs', function
     $vm = directSweepVm('provisioning', '10.44.0.129');
     expect(app(DirectOperation::class)->workflowInputs($operation)['intent']['scope']['live_names'])->toBe([])
         ->and(app(DirectOperation::class)->workflowInputs($operation)['intent']['scope']['max_task_vm_id'])->toBeLessThan($vm->id);
+});
+
+it('protects allocations committed between the ownership capture queries', function (): void {
+    $allocated = null;
+    DB::listen(function (QueryExecuted $query) use (&$allocated): void {
+        if ($allocated === null && str_contains($query->sql, 'select "name" from "task_vms"')) {
+            $allocated = false;
+            $allocated = directSweepVm('provisioning', '10.44.0.132');
+        }
+    });
+    $operation = directSweepAdmit();
+    expect($allocated)->toBeInstanceOf(TaskVm::class);
+    expect($operation->input['scope']['live_names'])->not->toContain($allocated->name)
+        ->and($operation->input['scope']['max_task_vm_id'])->toBeLessThan($allocated->id);
 });
 
 it('retires only expired nonrunning build intent before native dispatch', function (): void {

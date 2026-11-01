@@ -45,7 +45,8 @@ final readonly class TaskVmSweepWorkflowInput
             }
         }
 
-        $scope = ['live_names' => $live->orderBy('id')->pluck('name')->all(), 'max_task_vm_id' => TaskVm::query()->max('id') ?? 0];
+        $maxTaskVmId = TaskVm::query()->max('id') ?? 0;
+        $scope = ['max_task_vm_id' => $maxTaskVmId, 'live_names' => $live->orderBy('id')->pluck('name')->all()];
         if ($host !== null) {
             $scope += ['project' => $host->project, 'pool' => $host->pool, 'operator_owned' => $host->operatorOwned,
                 'max_build_id' => TaskVmImageBuild::query()->max('id') ?? 0,
@@ -56,7 +57,7 @@ final readonly class TaskVmSweepWorkflowInput
         }
 
         return ['node_id' => $node->id, 'provider' => $provider,
-            'ssh_execution' => $host === null ? null : $this->ssh->forNode($node), 'scope' => $scope,
+            ...($host === null ? [] : ['ssh_execution' => $this->ssh->forNode($node)]), 'scope' => $scope,
             'ci_runner' => $node->roles()->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists(),
             'stray_vm_ids' => $host === null ? [] : array_map(static fn (TaskVm $vm): int => $vm->id, TaskVmHostAudit::strayRecords($node)),
             'image_cutoff' => now()->subHours(2)->getTimestamp(),

@@ -8,38 +8,6 @@ inputs:
   properties:
     scope:
       type: object
-      properties:
-        live_names:
-          type: array
-          items: &id001
-            type: string
-            pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$
-          maxItems: 4096
-        max_task_vm_id:
-          type: integer
-          minimum: 0
-        project: *id001
-        pool: *id001
-        operator_owned:
-          type: array
-          items:
-            type: string
-          maxItems: 4096
-        max_build_id:
-          type: integer
-          minimum: 0
-        recorded_build_ids: &id002
-          type: array
-          items:
-            type: integer
-            minimum: 1
-          maxItems: 4096
-        retired_build_ids: *id002
-        protected_build_ids: *id002
-      required:
-      - live_names
-      - max_task_vm_id
-      additionalProperties: false
     resources:
       type: array
       items:
@@ -129,3 +97,4 @@ jobs:
     - step: remove
       condition:
         type: succeeded
+queueTimeout: 60

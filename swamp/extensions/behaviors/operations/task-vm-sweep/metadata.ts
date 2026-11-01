@@ -143,7 +143,7 @@ export const behavior = {
         terminal: {
             lifetime: "infinite",
             garbageCollection: 10,
-            schema: z.object({ result_json: z.string() }),
+            schema: z.object({ result_json: z.string(), ready: z.boolean() }),
         },
     },
     methods: {
@@ -312,6 +312,52 @@ export const behavior = {
                 };
             },
         },
+        result: {
+            description:
+                "Publish the selected child's public receipt or a safe native failure",
+            arguments: z.object({
+                provider: z.enum(["incus", "upcloud"]),
+                steps: z.record(z.string(), z.unknown()),
+            }),
+            async execute(
+                args: { provider: string; steps: Record<string, unknown> },
+                ctx: Context,
+            ) {
+                const child = z.object({
+                    status: z.string(),
+                    outputs: z.unknown().optional(),
+                }).parse(
+                    args.steps[args.provider === "incus" ? "incus" : "cloud"],
+                );
+                const receipt = child.status === "succeeded"
+                    ? z.object({
+                        ready: z.literal(true),
+                        observed_names: z.array(Name).max(4096),
+                        deleted_names: z.array(Name).max(4096),
+                    }).parse(
+                        JSON.parse(
+                            z.object({
+                                result: z.object({ stdout: z.string() }),
+                            }).parse(child.outputs).result.stdout,
+                        ),
+                    )
+                    : {
+                        ready: false,
+                        error_code: "task_vm.host_command_failed",
+                        failed_step: args.provider === "incus"
+                            ? "incus"
+                            : "cloud",
+                    };
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("terminal", "terminal", {
+                            ready: receipt.ready,
+                            result_json: JSON.stringify(receipt),
+                        }),
+                    ],
+                };
+            },
+        },
         terminal: {
             description:
                 "Shape a successful final provider observation into public sweep JSON",
@@ -326,6 +372,7 @@ export const behavior = {
                 return {
                     dataHandles: [
                         await ctx.writeResource("terminal", "terminal", {
+                            ready: true,
                             result_json: JSON.stringify({
                                 ready: true,
                                 observed_names: [

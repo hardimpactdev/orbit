@@ -66,23 +66,25 @@ raise SystemExit(result.returncode)
     def run_sweep(self, success=True):
         run=json.loads(self.cli('workflow','run','operation-task-vm-sweep','--input',json.dumps(self.inputs),success=success).stdout)
         history=json.loads(self.cli('workflow','history','get',run['id']).stdout)
+        print('SWEEP-NATIVE-DURATION '+json.dumps({'provider':self.inputs['intent']['provider'],'status':run['status'],'started_at':run.get('startedAt'),'completed_at':run.get('completedAt'),'duration':run.get('duration')}),flush=True)
         return run,history
 
     def test_incus_cleanup_preserves_live_and_future_resources(self):
         run,history=self.run_sweep()
         self.assertEqual(run['status'],'succeeded')
-        result=json.loads(history['jobs'][0]['steps'][-1]['outputs']['stdout'])
+        result=json.loads(next(s for s in history['jobs'][0]['steps'] if s['name']=='result')['outputs']['stdout'])
         self.assertEqual(set(result['deleted_names']),{'tvm-6','tvm-image-16','tvm-6-topology-seed'})
         self.assertEqual(json.loads(self.state.read_text()),{'instances':['tvm-7','tvm-11','tvm-image-18'],'volumes':['tvm-7-topology-seed']})
         _,again=self.run_sweep()
-        self.assertEqual(json.loads(again['jobs'][0]['steps'][-1]['outputs']['stdout'])['deleted_names'],[])
+        self.assertEqual(json.loads(next(s for s in again['jobs'][0]['steps'] if s['name']=='result')['outputs']['stdout'])['deleted_names'],[])
 
     def test_ssh_failure_skips_cleanup_and_keeps_native_failure(self):
         self.block.touch()
         run,history=self.run_sweep(False)
         self.assertEqual(run['status'],'failed')
         self.assertFalse(self.calls.exists())
-        self.assertEqual(history['jobs'][0]['steps'][-1]['status'],'skipped')
+        self.assertEqual(history['jobs'][0]['steps'][-1]['status'],'failed')
+        self.assertEqual(json.loads(next(s for s in history['jobs'][0]['steps'] if s['name']=='result')['outputs']['stdout']),{'ready':False,'error_code':'task_vm.host_command_failed','failed_step':'incus'})
 
     def enable_cloud(self):
         import uuid
@@ -136,18 +138,21 @@ raise SystemExit(result.returncode)
         self.cli('vault','create','local_encryption','orbit-control-inputs')
         self.cli('vault','put','orbit-control-inputs','task-vm-upcloud-token',input=self.cloud_token)
         self.inputs['execution_secrets']={'upcloud':{'vault':'orbit-control-inputs','key':'task-vm-upcloud-token'}}
-        self.inputs['intent'].update({'provider':'upcloud','ssh_execution':None,'scope':{'live_names':['tvm-7'],'max_task_vm_id':10},'image_cutoff':1735689600})
+        self.inputs['intent'].pop('ssh_execution')
+        self.inputs['intent'].update({'provider':'upcloud','scope':{'live_names':['tvm-7'],'max_task_vm_id':10},'image_cutoff':1735689600})
 
     def test_cloud_cleanup_uses_canonical_api_vault_and_preserves_live_and_future_ids(self):
         self.enable_cloud()
         _run,history=self.run_sweep()
-        result=json.loads(history['jobs'][0]['steps'][-1]['outputs']['stdout'])
+        result=json.loads(next(s for s in history['jobs'][0]['steps'] if s['name']=='result')['outputs']['stdout'])
         self.assertTrue(result['ready'])
         self.assertEqual(set(result['deleted_names']),{'tvm-6','orbit-task-base-20240101000000-unverified'})
         self.assertEqual({v['title'] for v in self.cloud.values()},{'tvm-7','tvm-11'})
         self.assertFalse(self.templates)
         self.assertFalse(self.calls.exists())
         self.assertEqual(sum(method=='POST' for method,_ in self.cloud_calls),1)
+        _,again=self.run_sweep()
+        self.assertEqual(json.loads(next(s for s in again['jobs'][0]['steps'] if s['name']=='result')['outputs']['stdout'])['deleted_names'],[])
 
     def test_cloud_pending_stop_fails_once_without_a_delete_or_custom_wait(self):
         self.enable_cloud();self.pending_stop=True

@@ -18,72 +18,6 @@ inputs:
       - task_vm.sweep_host
     intent:
       type: object
-      properties:
-        node_id:
-          type: integer
-          minimum: 1
-        provider:
-          type: string
-          enum:
-          - incus
-          - upcloud
-        ci_runner:
-          type: boolean
-        stray_vm_ids: &id002
-          type: array
-          items:
-            type: integer
-            minimum: 1
-          maxItems: 4096
-        image_cutoff:
-          type: integer
-        running_stamps:
-          type: array
-          items:
-            type: string
-        scope:
-          type: object
-          properties:
-            live_names:
-              type: array
-              items: &id001
-                type: string
-                pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$
-              maxItems: 4096
-            max_task_vm_id:
-              type: integer
-              minimum: 0
-            project: *id001
-            pool: *id001
-            operator_owned:
-              type: array
-              items:
-                type: string
-              maxItems: 4096
-            max_build_id:
-              type: integer
-              minimum: 0
-            recorded_build_ids: *id002
-            retired_build_ids: *id002
-            protected_build_ids: *id002
-          required:
-          - live_names
-          - max_task_vm_id
-          additionalProperties: false
-        ssh_execution:
-          type:
-          - object
-          - 'null'
-      required:
-      - node_id
-      - provider
-      - ci_runner
-      - stray_vm_ids
-      - image_cutoff
-      - running_stamps
-      - scope
-      - ssh_execution
-      additionalProperties: false
     execution_secrets:
       type: object
       additionalProperties:
@@ -258,3 +192,4 @@ jobs:
     - step: format
       condition:
         type: succeeded
+queueTimeout: 60

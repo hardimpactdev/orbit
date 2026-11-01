@@ -33,6 +33,10 @@ Deno.test("cloud sweep only selects admitted orphan IDs and inactive old image s
             ),
         ],
         templates: [{
+            uuid: id(32),
+            title: "Ubuntu Server 24.04 LTS (Noble Numbat)",
+            access: "public",
+        }, {
             uuid: id(30),
             title: "orbit-task-base-20240101000000-unverified",
             access: "private",
