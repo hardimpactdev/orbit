@@ -228,7 +228,8 @@ final readonly class NodeFirewallRuleCatalog
         $router = $nodeOverrides === []
             ? $node
             : $this->withNodeOverrides($node, $nodeOverrides[$node->id] ?? []);
-        $destination = is_string($router->lan_ip) ? $router->lan_ip : null;
+        $destination = array_key_exists('lan_ip', $nodeOverrides[$node->id] ?? [])
+            ? $router->lan_ip : app(RouteRenderContext::class)->lanIp($router);
 
         if ($destination === null || filter_var($destination, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             return [];
@@ -238,7 +239,8 @@ final readonly class NodeFirewallRuleCatalog
 
         foreach ($policy->eligibleSources($node, $nodeOverrides, $clusterOverrides) as $source) {
             foreach (array_keys(RouterLanIngressPolicy::Families) as $prefix) {
-                $rules[] = $this->routerLanIngressRule((string) $source->lan_ip, $destination, $source->id, $prefix);
+                $rules[] = $this->routerLanIngressRule((string) (array_key_exists('lan_ip', $nodeOverrides[$source->id] ?? [])
+                    ? $source->lan_ip : app(RouteRenderContext::class)->lanIp($source)), $destination, $source->id, $prefix);
             }
         }
 

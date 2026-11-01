@@ -22,6 +22,20 @@ Node209 runs Serve and every Swamp worker. Native Node actions run there and rea
 
 Lane21 stops existing workers by family after their placements move and replacement execution is verified. Source conversion does not stop workers, revoke credentials or prove target key coverage. The separately tracked first-key rollout owns those effects.
 
+## Public role capture for enrollment
+
+`NodeRoleConvergeInput::capture(actual, assignment, candidate, normalizedPublicSettings)` captures immutable role intent for the actual recorded assignment. The optional candidate must name that same Linux Node. Capture performs no host action, creates no Operation and writes no Node, role, setting or Process. The owning admission transaction prepares existing role runtime intent first with `NodeRoleRuntimeInput::prepare(actual, assignment, candidate)`.
+
+Omitting the fourth argument preserves stored settings. An explicit null or empty settings map clears managed settings and preserves unowned members through `NodeSettingsNormalizer::storedOver`. The public payload excludes unowned settings; the observer digest includes their effective values. Candidate account, address, storage root, runtime and footprint are captured together. Publication snapshots keep the stored before state outside the prospective scope; only after uses candidate identity, settings and planned role certificate readiness. Router LAN rules read the candidate membership and destination through the canonical policy; explicit policy overrides remain authoritative. Nested and failed captures restore the prior render scope.
+
+The result is `{intent, participant_node_ids}`. `intent.ssh` and `intent.targets` use the one canonical 209 SSH identity. A candidate target without stored host keys has `host_keys: null`; this is required native binding to the parent's fingerprint-verified bootstrap pin before any effect. Other participants require full stored pins. Null is never an accepted SSH policy.
+
+A candidate role has `prepared_tools_required: true`, no JavaScript installer and no manager materializer. Its parent must supply the typed same-Node tool receipt before execution. The capture does not prove that tools, runtime, publications or footprint have converged. The complete native forward, external restore and finalize composition remains a separate requirement; this source API alone does not activate enrollment or replace a retained writer.
+
+### Private runtime material
+
+Existing runtime material remains private. `NodeRoleRuntimeSource::resolveRoleMaterial(intent, nodeId, candidate)` accepts the same explicit candidate when resolving a provisional Analytics Process or prospective Metrics configuration. The result retains its existing `OperationSecretValue` wrapper and redactions. This lower grants no Operation authority; the parent delivers only its JSON value through the canonical execution copy.
+
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.

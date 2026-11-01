@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
@@ -38,21 +39,25 @@ final readonly class NodeRoleDirectInput
         if ($assignment->node_id !== $node->id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The role snapshot requires its admitted Node assignment.', 422);
         }
+        $render = app(RouteRenderContext::class);
+        $candidate = $render->enrollment();
+        $candidate = $candidate?->nodeId === $node->id ? $candidate : null;
+        $user = $render->user($node);
         $role = $assignment->role;
         $prerequisites = $this->prerequisites->input($node, $role,
-            new ManagedUserAccount($node->user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken));
+            new ManagedUserAccount($user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken));
         unset($prerequisites['user'], $prerequisites['group'], $prerequisites['home']);
         $footprint = $this->footprint->capture($node, false, false);
         unset($footprint['secret_hash']);
 
-        return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
-            'assignment_id' => $assignment->id, 'role' => $role->value, 'created' => $created, 'user' => $node->user,
+        return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($candidate ?? $node),
+            'assignment_id' => $assignment->id, 'role' => $role->value, 'created' => $created, 'user' => $user,
             'prerequisites' => $prerequisites, 'firewall' => $role === RoleName::Database ? null : $this->firewall->converge($node, $role),
             'footprint' => $footprint,
-            'javascript' => in_array($role, [RoleName::AppDev, RoleName::AppProd], true) ? NodeRecipeProgram::javascript($node, $role) : null,
-            'storage_root' => $role === RoleName::AppDev ? (ValidatedData::object($node->settings['apps'] ?? [])['path'] ?? null) : null,
+            'javascript' => $candidate === null && in_array($role, [RoleName::AppDev, RoleName::AppProd], true) ? NodeRecipeProgram::javascript($node, $role) : null,
+            'storage_root' => $role === RoleName::AppDev ? (ValidatedData::object($render->settings($node)['apps'] ?? [])['path'] ?? null) : null,
             'router_lan' => $role === RoleName::Router ? $this->firewall->routerLan($node) : null,
-            'managers' => in_array($role, [RoleName::AppDev, RoleName::AppProd], true)
+            'managers' => $candidate === null && in_array($role, [RoleName::AppDev, RoleName::AppProd], true)
                 ? array_map(fn (ToolManagerName $manager): array => ['manager' => $manager->value, 'platform' => $node->platform,
                     'architecture' => MachineArchitecture::normalize($node->architecture), 'user' => $node->user,
                     'materialize' => $this->managers->input($node, $manager)['materialize'] ?? null], [ToolManagerName::Vp, ToolManagerName::Composer]) : [],

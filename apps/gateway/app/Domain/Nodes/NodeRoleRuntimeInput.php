@@ -16,6 +16,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -37,9 +38,12 @@ final readonly class NodeRoleRuntimeInput
         private ServiceMetricsProjection $services) {}
 
     /** Record-only preparation runs in the parent admission transaction, before immutable capture. */
-    public function prepare(Node $node, NodeRole $assignment): void
+    public function prepare(Node $node, NodeRole $assignment, ?NodeEnrollmentCandidate $candidate = null): void
     {
         $this->assignment($node, $assignment);
+        if ($candidate !== null && $candidate->nodeId !== $node->id) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The runtime candidate belongs to another Node.', 422);
+        }
         if ($assignment->role === RoleName::Metrics) {
             $this->metricsSecrets->passwordForConvergence($node);
         } elseif ($assignment->role === RoleName::WebSocket) {
@@ -48,8 +52,8 @@ final readonly class NodeRoleRuntimeInput
             $settings = $this->analytics->find($node) ?? throw new ResourceOperationException('analytics.settings_missing', 'Analytics storage intent is missing.', 422);
             $storage = $this->storage->assert($settings->postgresProcessId, $settings->clickhouseProcessId);
             $data = PlausibleProcess::data($node, $this->analytics->version($node),
-                AnalyticsStorageConnection::from($storage['postgres'], $storage['clickhouse']), $this->analyticsSecrets->secretKeyBase($node));
-            $target = $this->targets->forNodeAdmission($node);
+                AnalyticsStorageConnection::from($storage['postgres'], $storage['clickhouse']), $this->analyticsSecrets->secretKeyBase($node), $candidate);
+            $target = $candidate === null ? $this->targets->forNodeAdmission($node) : $this->targets->forNodeCapture($node, $candidate);
             try {
                 $this->processes->execute($data, $target);
             } catch (ResourceOperationException $exception) {
@@ -74,10 +78,13 @@ final readonly class NodeRoleRuntimeInput
         if (! in_array($assignment->role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
             return null;
         }
+        $render = app(RouteRenderContext::class);
+        $candidate = $render->enrollment();
+        $target = $candidate?->nodeId === $node->id ? $candidate : $node;
         $input = ['role' => $assignment->role->value, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
-            'agent_sha256' => $this->agents->pin($node), 'material' => ['$secret' => 'node.role_runtime', 'id' => $node->id]];
+            'agent_sha256' => $this->agents->pin($target), 'material' => ['$secret' => 'node.role_runtime', 'id' => $node->id]];
         if ($assignment->role === RoleName::WebSocket) {
-            return [...$input, 'user' => $node->user, 'install_path' => config('orbit.websocket.install_path'),
+            return [...$input, 'user' => $render->user($node), 'install_path' => config('orbit.websocket.install_path'),
                 'repository' => config('orbit.websocket.repository'), 'ref' => config('orbit.websocket.ref'), 'port' => config('orbit.websocket.port')];
         }
         if ($assignment->role === RoleName::Metrics) {
@@ -86,16 +93,17 @@ final readonly class NodeRoleRuntimeInput
             foreach ($this->exporters->for($node) as $item) {
                 $target = $item->node;
                 if ($item->selection->selected) {
-                    $targets[] = ['name' => $target->name, 'address' => $target->wireguard_ip];
+                    $targets[] = ['name' => $render->name($target), 'address' => $render->wireguardIp($target)];
                 }
                 $service = $this->services->forNode($node, $target);
-                $fleet[] = ['node_id' => $target->id, 'agent_sha256' => $this->agents->pin($target),
-                    'address' => $target->wireguard_ip, 'name' => $target->name, 'selected' => $item->selection->selected,
+                $desired = $candidate?->nodeId === $target->id ? $candidate : $target;
+                $fleet[] = ['node_id' => $target->id, 'agent_sha256' => $this->agents->pin($desired),
+                    'address' => $render->wireguardIp($target), 'name' => $render->name($target), 'selected' => $item->selection->selected,
                     'caddy' => $service->caddy, 'fpm' => $service->fpm, 'hosts' => $service->hosts,
                     'instance_ids' => array_map(static fn ($instance): int => $instance->id, $service->instances)];
             }
 
-            return [...$input, 'address' => $node->wireguard_ip, 'targets' => $targets, 'fleet' => $fleet];
+            return [...$input, 'address' => $render->wireguardIp($node), 'targets' => $targets, 'fleet' => $fleet];
         }
         $process = $this->plausible($node);
         $settings = $this->analytics->find($node) ?? throw new ResourceOperationException('analytics.settings_missing', 'Analytics storage intent is missing.', 422);
@@ -108,7 +116,7 @@ final readonly class NodeRoleRuntimeInput
         }
 
         return [...$input, 'installation' => $this->installation($node, $process),
-            'health_url' => 'http://'.$node->wireguard_ip.':'.PlausibleProcess::PORT.'/api/health',
+            'health_url' => 'http://'.$render->wireguardIp($node).':'.PlausibleProcess::PORT.'/api/health',
             'clickhouse' => ['node_id' => $storageNode->id, 'agent_sha256' => $this->agents->pin($storageNode), 'process_id' => $clickhouse->id]];
     }
 
@@ -129,9 +137,12 @@ final readonly class NodeRoleRuntimeInput
     /** @return array<string,mixed> */
     private function installation(Node $node, Process $process): array
     {
-        return ['process_id' => $process->id, 'agent_sha256' => $this->agents->pin($node), 'runtime' => 'docker',
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        $target = $candidate?->nodeId === $node->id ? $this->targets->forNodeCapture($node, $candidate) : $this->targets->forInstallation($process);
+
+        return ['process_id' => $process->id, 'agent_sha256' => $this->agents->pin($candidate?->nodeId === $node->id ? $candidate : $node), 'runtime' => 'docker',
             'name' => $this->docker->containerName($process), 'desired' => 'running', 'on_demand' => false,
-            'retired' => null, 'spec' => $this->docker->specHash($process, $this->targets->forInstallation($process))];
+            'retired' => null, 'spec' => $this->docker->specHash($process, $target)];
     }
 
     private function plausible(Node $node): Process

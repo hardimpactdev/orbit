@@ -6,6 +6,7 @@ namespace App\Domain\Processes;
 
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -44,6 +45,17 @@ final readonly class ProcessTargetResolver
         $this->ensureActiveNode($node);
 
         return $this->nodeContext($node);
+    }
+
+    /** Pure target rendering for the owning enrollment's actual Node reservation. */
+    public function forNodeCapture(Node $actual, NodeEnrollmentCandidate $candidate): ProcessTarget
+    {
+        if (! $actual->exists || $actual->id !== $candidate->nodeId || $candidate->platform !== 'linux'
+            || ! in_array($actual->status, [LifecycleStatus::Active, LifecycleStatus::Provisioning, LifecycleStatus::Failed], true)) {
+            throw new ResourceOperationException('process.target_unsupported', 'The candidate must name its real Linux Node reservation.', 422);
+        }
+
+        return $this->nodeContext($actual, $candidate->user);
     }
 
     public function forProcess(#[SensitiveParameter] Process $process): ProcessTarget
@@ -153,11 +165,11 @@ final readonly class ProcessTargetResolver
         };
     }
 
-    private function nodeContext(Node $node): ProcessTarget
+    private function nodeContext(Node $node, ?string $admittedUser = null): ProcessTarget
     {
         $this->ensureLinux($node);
 
-        $user = $node->user;
+        $user = $admittedUser ?? $node->user;
         $workingDirectory = "/home/{$user}";
 
         if (! $this->safeAbsolutePath($workingDirectory)) {
