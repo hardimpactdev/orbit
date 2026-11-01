@@ -23,7 +23,7 @@ A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` 
 
 Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
-Never load `swamp/` into production serve or log in to 209 for a port. Any change under `swamp/workflows/`, to a grant, a declaration or a public projection changes behavior and needs a receipt, even under a "retire" or "remove" title (#2257, #2259). Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so; a live check follows the load. Each kind keeps a proof file, `swamp/proof/<kind>.json` (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). It holds the `prepare` and `request` CLI calls, a partial expected `envelope`, budgets, F9 phases, parity tests, `queue_timeout_seconds` and the default `topology`. No secret appears in it or in argv.
+Never use production serve or a 209 login for a port. Any change under `swamp/workflows/`, to a grant, a declaration or a public projection, even in Gateway files only, changes behavior and needs a receipt, even under a "retire" or "remove" title (#2257, #2259). Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so; a live check follows the load. Each kind keeps a [proof file](#test-layout).
 
 ### Translate a legacy command
 
@@ -33,7 +33,7 @@ Use these steps in step 4 of the loop.
 2. **One legacy phase, one step.** Each legacy phase becomes one script-file step on one Node. A phase-order change needs a [documented reason](/swamp/porting-retros#documented-f9-deviations) in the PR body.
 3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature) and prefer an official model over a script. The PR names what you checked.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Secrets become `{vault, key}` descriptors under `execution_secrets`.
-5. **Refuse first, then print the result.** The script checks preconditions before its first write. It prints one public JSON object and a redacted stderr tail.
+5. **Refuse first, then print the result.** The script checks preconditions before its first write. It prints one public JSON object and keeps a redacted stderr tail.
 6. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
 7. **Delete the old path in the same PR.** Remove the executor, its tests, scripts and callbacks, and its `swamp-shape-baseline.json` rows.
 
@@ -124,7 +124,7 @@ Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOpera
 | --- | --- |
 | [ ] | Validate and record the complete immutable intent at admission. Use shared `StartSwampRun`; its builder sets Operation, kind and Node identity. Remove intent, private-material and status callbacks. |
 | [ ] | Push a changed Gateway-owned secret with `SwampCommandStep::executionCopy` and pass only `{vault, key}` descriptors; VM-created Pi credentials stay on the VM. Declare one fixed terminal selector; `projectTerminal` reads history once and calls the family projector. |
-| [ ] | Projection keeps an exact native terminal that met its budget, even when it arrives after the Gateway expiry. Use the single history read; add no timer, retry or second reader. |
+| [ ] | Projection keeps an exact native terminal that met its budget, even after the Gateway expiry, and drops the `timed_out` mark. One history read; no timer, retry or second reader. |
 
 ## Set the time budget
 
@@ -157,7 +157,7 @@ Put each test where its project's CI runs it.
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
 | Parity tests ported from the legacy feature tests | Every legacy case, including edge cases, gives the same public result natively. |
 | A generator drift test, when a generator writes the workflow | The committed YAML equals the generator output. Generate readable YAML, not JSON in YAML behind `deno-fmt-ignore`. |
-| `swamp/proof/<kind>.json` | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. |
+| `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or the v0 design on beast until it lands) | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. No secret appears in it or in argv. |
 
 ## Check all seven boundary decisions
 
@@ -240,9 +240,9 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2281, lanes 17 and 27 | F9 means the legacy code and tests at `6291bb036`: its sweep stops a host at the first failure. Over two steps per legacy call needs a reason; #2281 ran 22 for 6. |
 | #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
-| Lane 17 on #2201, #2208, #2210, #2304, #2310 | Gateway macros never reach a shell. Read `data.latest`, not `data.query`. Several workflows lacked `queueTimeout`; #2210 rewrote a script; phase-order reasons belong in the PR body. |
+| Lane 17 on #2201, #2208, #2210, #2304, #2310 | No step receives a Gateway macro; #2304 expands it through `GatewaySetupSteps` after checking admitted digests. Read `data.latest`, and set `queueTimeout` everywhere. #2210 rewrote a script. |
 | PLAN F10, F12, F13, F14 | Port inside a versioned dev topology through `bin/swamp-proof`; the PR carries the receipt, which names the topology version. Topologies are built from Node roles. |
-| #2304 (B), lane 17 | Carry Gateway-rewritten values and legacy exit-code cases. Redact the whole output, then cut the tail. Private stdout in native history waits on A. |
+| #2304 (B), lane 17 | Keep legacy exit-code and error-name cases or explain each change. Redact the whole output before cutting the tail. Private stdout waits on A; F1 does not cover it. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8, F11, orchestrator rulings | Every kind gets an expiry: measured budget, else 30 minutes until the first success, then the longest successful run times 1.5. Topologies die after 60 minutes without a run (8 h at most). |
 | Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, window asserts and one `exec` per command gave up to about 20 steps per legacy call (#2253). #2248's one-shot observe regressed legacy polling. |
