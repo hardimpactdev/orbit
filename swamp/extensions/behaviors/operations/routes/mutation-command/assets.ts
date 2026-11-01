@@ -90,7 +90,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.11.01.3",
+    version: "2026.11.01.4",
     resources: {
         lan_changes: {
             schema: z.object({
@@ -135,6 +135,11 @@ export const behavior = {
                 migrated_node_ids: z.array(Id),
             }),
         },
+        dns_grace_assets: {
+            lifetime: "infinite",
+            garbageCollection: 10,
+            schema: z.object({ grace_script: z.string() }),
+        },
         assets: {
             lifetime: "infinite",
             garbageCollection: 10,
@@ -155,6 +160,16 @@ export const behavior = {
         },
     },
     methods: {
+        dnsGraceAssets: {
+            description: "Resolve the private DNS TTL grace script on this worker",
+            arguments: z.object({}).strict(),
+            execute: async (_args: Record<string, never>, ctx: Context) => ({
+                dataHandles: [await ctx.writeResource("dns_grace_assets", "dns_grace_assets", {
+                    grace_script: ctx.extensionFile("scripts/route_dns_grace.sh"),
+                })],
+            }),
+        },
+
         lanChanges: {
             description:
                 "Shape visible tuple commands from the pinned UFW observation",

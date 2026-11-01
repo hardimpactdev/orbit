@@ -2,11 +2,20 @@ id: 6c2d24de-e47f-48c7-9d5e-b060e61b893d
 name: route-dns-grace
 description: Preserve the private DNS TTL before retiring the prior Route target.
 vaults: []
+queueTimeout: 60
 inputs:
   type: object
 jobs:
 - name: grace
   steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: route-dns-grace-assets
+      methodName: dnsGraceAssets
+      inputs: {}
   - name: wait-private-dns-ttl
     target: orbit-node-209
     task:
@@ -15,4 +24,10 @@ jobs:
       behaviorName: route-dns-grace
       methodName: execute
       inputs:
-        run: /usr/bin/sleep 31
+        run: bash "$ORBIT_GRACE_SCRIPT"
+        env:
+          ORBIT_GRACE_SCRIPT: ${{ steps.assets.outputs.grace_script }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
