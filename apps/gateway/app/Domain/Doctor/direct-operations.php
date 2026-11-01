@@ -13,5 +13,6 @@ return ['doctor.inspect' => [
 ], 'observation.maintain' => [
     'workflow' => 'operation-observation-maintain',
     'projection' => ObservationMaintenanceProjection::class,
-    'private_material' => ['queue_redis' => 'observation.queue_redis'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'report', 'step' => 'result'],
 ]];

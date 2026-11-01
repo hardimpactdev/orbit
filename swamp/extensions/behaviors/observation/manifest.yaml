@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/observation-schedule'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public immutable intent and typed scheduled observation results.
+behaviors:
+  - observation/scheduled.ts

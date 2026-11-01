@@ -350,9 +350,9 @@ export function compare(
                             const view = node.observations;
                             if (
                                 state.ActiveState === "active" &&
-                                (!view || view.freshness !== "fresh" ||
+                                (view && (view.freshness !== "fresh" ||
                                     view.valid_until === null ||
-                                    view.valid_until < now)
+                                    view.valid_until < now))
                             ) {
                                 issues.push(
                                     issue(
@@ -369,7 +369,7 @@ export function compare(
                                 node.id,
                                 "node.agent_missing",
                                 "node.agent_inactive",
-                                "node.agent_view_stale",
+                                ...(view ? ["node.agent_view_stale"] : []),
                             );
                         } else {
                             if (
@@ -571,14 +571,14 @@ const Report = z.object({
         informational: z.number(),
     }),
 });
-const Result = z.object({
+export const Result = z.object({
     report: Report,
     logs: Logs.optional(),
     signals: z.unknown().optional(),
 });
 export const behavior = {
     type: "@nckrtl/doctor",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         plan: {
             schema: z.object({ reads: z.array(Read), log_script: z.string() }),

@@ -33,6 +33,10 @@
   ],
   "workflows": [
     {"workflow": "operation-metrics-role", "actions": ["run", "read"]},
+    {"workflow": "task-check-ci", "actions": ["run", "read"]},
+    {"workflow": "observation-context", "actions": ["run", "read"]},
+    {"workflow": "observation-collection", "actions": ["run", "read"]},
+    {"workflow": "observation-horizon", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-hub-converge", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-exporter", "actions": ["run", "read"]},
     {"workflow": "operation-conn-pairing-create", "actions": ["run", "read"]},
