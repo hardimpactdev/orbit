@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { before, WriteInput, writeResult } from "./write.ts";
+import { before, decision, WriteInput, writeResult } from "./write.ts";
 
 const observation = (facts: unknown) => ({
     stdout: JSON.stringify(facts),
@@ -68,3 +68,16 @@ for (const manager of ["composer", "brew-cask"] as const) {
         assertEquals(checked.package_required, true);
     });
 }
+
+Deno.test("2211-03: reconciliation uses write inventory for a Composer dependency", () => {
+    const { input, facts } = installed("composer", "tool.update");
+    const result = decision(
+        input,
+        facts,
+        { ready: true, version: "2.0.0", allowed: true },
+        observation(facts),
+    );
+    assertEquals(result.error_code, undefined);
+    assertEquals(result.ready, true);
+    assertEquals(result.mutate, true);
+});

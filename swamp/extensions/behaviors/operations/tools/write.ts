@@ -14,7 +14,7 @@ const Public = z.record(z.string(), z.unknown());
 const Step = z.object({ status: z.string(), outputs: Public.optional() }).passthrough();
 type Check = { ready: boolean; error_code?: string; setup_required?: boolean; package_required?: boolean; facts?: z.infer<typeof Facts>; version?: string; allowed?: boolean; mutate?: boolean; outcome?: string };
 const refusal = (error: unknown, fallback = "tool.version_probe_failed") => ({ ready: false, error_code: error instanceof ToolRefusal ? error.code : fallback });
-function writeInventory(observation: unknown) {
+export function writeInventory(observation: unknown) {
   const facts = Facts.parse(JSON.parse(Observation.parse(observation).stdout));
   if (facts.scope !== "present") throw new ToolRefusal("tool.manager_unavailable");
   if (facts.error_code || !safeVersion(facts.manager_version) || facts.complete !== true || !facts.versions ||
