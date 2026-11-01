@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\SwampCredentials;
 
 use App\Domain\Operations\ScheduledResultProjection;
+use App\Domain\Releases\ReleaseAlertOutcome;
 use App\Domain\Releases\ReleaseAlertWebhook;
 use App\Models\Activity;
 use Illuminate\Support\Facades\Cache;
@@ -96,7 +97,8 @@ final readonly class SwampCredentialAlerts implements ScheduledResultProjection
                 'error_code' => $receipt->failedStep() ? 'swamp.credential_alert_webhook_failed' : null,
                 'properties' => [...$payload, 'webhook' => $receipt->toArray()]]);
 
-            return ! $receipt->failedStep();
+            // Only a delivered webhook ends a retry; a skipped one (not configured) does not.
+            return $receipt->outcome === ReleaseAlertOutcome::Done;
         } catch (Throwable $exception) {
             report($exception);
 

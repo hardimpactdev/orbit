@@ -29,13 +29,13 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Swamp credential expiry alerts
 
-The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the `orbit-node-209` worker. It is alert only: it reads expiry metadata and changes no credential, grant or file. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the `orbit-node-209` worker. It is alert only: it reads expiry metadata and changes no credential or grant. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
 
 - `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
 - `swamp auth token list --collective nckrtl`, for club tokens; a token with no `expiresAt` is reported as `no_expiry`;
 - `openssl x509 -enddate` for the `swamp.orbit` certificate.
 
-Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`. Revoked and disabled tokens are skipped. The report keeps at most 200 rows, soonest expiry first, and drops credentials that expired more than a week ago.
+Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`. Revoked and disabled tokens are skipped. Alerts come from the full list. The published report keeps at most 200 rows, soonest expiry first, and drops credentials that expired more than a week ago.
 
 | Result | Alert reason |
 | --- | --- |
@@ -45,7 +45,7 @@ Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `w
 
 The Gateway reads the terminal `check` output through the shared scheduled-result reader. It sends event `swamp.credential_expiring` through the [signed release webhook](/reference/gateway-recovery#webhook) with each credential's kind, name, reason, expiry and hours left. Each credential, expiry and reason alerts once after a delivered webhook. While a condition holds, every run reports it again, so an undelivered alert is retried by the next run.
 
-If a monitor run does not succeed, the Gateway sends `swamp.credential_monitor_failed` once per failure streak, and `swamp.credential_monitor_recovered` when a run succeeds again. Both are retried until delivered. Each native run is projected once. The Activity command `swamp:credential-alert` records each notification and its webhook outcome.
+If a monitor run does not succeed, the Gateway sends `swamp.credential_monitor_failed` once per failure streak. An undelivered failure alert is sent again by the next failed run. When a run succeeds after a delivered failure alert, the Gateway sends `swamp.credential_monitor_recovered`, again on each run until it is delivered. A webhook that is not configured counts as undelivered. The monitor runs on the worker it watches: when the `orbit-node-209` pair has expired, no worker claims the step, and only the failure alert reports it after `queueTimeout`. Each native run is projected once. The Activity command `swamp:credential-alert` records each notification and its webhook outcome.
 
 Renewal stays a hand procedure. When an alert names a worker token, follow the [worker enrollment steps](/reference/node-provisioning#per-node-swamp-worker) to issue it again. Then follow the [break-glass recovery steps](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209) to restore the worker.
 

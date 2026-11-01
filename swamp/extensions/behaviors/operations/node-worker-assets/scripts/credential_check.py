@@ -95,10 +95,16 @@ def inspect(now: datetime.datetime) -> list:
     found += [record('club', row['name'], row['expiresAt'], now) for row in rows('club', club) if row['enabled']]
     certificate = run('openssl x509 -enddate', ['openssl', 'x509', '-enddate', '-noout', '-in', CERTIFICATE])
     found.append(record('tls', 'swamp.orbit', certificate_end(certificate), now))
-    # A credential expired for over a week has alerted already; drop it before the bound.
-    found = [item for item in found if item['hours_left'] is None or item['hours_left'] > STALE_HOURS]
     found.sort(key=lambda item: (item['hours_left'] is None, item['hours_left'] or 0))
-    return found[:MAXIMUM_ROWS]
+    return found
+
+
+def report(credentials: list, now: datetime.datetime) -> dict:
+    """Alerts come from the full list; only the published rows are bounded."""
+    # A credential expired for over a week has alerted already; drop it before the bound.
+    current = [item for item in credentials if item['hours_left'] is None or item['hours_left'] > STALE_HOURS]
+    return {'checked_at': now.isoformat(), 'credentials': current[:MAXIMUM_ROWS],
+            'alerts': alerts(current)[:MAXIMUM_ROWS]}
 
 
 def alerts(credentials: list) -> list:
@@ -119,4 +125,4 @@ if __name__ == '__main__':
         detail = f': {error}' if isinstance(error, CheckFailed) else ''
         print(f'credential check failed: {type(error).__name__}{detail}'[:300], file=sys.stderr)
         sys.exit(1)
-    print(json.dumps({'checked_at': moment.isoformat(), 'credentials': credentials, 'alerts': alerts(credentials)}))
+    print(json.dumps(report(credentials, moment)))

@@ -104,3 +104,35 @@ it('forwards a missing expected credential', function (): void {
     Http::assertSent(fn (Request $request): bool => $request['event'] === 'swamp.credential_expiring'
         && $request['credentials'] === [['kind' => 'enrollment', 'name' => 'orbit-node-209', 'reason' => 'missing', 'expires_at' => null, 'hours_left' => null]]);
 });
+
+it('projects a replayed run once', function (): void {
+    $alerts = app(SwampCredentialAlerts::class);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(), ['alerts' => [credentialAlert('orbit-node-9-access', 'within_72h')]]);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(), ['alerts' => [credentialAlert('orbit-node-13-access', 'within_72h')]]);
+
+    Http::assertSentCount(1);
+});
+
+it('retries an undelivered recovery alert on the next run', function (): void {
+    config(['orbit.releases.alert_webhook_url' => 'https://hooks.example.test/credential-recovery']);
+    Http::fake(['https://hooks.example.test/credential-recovery' => Http::sequence()->push('', 200)->push('', 500)->push('', 200)]);
+    $alerts = app(SwampCredentialAlerts::class);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun('failed'), []);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01'), ['alerts' => []]);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '9b7e4f0c-2d3a-4e1b-a6c5-7f8e9d0a1b2c'), ['alerts' => []]);
+    $alerts->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: 'c3d4e5f6-0a1b-4c2d-8e3f-4a5b6c7d8e9f'), ['alerts' => []]);
+
+    Http::assertSentCount(3);
+    Http::assertSent(fn (Request $request): bool => $request['event'] === 'swamp.credential_monitor_recovered');
+});
+
+it('keeps retrying while the webhook is not configured', function (): void {
+    config(['orbit.releases.alert_webhook_url' => null, 'orbit.releases.alert_webhook_secret' => null]);
+    $result = ['alerts' => [credentialAlert('orbit-node-9-access', 'within_72h')]];
+    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(), $result);
+    config(['orbit.releases.alert_webhook_url' => 'https://hooks.example.test/credential-alert',
+        'orbit.releases.alert_webhook_secret' => 'fixture-signing-key']);
+    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01'), $result);
+
+    Http::assertSentCount(1);
+});

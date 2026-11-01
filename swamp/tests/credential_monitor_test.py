@@ -86,12 +86,15 @@ class Inspect(unittest.TestCase):
 
     def test_report_stays_bounded(self):
         many = [access(f'stale-{n}', -200) for n in range(3)] + [access(f'live-{n}', n + 1) for n in range(400)]
-        run, _ = native(many, [])
+        run, _ = native([*many, access('orbit-node-209-access', 500)], [enrollment('orbit-node-209', 500)])
         with patch.object(check, 'run', side_effect=run):
-            found = check.inspect(NOW)
+            result = check.report(check.inspect(NOW), NOW)
+        found = result['credentials']
         self.assertEqual(len(found), check.MAXIMUM_ROWS)
         self.assertEqual(found[0]['name'], 'live-0')
         self.assertFalse(any(item['name'].startswith('stale-') for item in found))
+        # The 209 pair falls past the bound but is listed, so it is not reported missing.
+        self.assertNotIn('missing', {item['reason'] for item in result['alerts']})
 
 
 class Alerts(unittest.TestCase):
