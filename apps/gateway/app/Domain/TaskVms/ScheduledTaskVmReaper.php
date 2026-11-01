@@ -59,7 +59,7 @@ final readonly class ScheduledTaskVmReaper implements ScheduledResultProjection
             if (($state['published'] ?? false) && ($state['inputs'] ?? null) === $inputs) {
                 return null;
             }
-            $live = array_fill_keys(array_map(static fn (array $vm): string => 'vm-'.$vm['task_vm_id'], $snapshot['vms']), true);
+            $live = array_fill_keys(array_map(static fn (array $vm): string => 'vm-'.ValidatedData::integer($vm['task_vm_id']), $snapshot['vms']), true);
             $admissions = array_intersect_key(ValidatedData::object($state['admissions'] ?? []), $live);
             $next = [...$state, 'inputs' => $inputs, 'admissions' => $admissions, 'published' => false];
             try {
@@ -114,7 +114,7 @@ final readonly class ScheduledTaskVmReaper implements ScheduledResultProjection
                     $key = hash('sha256', json_encode($expected, JSON_THROW_ON_ERROR));
                     $vmKey = 'vm-'.$vmId;
                     $priorAdmission = ValidatedData::object($admissions[$vmKey] ?? []);
-                    $priorOperation = Operation::query()->find($priorAdmission['operation_id'] ?? 0);
+                    $priorOperation = Operation::query()->find(ValidatedData::integer($priorAdmission['operation_id'] ?? 0));
                     if (($priorAdmission['key'] ?? null) === $key && $priorOperation !== null
                         && (! $priorOperation->status->terminal() || $priorOperation->status === OperationStatus::Succeeded)) {
                         continue;

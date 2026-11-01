@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\ScheduledTaskVmReaper;
@@ -121,6 +122,15 @@ it('cancels the actual bound hung turn first without admitting cleanup or invent
         ->and($operation->fresh()->cancel_requested_at)->not->toBeNull()
         ->and(Operation::query()->count())->toBe(1)
         ->and(($this->state)()['terminal']['outcomes'][$this->vm->id])->toBe('operation.target_busy');
+
+    $operation->update(['status' => 'cancelled', 'finished_at' => now(), 'lock_key' => null]);
+    $this->travel(1)->minutes();
+    [$next, $selected] = ($this->selection)();
+    $this->schedule->applyScheduled(ScheduledTaskVmReaper::Workflow, $next, $selected);
+
+    Http::assertSentCount(1);
+    expect(Operation::query()->where('kind', 'tasks.cancel')->count())->toBe(1)
+        ->and($operation->fresh()->status)->toBe(OperationStatus::Cancelled);
 });
 
 it('rejects changed progress, ownership, failed runs and altered results before cleanup', function (string $cause): void {
@@ -197,3 +207,29 @@ it('uses standalone VM destroy for a claimed orphan without a workspace', functi
     expect($operation->kind)->toBe('task_vm.destroy')->and($operation->target_type)->toBe('task_vm')
         ->and($operation->target_id)->toBe($this->vm->id);
 });
+
+it('uses the shared ended-group cleanup seam and projects only its complete native receipt', function (string $status): void {
+    $this->group->update(['status' => $status]);
+    $this->schedule->publish();
+    [$run, $result] = ($this->selection)();
+    $result['requests'][0]['reason'] = 'no_live_group';
+    $this->schedule->applyScheduled(ScheduledTaskVmReaper::Workflow, $run, $result);
+    $operation = Operation::query()->sole();
+    expect($operation->kind)->toBe('tasks.cancel')
+        ->and($this->group->fresh()->status->value)->toBe($status)
+        ->and($this->workspace->fresh())->not->toBeNull();
+
+    app(TaskCancelProjection::class)->apply($operation, [
+        'run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(),
+        'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['group_id' => $this->group->id, 'instance_id' => $this->workspace->id, 'cleanup_complete' => true,
+            'vm' => ['task_vm_id' => $this->vm->id, 'guest_node_id' => $this->vm->node_id,
+                'destroyed' => true, 'cleanup_complete' => true,
+                'removal' => ['node_id' => $this->vm->node_id, 'removed' => true, 'offline' => true]]],
+    ]);
+
+    expect($this->group->fresh()->status->value)->toBe($status)
+        ->and($this->group->fresh()->taskable_id)->toBeNull()
+        ->and(Instance::query()->find($this->workspace->id))->toBeNull()
+        ->and($this->vm->fresh()->state->value)->toBe('destroyed');
+})->with(['completed', 'cancelled']);
