@@ -36,7 +36,7 @@ class DependencyMergeRealHttp(NativeTestCase):
         gateway = Path(os.environ['DEPENDENCY_MERGE_TEST_GATEWAY_ROOT'])
         scratch = self.repo
         family = ROOT / 'extensions/behaviors/operations/dependency-merge'
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/dependency-merge', '_lib')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/dependency-merge', '_lib')
         (scratch / 'extensions/behaviors/native_host_method.ts').write_text((ROOT / 'extensions/behaviors/native_host_method.ts').read_text())
         for name in ('storage/logs', 'storage/framework/cache/data', 'storage/framework/sessions', 'storage/framework/views'):
             (scratch / name).mkdir(parents=True, exist_ok=True)

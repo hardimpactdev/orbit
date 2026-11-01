@@ -1,9 +1,10 @@
 import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
-import { type Context, Globals } from "../../operation-runner/mod.ts";
 import {
+  type Context,
   DirectArgs,
+  Globals,
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";

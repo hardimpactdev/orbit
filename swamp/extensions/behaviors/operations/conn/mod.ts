@@ -1,10 +1,11 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { type Context, Globals } from "../../operation-runner/mod.ts";
 import {
+    type Context,
     DirectArgs,
     directOperation,
     GatewayOperation,
+    Globals,
 } from "../_lib/direct.ts";
 
 const Kind = z.enum([
@@ -47,8 +48,8 @@ export type T3 = (
 
 /** Secret-bearing input and output stay inside this call, outside native arguments/resources. */
 export async function executeConn(
-    args: z.infer<typeof Args>,
-    ctx: Pick<Context, "readResource" | "writeResource">,
+    _args: z.infer<typeof Args>,
+    _ctx: Pick<Context, "readResource" | "writeResource">,
     gateway: GatewayOperation,
     t3: T3,
     safeInput: Record<string, unknown>,

@@ -53,7 +53,7 @@ class VaultRealHttp(NativeTestCase):
         (scratch / 'gateway.sqlite').touch()
         for name in ('logs', 'framework/cache/data', 'framework/sessions', 'framework/views'):
             (scratch / 'storage' / name).mkdir(parents=True, exist_ok=True)
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/vault')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/vault')
         backend_port, serve_port, php_port, tls_port, backend_tls_port = [free_port() for _ in range(5)]
         fixture_host = 'vault-fixture.orbit'
         cert, key = scratch / 'cert.pem', scratch / 'key.pem'
