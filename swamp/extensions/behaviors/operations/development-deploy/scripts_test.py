@@ -118,6 +118,24 @@ class DevelopmentScripts(unittest.TestCase):
         self.assertFalse((self.repo / "unexpected").exists())
         self.assertTrue(self.action("app", "sleep 4", seconds=1)["timed_out"])
 
+    def test_vp_scope_follows_the_legacy_owner_rule(self):
+        home = Path(self.temp.name) / "home"
+        (home / ".vite-plus/bin").mkdir(parents=True)
+        (home / ".vite-plus/bin/vp").write_text("#!/bin/sh\n")
+        (home / ".vite-plus/bin/vp").chmod(0o755)
+        (home / ".vite-plus/bin").chmod(0o775)
+        account = pwd.getpwuid(os.geteuid())
+        namespace = self.definitions("vp")
+        namespace["ACCOUNT"] = type("A", (), {"pw_uid": account.pw_uid, "pw_gid": account.pw_gid, "pw_dir": str(home)})()
+        self.assertEqual(namespace["scope"](), home / ".vite-plus")
+        (home / ".vite-plus/bin/vp").chmod(0o644)
+        with self.assertRaisesRegex(namespace["Refused"], "tool.vp_scope_conflict"):
+            namespace["scope"]()
+        (home / ".vite-plus/bin/vp").chmod(0o755)
+        namespace["ACCOUNT"] = type("A", (), {"pw_uid": account.pw_uid, "pw_gid": account.pw_gid + 1, "pw_dir": str(home)})()
+        with self.assertRaisesRegex(namespace["Refused"], "tool.vp_scope_conflict"):
+            namespace["scope"]()
+
     def definitions(self, name):
         namespace = {}
         with patch.object(sys, "argv", ["fixture", "unused", json.dumps(self.input)]):
