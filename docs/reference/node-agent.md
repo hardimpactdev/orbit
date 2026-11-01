@@ -166,7 +166,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-During the Swamp migration, CI never builds the agent. Gateway releases and desired fleet state use the frozen `cli-v0.7261.0` delivery. Its `orbit-agent contract` output is stored beside the frozen delivery manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway call sites and agent descriptors against it on every CI run. The same contract checks calls in orbit-swamp. Missing commands must move to native Swamp code; changing the Rust registry does not change the frozen delivery.
+During the Swamp migration, CI never builds the agent. Gateway releases and desired fleet state use the frozen `cli-v0.7261.0` delivery. Its `orbit-agent contract` output is stored beside the frozen delivery manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the frozen delivery.
 
 `instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
 

@@ -47,6 +47,7 @@ class FrozenAgentReferences(unittest.TestCase):
         await localAgent("process.new-command", {});
         const args = [binary, "command", "new.direct-call"];
         const Budgets = {"schedule.new-command": 1000};
+        command("reload", ["/usr/bin/systemctl", "daemon-reload"]);
         '''
         self.assertEqual(self.names(source), {'image.new-command', 'process.new-command', 'new.direct-call', 'schedule.new-command'})
 
