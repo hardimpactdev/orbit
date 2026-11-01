@@ -14,6 +14,10 @@ const roots = [
     "operation-instance-create",
     "operation-instance-setup-direct",
     "operation-instance-destroy",
+    "operation-analytics-enable-direct",
+    "operation-analytics-disable-direct",
+    "operation-analytics-update-direct",
+    "operation-websocket-registry",
 ];
 
 Deno.test("Fixture workflows and their children declare queueTimeout", async () => {

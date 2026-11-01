@@ -1,5 +1,6 @@
 id: 689cad3b-d90c-49fe-bf2f-5ed0974a32ec
 name: operation-process-create
+queueTimeout: 30
 description: Create or update one Process through official cfgmgmt and SSH on209.
 vaults:
 - orbit-control-inputs
