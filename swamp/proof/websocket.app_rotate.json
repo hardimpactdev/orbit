@@ -17,10 +17,10 @@
       "credential_generation": 2,
       "runtimes": [
         {
-          "process_id": "8f61a312-2b19-4ef7-92d5-39dff3d42380",
+          "process_id": "8f61a312-2b19-4ef7-92d5-39dff3d42383",
           "node_id": "${proof.target.node_id}",
-          "port": 18790,
-          "credential_field": "runtime_8f61a312_2b19_4ef7_92d5_39dff3d42380",
+          "port": 18796,
+          "credential_field": "runtime_8f61a312_2b19_4ef7_92d5_39dff3d42383",
           "ssh": {
             "control_node_id": "${proof.control.node_id}",
             "identity_file": "${proof.control.identity_file}",
@@ -38,20 +38,21 @@
       "missing_node_ids": []
     },
     "execution_secrets": {
-      "runtime_8f61a312_2b19_4ef7_92d5_39dff3d42380": {
+      "runtime_8f61a312_2b19_4ef7_92d5_39dff3d42383": {
         "vault": "orbit-control-inputs",
-        "key": "websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42380"
+        "key": "websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42383"
       }
     }
   },
   "secrets": [
     {
       "vault": "orbit-control-inputs",
-      "key": "websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42380",
-      "value": "file:registry-token"
+      "key": "websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42383",
+      "value": "generate:hex32",
+      "stage_to_target": true
     }
   ],
-  "target_setup": "websocket.sync/tests/target-setup.sh",
+  "target_setup": "websocket.app_rotate/tests/target-setup.sh",
   "expect": {
     "status": "succeeded",
     "outputs": {
@@ -99,5 +100,6 @@
       "unrelated-app-preserved",
       "legacy-provider-wire-cases"
     ]
-  }
+  },
+  "topology": "app-dev"
 }

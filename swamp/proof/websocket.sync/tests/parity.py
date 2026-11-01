@@ -12,6 +12,7 @@ import json
 import socket
 import time
 import urllib.parse
+from pathlib import Path
 
 c = http.client.HTTPConnection('127.0.0.1', 18791, timeout=3)
 try:
@@ -43,17 +44,23 @@ def publish(secret):
     finally:
         c.close()
 
-assert publish('rotating-secret-1') == 401
-assert publish('rotating-secret-2') == 200
+material = json.loads(Path('/var/lib/orbit-swamp-proof/websocket/publisher-secrets.json').read_text())
+assert publish(material['rotating:1']) == 401
+assert publish(material['rotating:2']) == 200
 print('current-revision created-app removed-app rotated-secret unrelated-app: PASS')
 '''
 
 
 def main():
+    kind = sys.argv[1]
+    index = ['websocket.sync', 'websocket.app_create', 'websocket.app_destroy', 'websocket.app_rotate'].index(kind)
+    port = 18790 + 2 * index
+    state_root = '/var/lib/orbit-swamp-proof/' + kind
+    probe = PROBE.replace('/var/lib/orbit-swamp-proof/websocket', state_root).replace('18790', str(port)).replace('18791', str(port + 1))
     prefix = shlex.split(os.environ['PROOF_TARGET_SSH'])
-    subprocess.run([*prefix, 'python3 -'], input=PROBE, text=True, check=True, timeout=15)
+    subprocess.run([*prefix, 'sudo -n -- python3 -'], input=probe, text=True, check=True, timeout=15)
     # The provider's ported legacy cases also run on this isolated target.
-    test_command = ('cd /var/lib/orbit-swamp-proof/websocket/reverb && '
+    test_command = ('cd ' + shlex.quote(state_root + '/reverb') + ' && '
                     'vendor/bin/pest --compact tests/Feature/RollingWireTest.php tests/Feature/RegistryApplyTest.php')
     command = 'sudo -n -- sh -c ' + shlex.quote(test_command)
     subprocess.run([*prefix, command], check=True, timeout=120)

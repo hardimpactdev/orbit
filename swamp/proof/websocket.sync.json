@@ -48,7 +48,8 @@
     {
       "vault": "orbit-control-inputs",
       "key": "websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42380",
-      "value": "file:registry-token"
+      "value": "generate:hex32",
+      "stage_to_target": true
     }
   ],
   "target_setup": "websocket.sync/tests/target-setup.sh",
@@ -99,5 +100,6 @@
       "unrelated-app-preserved",
       "legacy-provider-wire-cases"
     ]
-  }
+  },
+  "topology": "app-dev"
 }

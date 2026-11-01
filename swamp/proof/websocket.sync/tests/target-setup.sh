@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Disposable F10 target only. All credentials below are public test fixtures.
+# Disposable F10 container only. Credentials come from the proof runner.
 set -euo pipefail
 umask 077
-proof_root=/var/lib/orbit-swamp-proof/websocket
+proof_root=/var/lib/orbit-swamp-proof/websocket.sync
+secret_file="${PROOF_KIND_DIR:?}/secrets/websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42380"
+test -r "$secret_file"
 install -d -m 0700 "$proof_root"
 command -v php >/dev/null
 command -v composer >/dev/null
@@ -14,16 +16,20 @@ composer --working-dir="$proof_root/reverb" install --no-interaction --prefer-di
 cat >"$proof_root/authority.py" <<'PY'
 """A loopback-only disposable registry authority, never a production Gateway."""
 import json
+import os
+import secrets
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-ROOT = Path('/var/lib/orbit-swamp-proof/websocket')
-TOKEN = 'proof-only-websocket-registry-v0-not-a-live-credential'
+ROOT = Path('/var/lib/orbit-swamp-proof/websocket.sync')
+TOKEN = Path(os.environ['PROOF_REGISTRY_TOKEN_FILE']).read_text()
 state = {'boot_id': None, 'revision': 0, 'state': 'starting', 'reads': 0}
+material = {}
 
 
 def app(name, generation=1):
-    return {'app_id': name, 'key': name + '-key', 'secret': name + '-secret-' + str(generation),
+    secret = material.setdefault(name + ':' + str(generation), secrets.token_hex(20))
+    return {'app_id': name, 'key': name + '-key', 'secret': secret,
             'credential_generation': generation, 'ping_interval': 60, 'activity_timeout': 30,
             'allowed_origins': ['*'], 'max_message_size': 10000, 'max_connections': None,
             'accept_client_events_from': 'members', 'rate_limiting': None, 'options': []}
@@ -35,6 +41,7 @@ def snapshot(revision, apps):
 
 (ROOT / 'snapshot.json').write_text(json.dumps(snapshot(1, [app('retired'), app('rotating'), app('unrelated')])))
 (ROOT / 'next.json').write_text(json.dumps(snapshot(2, [app('created'), app('rotating', 2), app('unrelated')])))
+(ROOT / 'publisher-secrets.json').write_text(json.dumps(material))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -77,12 +84,12 @@ HTTPServer(('127.0.0.1', 18791), Handler).serve_forever()
 PY
 cat >"$proof_root/boot.php" <<'PHP'
 <?php
-require '/var/lib/orbit-swamp-proof/websocket/reverb/vendor/autoload.php';
-$app = require '/var/lib/orbit-swamp-proof/websocket/reverb/bootstrap/app.php';
+require '/var/lib/orbit-swamp-proof/websocket.sync/reverb/vendor/autoload.php';
+$app = require '/var/lib/orbit-swamp-proof/websocket.sync/reverb/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 config()->set([
     'registry.registry_url' => 'http://127.0.0.1:18791/registry',
-    'registry.registry_token' => 'proof-only-websocket-registry-v0-not-a-live-credential',
+    'registry.registry_token' => file_get_contents(getenv('PROOF_REGISTRY_TOKEN_FILE')),
     'registry.notification_token' => null,
     'registry.process_id' => '8f61a312-2b19-4ef7-92d5-39dff3d42380',
     'registry.heartbeat_interval' => 300,
@@ -95,8 +102,8 @@ app(Laravel\Reverb\ServerProviderManager::class)->forgetDrivers();
 app(Laravel\Reverb\ServerProviderManager::class)->register();
 Illuminate\Support\Facades\Artisan::call('orbit:reverb:start', ['--host' => '127.0.0.1']);
 PHP
-systemd-run --quiet --unit=orbit-proof-websocket-authority /usr/bin/python3 "$proof_root/authority.py"
-systemd-run --quiet --unit=orbit-proof-websocket-reverb --working-directory="$proof_root/reverb" --setenv=APP_ENV=testing --setenv=CACHE_STORE=array --setenv=DB_CONNECTION=sqlite --setenv=DB_DATABASE=:memory: "$(command -v php)" "$proof_root/boot.php"
+systemd-run --quiet --unit=orbit-proof-authority-websocket.sync --setenv="PROOF_REGISTRY_TOKEN_FILE=$secret_file" /usr/bin/python3 "$proof_root/authority.py"
+systemd-run --quiet --unit=orbit-proof-reverb-websocket.sync --working-directory="$proof_root/reverb" --setenv=APP_ENV=testing --setenv=CACHE_STORE=array --setenv=DB_CONNECTION=sqlite --setenv=DB_DATABASE=:memory: --setenv="PROOF_REGISTRY_TOKEN_FILE=$secret_file" "$(command -v php)" "$proof_root/boot.php"
 # Bounded setup readiness only. The kind workflow itself has no wait or retry.
 python3 - <<'PY'
 import json
@@ -112,7 +119,7 @@ for _ in range(100):
         if state['revision'] == 1 and state['state'] == 'serving':
             with socket.create_connection(('127.0.0.1', 18790), timeout=.2):
                 pass
-            Path('/var/lib/orbit-swamp-proof/websocket/next.json').replace('/var/lib/orbit-swamp-proof/websocket/snapshot.json')
+            Path('/var/lib/orbit-swamp-proof/websocket.sync/next.json').replace('/var/lib/orbit-swamp-proof/websocket.sync/snapshot.json')
             break
     except (OSError, ValueError):
         pass
