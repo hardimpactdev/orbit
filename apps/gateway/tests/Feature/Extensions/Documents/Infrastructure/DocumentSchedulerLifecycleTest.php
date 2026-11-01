@@ -20,10 +20,9 @@ beforeEach(function (): void {
     $this->initializeDocumentDeletionFixture();
 });
 
-it('pauses at startup and resumes successive recurring children', function (): void {
-    deletion_provider($this, ['restored' => 'preserved body', 'next' => 'next body']);
+it('pauses at startup even when a previous cleanup permit was running', function (): void {
+    deletion_provider($this, ['restored' => 'preserved body']);
     $restored = ProjectDocumentCleanup::query()->create(['storage_key' => 'restored', 'next_attempt_at' => now()]);
-    $next = ProjectDocumentCleanup::query()->create(['storage_key' => 'next', 'next_attempt_at' => now()->addYears(20)]);
     deletion_resume();
     $oldGeneration = app(CleanupGate::class)->status()->generation;
     deletion_scheduler_clock('2030-01-01T00:00:01Z');
@@ -35,7 +34,20 @@ it('pauses at startup and resumes successive recurring children', function (): v
         expect(deletion_scheduler_tick($consumer, '2030-01-01T00:05:00Z'))->toMatchArray(['cleanup_state' => 'paused', 'cleanup_generation' => $generation]);
         expect(deletion_requests())->toBe([]);
         expect($restored->fresh()->pending)->toBeTrue();
+    } finally {
+        $consumer->process->stop(0);
+    }
+});
 
+it('resumes successive recurring children after explicit authorization', function (): void {
+    deletion_provider($this, ['restored' => 'preserved body', 'next' => 'next body']);
+    $restored = ProjectDocumentCleanup::query()->create(['storage_key' => 'restored', 'next_attempt_at' => now()]);
+    $next = ProjectDocumentCleanup::query()->create(['storage_key' => 'next', 'next_attempt_at' => now()->addYears(20)]);
+    deletion_scheduler_clock('2030-01-01T00:00:01Z');
+    $consumer = deletion_scheduler();
+    try {
+        deletion_scheduler_start($consumer);
+        $generation = app(CleanupGate::class)->status()->generation;
         deletion_resume();
         expect(deletion_scheduler_tick($consumer, '2030-01-01T00:10:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $generation]);
         expect($restored->fresh())->toBeNull();

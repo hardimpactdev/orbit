@@ -16,6 +16,9 @@ use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
 use App\Models\AgentThread;
 use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Project;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use App\Models\TaskWorkspaceOperation;
@@ -26,8 +29,11 @@ use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\UnreachableSshExecutor;
 
 beforeEach(function (): void {
-    tick_bind_defaults();
-    $this->leaseGroup = tick_group();
+    $project = Project::query()->create(['name' => 'Lease', 'slug' => 'lease', 'repository_url' => 'https://example.test/lease.git']);
+    $node = Node::query()->create(['name' => 'lease-node', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '192.0.2.10']);
+    $workspace = test_ready_task_workspace($project, $node, ['checkout_path' => '/srv/lease', 'branch' => 'main'], ['orchestration' => 'external']);
+    $this->leaseGroup = Task::topLevel()->findOrFail($workspace->task_workspace_owner_id);
+    $this->leaseGroup->tasks()->create(['title' => 'Work', 'brief' => 'Work.', 'status' => 'running', 'position' => 1]);
     AgentThread::query()->delete();
     $this->leaseChecks = new FakeTaskCheckRunner;
     app()->instance(TaskCheckRunner::class, $this->leaseChecks);
