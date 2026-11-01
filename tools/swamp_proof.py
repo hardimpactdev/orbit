@@ -245,7 +245,13 @@ def main(argv=None):
     runner.add_argument('kind', nargs='+')
     sub.add_parser('receipt')
     sub.add_parser('down')
+    parser.add_argument('--session', default='minimal', help='Session name; each owns one proof VM (default minimal).')
     args = parser.parse_args(argv)
+    if not re.fullmatch(r'[a-z0-9-]{1,32}', args.session):
+        print('swamp-proof: invalid --session name', file=sys.stderr)
+        return 2
+    global SESSION
+    SESSION = SESSION.with_name(args.session + '.json')
     SESSION.parent.mkdir(parents=True, exist_ok=True)
     with SESSION.with_suffix('.lock').open('a') as lock:
         try:

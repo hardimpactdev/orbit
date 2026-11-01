@@ -160,14 +160,14 @@ Deno.test("IPv6 text in an IPv4 comment cannot hide the row; IPv6-only intent st
 Deno.test("official named tuples and shared aliases compare exactly without weakening role ownership", () => {
     const named = {
         ...shape,
-        comment: "orbit:node:9:firewall:web",
+        comment: "orbit web",
         source: "any",
         port: "443:444",
         family: null,
     };
     const expected = [{ name: "web", shape: named }, {
         name: "alias",
-        shape: { ...named, comment: "orbit:node:9:firewall:alias" },
+        shape: { ...named, comment: "orbit alias" },
     }, {
         name: "role",
         shape: {
@@ -208,7 +208,7 @@ Deno.test("named tuples cannot hide drift of an explicit role comment owner", ()
                 name: "web",
                 shape: {
                     ...shape,
-                    comment: "orbit:node:9:firewall:web",
+                    comment: "orbit web",
                     source: "any",
                     port: "80",
                 },
@@ -230,13 +230,12 @@ Deno.test("named tuples cannot hide drift of an explicit role comment owner", ()
     ]]);
 });
 
-Deno.test("allowlist source blocks compare exact shapes and precede broad trust", () => {
-    const comment = "orbit:node:9:allowlist:rex";
+Deno.test("an allow and a deny on one port match by tuple whatever their comment", () => {
     const expected = ["10.44.0.6", "10.44.0.9", "any"].map((source) => ({
-        name: "rex",
+        name: "7297/tcp from any",
         shape: {
             ...shape,
-            comment,
+            comment: "orbit rex",
             source,
             port: "7297",
             action: source === "any" ? "deny" as const : "allow" as const,
@@ -244,47 +243,16 @@ Deno.test("allowlist source blocks compare exact shapes and precede broad trust"
         },
     }));
     const lines = [
-        "7297/tcp ALLOW IN 10.44.0.6 # " + comment,
-        "7297/tcp ALLOW IN 10.44.0.9 # " + comment,
-        "7297/tcp DENY IN Anywhere # " + comment,
+        "7297/tcp ALLOW IN 10.44.0.6 # orbit rex",
+        "7297/tcp ALLOW IN 10.44.0.9 # orbit:node:9:allowlist:rex",
+        "7297/tcp DENY IN Anywhere",
     ];
-    const trust = "Anywhere ALLOW IN 10.44.0.0/24 # orbit:wireguard-members";
     const compare = (rows: string[]) =>
-        inspectionResult({
-            stdout: "Status: active\n" + rows.join("\n"),
-            expected,
-        });
-    assertEquals(
-        compare([...lines, trust]).live.slice(0, 3).map((r) => r.match),
-        ["exact", "exact", "exact"],
-    );
-    assertEquals(compare([...lines, trust]).missing, []);
-    assertEquals(compare([trust, ...lines]).live.slice(1).map((r) => r.match), [
-        "drift",
-        "drift",
-        "drift",
-    ]);
-    assertEquals(
-        compare([lines[0], lines[2], trust]).missing.map((r) => r.source),
-        ["10.44.0.9"],
-    );
-    assertEquals(
-        compare([lines[2], lines[0], lines[1], trust]).live.slice(0, 3).map((
-            r,
-        ) => r.match),
-        ["drift", "drift", "drift"],
-    );
-    const staleGuard = "0.0.0.0/1 7297/tcp DENY IN Anywhere # " + comment +
-        ":updating";
-    assertEquals(
-        compare([staleGuard, ...lines, trust]).live.slice(1, 4).map((r) =>
-            r.match
-        ),
-        ["drift", "drift", "drift"],
-    );
-    const changed = lines[1].replace("10.44.0.9", "10.44.0.7");
-    assertEquals(
-        compare([lines[0], changed, lines[2], trust]).live[1].match,
-        "drift",
-    );
+        inspectionResult({ stdout: "Status: active\n" + rows.join("\n"), expected });
+    assertEquals(compare(lines).live.map((r) => r.match), ["exact", "exact", "exact"]);
+    assertEquals(compare(lines).missing, []);
+    assertEquals(compare([lines[0], lines[2]]).missing.map((r) => r.source), ["10.44.0.9"]);
+    const changed = compare([lines[0], lines[1].replace("10.44.0.9", "10.44.0.7"), lines[2]]);
+    assertEquals(changed.live[1].match, "unmanaged");
+    assertEquals(changed.missing.map((r) => r.source), ["10.44.0.9"]);
 });

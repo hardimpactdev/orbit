@@ -1,31 +1,32 @@
 ---
 title: "firewall"
-description: "Allow, deny, list, and remove named UFW rules on one Node through the Gateway."
+description: "Allow, deny, list, and remove UFW rules on one Node through the Gateway."
 covers:
   - apps/cli/app/Commands/Firewall/**
   - apps/gateway/app/{Actions,Domain,Infrastructure}/Firewall/**
   - apps/gateway/app/Http/Controllers/Api/{FirewallRulesController,FleetFirewallRulesController}.php
   - apps/gateway/app/Http/Requests/Firewall/**
-  - apps/gateway/database/migrations/2027_01_09_120020_add_sources_to_firewall_rules.php
+  - apps/gateway/database/migrations/2027_01_09_120022_identify_firewall_rules_by_tuple.php
+  - swamp/extensions/behaviors/operations/firewall/**
+  - swamp/workflows/workflow-operation-firewall-direct.yaml
 ---
 
-Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it needs for public SSH recovery, WireGuard member trust, and each role. Those rules carry an `orbit:` prefix. The rule `orbit:wireguard-members` admits every WireGuard member on the Node's WireGuard address, as [private network trust](/reference/routes#private-network-trust) describes. The `firewall` family adds operator rules beside them, each identified by a stable name on one Node.
+Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it needs for public SSH recovery, WireGuard member trust, and each role. Those rules carry an `orbit:` prefix. The rule `orbit:wireguard-members` admits every WireGuard member on the Node's WireGuard address, as [private network trust](/reference/routes#private-network-trust) describes. The `firewall` family adds operator rules beside them, each identified by its port, protocol, and source on one Node.
 
-The Gateway validates and records named rule intent, then returns an Operation with `202 Accepted`. Swamp receives the complete admitted rule and SSH target, runs its native DAG from Node 209, and returns typed output for terminal projection. The target needs no worker. The CLI follows the Operation until it ends. The Gateway projects the managed row without inspecting execution again. There is no agent action, child Operation or polled writer.
+The Gateway validates and records rule intent, then returns an Operation with `202 Accepted`. Swamp receives the complete admitted rule and SSH target, runs its native DAG from Node 209, and returns typed output for terminal projection. The target needs no worker. The CLI follows the Operation until it ends. The Gateway projects the managed row without inspecting execution again. There is no agent action, child Operation or polled writer.
 
-Named rules use the official firewall model and its UFW defaults. orbit-agent will be the only collector of live UFW facts, with `observed_at`, and the Gateway will read its latest observation. Until the agent reports UFW, the Gateway has no live firewall observation. [Doctor](/cli/doctor) still reports firewall drift from its own read; it compares exact tuples for named rules, including numeric contributions to a range, and keeps comment ownership for role and Router rules.
+orbit-agent will be the only collector of live UFW facts, with `observed_at`, and the Gateway will read its latest observation. Until the agent reports UFW, the Gateway has no live firewall observation. [Doctor](/cli/doctor) still reports firewall drift from its own read; it compares exact tuples for operator rules, including numeric contributions to a range, and keeps comment ownership for role and Router rules.
 
-[Database servers](/reference/database-servers#private-publication) publish only on explicit WireGuard and LAN addresses. Ports published by Docker bypass UFW. These servers trust the private Orbit networks and have no port firewall; named UFW rules do not restrict their Docker publications.
+[Database servers](/reference/database-servers#private-publication) publish only on explicit WireGuard and LAN addresses. Ports published by Docker bypass UFW. These servers trust the private Orbit networks and have no port firewall; operator UFW rules do not restrict their Docker publications.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`firewall:allow`](#orbit-firewallallow) | Create or converge one named allow rule. |
-| [`firewall:allowlist`](#orbit-firewallallowlist) | Replace the sources allowed to reach a port before broad peer trust. |
-| [`firewall:deny`](#orbit-firewalldeny) | Create or converge one named deny rule. |
-| [`firewall:list`](#orbit-firewalllist) | List the named rules of one Node. |
-| [`firewall:remove`](#orbit-firewallremove) | Remove one named rule. |
+| [`firewall:allow`](#orbit-firewallallow) | Create one allow rule. |
+| [`firewall:deny`](#orbit-firewalldeny) | Create one deny rule. |
+| [`firewall:list`](#orbit-firewalllist) | List the operator rules of one Node. |
+| [`firewall:remove`](#orbit-firewallremove) | Remove the one rule that matches a port. |
 
 The `ci-runner` role owns the routed allowance on `orbitci0`, with the comment `orbit-ci-runners`. This is the same comment used by the former host setup step, so adding the role adopts that rule through the managed catalog. Role removal closes it; the Incus ACL enforces the runner egress boundary.
 
@@ -84,7 +85,7 @@ A failed apply or verification reports `node.firewall_convergence_failed`. Failu
 
 Member rules alone do not enforce member-only DNS if a broader allow still overlaps port 53. A positive query from an already allowed member is not proof of LAN isolation. The following is an authorized **postmerge rollout**, not a fleet mutation during authoring or review. Rehearse it first on the group's allocated native disposable topology through normal Orbit commands. Keep rehearsal evidence separate from live results.
 
-1. Before any change, inventory the current Router, Cluster and eligible source IDs and addresses. Record the deployed commit, UFW active/default policy, ordered IPv4 and IPv6 rules with comments, interfaces, destinations, protocols and port ranges, persistent UFW configuration, and named operator-rule records and statuses. Retain the exact previous inventory and the commands needed to restore it outside the repository; a screenshot or a list of port 53 rules alone is not sufficient rollback evidence. Keep credentials out of shared evidence.
+1. Before any change, inventory the current Router, Cluster and eligible source IDs and addresses. Record the deployed commit, UFW active/default policy, ordered IPv4 and IPv6 rules with comments, interfaces, destinations, protocols and port ranges, persistent UFW configuration, and operator-rule records and statuses. Retain the exact previous inventory and the commands needed to restore it outside the repository; a screenshot or a list of port 53 rules alone is not sufficient rollback evidence. Keep credentials out of shared evidence.
 2. Deploy step 1 normally. The next Router LAN reconcile, such as Node enrollment, attach/detach, or `node:add`, adds two DNS rules per eligible member beside unchanged HTTPS rules. Use the managed and live reads above to compare intended and actual rules. Check loopback, HTTPS, WireGuard access, and the existing DNS service too. Do not enable Cluster DNS or change a member resolver in this step.
 3. Before any later Cluster DNS enablement, review every operator or unmanaged allowance that can reach Router LAN port 53, including protocol-wide allows, port ranges and subnet/any-source rules. Record an individually authorized narrowing and its inverse against the saved inventory. These rules are not automatically pruned by Orbit. Do not add a deny and assume it overrides an earlier allow, reset UFW, or delete unrelated rules.
 4. Preserve Incus DNS before withdrawing an overlap. Add and verify the required UDP and TCP rules scoped to the actual Incus bridge **input interface and bridge destination address**, with the required bridge client sources. A source-subnet-only rule that also admits the Router LAN destination is not sufficient. Verify real bridge client DNS over both transports, then narrow/remove only the inventoried overlapping allowances. If an operator rule cannot express the required interface/destination scope, use a separately authorized host firewall change rather than a broader replacement. Retain both the previous and replacement inventories.
@@ -100,88 +101,98 @@ Roll back later DNS service/member steps first if any have shipped, keeping the 
 
 If authorized overlap narrowing occurred, restore the exact previous operator records and unmanaged rules from the saved inventory, including their scope and ordering, and remove only the replacement rules introduced by that narrowing. Do not restore an entire old firewall snapshot over unrelated intervening changes; compare inventories and stop for ownership review if they differ. Verify the previous DNS path, required Incus bridge DNS, loopback, HTTPS, and managed/live agreement. Record that restoring a previous broad allow also restores its previous exposure; it is rollback, not successful member-only isolation.
 
-## Rules and names
+## Rule identity
 
-The [allowlist design](/decisions/0241-firewall-source-allowlists) defines the closed source-set contract.
+A rule's identity on a Node is its port, protocol, and source ([ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source)). An omitted `--protocol` means both `tcp` and `udp`; an omitted `--from` means `any`. Admission refuses:
 
-Every command accepts `--json` and requires `--node` with a numeric Node ID. A rule name is 1 through 63 characters of lowercase letters, digits, dots, underscores, and hyphens, starting and ending with a letter or digit; it cannot contain a colon, so an operator name never collides with an `orbit:` rule. The name identifies a Gateway intent record. The official model converges its tuple; old `orbit:node:<node-id>:firewall:<name>` comments are removed when the last contribution to their tuple is removed.
+- a second rule with the same identity and action: `firewall.rule_exists`;
+- an allow and a deny with the same identity: `firewall.rule_conflict`;
+- a rule for both protocols beside a `tcp` or `udp` rule on the same port and source: `firewall.rule_overlap`.
 
-All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
+The port is one number from 1 through 65535, such as `25`, or an ordered range, such as `8000:8100`. Service names are not accepted. The CLI checks the port, source, and protocol before it sends a request.
+
+`--label` is optional free text of at most 255 characters. The UFW comment Orbit writes is `orbit` plus the label, sanitized: printable characters only, quotes removed, at most 64 characters. Matching never reads the comment; only the identity selects a rule.
+
+### Order on the Node
+
+UFW stops at the first rule that matches, so Orbit sets the order of every operator rule it writes:
+
+- Operator rules sit above Orbit's own `orbit:` rules. A deny on a port therefore also applies to WireGuard peers that `orbit:wireguard-members` would admit.
+- A narrower rule sits above a broader one, allow or deny alike: one address above a CIDR above anywhere.
+
+Overlap at a different scope is the way to restrict a port. These pairs are admitted:
+
+```bash
+orbit firewall:deny 5432 --node=7 --protocol=tcp                      # nobody, WireGuard peers included
+orbit firewall:allow 5432 --node=7 --protocol=tcp --from=10.44.0.6    # except this peer
+
+orbit firewall:allow 25 --node=7                                      # everyone
+orbit firewall:deny 25 --node=7 --from=203.0.113.9                    # except this host
+```
+
+Each write inserts its lines at the computed position with `ufw insert`, one line per protocol and address family, and the check step verifies the order as well as the lines. A removal leaves the other lines in order.
+
+### Change rules without an exposure window
+
+There is no atomic swap of a source set. Change rules in this order:
+
+1. To restrict a port, add the allows for the sources that keep access first, then the deny.
+2. To replace a source, add the new allow before you remove the old one.
+3. To lift a restriction, remove the deny before you remove the allows.
+
+Each step leaves the port at least as closed as the end state, so no request reaches it between steps.
+
+Every command accepts `--json` and requires `--node` with a numeric Node ID. All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
 
 ## orbit firewall:allow
 
 Allow traffic to one destination port or port range, optionally from one source.
 
 ```bash
-orbit firewall:allow <name> --node=ID --port=PORT [--from=SOURCE] [--protocol=PROTO]
+orbit firewall:allow <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `name` | yes | Stable rule name, unique per Node. |
+| `port` | yes | Destination port from 1 through 65535, or an ordered range such as `8000:8100`. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=ID` | required | Numeric target Node ID. |
-| `--port=PORT` | required | Destination port from 1 through 65535, or an ordered range such as `8000:8100`. |
 | `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, a CIDR such as `10.6.0.0/24`, or `any`. |
-| `--protocol=PROTO` | `tcp` | `tcp` or `udp`. |
+| `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both. |
+| `--label=TEXT` | none | Free text that describes the rule. |
 
 ```bash
-orbit firewall:allow office-postgres --node=7 --port=5432 --from=10.6.0.0/24
-orbit firewall:allow media-udp --node=7 --port=6000:6100 --protocol=udp
+orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --label="office postgres"
+orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 ```
 
-Repeating the same command with the same values admits an Operation that converges the existing rule. A running Operation keeps its Node firewall target and returns `operation.target_busy` to another admission. The same name with different values returns `firewall.name_taken`; remove the rule and create it again to change it. Human output follows the UFW step and reports `Firewall rule succeeded.` with the Operation and request IDs.
+A running Operation keeps its Node firewall target and returns `operation.target_busy` to another admission. To change a rule, remove it and create it again. Human output follows the UFW step and reports `Firewall rule succeeded.` with the Operation and request IDs.
 
-Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node, rule name and input.
+Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
 
 ## orbit firewall:deny
 
 Deny traffic to one destination port or port range, optionally from one source. It accepts the same argument and options as `firewall:allow`.
 
 ```bash
-orbit firewall:deny <name> --node=ID --port=PORT [--from=SOURCE] [--protocol=PROTO]
+orbit firewall:deny <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT]
 ```
 
 ```bash
-orbit firewall:deny block-scanner --node=7 --port=22 --from=203.0.113.9
+orbit firewall:deny 22 --node=7 --from=203.0.113.9 --label=scanner
 ```
 
 <Warning>
-The Gateway refuses a deny rule whose port contains the Node's public SSH port for any source that would cover it with `firewall.public_ssh_deny_forbidden`, because that port is the recovery path after a failed provisioning. A deny rule and an allow rule with the same source, protocol, and port cannot coexist on one Node; the second one returns `firewall.action_conflict`.
+A Node can never be cut off. The Gateway refuses a deny whose port or range includes SSH port 22, the Node's recovery SSH port, the configured WireGuard port, or a port in the Node's managed firewall catalog, including ports reserved by assigned roles, with `firewall.protected_port`. An allow on these ports is accepted.
 </Warning>
 
-Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node, rule name and input.
-
-## orbit firewall:allowlist
-
-Admit only selected source IPv4 addresses or CIDRs to a port or range. This block precedes other UFW rules, including `orbit:wireguard-members`. Source allows come first, followed by a deny for everyone else. Existing connections can survive through connection tracking; verify with new connections.
-
-```bash
-orbit firewall:allowlist rex --node=7 --port=7297 --from=10.44.0.6 --from=10.44.0.9
-orbit firewall:allowlist rex --node=7 --port=7297 --from=10.44.0.0/28
-```
-
-| Input | Meaning |
-| --- | --- |
-| `name` | Stable name, unique among all named firewall rules on the Node. |
-| `--node=ID` | Required numeric Linux Node ID. |
-| `--port=PORT` | Required port or ordered range, such as `7297` or `7297:7299`. |
-| `--from=SOURCE` | Required, repeatable IPv4 address or CIDR. At least one source. |
-| `--protocol=PROTO` | `tcp` by default, or `udp`. |
-
-The API is `POST /api/v1/nodes/{node}/firewall-rules/allowlist` with `name`, `port`, optional `protocol`, and a `sources` array. MCP exposes `firewall-allowlist` from the same contract. Up to 64 sources are normalized, deduplicated and sorted. Repeating a name replaces the complete source list; omitted old sources are withdrawn. The port and protocol cannot change under the same name. An allowlist exclusively owns its port or range and protocol among named operator rules. Overlapping ordinary allows, denies or allowlists refuse with `firewall.allowlist_overlap`.
-
-The Gateway refuses SSH port 22, the Node's recovery SSH port, the configured WireGuard port, and bounded ports in its managed firewall catalog, including ports reserved by assigned roles even before they have traffic with `firewall.protected_port`. This includes a protected port inside a requested range, regardless of protocol. The broad WireGuard trust rule does not reserve all ports. Invalid or empty sources return `validation.failed` from the API.
-
-Use `firewall:list` to read the complete source set and `firewall:remove` to remove all lines owned by the allowlist. Removal restores the underlying firewall policy. Run `orbit doctor --family=firewall --node=<id>` to check source lines, the final deny and their order. A block after broad trust reports drift. Doctor reports missing lines, drift, inactive UFW and failed rule lifecycle.
-
-Use `--idempotency-key=KEY` to retry the same admission. A changed source set needs a new key. Human and JSON output follow the same Operation as other firewall writes. An unowned identical UFW tuple refuses before mutation with `firewall.rule_collision`; UFW cannot keep two separately owned copies of that tuple.
+Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
 
 ## orbit firewall:list
 
-List the named rules recorded for one Node with their action, source, port, protocol, and lifecycle status.
+List the operator rules recorded for one Node with their port, protocol, source, action, label, and lifecycle status.
 
 ```bash
 orbit firewall:list --node=ID
@@ -191,64 +202,67 @@ orbit firewall:list --node=ID
 | --- | --- |
 | `--node=ID` | Numeric target Node ID. |
 
-Human output uses a read-only table with NAME, ACTION, SOURCE, PORT, PROTOCOL, and STATUS columns. Values wrap inside their cells; below the minimum width, labeled records retain every field. An empty result says `No firewall rules.`.
+Human output uses a read-only table with PORT, PROTOCOL, SOURCE, ACTION, LABEL, and STATUS columns, sorted by port, protocol, and source. A rule for both protocols shows `any`. Values wrap inside their cells; below the minimum width, labeled records retain every field. An empty result says `No firewall rules.`.
 
 A rule's `status` is `provisioning`, `active`, `failed`, or `removing`. A failed rule keeps `failed_step` and `error_code` so the same command can be repeated after the cause is fixed. Orbit-owned `orbit:` rules are not part of this list.
 
 ## orbit firewall:remove
 
-Remove one named rule from UFW and delete its record. Before prompting, the CLI resolves the rule with a read-only lookup unless a retry key is supplied, then asks `Remove firewall rule [name] from Node #ID?` with No selected. Supply `--yes` for automation, including JSON; JSON never implies consent.
+Remove the one rule that matches a port from UFW and delete its record. `--from` and `--protocol` narrow the match; when you omit one, it matches any value. `--from=any` matches only a rule for any source. The CLI asks `Remove firewall rule [443/tcp from any] from Node #ID?` with No selected. Supply `--yes` for automation, including JSON; JSON never implies consent.
 
 ```bash
-orbit firewall:remove <name> --node=ID [--yes] [--json]
+orbit firewall:remove <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `name` | yes | Stable rule name. |
+| `port` | yes | Port or ordered range of the rule. |
 
 | Option | Meaning |
 | --- | --- |
 | `--node=ID` | Numeric target Node ID. |
+| `--from=SOURCE` | Match only a rule with this source. |
+| `--protocol=PROTO` | Match only a rule with this protocol. |
 | `--yes` | Confirm rule removal without prompting. |
 
 ```bash
-orbit firewall:remove office-postgres --node=7
-orbit firewall:remove office-postgres --node=7 --yes --json
+orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24
+orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --yes --json
 ```
 
-The Gateway marks the rule `removing` and returns its Operation. Swamp removes the named contribution through the official firewall model on Node 209. Another recorded name or the canonical Node firewall catalog keeps any shared tuple. A visible official SSH step removes the selected old named rule when its tuple has ports to withdraw, before tuple convergence; no target worker or agent action runs. Completion removes the Gateway record. A failure leaves the rule `failed` with the step that stopped; repeat the command with a new admission key after fixing the cause.
+The API is `POST /api/v1/nodes/{node}/firewall-rules/remove` with `port` and optional `source` and `protocol`. When no rule matches, the Gateway returns `firewall.rule_not_found`. When more than one rule matches, it returns `firewall.rule_ambiguous` and lists each match in `details.matches`; the CLI prints one line per match. Add `--from` or `--protocol` and repeat the command.
 
-Declining, Ctrl-C, or end of input before removal exits 1 with `input.cancelled`. Noninteractive removal without `--yes` exits 1 with `input.confirmation_required` and an instruction to supply `--yes`. Refused confirmations send no removal request. Existing lookup, authorization, and safety errors retain their codes.
+The Gateway marks the rule `removing` and returns its Operation. Swamp deletes the rule's lines on the Node. A line that a role-managed rule with the same tuple also needs stays. Completion removes the Gateway record. A failure leaves the rule `failed` with the step that stopped; repeat the command with a new admission key after fixing the cause.
 
-Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node, rule name and input.
+Declining, Ctrl-C, or end of input before removal exits 1 with `input.cancelled`. Noninteractive removal without `--yes` exits 1 with `input.confirmation_required` and an instruction to supply `--yes`. Refused confirmations send no removal request. Authorization and safety errors retain their codes.
+
+Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
 
 ## Error codes
 
-The CLI validates the name, source, protocol, and port before it sends a request. The Gateway returns admission errors. Native diagnostic reasons appear in Swamp history. If execution stops before the result step, the final Operation reports `operation.native_failed`.
+The CLI validates the port, source, and protocol before it sends a request. The Gateway returns admission errors. Native diagnostic reasons appear in Swamp history. If execution stops before the result step, the final Operation reports `operation.native_failed`.
 
 | Error code | Meaning |
 | --- | --- |
 | `firewall.node_id_invalid` | `--node` is not a positive integer. |
-| `firewall.rule_name_required`, `firewall.rule_name_invalid` | The name is missing or outside the accepted form. |
 | `firewall.source_invalid` | The source is not `any`, an IP address, or a valid CIDR. |
 | `firewall.protocol_invalid` | The protocol is not `tcp` or `udp`. |
 | `firewall.port_invalid` | The port is outside 1 through 65535 or the range is not ordered. |
-| `firewall.name_taken` | The name exists on the Node with different values. |
-| `firewall.action_conflict` | An opposite rule with the same source, protocol, and port exists. |
-| `firewall.public_ssh_deny_forbidden` | The deny rule would cover the public recovery SSH port. |
-| `firewall.known_hosts_unpublished` | The worker snapshot has no matching admitted target pin, or has an additional different pin for that address. |
+| `firewall.rule_exists` | A rule with the same port, protocol, source, and action exists on the Node. |
+| `firewall.rule_conflict` | An allow and a deny would have the same port, protocol, and source. |
+| `firewall.rule_overlap` | A rule for both protocols overlaps a `tcp` or `udp` rule on the same port and source. |
+| `firewall.rule_not_found` | No rule matches the removal. |
+| `firewall.rule_ambiguous` | More than one rule matches the removal; `details.matches` lists them. |
+| `firewall.protected_port` | A deny would cover SSH, recovery SSH, WireGuard, or a managed role port. |
 | `firewall.backend_inactive` | UFW is inactive on the Node. |
 | `firewall.platform_unsupported` | The Node is not a Linux Node. macOS is refused before SSH and before a rule is stored. |
-| `firewall.apply_failed`, `firewall.verify_failed` | UFW did not accept the rule or the verification did not find it. |
+| `firewall.apply_failed`, `firewall.verify_failed` | UFW did not accept the rule, or the check did not find its lines in the required order. |
 | `firewall.remove_failed`, `firewall.remove_verify_failed` | UFW did not remove the rule or the verification still found it. |
 | `firewall.node_unreachable` | The Gateway could not reach the Node over SSH. |
 
 ## Execution and ownership
 
-The official `@swamp/cfgmgmt/firewall` model manages source, protocol, action and numeric port tuples. Names remain Gateway intent labels. Port ranges fan out into numeric tuples; removal retains ports contributed by another recorded name. The native result proves tuple presence or absence, not that a broader earlier rule permits traffic. The official model appends new rules; new allow rules use this ordering.
-
-Before any remote action, the Node 209 worker requires the admitted target key in its published `~/.ssh/known_hosts` snapshot. Missing or different entries fail with `firewall.known_hosts_unpublished`. The official model uses its standard SSH connection and host-key defaults; this port does not add a custom transport or update known_hosts. A pinned official SSH read then refuses inactive UFW before the model can select another backend. Native steps return the final result; they never fetch intent or post progress to the Gateway.
+The workflow `operation-firewall-direct` runs three steps on Node 209: it resolves the shipped rule script, runs it on the Node over official SSH with the admitted host key and `sudo`, and asserts its exit code. The script holds the host firewall lock, reads `ufw status numbered`, writes or deletes the rule's lines, and prints the public result or a public `error_code`. The official firewall model was not used: it cannot write a comment, both protocols, or a position. Native steps never fetch intent or post progress to the Gateway.
 
 ## Why it works this way
 
@@ -257,4 +271,4 @@ The managed list is the set that convergence keeps, not every rule Orbit can wri
 ## Related
 
 - [`doctor`](/cli/doctor) reports Node, role-service and Process liveness, and reuses native firewall comparison.
-- [`node`](/cli/node) removal refuses a Node that still owns named firewall rules.
+- [`node`](/cli/node) removal refuses a Node that still owns operator firewall rules.

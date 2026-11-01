@@ -16,7 +16,12 @@ import {
     processHealthy,
     processesFor,
 } from "../fleet/fleet";
-import { firewallLineTone, firewallPort, firewallSource } from "../fleet/firewall";
+import {
+    firewallIdentity,
+    firewallLineTone,
+    firewallPort,
+    firewallSource,
+} from "../fleet/firewall";
 import { useNodeMetrics } from "../metrics/grafana";
 import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
@@ -173,7 +178,7 @@ function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
         return [
             ...operator.map((rule) => ({
                 key: `operator-${rule.id}`,
-                name: rule.name,
+                name: rule.label ?? firewallIdentity(rule),
                 port: firewallPort(rule.port, rule.protocol),
                 action: rule.action,
                 source: rule.source,
@@ -210,7 +215,7 @@ function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
 }
 
 function liveLine(rule: LiveFirewallRule, operator: FirewallRule[], key: string): FirewallLine {
-    const record = operator.find((candidate) => candidate.name === rule.name) ?? null;
+    const record = operator.find((candidate) => firewallIdentity(candidate) === rule.name) ?? null;
     const state =
         rule.match === "missing"
             ? "missing"
@@ -222,7 +227,7 @@ function liveLine(rule: LiveFirewallRule, operator: FirewallRule[], key: string)
 
     return {
         key,
-        name: rule.name,
+        name: record?.label ?? rule.name,
         port: firewallPort(rule.port, rule.protocol),
         action: rule.action,
         source: firewallSource(rule.source, rule.interface),

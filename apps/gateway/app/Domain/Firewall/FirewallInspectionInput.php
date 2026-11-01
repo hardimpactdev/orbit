@@ -17,11 +17,10 @@ final readonly class FirewallInspectionInput
         $expected = array_map(static fn (DesiredFirewallRule $rule): array => [
             'name' => $rule->name, 'shape' => $rule->shape->toAgentInput(),
         ], app(NodeFirewallDesiredRules::class)->forNode($node));
-        foreach ($node->firewallRules()->orderBy('name')->get() as $rule) {
-            $targets = $rule->action === FirewallAction::Allowlist ? FirewallAllowlist::targets($rule) : [FirewallInspectionTarget::fromRule($rule)];
-            foreach ($targets as $target) {
+        foreach ($node->firewallRules()->orderBy('port')->orderBy('protocol')->orderBy('source')->get() as $rule) {
+            foreach (FirewallInspectionTarget::forRule($rule) as $target) {
                 $shape = $target->shape;
-                $expected[] = ['name' => $rule->name, 'shape' => [
+                $expected[] = ['name' => $rule->identity(), 'shape' => [
                     'comment' => $shape->comment, 'action' => $shape->action,
                     'direction' => $shape->direction, 'source' => $shape->source,
                     'destination' => $shape->destination, 'port' => $shape->port,

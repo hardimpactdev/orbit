@@ -1019,19 +1019,17 @@ it('records pre-persistence firewall allow and deny failures against the path-bo
         ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $denyRequestId)
         ->postJson("/api/v1/nodes/{$node->id}/firewall-rules/deny", [
-            'name' => 'block-ssh',
             'source' => 'any',
             'protocol' => 'tcp',
             'port' => '1:1024',
         ])
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'firewall.public_ssh_deny_forbidden');
+        ->assertJsonPath('error.code', 'firewall.protected_port');
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $allowRequestId)
         ->postJson("/api/v1/nodes/{$node->id}/firewall-rules/allow", [
-            'name' => 'private-web',
             'source' => 'any',
             'protocol' => 'tcp',
             'port' => '443',
@@ -1042,13 +1040,12 @@ it('records pre-persistence firewall allow and deny failures against the path-bo
         ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $conflictRequestId)
         ->postJson("/api/v1/nodes/{$node->id}/firewall-rules/deny", [
-            'name' => 'block-web',
             'source' => 'any',
             'protocol' => 'tcp',
             'port' => '443',
         ])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'firewall.action_conflict');
+        ->assertJsonPath('error.code', 'firewall.rule_conflict');
 
     $denied = Activity::query()->where('request_id', $denyRequestId)->sole();
     $conflicted = Activity::query()->where('request_id', $conflictRequestId)->sole();
@@ -1056,7 +1053,7 @@ it('records pre-persistence firewall allow and deny failures against the path-bo
     expect($denied)
         ->command->toBe('firewall:deny')
         ->status->toBe('failed')
-        ->error_code->toBe('firewall.public_ssh_deny_forbidden')
+        ->error_code->toBe('firewall.protected_port')
         ->subject_type->toBe(Node::class)
         ->subject_id->toBe($node->id)
         ->target_node_id->toBe($node->id);
@@ -1064,14 +1061,14 @@ it('records pre-persistence firewall allow and deny failures against the path-bo
     expect($conflicted)
         ->command->toBe('firewall:deny')
         ->status->toBe('failed')
-        ->error_code->toBe('firewall.action_conflict')
+        ->error_code->toBe('firewall.rule_conflict')
         ->subject_type->toBe(Node::class)
         ->subject_id->toBe($node->id)
         ->target_node_id->toBe($node->id)
         ->and($conflicted->properties?->get('path'))
         ->toBe("api/v1/nodes/{$node->id}/firewall-rules/deny");
 
-    expect(FirewallRule::query()->where('name', 'block-web')->exists())->toBeFalse();
+    expect(FirewallRule::query()->where('action', 'deny')->exists())->toBeFalse();
 });
 
 function command_activity_doctor_node(string $name): Node

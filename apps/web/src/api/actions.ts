@@ -1,3 +1,4 @@
+import { firewallIdentity } from "../fleet/firewall";
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
 import { api } from "./client";
@@ -279,15 +280,16 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                 {
                     label: "remove",
                     destructive: true,
-                    description: `Remove firewall rule [${rule.name}] on node [${rule.node}]?`,
+                    description: `Remove firewall rule [${firewallIdentity(rule)}] on node [${rule.node}]?`,
                     run: async () => {
-                        await api(
-                            "DELETE",
-                            `/api/v1/nodes/${rule.node_id}/firewall-rules/${encodeURIComponent(rule.name)}`,
-                        );
+                        await api("POST", `/api/v1/nodes/${rule.node_id}/firewall-rules/remove`, {
+                            port: rule.port,
+                            protocol: rule.protocol,
+                            source: rule.source,
+                        });
                         applyRow(queryClient, "firewall", "deleted", { id: rule.id });
 
-                        return `Firewall rule [${rule.name}] removed.`;
+                        return `Firewall rule [${firewallIdentity(rule)}] removed.`;
                     },
                 },
             ];

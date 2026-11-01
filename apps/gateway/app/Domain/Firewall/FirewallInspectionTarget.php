@@ -16,27 +16,21 @@ final readonly class FirewallInspectionTarget
         public string $resourceName,
     ) {}
 
-    public static function fromRule(FirewallRule $rule): self
+    /** @return list<self> One target per ufw protocol the rule covers. */
+    public static function forRule(FirewallRule $rule): array
     {
         $rule->loadMissing('node');
         $family = FirewallSource::family($rule->source);
 
-        return new self(
+        return array_map(static fn (string $protocol): self => new self(
             node: $rule->node,
             shape: new FirewallInspectionShape(
-                comment: "orbit:node:{$rule->node_id}:firewall:{$rule->name}",
-                action: $rule->action->value,
-                direction: 'in',
-                source: $rule->source,
-                destination: 'any',
-                port: $rule->port,
-                protocol: $rule->protocol,
-                inInterface: null,
-                outInterface: null,
+                comment: $rule->comment(), action: $rule->action->value, direction: 'in', source: $rule->source,
+                destination: 'any', port: $rule->port, protocol: $protocol, inInterface: null, outInterface: null,
                 family: $family === 'both' ? null : $family,
             ),
             resourceId: $rule->id,
-            resourceName: $rule->name,
-        );
+            resourceName: $rule->identity(),
+        ), $rule->protocols());
     }
 }

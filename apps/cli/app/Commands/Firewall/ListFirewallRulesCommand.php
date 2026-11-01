@@ -18,7 +18,7 @@ final class ListFirewallRulesCommand extends FirewallCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List named firewall rules for one node.';
+    protected $description = 'List the operator firewall rules of one node.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -57,16 +57,17 @@ final class ListFirewallRulesCommand extends FirewallCommand
 
         foreach ($response->rules as $rule) {
             $rows[] = [
-                $rule->name,
-                $rule->action,
-                $rule->action === 'allowlist' ? implode(', ', $rule->sources) : $rule->source,
                 $rule->port,
                 $rule->protocol,
+                $rule->source,
+                $rule->action,
+                $rule->label ?? '',
                 $rule->status,
             ];
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['Name', 'Action', 'Source', 'Port', 'Protocol', 'Status'], $rows, 'No firewall rules.'));
+        usort($rows, static fn (array $a, array $b): int => [(int) $a[0], $a[0], $a[1], $a[2]] <=> [(int) $b[0], $b[0], $b[1], $b[2]]);
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['Port', 'Protocol', 'Source', 'Action', 'Label', 'Status'], $rows, 'No firewall rules.'));
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

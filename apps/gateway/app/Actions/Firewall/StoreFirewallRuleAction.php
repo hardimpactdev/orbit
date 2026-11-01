@@ -7,10 +7,9 @@ namespace App\Actions\Firewall;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Firewall\FirewallAction;
-use App\Domain\Firewall\FirewallAllowlist;
 use App\Domain\Firewall\FirewallMutationInput;
 use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Firewall\FirewallPort;
+use App\Domain\Firewall\FirewallProtectedPorts;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
@@ -30,45 +29,20 @@ final readonly class StoreFirewallRuleAction
     {
         return DB::transaction(function () use ($node, $data, $caller, $requestId): Operation {
             $this->guardLinuxPlatform($node);
-            $this->guardRecoverySsh($node, $data);
-            app(FirewallAllowlist::class)->guardOverlap($node, $data);
-            if ($data->action === FirewallAction::Allowlist) {
-                app(FirewallAllowlist::class)->guard($node, $data);
-            } else {
-                $this->guardActionConflict($node, $data);
+            if ($data->action === FirewallAction::Deny) {
+                app(FirewallProtectedPorts::class)->guard($node, $data->port);
             }
+            $rule = $this->identity($node, $data);
             app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
-            $rule = FirewallRule::query()->firstOrNew([
-                'node_id' => $node->id,
-                'name' => $data->name,
-            ]);
-            $created = ! $rule->exists;
-            $attributes = [
-                'action' => $data->action,
-                'source' => $data->source,
-                'sources' => $data->sources,
-                'protocol' => $data->protocol,
-                'port' => $data->port,
-            ];
-
-            if ($rule->exists && ! $this->matches($rule, $attributes)) {
-                throw new ResourceOperationException(
-                    errorCode: 'firewall.name_taken',
-                    message: "Firewall rule [{$data->name}] already exists with different configuration.",
-                    status: 409,
-                );
-            }
-
             $rule->fill([
-                ...$attributes,
-                'status' => LifecycleStatus::Provisioning,
-                'failed_step' => null,
-                'error_code' => null,
+                'action' => $data->action, 'source' => $data->source,
+                'protocol' => $data->protocol, 'port' => $data->port, 'label' => $data->label,
+                'status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null,
             ])->save();
             $rule->setRelation('node', $node);
 
             return $this->operations->execute('firewall.'.$data->action->value, 'node_firewall', $node->id, $node->id, [
-                'rule_id' => $rule->id, 'created' => $created, 'name' => $rule->name, 'action' => $rule->action->value,
+                'rule_id' => $rule->id, 'label' => $rule->label, 'action' => $rule->action->value,
                 'source' => $rule->source, 'protocol' => $rule->protocol, 'port' => $rule->port,
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 'firewall' => app(FirewallMutationInput::class)->capture($rule),
@@ -76,14 +50,26 @@ final readonly class StoreFirewallRuleAction
         });
     }
 
-    /** @param array{action: FirewallAction, source: string, protocol: string, port: string} $attributes */
-    private function matches(FirewallRule $rule, array $attributes): bool
+    /** A Node holds one rule per (port, protocol, source); the opposite action on it conflicts. */
+    private function identity(Node $node, StoreFirewallRuleData $data): FirewallRule
     {
-        return
-            $rule->action === $attributes['action']
-            && $rule->source === $attributes['source']
-            && $rule->protocol === $attributes['protocol']
-            && $rule->port === $attributes['port'];
+        $same = FirewallRule::query()->where('node_id', $node->id)->where('port', $data->port)->where('source', $data->source)->get();
+        foreach ($same as $rule) {
+            if ($rule->protocol === $data->protocol) {
+                if ($rule->action !== $data->action) {
+                    throw new ResourceOperationException('firewall.rule_conflict',
+                        "Node [{$node->name}] already has a {$rule->action->value} rule for {$rule->identity()}.", 409);
+                }
+                throw new ResourceOperationException('firewall.rule_exists',
+                    "Node [{$node->name}] already has a firewall rule for {$rule->identity()}.", 409);
+            }
+            if ($rule->protocol === 'any' || $data->protocol === 'any') {
+                throw new ResourceOperationException('firewall.rule_overlap',
+                    "Firewall rule {$rule->identity()} overlaps {$data->port}/{$data->protocol} from {$data->source}.", 409);
+            }
+        }
+
+        return new FirewallRule(['node_id' => $node->id]);
     }
 
     private function guardLinuxPlatform(Node $node): void
@@ -98,50 +84,5 @@ final readonly class StoreFirewallRuleAction
             message: 'Firewall rules require a Linux node.',
             status: 422,
         );
-    }
-
-    private function guardRecoverySsh(Node $node, StoreFirewallRuleData $data): void
-    {
-        if (
-            $data->action !== FirewallAction::Deny
-            || ! FirewallPort::contains($data->port, $node->public_ssh_port)
-        ) {
-            return;
-        }
-
-        throw new ResourceOperationException(
-            errorCode: 'firewall.public_ssh_deny_forbidden',
-            message: "Firewall rule [{$data->name}] would deny the public recovery SSH port.",
-        );
-    }
-
-    private function guardActionConflict(Node $node, StoreFirewallRuleData $data): void
-    {
-        $conflict = FirewallRule::query()
-            ->where('node_id', $node->id)
-            ->where('name', '!=', $data->name)
-            ->where('action', $this->oppositeAction($data->action))
-            ->where('source', $data->source)
-            ->where('protocol', $data->protocol)
-            ->where('port', $data->port)
-            ->first();
-
-        if ($conflict === null) {
-            return;
-        }
-
-        throw new ResourceOperationException(
-            errorCode: 'firewall.action_conflict',
-            message: "Firewall rule [{$data->name}] conflicts with [{$conflict->name}] on the same source, protocol, and port.",
-            status: 409,
-        );
-    }
-
-    private function oppositeAction(FirewallAction $action): FirewallAction
-    {
-        return match ($action) {
-            FirewallAction::Allow, FirewallAction::Allowlist => FirewallAction::Deny,
-            FirewallAction::Deny => FirewallAction::Allow,
-        };
     }
 }

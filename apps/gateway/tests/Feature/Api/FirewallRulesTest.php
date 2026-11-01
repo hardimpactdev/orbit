@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FirewallProjectionFixture;
@@ -30,12 +32,12 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
 });
 
-it('returns 422 for invalid names sources protocols and ports without persistence', function (
+it('returns 422 for invalid labels sources protocols and ports without persistence', function (
     array $payload,
     string $field,
 ): void {
     $response = $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
-        'name' => 'private-web',
+        'label' => 'private web',
         'source' => 'any',
         'protocol' => 'tcp',
         'port' => '443',
@@ -51,7 +53,7 @@ it('returns 422 for invalid names sources protocols and ports without persistenc
         ->and(FirewallRule::query()->count())
         ->toBe(0);
 })->with([
-    'unsafe name' => [['name' => 'Private Web'], 'name'],
+    'long label' => [['label' => str_repeat('a', 256)], 'label'],
     'hostname source' => [['source' => 'example.test'], 'source'],
     'invalid CIDR' => [['source' => '192.0.2.1/33'], 'source'],
     'protocol outside tcp and udp' => [['protocol' => 'sctp'], 'protocol'],
@@ -59,88 +61,100 @@ it('returns 422 for invalid names sources protocols and ports without persistenc
     'reversed range' => [['port' => '9000:8000'], 'port'],
 ]);
 
-it('returns 422 before persistence when a deny intersects public recovery SSH', function (): void {
-    $this
-        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/deny", [
-            'name' => 'block-ssh',
-            'source' => 'any',
-            'protocol' => 'tcp',
-            'port' => '1:1024',
-        ])
+it('refuses a deny on a port that keeps the Node reachable, before persistence', function (string $port): void {
+    $this->node->update(['public_ssh_port' => 2222]);
+    NodeRole::query()->create(['node_id' => $this->node->id, 'role' => 'gateway', 'status' => 'active']);
+    app(VpnSettings::class)->configure('10.44.0.0/24', 51821);
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/deny", ['port' => $port, 'source' => '192.0.2.9'])
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'firewall.public_ssh_deny_forbidden');
+        ->assertJsonPath('error.code', 'firewall.protected_port');
 
-    expect(FirewallRule::query()->count())->toBe(0);
+    expect(FirewallRule::query()->count())->toBe(0)
+        ->and(Activity::query()->where('command', 'firewall:deny')->sole()->error_code)->toBe('firewall.protected_port');
+})->with(['SSH' => '22', 'recovery SSH' => '2222', 'WireGuard' => '51821', 'role port' => '440:445']);
 
-    $activity = Activity::query()->where('command', 'firewall:deny')->sole();
-
-    expect($activity)
-        ->status->toBe('failed')
-        ->error_code->toBe('firewall.public_ssh_deny_forbidden')
-        ->subject_type->toBe(Node::class)
-        ->subject_id->toBe($this->node->id)
-        ->target_node_id->toBe($this->node->id);
+it('admits an allow on a protected port', function (): void {
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", ['port' => '22', 'source' => '192.0.2.9'])->assertAccepted();
 });
 
-it('returns 409 before UFW when allow and deny share a node source protocol and port', function (): void {
-    $this
-        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
-            'name' => 'private-web',
-            'source' => 'any',
-            'protocol' => 'tcp',
-            'port' => '443',
-        ])
-        ->assertAccepted();
+it('stores protocol any and no label when the request omits them', function (): void {
+    $id = $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", ['port' => '443'])->assertAccepted()->json('data.id');
 
-    $this
-        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/deny", [
-            'name' => 'block-web',
-            'source' => 'any',
-            'protocol' => 'tcp',
-            'port' => '443',
-        ])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'firewall.action_conflict');
+    expect(FirewallRule::query()->sole())->protocol->toBe('any')->source->toBe('any')->label->toBeNull()
+        ->and(Operation::findOrFail($id)->input['firewall']['rule'])->toMatchArray(['protocol' => 'any', 'source' => 'any', 'comment' => 'orbit', 'retain' => false]);
+});
 
-    $this->assertDatabaseHas('firewall_rules', [
-        'node_id' => $this->node->id,
-        'name' => 'private-web',
-        'action' => 'allow',
-        'status' => 'provisioning',
-        'failed_step' => null,
-        'error_code' => null,
-    ]);
-    $this->assertDatabaseMissing('firewall_rules', [
-        'node_id' => $this->node->id,
-        'name' => 'block-web',
-    ]);
+it('returns 409 before UFW for a second rule with the same identity or an overlapping protocol', function (string $action, array $payload, string $code): void {
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", ['label' => 'web', 'protocol' => 'tcp', 'port' => '443'])->assertAccepted();
 
-    $conflict = Activity::query()
-        ->where('command', 'firewall:deny')
-        ->where('status', 'failed')
-        ->sole();
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/{$action}", ['port' => '443', ...$payload])
+        ->assertConflict()->assertJsonPath('error.code', $code);
 
+    expect(FirewallRule::query()->sole())->action->value->toBe('allow')->label->toBe('web')->status->toBe(LifecycleStatus::Provisioning);
+    $conflict = Activity::query()->where('command', "firewall:{$action}")->where('status', 'failed')->sole();
     expect($conflict)
-        ->error_code->toBe('firewall.action_conflict')
+        ->error_code->toBe($code)
         ->subject_type->toBe(Node::class)
         ->subject_id->toBe($this->node->id)
         ->target_node_id->toBe($this->node->id)
         ->and($conflict->properties?->get('path'))
-        ->toBe("api/v1/nodes/{$this->node->id}/firewall-rules/deny");
-});
+        ->toBe("api/v1/nodes/{$this->node->id}/firewall-rules/{$action}");
+})->with([
+    'same allow' => ['allow', ['protocol' => 'tcp', 'label' => 'other'], 'firewall.rule_exists'],
+    'deny on the same identity' => ['deny', ['protocol' => 'tcp'], 'firewall.rule_conflict'],
+    'any over tcp' => ['allow', [], 'firewall.rule_overlap'],
+]);
 
-it('lists stable named intent and admits removal of only the selected rule', function (): void {
+it('admits a second rule on the same port at a different scope', function (array $first, array $second): void {
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/{$first[0]}", $first[1])->assertAccepted();
+    FirewallProjectionFixture::finish(Operation::query()->sole());
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/{$second[0]}", $second[1])->assertAccepted();
+
+    expect(FirewallRule::query()->orderBy('id')->get()->map(fn (FirewallRule $rule): string => $rule->action->value.' '.$rule->identity())->all())
+        ->toBe(["{$first[0]} {$first[2]}", "{$second[0]} {$second[2]}"]);
+})->with([
+    'deny from any, allow one source' => [['deny', ['port' => '5432'], '5432/any from any'], ['allow', ['port' => '5432', 'source' => '192.0.2.10'], '5432/any from 192.0.2.10']],
+    'allow from any, deny one source' => [['allow', ['port' => '25'], '25/any from any'], ['deny', ['port' => '25', 'source' => '192.0.2.10'], '25/any from 192.0.2.10']],
+    'udp beside tcp' => [['allow', ['port' => '443', 'protocol' => 'tcp'], '443/tcp from any'], ['allow', ['port' => '443', 'protocol' => 'udp'], '443/udp from any']],
+]);
+
+it('lists labelled intent and admits removal of only the selected rule by port', function (): void {
     $this->node->firewallRules()->create([
-        'name' => 'private-web', 'action' => 'allow', 'source' => 'any',
+        'label' => 'private web', 'action' => 'allow', 'source' => 'any',
         'port' => '443', 'protocol' => 'tcp', 'status' => LifecycleStatus::Active,
     ]);
+    $this->node->firewallRules()->create([
+        'action' => 'allow', 'source' => 'any', 'port' => '8443', 'protocol' => 'tcp', 'status' => LifecycleStatus::Active,
+    ]);
     $this->getJson("/api/v1/nodes/{$this->node->id}/firewall-rules")->assertOk()
-        ->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'private-web')->assertJsonMissingPath('data.0.backend_status');
-    $id = $this->withHeader('Idempotency-Key', 'remove-proof')->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")->assertAccepted()->assertJsonPath('data.kind', 'firewall.remove')->json('data.id');
-    expect(FirewallRule::query()->sole()->status)->toBe(LifecycleStatus::Removing);
+        ->assertJsonCount(2, 'data')->assertJsonPath('data.0.label', 'private web')->assertJsonPath('data.1.label', null)
+        ->assertJsonMissingPath('data.0.name')->assertJsonMissingPath('data.0.backend_status');
+    $id = $this->withHeader('Idempotency-Key', 'remove-proof')->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/remove", ['port' => '443'])
+        ->assertAccepted()->assertJsonPath('data.kind', 'firewall.remove')->json('data.id');
+    expect(Operation::findOrFail($id)->input)->toMatchArray(['label' => 'private web', 'port' => '443'])->not->toHaveKey('name')
+        ->and(FirewallRule::query()->where('port', '443')->sole()->status)->toBe(LifecycleStatus::Removing);
     FirewallProjectionFixture::finish(Operation::findOrFail($id));
-    expect(FirewallRule::query()->count())->toBe(0);
-    $this->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")->assertAccepted()->assertJsonPath('data.id', $id);
+    expect(FirewallRule::query()->pluck('port')->all())->toBe(['8443']);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/remove", ['port' => '443'])->assertAccepted()->assertJsonPath('data.id', $id);
+});
+
+it('refuses an ambiguous removal with the matches and narrows it by protocol or source', function (): void {
+    $this->node->firewallRules()->create(['label' => 'web', 'action' => 'allow', 'source' => 'any', 'port' => '443', 'protocol' => 'tcp', 'status' => LifecycleStatus::Active]);
+    $this->node->firewallRules()->create(['action' => 'deny', 'source' => '192.0.2.9', 'port' => '443', 'protocol' => 'udp', 'status' => LifecycleStatus::Active]);
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/remove", ['port' => '443'])
+        ->assertConflict()->assertJsonPath('error.code', 'firewall.rule_ambiguous')
+        ->assertJsonPath('error.details.matches', [
+            ['port' => '443', 'protocol' => 'tcp', 'source' => 'any', 'action' => 'allow', 'label' => 'web'],
+            ['port' => '443', 'protocol' => 'udp', 'source' => '192.0.2.9', 'action' => 'deny', 'label' => null],
+        ]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/remove", ['port' => '443', 'protocol' => 'any'])
+        ->assertNotFound()->assertJsonPath('error.code', 'firewall.rule_not_found');
+    $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/remove", ['port' => '443', 'source' => '192.0.2.9/32'])
+        ->assertAccepted()->assertJsonPath('data.kind', 'firewall.remove');
+
+    expect(FirewallRule::query()->where('status', LifecycleStatus::Removing)->sole()->protocol)->toBe('udp');
 });
 
 it('returns 404 without exposing a rule that belongs to another node', function (): void {
@@ -153,60 +167,20 @@ it('returns 404 without exposing a rule that belongs to another node', function 
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.4',
     ]);
-    $other
-        ->firewallRules()
-        ->create([
-            'name' => 'private-web',
-            'action' => 'allow',
-            'source' => 'any',
-            'protocol' => 'tcp',
-            'port' => '443',
-            'status' => LifecycleStatus::Active,
-        ]);
+    $otherRule = $other->firewallRules()->create([
+        'action' => 'allow', 'source' => 'any', 'protocol' => 'tcp', 'port' => '443', 'status' => LifecycleStatus::Active,
+    ]);
 
     $this
-        ->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")
-        ->assertNotFound();
+        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/remove", ['port' => '443'])
+        ->assertNotFound()->assertJsonPath('error.code', 'firewall.rule_not_found');
 
-});
-
-it('binds identical firewall rule names through the requested node', function (): void {
-    $other = Node::query()->create([
-        'name' => 'other-identical-name',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.22',
-        'public_ssh_port' => 22,
-        'user' => 'orbit',
-        'wireguard_ip' => '10.44.0.5',
+    $requestedRule = $this->node->firewallRules()->create([
+        'action' => 'allow', 'source' => 'any', 'protocol' => 'tcp', 'port' => '443', 'status' => LifecycleStatus::Active,
     ]);
-    $otherRule = $other
-        ->firewallRules()
-        ->create([
-            'name' => 'private-web',
-            'action' => 'allow',
-            'source' => 'any',
-            'protocol' => 'tcp',
-            'port' => '443',
-            'status' => LifecycleStatus::Active,
-        ]);
-    $requestedRule = $this->node
-        ->firewallRules()
-        ->create([
-            'name' => 'private-web',
-            'action' => 'allow',
-            'source' => 'any',
-            'protocol' => 'tcp',
-            'port' => '443',
-            'status' => LifecycleStatus::Active,
-        ]);
-
-    $id = $this
-        ->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")
-        ->assertAccepted()->json('data.id');
+    $id = $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/remove", ['port' => '443'])->assertAccepted()->json('data.id');
 
     FirewallProjectionFixture::finish(Operation::findOrFail($id));
     $this->assertDatabaseHas('firewall_rules', ['id' => $otherRule->id]);
     $this->assertDatabaseMissing('firewall_rules', ['id' => $requestedRule->id]);
-
 });

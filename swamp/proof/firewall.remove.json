@@ -3,65 +3,60 @@
   "workflow": "operation-firewall-direct",
   "topology": "minimal",
   "budget_seconds": 300,
-  "prepare": [
-    {
-      "method": "POST",
-      "path": "nodes/${node.target}/firewall-rules/allow",
-      "body": {
-        "name": "r-${proof.run}",
-        "source": "192.0.2.2",
-        "protocol": "tcp",
-        "port": "8443"
-      }
-    }
-  ],
-  "before_target": [
-    [
-      "sh",
-      "-c",
-      "ufw status | grep -qE '^8443/tcp +ALLOW +192.0.2.2'"
-    ]
-  ],
-  "request": {
-    "method": "DELETE",
-    "path": "nodes/${node.target}/firewall-rules/r-${proof.run}",
-    "body": {}
-  },
   "expect": {
     "status": "succeeded"
   },
   "phases": [
     {
-      "name": "read-before",
+      "name": "assets",
       "job": "firewall",
-      "step": "read-before",
-      "budget_seconds": 120
+      "step": "assets",
+      "budget_seconds": 60
     },
     {
       "name": "apply",
       "job": "firewall",
-      "step": "apply-source-0",
-      "budget_seconds": 120
+      "step": "apply",
+      "budget_seconds": 60
     },
     {
-      "name": "verify",
+      "name": "accepted",
       "job": "firewall",
-      "step": "verify-source-0",
-      "budget_seconds": 120
-    },
-    {
-      "name": "result",
-      "job": "firewall",
-      "step": "result",
-      "budget_seconds": 120
+      "step": "accepted",
+      "budget_seconds": 60
     }
   ],
-  "parity": "swamp/proof/firewall.remove/parity.py",
-  "clean_target": [
-    [
-      "sh",
-      "-c",
-      "ufw --force delete allow from 192.0.2.2 to any port 8443 proto tcp >/dev/null 2>&1; true"
-    ]
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/firewall-rules/allow",
+      "body": {
+        "port": "8443",
+        "protocol": "tcp",
+        "source": "192.0.2.2"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/firewall-rules/allow",
+      "body": {
+        "port": "8443",
+        "protocol": "udp",
+        "source": "192.0.2.2"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/firewall-rules/remove",
+    "body": {
+      "port": "8443",
+      "protocol": "tcp"
+    }
+  },
+  "parity": [
+    "swamp/proof/firewall/check.py",
+    "-8443/tcp ALLOW 192.0.2.2",
+    "+8443/udp ALLOW 192.0.2.2"
   ]
 }

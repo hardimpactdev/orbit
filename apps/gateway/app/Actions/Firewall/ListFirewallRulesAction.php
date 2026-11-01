@@ -13,7 +13,7 @@ final readonly class ListFirewallRulesAction
     /** @return Collection<int, FirewallRule> */
     public function execute(Node $node): Collection
     {
-        return $node->firewallRules()->with('node')->orderBy('name')->get();
+        return $node->firewallRules()->with('node')->orderBy('port')->orderBy('protocol')->orderBy('source')->get();
     }
 
     /**
@@ -28,7 +28,7 @@ final readonly class ListFirewallRulesAction
             ->with('node')
             ->whereIn('node_id', $nodeIds)
             ->orderBy('node_id')
-            ->orderBy('name')
+            ->orderBy('port')->orderBy('protocol')->orderBy('source')
             ->get();
     }
 }

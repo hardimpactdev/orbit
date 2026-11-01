@@ -29,7 +29,7 @@ final readonly class RemoveFirewallRuleAction
         return DB::transaction(function () use ($rule, $caller, $requestId): Operation {
             app(DirectOperation::class)->writer('firewall.remove', [], $rule->node_id);
             $operation = $this->operations->execute('firewall.remove', 'node_firewall', $rule->node_id, $rule->node_id, [
-                'rule_id' => $rule->id, 'node_id' => $rule->node_id, 'name' => $rule->name,
+                'rule_id' => $rule->id, 'node_id' => $rule->node_id, 'label' => $rule->label,
                 'action' => $rule->action->value, 'source' => $rule->source, 'protocol' => $rule->protocol,
                 'port' => $rule->port, 'caller_node_id' => $caller?->id,
                 'firewall' => app(FirewallMutationInput::class)->capture($rule, true),

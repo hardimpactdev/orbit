@@ -45,7 +45,6 @@ use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Firewall\AllowlistFirewallRuleRequest;
 use Orbit\Sdk\Requests\GitHub\DestroyGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
@@ -381,8 +380,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeWireGuardHubRequest',
         ];
-        $allowlistRequests = [AllowlistFirewallRuleRequest::class];
-        $expectedOperationCount = count($allowlistRequests) + count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -479,7 +477,6 @@ describe('repository guidance bootstrap', function (): void {
             ->toBe($expectedOperationCount + 5)
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
-            ->toContain(...$allowlistRequests)
             ->toContain(...$developmentDeployRequests)
             ->toContain(...$lifecycleRequests)
             ->toContain(...$exclusionRequests)

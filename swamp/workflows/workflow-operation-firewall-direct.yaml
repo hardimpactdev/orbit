@@ -1,6 +1,6 @@
 id: 4093f46d-9dd2-4e67-a151-dd5bb9addb0c
 name: operation-firewall-direct
-description: Converge admitted named firewall tuples from Node 209 through official models.
+description: Converge one admitted firewall rule from Node 209 with one shipped script over official SSH.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -8,7 +8,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [firewall.allow, firewall.deny, firewall.allowlist, firewall.remove]}
+    kind: {type: string, enum: [firewall.allow, firewall.deny, firewall.remove]}
     intent: {type: object}
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -16,25 +16,25 @@ inputs:
 jobs:
 - name: firewall
   steps:
-  - name: pins
+  - name: assets
     target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/firewall-mutation-result'
-      behaviorName: '${{ "firewall-pins-" + run.id }}'
-      methodName: preflight
+      behaviorType: '@nckrtl/firewall-assets'
+      behaviorName: '${{ "firewall-assets-" + run.id }}'
+      methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
-  - name: read-before
+  - name: apply
     target: orbit-node-209
-    guard: '${{ inputs.intent.rule.action == "allowlist" }}'
-    dependsOn: [{step: pins, condition: {type: succeeded}}]
-    task: &read
+    writes: true
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "firewall-read-" + run.id }}'
+      behaviorName: '${{ "firewall-apply-" + run.id }}'
       methodName: exec
-      globalArgs: &ssh
-        name: '${{ "firewall-read-" + run.id }}'
+      globalArgs:
+        name: '${{ "firewall-apply-" + run.id }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.ssh.target.user }}'
@@ -42,117 +42,12 @@ jobs:
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
           hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'
         hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
-      inputs: {hosts: 'name:target', argv: [/usr/sbin/ufw, status, numbered], sudo: true}
-  - name: allowlist-assets
-    target: orbit-node-209
-    dependsOn: [{step: pins, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.rule.action != "allowlist" }}'
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/firewall-allowlist-assets'
-      behaviorName: '${{ "firewall-assets-" + run.id }}'
-      methodName: read
-      inputs: {intent: '${{ inputs.intent }}'}
-  - name: allowlist
-    target: orbit-node-209
-    writes: true
-    dependsOn: [{step: allowlist-assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.rule.action != "allowlist" }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "firewall-allowlist-" + run.id }}'
-      methodName: exec
-      globalArgs: *ssh
       inputs:
         hosts: 'name:target'
         sudo: true
-        argv: [timeout, '60', python3, -I, -c, '${{ steps["allowlist-assets"].outputs.script }}', '${{ steps["allowlist-assets"].outputs.input }}']
+        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.script }}', '${{ steps.assets.outputs.input }}']
         okExitCodes: [0, 1]
-  - name: backend
+  - name: accepted
     target: orbit-node-209
-    guard: '${{ inputs.intent.rule.action == "allowlist" }}'
-    dependsOn: [{step: read-before, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/firewall-mutation-result'
-      behaviorName: '${{ "firewall-backend-" + run.id }}'
-      methodName: observe
-      inputs: {intent: '${{ inputs.intent }}', stdout: '${{ steps["read-before"].outputs.stdout }}'}
-  - name: legacy-remove
-    target: orbit-node-209
-    writes: true
-    dependsOn: [{step: backend, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.rule.action == "allowlist" || (!steps.backend.outputs.legacy) }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "firewall-legacy-" + run.id }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs: {hosts: 'name:target', argv: '${{ inputs.intent.legacy_remove }}', sudo: true}
-  - name: apply-any
-    target: orbit-node-209
-    writes: true
-    forEach: &tuples {item: tuple, in: '${{ inputs.intent.tuples }}'}
-    dependsOn: &prepared [{step: backend, condition: {type: succeeded}}, {step: legacy-remove, condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: '${{ inputs.intent.rule.action == "allowlist" || (inputs.intent.rule.source != "any") }}'
-    task: &any
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/firewall'
-      behaviorName: '${{ "firewall-apply-any-" + run.id + "-" + string(self._index) }}'
-      methodName: apply
-      globalArgs: &tuple
-        nodeHost: '${{ inputs.intent.ssh.target.host }}'
-        nodeUser: '${{ inputs.intent.ssh.target.user }}'
-        nodePort: '${{ inputs.intent.ssh.target.port }}'
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
-        become: true
-        port: '${{ self.tuple.port }}'
-        protocol: '${{ inputs.intent.rule.protocol }}'
-        action: '${{ inputs.intent.rule.action }}'
-        direction: in
-        ensure: '${{ self.tuple.ensure }}'
-      inputs: {}
-  - name: apply-source
-    target: orbit-node-209
-    writes: true
-    forEach: *tuples
-    dependsOn: *prepared
-    guard: '${{ inputs.intent.rule.action == "allowlist" || (inputs.intent.rule.source == "any") }}'
-    task: &source
-      <<: *any
-      behaviorName: '${{ "firewall-apply-source-" + run.id + "-" + string(self._index) }}'
-      globalArgs: {<<: *tuple, source: '${{ inputs.intent.rule.source }}'}
-  - name: verify-any
-    target: orbit-node-209
-    forEach: *tuples
-    dependsOn: &applied [{step: apply-any, condition: *done}, {step: apply-source, condition: *done}]
-    guard: '${{ inputs.intent.rule.action == "allowlist" || (inputs.intent.rule.source != "any") }}'
-    task:
-      <<: *any
-      behaviorName: '${{ "firewall-verify-any-" + run.id + "-" + string(self._index) }}'
-      methodName: check
-  - name: verify-source
-    target: orbit-node-209
-    forEach: *tuples
-    dependsOn: *applied
-    guard: '${{ inputs.intent.rule.action == "allowlist" || (inputs.intent.rule.source == "any") }}'
-    task:
-      <<: *source
-      behaviorName: '${{ "firewall-verify-source-" + run.id + "-" + string(self._index) }}'
-      methodName: check
-  - name: read-after
-    target: orbit-node-209
-    guard: '${{ inputs.intent.rule.action == "allowlist" }}'
-    dependsOn: [{step: verify-any, condition: *done}, {step: verify-source, condition: *done}]
-    task: *read
-  - name: result
-    target: orbit-node-209
-    dependsOn: [{step: read-after, condition: *done}, {step: allowlist, condition: *done}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/firewall-mutation-result'
-      behaviorName: '${{ "firewall-result-" + run.id }}'
-      methodName: result
-      inputs: {intent: '${{ inputs.intent }}', outcomes: '${{ steps }}', stdout: '${{ inputs.intent.rule.action == "allowlist" ? "" : steps["read-after"].outputs.stdout }}'}
+    dependsOn: [{step: apply, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.apply.outputs.exitCode == 0, severity: high, message: The firewall rule did not converge.}

@@ -26,7 +26,7 @@ Project development deploy step changes record `project:dev-deploy-step:create`,
 
 [Conn](/reference/conn) T3 server registration records `conn:environment:register` with only the environment ID, label, and URL, so the admin session never enters Activity. A profile settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. `conn:profile:settings:update` records the document version it replaced and the names of the sections it sent. `conn:profile:settings:patch` records each section name with the version the client sent. The Conn extension contributes these rules through the `ActivityInputRedaction` [plug-in point](/reference/extensions#plug-in-points), so they apply while `conn` is off too.
 
-`firewall:allowlist` records the target Node, rule name, complete source list, outcome and request ID. A refusal before the rule exists still identifies the path-bound Node.
+`firewall:allow`, `firewall:deny` and `firewall:remove` record the target Node, the rule's port, protocol and source, the outcome and the request ID. A refusal before the rule exists still identifies the path-bound Node.
 
 ## Commands
 

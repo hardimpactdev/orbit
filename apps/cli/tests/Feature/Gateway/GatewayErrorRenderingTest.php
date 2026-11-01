@@ -594,31 +594,25 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'firewall node ID' => [
         'firewall:allow',
-        ['name' => 'web', '--node' => '0', '--port' => '443'],
+        ['port' => '443', '--node' => '0'],
         'firewall.node_id_invalid',
         'Node ID must be a positive integer.',
     ],
-    'firewall name' => [
-        'firewall:allow',
-        ['name' => 'validation-secret name', '--node' => '1', '--port' => '443'],
-        'firewall.rule_name_invalid',
-        'Firewall rule name is invalid.',
-    ],
     'firewall protocol' => [
         'firewall:allow',
-        ['name' => 'web', '--node' => '1', '--protocol' => 'validation-secret', '--port' => '443'],
+        ['port' => '443', '--node' => '1', '--protocol' => 'validation-secret'],
         'firewall.protocol_invalid',
         'Firewall protocol must be tcp or udp.',
     ],
     'firewall source' => [
         'firewall:allow',
-        ['name' => 'web', '--node' => '1', '--from' => 'validation-secret', '--port' => '443'],
+        ['port' => '443', '--node' => '1', '--from' => 'validation-secret'],
         'firewall.source_invalid',
         'Firewall source must be any or a valid IPv4 or IPv6 address or CIDR.',
     ],
     'firewall port' => [
         'firewall:allow',
-        ['name' => 'web', '--node' => '1', '--port' => 'validation-secret'],
+        ['port' => 'validation-secret', '--node' => '1'],
         'firewall.port_invalid',
         'Firewall port must be from 1 to 65535 or an ordered range.',
     ],
@@ -783,11 +777,10 @@ it('renders local validation failures through the exact json boundary', function
     'multiple firewall values fail at the first error' => [
         'firewall:allow',
         [
-            'name' => 'validation-secret name',
+            'port' => 'validation-secret',
             '--node' => '0',
             '--protocol' => 'validation-secret',
             '--from' => 'validation-secret',
-            '--port' => 'validation-secret',
         ],
         'firewall.node_id_invalid',
         'Node ID must be a positive integer.',

@@ -117,7 +117,7 @@ it('admits public Process publication without requesting a private ingress certi
         $process->update(['runtime_config' => ['ports' => ['10.6.0.42:8787:8080/tcp']]]);
     }
     if ($allowed) {
-        $node->firewallRules()->create(['name' => 'process-lan', 'action' => 'allow', 'source' => $ingress->lan_ip, 'port' => '8787', 'protocol' => 'tcp', 'status' => 'active']);
+        $node->firewallRules()->create(['label' => 'process-lan', 'action' => 'allow', 'source' => $ingress->lan_ip, 'port' => '8787', 'protocol' => 'tcp', 'status' => 'active']);
     }
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
@@ -135,12 +135,12 @@ it('admits public Process publication without requesting a private ingress certi
     $expected = $intent['preparation']['upstream_firewalls'][0];
     expect($expected['node_id'])->toBe($node->id);
     if ($allowed) {
-        expect($expected['expected'][0])->toMatchArray(['comment' => 'orbit:node:'.$node->id.':firewall:process-lan', 'source' => $ingress->lan_ip, 'port' => '8787']);
+        expect($expected['expected'][0])->toMatchArray(['comment' => 'orbit process-lan', 'source' => $ingress->lan_ip, 'port' => '8787']);
         $node->firewallRules()->delete();
         expect($operation->fresh()->input['route_lifecycle']['preparation']['upstream_firewalls'][0])->toBe($expected);
     } elseif ($lan) {
         expect($expected['expected'])->toBe([]);
-        $node->firewallRules()->create(['name' => 'process-lan', 'action' => 'allow', 'source' => $ingress->lan_ip, 'port' => '8787', 'protocol' => 'tcp', 'status' => 'active']);
+        $node->firewallRules()->create(['label' => 'process-lan', 'action' => 'allow', 'source' => $ingress->lan_ip, 'port' => '8787', 'protocol' => 'tcp', 'status' => 'active']);
         expect($operation->fresh()->input['route_lifecycle']['preparation']['upstream_firewalls'][0]['expected'])->toBe([])
             ->and($this->socket->sent)->toHaveCount(1);
     } else {

@@ -8,7 +8,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
-use Orbit\Sdk\Requests\Firewall\AllowlistFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
@@ -41,21 +40,21 @@ it('sends normalized allow input through the active gateway as JSON', function (
 
     $this
         ->artisan('firewall:allow', [
-            'name' => 'private-web',
+            'port' => '443',
             '--node' => '7',
             '--from' => '192.0.2.0/24',
             '--protocol' => 'tcp',
-            '--port' => '443',
+            '--label' => 'office web',
             '--json' => true,
         ])
         ->expectsOutput(firewall_cli_json(action: 'allow', backendStatus: 'active'))
         ->assertExitCode(0);
 
     $mock->assertSent(fn ($request): bool => $request instanceof AllowFirewallRuleRequest
-        && $request->body()->all() === ['name' => 'private-web', 'source' => '192.0.2.0/24', 'protocol' => 'tcp', 'port' => '443']);
+        && $request->body()->all() === ['port' => '443', 'source' => '192.0.2.0/24', 'protocol' => 'tcp', 'label' => 'office web']);
 });
 
-it('omits optional firewall source and protocol for Gateway defaults', function (
+it('omits an absent source, protocol, and label so the Gateway reads any', function (
     string $command,
     string $requestClass,
 ): void {
@@ -69,13 +68,12 @@ it('omits optional firewall source and protocol for Gateway defaults', function 
 
     $this
         ->artisan($command, [
-            'name' => 'web',
+            'port' => '443',
             '--node' => '7',
-            '--port' => '443',
         ])
         ->assertExitCode(0);
 
-    $mock->assertSent(fn ($request): bool => $request instanceof $requestClass && $request->body()->all() === ['name' => 'web', 'port' => '443']);
+    $mock->assertSent(fn ($request): bool => $request instanceof $requestClass && $request->body()->all() === ['port' => '443']);
 })->with([
     'allow' => ['firewall:allow', AllowFirewallRuleRequest::class],
     'deny' => ['firewall:deny', DenyFirewallRuleRequest::class],
@@ -106,17 +104,17 @@ it('reports inactive UFW as a structured gateway failure', function (
     'allow' => [
         'firewall:allow',
         AllowFirewallRuleRequest::class,
-        ['name' => 'private-web', '--node' => '7', '--port' => '443'],
+        ['port' => '443', '--node' => '7'],
     ],
     'deny' => [
         'firewall:deny',
         DenyFirewallRuleRequest::class,
-        ['name' => 'block-admin', '--node' => '7', '--port' => '9000'],
+        ['port' => '9000', '--node' => '7'],
     ],
     'remove' => [
         'firewall:remove',
         RemoveFirewallRuleRequest::class,
-        ['--yes' => true, 'name' => 'private-web', '--node' => '7'],
+        ['--yes' => true, 'port' => '443', '--node' => '7'],
     ],
 ]);
 
@@ -152,40 +150,41 @@ it('reports inactive UFW with the exact safe JSON error envelope', function (
     'allow JSON' => [
         'firewall:allow',
         AllowFirewallRuleRequest::class,
-        ['name' => 'private-web', '--node' => '7', '--port' => '443'],
+        ['port' => '443', '--node' => '7'],
     ],
     'deny JSON' => [
         'firewall:deny',
         DenyFirewallRuleRequest::class,
-        ['name' => 'block-admin', '--node' => '7', '--port' => '9000'],
+        ['port' => '9000', '--node' => '7'],
     ],
     'remove JSON' => [
         'firewall:remove',
         RemoveFirewallRuleRequest::class,
-        ['--yes' => true, 'name' => 'private-web', '--node' => '7'],
+        ['--yes' => true, 'port' => '443', '--node' => '7'],
     ],
 ]);
 
-it('lists stable named rules for one node', function (): void {
+it('lists rules by port, protocol, and source with their label', function (): void {
     firewall_cli_mock([
         ListFirewallRulesRequest::class => MockResponse::make([
-            'data' => [firewall_cli_payload(action: 'allow', backendStatus: null)],
+            'data' => [
+                [...firewall_cli_payload(action: 'allow', backendStatus: null), 'port' => '8000:8100', 'label' => null],
+                [...firewall_cli_payload(action: 'deny', backendStatus: null), 'port' => '443', 'protocol' => 'udp'],
+                firewall_cli_payload(action: 'allow', backendStatus: null),
+            ],
             'meta' => ['request_id' => firewall_cli_request_id()],
         ]),
     ]);
 
     expect(Artisan::call('firewall:list', ['--node' => '7']))->toBe(0);
     $output = Artisan::output();
-    expect($output)->toContain('NAME');
-    expect($output)->toContain('ACTION');
-    expect($output)->toContain('SOURCE');
-    expect($output)->toContain('PORT');
-    expect($output)->toContain('PROTOCOL');
-    expect($output)->toContain('STATUS');
-    expect($output)->toContain('Request ID: '.firewall_cli_request_id());
+    expect($output)->toMatch('/PORT[\s│]+PROTOCOL[\s│]+SOURCE[\s│]+ACTION[\s│]+LABEL[\s│]+STATUS/u')
+        ->not->toContain('NAME')
+        ->toMatch('/443[\s│]+tcp[\s│]+192\.0\.2\.0\/24[\s│]+allow[\s│]+office web.*443[\s│]+udp[\s│]+any[\s│]+deny.*8000:8100/su')
+        ->toContain('Request ID: '.firewall_cli_request_id());
 });
 
-it('removes one stable name within one node', function (): void {
+it('removes the one rule that matches the port, source, and protocol', function (): void {
     $mock = firewall_cli_mock([
         RemoveFirewallRuleRequest::class => firewall_cli_response(action: 'allow', backendStatus: 'absent'),
     ]);
@@ -193,15 +192,40 @@ it('removes one stable name within one node', function (): void {
     $this
         ->artisan('firewall:remove', [
             '--yes' => true,
-            'name' => 'private-web',
+            'port' => '443',
             '--node' => '7',
+            '--from' => 'any',
+            '--protocol' => 'tcp',
         ])
         ->expectsOutputToContain('succeeded')
         ->expectsOutput('Request ID: '.firewall_cli_request_id())
         ->assertExitCode(0);
 
-    $mock->assertSent(fn ($request): bool => $request instanceof RemoveFirewallRuleRequest && $request->resolveEndpoint() === '/api/v1/nodes/7/firewall-rules/private-web');
+    $mock->assertSent(fn ($request): bool => $request instanceof RemoveFirewallRuleRequest
+        && $request->resolveEndpoint() === '/api/v1/nodes/7/firewall-rules/remove'
+        && $request->body()->all() === ['port' => '443', 'source' => 'any', 'protocol' => 'tcp']);
 });
+
+it('renders every rule that an ambiguous removal matched', function (bool $json): void {
+    firewall_cli_mock([
+        RemoveFirewallRuleRequest::class => MockResponse::make(['error' => [
+            'code' => 'firewall.rule_ambiguous',
+            'message' => 'More than one firewall rule matches.',
+            'details' => ['matches' => [
+                ['port' => '443', 'protocol' => 'tcp', 'source' => 'any', 'action' => 'allow', 'label' => 'web'],
+                ['port' => '443', 'protocol' => 'udp', 'source' => 'any', 'action' => 'deny', 'label' => null],
+            ]],
+        ]], 409, ['X-Orbit-Request-Id' => firewall_cli_request_id()]),
+    ]);
+    $matches = ['443/tcp from any: allow (web)', '443/udp from any: deny'];
+
+    $command = $this->artisan('firewall:remove', ['port' => '443', '--node' => '7', '--yes' => true, '--json' => $json]);
+    $json
+        ? $command->expectsOutput(json_encode(['error' => ['code' => 'firewall.rule_ambiguous', 'message' => 'More than one firewall rule matches.',
+            'details' => ['matches' => $matches], 'request_id' => firewall_cli_request_id()]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        : $command->expectsOutputToContain('More than one firewall rule matches.')->expectsOutputToContain($matches[0])->expectsOutputToContain($matches[1]);
+    $command->assertExitCode(1);
+})->with(['human' => false, 'JSON' => true]);
 
 it('rejects invalid local input before making a gateway request', function (
     string $command,
@@ -222,53 +246,52 @@ it('rejects invalid local input before making a gateway request', function (
         ['--node' => 'app-dev'],
         'Node ID must be a positive integer.',
     ],
-    'name' => [
-        'firewall:allow',
-        ['name' => 'Private Web', '--node' => '7', '--port' => '443'],
-        'Firewall rule name is invalid.',
-    ],
     'protocol' => [
         'firewall:allow',
-        ['name' => 'private-web', '--node' => '7', '--port' => '443', '--protocol' => 'sctp'],
+        ['port' => '443', '--node' => '7', '--protocol' => 'sctp'],
         'Firewall protocol must be tcp or udp.',
     ],
     'source' => [
         'firewall:allow',
-        ['name' => 'private-web', '--node' => '7', '--port' => '443', '--from' => 'example.test'],
+        ['port' => '443', '--node' => '7', '--from' => 'example.test'],
         'Firewall source must be any or a valid IPv4 or IPv6 address or CIDR.',
     ],
-    'port' => [
+    'port range order' => [
         'firewall:deny',
-        ['name' => 'block-admin', '--node' => '7', '--port' => '9000:8000'],
+        ['port' => '9000:8000', '--node' => '7'],
+        'Firewall port must be from 1 to 65535 or an ordered range.',
+    ],
+    'service name' => [
+        'firewall:remove',
+        ['port' => 'https', '--node' => '7', '--yes' => true],
+        'Firewall port must be from 1 to 65535 or an ordered range.',
+    ],
+    'port above range' => [
+        'firewall:allow',
+        ['port' => '65536', '--node' => '7', '--from' => '10.44.0.6'],
         'Firewall port must be from 1 to 65535 or an ordered range.',
     ],
 ]);
 
-it('shows the gateway request ID on bounded failures', function (): void {
+it('shows the gateway admission refusal and request ID', function (string $command, string $code, int $status, string $message): void {
     firewall_cli_mock([
-        AllowFirewallRuleRequest::class => MockResponse::make(
-            [
-                'error' => [
-                    'code' => 'firewall.rule_collision',
-                    'message' => 'The managed firewall name is ambiguous.',
-                    'details' => [],
-                ],
-            ],
-            502,
+        ($command === 'firewall:deny' ? DenyFirewallRuleRequest::class : AllowFirewallRuleRequest::class) => MockResponse::make(
+            ['error' => ['code' => $code, 'message' => $message, 'details' => []]],
+            $status,
             ['X-Orbit-Request-Id' => firewall_cli_request_id()],
         ),
     ]);
 
     $this
-        ->artisan('firewall:allow', [
-            'name' => 'private-web',
-            '--node' => '7',
-            '--port' => '443',
-        ])
-        ->expectsOutputToContain('The managed firewall name is ambiguous.')
-        ->expectsOutput('Request ID: '.firewall_cli_request_id())
+        ->artisan($command, ['port' => '22', '--node' => '7', '--protocol' => 'tcp', '--json' => true])
+        ->expectsOutput(json_encode(['error' => ['code' => $code, 'message' => $message, 'request_id' => firewall_cli_request_id()]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(1);
-});
+})->with([
+    'conflict' => ['firewall:deny', 'firewall.rule_conflict', 409, 'An allow rule has the same port, protocol, and source.'],
+    'exists' => ['firewall:allow', 'firewall.rule_exists', 409, 'This firewall rule exists.'],
+    'overlap' => ['firewall:allow', 'firewall.rule_overlap', 409, 'A rule for any protocol overlaps this rule.'],
+    'protected port' => ['firewall:deny', 'firewall.protected_port', 422, 'Port 22 is protected.'],
+]);
 
 function firewall_cli_response(string $action, ?string $backendStatus, int $status = 200): MockResponse
 {
@@ -300,7 +323,7 @@ function firewall_cli_payload(string $action, ?string $backendStatus): array
         'id' => 11,
         'node_id' => 7,
         'node' => 'app-dev',
-        'name' => $action === 'deny' ? 'block-admin' : 'private-web',
+        'label' => $action === 'deny' ? null : 'office web',
         'action' => $action,
         'source' => $action === 'deny' ? 'any' : '192.0.2.0/24',
         'protocol' => 'tcp',
@@ -315,7 +338,7 @@ function firewall_cli_payload(string $action, ?string $backendStatus): array
 function firewall_cli_operation(string $action = 'allow', ?string $backendStatus = 'active'): array
 {
     return ['id' => 42, 'kind' => 'firewall.'.($backendStatus === 'absent' ? 'remove' : $action),
-        'target_type' => 'node_firewall', 'target_id' => 7, 'input' => ['name' => 'private-web'],
+        'target_type' => 'node_firewall', 'target_id' => 7, 'input' => ['port' => '443'],
         'status' => 'succeeded', 'sequence' => 5, 'result' => ['backend' => $backendStatus]];
 }
 
@@ -349,28 +372,8 @@ it('follows a queued firewall Operation to its final JSON receipt and forwards t
         ShowRealtimeRequest::class => MockResponse::make([], 503),
         ShowOperationRequest::class => firewall_cli_response('allow', 'active'),
     ]);
-    $this->artisan('firewall:allow', ['name' => 'private-web', '--node' => '7', '--port' => '443', '--idempotency-key' => 'allow-7', '--json' => true])
+    $this->artisan('firewall:allow', ['port' => '443', '--node' => '7', '--idempotency-key' => 'allow-7', '--json' => true])
         ->expectsOutput(firewall_cli_json('allow', 'active'))->assertExitCode(0);
     $mock->assertSent(fn ($request): bool => $request instanceof AllowFirewallRuleRequest && $request->headers()->get('Idempotency-Key') === 'allow-7');
     $mock->assertSent(fn ($request): bool => $request instanceof ShowOperationRequest);
-});
-
-it('sends a complete repeated source set and follows the allowlist Operation', function (): void {
-    $mock = MockClient::global([
-        AllowlistFirewallRuleRequest::class => firewall_cli_response('allowlist', 'active'),
-        ShowRealtimeRequest::class => MockResponse::make([], 503),
-        ShowOperationRequest::class => firewall_cli_response('allowlist', 'active'),
-    ]);
-    $this->artisan('firewall:allowlist', ['name' => 'rex', '--node' => '7', '--port' => '7297', '--from' => ['10.44.0.6', '10.44.0.9'], '--idempotency-key' => 'rex-first', '--json' => true])
-        ->expectsOutput(firewall_cli_json('allowlist', 'active'))->assertExitCode(0);
-    $mock->assertSent(fn ($request): bool => $request instanceof AllowlistFirewallRuleRequest
-        && $request->body()->all() === ['name' => 'rex', 'sources' => ['10.44.0.6', '10.44.0.9'], 'port' => '7297']
-        && $request->headers()->get('Idempotency-Key') === 'rex-first');
-});
-
-it('refuses an empty allowlist without contacting the Gateway', function (): void {
-    $mock = MockClient::global([]);
-    $this->artisan('firewall:allowlist', ['name' => 'rex', '--node' => '7', '--port' => '7297', '--json' => true])
-        ->expectsOutputToContain('firewall.source_invalid')->assertExitCode(1);
-    $mock->assertNothingSent();
 });

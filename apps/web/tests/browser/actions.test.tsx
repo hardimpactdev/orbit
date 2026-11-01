@@ -273,15 +273,19 @@ it("asks before a destructive action and sends nothing until it is confirmed", a
     await userEvent.keyboard("{Enter}");
     await expect
         .element(pane("https-public"))
-        .toMatchTextContent("Confirm? Remove firewall rule [https-public] on node [beast]?");
-    expect(app.gateway.requests.some((request) => request.method === "DELETE")).toBe(false);
+        .toMatchTextContent(
+            "Confirm? Remove firewall rule [443/tcp from 0.0.0.0/0] on node [beast]?",
+        );
+    expect(app.gateway.requests.some((request) => request.path.endsWith("/remove"))).toBe(false);
 
     await userEvent.keyboard("{Enter}");
-    await expect.element(footer()).toMatchTextContent("Firewall rule [https-public] removed.");
+    await expect
+        .element(footer())
+        .toMatchTextContent("Firewall rule [443/tcp from 0.0.0.0/0] removed.");
     await expect.element(row("Firewall", "443/tcp")).not.toBeInTheDocument();
     expect(app.gateway.requests.at(-1)).toMatchObject({
-        method: "DELETE",
-        path: "/api/v1/nodes/2/firewall-rules/https-public",
+        method: "POST",
+        path: "/api/v1/nodes/2/firewall-rules/remove",
     });
 });
 
@@ -291,7 +295,7 @@ it("cancels a menu with Esc", async () => {
     await userEvent.keyboard("{Enter}{Escape}");
 
     await expect.element(pane("https-public")).not.toBeInTheDocument();
-    expect(app.gateway.requests.some((request) => request.method === "DELETE")).toBe(false);
+    expect(app.gateway.requests.some((request) => request.path.endsWith("/remove"))).toBe(false);
 });
 
 it("names the command for an action that has no request", async () => {

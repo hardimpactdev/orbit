@@ -11,27 +11,24 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-final class AllowlistFirewallRuleRequest extends GatewayRequest implements HasBody
+/** Admits one firewall write on a Node. An omitted source, protocol, or label is left out of the body. */
+abstract class FirewallRuleRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param list<string> $sources */
     public function __construct(
         private readonly int $nodeId,
-        private readonly string $name,
-        private readonly array $sources,
-        private readonly ?string $protocol,
         private readonly string $port,
+        private readonly ?string $source = null,
+        private readonly ?string $protocol = null,
+        private readonly ?string $label = null,
         private readonly ?string $idempotencyKey = null,
     ) {}
 
-    public function resolveEndpoint(): string
-    {
-        return "/api/v1/nodes/{$this->nodeId}/firewall-rules/allowlist";
-    }
+    abstract protected function action(): string;
 
     /** @return array<string, string> */
     protected function defaultHeaders(): array
@@ -39,19 +36,22 @@ final class AllowlistFirewallRuleRequest extends GatewayRequest implements HasBo
         return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{name: string, sources: list<string>, port: string, protocol?: string} */
-    protected function defaultBody(): array
+    public function resolveEndpoint(): string
     {
-        $body = ['name' => $this->name, 'sources' => $this->sources, 'port' => $this->port];
-        if ($this->protocol !== null) {
-            $body['protocol'] = $this->protocol;
-        }
-
-        return $body;
+        return "/api/v1/nodes/{$this->nodeId}/firewall-rules/{$this->action()}";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
         return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+    }
+
+    /** @return array{port: string, source?: string, protocol?: string, label?: string} */
+    protected function defaultBody(): array
+    {
+        return array_filter(
+            ['port' => $this->port, 'source' => $this->source, 'protocol' => $this->protocol, 'label' => $this->label],
+            static fn (?string $value): bool => $value !== null,
+        );
     }
 }

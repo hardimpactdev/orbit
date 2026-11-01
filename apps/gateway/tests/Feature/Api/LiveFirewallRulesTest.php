@@ -15,7 +15,7 @@ beforeEach(function (): void {
 });
 
 it('marks every desired rule unverifiable without reading the Node or stored snapshots', function (): void {
-    FirewallRule::query()->create(['node_id' => $this->node->id, 'name' => 'web', 'action' => 'allow', 'source' => '192.0.2.9',
+    FirewallRule::query()->create(['node_id' => $this->node->id, 'label' => 'web', 'action' => 'allow', 'source' => '192.0.2.9',
         'port' => '443', 'protocol' => 'tcp', 'status' => 'active']);
     Operation::query()->create(['kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
         'status' => 'succeeded', 'input' => [], 'result' => ['firewall' => [$this->node->id => ['backend' => 'active', 'live' => [], 'missing' => []]]]]);
@@ -23,7 +23,7 @@ it('marks every desired rule unverifiable without reading the Node or stored sna
         ->assertJsonPath('data.observed_at', null)->assertJsonPath('data.missing', []);
     $live = collect($response->json('data.live'));
     expect($live)->not->toBeEmpty()->and($live->pluck('match')->unique()->all())->toBe(['unverifiable'])
-        ->and($live->firstWhere('name', 'web'))->toBe(['name' => 'web', 'comment' => 'orbit:node:'.$this->node->id.':firewall:web', 'action' => 'allow',
+        ->and($live->firstWhere('name', '443/tcp from 192.0.2.9'))->toBe(['name' => '443/tcp from 192.0.2.9', 'comment' => 'orbit web', 'action' => 'allow',
             'source' => '192.0.2.9', 'destination' => 'any', 'port' => '443', 'protocol' => 'tcp', 'interface' => null, 'family' => 'v4', 'match' => 'unverifiable']);
 });
 

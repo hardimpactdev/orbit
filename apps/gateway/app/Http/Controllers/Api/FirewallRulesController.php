@@ -11,10 +11,11 @@ use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Data\Firewall\FirewallRuleData;
 use App\Data\Operations\OperationData;
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Firewall\StoreFirewallAllowlistRequest;
+use App\Http\Requests\Firewall\RemoveFirewallRuleRequest;
 use App\Http\Requests\Firewall\StoreFirewallRuleRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\FirewallRule;
@@ -74,12 +75,6 @@ final class FirewallRulesController extends Controller
         return $this->store($request, $node, $action);
     }
 
-    #[StartsOperation('firewall.allowlist')]
-    public function allowlist(StoreFirewallAllowlistRequest $request, Node $node, StoreFirewallRuleAction $action): JsonResponse
-    {
-        return $this->store($request, $node, $action);
-    }
-
     #[StartsOperation('firewall.deny')]
     public function deny(StoreFirewallRuleRequest $request, Node $node, StoreFirewallRuleAction $action): JsonResponse
     {
@@ -96,9 +91,22 @@ final class FirewallRulesController extends Controller
     }
 
     #[StartsOperation('firewall.remove')]
-    public function destroy(Request $request, Node $node, string $firewallRule, RemoveFirewallRuleAction $action): JsonResponse
+    public function destroy(RemoveFirewallRuleRequest $request, Node $node, RemoveFirewallRuleAction $action): JsonResponse
     {
-        $firewallRule = $node->firewallRules()->where('name', $firewallRule)->firstOrFail();
+        $filters = $request->filters();
+        $matches = $node->firewallRules()->where('port', $filters['port'])
+            ->when($filters['source'] !== null, static fn ($query) => $query->where('source', $filters['source']))
+            ->when($filters['protocol'] !== null, static fn ($query) => $query->where('protocol', $filters['protocol']))
+            ->orderBy('protocol')->orderBy('source')->get();
+        if ($matches->isEmpty()) {
+            throw new ResourceOperationException('firewall.rule_not_found', "Node [{$node->name}] has no firewall rule on port {$filters['port']} that matches.", 404);
+        }
+        if ($matches->count() > 1) {
+            throw new ResourceOperationException('firewall.rule_ambiguous', "Several firewall rules on port {$filters['port']} match; narrow with --from or --protocol.", 409,
+                details: ['matches' => $matches->map(static fn (FirewallRule $rule): array => ['port' => $rule->port, 'protocol' => $rule->protocol,
+                    'source' => $rule->source, 'action' => $rule->action->value, 'label' => $rule->label])->all()]);
+        }
+        $firewallRule = $matches->first();
         $caller = $request->user();
         $operation = $action->execute($firewallRule, $caller instanceof Node ? $caller : null,
             $request->attributes->getString('orbit.request_id'));

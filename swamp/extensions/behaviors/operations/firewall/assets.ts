@@ -1,8 +1,8 @@
 import { z } from "npm:zod@4.4.3";
 
 export const behavior = {
-    type: "@nckrtl/firewall-allowlist-assets",
-    version: "2026.11.01.1",
+    type: "@nckrtl/firewall-assets",
+    version: "2026.11.02.1",
     resources: {
         assets: {
             schema: z.object({ script: z.string(), input: z.string() }),
@@ -13,7 +13,7 @@ export const behavior = {
     methods: {
         read: {
             description:
-                "Resolve the shipped ordered UFW block action and public intent",
+                "Resolve the shipped firewall rule script and public intent",
             arguments: z.object({ intent: z.record(z.string(), z.unknown()) }),
             execute: async (args: { intent: Record<string, unknown> }, ctx: {
                 extensionFile(name: string): string;
@@ -25,7 +25,7 @@ export const behavior = {
             }) => {
                 const value = {
                     script: await Deno.readTextFile(
-                        ctx.extensionFile("scripts/allowlist.py"),
+                        ctx.extensionFile("scripts/firewall.py"),
                     ),
                     input: JSON.stringify(args.intent),
                 };

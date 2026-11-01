@@ -4,12 +4,12 @@
 
 ```sh
 bin/swamp-proof up                 # provision (or keep the held VM), stage this commit, bring the topology up
-bin/swamp-proof run firewall.allow firewall.remove
+bin/swamp-proof run firewall.allow firewall.deny firewall.remove firewall.remove-ambiguous firewall.deny-peer firewall.deny-ssh
 bin/swamp-proof receipt            # path of the latest receipt
 bin/swamp-proof down               # cancel the task group; the VM is destroyed
 ```
 
-Always finish with `down`. Proof VMs do not outlive the proof.
+Always finish with `down`. Proof VMs do not outlive the proof. `--session NAME` (default `minimal`) gives each user of the tool its own VM and session file.
 
 ## Topology `minimal`
 
@@ -24,7 +24,7 @@ Always finish with `down`. Proof VMs do not outlive the proof.
 
 ## Fixtures
 
-`<kind>.json` declares `prepare` and `request` (API calls with `${node.<key>}` and `${proof.run}` bindings), `clean_target` and `before_target` (argv run on the target), `expect.status`, `phases` (native job, step and budget), `budget_seconds` and `parity`, a script that checks the legacy contract on the real target. Each API call goes through the Gateway's HTTP kernel with the operator's address, so peer identity, Node access and admission run as in production. [`gateway.php`](../../tools/swamp-proof-guest/gateway.php) then drives the production `SwampRunSubscriber` and fires its `operations` jobs until the Operation is terminal.
+`<kind>.json` declares `prepare` and `request` (API calls with `${node.<key>}` and `${proof.run}` bindings), `clean_target` and `before_target` (argv run on the target), `expect`, `phases` (native job, step and budget), `budget_seconds` and `parity`, a script path or `[script, args...]` that checks the legacy contract on the real target. `expect` is `{status}` for a run, or `{http_status, error_code}` for an admission refusal: the receipt then proves the code, that no Operation was created, and the parity check. Each API call goes through the Gateway's HTTP kernel with the operator's address, so peer identity, Node access and admission run as in production. [`gateway.php`](../../tools/swamp-proof-guest/gateway.php) then drives the production `SwampRunSubscriber` and fires its `operations` jobs until the Operation is terminal.
 
 ## Receipts
 

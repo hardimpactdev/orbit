@@ -8,13 +8,11 @@ use App\Domain\Firewall\FirewallAction;
 
 final readonly class StoreFirewallRuleData
 {
-    /** @param list<string> $sources */
     public function __construct(
-        public string $name,
         public FirewallAction $action,
         public string $source,
         public string $protocol,
         public string $port,
-        public array $sources = [],
+        public ?string $label = null,
     ) {}
 }

@@ -3,51 +3,53 @@
   "workflow": "operation-firewall-direct",
   "topology": "minimal",
   "budget_seconds": 300,
-  "request": {
-    "method": "POST",
-    "path": "nodes/${node.target}/firewall-rules/allow",
-    "body": {
-      "name": "a-${proof.run}",
-      "source": "192.0.2.1",
-      "protocol": "tcp",
-      "port": "443"
-    }
-  },
   "expect": {
     "status": "succeeded"
   },
   "phases": [
     {
-      "name": "read-before",
+      "name": "assets",
       "job": "firewall",
-      "step": "read-before",
-      "budget_seconds": 120
+      "step": "assets",
+      "budget_seconds": 60
     },
     {
       "name": "apply",
       "job": "firewall",
-      "step": "apply-source-0",
-      "budget_seconds": 120
+      "step": "apply",
+      "budget_seconds": 60
     },
     {
-      "name": "verify",
+      "name": "accepted",
       "job": "firewall",
-      "step": "verify-source-0",
-      "budget_seconds": 120
-    },
-    {
-      "name": "result",
-      "job": "firewall",
-      "step": "result",
-      "budget_seconds": 120
+      "step": "accepted",
+      "budget_seconds": 60
     }
   ],
-  "parity": "swamp/proof/firewall.allow/parity.py",
-  "clean_target": [
-    [
-      "sh",
-      "-c",
-      "ufw --force delete allow from 192.0.2.1 to any port 443 proto tcp >/dev/null 2>&1; true"
-    ]
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/firewall-rules/deny",
+      "body": {
+        "port": "5432",
+        "protocol": "tcp"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/firewall-rules/allow",
+    "body": {
+      "port": "5432",
+      "protocol": "tcp",
+      "source": "192.0.2.10",
+      "label": "db office"
+    }
+  },
+  "parity": [
+    "swamp/proof/firewall/check.py",
+    "+5432/tcp ALLOW 192.0.2.10 # orbit db office",
+    "+5432/tcp DENY Anywhere # orbit",
+    "+5432/tcp (v6) DENY Anywhere (v6)"
   ]
 }

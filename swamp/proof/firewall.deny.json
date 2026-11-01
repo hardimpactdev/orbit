@@ -1,0 +1,54 @@
+{
+  "kind": "firewall.deny",
+  "workflow": "operation-firewall-direct",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "assets",
+      "job": "firewall",
+      "step": "assets",
+      "budget_seconds": 60
+    },
+    {
+      "name": "apply",
+      "job": "firewall",
+      "step": "apply",
+      "budget_seconds": 60
+    },
+    {
+      "name": "accepted",
+      "job": "firewall",
+      "step": "accepted",
+      "budget_seconds": 60
+    }
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/firewall-rules/allow",
+      "body": {
+        "port": "25"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/firewall-rules/deny",
+    "body": {
+      "port": "25",
+      "source": "192.0.2.10",
+      "label": "spam host"
+    }
+  },
+  "parity": [
+    "swamp/proof/firewall/check.py",
+    "+25/tcp DENY 192.0.2.10 # orbit spam host",
+    "+25/udp DENY 192.0.2.10",
+    "+25/tcp ALLOW Anywhere",
+    "+25/udp ALLOW Anywhere"
+  ]
+}

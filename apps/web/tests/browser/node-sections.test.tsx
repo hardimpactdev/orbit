@@ -49,12 +49,16 @@ it("loads a section from its address and keeps firewall actions", async () => {
     await userEvent.keyboard("{Enter}");
     await expect
         .element(pane("https-public"))
-        .toMatchTextContent("Confirm? Remove firewall rule [https-public] on node [beast]?");
+        .toMatchTextContent(
+            "Confirm? Remove firewall rule [443/tcp from 0.0.0.0/0] on node [beast]?",
+        );
     await userEvent.keyboard("{Enter}");
-    await expect.element(footer()).toMatchTextContent("Firewall rule [https-public] removed.");
+    await expect
+        .element(footer())
+        .toMatchTextContent("Firewall rule [443/tcp from 0.0.0.0/0] removed.");
     expect(app.gateway.requests.at(-1)).toMatchObject({
-        method: "DELETE",
-        path: "/api/v1/nodes/2/firewall-rules/https-public",
+        method: "POST",
+        path: "/api/v1/nodes/2/firewall-rules/remove",
     });
 });
 

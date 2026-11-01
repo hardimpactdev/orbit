@@ -80,6 +80,17 @@ def steps(history):
     return rows
 
 
+def parity_check(fixture, up, run_id, outputs, operation):
+    outputs_file = STATE / f'outputs-{run_id}.json'
+    outputs_file.write_text(json.dumps(outputs))
+    script, *arguments = [fixture['parity']] if isinstance(fixture['parity'], str) else fixture['parity']
+    parity = run(['python3', '-I', str(SOURCE / script), *arguments], check=False, cwd=SOURCE, timeout=120,
+                 env={'PATH': '/usr/sbin:/usr/bin:/bin', 'PROOF_OUTPUTS': str(outputs_file), 'PROOF_RESULT': json.dumps(operation and operation.get('result')),
+                      'PROOF_TARGET': up['target']['key'], 'PROOF_RUN': run_id, 'PROOF_NODES': json.dumps(up['nodes']),
+                      'PROOF_OPERATION': json.dumps(operation)})
+    return {'exit': parity.returncode, 'output': (parity.stdout + parity.stderr)[-2000:]}
+
+
 def main():
     fixture = json.loads((SOURCE / 'swamp/proof' / (KIND + '.json')).read_text())
     up = json.loads((STATE / 'up.json').read_text())
@@ -113,6 +124,15 @@ def main():
     operation = reply.get('operation') or {}
     receipt.update(http_status=reply.get('http_status'), operation=operation, admit_seconds=reply.get('admit_seconds'),
                    total_seconds=reply.get('terminal_seconds'))
+    refusal = fixture['expect'].get('error_code')
+    if refusal is not None:
+        # An admission refusal starts no run: prove the code, that no Operation exists, and the target is unchanged.
+        error = (reply.get('response') or {}).get('error') or {}
+        receipt.update(refusal={'http_status': reply.get('http_status'), 'error_code': error.get('code'), 'details': error.get('details')},
+                       parity=parity_check(fixture, up, run_id, None, None))
+        receipt['proof_pass'] = (not operation and reply.get('http_status') == fixture['expect']['http_status']
+                                 and error.get('code') == refusal and receipt['parity']['exit'] == 0)
+        return receipt
     if not operation.get('swamp_run_id'):
         receipt.update(proof_pass=False, error='no native run was bound', reply=reply)
         return receipt
@@ -125,16 +145,10 @@ def main():
         phases.append({**phase, 'seconds': row and row['seconds'], 'status': row and row['status'],
                        'passed': bool(row) and row['seconds'] is not None and row['seconds'] <= phase['budget_seconds']})
     receipt['phases'] = phases
-    outputs_file = STATE / f'outputs-{run_id}.json'
-    outputs_file.write_text(json.dumps(outputs))
-    parity = run(['python3', '-I', str(SOURCE / fixture['parity'])], check=False, cwd=SOURCE, timeout=120,
-                 env={'PATH': '/usr/sbin:/usr/bin:/bin', 'PROOF_OUTPUTS': str(outputs_file), 'PROOF_RESULT': json.dumps(operation.get('result')),
-                      'PROOF_TARGET': up['target']['key'], 'PROOF_RUN': run_id, 'PROOF_NODES': json.dumps(up['nodes']),
-                      'PROOF_OPERATION': json.dumps(operation)})
-    receipt['parity'] = {'exit': parity.returncode, 'output': (parity.stdout + parity.stderr)[-2000:]}
+    receipt['parity'] = parity_check(fixture, up, run_id, outputs, operation)
     expected = fixture['expect']['status']
     receipt['proof_pass'] = (operation.get('status') == expected and str(history.get('status', '')).lower() == expected
-                             and parity.returncode == 0 and all(phase['passed'] for phase in phases)
+                             and receipt['parity']['exit'] == 0 and all(phase['passed'] for phase in phases)
                              and receipt['total_seconds'] is not None and receipt['total_seconds'] <= fixture['budget_seconds'])
     return receipt
 

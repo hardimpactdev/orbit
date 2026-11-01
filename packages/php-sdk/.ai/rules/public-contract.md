@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 247 concrete public Gateway API operations:
+The SDK models exactly 246 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -17,7 +17,7 @@ The SDK models exactly 247 concrete public Gateway API operations:
 - Process: list, add, start, stop, restart, logs, and remove.
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
-- Firewall: list, allow, source allowlist replacement, deny, remove, and native inspection refresh.
+- Firewall: list, allow, deny, remove, and native inspection refresh.
 - Tool: manager list, inventory scan, tool list, show, install, adopt, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
@@ -33,9 +33,9 @@ The SDK models exactly 247 concrete public Gateway API operations:
 The five abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
 
-- Use numeric resource IDs in routes where the Gateway contract does. Keep a
-  firewall rule name as the delete route key. Do not substitute display names
-  for identifiers.
+- Use numeric resource IDs in routes where the Gateway contract does. Send a
+  firewall removal as its port, source, and protocol match; the Gateway
+  resolves the rule. Do not substitute display names for identifiers.
 - Send `host_key_fingerprint` in a node add request. Parse
   `ssh_host_fingerprint` from a node response.
 - Keep Instance lifecycle transport limited to Project, Node, name, optional

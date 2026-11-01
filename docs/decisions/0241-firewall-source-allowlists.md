@@ -1,7 +1,7 @@
 ---
 title: "ADR 0241: Firewall source allowlists"
 sidebarTitle: "0241 Firewall source allowlists"
-description: "In progress. Admit selected sources before broad WireGuard trust through a named firewall rule."
+description: "Superseded by ADR 0245. Admitted selected sources before broad WireGuard trust through a named firewall rule."
 ---
 
 # ADR 0241: Firewall source allowlists
@@ -10,7 +10,9 @@ Give an operator one named source allowlist for a Node port or range. Place its 
 
 ## Status
 
-In progress.
+Superseded on 2026-11-01 by ADR 0245.
+
+Plain allows and denies replace the allowlist: [0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) puts every operator rule above broad WireGuard trust and keeps the protected ports on deny. The migration turned each allowlist into a deny from anywhere plus one allow per source.
 
 Principle: [One way, one name](/mission#principles) and [Security fits the real threat model](/mission#principles). One intent record owns the complete source set and its UFW block. The Gateway admits intent and projects results; Swamp executes it.
 

@@ -9,12 +9,11 @@ use SensitiveParameter;
 
 final readonly class FirewallRuleResponse
 {
-    /** @param list<string> $sources */
     public function __construct(
         public int $id,
         public int $nodeId,
         public string $node,
-        public string $name,
+        public ?string $label,
         public string $action,
         public string $source,
         public string $protocol,
@@ -24,7 +23,6 @@ final readonly class FirewallRuleResponse
         public ?string $failedStep,
         public ?string $errorCode,
         public string $requestId,
-        public array $sources = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -38,7 +36,7 @@ final readonly class FirewallRuleResponse
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
             node: is_string($data['node'] ?? null) ? $data['node'] : '',
-            name: is_string($data['name'] ?? null) ? $data['name'] : '',
+            label: is_string($data['label'] ?? null) ? $data['label'] : null,
             action: is_string($data['action'] ?? null) ? $data['action'] : '',
             source: is_string($data['source'] ?? null) ? $data['source'] : '',
             protocol: is_string($data['protocol'] ?? null) ? $data['protocol'] : '',
@@ -48,7 +46,6 @@ final readonly class FirewallRuleResponse
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             requestId: $requestId,
-            sources: is_array($data['sources'] ?? null) ? array_values(array_filter($data['sources'], is_string(...))) : [],
         );
     }
 
@@ -59,10 +56,9 @@ final readonly class FirewallRuleResponse
             'id' => $this->id,
             'node_id' => $this->nodeId,
             'node' => $this->node,
-            'name' => $this->name,
+            'label' => $this->label,
             'action' => $this->action,
             'source' => $this->source,
-            ...($this->action === 'allowlist' ? ['sources' => $this->sources] : []),
             'protocol' => $this->protocol,
             'port' => $this->port,
             'status' => $this->status,

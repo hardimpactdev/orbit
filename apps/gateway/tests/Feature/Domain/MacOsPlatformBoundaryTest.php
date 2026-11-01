@@ -114,7 +114,6 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
         });
 
     expect(fn () => app(StoreFirewallRuleAction::class)->execute($node, new StoreFirewallRuleData(
-        name: 'web',
         action: FirewallAction::Allow,
         source: '192.0.2.0/24',
         protocol: 'tcp',
@@ -126,7 +125,7 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
 
     $rule = FirewallRule::query()->create([
         'node_id' => $node->id,
-        'name' => 'web',
+        'label' => 'web',
         'action' => FirewallAction::Allow,
         'source' => '192.0.2.0/24',
         'protocol' => 'tcp',

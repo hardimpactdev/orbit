@@ -148,7 +148,7 @@ The agent view subscriber sends `process.usage` while at least one `viewer.*` me
 | Type | Fires when | Data |
 | --- | --- | --- |
 | `firewall.created` | A firewall rule is stored. | `FirewallRuleData` |
-| `firewall.deleted` | A firewall rule is removed. | `{ id, name }` |
+| `firewall.deleted` | A firewall rule is removed. | `{ id, port, protocol, source }` |
 
 A stored rule never changes, so there is no `firewall.updated`.
 

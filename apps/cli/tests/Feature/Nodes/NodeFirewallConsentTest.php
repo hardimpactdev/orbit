@@ -7,7 +7,6 @@ use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\TerminalText;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeAccessRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
@@ -28,11 +27,8 @@ function node_firewall_reply(string $class, array $data): array
 function node_firewall_consent_case(string $family, bool $purge = false): array
 {
     $node = ['id' => 7, 'name' => 'worker', 'status' => 'active', 'roles' => []];
-    $rule = ['id' => 4, 'node_id' => 7, 'node' => 'worker', 'name' => 'web', 'action' => 'allow',
-        'source' => 'any', 'protocol' => 'tcp', 'port' => '8080', 'status' => 'active', 'backend_status' => 'absent'];
-
     $operation = ['id' => 42, 'kind' => 'firewall.remove', 'target_type' => 'node_firewall', 'target_id' => 7,
-        'input' => ['name' => 'web'], 'status' => 'succeeded', 'sequence' => 5, 'result' => ['backend' => 'absent']];
+        'input' => ['port' => '8080', 'protocol' => 'tcp'], 'status' => 'succeeded', 'sequence' => 5, 'result' => ['backend' => 'absent']];
 
     return match ($family) {
         'node' => [
@@ -75,13 +71,12 @@ function node_firewall_consent_case(string $family, bool $purge = false): array
             ],
         ],
         'firewall' => [
-            'arguments' => ['firewall:remove', 'web', '--node=7'],
-            'prompt' => 'Remove firewall rule [web] from Node #7?',
-            'reads' => 1,
+            'arguments' => ['firewall:remove', '8080', '--node=7', '--protocol=tcp'],
+            'prompt' => 'Remove firewall rule [8080/tcp] from Node #7?',
+            'reads' => 0,
             'mutation' => RemoveFirewallRuleRequest::class,
-            'mutation_body' => [],
-            'replies' => [node_firewall_reply(ListFirewallRulesRequest::class, [$rule]),
-                node_firewall_reply(RemoveFirewallRuleRequest::class, $operation),
+            'mutation_body' => ['port' => '8080', 'protocol' => 'tcp'],
+            'replies' => [node_firewall_reply(RemoveFirewallRuleRequest::class, $operation),
                 ['class' => ShowRealtimeRequest::class, 'status' => 503, 'body' => ['error' => ['code' => 'realtime.unavailable', 'message' => 'Realtime unavailable.']]],
                 node_firewall_reply(ShowOperationRequest::class, $operation)],
         ],
@@ -164,14 +159,14 @@ describe('Node and firewall native consent', function (): void {
     it('requires explicit firewall consent in human and machine automation', function (bool $json, bool $yes): void {
         $case = node_firewall_consent_case('firewall');
         $case['arguments'] = [...$case['arguments'], '--ansi', ...($json ? ['--json'] : []), ...($yes ? ['--yes'] : [])];
-        if ($yes) {
-            array_shift($case['replies']);
-        }
         $result = run_node_firewall_fixture($case, [], pty: false);
         expect($result['status'])->toBe($yes ? 0 : 1)->and($result['stderr'])->toBe('')
             ->and($result['output'])->not->toContain("\e[")
-            ->and($result['requests'])->toHaveCount($yes ? ($json ? 3 : 2) : 1)
-            ->and($result['requests'][0]['class'])->toBe($yes ? RemoveFirewallRuleRequest::class : ListFirewallRulesRequest::class);
+            ->and($result['requests'])->toHaveCount($yes ? ($json ? 3 : 2) : 0);
+        if ($yes) {
+            expect($result['requests'][0]['class'])->toBe(RemoveFirewallRuleRequest::class)
+                ->and($result['requests'][0]['body'])->toBe($case['mutation_body']);
+        }
         if ($json) {
             $payload = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR);
             expect($yes ? $payload['status'] : $payload['error']['code'])->toBe($yes ? 'succeeded' : 'input.confirmation_required');
@@ -201,7 +196,7 @@ it('never asks for consent or mutates from JSON in a terminal', function (string
 it('rejects a transport response that does not establish the requested removal', function (string $family, bool $json): void {
     $case = node_firewall_consent_case($family);
     $case['arguments'] = [...$case['arguments'], $family === 'firewall' ? '--yes' : '--force', ...($json ? ['--json'] : [])];
-    if ($family !== 'node') {
+    if ($family === 'role') {
         array_shift($case['replies']);
     }
     $last = array_find_key($case['replies'], static fn (array $reply): bool => $reply['class'] === $case['mutation']);
@@ -216,7 +211,7 @@ it('rejects a transport response that does not establish the requested removal',
     }
     $result = run_node_firewall_fixture($case, [], pty: false);
     expect($result['status'])->toBe(1)->and($result['stderr'])->toBe('')
-        ->and($result['output'])->not->toContain('Removed Node.', 'Removed Node role.', 'Removed firewall rule.', '[web] removed.');
+        ->and($result['output'])->not->toContain('Removed Node.', 'Removed Node role.', 'Firewall rule removal succeeded.');
     if ($json) {
         $payload = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR);
         expect($payload['error']['code'])->toBe('gateway.invalid_response')
@@ -228,18 +223,17 @@ it('rejects a transport response that does not establish the requested removal',
     }
 })->with(['node', 'role', 'firewall'])->with([false, true]);
 
-it('keeps authorization and missing-rule failures ahead of firewall consent', function (bool $forbidden): void {
+it('reports authorization and missing-rule refusals of a consented firewall removal', function (bool $forbidden): void {
     $case = node_firewall_consent_case('firewall');
-    $case['arguments'][] = '--json';
-    $case['replies'][0] = $forbidden
-        ? ['class' => ListFirewallRulesRequest::class, 'status' => 403, 'body' => ['error' => [
-            'code' => 'authorization.node_access_denied', 'message' => 'Node access is denied.', 'details' => [],
-        ]]]
-        : node_firewall_reply(ListFirewallRulesRequest::class, []);
+    $case['arguments'] = [...$case['arguments'], '--yes', '--json'];
+    $case['replies'] = [['class' => RemoveFirewallRuleRequest::class, 'status' => $forbidden ? 403 : 404, 'body' => ['error' => $forbidden
+        ? ['code' => 'authorization.node_access_denied', 'message' => 'Node access is denied.', 'details' => []]
+        : ['code' => 'firewall.rule_not_found', 'message' => 'No firewall rule matches.', 'details' => []],
+    ]]];
     $result = run_node_firewall_fixture($case, [], pty: false);
     $payload = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR);
     expect($result['status'])->toBe(1)->and($result['requests'])->toHaveCount(1)
-        ->and($payload['error']['code'])->toBe($forbidden ? 'authorization.node_access_denied' : 'http.404')
+        ->and($payload['error']['code'])->toBe($forbidden ? 'authorization.node_access_denied' : 'firewall.rule_not_found')
         ->and($payload['error']['request_id'])->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 })->with([false, true]);
 
@@ -282,7 +276,6 @@ it('wraps the self-lockout warning within a narrow terminal', function (): void 
 it('reports a failed firewall removal Operation after consent', function (bool $json): void {
     $case = node_firewall_consent_case('firewall');
     $case['arguments'] = [...$case['arguments'], '--yes', ...($json ? ['--json'] : [])];
-    array_shift($case['replies']);
     foreach ($case['replies'] as &$reply) {
         if (in_array($reply['class'], [RemoveFirewallRuleRequest::class, ShowOperationRequest::class], true)) {
             $reply['body']['data'] = [...$reply['body']['data'], 'status' => 'failed',

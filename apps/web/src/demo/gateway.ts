@@ -18,6 +18,7 @@ import type {
 import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
 import { TERMINAL, type Operation } from "../api/operations";
+import { firewallIdentity } from "../fleet/firewall";
 import { createDemoDocuments } from "./documents";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
@@ -215,8 +216,8 @@ export function createDemoGateway() {
             backend_status: "active",
             live: [
                 ...operator.map((rule) => ({
-                    name: rule.name,
-                    comment: `orbit:node:${id}:firewall:${rule.name}`,
+                    name: firewallIdentity(rule),
+                    comment: rule.label === null ? "orbit" : `orbit ${rule.label}`,
                     action: rule.action,
                     source: rule.source,
                     destination: "any",
@@ -1144,13 +1145,12 @@ export function createDemoGateway() {
                 },
             ],
             [
-                "DELETE",
-                /^\/api\/v1\/nodes\/(\d+)\/firewall-rules\/([^/]+)$/,
-                ([node = "", name = ""]) => {
+                "POST",
+                /^\/api\/v1\/nodes\/(\d+)\/firewall-rules\/remove$/,
+                ([node = ""], body) => {
                     const onNode = rules(node);
-                    const index = onNode.findIndex(
-                        (candidate) => candidate.name === decodeURIComponent(name),
-                    );
+                    const identity = firewallIdentity(body as FirewallRule);
+                    const index = onNode.findIndex((rule) => firewallIdentity(rule) === identity);
 
                     return index === -1
                         ? notFound("Firewall rule")
