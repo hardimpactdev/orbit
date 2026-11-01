@@ -81,8 +81,10 @@ def fixture_for(kind, root=ROOT, variant=None):
     path = root / 'swamp/proof' / (kind + '.json') if variant is None else root / 'swamp/proof' / kind / (variant + '.json')
     fixture = json.loads(path.read_text())
     required = {'kind', 'workflow', 'budget_seconds', 'queue_timeout_seconds', 'envelope', 'request', 'expect', 'phases', 'parity'}
-    if set(fixture) - required - {'prepare', 'before_request', 'topology'} or required - set(fixture) or fixture['kind'] != kind:
+    if set(fixture) - required - {'prepare', 'before_request', 'topology', 'secrets', 'limitations'} or required - set(fixture) or fixture['kind'] != kind:
         raise ProofError('Fixture does not match the F13 request format; legacy secrets/target_setup are retired.')
+    if not isinstance(fixture.get('limitations', []), list) or any(not isinstance(item, str) or not item.strip() for item in fixture.get('limitations', [])):
+        raise ProofError('limitations must be a list of nonempty strings.')
     positive(fixture['budget_seconds'], 'budget_seconds')
     positive(fixture['queue_timeout_seconds'], 'queue_timeout_seconds')
     if not isinstance(fixture['envelope'], dict):
@@ -92,7 +94,7 @@ def fixture_for(kind, root=ROOT, variant=None):
     if not fixture['phases']:
         raise ProofError('Proof requires named legacy phases.')
     for phase in fixture['phases']:
-        if set(phase) != {'name', 'job', 'step', 'budget_seconds'} or any(not isinstance(phase[key], str) or not phase[key] for key in ('name', 'job', 'step')):
+        if not isinstance(phase, dict) or set(phase) - {'name', 'job', 'step', 'budget_seconds', 'workflow'} or not {'name', 'job', 'step', 'budget_seconds'} <= set(phase) or any(not isinstance(phase[key], str) or not phase[key] for key in ('name', 'job', 'step')) or ('workflow' in phase and (not isinstance(phase['workflow'], str) or not phase['workflow'])):
             raise ProofError('Each phase requires its name and exact native job/step.')
         positive(phase['budget_seconds'], 'phase budget_seconds')
     if set(fixture['expect']) != {'status', 'outputs'} or fixture['expect']['status'] not in TERMINAL:
@@ -220,7 +222,7 @@ def native_step(history, job, step):
     return found[0]
 
 
-def evaluate(history, fixture, parity_exit):
+def evaluate(history, fixture, parity_exit, child_histories=None):
     """Use native timestamps, never wall time spent installing or bootstrapping."""
     def seconds(row):
         start = datetime.fromisoformat(row['startedAt'])
@@ -232,9 +234,15 @@ def evaluate(history, fixture, parity_exit):
     total = seconds(history)
     phases = []
     for phase in fixture['phases']:
-        row = native_step(history, phase['job'], phase['step'])
+        selected = history
+        if phase.get('workflow', history.get('workflowName')) != history.get('workflowName'):
+            selected = (child_histories or {}).get(phase['workflow'])
+            if selected is None:
+                raise ProofError('Native history lacks one exact linked phase workflow.')
+        row = native_step(selected, phase['job'], phase['step'])
         elapsed = seconds(row)
-        phases.append({'name': phase['name'], 'seconds': elapsed, 'budget_seconds': phase['budget_seconds'],
+        phases.append({'name': phase['name'], 'workflow': selected.get('workflowName'), 'native_run_id': selected['id'],
+                       'job': phase['job'], 'step': phase['step'], 'seconds': elapsed, 'budget_seconds': phase['budget_seconds'],
                        'pass': elapsed <= phase['budget_seconds']})
     expected = fixture['expect']
     matches = history['status'] == expected['status']

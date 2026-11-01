@@ -50,8 +50,10 @@ def describe_differences(result):
 def validate_commands(fixture):
     """Validate shapes without resolving captures that only exist after prepare."""
     request = fixture['request']
-    if not isinstance(request, dict) or set(request) not in ({'argv', 'operation'}, {'artisan', 'select'}):
+    if not isinstance(request, dict) or set(request) not in ({'argv', 'operation'}, {'artisan', 'select'}, {'api', 'operation'}):
         raise ProofError('request requires argv and its exact Operation JSON path.')
+    from swamp_proof_api import validate_private_request
+    validate_private_request(fixture)
     # Syntax validation does not require a value at the path yet.
     if 'operation' in request and (not isinstance(request['operation'], str) or not re.fullmatch(r'\$(?:\.[a-zA-Z_][a-zA-Z0-9_]*|\[[0-9]+\])*', request['operation'])):
         raise ProofError('Invalid request Operation JSON path.')

@@ -112,6 +112,97 @@ class ReceiptTest(unittest.TestCase):
         self.assertEqual(proof.bind('${proof.epoch+300}', {}, datetime(2026, 11, 1, tzinfo=UTC)), 1793491500)
 
 
+class ChildPhaseTest(unittest.TestCase):
+    def setUp(self):
+        self.root = {'id': 'root', 'workflowId': 'root-flow', 'workflowName': 'dispatcher', 'status': 'succeeded',
+                     'startedAt': '2026-11-01T00:00:00Z', 'completedAt': '2026-11-01T00:00:10Z',
+                     'jobs': [{'name': 'dispatch', 'steps': [{'name': 'child', 'status': 'succeeded', 'outputs': {}}]}]}
+        self.middle = dict(copy.deepcopy(self.root), id='middle', workflowId='middle-flow', workflowName='intermediate',
+                           parentRun={'runId': 'root', 'workflowId': 'root-flow', 'workflowName': 'dispatcher', 'stepName': 'child'})
+        self.child = dict(copy.deepcopy(self.root), id='effect', workflowId='effect-flow', workflowName='node-role-converge',
+                          parentRun={'runId': 'middle', 'workflowId': 'middle-flow', 'workflowName': 'intermediate', 'stepName': 'child'},
+                          jobs=[{'name': 'converge', 'steps': [{'name': 'apply', 'status': 'succeeded', 'startedAt': '2026-11-01T00:00:01Z',
+                                                             'completedAt': '2026-11-01T00:00:05Z'}]}])
+        self.fixture = {'phases': [{'name': 'role', 'workflow': 'node-role-converge', 'job': 'converge', 'step': 'apply', 'budget_seconds': 3}],
+                        'budget_seconds': 10, 'queue_timeout_seconds': 2, 'expect': {'status': 'succeeded'}, 'parity': {'cases': ['role']}}
+
+    def resolve(self, children=None, changed=None):
+        children = children if children is not None else [self.child, self.middle]
+        rows = [dict(runId=row['id'], **{key: row[key] for key in ('workflowId', 'workflowName', 'parentRun')}) for row in children]
+        top = Mock()
+        by_id = {row['id']: row for row in children}
+        def history(*argv):
+            if argv == ('search',):
+                return {'results': rows}
+            return (changed or {}).get(argv[1], by_id[argv[1]])
+        top.history.side_effect = history
+        return runner.phase_histories(top, self.root, self.fixture)
+
+    def test_nested_child_uses_its_own_native_timing_and_records_full_linked_histories(self):
+        unrelated = dict(self.child, id='unrelated', parentRun={**self.child['parentRun'], 'runId': 'another-root'})
+        selected, histories = self.resolve([unrelated, self.child, self.middle])
+        self.assertEqual([row['id'] for row in histories], ['middle', 'effect'])
+        result = proof.evaluate(self.root, self.fixture, 0, selected)
+        self.assertEqual(result['total_seconds'], 10)
+        self.assertEqual(result['phases'][0]['seconds'], 4)
+        self.assertEqual(result['phases'][0]['native_run_id'], 'effect')
+        self.assertEqual(result['phases'][0]['workflow'], 'node-role-converge')
+        self.assertFalse(result['budget_pass'])
+        self.fixture['phases'][0]['budget_seconds'] = 4
+        self.assertTrue(proof.evaluate(self.root, self.fixture, 0, selected)['budget_pass'])
+
+    def test_absent_or_multiple_linked_runs_never_select_latest_or_an_unrelated_run(self):
+        duplicate = dict(self.child, id='second')
+        for rows in ([], [self.child], [self.child, duplicate, self.middle]):
+            with self.subTest(rows=rows), self.assertRaisesRegex(proof.ProofError, 'exactly one linked'):
+                self.resolve(rows)
+
+    def test_rechecked_child_identity_parent_and_terminal_state_must_match(self):
+        for change in ({'id': 'foreign'}, {'workflowId': 'foreign'}, {'workflowName': 'foreign'},
+                       {'parentRun': {**self.child['parentRun'], 'runId': 'foreign'}}, {'status': 'running'}):
+            with self.subTest(change=change), self.assertRaises(proof.ProofError):
+                self.resolve(changed={'effect': {**self.child, **change}})
+
+    def test_cycles_and_conflicting_parent_identity_are_refused(self):
+        for parent in ({**self.middle['parentRun'], 'workflowId': 'wrong'},
+                       {'runId': 'effect', 'workflowId': 'effect-flow', 'workflowName': 'node-role-converge', 'stepName': 'apply'}):
+            with self.subTest(parent=parent), self.assertRaises(proof.ProofError):
+                self.resolve([self.child, {**self.middle, 'parentRun': parent}])
+
+    def test_parent_step_and_optional_forward_link_must_identify_this_child(self):
+        for steps in ([], self.root['jobs'][0]['steps'] * 2,
+                      [{'name': 'child', 'nestedRun': {'runId': 'foreign', 'workflowId': 'middle-flow', 'workflowName': 'intermediate'}}]):
+            with self.subTest(steps=steps), self.assertRaises(proof.ProofError):
+                self.root['jobs'][0]['steps'] = steps
+                self.resolve()
+
+    def test_child_missing_phase_does_not_use_root_step_with_same_name(self):
+        selected, _ = self.resolve()
+        self.fixture['phases'][0]['step'] = 'missing'
+        with self.assertRaisesRegex(proof.ProofError, 'exact fixture job/step'):
+            proof.evaluate(self.root, self.fixture, 0, selected)
+        with self.assertRaisesRegex(proof.ProofError, 'linked phase workflow'):
+            proof.evaluate(self.root, self.fixture, 0)
+
+    def test_fixture_phase_accepts_only_nonempty_optional_workflow(self):
+        fixture = proof.fixture_for('firewall.inspect')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'swamp/proof').mkdir(parents=True)
+            (root / 'swamp/workflows').symlink_to(proof.ROOT / 'swamp/workflows')
+            (root / 'swamp/proof/topologies').symlink_to(proof.ROOT / 'swamp/proof/topologies')
+            (root / 'apps').symlink_to(proof.ROOT / 'apps')
+            path = root / 'swamp/proof/firewall.inspect.json'
+            for value in ('node-role-converge', '', None, 42):
+                fixture['phases'][0]['workflow'] = value
+                path.write_text(json.dumps(fixture))
+                if value == 'node-role-converge':
+                    self.assertEqual(proof.fixture_for('firewall.inspect', root)['phases'][0]['workflow'], value)
+                else:
+                    with self.subTest(value=value), self.assertRaises(proof.ProofError):
+                        proof.fixture_for('firewall.inspect', root)
+
+
 class ExpectedInputTest(unittest.TestCase):
     def test_recursive_subset_reports_each_path_and_compares_arrays_whole(self):
         actual = {'native_registry': {'request': '4ba84968-1919-40b2-b919-f0ced3951770', 'revision': 4},
@@ -402,6 +493,12 @@ class RequestSequenceTest(unittest.TestCase):
                 self.assertNotIn('PROOF_OPERATION_ID', kwargs['env'])
                 return SimpleNamespace(returncode=hook_exit, stdout='observer ready', stderr='')
             events.append('parity')
+            if self.fixture.get('secrets'):
+                self.parity_secret_file = Path(kwargs['env']['PROOF_SECRETS'])
+                self.assertEqual(json.loads(self.parity_secret_file.read_text()), {'password': self.api_secret})
+                self.assertEqual(self.parity_secret_file.stat().st_mode & 0o777, 0o600)
+            else:
+                self.assertNotIn('PROOF_SECRETS', kwargs['env'])
             self.assertEqual(kwargs['cwd'], proof.ROOT)
             self.assertEqual(json.loads(Path(kwargs['env']['PROOF_OUTPUTS']).read_text()), {'ready': True})
             self.assertEqual(kwargs['env']['PROOF_OPERATION_ID'], '73')
@@ -410,6 +507,14 @@ class RequestSequenceTest(unittest.TestCase):
             events.append('history')
             return {'results': [{'runId': 'exact-root', 'workflowName': 'operation-firewall-inspect', 'inputs': {'operation_id': 73}}]} if args[0] == 'search' else self.history
         top.cli.side_effect = cli
+        def api_node(name, argv, **kwargs):
+            events.append('request')
+            self.assertEqual(name, 'operator')
+            self.assertEqual(argv[0:2], ['php', '/home/orbit/orbit/tools/swamp-proof-request.php'])
+            self.api_secret = json.loads(kwargs['stdin'])['password']
+            self.assertNotIn(self.api_secret, json.dumps(argv))
+            return {'data': {'operation': {'id': 73}}}
+        top.node.side_effect = api_node
         top.request.side_effect = admitted
         top.execute.side_effect = public_command
         top.history.side_effect = history
@@ -430,6 +535,21 @@ class RequestSequenceTest(unittest.TestCase):
         self.assertEqual(result['topology_ca'], 'fixture-set')
         self.assertEqual(result['fixture_repositories'], 'separate-caddy')
         self.assertEqual(result['github_token_path'], 'not_exercised')
+
+    def test_private_api_request_preserves_operation_identity_and_scoped_parity_material(self):
+        self.fixture.update(secrets=[{'name': 'password', 'value': 'generate:hex32'}], limitations=['fixture enrollment only'])
+        self.fixture['request'] = {'api': {'method': 'POST', 'path': '/api/v1/proof', 'body': {'password': '${secret.password}'}},
+                                   'operation': '$.data.operation.id'}
+        for parity_exit in (0, 1):
+            result, events, snapshots = self.execute(parity_exit=parity_exit)
+            self.assertEqual(result['operation_id'], 73)
+            self.assertEqual(result['proof_pass'], parity_exit == 0)
+            self.assertEqual(result['limitations'], ['fixture enrollment only'])
+            self.assertEqual(result['workload_roles'], 'recorded_not_converged')
+            self.assertEqual(result['request']['body']['password'], '[REDACTED:password]')
+            self.assertNotIn(self.api_secret, json.dumps(snapshots))
+            self.assertFalse(self.parity_secret_file.exists())
+            self.assertEqual(events.count('request'), 1)
 
     def test_failed_before_request_never_admits_and_retains_failure_receipt(self):
         result, events, _ = self.execute(hook_exit=1)

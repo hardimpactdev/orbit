@@ -9,6 +9,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from swamp_proof import (
     TERMINAL,
@@ -21,6 +22,7 @@ from swamp_proof import (
     topology_for,
     utc,
 )
+from swamp_proof_api import generate, private_api, redact, secret_file
 from swamp_proof_requests import cli_argv, compare_input, json_path, prepare
 from swamp_proof_topology import save_state
 from swamp_proof_transport import pins
@@ -41,20 +43,36 @@ def parity_outputs(history, fixture):
 def execute(argv, *, timeout=60, env=None, cwd=None):
     """Commands contain public arguments only; preserve their complete stderr."""
     result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=env, cwd=cwd, check=False)
-    if result.stderr:
-        print(result.stderr, file=sys.stderr, end='' if result.stderr.endswith('\n') else '\n')
     return result
 
 
 class Topology:
     def __init__(self, state, execute_command=execute):
         self.state = state
-        self.execute = execute_command
+        self.execute_command = execute_command
+        self.private_values = {}
+        self.private_leak = False
         self.root = Path(state['worktree'])
         self.prefix = [str(self.root / 'bin/e2e-topology'), 'exec', state['issue']]
 
-    def node(self, name, argv, timeout=60, admitted_request=False, raw_output=False, allow_failure=False):
-        result = self.execute([*self.prefix, name, '--argv=' + json.dumps(argv), '--timeout=' + str(timeout), '--json'], timeout=timeout + 15)
+    def execute(self, argv, **kwargs):
+        result = self.execute_command(argv, **kwargs)
+        stdout, stderr = redact(result.stdout, self.private_values), redact(result.stderr, self.private_values)
+        self.private_leak |= stdout != result.stdout or stderr != result.stderr
+        if stderr:
+            print(stderr, file=sys.stderr, end='' if stderr.endswith('\n') else '\n')
+        return SimpleNamespace(returncode=result.returncode, stdout=stdout, stderr=stderr)
+
+    def node(self, name, argv, timeout=60, admitted_request=False, raw_output=False, allow_failure=False, stdin=None):
+        if stdin is None:
+            result = self.execute([*self.prefix, name, '--argv=' + json.dumps(argv), '--timeout=' + str(timeout), '--json'], timeout=timeout + 15)
+        else:
+            with tempfile.TemporaryDirectory(prefix='swamp-proof-request-') as tmp:
+                path = Path(tmp) / 'command.json'
+                with path.open('x') as stream:
+                    path.chmod(0o600)
+                    json.dump({'argv': argv, 'stdin': stdin}, stream)
+                result = self.execute([*self.prefix, name, '--argv-file=' + str(path), '--timeout=' + str(timeout), '--json'], timeout=timeout + 15)
         response = json.loads(result.stdout)
         # e2e-topology exit status includes the guest exit, but its public JSON still carries diagnostics.
         if response.get('stderr'):
@@ -143,6 +161,67 @@ def exact_history(topology, operation, fixture):
     return history
 
 
+
+def phase_histories(topology, root, fixture):
+    """Select descendants from official parentRun metadata, then recheck full histories."""
+    wanted = {phase['workflow'] for phase in fixture['phases'] if phase.get('workflow', root['workflowName']) != root['workflowName']}
+    if not wanted:
+        return {}, []
+    rows = topology.history('search')['results']
+    indexed = {}
+    for row in rows:
+        if row['runId'] in indexed:
+            raise ProofError('Native search returned ambiguous run identities.')
+        indexed[row['runId']] = row
+    histories = {root['id']: root}
+
+    def identity(row, summary=False):
+        return (row['runId' if summary else 'id'], row['workflowId'], row['workflowName'])
+
+    def lineage(row, seen):
+        if row['runId'] in seen:
+            raise ProofError('Native child history has a cyclic parent link.')
+        parent = row.get('parentRun')
+        if not parent:
+            return None
+        if parent['runId'] == root['id']:
+            if (parent['runId'], parent['workflowId'], parent['workflowName']) != identity(root):
+                raise ProofError('Native child history has a conflicting root link.')
+            return [row]
+        ancestor = indexed.get(parent['runId'])
+        if ancestor is None:
+            return None
+        if (parent['runId'], parent['workflowId'], parent['workflowName']) != identity(ancestor, True):
+            raise ProofError('Native child history has a conflicting parent link.')
+        chain = lineage(ancestor, seen | {row['runId']})
+        return None if chain is None else [*chain, row]
+
+    selected = {}
+    for workflow in sorted(wanted):
+        candidates = [chain for row in rows if row['workflowName'] == workflow and (chain := lineage(row, set()))]
+        if len(candidates) != 1:
+            raise ProofError('Native history must contain exactly one linked phase workflow: ' + workflow)
+        for row in candidates[0]:
+            if row['runId'] in histories:
+                continue
+            child = topology.history('get', row['runId'])
+            if identity(child) != identity(row, True) or child.get('parentRun') != row['parentRun']:
+                raise ProofError('Native child history identity differs from its linked search record.')
+            parent = histories[row['parentRun']['runId']]
+            steps = [step for job in parent['jobs'] for step in job['steps'] if step['name'] == row['parentRun']['stepName']]
+            if len(steps) != 1:
+                raise ProofError('Native child history lacks one exact parent step.')
+            # nestedRun is present for suspended children; completed children still carry parentRun.
+            link = steps[0].get('nestedRun')
+            if link and (link['runId'], link['workflowId'], link['workflowName']) != identity(child):
+                raise ProofError('Native parent step names another child run.')
+            if child['status'] not in TERMINAL:
+                raise ProofError('Native phase child has no terminal history.')
+            histories[child['id']] = child
+        selected[workflow] = histories[candidates[0][-1]['runId']]
+    return selected, [row for key, row in histories.items() if key != root['id']]
+
+
 def step_report(history):
     result = []
     for job in history['jobs']:
@@ -150,7 +229,8 @@ def step_report(history):
             elapsed = None
             if step.get('startedAt') and step.get('completedAt'):
                 elapsed = (datetime.fromisoformat(step['completedAt']) - datetime.fromisoformat(step['startedAt'])).total_seconds()
-            row = {'job': job['name'], 'step': step['name'], 'status': step['status'], 'seconds': elapsed}
+            row = {'workflow': history['workflowName'], 'native_run_id': history['id'],
+                   'job': job['name'], 'step': step['name'], 'status': step['status'], 'seconds': elapsed}
             if step.get('error'):
                 row['error'] = step['error']
             if step.get('outputs', {}).get('stderr'):
@@ -176,10 +256,13 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
                    swamp_commit=state['commit'], swamp_version=pins(topology.root)['version'],
                    topology=state['topology'], topology_version=state['topology_version'], nodes=state['nodes'],
                    seed=state['vm']['seed'], vm=dict(state['vm']), gateway_install=state.get('gateway_install'),
-                   gateway_status=state.get('gateway_status'), sandbox_verified=state.get('sandbox_verified'), destroyed=False)
+                   gateway_status=state.get('gateway_status'), sandbox_verified=state.get('sandbox_verified'), destroyed=False,
+                   workload_roles='recorded_not_converged', limitations=fixture.get('limitations', []))
     receipt.update(enrollment='fixture-set', topology_ca='fixture-set', fixture_repositories='separate-caddy', github_token_path='not_exercised')
     save()
     try:
+        topology.private_values = generate(fixture)
+        topology.private_leak = False
         # Root-owned timestamp is the only F11 activity fact; no Gateway metadata is written.
         touched = topology.execute(['sudo', '-n', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '755', '/var/lib/orbit/swamp-proof'])
         if touched.returncode or topology.execute(['sudo', '-n', 'touch', '/var/lib/orbit/swamp-proof/last-run']).returncode:
@@ -202,6 +285,9 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
                 print(result.stdout, file=sys.stderr)
             if result.returncode:
                 raise ProofError('before_request failed; no kind request was admitted.')
+        if 'api' in fixture['request']:
+            _body, receipt['request'] = private_api(fixture['request']['api'], context, now, topology.private_values)
+            save()
         operation_id = admit(topology, fixture, context, now)
         receipt['operation_id'] = operation_id
         save()
@@ -224,6 +310,11 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
         receipt['native_run_id'] = history['id']
         receipt['native_history'] = history
         save()
+        children, child_runs = phase_histories(topology, history, fixture)
+        receipt['native_child_histories'] = child_runs
+        for child in child_runs:
+            receipt['native_steps'].extend(step_report(child))
+        save()
         if history['status'] not in TERMINAL:
             raise ProofError('Gateway terminal state has no matching native terminal history.')
         with tempfile.TemporaryDirectory(prefix='swamp-proof-parity-') as tmp:
@@ -231,16 +322,20 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
             outputs.write_text(json.dumps(parity_outputs(history, fixture)))
             outputs.chmod(0o600)
             env = hook_env(topology, run, folder, operation_id, outputs)
+            if topology.private_values:
+                env['PROOF_SECRETS'] = str(secret_file(tmp, topology.private_values))
             result = topology.execute([str(arg) for arg in bind(fixture['parity']['command'], context, now)],
                                       timeout=fixture['budget_seconds'] + 120, env=env, cwd=topology.root)
             if result.stdout:
                 print(result.stdout, file=sys.stderr)
-            receipt.update(evaluate(history, fixture, result.returncode))
-        receipt['proof_pass'] = (receipt['expect_pass'] and receipt['budget_pass'] and receipt['parity']['passed'] and
+            receipt.update(evaluate(history, fixture, result.returncode, children))
+        receipt['secret_leak_detected'] = bool(topology.private_leak)
+        receipt['proof_pass'] = (not topology.private_leak and receipt['expect_pass'] and receipt['budget_pass'] and receipt['parity']['passed'] and
                                  not receipt['input_mismatches'] and operation['status'] == history['status'])
     except (ProofError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
-        receipt['error'] = str(error)
+        receipt['error'] = redact(str(error), topology.private_values)
     finally:
+        topology.private_values = {}
         receipt['finished_at'] = utc()
         save()
     return receipt
@@ -248,6 +343,13 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
 
 def admit(topology, fixture, context, now):
     request = fixture['request']
+    if 'api' in request:
+        body, public = private_api(request['api'], context, now, topology.private_values)
+        if not public['path'].startswith('/api/') or any(char in public['path'] for char in '\r\n?#'):
+            raise ProofError('Bound API path is outside the normal Gateway API origin.')
+        response = topology.node('operator', ['php', '/home/orbit/orbit/tools/swamp-proof-request.php', public['method'], public['path']],
+                                 stdin=json.dumps(body), timeout=120)
+        return positive(json_path(response, request['operation']), 'Operation id')
     if 'argv' in request:
         operation = topology.request(cli_argv(request['argv'], context, now), timeout=min(3600, fixture['budget_seconds'] + fixture['queue_timeout_seconds'] + 120))
         return positive(json_path(operation, request['operation']), 'Operation id')
