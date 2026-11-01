@@ -21,12 +21,14 @@ def render(data):
     text = (
         "[Interface]\nAddress = " + peer["address"] + "\nPrivateKey = " + private + "\n"
     )
+    # Route-only domains make resolved infer default-route no. Setting it here is
+    # also refused: Ubuntu's wg-quick AppArmor profile denies SetLinkDefaultRoute.
     text += (
         "PostUp = resolvectl dns %i "
         + peer["dns_server"]
         + "; resolvectl domain %i "
         + domains
-        + "; resolvectl default-route %i no\n\n"
+        + "\n\n"
     )
     text += (
         "[Peer]\nPublicKey = "
