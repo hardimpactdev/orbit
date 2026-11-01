@@ -154,6 +154,7 @@ print('{"ready":true}')
                         "cleanup",
                     )
                 },
+                "certificates": [{"leaf": {"node_id": 14, "scope": "route-7-router"}, "connection": {}, "host_keys": []}],
                 "result_json": json.dumps(
                     {
                         "ready": True,
@@ -178,15 +179,8 @@ print('{"ready":true}')
             ).stdout
         )
         run = json.loads(self.cli("workflow", "history", "get", result["id"]).stdout)
-        workspace = next(
-            step
-            for job in run["jobs"]
-            for step in job["steps"]
-            if step["name"] == "workspace"
-        )["outputs"]["stdout"].strip()
-        self.assertFalse(
-            Path(workspace).exists(), "Private provider session retained after terminal"
-        )
+        self.assertEqual(list(self.repo.rglob("cookies")), [])
+        self.assertEqual(list(self.repo.rglob("csrf")), [])
         return run
 
     def test_creates_and_verifies_before_canonical_publication_and_terminal_result(
@@ -222,7 +216,7 @@ print('{"ready":true}')
         self.assertIn(("PUT", "/old.test/settings"), self.provider.calls)
         self.assertNotIn(("POST", "/sites"), self.provider.calls)
 
-    def test_current_site_uses_observation_guards_and_batches_goals_by_eight(self):
+    def test_site_group_observes_current_state_and_batches_goals_by_eight(self):
         self.provider.sites = {"shop.test": "UTC"}
         self.site["goals"] = [
             {"goal_type": "Goal.CustomEvent", "goal": {"event_name": "Signup" + str(i)}}
@@ -263,7 +257,7 @@ print('{"ready":true}')
             ],
         )
 
-    def test_failed_provider_can_use_native_resume_from_workspace_to_reauthenticate(
+    def test_failed_site_group_can_use_native_resume_to_reauthenticate(
         self,
     ):
         self.provider.fail = "/api/v2/query"
@@ -276,7 +270,7 @@ print('{"ready":true}')
             "--run",
             run["id"],
             "--from",
-            "workspace",
+            "site",
         )
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         self.assertEqual(history["status"], "succeeded")
@@ -457,23 +451,9 @@ print('{"ready":true}')
                 )
                 self.assertEqual(history["status"], "succeeded")
                 assets = history["jobs"][0]["steps"][0]["outputs"]
-                self.assertIn("worker-cache", assets["login"])
-                for action in (
-                    "login_form",
-                    "login",
-                    "site_form",
-                    "inspect",
-                    "create",
-                    "update",
-                    "verify",
-                    "goals",
-                    "stats",
-                    "logout",
-                ):
-                    self.assertTrue(
-                        Path(assets[action]).is_file(), action + " script not shipped"
-                    )
-                self.assertTrue(Path(assets["login"]).with_name("common.py").is_file())
+                self.assertIn("worker-cache", assets["site_script"])
+                self.assertTrue(Path(assets["site_script"]).is_file(), "Site action group not shipped")
+                self.assertTrue(Path(assets["site_script"]).with_name("common.py").is_file())
                 self.assertEqual(self.provider.sites, {"shop.test": "UTC"})
                 self.assert_private_absent(json.dumps(history))
             finally:

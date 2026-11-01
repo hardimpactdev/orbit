@@ -11,6 +11,8 @@ class PlausibleFixture:
         self.sites = {}
         self.calls = []
         self.fail = ""
+        self.fail_paths = set()
+        self.malformed_paths = set()
         self.bad_goals = False
         self.password = "provider-password-938725"
         self.api_key = "provider-api-key-736529"
@@ -25,6 +27,9 @@ class PlausibleFixture:
             def handle_call(self):
                 path = unquote(self.path)
                 owner.calls.append((self.command, path))
+                if path in owner.malformed_paths:
+                    self.wfile.write((owner.password + "\r\n").encode())
+                    return
                 body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
                 data = json.loads(body) if body else {}
                 status, headers, response = 200, {}, ""
@@ -46,7 +51,7 @@ class PlausibleFixture:
                     and self.headers.get("X-CSRF-Token") != "private-csrf-826495"
                 ):
                     status = 403
-                elif owner.fail and owner.fail in path:
+                elif (owner.fail and owner.fail in path) or path in owner.fail_paths:
                     status = 503
                     response = (
                         owner.password
