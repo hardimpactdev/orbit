@@ -65,6 +65,11 @@ final readonly class TaskProvisionIntent
             if ($project->task_workspace_routed || $project->processDefinitions()->exists() || $project->scheduleDefinitions()->exists()) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace publication and runtime definitions need their native parent steps.', 503);
             }
+            $proof = $project->id === 62 && $project->slug === 'swamp-proof';
+            $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
+            if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
+                throw new ResourceOperationException('tasks.proof_credential_unavailable', 'The proof Project requires its Gateway-held sandbox club credential before placement.', 503);
+            }
             try {
                 $vm = $this->allocate->capture($group);
             } catch (TaskCapacityException $exception) {
@@ -96,13 +101,17 @@ final readonly class TaskProvisionIntent
                 return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
             }, $this->steps->ordered($project, LifecyclePhase::Setup));
             $copies = ValidatedData::object($input['execution_secrets']);
+            if ($proof) {
+                $copies['proof_club'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+                    'swamp-proof-club-api-key', $proofClub);
+            }
             $git = app(RepositoryReadAccess::class)->for($project->repository_url, $project->source_access);
             if (! $git->isEmpty()) {
                 $copies['git_authorization'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                     'task-provision-git-'.$vm->id, $git->variables['GIT_CONFIG_VALUE_0']);
             }
             $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
-                'project_id' => $project->id, 'eligible' => true,
+                'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
                 'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
                     'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
                     'branch' => $instance->branch_override, 'default_branch' => $project->default_branch,
