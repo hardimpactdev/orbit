@@ -28,7 +28,7 @@ Never load `swamp/` into production serve or log in to 209 for a port. Any chang
 Use these steps in step 4 of the loop.
 
 1. **Start from the legacy sequence (F9).** The legacy Gateway action and its tests are the spec. Keep every edge case, even values the Gateway rewrites first (#2304).
-2. **One legacy phase, one step.** Each legacy phase becomes one script-file step on one Node. A phase-order change needs a [documented reason](/swamp/porting-retros#documented-f9-deviations).
+2. **One legacy phase, one step.** Each legacy phase becomes one script-file step on one Node. A phase-order change needs a [documented reason](/swamp/porting-retros#documented-f9-deviations) in the PR body.
 3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature) and prefer an official model over a script. The PR names what you checked.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Secrets become `{vault, key}` descriptors under `execution_secrets`.
 5. **Refuse first, then print the result.** The action script checks preconditions before its first write. It prints one public JSON object and keeps a redacted output tail.
@@ -150,9 +150,8 @@ Put each test where its project's CI runs it.
 | Where | What it proves |
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
-| `swamp/extensions/behaviors/operations/<family>/*_test.ts` | Typed decision and result behaviors, with Deno. |
+| `swamp/extensions/behaviors/operations/<family>/*_test.ts` and script tests | Typed behaviors with Deno; each shipped script file directly, plus shellcheck or ruff. |
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
-| `swamp/tests` script tests | Each shipped script file directly, plus shellcheck or ruff. |
 | Parity tests ported from the legacy feature tests | Every legacy case, including edge cases, gives the same public result natively. |
 | A generator drift test, when a generator writes the workflow | The committed YAML equals the generator output. Generate readable YAML, not JSON in YAML behind `deno-fmt-ignore`. |
 | `swamp/proof/<kind>.json` | The kind's proof file: parity tests, F9 phases with budgets, `queueTimeout` and topology. |
@@ -239,6 +238,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2281, lanes 17 and 27 | F9 means the legacy code and tests at `6291bb036`: its sweep stops a host at the first failure. Over two steps per legacy call needs a reason; #2281 ran 22 for 6. |
 | #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
+| Lane 17 on #2201, #2208, #2210 | Five observation workflows and `database.clone` lacked `queueTimeout`. `node-removal` `assets.ts:125` rewrote a script, as #2281 did. A phase-order reason outside the PR body does not count. |
 | #2304, #2310, lane 17 | No step receives a Gateway macro such as `@orbit/ci-caches`; #2304 expands it through `GatewaySetupSteps` after checking the admitted digests. Read `data.latest`, not `data.query`. Every workflow sets `queueTimeout`. |
 | PLAN F10, F12, F13, F14 | Port inside a versioned dev topology through `bin/swamp-proof`; the PR carries the receipt, which names the topology version. Topologies are built from Node roles. |
 | #2304 (B) | Legacy edge cases include values the Gateway rewrites before execution, such as setup macros. A runner that discards child output makes every failure unreadable. |
