@@ -16,6 +16,9 @@ inputs:
       - doctor.inspect
     intent:
       type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
   - node_id
   - intent

@@ -17,6 +17,9 @@ inputs:
       - observation.maintain
     intent:
       type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
   - operation_id
   - node_id
