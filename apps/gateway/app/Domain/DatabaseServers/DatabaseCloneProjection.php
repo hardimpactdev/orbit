@@ -12,6 +12,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
@@ -25,10 +26,20 @@ final readonly class DatabaseCloneProjection implements DirectOperationProjectio
 {
     public function input(Operation $operation): array
     {
-        $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
-        $input = Arr::except($intent->payload['commands']['database-apply']['input'], ['password', 'payload']);
+        $intent = $this->intent($operation);
+        $raw = $intent->payload['commands']['database-apply']['input'];
+        $input = Arr::except($raw, ['password', 'payload']);
+        $copies = [];
+        if (($input['variant'] ?? null) === 'mysql') {
+            $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-clone-intent-'.$intent->id];
+            if (! $operation->status->terminal()) {
+                $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'],
+                    json_encode(array_intersect_key($raw, array_flip(['password', 'payload'])), JSON_THROW_ON_ERROR));
+            }
+            $copies['database_clone'] = $copy;
+        }
 
-        return $input;
+        return ['intent' => $input, 'execution_secrets' => $copies];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -42,7 +53,9 @@ final readonly class DatabaseCloneProjection implements DirectOperationProjectio
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
 
-        return $this->input($operation);
+        $intent = $this->intent($operation);
+
+        return Arr::except($intent->payload['commands']['database-apply']['input'], ['password', 'payload']);
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -63,5 +76,15 @@ final readonly class DatabaseCloneProjection implements DirectOperationProjectio
 
             return $projected;
         });
+    }
+
+    private function intent(Operation $operation): DatabaseExecutionIntent
+    {
+        $id = app(DatabaseIntentSource::class)->ownerId($operation);
+        if ($id === null || $operation->kind !== 'database.clone' || $operation->target_type !== 'instance') {
+            throw new ResourceOperationException('database.clone_intent_invalid', 'The clone does not match its admitted target.', 422);
+        }
+
+        return DatabaseExecutionIntent::recorded($id);
     }
 }

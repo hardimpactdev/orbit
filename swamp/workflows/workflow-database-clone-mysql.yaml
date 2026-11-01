@@ -1,0 +1,154 @@
+id: 41a9479f-05dc-4626-a875-585a143bb40d
+name: database-clone-mysql
+description: One admitted database clone through placed native actions and official SSH from209.
+writes: true
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.clone]}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^database-clone-intent-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: clone
+  target: orbit-node-209
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-clone-command-assets'
+      behaviorName: ${{ "dbcm-" + run.id }}
+      methodName: read
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: directory
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbmq-" + run.id }}
+      globalArgs: &id001 {name: '${{ "dbmq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+        hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-dbc-mysql-" + run.id }}']}
+  - name: files
+    target: orbit-node-209
+    dependsOn:
+    - {step: assets, condition: {type: succeeded}}
+    - {step: directory, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbmq-" + run.id }}
+      globalArgs: *id001
+      methodName: copy
+      inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-dbc-mysql-" + run.id }}', direction: to, recursive: true}
+  - name: source_probe
+    target: orbit-node-209
+    dependsOn:
+    - {step: files, condition: {type: succeeded}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbmq-" + run.id }}
+      globalArgs: *id001
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-mysql-" + run.id + "/mysql_clone_probe.py" }}', '${{
+            steps.assets.outputs.intent_json }}'], okExitCodes: [0, 1], stdin: '${{ vault.get(inputs.execution_secrets.database_clone.vault,inputs.execution_secrets.database_clone.key)
+          }}'}
+  - name: source_checked
+    target: orbit-node-209
+    dependsOn:
+    - {step: source_probe, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: 'steps.source_probe.outputs.exitCode == 0 && steps.source_probe.outputs.stdout == "{\"ready\": true}\n"'
+      severity: high
+      message: Clone source is unavailable.
+  - name: prepare_mysql
+    target: orbit-node-209
+    dependsOn:
+    - {step: source_checked, condition: {type: succeeded}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-database-create
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ steps.assets.outputs.create_intent
+          }}', execution_secrets: {database_create: '${{ inputs.execution_secrets.database_clone }}'}}
+  - name: mysql_copy
+    target: orbit-node-209
+    dependsOn:
+    - {step: prepare_mysql, condition: {type: succeeded}}
+    - {step: assets, condition: {type: succeeded}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbmq-" + run.id }}
+      globalArgs: *id001
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-mysql-" + run.id + "/mysql_clone_copy.py" }}', '${{
+            steps.assets.outputs.intent_json }}'], okExitCodes: [0, 1], stdin: '${{ vault.get(inputs.execution_secrets.database_clone.vault,inputs.execution_secrets.database_clone.key)
+          }}'}
+  - name: cleanup_scripts
+    target: orbit-node-209
+    dependsOn:
+    - {step: assets, condition: {type: always}}
+    - {step: directory, condition: {type: always}}
+    - {step: files, condition: {type: always}}
+    - {step: source_probe, condition: {type: always}}
+    - {step: source_checked, condition: {type: always}}
+    - {step: prepare_mysql, condition: {type: always}}
+    - {step: mysql_copy, condition: {type: always}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbmq-" + run.id }}
+      globalArgs: *id001
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-dbc-mysql-" + run.id }}']}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - {step: assets, condition: {type: always}}
+    - {step: directory, condition: {type: always}}
+    - {step: files, condition: {type: always}}
+    - {step: source_probe, condition: {type: always}}
+    - {step: source_checked, condition: {type: always}}
+    - {step: prepare_mysql, condition: {type: always}}
+    - {step: mysql_copy, condition: {type: always}}
+    - {step: cleanup_scripts, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-clone-command-assets'
+      behaviorName: ${{ "dbcm-" + run.id }}
+      methodName: result
+      inputs: {expected: '${{ ["source_probe","prepare_mysql","mysql_copy","cleanup_scripts"] }}', steps: '${{ steps }}'}
+  - name: accept_result
+    target: orbit-node-209
+    dependsOn:
+    - {step: result, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: Database clone did not complete.

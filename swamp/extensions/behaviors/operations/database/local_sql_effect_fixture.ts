@@ -1,8 +1,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { invokeSql } from "./local_sql.ts";
-import { createDatabase } from "./clone_create.ts";
+import { copyMysqlClone, createDatabase } from "./native_create_fixture.ts";
 import { destroyDatabase } from "./destroy.ts";
-import { copyMysqlClone } from "./clone_mysql.ts";
 
 const docker = async (...args: string[]) => {
   const result = await new Deno.Command("/usr/bin/sudo", {

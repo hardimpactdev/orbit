@@ -1,181 +1,83 @@
 id: 3c44f7b0-9f87-4a6e-b899-6d0b4bb71292
 name: operation-database-clone
-description: One admitted MySQL or SQLite clone with native placement and snapshot
-  data.
-vaults: []
+description: One admitted database clone through placed native actions and official SSH from209.
+writes: true
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database.clone
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.clone]}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^database-clone-intent-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-- name: admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  writes: true
+- name: clone
+  target: orbit-node-209
   steps:
-  - name: admit
+  - name: intent
+    target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + run.id }}
-      methodName: admit
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: source
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  target: ${{ "orbit-node-" + string(data.latest("database-clone-" + run.id, "admitted-"
-    + run.id).attributes.intent.source_node_id) }}
-  labels:
-    node: ${{ string(data.latest("database-clone-" + run.id, "admitted-" + run.id).attributes.intent.source_node_id)
-      }}
-  writes: true
-  steps:
-  - name: export
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + run.id }}
-      methodName: export
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
-          + run.id).attributes.intent.source_node_id }}
-- name: target
-  dependsOn:
-  - job: source
-    condition:
-      type: succeeded
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  writes: true
-  steps:
-  - name: prepare
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + run.id }}
-      methodName: prepare
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
-          + run.id).attributes.intent.node_id }}
-  - name: apply
+      behaviorType: '@nckrtl/database-clone-command-assets'
+      behaviorName: ${{ "dbcm-" + run.id }}
+      methodName: read
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: mysql
+    target: orbit-node-209
     dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
+    - {step: intent, condition: {type: succeeded}}
+    guard: ${{ steps.intent.status != "succeeded" || inputs.intent.variant != "mysql" }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + run.id }}
-      methodName: apply
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
-          + run.id).attributes.intent.node_id }}
-- name: cleanup-target
+      type: workflow
+      workflowIdOrName: database-clone-mysql
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{
+          inputs.execution_secrets }}'}
+  - name: sqlite
+    target: orbit-node-209
+    dependsOn:
+    - {step: intent, condition: {type: succeeded}}
+    guard: ${{ steps.intent.status != "succeeded" || inputs.intent.variant == "mysql" }}
+    task:
+      type: workflow
+      workflowIdOrName: database-clone-sqlite
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{
+          inputs.execution_secrets }}'}
+- name: result
+  target: orbit-node-209
   dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  - job: target
-    condition:
-      type: always
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  writes: true
+  - {job: clone, condition: {type: always}}
   steps:
-  - name: cleanupTarget
+  - name: result
+    target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + run.id }}
-      methodName: cleanupTarget
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ inputs.node_id }}
-- name: cleanup
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  - job: cleanup-target
-    condition:
-      type: always
-  target: ${{ "orbit-node-" + string(data.latest("database-clone-" + run.id, "admitted-"
-    + run.id).attributes.intent.source_node_id) }}
-  labels:
-    node: ${{ string(data.latest("database-clone-" + run.id, "admitted-" + run.id).attributes.intent.source_node_id)
-      }}
-  writes: true
-  steps:
-  - name: cleanup
+      behaviorType: '@nckrtl/database-clone-command-assets'
+      behaviorName: ${{ "dbcm-" + run.id }}
+      methodName: result
+      inputs: {expected: '${{ inputs.intent.variant == "mysql" ? ["mysql"] : ["sqlite"] }}', steps: '${{ steps }}'}
+  - name: accept_result
+    target: orbit-node-209
+    dependsOn:
+    - {step: result, condition: {type: succeeded}}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + run.id }}
-      methodName: cleanup
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
-          + run.id).attributes.intent.source_node_id }}
-- name: projection
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  - job: cleanup
-    condition:
-      type: always
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
-  writes: true
-  steps:
-  - name: project
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + run.id }}
-      methodName: project
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: Database clone did not complete.

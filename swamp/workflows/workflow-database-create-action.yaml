@@ -8,10 +8,10 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.create]}
+    kind: {type: string, enum: [database.create, database.clone]}
     intent: {type: object}
     intent_json: {type: string}
-    execution_secrets: {type: object, properties: {database_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-create-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_create], additionalProperties: false}
+    execution_secrets: {type: object, properties: {database_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-(create|clone)-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_create], additionalProperties: false}
     action: {type: string, enum: [sql_probe_user, sql_probe_databases, sql_create_user, sql_authenticate, mysql_grant, sql_create_database, postgres_revoke_database, postgres_revoke_schema, postgres_grant_schema, valkey_index, valkey_user, valkey_set_user, valkey_save]}
     item: {type: object}
   required: [operation_id, node_id, kind, intent, intent_json, execution_secrets, action, item]

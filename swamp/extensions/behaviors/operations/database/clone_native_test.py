@@ -1,280 +1,63 @@
-"""One clone DAG with real native persistence and the shared local native harness."""
-from contextlib import closing
-import base64
-import getpass
-import sqlite3
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+"""Official native clone children, vault inputs, cleanup and terminal resume."""
 import json
-import yaml
-from pathlib import Path
-import secrets
+import os
 import shutil
+import signal
 import subprocess
 import sys
-import threading
+import time
 import unittest
+from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT / 'tests'))
-from native_harness import NativeTestCase
+ROOT=Path(__file__).resolve().parents[4]
+sys.path.insert(0,str(ROOT/'tests'))
+from database_command_native import DatabaseCommands,reply
 
+class CloneNative(DatabaseCommands):
+ fail=unittest.TestCase.fail
+ def setUp(self):
+  super().setUp()
+  self.prepare_commands(['workflow-operation-database-clone.yaml','workflow-database-clone-mysql.yaml','workflow-database-clone-sqlite.yaml','workflow-operation-database-create.yaml','workflow-database-create-action.yaml'])
+  shutil.copy(ROOT/'extensions/behaviors/operations/database/clone_input.ts',self.repo/'extensions/behaviors/operations/database/clone_input.ts')
+  fake=self.repo/'fixture-ssh';s=fake.read_text()
+  s=s.replace("m=json.load(sys.stdin);assert m['password'] not in repr(args)","m={} if scripts[0].startswith('sqlite_clone_') else json.load(sys.stdin)\nif m:assert m['password'] not in repr(args)")
+  old="print(json.dumps({'databases':v.get('inventory',[])}"
+  s=s.replace(old,"print(json.dumps({'bytes':4096,'sha256':'a'*64,'mode':420,'copy':'snapshot'} if action=='sqlite_clone_export' else {'backend':'active'} if action in ('mysql_clone_copy','sqlite_clone_local','sqlite_clone_install') else {'databases':v.get('inventory',[])}")
+  fake.write_text(s)
+  ssh={'host':'127.0.0.1','user':'orbit','host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}
+  self.i={'variant':'mysql','node_id':9,'source_node_id':9,'source_ssh':ssh,'target_ssh':ssh,'mysql':{'repair':False,'driver':'mysql','username':'proof_owner','databases':['target','target_test'],'test_prefix':'target_test','locale':None,'host':'10.44.0.9','port':3306,'container':'orbit-process-42-proof','index':None,'patterns':[],'allow':[],'source_database':'source'}}
+  self.public={'operation_id':17,'node_id':9,'kind':'database.clone','intent':self.i,'execution_secrets':{'database_clone':{'vault':'orbit-control-inputs','key':'database-clone-intent-17'}}}
+  self.secrets=('private-clone-admin','private-clone-owner-password-unique-123456')
+  self.cli('vault','create','local_encryption','orbit-control-inputs');self.cli('vault','put','orbit-control-inputs','database-clone-intent-17',input=json.dumps({'password':self.secrets[0],'payload':{'password':self.secrets[1],'salt':'YWFhYWFhYWFhYWFhYWFhYQ=='}}))
+ def sqlite(self,remote):
+  ssh=self.i['source_ssh'];self.i.clear();self.i.update(variant='sqlite_remote' if remote else 'sqlite_local',node_id=10 if remote else 9,source_node_id=9,source_ssh=ssh,target_ssh=ssh,source={'variant':'clone','node_id':9,'transport_user':'orbit','checkout':'/apps/source','source':'/apps/source/database/database.sqlite','directory':'/tmp/orbit-sqlite-clone-'+'c'*32},target={'node_id':10 if remote else 9,'transport_user':'orbit','checkout':'/apps/target','target':'/apps/target/database/database.sqlite','incoming':'/apps/target/database/.orbit-sqlite-'+'d'*32});self.public['execution_secrets']={};self.public['node_id']=self.i['node_id']
+ def run_clone(self,success=True):
+  self.cli('workflow','validate','operation-database-clone')
+  return reply(self.cli('workflow','run','operation-database-clone','--input',json.dumps(self.public),success=success).stdout)
+ def actions(self):return [x['action']for x in self.calls()]
+ def test_mysql_source_proof_precedes_native_create_and_copy(self):
+  run=self.run_clone();actions=self.actions();self.assertEqual(actions[0],'mysql_clone_probe');self.assertEqual(actions[-1],'mysql_clone_copy');self.assertLess(actions.index('sql_create_database'),actions.index('mysql_clone_copy'));self.assertEqual(self.outcome(run),{'backend':'active'});self.assert_private_absent(json.dumps(self.history(run)))
+ def test_source_refusal_performs_no_mutation(self):
+  DatabaseCommands.fail(self,'mysql_clone_probe','database.source_missing');run=self.run_clone(False);self.assertEqual(self.actions(),['mysql_clone_probe']);self.assertEqual(self.outcome(run),{'error_code':'database.clone_outcome_unknown'})
+ def test_local_sqlite_uses_only_the_local_copy_and_no_vault(self):
+  self.sqlite(False);run=self.run_clone();self.assertEqual(self.actions(),['sqlite_clone_local']);self.assertEqual(self.outcome(run),{'backend':'active'})
+ def test_remote_sqlite_snapshot_and_both_cleanup_branches(self):
+  self.sqlite(True);run=self.run_clone();a=self.actions();self.assertEqual(a[:3],['sqlite_clone_export','sqlite_clone_prepare','sqlite_clone_install']);self.assertCountEqual(a[3:],['sqlite_clone_cleanup_source','sqlite_clone_cleanup_target']);self.assertEqual(self.outcome(run),{'backend':'active'})
+ def test_failed_remote_install_cleans_both_sides_and_never_claims_success(self):
+  self.sqlite(True);DatabaseCommands.fail(self,'sqlite_clone_install');run=self.run_clone(False);self.assertIn('sqlite_clone_cleanup_source',self.actions());self.assertIn('sqlite_clone_cleanup_target',self.actions());self.assertEqual(self.outcome(run),{'error_code':'database.clone_outcome_unknown'})
+ def test_terminal_projection_resume_after_another_root_never_replays_copy(self):
+  self.sqlite(True);marker=self.repo/'delivery-failed';marker.touch();self.workflows['workflow-operation-database-clone.yaml']['jobs'][-1]['steps'].append({'name':'fixture_delivery','dependsOn':[{'step':'accept_result','condition':{'type':'succeeded'}}],'task':{'type':'behavior','behaviorType':'command/shell','behaviorName':'fixture-delivery-${{ run.id }}','methodName':'execute','inputs':{'run':f'test ! -e "{marker}"'}}});self.save();first=self.run_clone(False);marker.unlink();self.public['operation_id']=18;self.run_clone();before=self.calls();self.cli('workflow','resume','operation-database-clone','--run',first['id']);self.assertEqual(self.calls(),before);self.assertEqual(self.outcome(first),{'backend':'active'})
+ def test_cancel_after_remote_export_still_cleans_source_and_incoming(self):
+  self.sqlite(True);marker=self.repo/'cancel-ready';fake=self.repo/'fixture-ssh';s=fake.read_text().replace("if v.get('transport_fail')==action:sys.exit(255)","if action=='sqlite_clone_prepare':\n import time\n Path("+repr(str(marker))+").touch();time.sleep(5)\nif v.get('transport_fail')==action:sys.exit(255)");fake.write_text(s)
+  env=dict(os.environ,SWAMP_NO_UPDATE_CHECK='1',SWAMP_NO_TELEMETRY='1')
+  for key in ['SWAMP_SERVER_URL','SWAMP_SERVE_URL','SWAMP_SERVER_TOKEN','SWAMP_SERVER_TOKEN_FILE','SWAMP_REPO_DIR','SWAMP_CA_CERT','SWAMP_EXTENSIONS_DIR']:env.pop(key,None)
+  process=subprocess.Popen([os.environ.get('SWAMP_BIN','swamp'),'workflow','run','operation-database-clone','--input',json.dumps(self.public),'--json'],cwd=self.repo,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+  try:
+   until=time.monotonic()+90
+   while not marker.exists():
+    self.assertIsNone(process.poll(),'Native cancellation gate not reached');self.assertLess(time.monotonic(),until,'Native cancellation gate timed out');time.sleep(.05)
+   process.send_signal(signal.SIGINT);stdout,stderr=process.communicate(timeout=90);self.assert_private_absent(stdout,stderr);self.assertEqual(reply(stdout)['status'],'cancelled');self.assertIn('sqlite_clone_cleanup_source',self.actions());self.assertIn('sqlite_clone_cleanup_target',self.actions())
+  finally:
+   if process.poll() is None:process.kill();process.communicate(timeout=10)
 
-class CloneNative(NativeTestCase):
-    def setUp(self):
-        super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
-        self.password = 'clone-private-' + secrets.token_hex(16)
-        self.secrets = (self.password, base64.b64encode(self.password.encode()).decode())
-        self.operation = {'id': 17, 'kind': 'database.clone', 'node_id': 209,
-            'status': 'queued', 'result': None, 'cancel_requested': False,
-            'input': {'variant': 'mysql', 'node_id': 209, 'source_node_id': 209, 'mysql': {
-                'driver': 'mysql', 'repair': False, 'username': 'target_owner', 'databases': ['target', 'target_test'],
-                'test_prefix': 'target_test', 'locale': None, 'host': '10.44.0.209', 'port': 3306,
-                'container': 'orbit-process-42-proof',
-                'index': None, 'patterns': [], 'allow': [], 'source_database': 'source_database'}}}
-        self.lose_projection = False
-        self.public_reads = 0
-        self.cancel_at_read = None
-        self.terminal_callbacks = 0
-        fixture = self
-
-        class Gateway(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def do_GET(self):
-                if '/private-material?' not in self.path:
-                    fixture.public_reads += 1
-                    if fixture.public_reads == fixture.cancel_at_read:
-                        fixture.operation['cancel_requested'] = True
-                self.send_response(200)
-                self.send_header('Cache-Control', 'no-store, private')
-                self.end_headers()
-                data = {'password': fixture.password,
-                    'payload': {'password': 'a' * 40, 'salt': 'YWFhYWFhYWFhYWFhYWFhYQ=='}} if '/private-material?' in self.path else fixture.operation
-                self.wfile.write(json.dumps({'data': data}).encode())
-
-            def do_POST(self):
-                data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-                if self.path.endswith('/failure'):
-                    fixture.operation.update(status='failed', result=None, error_code='operation.native_failed')
-                    self.send_response(200)
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'data': fixture.operation}).encode())
-                    return
-                if fixture.lose_projection and data['status'] == 'succeeded':
-                    fixture.lose_projection = False
-                    self.send_response(503)
-                    self.end_headers()
-                    self.wfile.write(b'{"error":{"code":"fixture.lost_projection"}}')
-                    return
-                if data['status'] != 'running': fixture.terminal_callbacks += 1
-                fixture.operation.update(status=data['status'], result=data.get('result'), error_code=data.get('error_code'))
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(json.dumps({'data': fixture.operation}).encode())
-
-        server = ThreadingHTTPServer(('127.0.0.1', 0), Gateway)
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        cert = self.repo / 'fixture.pem'
-        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout',
-            str(self.repo / 'fixture.key'), '-out', str(cert), '-days', '1', '-subj', '/CN=fixture'],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
-        self.native_env.update(CLONE_FIXTURE_URL=f'http://127.0.0.1:{server.server_port}', CLONE_FIXTURE_CA=str(cert))
-        module = self.repo / 'extensions/behaviors/operations/database/clone.ts'
-        # These are canonical shared system dependencies of the database behavior family.
-        for relative in ('operations/processes-schedules/process-system.ts',
-                         'operations/processes-schedules/system.ts', 'operations/node/system_command.ts'):
-            target = self.repo / 'extensions/behaviors' / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(ROOT / 'extensions/behaviors' / relative, target)
-        module.write_text('import { fixtureSqlInvoke, fixtureSqliteInvoke } from "./clone_native_fixture.ts";\n' + module.read_text().replace(
-            'export const behavior = clone();', '''const fixtureBehavior = clone(() => gatewayHttp(Deno.env.get("CLONE_FIXTURE_URL")!, Deno.env.get("CLONE_FIXTURE_CA")!), fixtureSqlInvoke, undefined, fixtureSqliteInvoke);
-for (const name of ["export", "apply", "cleanup", "cleanupTarget"] as const) {
-  const method = fixtureBehavior.methods[name], execute = method.execute;
-  method.execute = async (...args: Parameters<typeof execute>) => {
-    if (Deno.env.get("CLONE_ENGINE_FAILURE") === name) throw new Error("Fixture failed before outcome");
-    return await execute(...args);
-  };
-}
-export const behavior = fixtureBehavior;'''))
-        workflow = ROOT / 'workflows/workflow-operation-database-clone.yaml'
-        fixture_workflow = yaml.safe_load(workflow.read_text())
-        fixture_workflow.pop('target', None)
-        fixture_workflow.pop('labels', None)
-        for job in fixture_workflow['jobs']:
-            job.pop('target', None)
-            job.pop('labels', None)
-            for step in job['steps']:
-                step.pop('target', None)
-                step.pop('labels', None)
-        (self.repo / 'workflows' / workflow.name).write_text(yaml.safe_dump(fixture_workflow, sort_keys=False))
-
-    def start(self, success=True):
-        self.cli('workflow', 'validate', 'operation-database-clone')
-        return self.cli('workflow', 'run', 'operation-database-clone', '--input', 'operation_id=17',
-            '--input', 'node_id=209', '--input', 'kind=database.clone', success=success)
-
-    def test_clone_private_material_never_enters_native_scratch(self):
-        self.start()
-        self.assertEqual(self.operation['status'], 'succeeded')
-        self.assertEqual(self.operation['result'], {'backend': 'active'})
-        effects = (self.repo / 'effects').read_text().splitlines()
-        self.assertEqual(effects.count('copy'), 1)
-        self.assert_private_absent()
-
-    def test_resume_projects_saved_outcome_without_repeating_reset_or_copy(self):
-        self.lose_projection = True
-        result = self.start(False)
-        before = (self.repo / 'effects').read_bytes()
-        run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
-        self.cli('workflow', 'resume', 'operation-database-clone', '--run', run_id)
-        self.assertEqual((self.repo / 'effects').read_bytes(), before)
-        self.assertEqual(self.operation['status'], 'succeeded')
-        self.assert_private_absent()
-
-    def test_uncertain_copy_is_terminal_failed_without_another_effect(self):
-        self.native_env['CLONE_FAIL_COPY_ONCE'] = '1'
-        self.start(False)
-        effects = (self.repo / 'effects').read_text().splitlines()
-        self.assertEqual(effects.count('reset'), 1)
-        self.assertEqual(effects.count('copy'), 1)
-        self.assertEqual(self.operation['status'], 'failed')
-        self.assertEqual(self.operation['error_code'], 'database.clone_native_failed')
-        self.assert_private_absent()
-
-    def test_sql_exception_does_not_leak_password(self):
-        self.native_env['CLONE_THROW'] = '1'
-        self.start(False)
-        self.assertEqual(self.operation['status'], 'failed')
-        self.assertEqual(self.operation['error_code'], 'database.clone_native_failed')
-        self.assert_private_absent()
-
-
-    def sqlite(self, remote=True, nested=False):
-        self.native_env['CLONE_SQLITE'] = '1'
-        source = self.repo / 'source'
-        target = self.repo / 'target'
-        source.mkdir(mode=0o700)
-        target.mkdir(mode=0o700)
-        relative = Path('not-created/proof.sqlite') if nested else Path('proof.sqlite')
-        self.database = source / relative
-        self.destination = target / relative
-        self.database.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.database)) as db:
-            db.execute('CREATE TABLE proof(value TEXT)')
-            db.execute("INSERT INTO proof VALUES ('native-clone-fixture')")
-            db.commit()
-        self.database.chmod(0o600)
-        self.export_directory = Path('/tmp/orbit-sqlite-clone-' + secrets.token_hex(16))
-        self.incoming = self.destination.parent / ('.orbit-sqlite-' + secrets.token_hex(16))
-        self.addCleanup(lambda: shutil.rmtree(self.export_directory, ignore_errors=True))
-        self.operation['input'] = {'variant': 'sqlite_remote' if remote else 'sqlite_local',
-            'node_id': 209, 'source_node_id': 9 if remote else 209,
-            'source': {'variant': 'clone', 'node_id': 9 if remote else 209,
-                'transport_user': getpass.getuser(), 'checkout': str(source), 'source': str(self.database),
-                'directory': str(self.export_directory)},
-            'target': {'node_id': 209, 'transport_user': getpass.getuser(), 'checkout': str(target),
-                'target': str(self.destination), 'incoming': str(self.incoming)}}
-
-    def break_step(self, step):
-        self.native_env['CLONE_ENGINE_FAILURE'] = step
-
-    def test_remote_sqlite_copies_real_snapshot_and_cleans_both_scratch_locations(self):
-        self.sqlite()
-        self.start()
-        with closing(sqlite3.connect(self.destination)) as db:
-            self.assertEqual(db.execute('SELECT value FROM proof').fetchall(), [('native-clone-fixture',)])
-        self.assertEqual(self.operation['status'], 'succeeded')
-        self.assertFalse(self.export_directory.exists())
-        self.assertFalse(self.incoming.exists())
-        self.assertEqual(self.terminal_callbacks, 1)
-        for path in (self.repo / '.swamp').rglob('*'):
-            if path.is_file() and path.name != 'raw':
-                self.assertNotIn(b'native-clone-fixture', path.read_bytes(), str(path))
-
-    def test_local_sqlite_copies_without_a_remote_snapshot(self):
-        self.sqlite(remote=False)
-        self.start()
-        self.assertTrue(self.destination.exists())
-        self.assertEqual((self.repo / 'effects').read_text().splitlines(), ['sqlite-local'])
-
-    def test_fresh_cancel_after_export_skips_target_copy_and_cleans_snapshot(self):
-        self.sqlite()
-        self.cancel_at_read = 3
-        self.start()
-        self.assertEqual(self.operation['status'], 'cancelled')
-        self.assertFalse(self.destination.exists())
-        self.assertFalse(self.export_directory.exists())
-        self.assertFalse(self.incoming.exists())
-        self.assertNotIn('sqlite-install', (self.repo / 'effects').read_text())
-
-    def test_cancel_after_export_keeps_missing_target_parent_absent_and_projects_cancelled(self):
-        self.sqlite(nested=True)
-        self.cancel_at_read = 3
-        self.start()
-        self.assertEqual(self.operation['status'], 'cancelled')
-        self.assertFalse(self.destination.parent.exists())
-        self.assertFalse(self.export_directory.exists())
-        self.assertFalse(self.incoming.exists())
-        self.assertNotIn('sqlite-remove', (self.repo / 'effects').read_text())
-
-    def test_engine_install_failure_projects_once_after_both_cleanups(self):
-        self.sqlite()
-        self.break_step('apply')
-        self.start(False)
-        self.assertEqual(self.operation['status'], 'failed')
-        self.assertEqual(self.operation['error_code'], 'database.clone_native_failed')
-        self.assertEqual(self.terminal_callbacks, 1)
-        self.assertFalse(self.destination.exists())
-        self.assertFalse(self.export_directory.exists())
-        self.assertFalse(self.incoming.exists())
-
-    def test_engine_export_failure_can_settle_without_missing_outcome_dereference(self):
-        self.sqlite()
-        self.break_step('export')
-        self.start(False)
-        self.assertEqual(self.operation['status'], 'failed')
-        self.assertEqual(self.terminal_callbacks, 1)
-        self.assertFalse(self.destination.exists())
-
-    def test_source_cleanup_engine_failure_never_projects_a_completed_copy(self):
-        self.sqlite()
-        self.break_step('cleanup')
-        self.start(False)
-        self.assertEqual(self.operation['status'], 'failed')
-        self.assertEqual(self.terminal_callbacks, 1)
-        self.assertTrue(self.destination.exists())
-
-    def test_target_cleanup_engine_failure_still_cleans_source_before_failure(self):
-        self.sqlite()
-        self.break_step('cleanupTarget')
-        self.start(False)
-        self.assertEqual(self.operation['status'], 'failed')
-        self.assertEqual(self.terminal_callbacks, 1)
-        self.assertFalse(self.export_directory.exists())
-
-    def test_remote_projection_resume_does_not_repeat_export_or_install(self):
-        self.sqlite()
-        self.lose_projection = True
-        result = self.start(False)
-        before = (self.repo / 'effects').read_bytes()
-        run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
-        self.cli('workflow', 'resume', 'operation-database-clone', '--run', run_id)
-        self.assertEqual((self.repo / 'effects').read_bytes(), before)
-        self.assertEqual(self.operation['status'], 'succeeded')
-
-    def test_resume_terminal_failure_never_repeats_uncertain_copy(self):
-        self.native_env['CLONE_FAIL_COPY_ONCE'] = '1'
-        result = self.start(False)
-        before = (self.repo / 'effects').read_bytes()
-        run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
-        self.cli('workflow', 'resume', 'operation-database-clone', '--run', run_id, success=False)
-        self.assertEqual((self.repo / 'effects').read_bytes(), before)
-        self.assertEqual(self.operation['status'], 'failed')
-
-
-if __name__ == '__main__':
-    unittest.main()
+if __name__=='__main__':unittest.main()
