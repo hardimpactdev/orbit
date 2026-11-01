@@ -222,7 +222,7 @@ Continue ports in the approved shape while live admission proof is pending. Use 
 - [ ] Name the core feature and official extension checked. Use defaults, and record each deviation's measured reason and removal condition in PLAN.
 - [ ] Delete the old executor and everything only it used. Remove baseline rows in the last commit, after the last rebase.
 - [ ] Report Orbit and Swamp net lines separately. Keep the diff under GitHub's 20,000-line limit so the audit can read it.
-- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing kind attaches its F10 proof receipt from `bin/swamp-proof <kind>`. Without them the review fails.
+- [ ] State the measured p95, sample size, run budget and `queueTimeout`. Behavior changes also need an [F13 proof receipt](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md).
 
 Check the completed port and report what the evidence proves.
 

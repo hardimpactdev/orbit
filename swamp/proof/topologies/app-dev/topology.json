@@ -1,22 +1,6 @@
 {
   "name": "app-dev",
   "version": 1,
-  "image": {
-    "alias": "orbit-proof-app-dev-v1",
-    "type": "container",
-    "fingerprint": null
-  },
-  "targets": {
-    "default": {
-      "roles": [
-        "app-dev"
-      ],
-      "recipe_source": "canonical-app-dev-recipe",
-      "setup": "setup.sh"
-    }
-  },
-  "pilot_image": "images:ubuntu/24.04",
-  "pilot_kinds": [
-    "firewall.inspect"
-  ]
+  "nodes": ["app-dev"],
+  "seed": null
 }

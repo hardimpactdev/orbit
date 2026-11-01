@@ -5,44 +5,19 @@
   "budget_seconds": 1,
   "queue_timeout_seconds": null,
   "envelope": {
-    "operation_id": "${proof.operation_id}",
-    "node_id": "${proof.target.node_id}",
-    "kind": "firewall.inspect",
+    "node_id": "${topology.app-dev.node_id}",
     "intent": {
       "ssh": {
-        "identity_file": "${proof.control.identity_file}",
-        "control_node_id": "${proof.control.node_id}",
-        "public_key": "${proof.control.public_key}",
         "target": {
-          "name": "${proof.target.name}",
-          "host": "${proof.target.host}",
-          "user": "${proof.target.user}",
-          "port": "${proof.target.port}",
-          "host_keys": "${proof.target.host_keys}"
+          "name": "target",
+          "host": "${topology.app-dev.wireguard_ip}",
+          "user": "orbit",
+          "port": 22
         }
       },
-      "expected": [
-        {
-          "name": "proof-owned",
-          "shape": {
-            "comment": "proof-owned",
-            "action": "allow",
-            "direction": "in",
-            "source": "192.0.2.1",
-            "destination": "any",
-            "port": "443",
-            "protocol": "tcp",
-            "in_interface": null,
-            "out_interface": null,
-            "family": "v4"
-          }
-        }
-      ]
-    },
-    "execution_secrets": {}
+      "expected": "${match.present}"
+    }
   },
-  "secrets": [],
-  "target_setup": "firewall.inspect/target-setup.sh",
   "expect": {
     "status": "succeeded",
     "outputs": {
@@ -77,5 +52,37 @@
       "unmanaged-ssh-preserved",
       "inspection-read-only"
     ]
+  },
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "firewall:allow",
+        "proof-owned",
+        "--node=${topology.app-dev.node_id}",
+        "--from=192.0.2.1",
+        "--protocol=tcp",
+        "--port=443",
+        "--json"
+      ]
+    }
+  ],
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "setup.py"
+      ]
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "firewall:inspect",
+      "--node=${topology.app-dev.node_id}",
+      "--json"
+    ],
+    "operation": "$.id"
   }
 }

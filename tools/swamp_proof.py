@@ -1,15 +1,11 @@
 """F10 proof orchestration. Provision and destroy only through the normal Gateway API."""
-import argparse
 import json
-import os
 import re
-import secrets
-import signal
 import ssl
-import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -43,22 +39,23 @@ def relative_file(root, value):
     return path
 
 
-def bind(value, context, now):
+def bind(value, context, now, allow_matchers=False):
     """The frozen v0 substitutions, with whole-value types preserved."""
     def resolve(name):
+        if allow_matchers and name in {'match.uuid', 'match.positive_int', 'match.sha256', 'match.nonempty_string', 'match.present'}:
+            return '${' + name + '}'
         if re.fullmatch(r'proof\.(now|epoch)\+[0-9]+', name):
             instant = now + timedelta(seconds=int(name.split('+')[1]))
             return int(instant.timestamp()) if name.startswith('proof.epoch') else instant.isoformat().replace('+00:00', 'Z')
-        allowed = {'proof.operation_id', 'proof.start_tag'} | {
-            'proof.control.' + key for key in ('node_id', 'identity_file', 'public_key')
-        } | {'proof.target.' + key for key in ('node_id', 'name', 'host', 'user', 'port', 'host_keys')}
-        if name not in allowed or name not in context:
+        allowed = {'proof.start_tag'}
+        dynamic = re.fullmatch(r'capture\.[a-zA-Z_][a-zA-Z0-9_.]*|topology\.[a-zA-Z0-9_-]+\.(node_id|name|wireguard_ip)', name)
+        if (name not in allowed | {'proof.run', 'proof.repo.url'} and not dynamic) or name not in context:
             raise ProofError(f'Unknown or unavailable binding: {name}')
         return context[name]
     if isinstance(value, dict):
-        return {key: bind(item, context, now) for key, item in value.items()}
+        return {key: bind(item, context, now, allow_matchers) for key, item in value.items()}
     if isinstance(value, list):
-        return [bind(item, context, now) for item in value]
+        return [bind(item, context, now, allow_matchers) for item in value]
     if not isinstance(value, str):
         return value
     match = BINDING.fullmatch(value)
@@ -75,83 +72,92 @@ def bind(value, context, now):
     return result
 
 
-def fixture_for(kind, root=ROOT):
+def fixture_for(kind, root=ROOT, variant=None):
+    """Validate the effective F13 format before any infrastructure admission."""
     if not KIND.fullmatch(kind):
         raise ProofError('Invalid kind.')
-    path = root / 'swamp/proof' / (kind + '.json')
+    if variant is not None and (not isinstance(variant, str) or not re.fullmatch(r'[a-zA-Z0-9_-]+', variant)):
+        raise ProofError('Invalid fixture variant.')
+    path = root / 'swamp/proof' / (kind + '.json') if variant is None else root / 'swamp/proof' / kind / (variant + '.json')
     fixture = json.loads(path.read_text())
-    required = {'kind', 'workflow', 'budget_seconds', 'queue_timeout_seconds', 'envelope', 'secrets', 'expect', 'phases', 'parity'}
-    if set(fixture) - required - {'target_setup', 'topology'} or required - set(fixture) or fixture['kind'] != kind:
-        raise ProofError('Fixture does not match frozen v0 fields.')
+    required = {'kind', 'workflow', 'budget_seconds', 'queue_timeout_seconds', 'envelope', 'request', 'expect', 'phases', 'parity'}
+    if set(fixture) - required - {'prepare', 'before_request', 'topology'} or required - set(fixture) or fixture['kind'] != kind:
+        raise ProofError('Fixture does not match the F13 request format; legacy secrets/target_setup are retired.')
     positive(fixture['budget_seconds'], 'budget_seconds')
     if fixture['queue_timeout_seconds'] is not None:
         positive(fixture['queue_timeout_seconds'], 'queue_timeout_seconds')
-    if fixture['envelope'].get('kind') != kind:
-        raise ProofError('Fixture kind and envelope kind differ.')
-    if set(fixture['envelope']) != {'operation_id', 'node_id', 'kind', 'intent', 'execution_secrets'}:
-        raise ProofError('Fixture requires the exact Gateway input envelope.')
-    # Validate every binding before creating any group.
-    example = {'proof.operation_id': 1, 'proof.start_tag': 'validation'}
-    example.update({'proof.control.' + key: value for key, value in {'node_id': 1, 'identity_file': '/tmp/key', 'public_key': 'public'}.items()})
-    example.update({'proof.target.' + key: value for key, value in {'node_id': 2, 'name': 'target', 'host': '127.0.0.1', 'user': 'orbit', 'port': 22, 'host_keys': ['public']}.items()})
-    validated = bind(fixture, example, datetime.now(UTC))
-    folder = root / 'swamp/proof' / kind
-    if fixture.get('target_setup'):
-        relative_file(root / 'swamp/proof', fixture['target_setup'])
-    for secret in validated['secrets']:
-        if set(secret) - {'vault', 'key', 'value', 'stage_to_target'} or not {'vault', 'key', 'value'} <= set(secret):
-            raise ProofError('Invalid throwaway secret fields.')
-        if any(not isinstance(secret[key], str) or not re.fullmatch(r'[a-zA-Z0-9_.-]+', secret[key]) for key in ('vault', 'key')):
-            raise ProofError('Invalid throwaway vault/key name.')
-        if 'stage_to_target' in secret and type(secret['stage_to_target']) is not bool:
-            raise ProofError('stage_to_target must be boolean.')
-        value = secret.get('value')
-        if value not in ('generate:hex32', 'generate:ed25519'):
-            if not isinstance(value, str) or not value.startswith('file:'):
-                raise ProofError('Only v0 throwaway secret sources are accepted.')
-            relative_file(folder, value[5:])
-    if not fixture['phases'] or not fixture['parity'].get('cases') or not fixture['parity'].get('command'):
-        raise ProofError('Proof requires named phases and legacy parity cases/command.')
+    if not isinstance(fixture['envelope'], dict):
+        raise ProofError('envelope must be a partial expected Operation.input object.')
+    from swamp_proof_requests import validate_commands
+    validate_commands(fixture)
+    if not fixture['phases']:
+        raise ProofError('Proof requires named legacy phases.')
     for phase in fixture['phases']:
-        if set(phase) != {'name', 'job', 'step', 'budget_seconds'}:
-            raise ProofError('Invalid phase fields.')
-        if any(not isinstance(phase[key], str) or not phase[key] for key in ('name', 'job', 'step')):
-            raise ProofError('Each phase needs its name and exact native job/step.')
+        if set(phase) != {'name', 'job', 'step', 'budget_seconds'} or any(not isinstance(phase[key], str) or not phase[key] for key in ('name', 'job', 'step')):
+            raise ProofError('Each phase requires its name and exact native job/step.')
         positive(phase['budget_seconds'], 'phase budget_seconds')
-    if fixture['expect'].get('status') not in TERMINAL or set(fixture['expect']) != {'status', 'outputs'}:
+    if set(fixture['expect']) != {'status', 'outputs'} or fixture['expect']['status'] not in TERMINAL:
         raise ProofError('Expected native status must be terminal.')
-    outputs = fixture['expect'].get('outputs')
-    if outputs is not None and (not isinstance(outputs, dict) or set(outputs) != {'job', 'step', 'match'} or not isinstance(outputs['match'], dict)):
-        raise ProofError('Expected outputs require job, step and a partial match object.')
-    if outputs is None or any(not isinstance(outputs[key], str) or not outputs[key] for key in ('job', 'step')):
-        raise ProofError('Expected outputs require the exact terminal job and step names.')
+    output = fixture['expect']['outputs']
+    if not isinstance(output, dict) or set(output) != {'job', 'step', 'match'} or not isinstance(output['match'], dict) or any(not isinstance(output[key], str) or not output[key] for key in ('job', 'step')):
+        raise ProofError('Expected outputs require exact job, step and public partial match.')
     parity = fixture['parity']
-    if set(parity) != {'command', 'cases'} or any(not isinstance(parity[key], list) or not parity[key] or
-            any(not isinstance(value, str) or not value for value in parity[key]) for key in ('command', 'cases')):
+    if set(parity) != {'command', 'cases'} or any(not isinstance(parity[key], list) or not parity[key] or any(not isinstance(value, str) or not value for value in parity[key]) for key in ('command', 'cases')):
         raise ProofError('Parity requires a command argv and named legacy cases.')
-    # Validate placement/queue policy against the exact unmodified workflow before any VM admission.
     import yaml
     workflows = [yaml.safe_load(path.read_text()) for path in (root / 'swamp/workflows').glob('*.yaml')]
     matches = [flow for flow in workflows if flow.get('name') == fixture['workflow']]
     if len(matches) != 1 or matches[0].get('queueTimeout') != fixture['queue_timeout_seconds']:
         raise ProofError('Fixture queue timeout differs from its unique source workflow.')
+    topology_for(fixture.get('topology', 'app-dev'), root)
     return fixture
 
 
-def topology_for(name, root=ROOT):
-    if not isinstance(name, str) or not re.fullmatch(r'[a-z][a-z0-9_-]*(?:\+ingress)?', name):
-        raise ProofError('Invalid topology name.')
-    folder = root / 'swamp/proof/topologies' / name
-    topology = json.loads((folder / 'topology.json').read_text())
-    if topology.get('name') != name or set(topology.get('targets', {})) != {'default'}:
-        raise ProofError('v0 requires one named default target in its topology.')
+def fixture_variants(kind, variant=None, root=ROOT):
+    if not KIND.fullmatch(kind):
+        raise ProofError('Invalid kind.')
+    if variant is not None:
+        return [(variant, fixture_for(kind, root, variant))]
+    direct = root / 'swamp/proof' / (kind + '.json')
+    variants = sorted((root / 'swamp/proof' / kind).glob('*.json'))
+    if direct.is_file() and variants:
+        raise ProofError('A kind must use either a single fixture or named variants.')
+    if direct.is_file():
+        return [(None, fixture_for(kind, root))]
+    if not variants:
+        raise ProofError('No fixture exists for ' + kind)
+    return [(path.stem, fixture_for(kind, root, path.stem)) for path in variants]
+
+
+def topology_for(value, root=ROOT):
+    """Use the existing declarable Node/role catalog, including its prerequisites."""
+    if isinstance(value, str) and value.startswith('['):
+        value = json.loads(value)
+    if isinstance(value, list):
+        topology = {'name': 'custom', 'version': 1, 'nodes': value, 'seed': None}
+    else:
+        if not isinstance(value, str) or not re.fullmatch(r'[a-z][a-z0-9_-]*', value):
+            raise ProofError('Topology must name a preset or contain a JSON array of Task Nodes.')
+        topology = json.loads((root / 'swamp/proof/topologies' / value / 'topology.json').read_text())
+        if topology.get('name') != value or set(topology) != {'name', 'version', 'nodes', 'seed'}:
+            raise ProofError('Topology preset requires name, version, nodes and seed; container images are retired.')
     positive(topology.get('version'), 'topology version')
-    relative_file(folder, topology['targets']['default']['setup'])
-    image = topology.get('image', {})
-    if set(image) != {'alias', 'type', 'fingerprint'} or image.get('alias') != f'orbit-proof-{name}-v{topology["version"]}' or image.get('type') != 'container':
-        raise ProofError('Topology image must use its versioned container alias.')
-    if image['fingerprint'] is not None and not re.fullmatch(r'[a-f0-9]{64}', image['fingerprint']):
-        raise ProofError('Topology image fingerprint must be a full SHA256 or null.')
+    seed = topology['seed']
+    if seed is not None and (not isinstance(seed, str) or not re.fullmatch(r'[a-f0-9]{64}', seed)):
+        raise ProofError('Topology seed must be a full base-image SHA256 or null until allocation.')
+    catalog = json.loads((root / 'apps/e2e/resources/topology-nodes.json').read_text())
+    nodes = topology.get('nodes')
+    if not isinstance(nodes, list) or not nodes or any(not isinstance(node, str) for node in nodes):
+        raise ProofError('Topology requires normal declarable Task Nodes.')
+    bases = []
+    for node in nodes:
+        base, *roles = node.split('+')
+        entry = catalog['nodes'].get(base, {})
+        if not entry.get('declarable') or len(set(roles)) != len(roles) or any(role not in catalog['extra_roles'] for role in roles):
+            raise ProofError('Topology Node or role is absent from the existing Task catalog: ' + node)
+        bases.append(base)
+    if len(set(bases)) != len(bases) or any(catalog['nodes'][base].get('requires', base) not in bases for base in bases):
+        raise ProofError('Topology repeats a Node or omits its catalog prerequisite.')
     return topology
 
 
@@ -169,6 +175,45 @@ def partial_match(actual, expected):
     if isinstance(expected, dict):
         return isinstance(actual, dict) and all(key in actual and partial_match(actual[key], value) for key, value in expected.items())
     return type(actual) is type(expected) and actual == expected
+
+
+def input_mismatches(actual, expected, path='$', exact=False):
+    """F13 expected Operation.input is a recursive subset; arrays compare whole."""
+    if isinstance(expected, str) and expected.startswith('${match.'):
+        matchers = {
+            '${match.uuid}': lambda value: isinstance(value, str) and valid_uuid(value),
+            '${match.positive_int}': lambda value: type(value) is int and value > 0,
+            '${match.sha256}': lambda value: isinstance(value, str) and re.fullmatch(r'[a-fA-F0-9]{64}', value) is not None,
+            '${match.nonempty_string}': lambda value: isinstance(value, str) and bool(value),
+            '${match.present}': lambda _value: True,
+        }
+        if expected not in matchers:
+            raise ProofError('Unknown expected-input matcher.')
+        return [] if matchers[expected](actual) else [{'path': path, 'expected': expected, 'actual': actual}]
+    if isinstance(expected, list):
+        if not isinstance(actual, list) or len(actual) != len(expected):
+            return [{'path': path, 'expected': expected, 'actual': actual}]
+        return [difference for index, value in enumerate(expected)
+                for difference in input_mismatches(actual[index], value, path + '[' + str(index) + ']', exact=True)]
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        differences = []
+        if exact:
+            differences.extend({'path': path + '[' + json.dumps(key) + ']', 'unexpected': True, 'actual': actual[key]} for key in actual if key not in expected)
+        for key, value in expected.items():
+            child = path + '[' + json.dumps(key) + ']'
+            if key not in actual:
+                differences.append({'path': child, 'expected': value, 'missing': True})
+            else:
+                differences.extend(input_mismatches(actual[key], value, child, exact=exact))
+        return differences
+    return [] if partial_match(actual, expected) else [{'path': path, 'expected': expected, 'actual': actual}]
+
+
+def valid_uuid(value):
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
 
 
 def native_step(history, job, step):
@@ -250,13 +295,13 @@ def wait_operation(gateway, operation, kind, target, timeout=LIFECYCLE_SECONDS):
         operation = gateway.request('GET', f'operations/{operation["id"]}')
 
 
-def provision(gateway, project, kind, role, nonce, record, save):
+def provision(gateway, project, kind, role, nonce, record, save, nodes=None):
     group = gateway.request('POST', 'task-groups', {
-        'project_id': project, 'title': f'proof {kind}',
+        'project_id': project, 'title': kind,
         'brief': 'Disposable F10 proof infrastructure. No product work, publication or merge.',
         'orchestration': 'external', 'status': 'todo',
         'tasks': [{'title': 'Run isolated native proof', 'brief': 'Exercise the fixture and retain the proof receipt.',
-                   'deliverables': [{'id': 'proof', 'type': 'review', 'description': 'Native parity and timing receipt.'}]}],
+                   'deliverables': [{'id': 'proof', 'type': 'review', 'description': 'Native parity and timing receipt.'}], 'topology': nodes or []}],
     })
     record.update(group_id=positive(group['id'], 'group_id'))
     save()
@@ -273,7 +318,10 @@ def provision(gateway, project, kind, role, nonce, record, save):
     node = gateway.request('GET', f'nodes/{record["node_id"]}')
     if node['status'] != 'active' or node['name'] != f'tvm-{record["task_vm_id"]}' or node['user'] == 'root':
         raise ProofError('Normal provisioning did not return an active owned non-root guest Node.')
-    record.update(host_node_id=13, name=node['name'], instance_id=result['instance_id'])
+    seed = admitted.get('image_fingerprint')
+    if not isinstance(seed, str) or not re.fullmatch(r'[a-f0-9]{64}', seed):
+        raise ProofError('Normal provision did not record its exact Task VM base-image fingerprint.')
+    record.update(host_node_id=13, name=node['name'], instance_id=result['instance_id'], seed=seed)
     save()
     return {'record': record, 'node': node, 'result': result, 'input': admitted}
 
@@ -293,104 +341,6 @@ def destroy(gateway, record, nonce):
     record['destroyed'] = True
 
 
-def run(gateway, project, fixture, execute, receipt, save):
-    nonce = secrets.token_hex(8)
-    receipt.update(kind=fixture['kind'], workflow=fixture['workflow'], budget_seconds=fixture['budget_seconds'],
-                   started_at=utc(), status='failed', destroyed=False, control_vm={}, target_vm={}, phases=[],
-                   parity={'passed': False, 'failed': list(fixture['parity']['cases']), 'cases': fixture['parity']['cases']})
-    try:
-        # A dedicated Project's normal exclusion config is required; never edit placement or capacity here.
-        config = gateway.request('GET', f'projects/{project}')
-        exclusions = gateway.request('GET', f'projects/{project}/excluded-nodes')
-        excluded = {row['id'] for row in exclusions}
-        if config.get('slug') != 'swamp-proof' or 9 not in excluded or 13 in excluded or config.get('task_workspace_routed') or config.get('review_and_merge'):
-            raise ProofError('Proof Project must exclude Beast, allow Shark, and disable workspace routing and review/merge.')
-        title = fixture.get('_group_title', fixture['kind'])
-        control = provision(gateway, project, title, 'control', nonce, receipt['control_vm'], save)
-        control['host'] = gateway.request('GET', 'nodes/13')
-        if control['host'].get('name') != 'shark' or control['host'].get('status') != 'active':
-            raise ProofError('The normal provider host is not active Shark.')
-        receipt.update(execute(control, fixture))
-        receipt['target_vm'] = {'task_vm_id': receipt['control_vm']['task_vm_id'], 'container': 'proof-target', 'type': 'incus-container'}
-    except (ProofError, OSError, ValueError, KeyError, KeyboardInterrupt) as error:
-        receipt['error'] = str(error) if isinstance(error, ProofError) else 'Proof interrupted or local input unavailable.'
-    finally:
-        # One failed cleanup must never prevent attempting the other owned VM.
-        for role in ('control_vm',):
-            try:
-                destroy(gateway, receipt[role], nonce)
-            except (ProofError, OSError, ValueError, KeyError, KeyboardInterrupt) as error:
-                receipt[role]['cleanup_error'] = str(error) if isinstance(error, ProofError) else 'Cleanup observation unavailable.'
-                receipt['status'] = 'failed'
-            save()
-        owned = [receipt['control_vm']] if 'group_id' in receipt['control_vm'] else []
-        receipt['destroyed'] = bool(owned) and all(vm.get('destroyed') is True for vm in owned)
-        if receipt['target_vm']:
-            receipt['target_vm']['destroyed'] = receipt['destroyed']
-        receipt['finished_at'] = utc()
-        receipt['proof_pass'] = (receipt.get('expect_pass') is True and receipt.get('budget_pass') is True and
-                                 receipt['parity'].get('passed') is True and receipt['destroyed'] and not receipt.get('error') and
-                                 not receipt['control_vm'].get('cleanup_error'))
-        save()
-    return receipt['proof_pass']
-
-
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('kind', nargs='+')
-    parser.add_argument('--topology')
-    parser.add_argument('--project', type=int, default=os.environ.get('ORBIT_PROOF_PROJECT_ID'))
-    parser.add_argument('--gateway-config', type=Path, default=Path(os.environ.get('ORBIT_HOME', Path.home() / '.orbit')) / 'config.json')
-    args = parser.parse_args(argv)
-    try:
-        fixtures = [fixture_for(kind) for kind in args.kind]
-        if len(set(args.kind)) != len(args.kind):
-            raise ProofError('Each kind may appear once in a proof batch.')
-        secrets_seen = {}
-        for item in fixtures:
-            for secret in item['secrets']:
-                identity = (secret['vault'], secret['key'])
-                source = (item['kind'], secret['value']) if secret['value'].startswith('file:') else secret['value']
-                if identity in secrets_seen and secrets_seen[identity] != source:
-                    raise ProofError('Batch fixtures disagree on one throwaway vault key.')
-                secrets_seen[identity] = source
-        topology = topology_for(args.topology or fixtures[0].get('topology', 'app-dev'))
-        if any(fixture.get('topology', topology['name']) != topology['name'] for fixture in fixtures) and not args.topology:
-            raise ProofError('Several default topologies require an explicit --topology selection.')
-        for fixture in fixtures:
-            if topology['image']['fingerprint'] is None and fixture['kind'] not in topology.get('pilot_kinds', []):
-                raise ProofError('app-dev container recipe image is not available for this kind; only the harness pilot is admitted.')
-        fixture = dict(fixtures[0], _group_title=' '.join(args.kind) + f' {topology["name"]}@{topology["version"]}')
-        gateway = Gateway(args.gateway_config)
-        project = proof_project(gateway, args.project)
-        from swamp_proof_control import execute
-        stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S.%fZ') + '.json'
-        paths = {item['kind']: Path.home() / 'swamp-execution/evidence/proof' / item['kind'] / stamp for item in fixtures}
-        for path in paths.values():
-            path.parent.mkdir(parents=True, exist_ok=True)
-        receipt = {}
-        def save():
-            for kind, path in paths.items():
-                result = next((row for row in receipt.get('proofs', []) if row['kind'] == kind), {})
-                document = dict(receipt, **result)
-                document.update(kind=kind, topology=topology['name'], topology_version=topology['version'],
-                                image_missing=topology['image']['fingerprint'] is None, image_fingerprint=topology['image']['fingerprint'])
-                pending = path.with_suffix('.pending')
-                with pending.open('w', opener=lambda name, flags: os.open(name, flags, 0o600)) as stream:
-                    stream.write(json.dumps(document, indent=2) + '\n')
-                pending.replace(path)
-        def interrupted(_signal, _frame):
-            raise KeyboardInterrupt
-        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
-            signal.signal(number, interrupted)
-        def execute_all(control, _fixture):
-            return execute(control, fixtures, topology, receipt, save)
-        passed = run(gateway, project, fixture, execute_all, receipt, save)
-        for path in paths.values():
-            print(path)
-        if not passed:
-            print(receipt.get('error', 'Proof or cleanup did not pass; inspect the receipt.'), file=sys.stderr)
-        return 0 if passed else 1
-    except (ProofError, OSError, ValueError, KeyError) as error:
-        print(str(error) if isinstance(error, ProofError) else 'Proof configuration is unavailable or invalid.', file=sys.stderr)
-        return 2
+    from swamp_proof_topology import cli
+    return cli(argv)

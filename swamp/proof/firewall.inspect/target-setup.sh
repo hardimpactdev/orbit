@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${SUDO_USER:?Run through the target user with sudo -n}"
-: "${PROOF_KIND_DIR:?Runner must stage the kind directory}"
-# These effects are confined to the disposable target container.
+# These effects are confined to this topology workload VM.
 ufw allow 22/tcp comment proof-ssh
-ufw allow proto tcp from 192.0.2.1 to any port 443 comment proof-owned
 ufw --force enable
-python3 - "$PROOF_KIND_DIR/before.json" "$SUDO_USER" <<'PY'
+python3 - /tmp/swamp-proof-firewall-before.json "$SUDO_USER" <<'PY'
 import hashlib,json,pathlib,pwd,sys,os
 state={name:hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in ['/etc/ufw/user.rules','/etc/ufw/user6.rules']}
 path=pathlib.Path(sys.argv[1]);path.write_text(json.dumps(state))
