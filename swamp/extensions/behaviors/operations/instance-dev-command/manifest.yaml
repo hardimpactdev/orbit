@@ -15,3 +15,5 @@ additionalFiles:
   - scripts/finalize_source.py
   - scripts/run_project_step.py
   - create/setup.py
+  - create/prepare.py
+  - create/source.py

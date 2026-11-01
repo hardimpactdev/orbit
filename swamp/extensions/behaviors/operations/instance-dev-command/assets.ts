@@ -2,6 +2,8 @@ import { z } from "npm:zod@4.4.3";
 import { inspectDestroySources } from "../instance-lifecycle/destroy_inspection.ts";
 import { destroyResult, requireActions } from "./required.ts";
 import { createResult, Step } from "./result.ts";
+import { createAssets } from "./create_assets.ts";
+import { classifyProvisioningProfile } from "../instance-lifecycle/source_profile.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 const Observation = z.object({ stdout: z.string() }).passthrough();
 type Context = {
@@ -31,8 +33,71 @@ export const behavior = {
             lifetime: "1d",
             garbageCollection: 10,
         },
+        create_assets: {
+            schema: z.object({
+                directory: z.string(),
+                prepare: z.string(),
+                source: z.string(),
+            }),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
     },
     methods: {
+        create_assets: {
+            description:
+                "Resolve the unchanged create phase scripts and their delivery directory",
+            arguments: z.object({}).strict(),
+            execute: async (_args: Record<string, never>, ctx: Context) => {
+                const value = await createAssets((path) =>
+                    ctx.extensionFile(path)
+                );
+                await ctx.writeResource("create_assets", "create", value);
+                return value;
+            },
+        },
+        source_result: {
+            description:
+                "Classify the single source phase's public profile through canonical policy",
+            arguments: z.object({
+                intent: ObjectValue,
+                observation: Observation,
+            }),
+            execute: async (
+                args: {
+                    intent: Record<string, unknown>;
+                    observation: { stdout: string };
+                },
+                ctx: Context,
+            ) => {
+                const observed = z.object({
+                    branch: z.string(),
+                    commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
+                    profile: z.unknown().optional(),
+                    php_version: z.string().nullable().optional(),
+                    laravel: z.boolean().optional(),
+                }).parse(JSON.parse(args.observation.stdout));
+                const value = {
+                    branch: observed.branch,
+                    commit: observed.commit,
+                    ...(args.intent.retained_source != null
+                        ? {
+                            php_version: observed.php_version ?? null,
+                            laravel: observed.laravel ?? false,
+                        }
+                        : classifyProvisioningProfile(observed.profile, {
+                            project_type: z.string().parse(
+                                args.intent.project_type,
+                            ),
+                            php_versions: z.array(z.string()).min(1).parse(
+                                args.intent.php_versions,
+                            ),
+                        })),
+                };
+                await ctx.writeResource("result", "source", value);
+                return value;
+            },
+        },
         setup_assets: {
             description:
                 "Resolve the shared ordered setup phase and its canonical command policy",

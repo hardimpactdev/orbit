@@ -1,12 +1,11 @@
-import { sourceSteps } from "../instance-source-command/workflow.ts";
 import {
     expression as e,
     instanceActions,
 } from "../instance-vp-command/native_steps.ts";
 type Fields = Record<string, unknown>;
-/** Complete admitted development create, with one native action per source/environment/setup effect. */
-export function createPreparationSteps(): Fields[] {
-    const intent = "inputs.intent", ssh = intent + ".ssh_execution";
+/** Legacy action groups; private environment capture stays an explicit file/vault boundary. */
+export function createPreparationSteps(input = "inputs"): Fields[] {
+    const intent = input + ".intent", ssh = intent + ".ssh_execution";
     const first = instanceActions("create", ssh);
     first.add("local-directory", {
         type: "behavior",
@@ -36,23 +35,48 @@ export function createPreparationSteps(): Fields[] {
                 ORBIT_MINT_FILE: e(
                     'steps["create-mint-assets"].outputs.directory + "/mint.py"',
                 ),
-                ORBIT_OPERATION_ID: e("string(inputs.operation_id)"),
+                ORBIT_OPERATION_ID: e("string(" + input + ".operation_id)"),
                 ORBIT_RUN_ID: e("run.id"),
                 ORBIT_GIT_REFERENCES: e(
-                    "inputs.intent.execution_references_json",
+                    intent + ".execution_references_json",
                 ),
             },
         },
     });
-    const source = sourceSteps(
-        "source",
-        intent,
-        "vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key)",
-    );
-    source[0].dependsOn = [{
-        step: "create-mint",
-        condition: { type: "succeeded" },
-    }];
+    first.metadata("phase-assets", "create_assets", {});
+    first.sshAction("prepare", "exec", {
+        argv: [
+            "/usr/bin/timeout",
+            "--kill-after=1s",
+            e("string(" + intent + ".phase_plan.prepare.seconds) + 's'"),
+            "/usr/bin/python3",
+            "-B",
+            "-c",
+            e(first.output("phase-assets") + ".prepare"),
+            e("toJSON(" + intent + ")"),
+        ],
+    });
+    first.sshAction("source", "exec", {
+        argv: [
+            "/usr/bin/timeout",
+            "--kill-after=1s",
+            e("string(" + intent + ".phase_plan.source.seconds) + 's'"),
+            "/usr/bin/python3",
+            "-B",
+            "-c",
+            e(first.output("phase-assets") + ".source"),
+            e("toJSON(" + intent + ")"),
+        ],
+        stdin: e(
+            "vault.get(" + input + ".execution_secrets.git_read.vault," +
+                input + ".execution_secrets.git_read.key)",
+        ),
+    });
+    const source = instanceActions("source", ssh, "create-source");
+    source.metadata("result", "source_result", {
+        intent: e(intent),
+        observation: e(first.output("source")),
+    });
     const env = instanceActions("env", ssh, "source-result"), o = env.output;
     const remote = '"/tmp/orbit-instance-" + run.id + "/template"';
     env.script("template", "template", {
@@ -68,7 +92,8 @@ export function createPreparationSteps(): Fields[] {
         path: e(remote),
         env: {
             ORBIT_ENVIRONMENT: e(
-                "vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key)",
+                "vault.get(" + input + ".execution_secrets.environment.vault," +
+                    input + ".execution_secrets.environment.key)",
             ),
         },
         profile: e('steps["source-result"].outputs'),
@@ -91,13 +116,17 @@ export function createPreparationSteps(): Fields[] {
             e('"/tmp/orbit-instance-" + run.id + "/write_environment.py"'),
         ],
         stdin: e(
-            "vault.get(inputs.intent.environment_output.vault,inputs.intent.environment_output.key)",
+            "vault.get(" + intent + ".environment_output.vault," + intent +
+                ".environment_output.key)",
         ),
     });
-    return [...first.steps, ...source, ...env.steps];
+    for (const step of [...first.steps, ...source.steps, ...env.steps]) {
+        step.queueTimeout = 15;
+    }
+    return [...first.steps, ...source.steps, ...env.steps];
 }
-export function createCompletionSteps(): Fields[] {
-    const intent = "inputs.intent", ssh = intent + ".ssh_execution";
+export function createCompletionSteps(input = "inputs"): Fields[] {
+    const intent = input + ".intent", ssh = intent + ".ssh_execution";
     const end = instanceActions("finish", ssh);
     end.add("prepared", {
         type: "assert",
@@ -106,59 +135,31 @@ export function createCompletionSteps(): Fields[] {
         severity: "high",
         message: "Instance preparation did not finish.",
     });
-    end.metadata("setup-assets", "read", {
-        action: "run_project_step",
-        input: {},
-    }, "@nckrtl/instance-dev-command");
+    end.metadata("setup-assets", "create_assets", {});
     end.sshAction("setup-copy", "copy", {
-        src: e(end.output("setup-assets") + ".script_file"),
-        dst: e('"/tmp/orbit-instance-" + run.id + "/run_project_step.py"'),
+        src: e(end.output("setup-assets") + ".directory"),
+        dst: e('"/tmp/orbit-create-phase-" + run.id'),
         direction: "to",
+        recursive: true,
     });
-    for (let index = 0; index < 32; index++) {
-        end.sshAction("setup-" + index, "exec", {
-            argv: [
-                "/usr/bin/python3",
-                "-B",
-                e('"/tmp/orbit-instance-"+run.id+"/run_project_step.py"'),
-            ],
-            timeoutSec: e("self.command.timeout_seconds"),
-            okExitCodes: "any",
-            env: {
-                VP_HOME: e(
-                    'steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store',
-                ),
-            },
-            stdin: e(
-                "vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key)",
+    end.sshAction("setup", "exec", {
+        argv: [
+            "/usr/bin/python3",
+            "-B",
+            e('"/tmp/orbit-create-phase-"+run.id+"/create/setup.py"'),
+        ],
+        okExitCodes: "any",
+        timeoutSec: e(intent + ".phase_plan.setup.seconds + 2"),
+        env: {
+            VP_HOME: e(
+                'steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store',
             ),
-        }, {
-            ...(index
-                ? {
-                    guard: e(
-                        '!("finish-setup-' + (index - 1) +
-                            '-0" in steps && steps["finish-setup-' +
-                            (index - 1) +
-                            '-0"].status == "succeeded" && steps["finish-setup-' +
-                            (index - 1) + '-0"].outputs.exitCode == 0)',
-                    ),
-                }
-                : {}),
-            forEach: {
-                item: "command",
-                in: e(
-                    intent + ".setup_commands.filter(command,command.index==" +
-                        index + ")",
-                ),
-            },
-            dependsOn: [{
-                step: index
-                    ? "finish-setup-" + (index - 1)
-                    : "finish-setup-copy",
-                condition: { type: "succeeded" },
-            }],
-        });
-    }
+        },
+        stdin: e(
+            "vault.get(" + input + ".execution_secrets.setup.vault," + input +
+                ".execution_secrets.setup.key)",
+        ),
+    });
     end.metadata(
         "result",
         "create_result",
@@ -171,5 +172,6 @@ export function createCompletionSteps(): Fields[] {
             })),
         },
     );
+    for (const step of end.steps) step.queueTimeout = 15;
     return end.steps;
 }
