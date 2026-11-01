@@ -104,7 +104,7 @@ A profile's effective set is the union of `common` and its own list, sorted by t
 
 ### Swamp worker
 
-The one task VM base profile includes the official Swamp binary, pinned by version and SHA-256. Its release matches the orchestrator's `swamp serve`: `20261022.021804.0-sha.983e2929`. Roll out a reviewed recipe pin and matching serve release together. Image verification checks the installed binary against its artifact digest. No fleet or account credential belongs in the image.
+The one task VM base profile includes the official Swamp binary, pinned by version and SHA-256. Its release matches the orchestrator's `swamp serve`: `20261031.063736.0-sha.e459d219`. Roll out a reviewed recipe pin and matching serve release together. Image verification checks the installed binary against its artifact digest. No fleet or account credential belongs in the image.
 
 Before publishing the base image, the builder installs the Gateway's public Orbit root certificate at `/usr/local/share/ca-certificates/orbit-root.crt` and refreshes the system trust store. Orbit CA rotation requires rebuilding the base image before new task VMs use that CA. The worker explicitly uses this certificate for its WebSocket and HTTP/2 connections. Native VM enrollment starts its exact Node worker before Pi preparation. The separate [Task worker](/reference/tasks#optional-swamp-worker) serves group work after workspace setup. Swamp's [remote execution manual](https://swamp-club.com/manual/explanation/remote-execution) and [worker reference](https://swamp-club.com/manual/reference/remote-execution/worker-commands) own its protocol and reconnect behavior.
 
@@ -135,6 +135,8 @@ The base also holds the nested Incus packages, so a task VM [runs a topology](#p
 - `nftables`, for the isolation table.
 
 Zabbly bundles QEMU, qemu-img, virtiofsd, and firmware with Incus. No separate Ubuntu packages provide them. The recipe installs packages without recommended packages. The `base` profile is amd64 only, because Pi is. The topology Nodes start from the same base and carry these packages unused.
+
+The base also holds two packages for a topology's `gateway` VM. `dnsmasq` is the `vpn` role's DNS service, because that VM holds the `vpn` role. `fcgiwrap` serves the topology's Git repositories over HTTP, with Git's own `git-http-backend`. The `dnsmasq` package enables its unit, but the unit fails at boot: systemd-resolved starts first and holds port 53. Name resolution and nested Incus bridges are not affected. On the `gateway` VM, the `vpn` role's DNS configuration binds dnsmasq to `127.0.0.55`, the private DNS backend address, and restarts it, as on a production `vpn` Node.
 
 After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `image.clean` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
 
