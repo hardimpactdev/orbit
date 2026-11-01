@@ -98,7 +98,7 @@ jobs:
     writes: true
     dependsOn: [{condition: {type: succeeded}, step: before}]
     guard: ${{ !steps["before-0"].outputs.ready || !("repository" in inputs.intent) || inputs.intent.repository==null }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["sh","-c",''/usr/bin/timeout 180 "$@"; result=$?; if [ "$result" -eq 124 ]; then echo "repository: 180s budget exceeded" >&2; fi; exit "$result"'',"repository","/usr/bin/python3","-I","-c",steps["query_assets-0"].outputs.repository_body,"prepare",steps["query_assets-0"].outputs.repository_json] }}', sudo: true}, methodName: exec, type: behavior}
+    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["/usr/bin/timeout","180","/usr/bin/python3","-I","-c",steps["query_assets-0"].outputs.repository_body,"prepare",steps["query_assets-0"].outputs.repository_json] }}', sudo: true}, methodName: exec, type: behavior}
   - name: candidate_assets
     target: orbit-node-209
     allowFailure: true

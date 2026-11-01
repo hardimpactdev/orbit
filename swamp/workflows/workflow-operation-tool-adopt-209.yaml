@@ -81,7 +81,7 @@ jobs:
         name: ${{ "tool-adopt-repository-" + run.id + "-" + string(self._index) }}
         transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true}
         hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
-      inputs: {hosts: 'name:target', sudo: false, argv: '${{ ["sh","-c",''/usr/bin/timeout 180 "$@"; result=$?; if [ "$result" -eq 124 ]; then echo "repository: 180s budget exceeded" >&2; fi; exit "$result"'',"repository","/usr/bin/python3","-I","-c",steps.assets.outputs.repository_body,"adopt",steps.assets.outputs.repository_json] }}'}
+      inputs: {hosts: 'name:target', sudo: false, argv: '${{ ["/usr/bin/timeout","180","/usr/bin/python3","-I","-c",steps.assets.outputs.repository_body,"adopt",steps.assets.outputs.repository_json] }}'}
   - name: result
     target: orbit-node-209
     dependsOn: [{step: query, condition: {type: succeeded}}, {step: repository, condition: {type: always}}]
