@@ -1,11 +1,11 @@
 ---
 title: "Swamp port retros"
-description: "One row per merged PR that touches swamp/: what it ported, steps per legacy call, budget, proof and review findings, and one row per F10 proof receipt."
+description: "One row per merged PR that touches swamp/: what it ported, steps per legacy call, budget, proof and review findings, and one row per topology proof receipt."
 ---
 
 # Swamp port retros
 
-Lane 26 adds one row for each merged PR that touches `swamp/`. The lessons go into the [porting reference](/swamp/porting#changelog). No PR below has an F10 receipt; the evidence column lists what the PR ran instead. Every PR below merged before F10, so every behavior-changing row needs a re-proof, as do earlier ports such as #2238, #2243, #2244 and #2246. Step counts are estimates from workflow definitions, not run history. None of these PRs had a lane 26 review before merge.
+Lane 26 adds one row for each merged PR that touches `swamp/`. The lessons go into the [porting reference](/swamp/porting#changelog). No PR below has an F10 receipt; the evidence column lists what the PR ran instead. Every PR below merged before F10, so every behavior-changing row needs a re-proof, as do earlier ports such as #2238, #2243, #2244 and #2246. Step counts are estimates from workflow definitions, not run history. Only #2310 had a lane 26 review before merge; #2281 and #2304 were reviewed after.
 
 ## Behavior-changing PRs
 
@@ -48,9 +48,19 @@ Fix-forward is allowed for these. They need no proof.
 | #2264 | Route mutation helpers and Valkey ACL writer | 3 removed | Added a retirement procedure to the shape gate guide |
 | #2252 | PHP Instance create and destroy executors | 10 removed | Full Gateway suite red before the PR |
 
+## Documented F9 deviations
+
+A port may change the legacy phase order only with a written reason that a sub-orchestrator approves. Each approved deviation is listed here, with the parity tests that cover it.
+
+| Kind | Approved by | Legacy order | Native order | Reason | Parity tests |
+| --- | --- | --- | --- | --- | --- |
+| `websocket.app_attach`, `websocket.app_detach` (lane 23) | B, 2026-11-01 | Remote read-only inspection, then the Gateway commits the attachment and environment, then the Gateway builds Caddy | Admission records immutable prospective intent only; native read-only inspection; lane 8's prospective Route child; terminal projection stores the attachment and environment only if inspection succeeded, also when publication fails | A Gateway commit between native phases would need a forbidden step callback | Refusal leaves state unchanged; a failed build keeps the desired state |
+
+For the WebSocket attach deviation, unknown or cancelled roots keep their unresolved intent.
+
 ## Proof receipts
 
-Lane 26 adds one row for each F10 receipt. The fault column says whether the proof failed because of the kind or the topology. A topology fault fixes the topology and bumps its version in the same PR.
+Lane 26 adds one row for each receipt from the topology loop ([F13](/swamp/porting#port-inside-the-topology-f13)). The fault column says whether the proof failed because of the kind or the topology. A topology fault fixes the topology and bumps its version in the same PR.
 
 | Receipt | Kinds | Topology and version | Result | What the proof caught | Fault | Lesson |
 | --- | --- | --- | --- | --- | --- | --- |
