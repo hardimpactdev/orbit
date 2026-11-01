@@ -128,7 +128,7 @@ export interface GroupRow extends AssistanceFields {
 }
 
 const OPEN_SUBTASK = ["todo", "running", "reviewing"];
-const TERMINAL_OPERATION = ["succeeded", "failed", "cancelled"];
+const TERMINAL_OPERATION = ["succeeded", "failed", "cancelled", "interrupted"];
 
 /** The Orbit group id of a work item named `tg-<id>`. */
 export function groupOf(workItem: string): number {

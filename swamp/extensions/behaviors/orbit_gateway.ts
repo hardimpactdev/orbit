@@ -90,7 +90,7 @@ export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutS
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.30.1",
+  version: "2026.11.01.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     dependencyMergeConfiguration: {description:"Fresh private dependency merge switch",schema:MergeConfiguration,lifetime:"infinite",garbageCollection:1},

@@ -175,7 +175,7 @@ export async function parkForReview(key: string, a: Admission, deps: {
     op.target_id !== group
   ) throw new Error("Invalid scoped parking evidence; slot retained");
   parking.nextReadAt = now() + Number(op.poll_after_seconds ?? 5) * 1000;
-  if (["failed", "cancelled"].includes(String(op.status))) {
+  if (["failed", "cancelled", "interrupted"].includes(String(op.status))) {
     const failures = (parking.failures ?? 0) + 1;
     a = { ...a, parkingEpoch: (a.parkingEpoch ?? 0) + 1 };
     parking = {

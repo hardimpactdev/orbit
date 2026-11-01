@@ -364,7 +364,7 @@ export async function tick(
   }
   if (
     state.intent && receipt &&
-    ["succeeded", "failed", "cancelled"].includes(receipt.status)
+    ["succeeded", "failed", "cancelled", "interrupted"].includes(receipt.status)
   ) {
     const intent = state.intent;
     const row = history.find((r) => r.id === receipt.result?.deployment_id);
