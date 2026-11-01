@@ -1686,7 +1686,7 @@ export function analyzeYaml(
   };
   walk(data, []);
   result.declaredVaults = Array.isArray(data.vaults) ? data.vaults.filter((v): v is string => typeof v === "string") : [];
-  result.vaultReads = [...requiredVaults.size ? requiredVaults : readsVault ? result.declaredVaults : []];
+  result.vaultReads = [...(requiredVaults.size ? requiredVaults : readsVault ? result.declaredVaults : [])];
   if (readsVault && !requiredVaults.size && (!Array.isArray(data.vaults) || !data.vaults.length)) add("workflow-vault-declaration", ["dynamic vault reference"]);
   for (const name of [...requiredVaults].sort()) {
     if (!Array.isArray(data.vaults) || !data.vaults.includes(name)) add("workflow-vault-declaration", [name]);
