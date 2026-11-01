@@ -26,11 +26,23 @@ use Psr\Log\NullLogger;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeSwampEventSocket;
 
+beforeEach(function (): void {
+    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['test.start' => ['workflow' => 'operation-test-start',
+                'workflow_inputs' => true, 'projection' => StartTerminalProjection::class,
+                'terminal_result' => ['job' => 'completion', 'step' => 'result']]];
+        }
+    }]));
+});
+
 function startIntent(): Operation
 {
     $node = Node::query()->create(['name' => 'native-start', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
 
-    return Operation::query()->create(['kind' => 'route.private_dns_publish', 'target_type' => 'node_route_projection',
+    return Operation::query()->create(['kind' => 'test.start', 'target_type' => 'node',
         'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => [], 'state' => []]);
 }
 
@@ -41,10 +53,10 @@ it('submits once after admission commits and leaves confirmed native work runnin
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.start-token']);
     DB::beginTransaction();
-    $operation = app(StartOperationAction::class)->execute('route.private_dns_publish', 'node_route_projection', $node->id, $node->id, [], null, null);
+    $operation = app(StartOperationAction::class)->execute('test.start', 'node', $node->id, $node->id, [], null, null);
     expect($socket->sent)->toBe([]);
     expect($operation->fresh()->state)->toBe(['swamp_start' => [
-        'key' => 'operation:'.$operation->id, 'workflow' => 'operation-route-publication',
+        'key' => 'operation:'.$operation->id, 'workflow' => 'operation-test-start',
     ]]);
 
     DB::commit();
@@ -70,7 +82,7 @@ it('rolls back creation when the admission receipt cannot be stored', function (
         }
     });
     try {
-        expect(fn () => app(StartOperationAction::class)->execute('route.private_dns_publish', 'node_route_projection', $node->id, $node->id, [], null, null))
+        expect(fn () => app(StartOperationAction::class)->execute('test.start', 'node', $node->id, $node->id, [], null, null))
             ->toThrow(RuntimeException::class, 'Receipt write refused.');
         expect(Operation::query()->where('node_id', $node->id)->exists())->toBeFalse();
         expect($socket->sent)->toBe([]);
@@ -87,10 +99,10 @@ it('preserves unrelated state when adding the admission receipt', function (): v
         $operation->state = [...($operation->state ?? []), 'public_fixture' => 'retained'];
     });
     try {
-        $operation = app(OperationStore::class)->create('route.private_dns_publish', 'node_route_projection', $node->id, $node->id, [], null, null);
+        $operation = app(OperationStore::class)->create('test.start', 'node', $node->id, $node->id, [], null, null);
         expect($operation->fresh()->state)->toBe([
             'public_fixture' => 'retained',
-            'swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-route-publication'],
+            'swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-test-start'],
         ]);
         expect($operation->status)->toBe(OperationStatus::Queued);
     } finally {
@@ -101,19 +113,19 @@ it('preserves unrelated state when adding the admission receipt', function (): v
 it('leaves replayed and fenced admissions untouched without submitting', function (bool $fenced): void {
     $node = Node::query()->create(['name' => 'receipt-fixture', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
     $identity = app(OperationIdempotency::class);
-    $identity->kind = 'route.private_dns_publish';
+    $identity->kind = 'test.start';
     $identity->key = 'receipt-replay';
     $identity->fingerprint = str_repeat('a', 64);
     $operation = $fenced
-        ? app(OperationStore::class)->fenceAdmission($identity->kind, $identity->key, $identity->fingerprint, 'node_route_projection', $node->id, $node->id, [], 'fixture', 'fixture')
+        ? app(OperationStore::class)->fenceAdmission($identity->kind, $identity->key, $identity->fingerprint, 'node', $node->id, $node->id, [], 'fixture', 'fixture')
         : Operation::query()->create(['kind' => $identity->kind, 'idempotency_key' => $identity->key, 'idempotency_fingerprint' => $identity->fingerprint,
-            'target_type' => 'node_route_projection', 'target_id' => $node->id, 'node_id' => $node->id, 'input' => [],
+            'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'input' => [],
             'state' => ['retained' => true], 'status' => OperationStatus::Queued, 'sequence' => 1]);
     $before = $operation->fresh()->getAttributes();
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
 
-    $replayed = app(StartOperationAction::class)->execute($identity->kind, 'node_route_projection', $node->id, $node->id, [], 'fixture', 'fixture');
+    $replayed = app(StartOperationAction::class)->execute($identity->kind, 'node', $node->id, $node->id, [], 'fixture', 'fixture');
 
     expect($replayed->id)->toBe($operation->id);
     expect($replayed->fresh()->getAttributes())->toBe($before);
@@ -176,7 +188,7 @@ it('records a native refusal as failed without its diagnostic', function (): voi
 it('logs refusal diagnostics after removing credentials and secret patterns', function (): void {
     $operation = startIntent();
     $socket = new FakeRoutePublicationSocket;
-    $message = "Access denied: user:orbit-gateway needs run on workflow:operation-route-publication private.start-token password=hidden-password Bearer hidden-bearer-token\n-----BEGIN PRIVATE KEY-----\nhidden-pem\n-----END PRIVATE KEY-----";
+    $message = "Access denied: user:orbit-gateway needs run on workflow:operation-test-start private.start-token password=hidden-password Bearer hidden-bearer-token\n-----BEGIN PRIVATE KEY-----\nhidden-pem\n-----END PRIVATE KEY-----";
     $socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'unauthorized', 'message' => $message, 'details' => ['token' => 'hidden-detail']]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.start-token']);
@@ -187,7 +199,7 @@ it('logs refusal diagnostics after removing credentials and secret patterns', fu
     Log::shouldHaveReceived('warning')->with('Swamp direct start refused', Mockery::on(static function (array $context): bool {
         expect($context['remote_code'])->toBe('unauthorized');
         expect($context['remote_type'])->toBe('error');
-        expect($context['remote_message'])->toContain('Access denied', 'workflow:operation-route-publication', '[REDACTED]');
+        expect($context['remote_message'])->toContain('Access denied', 'workflow:operation-test-start', '[REDACTED]');
         expect(json_encode($context))->not->toContain('private.start-token', 'hidden-password', 'hidden-bearer-token', 'hidden-pem', 'hidden-detail');
 
         return true;
@@ -219,7 +231,7 @@ it('keeps a lost or malformed response active and never resubmits on replay', fu
     $operation = startIntent();
     $socket = new FakeRoutePublicationSocket(false);
     if ($malformed) {
-        $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-route-publication', 'runId' => 'not-a-native-uuid']]];
+        $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-test-start', 'runId' => 'not-a-native-uuid']]];
     }
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.start-token']);
@@ -245,7 +257,7 @@ it('binds a native root that fails before the first behavior and pins terminal c
     $operation = startIntent();
     $runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => $kind, 'workflowName' => 'operation-route-publication', 'runId' => $runId, 'message' => 'private native error']]];
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => $kind, 'workflowName' => 'operation-test-start', 'runId' => $runId, 'message' => 'private native error']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.start-token']);
 
@@ -486,7 +498,7 @@ it('accepts a root after measured pre-dispatch setup delays without waiting for 
         }
 
         return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
-            'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+            'workflowName' => 'operation-test-start', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     };
     config(['swamp.run_token' => 'private.start-token']);
     $clock = static function () use (&$time): float {
