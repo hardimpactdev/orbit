@@ -131,7 +131,8 @@ final readonly class ClusterRouterDnsSelection
             }
 
             $routerWireguard = $this->ipv4(app(RouteRenderContext::class)->wireguardIp($router));
-            $routerLan = $this->ipv4($router->lan_ip);
+            $routerLan = $this->ipv4(array_key_exists('lan_ip', $nodeOverrides[$router->id] ?? [])
+                ? $nodeOverrides[$router->id]['lan_ip'] : app(RouteRenderContext::class)->lanIp($router));
             $tld = array_key_exists('tld', $clusterOverrides[$cluster->id] ?? [])
                 ? $this->tld($clusterOverrides[$cluster->id]['tld'] ?? null)
                 : $this->tld($cluster->tld);
@@ -226,6 +227,14 @@ final readonly class ClusterRouterDnsSelection
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all();
 
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        if ($candidate !== null) {
+            $memberIds = array_values(array_filter($memberIds, static fn (int $id): bool => $id !== $candidate->nodeId));
+            if ($candidate->clusterId === $clusterId) {
+                $memberIds[] = $candidate->nodeId;
+            }
+        }
+
         foreach ($nodeOverrides as $id => $override) {
             if (! array_key_exists('cluster_id', $override)) {
                 continue;
@@ -262,7 +271,7 @@ final readonly class ClusterRouterDnsSelection
 
             $member = $this->applyNodeOverrides($member, $nodeOverrides[$id] ?? []);
 
-            if ($this->isEligibleRequester($member, $clusterId)) {
+            if ($this->isEligibleRequester($member, $clusterId, $nodeOverrides[$id] ?? [])) {
                 $eligible[] = $member;
             }
         }
@@ -270,12 +279,17 @@ final readonly class ClusterRouterDnsSelection
         return $eligible;
     }
 
-    private function isEligibleRequester(Node $member, int $clusterId): bool
+    /** @param array{cluster_id?:?int,lan_ip?:?string,status?:LifecycleStatus,wireguard_ip?:?string,wireguard_public_key?:?string} $override */
+    private function isEligibleRequester(Node $member, int $clusterId, array $override): bool
     {
+        $context = app(RouteRenderContext::class);
+        $memberCluster = array_key_exists('cluster_id', $override) ? $override['cluster_id'] : $context->clusterId($member);
+        $lan = array_key_exists('lan_ip', $override) ? $override['lan_ip'] : $context->lanIp($member);
+
         return $member->exists
-            && $member->cluster_id === $clusterId
+            && $memberCluster === $clusterId
             && $member->status === LifecycleStatus::Active
-            && $this->ipv4($member->lan_ip) !== null
+            && $this->ipv4($lan) !== null
             && $this->ipv4(app(RouteRenderContext::class)->wireguardIp($member)) !== null
             && is_string($member->wireguard_public_key)
             && $member->wireguard_public_key !== '';
