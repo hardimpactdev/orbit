@@ -78,50 +78,56 @@ const output = async (ctx: Context, value: Record<string, unknown>) => ({
     dataHandles: [await ctx.writeResource("public", "output", value)],
 });
 
+/** One project's configuration export, with its recorded exceptions supplied by `exceptions`. */
+async function exported(
+    project: (typeof projects)[number],
+    exceptions: () => Promise<Record<string, unknown> | null>,
+) {
+    let value: unknown;
+    // Configuration exports only transform metadata. No native method, CLI or HTTP is invoked.
+    await project.methods.configuration.execute({}, {
+        // The stored configuration only decides whether to write; reading null always captures the export.
+        readResource: (name: string) =>
+            name === "exceptions" ? exceptions() : Promise.resolve(null),
+        writeResource: (
+            _spec: string,
+            _name: string,
+            data: Record<string, unknown>,
+        ) => {
+            value = data;
+            return Promise.resolve({ name: "configuration" });
+        },
+    });
+    return value as { projectId?: number } | undefined;
+}
+
 async function configuredProject(
     snapshot: z.infer<typeof Snapshot>,
     ctx: Context,
 ) {
-    let selected: unknown;
-    // Configuration exports only transform metadata. No native method, CLI or HTTP is invoked.
+    // The project id is static configuration, so the match needs no data read; only its exceptions are queried.
+    const matched = [];
     for (const project of projects) {
-        let value: unknown;
-        await project.methods.configuration.execute({}, {
-            readResource: async (name: string) => {
-                const rows = await ctx.queryData(
-                    `modelType == ${JSON.stringify(project.type)} && name == ${
-                        JSON.stringify(name)
-                    }`,
-                );
-                return rows.length === 0 ? null : (rows[0] as {
-                    attributes: Record<string, unknown>;
-                }).attributes;
-            },
-            writeResource: (
-                _spec: string,
-                _name: string,
-                data: Record<string, unknown>,
-            ) => {
-                value = data;
-                return Promise.resolve({ name: "configuration" });
-            },
-        });
-        // A matching stored export can be unchanged, so capture it explicitly too.
-        if (!value) {
+        if (
+            (await exported(project, () => Promise.resolve(null)))
+                ?.projectId === snapshot.id
+        ) {
+            matched.push(project);
+        }
+    }
+    const owner = matched.at(-1);
+    const selected = owner
+        ? await exported(owner, async () => {
             const rows = await ctx.queryData(
                 `modelType == ${
-                    JSON.stringify(project.type)
-                } && name == "configuration"`,
+                    JSON.stringify(owner.type)
+                } && name == "exceptions"`,
             );
-            value = (rows[0] as { attributes?: unknown } | undefined)
-                ?.attributes;
-        }
-        if (
-            value &&
-            (value as { projectId?: number }).projectId ===
-                snapshot.id
-        ) selected = value;
-    }
+            return rows.length === 0 ? null : (rows[0] as {
+                attributes: Record<string, unknown>;
+            }).attributes;
+        })
+        : undefined;
     const project = DependencyProjectSchema.parse(
         selected && typeof selected === "object"
             ? Object.fromEntries(
@@ -144,7 +150,7 @@ async function configuredProject(
 /** Metadata only: source-owned Project policy and admitted public Gateway state. */
 export const behavior = {
     type: "@nckrtl/project-maintenance-input",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         public: { schema: Public, lifetime: "infinite", garbageCollection: 1 },
     },
