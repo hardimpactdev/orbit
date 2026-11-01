@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationSecretSource;
@@ -19,6 +20,7 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
+use SensitiveParameter;
 
 /** Existing Grafana material, delivered only to its admitted Metrics owner. */
 final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSource
@@ -71,8 +73,41 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
         if ($path === null && ! hash_equals(ValidatedData::string($plan['digest']), ValidatedData::string($this->capture->capture()['digest']))) {
             throw new ResourceOperationException('metrics.snapshot_changed', 'The desired fleet changed before runtime commit.', 409);
         }
-        $password = $path === null ? $this->credentials->passwordForConvergence($node)
-            : $this->settings->get(new SettingScope(SettingScopeType::Node, $id), NativeMetricsCredentialManager::ActivePasswordKey);
+        if ($path !== null) {
+            return $this->resolveFleetMaterial($plan, $id);
+        }
+
+        return $this->material($plan, $this->credentials->passwordForConvergence($node));
+    }
+
+    /** Existing type only, after the owning parent admits this exact public fleet plan.
+     * This read-only lower grants no Operation, transport or credential-creation authority.
+     *
+     * @param  array<string,mixed>  $plan
+     */
+    public function resolveFleetMaterial(array $plan, int $ownerNodeId, ?NodeEnrollmentCandidate $candidate = null): OperationSecretValue
+    {
+        MetricsFleetCapture::assertDigest($plan);
+        if ($ownerNodeId !== $plan['metrics_node_id'] || ($candidate !== null && $candidate->nodeId !== $ownerNodeId)
+            || ! NodeRole::query()->whereKey($plan['assignment_id'])->where('node_id', $ownerNodeId)->where('role', RoleName::Metrics)
+                ->whereIn('status', [LifecycleStatus::Provisioning, LifecycleStatus::Active, LifecycleStatus::Removing])->exists()) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The private fleet material requires its actual admitted Metrics assignment.', 422);
+        }
+        $node = Node::query()->findOrFail($ownerNodeId);
+        $address = $candidate === null ? $node->wireguard_ip : $candidate->wireguardIp;
+        $eligible = $node->status === LifecycleStatus::Active || ($candidate !== null
+            && in_array($node->status, [LifecycleStatus::Provisioning, LifecycleStatus::Failed], true));
+        if (! $eligible || $address !== $plan['metrics_address'] || ($candidate !== null && $candidate->platform !== 'linux')) {
+            throw new ResourceOperationException('metrics.snapshot_changed', 'The admitted Metrics owner changed before private capture.', 409);
+        }
+        $password = $this->settings->get(new SettingScope(SettingScopeType::Node, $ownerNodeId), NativeMetricsCredentialManager::ActivePasswordKey);
+
+        return $this->material($plan, $password);
+    }
+
+    /** @param array<string,mixed> $plan */
+    private function material(array $plan, #[SensitiveParameter] ?string $password): OperationSecretValue
+    {
         if (! is_string($password) || $password === '') {
             throw new ResourceOperationException('metrics.credentials_missing', 'The recorded Grafana credential is unavailable.', 409);
         }
