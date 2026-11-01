@@ -3,10 +3,9 @@ import ast
 import json
 import re
 import sys
-from urllib.parse import urlsplit
 
 from swamp_shape_host_tools import php_runtime_transaction
-from swamp_shape_polling import python_controls, shell_controls
+from swamp_shape_polling import external_origin, python_controls, shell_controls
 
 SECRET = re.compile(r"secret|password|passwd|credential|private.?key|api.?key|token|identity", re.I)
 # Guide rule 6: these are existing per-host tool transactions, not workflow locks.
@@ -41,7 +40,6 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
         return ""
 
     parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
-    phase_controls = python_controls(tree, phase_seconds)
     bindings = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -153,13 +151,7 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
             return prefix(node.left, at, seen)
         return None
 
-    def external_origin(value):
-        # The slash fixes the complete authority before any dynamic suffix.
-        if not value or not re.match(r"https?://[^/]+/", value) or re.search(r"[\\\x00-\x20]", value):
-            return False
-        parsed = urlsplit(value)
-        return bool(parsed.hostname and not re.search(r"gateway", parsed.hostname, re.I)
-                    and not parsed.username and not parsed.password)
+    phase_controls = python_controls(tree, phase_seconds, bound)
 
     def lock_path(node, at, seen=frozenset()):
         if isinstance(node, ast.Name) and node.id not in seen:
@@ -207,13 +199,13 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
             method = string(keywords.get("method"), node)
             if method is None and "method" not in keywords:
                 method = "POST" if "data" in keywords else "GET"
-        elif call in ("requests.get", "requests.post", "requests.put", "requests.patch", "requests.delete", "requests.request", "urllib.request.urlopen"):
-            generic = call == "requests.request"
+        elif call in ("requests.get", "requests.post", "requests.put", "requests.patch", "requests.delete", "requests.request", "httpx.get", "httpx.post", "httpx.put", "httpx.patch", "httpx.delete", "httpx.request", "urllib.request.urlopen"):
+            generic = call in ("requests.request", "httpx.request")
             method = string(node.args[0], node) if generic and node.args else call.rsplit(".", 1)[1].upper()
             if call == "urllib.request.urlopen":
                 method = "GET"
             index = 1 if generic else 0
-            url_node = node.args[index] if len(node.args) > index else None
+            url_node = node.args[index] if len(node.args) > index else next((item.value for item in node.keywords if item.arg == "url"), None)
             url = string(url_node, node)
         else:
             return
