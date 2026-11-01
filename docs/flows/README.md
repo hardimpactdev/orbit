@@ -4,130 +4,128 @@ Each Orbit operation kind has one sequence chart in `docs/flows/<kind>.mmd`. The
 
 Read the kind's chart first. Any change to a command's flow starts by updating its chart to the ideal flow; the code follows the chart. A chart shows the **target design**, not old code where it differs. Name what differs in your report, not in the chart.
 
-## Target architecture
+Edit charts here, never in a copy. A chart-only change arrives as a pull request that touches only `docs/flows/`. A chart Nick approved carries `%% status: reviewed`.
 
-These rules were decided in October and November 2026. Every chart follows them.
+## Design rules
 
-- The **Gateway** (Laravel API) is the trusted center. It never executes work.
-- The Gateway validates the request and records the intent as a task (ADR 0244; today an Operation).
-- The Gateway passes the full intent as Swamp workflow inputs. Secrets travel as Swamp vault key names, never as values.
-- The Gateway projects the result.
-- The Gateway has two execution primitives: minting GitHub tokens and signing certificates. The App key and the Orbit CA stay in the Gateway.
-- A step that needs a primitive calls the Gateway for it. This is the only allowed call from a step to the Gateway.
-Swamp and the Node agent split the rest:
+These rules come from the October and November 2026 decisions and from Nick's chart reviews. Every chart follows them.
 
-- **Swamp** does all execution. Only Node 209 runs Swamp (serve plus workers). There are no per-Node workers.
-- Swamp reaches every other Node with the official `@swamp/ssh` behavior from 209. Prefer official Swamp behaviors (`@swamp/ssh`, `@swamp/cfgmgmt/*`) over custom ones.
-- Steps never call the Gateway back otherwise. The Gateway reads results through its shared run reader (terminal-event projection).
-- **orbit-agent** only observes. It acts on nothing.
-- **Schedules** use native Swamp schedules: no systemd timers or units on Nodes (ADR 0244).
-- `firewall.inspect` is being removed and folded into `doctor`.
+**The Gateway never executes work.** It checks the request, records the intent as a task (ADR 0244; today an Operation), and takes a lock per target. It passes the full intent as Swamp workflow inputs and records state only from the terminal result (R2).
 
-## Decisions that override everything above
+**Node work follows one shape (R4).** The Gateway starts one Swamp run on Node 209 and replies 202. Swamp reaches Nodes over `@swamp/ssh`, with official `@swamp/cfgmgmt/*` behaviors where they fit. A check step confirms the end state. There are no per-Node workers.
 
-Read the migration's `DECISIONS.md` (on mini: `~/migration-dashboard/flows/DECISIONS.md`) before drafting. Where `DECISIONS.md` and this page differ, `DECISIONS.md` wins. It holds the orchestrator's decisions (R1–R4 and numbered ones). Examples:
+**Steps never call the Gateway**, except for certificate signing. GitHub tokens are minted at admission. Secrets go Gateway → vault → step as vault key names, never values (R3).
 
-- GitHub tokens are minted at admission and passed through the vault. There is no mint callback.
-- Certificate signing is the only step→Gateway call.
-- Record-only changes start no Swamp run.
-- The Gateway writes state only from the terminal result.
-- Every kind uses the `process.stop` shape.
+**Record-only changes start no run (R1).** A change that touches no Node is written by the Gateway and answered at once.
 
-The proving order is in `~/migration-dashboard/data/proof-order.json` on mini (waves, topology per wave).
+**Read-only commands use the Node agent.** A command that only reads a Node answers from the Node agent's latest reports: no task, no Swamp run, no SSH. Stale reports give "can't verify". The Node agent observes only; it acts on nothing.
 
-## Words
+**Failure keeps records and allows a rerun.** The record is marked failed, not deleted. Say what stays on the Node (no rollback unless needed) and that a rerun is safe.
 
-Use Orbit's glossary in `docs/concepts.md` and the domain pages it links. Examples: "access grant" (a Node's permission to act on another Node), "Placement", "Node agent", "Instance", "Route", "Process", "Schedule", "Database server". Don't invent synonyms such as "you may use the Node".
+**Steps of other commands aren't kinds.** A former child kind becomes a step in its parent's workflow. Chart it as part of the parent, and report it as "merge into <parent>".
 
-Step 1 shows the real CLI call with its flags, taken from `docs/cli/*.mdx`. The command and its name argument go on the main line, the flags on the detail line (for example `firewall:deny 25` / `--node=7`). Never a JSON-style `{node: 7}` blob. Its explanation starts with a `Command:` block holding one full example and the syntax.
+**Leftovers are removed.** A kind for machinery that Orbit has removed gets no chart, for example per-Node workers, one-off migrations, or duplicated work. Report them as "remove", with the reason.
+
+**Prefer the gentle action.** Reload over restart. Wait briefly for a busy lock within the time budget. Clean up harmless leftovers on a best-effort basis.
+
+### Decided by Nick
+
+Nick decided these points in chart reviews:
+
+- `doctor` and `tool:adopt` read Node agent state.
+- `instance:create` renders `.env` from the Project env template and starts development Processes.
+- `firewall` takes `<port>` plus `--label`, and it has no allowlist.
+- `firewall` refuses exact conflicts. Narrower rules go first, and operator rules sit above managed rules.
+- `tool.manager_converge` is removed. Its callers use the shared Tool Manager setup step.
+
+For Schedules:
+
+- Schedules are native Swamp schedules, except production per-minute Laravel schedulers.
+- `schedule:enable` and `schedule:disable` publish or remove the trigger. `schedule:run` fires once as a task.
+- `schedule:destroy` removes the trigger, then the record.
+
+Step labels become the progress names, so keep them stable and meaningful.
+
+Still open for Nick: the DNS hold for Routes, `instance:smoke`, and live `node:role:relocate`. Chart these with a `Note` that says "open: Nick decides", and list them in your report.
+
+The migration's `DECISIONS.md` (on mini: `~/migration-dashboard/flows/DECISIONS.md`) holds the orchestrator's decisions. Where it differs from this page, `DECISIONS.md` wins. The proving order is in `~/migration-dashboard/data/proof-order.json` on mini.
 
 ## Sources
 
 Read these sources; don't guess.
 
-- ADRs: `docs/decisions/0238`, `0243`, `0244`, plus any ADR about the kind.
+- `docs/cli/*.mdx`, `docs/reference/*.md`, and the ADRs about the kind (start with 0238, 0243, 0244).
 - The kind's declaration: `apps/gateway/app/Domain/*/direct-operations.php`.
 - Its Gateway Action: `apps/gateway/app/Actions/**`.
 - Its Swamp workflow: `swamp/workflows/workflow-*.yaml`.
-- Docs under `docs/`.
-- Recall (`search`, `decisions`, `get`): decisions about the kind and its family.
-- The dashboard data on mini, `~/migration-dashboard/data/commands.json`: each kind's workflow, status, and notes.
+- Recall (`search`, `decisions`): decisions about the kind and its family.
 
-Outside a checkout, read the repository with `gh api`, for example `timeout 60 gh api repos/hardimpactdev/orbit/contents/<path> --jq .content | base64 -d`.
+## Reference charts
+
+Copy the style of these reviewed charts exactly:
+
+- `firewall.allow`: a plain Node change. It is the best model.
+- `tool.install`: optional steps (`opt`) and per Tool Manager blocks.
+- `tool.remove`: a record-only branch versus a Node-work branch (nested `alt`).
+- `doctor.inspect` and `tool.adopt`: read-only through the Node agent, with no Swamp lane.
+- `metrics.exporter_enable`: a second target Node (purple lane).
+- `instance.create`: a long create flow.
 
 ## Format
 
-A small renderer parses this subset, so follow it exactly. Use `schedule.enable.mmd`, `instance.create.mmd`, and `route.create.mmd` as models.
+A small renderer parses this subset, so follow it exactly.
 
-### File
+### Header and lanes
 
-The repository is the source. Edit charts here, never in a copy. A chart Nick approved carries `%% status: reviewed`.
+The header lines come in this order: `sequenceDiagram`, a `%%` comment naming the design source, `%% status: draft`, `%% command: <cli command>`, and `autonumber`. The lane options follow.
 
-### Header lines
-
-The header lines come in this order:
-
-1. `sequenceDiagram`
-2. A `%%` comment naming the design source (an ADR or decision id).
-3. `  %% status: draft` or `  %% status: reviewed`
-4. Optionally `  %% command: <cli command>`, which links the chart to its docs page.
-5. `  autonumber`
-
-### Lanes
-
-Each lane is one `participant` line. An optional `%% lane <ID> icon=<terminal|gateway|workflow|server> pill=<caller|intent|executes|target> tone=<gray|blue|green|amber|purple>` comment styles it. The default lanes are:
+Each lane is one `participant` line. A `%% lane <ID> icon=<terminal|gateway|workflow|server> pill=<caller|intent|executes|target|observer> tone=<gray|blue|green|amber|purple>` comment styles it. The default lanes are:
 
 - `CLI as CLI / MCP<br/>orbit · MCP tools`
 - `GW as Gateway<br/>Laravel API`
 - `SW as Swamp<br/>serve on Node 209`
 - `N as Target Node<br/>reached over ssh`
+- For a read-only command, the Node agent replaces Swamp and the target: title `Node agent`, subtitle `orbit-agent`, `icon=server pill=observer tone=amber`.
 
-Add a lane only when it really acts. Use at most 5 lanes, with `tone=purple` for an extra Node. A lane title has at most 14 characters; a subtitle has at most 18. A kind with no CLI caller, such as an automatic or scheduled one, starts from the Gateway or Swamp lane and drops the CLI lane.
+Add a lane only when it really acts. Use at most 5 lanes, with `tone=purple` for an extra Node. A kind with no CLI caller, such as an automatic or scheduled one, starts from the Gateway or Swamp lane.
 
-### Syntax
+### Lines
 
 Use only these lines:
 
 - `participant X as Title<br/>sub`
-- `A->>B: text` (call)
-- `A-->>B: text` (reply)
-- `A--xB: text` (failure)
+- `A->>B: text` (call), `A-->>B: text` (reply), `A--xB: text` (failure)
 - `Note over X: text`
 - `alt label` / `else label` / `end`, `loop label` / `end`, `opt label` / `end`
 
-`%%>` lines below a step hold its detail. The step-detail panel shows them: a line ending in `:` is a heading, and `- ` lines are its bullets.
+A message or note has one main line of at most 26 characters. It may add `<br/>` and one mono detail line of at most 34 characters: a command, behavior, workflow, or field. A lane title has at most 14 characters and a subtitle at most 18.
 
-### Text
+### Step explanations
 
-A message or note has one main line. It may add `<br/>` and one mono detail line: a command, behavior, workflow, or field. The main line has at most 26 characters and the detail line at most 34. Use plain words and the active voice.
+Every step has `%%>` lines directly under it, which the step-detail panel shows. They are labelled blocks: a short line ending in `:` is a heading, then `- ` bullets. Write no prose paragraphs. Common headings are Command, Input, Requirements, Result, What it does, Why, How, Runs as, Inputs, Returns, When, Not included, On the Node, Retry, and Per Tool Manager. An outcome block starts with `Result:`.
 
-### Structure
+### Content
 
-Every chart shows the whole flow of the command, start to end. Never leave out common steps (Nick, 2026-11-01).
+Step 1 is the real CLI call from `docs/cli/*.mdx`. The command and its argument go on the main line, the flags on the detail line. Its explanation starts with a `Command:` block: one full example, then `syntax: …`. Never write a JSON-like `{node: 7}`.
 
-1. The happy path comes first.
-2. One `alt`/`else` shows the main failure.
-3. The flow covers the CLI request, admission, run start, the reply, every Swamp and Node step, and the result.
-4. An asynchronous kind ends with the CLI polling loop (`operation:show`).
-5. Use 8–14 numbered steps. Merge trivial ones; fewer is better.
-6. Use example ids only (operation #5130, instance 42). Never show secrets.
+Show the whole flow: the CLI request, the Gateway check, run start, the 202, every Swamp and Node step, the result, the main failure in one `alt`/`else`, and the `operation:show` polling loop when the kind is asynchronous. Never leave out common steps. Use 8–14 numbered steps.
+
+Use the Orbit glossary in `docs/concepts.md`: access grant, Placement, Node agent, Instance, Route, Process, Schedule, Tool, Tool Manager, Database server. Write "your Node has an access grant to Node 12", never "you may use the Node". Use example ids (Node 12, task #5140), keep them consistent within a chart, and never show secrets.
 
 ## Checks
 
 Run `bin/check-flows` from the repository root before you report. CI runs it in the Docs build. It checks the format above and two lists:
 
-- `pending.txt` names operation kinds that have no chart yet. Each kind leaves the list with its chart. The list may only shrink.
+- `pending.txt` names operation kinds that have no chart yet. A pull request that adds a kind's chart removes its line. The list may only shrink.
 - `migrated.txt` names kinds whose Swamp workflow follows its chart. The labels of the Swamp lane's calls and notes must equal the workflow's step names.
 
-The workflow of a kind is the one that names the kind in its `kind` input.
-
-`bin/check-operation-kinds`, in Generated contracts, requires a chart or a `pending.txt` line for every kind in the Gateway registry.
+The workflow of a kind is the one that names the kind in its `kind` input. `bin/check-operation-kinds`, in Generated contracts, requires a chart or a `pending.txt` line for every kind in the Gateway registry.
 
 ## Report
 
-Report at most 120 words per kind:
+Report at most 80 words per kind:
 
-1. The file path.
-2. The sources you relied on.
-3. Assumptions and open questions where the target is not decided.
-4. Where today's code differs from the chart.
+- the file;
+- what changed against the existing chart, if any;
+- the design choices you made by these rules;
+- anything that needs Nick (open points only), or "merge into X" or "remove".
