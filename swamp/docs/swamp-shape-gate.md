@@ -152,19 +152,7 @@ concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
 polling, retries and lock calls are counted separately.
 
-The approved Route private DNS grace is the sole sleep exception. It matches only
-`workflows/workflow-route-dns-grace.yaml`, job `grace`, step
-`wait-private-dns-ttl`, placed with step labels `{node: '209'}` or target
-`orbit-node-209` (or both with matching values), and the exact `command/shell`
-behavior `route-dns-grace.execute` with the sole input
-`run: /usr/bin/sleep 31`. Inherited targets still apply; a foreign target cannot
-qualify through 209 labels. The workflow contains one job and one step. This covers
-the existing 30-second private DNS TTL after replacement publication and before
-old Caddy sites, certificate scopes and LAN allowances retire, including restore.
-Core and the official workflows extension provide no native delay. The binding
-guide's **Approved exception: Route private DNS grace** records the approval.
-Other files, steps, tasks, durations, flags, wrappers and commands remain findings;
-the grandfather baseline does not grow. The Route owner owns phase ordering.
+Phase scripts follow the general bounded-wait rule in the [shape guide](swamp-shape.md#the-shape). The checker requires a literal positive coreutils timeout for every invocation and a fixed positive literal sleep shorter than that budget. It accepts one fixed wait or a poll of external HTTPS state whose failed requests propagate. It rejects inline waits, computed intervals, unbounded loops and failed-command retries. The Route private DNS grace uses the same rule: its shipped script sleeps exactly 31 seconds under the step's literal 35-second timeout. It has no dedicated matcher or baseline row. The Route owner owns publication → grace → withdrawal ordering; the shared F1 projector owns the timeout diagnostic.
 
 Agent calls are checked
 against an explicit observer/action inventory; dynamic agent targets are unknown,
