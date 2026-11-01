@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
@@ -47,7 +48,9 @@ final readonly class NodeNetworkInput
             throw $this->invalid();
         }
         $roleless = $rolelessOperator;
-        $snapshot = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => app(AgentDelivery::class)->pin($node), 'hub_id' => $hub->id, 'existing_key' => $node->wireguard_public_key, 'architecture' => $node->architecture,
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        $observerTarget = $candidate?->nodeId === $node->id ? $candidate : $node;
+        $snapshot = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => app(AgentDelivery::class)->pin($observerTarget), 'hub_id' => $hub->id, 'existing_key' => $node->wireguard_public_key, 'architecture' => $node->architecture,
             'peer' => ['server_public_key' => $publicKey, 'endpoint' => $endpoint, 'address' => $address.'/'.$subnet->prefixLength(),
                 'subnet' => $subnet->value(), 'dns_server' => $this->dns->serverForOverride($dnsOverride, $hub->wireguard_ip),
                 'domains' => $roleless ? [$this->vpn->domain()] : $this->dns->domainsForAdmittedNode($node, $tld),

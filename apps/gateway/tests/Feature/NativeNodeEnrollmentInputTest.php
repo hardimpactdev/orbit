@@ -15,6 +15,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use Tests\Support\Fleet\FleetFixtures;
@@ -54,6 +55,16 @@ it('captures immutable target, role tools and prior network without an early ide
 it('captures TLD-only work without tool, tunnel or bootstrap effects', function (): void {
     $input = app(NodeEnrollmentInput::class)->capture($this->node, $this->candidate, 'tld_only', 'managed', '', 'x86_64', []);
     expect($input['tools'])->toBeNull()->and($input['network'])->toBeNull()->and($input['hub'])->toBeNull();
+});
+
+it('selects the admitted Linux observer pin before the real Node has an observed architecture', function (): void {
+    $this->node->update(['architecture' => null, 'status' => 'provisioning', 'wireguard_public_key' => null,
+        'ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null]);
+    $input = app(NodeEnrollmentInput::class)->capture($this->node, $this->candidate, 'linux', 'root',
+        'SHA256:'.str_repeat('A', 43), null, []);
+    expect($input['network']['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->candidate))
+        ->and($this->node->refresh()->architecture)->toBeNull()
+        ->and(app(RouteRenderContext::class)->enrollment())->toBeNull();
 });
 
 it('captures admitted settings without resolving the remote account and preserves unrelated members', function (): void {
