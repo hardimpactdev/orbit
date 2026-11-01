@@ -31,7 +31,7 @@ jobs:
   - name: dispatch
     steps:
       - {name: native, target: orbit-node-209, forEach: {item: choice, in: '${{ has(inputs.intent) && inputs.intent != null ? [0] : [] }}'}, task: {type: workflow, workflowIdOrName: node-role-converge, inputs: {intent: '${{ has(inputs.intent) ? inputs.intent : null }}', parent_run_id: '${{ run.id }}', operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', execution_secrets: '${{ inputs.execution_secrets }}'}}}
-      - {name: retained, target: orbit-node-209, forEach: {item: choice, in: '${{ has(inputs.intent) && inputs.intent != null ? [] : [0] }}'}, task: {type: workflow, workflowIdOrName: operation-node-role-add-direct, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', parent_run_id: '${{ run.id }}'}}}
+      - {name: retained, target: orbit-node-209, forEach: {item: choice, in: '${{ has(inputs.intent) && inputs.intent != null ? [] : [0] }}'}, task: {type: workflow, workflowIdOrName: node-role-converge-retained, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', parent_run_id: '${{ run.id }}'}}}
   - name: result
     dependsOn:
       - {job: dispatch, condition: {type: always}}

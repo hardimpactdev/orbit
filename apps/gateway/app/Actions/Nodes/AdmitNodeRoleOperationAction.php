@@ -15,10 +15,8 @@ use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
 use App\Domain\Nodes\NodeRolePlacement;
 use App\Domain\Nodes\NodeRolePublicationInput;
-use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Nodes\NodeRoleRemoveInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
-use App\Domain\Nodes\NodeRoleSettings;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -32,7 +30,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -53,18 +50,21 @@ final readonly class AdmitNodeRoleOperationAction
 
     public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false): Operation
     {
-        $kind = $converge ? 'node.role_converge' : 'node.role_add';
+        if (! $converge) {
+            return app(AdmitNodeRoleAddAction::class)->execute($node, $role, $analytics, $requestId, $duringProvisioning);
+        }
+        $kind = 'node.role_converge';
         if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
         }
 
-        return DB::transaction(function () use ($node, $role, $converge, $analytics, $requestId, $duringProvisioning, $kind): Operation {
+        return DB::transaction(function () use ($node, $role, $analytics, $requestId, $duringProvisioning, $kind): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
-            $native = $converge && NativeNodeRoleConvergeInput::supports($node, $role);
-            if ($converge && $role === RoleName::WebSocket && ! $native) {
+            $native = NativeNodeRoleConvergeInput::supports($node, $role);
+            if ($role === RoleName::WebSocket && ! $native) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'WebSocket convergence requires a supported native role plan.', 422);
             }
             if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
@@ -78,10 +78,6 @@ final readonly class AdmitNodeRoleOperationAction
             if (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1) {
                 throw new ResourceOperationException('node.agent_rekey_required', 'The role needs the existing recorded Node agent identity.', 409);
             }
-            $existing = $node->roles()->where('role', $role)->first();
-            if ($existing !== null && ! $converge && ! ($role === RoleName::Ingress && $existing->status === LifecycleStatus::Active)) {
-                throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
-            }
             if ($role === RoleName::Analytics) {
                 $analytics ??= $this->analytics->find($node);
                 if ($analytics === null) {
@@ -91,7 +87,7 @@ final readonly class AdmitNodeRoleOperationAction
                 $this->analytics->store($node, $analytics);
             }
             $operation = $this->operations->execute($kind, 'node', $node->id, $node->id,
-                ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge], 'operator', $requestId);
+                ['node_id' => $node->id, 'role' => $role->value, 'converge' => true], 'operator', $requestId);
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
@@ -190,45 +186,7 @@ final readonly class AdmitNodeRoleOperationAction
 
     public function relocate(Node $target, RoleName $role, bool $force = false, ?Node $from = null, ?string $requestId = null): Operation
     {
-        if (($existing = $this->idempotency->replay('node.role_relocate')) !== null) {
-            return $existing;
-        }
-
-        return DB::transaction(function () use ($target, $role, $force, $from, $requestId): Operation {
-            $target = Node::query()->lockForUpdate()->findOrFail($target->id);
-            $this->guardMutable($target, $role);
-            $input = app(NodeRoleRelocateInput::class);
-            $prepared = $input->prepare($target, $role, $force, $from);
-            $source = Node::query()->lockForUpdate()->findOrFail($prepared['source']->id);
-            $assignment = NodeRole::query()->lockForUpdate()->findOrFail($prepared['assignment']->id);
-            $operation = $this->operations->execute('node.role_relocate', 'node', $target->id, $target->id,
-                ['node_id' => $target->id, 'role' => $role->value, 'source_node_id' => $source->id], 'operator', $requestId);
-            if (! $operation->wasRecentlyCreated) {
-                return $operation;
-            }
-            $assignment->update(['node_id' => $target->id]);
-            $assignment->claimConvergence();
-            app(NodeRoleSettings::class)->copyForTransfer($source->id, $target->id, $role);
-            if ($role === RoleName::Gateway) {
-                app(GrantGatewayRoleAccessAction::class)->execute($target);
-            }
-            app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
-            $snapshot = $input->capture($target->refresh(), $source, $assignment);
-            $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
-            $owner = $metrics === null ? $target->id : ValidatedData::integer($metrics['metrics_node_id']);
-            $this->store->change($operation, ['input' => [...$operation->input,
-                '_relocate' => $snapshot,
-                'participant_node_ids' => array_values(array_unique([$source->id, $target->id,
-                    ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
-                    ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
-                    ...NodeRoleMetricsInput::participants($metrics)])),
-                'metrics_runtime' => $metrics === null ? null : ['$secret' => 'metrics.fleet_runtime', 'id' => $owner],
-                'private_bindings' => ['metrics_runtime' => ['owner_node_id' => $owner, 'read_node_ids' => $metrics === null ? [] : [$owner], 'write_node_ids' => []]],
-                'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $target->id],
-                'runtime_material' => ['$secret' => 'node.role_runtime', 'id' => $target->id]]]);
-
-            return $operation;
-        });
+        return app(AdmitNodeRoleRelocateAction::class)->execute($target, $role, $force, $from, $requestId);
     }
 
     /** @param array<string,mixed> $snapshot */

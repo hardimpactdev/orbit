@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Actions\Nodes\AssignRoleAction;
-use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -17,8 +16,7 @@ use InvalidArgumentException;
 /** Public singleton-transfer intent. Both Node effects remain steps of the original native root. */
 final readonly class NodeRoleRelocateInput
 {
-    public function __construct(private RoleRegistry $roles, private AssignRoleAction $assign,
-        private NodeRoleDirectInput $target, private NodeRoleRemoveInput $source) {}
+    public function __construct(private RoleRegistry $roles, private AssignRoleAction $assign) {}
 
     /** Admission owns the transaction, assignment transfer and Settings records.
      * @return array{assignment:NodeRole,source:Node}
@@ -43,8 +41,8 @@ final readonly class NodeRoleRelocateInput
             throw new NodeRoleValidationException('The source does not own this singleton transfer.', ['field' => 'from', 'role' => $role->value]);
         }
         foreach ([$source, $target] as $node) {
-            if ($node->status !== LifecycleStatus::Active || ! app(NodeRolePlacement::class)->allows($node)) {
-                throw new ResourceOperationException('swamp.node_worker_not_ready', 'Both relocation Nodes require their exact native worker.', 422);
+            if (! app(ManagedNodeEligibility::class)->allows($node)) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Both relocation Nodes require managed pinned SSH access.', 422);
             }
         }
         $retry = $holder->is($target);
@@ -60,29 +58,6 @@ final readonly class NodeRoleRelocateInput
         $this->assign->preflightTransfer($target, $role);
 
         return compact('assignment', 'source');
-    }
-
-    /** The admitted singleton already names the target before desired-state capture.
-     * @return array<string,mixed>
-     */
-    public function capture(Node $target, Node $source, NodeRole $assignment): array
-    {
-        if ($assignment->node_id !== $target->id || $source->is($target)
-            || ! $this->roles->definition($assignment->role)->relocatable) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The relocated assignment must name its admitted target.', 422);
-        }
-        $ghost = new NodeRole(['node_id' => $source->id, 'role' => $assignment->role, 'status' => LifecycleStatus::Removing]);
-        $ghost->setAttribute('id', $assignment->id);
-        $ghost->setRelation('node', $source);
-
-        return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'schema_version' => 1, 'role' => $assignment->role->value, 'assignment_id' => $assignment->id,
-            'publication' => app(NodeRolePublicationInput::class)->capture($target, $assignment->role, $source),
-            'source_node_id' => $source->id, 'target_node_id' => $target->id,
-            'target' => $this->target->capture($target, $assignment, false),
-            'certificates' => app(NodeRoleCertificateInput::class)->captureForExecution($target, $assignment->role, $source),
-            'metrics_fleet' => app(NodeRoleMetricsInput::class)->capture($assignment),
-            'source' => $this->source->capture($source, $ghost, desiredAssignment: $assignment),
-            'withdrawal_grace_seconds' => $assignment->role === RoleName::WebSocket ? PrivateDnsAnswerExpiry::WithdrawalGraceSeconds : 0];
     }
 
     /** @return array<string,mixed> */

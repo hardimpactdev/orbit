@@ -142,7 +142,7 @@ export function dispatcherWorkflow() {
                 },
                 task: {
                     type: "workflow",
-                    workflowIdOrName: "operation-node-role-add-direct",
+                    workflowIdOrName: "node-role-converge-retained",
                     inputs: {
                         operation_id: ex("inputs.operation_id"),
                         node_id: ex("inputs.node_id"),

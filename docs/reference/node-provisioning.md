@@ -783,6 +783,10 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 ## Native role additions
 
+The add and singleton relocation parents run on209 with the full captured intent and names-only execution copies. They compose the shared role contribution and retain the legacy phase ordering. Target readiness precedes source withdrawal. WebSocket withdrawal publishes the target DNS first, waits through the existing31-second native DNS grace child, then removes the old source runtime, access and certificate. Runtime activation, recovery and finalization remain the existing WebSocket child phases. A source cleanup failure preserves the proven target and the source credentials needed for recovery. The Gateway records those facts only from the terminal result.
+
+The current shared executable contribution covers Database, Ingress and WebSocket. Additions outside that set and Gateway/Metrics relocations refuse before execution until their shared lowers are available. They do not fall back to per-Node workers. Existing convergence and enrollment consumers keep their owning paths.
+
 Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses its role convergence DAG. VPN and Router retain their protected-role policy.
 
 The Gateway validates the Node and records its assignment, runtime intent, public certificate plan and exact participants. Swamp performs the baseline, runtime, certificate and publication work in one native DAG. Role additions and Node convergence generate their footprint stages from one template. Agent actions, child Operations and polled execution are absent. The frozen agent continues to provide observations.
