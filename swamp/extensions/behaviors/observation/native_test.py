@@ -43,7 +43,13 @@ class ObservationNativeTest(NativeTestCase):
                 for step in job['steps']:
                     step.pop('target', None)
             path.write_text(yaml.safe_dump(workflow, sort_keys=False))
-        self.cli('workflow', 'run', 'observation-context', '--input', json.dumps(context))
+        failed = json.JSONDecoder().raw_decode(self.cli('workflow', 'run', 'observation-horizon', success=False).stdout.lstrip())[0]
+        self.assertEqual(failed['status'], 'failed')
+        for revision in (6, 7, 5):
+            self.cli('workflow', 'run', 'observation-context', '--input', json.dumps({**context, 'revision': revision}))
+        # One stable record per channel: select reads one bounded version, never the capture history.
+        names = json.JSONDecoder().raw_decode(self.cli('data', 'list', 'observation-context-horizon').stdout.lstrip())[0]
+        self.assertIn('context', json.dumps(names))
         raw = self.cli('workflow', 'run', 'observation-horizon').stdout
         run = json.JSONDecoder().raw_decode(raw.lstrip())[0]
         raw = self.cli('workflow', 'history', 'get', run['id']).stdout
