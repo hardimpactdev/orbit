@@ -42,7 +42,7 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 ## Check it
 
 - `swamp workflow validate` on the pinned runtime for every changed workflow.
-- The family's native test under `swamp/` and `deno test` for changed behaviors; shellcheck or ruff for every script.
+- The family's native test under `swamp/` and `deno test` for changed behaviors; shellcheck or ruff for every script. Real-Docker tests clean up with `docker rm --force --volumes`; a forced removal beats `--rm` and leaks anonymous volumes (#2358).
 - Parity tests: port the legacy feature tests so each legacy case gives the same public result natively.
 - Gateway Pest tests for admission, identity, inputs envelope and projection, run with a file path or `--filter`.
 - The shape gate and placement lint.
