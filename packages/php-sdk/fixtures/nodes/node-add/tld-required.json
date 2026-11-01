@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "node.tld_required",
-            "message": "An app-dev TLD is required for node [app-dev].",
+            "message": "An app-dev Node requires a Node TLD or an active Cluster TLD.",
             "details": {}
         }
     }

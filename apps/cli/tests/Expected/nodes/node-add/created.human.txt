@@ -1,10 +1,18 @@
-Adding Node...
+Admitting Node enrollment...
 
 ┌  Add Node
 │
-├  ● Added Node
+├  ● Node enrollment admitted
 │
-└  Added Node.
+└  Node enrollment Operation recorded.
 
-Node [app-dev] is active.
+Node enrollment running...
+
+┌  Add Node
+│
+├  ● Node enrollment complete
+│
+└  Node enrollment succeeded.
+
+Operation: 1
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

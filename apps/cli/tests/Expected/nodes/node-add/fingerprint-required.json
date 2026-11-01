@@ -1,1 +1,1 @@
-{"error":{"code":"node.ssh_host_fingerprint_required","message":"An expected SSH host fingerprint is required for node [app-dev].","request_id":null}}
+{"error":{"code":"node.ssh_host_fingerprint_required","message":"Enrollment requires a pinned public SSH host.","request_id":null}}

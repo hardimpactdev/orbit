@@ -1,9 +1,9 @@
-Adding Node...
+Admitting Node enrollment...
 
 ┌  Add Node
 │
-├  ● Adding Node
+├  ● Admitting Node enrollment
 │
 └  Operation failed.
 
-macOS enrollment does not change Cluster, DNS, tunnel, or storage settings.
+Mac enrollment preserves Cluster, DNS, tunnel and storage settings.

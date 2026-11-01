@@ -1,9 +1,9 @@
-Adding Node...
+Admitting Node enrollment...
 
 ┌  Add Node
 │
-├  ● Adding Node
+├  ● Admitting Node enrollment
 │
 └  Operation failed.
 
-An expected SSH host fingerprint is required for node [app-dev].
+Enrollment requires a pinned public SSH host.

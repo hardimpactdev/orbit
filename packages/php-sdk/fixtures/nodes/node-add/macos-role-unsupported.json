@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "node.platform_unsupported",
-            "message": "Node platform [macos] does not support service roles.",
+            "message": "Mac Nodes cannot own service roles.",
             "details": {}
         }
     }

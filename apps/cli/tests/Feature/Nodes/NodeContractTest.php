@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 /**
  * Contract tests replay recorded Gateway responses and compare the complete command
@@ -54,8 +58,8 @@ describe('node contract', function () use ($addArguments): void {
     });
 
     it('renders a created node', function () use ($addArguments): void {
-        run_contract('nodes/node-add/created', 'node:add', $addArguments, 'nodes/node-add/created.human.txt', 0);
-        run_contract('nodes/node-add/created', 'node:add', [...$addArguments, '--json' => true], 'nodes/node-add/created.json', 0);
+        run_enrollment_contract('nodes/node-add/created', $addArguments, 'nodes/node-add/created.human.txt', 0);
+        run_enrollment_contract('nodes/node-add/created', [...$addArguments, '--json' => true], 'nodes/node-add/created.json', 0);
     });
 
     it('renders an enrolled mac and its removal', function (): void {
@@ -68,10 +72,16 @@ describe('node contract', function () use ($addArguments): void {
             '--wireguard-ip' => '10.44.0.40',
             '--host-key-fingerprint' => 'SHA256:'.str_repeat('M', 43),
         ];
-        run_contract('nodes/node-add/macos-enrolled', 'node:add', $arguments, 'nodes/node-add/macos-enrolled.human.txt', 0);
-        run_contract('nodes/node-add/macos-enrolled', 'node:add', [...$arguments, '--json' => true], 'nodes/node-add/macos-enrolled.json', 0);
+        run_enrollment_contract('nodes/node-add/macos-enrolled', $arguments, 'nodes/node-add/macos-enrolled.human.txt', 0);
+        run_enrollment_contract('nodes/node-add/macos-enrolled', [...$arguments, '--json' => true], 'nodes/node-add/macos-enrolled.json', 0);
 
     });
+
+    it('renders restored failure and cancellation as unsuccessful terminal Operations', function (string $case) use ($addArguments): void {
+        $fixture = 'nodes/node-add/'.$case;
+        run_enrollment_contract($fixture, $addArguments, $fixture.'.human.txt', 1);
+        run_enrollment_contract($fixture, [...$addArguments, '--json' => true], $fixture.'.json', 1);
+    })->with(['restored-failure', 'cancelled']);
 
     it('renders macOS enrollment refusals', function (): void {
         $fingerprint = 'SHA256:'.str_repeat('M', 43);
@@ -120,3 +130,18 @@ describe('node contract', function () use ($addArguments): void {
         run_contract('nodes/node-role-remove/step-failed', 'node:role:remove', [...$arguments, '--json' => true], 'nodes/node-role-remove/step-failed.json', 1);
     });
 });
+
+/** @param array<string,mixed> $arguments */
+function run_enrollment_contract(string $fixture, array $arguments, string $expected, int $exitCode): void
+{
+    $terminal = gateway_fixture($fixture);
+    MockClient::destroyGlobal();
+    MockClient::global([
+        ...gateway_fixture_mock($fixture),
+        AddNodeRequest::class => MockResponse::make($terminal['body'], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+    ]);
+
+    expect(Artisan::call('node:add', $arguments))->toBe($exitCode);
+    expect_output(Artisan::output(), $expected);
+}

@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "node.macos_account_required",
-            "message": "macOS enrollment requires the existing account in user and orbit_user.",
+            "message": "Mac enrollment requires the existing account in user and orbit_user.",
             "details": {}
         }
     }

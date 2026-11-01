@@ -1,1 +1,1 @@
-{"error":{"code":"node.platform_unsupported","message":"Node platform [macos] does not support service roles.","request_id":null}}
+{"error":{"code":"node.platform_unsupported","message":"Mac Nodes cannot own service roles.","request_id":null}}

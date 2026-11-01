@@ -1,0 +1,20 @@
+Admitting Node enrollment...
+
+┌  Add Node
+│
+├  ● Node enrollment admitted
+│
+└  Node enrollment Operation recorded.
+
+Node enrollment running...
+
+┌  Add Node
+│
+├  ● Node enrollment running
+│    node.enrollment_failed
+│
+└  Node enrollment failed.
+
+Error code: node.enrollment_failed
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

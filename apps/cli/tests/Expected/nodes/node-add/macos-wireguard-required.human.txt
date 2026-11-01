@@ -1,10 +1,9 @@
-Adding Node...
+Admitting Node enrollment...
 
 ┌  Add Node
 │
-├  ● Adding Node
+├  ● Admitting Node enrollment
 │
 └  Operation failed.
 
-macOS enrollment requires a WireGuard address that is already on the machine.
-step: identity
+Mac enrollment requires its existing WireGuard address.

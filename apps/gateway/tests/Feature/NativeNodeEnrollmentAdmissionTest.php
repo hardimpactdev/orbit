@@ -136,3 +136,28 @@ it('captures a populated app-dev TLD change without bootstrap or a premature ide
         ->and($node->roles()->sole()->status)->toBe(LifecycleStatus::Active)
         ->and($route->refresh()->domain)->toBe('development.enrollment-tld.prior.test');
 });
+
+it('admits a provisional role with parent tools and pending target pins without publishing identity', function (RoleName $role): void {
+    $operation = app(AdmitNodeEnrollmentOperationAction::class)->execute(new ProvisionNodeData(
+        name: 'new-role-enrollment', publicSshHost: '192.0.2.240', wireguardIp: '10.44.0.240',
+        roles: [$role], tld: 'native-role.test', tldProvided: true, expectedSshHostFingerprint: 'SHA256:'.str_repeat('A', 43),
+    ));
+    $node = Node::query()->where('name', 'new-role-enrollment')->sole();
+    $assignment = $node->roles()->sole();
+    $intent = $operation->input['intent'];
+    $captured = $intent['roles'][0];
+
+    expect($node->status)->toBe(LifecycleStatus::Provisioning)
+        ->and($node->ssh_host_key)->toBeNull()
+        ->and($assignment->status)->toBe(LifecycleStatus::Provisioning)
+        ->and($captured['assignment_id'])->toBe($assignment->id)
+        ->and($captured['role'])->toBe($role->value)
+        ->and($captured['prepared_tools_required'])->toBeTrue()
+        ->and($captured['javascript'])->toBeNull()
+        ->and($captured['managers'])->toBe([])
+        ->and($captured['ssh']['target'])->toBe(['name' => 'target', 'host' => '10.44.0.240',
+            'user' => 'orbit', 'port' => 22, 'host_keys' => null])
+        ->and($intent['tools']['node_id'])->toBe($node->id)
+        ->and($intent['role_bindings'][$role->value]['runtime_material']['vault'])->toBe('orbit-control-inputs')
+        ->and(json_encode($intent, JSON_THROW_ON_ERROR))->not->toContain('PRIVATE KEY', 'identityContent', 'worker_token');
+})->with([RoleName::Database, RoleName::AppDev, RoleName::AppProd, RoleName::Metrics, RoleName::WebSocket]);

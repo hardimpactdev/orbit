@@ -12,7 +12,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
@@ -86,24 +85,6 @@ describe('node response fixtures', function (): void {
         record_fixture($this->getJson("/api/v1/nodes/{$node->id}")->assertOk(), 'nodes/node-show/default', ShowNodeRequest::class, 'GET /api/v1/nodes/{node}');
     });
 
-    it('records a created node', function (): void {
-        $cluster = Cluster::query()->create(['name' => 'development']);
-        $response = $this->postJson('/api/v1/nodes', [
-            'name' => 'app-dev',
-            'public_ssh_host' => '94.237.40.75',
-            'platform' => 'linux',
-            'architecture' => 'x86_64',
-            'tld' => 'app-dev.test',
-            'roles' => ['app-dev'],
-            'cluster_id' => $cluster->id,
-            'wireguard_ip' => '10.44.0.3',
-            'lan_ip' => '10.0.0.3',
-            'host_key_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
-        ])->assertCreated();
-
-        record_fixture($response, 'nodes/node-add/created', AddNodeRequest::class, 'POST /api/v1/nodes');
-    });
-
     it('records a role removal that fails at a named step', function (): void {
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
         {
@@ -141,23 +122,4 @@ describe('node response fixtures', function (): void {
         record_fixture($response, 'nodes/node-role-remove/step-failed', RemoveNodeRoleRequest::class, 'DELETE /api/v1/nodes/{node}/roles/{role}');
     });
 
-    it('records the node:add refusals the CLI must explain', function (): void {
-        $tldRequired = $this->postJson('/api/v1/nodes', [
-            'name' => 'app-dev',
-            'public_ssh_host' => '94.237.40.75',
-            'architecture' => 'x86_64',
-            'roles' => ['app-dev'],
-            'host_key_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
-        ])->assertUnprocessable()->assertJsonPath('error.code', 'node.tld_required');
-        record_fixture($tldRequired, 'nodes/node-add/tld-required', AddNodeRequest::class, 'POST /api/v1/nodes');
-
-        $fingerprintRequired = $this->postJson('/api/v1/nodes', [
-            'name' => 'app-dev',
-            'public_ssh_host' => '94.237.40.75',
-            'architecture' => 'x86_64',
-            'roles' => ['app-dev'],
-            'tld' => 'app-dev.test',
-        ])->assertUnprocessable()->assertJsonPath('error.code', 'node.ssh_host_fingerprint_required');
-        record_fixture($fingerprintRequired, 'nodes/node-add/fingerprint-required', AddNodeRequest::class, 'POST /api/v1/nodes');
-    });
 });

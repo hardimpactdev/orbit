@@ -1,9 +1,9 @@
-Adding Node...
+Admitting Node enrollment...
 
 ┌  Add Node
 │
-├  ● Adding Node
+├  ● Admitting Node enrollment
 │
 └  Operation failed.
 
-Node platform [macos] does not support service roles.
+Mac Nodes cannot own service roles.

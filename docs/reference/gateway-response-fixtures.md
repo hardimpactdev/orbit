@@ -32,6 +32,8 @@ Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global iden
 
 Doctor fixtures include informational-only healthy reports and mixed reports with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
 
+Node enrollment returns an accepted `node.add` Operation. The Node CLI follows that Operation through the shared follower and renders its terminal status. Enrollment response fixtures cover Linux and macOS success, restored failure, and cancellation. They prove API transport and rendering; the native enrollment tests prove host contributions and restoration.
+
 Node key fixtures under `nodes/node-wireguard-key` record an updated Node, a Gateway-role refusal, and a sanitized hub projection failure. The `node:wireguard-key` CLI tests replay each response in human and JSON modes. Keep the projection failure's error code and step, but never record remote process output or private key material. [WireGuard key recovery](/cli/node#orbit-nodewireguard-key) owns the stored-key and identical-replay behavior; subprocess feature tests cover interrupted publication separately from response fixtures.
 
 Task fixtures include a GitHub feedback fixup with `fixup_problem: review:{reviewer_id}` and an immutable findings packet in `brief`. Record that response from the Gateway fixture test with example identities and findings. Its `review-findings` deliverable uses the existing response schema. Replaying the fixture must preserve source provenance without interpreting review text as an action. The [Tasks contract](/reference/tasks#execution-ownership) owns the meaning of those fields.

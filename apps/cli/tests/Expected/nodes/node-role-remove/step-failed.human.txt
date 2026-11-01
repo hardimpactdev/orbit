@@ -1,8 +1,8 @@
-Removing Node role...
+Recording Node role removal...
 
 ┌  Remove Node role
 │
-├  ● Removing Node role
+├  ● Recording Node role removal
 │
 └  Operation failed.
 

@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "node.platform_unsupported",
-            "message": "macOS enrollment does not change Cluster, DNS, tunnel, or storage settings.",
+            "message": "Mac enrollment preserves Cluster, DNS, tunnel and storage settings.",
             "details": {}
         }
     }

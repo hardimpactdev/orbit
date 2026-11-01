@@ -1,9 +1,9 @@
-Adding Node...
+Admitting Node enrollment...
 
 ┌  Add Node
 │
-├  ● Adding Node
+├  ● Admitting Node enrollment
 │
 └  Operation failed.
 
-macOS enrollment requires the existing account in user and orbit_user.
+Mac enrollment requires the existing account in user and orbit_user.

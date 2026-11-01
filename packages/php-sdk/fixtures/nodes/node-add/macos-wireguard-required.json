@@ -6,10 +6,8 @@
     "body": {
         "error": {
             "code": "node.wireguard_required",
-            "message": "macOS enrollment requires a WireGuard address that is already on the machine.",
-            "details": {
-                "step": "identity"
-            }
+            "message": "Mac enrollment requires its existing WireGuard address.",
+            "details": {}
         }
     }
 }

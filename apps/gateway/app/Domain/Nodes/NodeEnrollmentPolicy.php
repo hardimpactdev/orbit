@@ -32,6 +32,9 @@ final readonly class NodeEnrollmentPolicy
             || ($mac && $node->exists && $data->platformProvided && $data->platform !== 'macos')) {
             throw $this->refuse('node.platform_unsupported', 'The Node platform cannot be changed by enrollment.');
         }
+        if ($mac && ($data->roles !== [] || ($node->exists && $node->roles()->exists()))) {
+            throw $this->refuse('node.platform_unsupported', 'Mac Nodes cannot own service roles.');
+        }
         if ($platform === 'linux' && $data->architecture !== null && MachineArchitecture::normalize($data->architecture) !== MachineArchitecture::Linux) {
             throw $this->refuse('node.architecture_unsupported', 'Linux enrollment requires the supported x86_64 architecture.');
         }
@@ -97,9 +100,6 @@ final readonly class NodeEnrollmentPolicy
             }
             if ($data->user !== $data->orbitUser) {
                 throw $this->refuse('node.macos_account_mismatch', 'Mac enrollment requires the same existing account.');
-            }
-            if ($data->roles !== [] || ($node->exists && $node->roles()->exists())) {
-                throw $this->refuse('node.platform_unsupported', 'Mac Nodes cannot own service roles.');
             }
             if ($data->settingsProvided || ($data->tldProvided && $tld !== ($node->exists ? $node->tld : null))
                 || ($data->clusterProvided && $data->clusterId !== ($node->exists ? $node->cluster_id : null))
