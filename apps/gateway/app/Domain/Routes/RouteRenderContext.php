@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Nodes\NodeEnrollmentCandidate;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Node;
 use Closure;
 use Illuminate\Container\Attributes\Scoped;
@@ -14,6 +16,49 @@ use Illuminate\Container\Attributes\Scoped;
 final class RouteRenderContext
 {
     private NativeRouteNodeRender|NodeEnrollmentCandidate|null $candidate = null;
+
+    private ?NativeRouteInstanceFacts $instanceFacts = null;
+
+    /** @template T
+     * @param  Closure():T  $render
+     * @return T
+     */
+    public function renderInstanceFacts(NativeRouteInstanceFacts $facts, Closure $render): mixed
+    {
+        $previous = $this->instanceFacts;
+        $this->instanceFacts = $facts;
+        try {
+            return $render();
+        } finally {
+            $this->instanceFacts = $previous;
+        }
+    }
+
+    public function instanceFacts(Instance $instance): ?NativeRouteInstanceFacts
+    {
+        if ($this->instanceFacts?->instanceId !== $instance->id) {
+            return null;
+        }
+        if ($this->instanceFacts->nodeId !== $instance->node_id) {
+            throw new ResourceOperationException('route.source_facts_invalid', 'The prospective source facts belong to the admitted Instance placement.', 409);
+        }
+
+        return $this->instanceFacts;
+    }
+
+    public function phpVersion(Instance $instance): ?string
+    {
+        $facts = $this->instanceFacts($instance);
+
+        return $facts->phpVersion ?? $instance->selected_php_version;
+    }
+
+    public function laravel(Instance $instance): ?bool
+    {
+        $facts = $this->instanceFacts($instance);
+
+        return $facts->laravel ?? $instance->source_is_laravel;
+    }
 
     /** @var ?array{leaves:list<array{node_id:int,scope:string}>,withdrawals:list<array{node_id:int,scope:string}>} */
     private ?array $roleCertificates = null;
@@ -94,13 +139,16 @@ final class RouteRenderContext
     {
         $candidate = $this->candidate;
         $certificates = $this->roleCertificates;
+        $facts = $this->instanceFacts;
         $this->candidate = null;
         $this->roleCertificates = null;
+        $this->instanceFacts = null;
         try {
             return $render();
         } finally {
             $this->candidate = $candidate;
             $this->roleCertificates = $certificates;
+            $this->instanceFacts = $facts;
         }
     }
 

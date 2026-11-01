@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Environment;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRouteInstanceFacts;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -279,29 +280,33 @@ final readonly class InstanceEnvironmentContextResolver
     }
 
     /** The child admission owns the Route relation, including an already detached target. */
-    public function resolveForBoundRoute(Instance $instance, ?Route $route, InstanceEnvironmentRouteDomain $domain): InstanceEnvironmentContext
+    public function resolveForBoundRoute(Instance $instance, ?Route $route, InstanceEnvironmentRouteDomain $domain, ?NativeRouteInstanceFacts $facts = null): InstanceEnvironmentContext
     {
         $node = Node::query()->findOrFail($instance->node_id);
         $environment = $instance->placementEnvironment();
-        if ($instance->status !== InstanceState::Active || $instance->provisioning_step !== 'active'
-            || ! is_bool($instance->source_is_laravel) || ! in_array($environment, ['development', 'production'], true)
+        $sourceIsLaravel = $facts->laravel ?? $instance->source_is_laravel;
+        $prospective = $facts !== null && $facts->instanceId === $instance->id && $facts->nodeId === $instance->node_id
+            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true);
+        if (($facts !== null && ! $prospective)
+            || ($facts === null && ($instance->status !== InstanceState::Active || $instance->provisioning_step !== 'active'))
+            || ! is_bool($sourceIsLaravel) || ! in_array($environment, ['development', 'production'], true)
             || $node->status !== LifecycleStatus::Active
             || ($route !== null && ($route->project_id !== $instance->project_id || $route->hasWebRoot()))) {
             $this->conflict();
         }
-        [$path, $user] = $this->placement($instance, $node);
+        [$path, $user] = $this->placement($instance, $node, $sourceIsLaravel);
 
         return new InstanceEnvironmentContext(instanceId: $instance->id, projectId: $instance->project_id,
             nodeId: $node->id, environment: $environment, path: $path, executionUser: $user,
-            laravel: $instance->source_is_laravel, routeId: $route?->id, routeDomain: $route?->domain,
+            laravel: $sourceIsLaravel, routeId: $route?->id, routeDomain: $route?->domain,
             nodeStatus: $node->status->value, node: $node, routeDomainSource: $domain);
     }
 
     /** @return array{string, string} */
-    private function placement(Instance $instance, Node $node): array
+    private function placement(Instance $instance, Node $node, ?bool $sourceIsLaravel = null): array
     {
         if ($instance->placementEnvironment() === 'development') {
-            $path = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->getAttribute('checkout_path');
+            $path = ($sourceIsLaravel ?? $instance->source_is_laravel) === true ? $instance->applicationDirectory() : $instance->getAttribute('checkout_path');
             $executionUser = $node->user;
         } else {
             $path = $instance->getAttribute('production_home');

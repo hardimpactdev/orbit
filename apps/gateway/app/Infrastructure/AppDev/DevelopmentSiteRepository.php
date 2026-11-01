@@ -275,11 +275,11 @@ final readonly class DevelopmentSiteRepository
             ->filter(
                 static fn (Instance $target): bool => (
                     is_string(app(RouteRenderContext::class)->wireguardIp($target->node))
-                    && in_array(
+                    && (app(RouteRenderContext::class)->instanceFacts($target) !== null || in_array(
                         $target->status,
                         [InstanceState::SourceResolved, InstanceState::Active],
                         true,
-                    )
+                    ))
                 ),
             )
             ->values();
@@ -543,7 +543,7 @@ final readonly class DevelopmentSiteRepository
             scope: "app-instance-{$instance->id}",
             checkoutPath: $checkoutPath,
             documentRoot: $webRoot ?? '',
-            phpVersion: $instance->selected_php_version,
+            phpVersion: app(RouteRenderContext::class)->phpVersion($instance),
             domain: $route->domain,
             environment: $instance->defaultAppEnv(),
             productionUser: $instance->production_user,
@@ -623,7 +623,7 @@ final readonly class DevelopmentSiteRepository
                 ? "{$localInstance->production_home}/current"
                 : ($localInstance->development_release_layout ? $localInstance->checkout_path.'/current' : ($localInstance->checkout_path ?? '')),
             documentRoot: $localInstance->root ?? $localInstance->project->root ?? '',
-            phpVersion: $localInstance->selected_php_version,
+            phpVersion: app(RouteRenderContext::class)->phpVersion($localInstance),
             domain: $route->domain,
             upstreamAddresses: $addresses,
             environment: $localInstance->defaultAppEnv(),
