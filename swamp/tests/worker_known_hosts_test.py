@@ -5,6 +5,8 @@ import runpy
 import stat
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,6 +32,34 @@ class KnownHosts(unittest.TestCase):
         before = self.file.stat().st_mtime_ns
         self.assertFalse(writer.publish(self.home, self.content)['changed'])
         self.assertEqual(self.file.stat().st_mtime_ns, before)
+
+    def test_overlapping_snapshots_replace_whole_file_and_last_finished_write_wins(self):
+        first = self.content + '10.44.0.14 ssh-ed25519 first-pin\n'
+        second = self.content + '10.44.0.14 ssh-ed25519 second-pin\n'
+        first_staged, finish_first = Event(), Event()
+        replace = writer.os.replace
+
+        def ordered_replace(source, destination):
+            if Path(source).read_text() == first:
+                first_staged.set()
+                self.assertTrue(finish_first.wait(5), 'release the first staged snapshot')
+            replace(source, destination)
+
+        with patch.object(writer.os, 'replace', side_effect=ordered_replace), ThreadPoolExecutor(max_workers=2) as pool:
+            pending = pool.submit(writer.publish, self.home, first)
+            try:
+                self.assertTrue(first_staged.wait(5), 'first snapshot staged')
+                completed = pool.submit(writer.publish, self.home, second).result(timeout=5)
+                self.assertEqual(self.file.read_text(), second)
+                self.assertEqual(completed['digest'], writer.hashlib.sha256(second.encode()).hexdigest())
+            finally:
+                finish_first.set()
+            completed = pending.result(timeout=5)
+
+        self.assertEqual(self.file.read_text(), first)
+        self.assertEqual(completed['digest'], writer.hashlib.sha256(first.encode()).hexdigest())
+        self.assertEqual(stat.S_IMODE(self.file.stat().st_mode), 0o600)
+        self.assertEqual(list(self.file.parent.iterdir()), [self.file])
 
     def test_failed_replace_preserves_existing_file_and_cleans_staging(self):
         writer.publish(self.home, 'previous\n')

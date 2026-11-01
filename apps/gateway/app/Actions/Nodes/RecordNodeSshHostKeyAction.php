@@ -7,7 +7,6 @@ namespace App\Actions\Nodes;
 use App\Data\Nodes\NodeData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\HostKey;
 use App\Models\Node;
@@ -16,11 +15,11 @@ use Illuminate\Support\Facades\DB;
 /** Record the approved public first scan; all scanning and host effects stay outside the Gateway. */
 final readonly class RecordNodeSshHostKeyAction
 {
-    public function __construct(private RecordEventBroadcaster $broadcaster, private WorkerKnownHostsPublisher $knownHosts) {}
+    public function __construct(private RecordEventBroadcaster $broadcaster) {}
 
     public function execute(Node $node, string $host, HostKey $key): Node
     {
-        $recorded = DB::transaction(function () use ($node, $host, $key): Node {
+        return DB::transaction(function () use ($node, $host, $key): Node {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             if ($node->wireguard_ip !== $host) {
                 throw new ResourceOperationException('node.ssh_host_key_target_mismatch', 'The observed host must match the stored Node WireGuard address.', 409);
@@ -38,8 +37,5 @@ final readonly class RecordNodeSshHostKeyAction
 
             return $node;
         });
-        $this->knownHosts->publish();
-
-        return $recorded;
     }
 }
