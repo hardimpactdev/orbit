@@ -1,6 +1,6 @@
 # Route workload preparation
 
-`instance-route-workload` prepares one immutable workload phase. The Route parent supplies `node_id`, `instance_id`, `connection`, `host_keys` and `plan`. `plan` has nullable `source_access`, `served_roots` and `runtime` members. Every step runs on 209; the host actions use the official SSH or cfgmgmt file model. The final `result` requires every nonempty branch to succeed.
+`instance-route-workload` prepares one immutable workload phase. The Route parent supplies `node_id`, `instance_id`, `connection`, `host_keys` and `plan`. `plan` has nullable `source_access`, `served_roots` and `runtime` members. Optional branches use native `forEach` with a model name for each run, step and item. Every step runs on 209; the host actions use the official SSH or cfgmgmt file model. The final `result` requires every nonempty branch to succeed.
 
 The owning admission captures development permissions with the existing `RouteWorkloadInput` policy. Production capture uses `RouteWebRoot::servedApplications`, `InstanceDeploymentIntent::runtimeIntent` and the canonical FPM renderer. `NativeRouteWorkloadPreparation::capture` returns `prepare`, `selected` and `restore` phases. The parent prepares the union before publication and selects the captured final or previous phase afterward. No Node or Instance identity changes during execution.
 

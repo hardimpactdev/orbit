@@ -36,7 +36,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: served-assets
+      behaviorName: ${{ "irw-" + run.id + "-served-assets-" + string(self._index) }}
       methodName: read
       inputs:
         action: served_roots
@@ -52,10 +52,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      behaviorName: ${{ "irw-" + run.id + "-served-command-" + string(self._index) }}
       methodName: script
       globalArgs:
-        name: ${{ "instance-route-workload-" + run.id }}
+        name: ${{ "irw-" + run.id + "-served-command-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -83,7 +83,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: served-decode
+      behaviorName: ${{ "irw-" + run.id + "-served-" + string(self._index) }}
       methodName: decode
       inputs:
         stdout: ${{ steps["served-command-0"].outputs.stdout }}
@@ -100,7 +100,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: dev-source-assets
+      behaviorName: ${{ "irw-" + run.id + "-dev-source-assets-" + string(self._index) }}
       methodName: read
       inputs:
         action: source_access
@@ -119,10 +119,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      behaviorName: ${{ "irw-" + run.id + "-dev-source-command-" + string(self._index) }}
       methodName: script
       globalArgs:
-        name: ${{ "instance-route-workload-" + run.id }}
+        name: ${{ "irw-" + run.id + "-dev-source-command-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -153,7 +153,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: dev-source-decode
+      behaviorName: ${{ "irw-" + run.id + "-dev-source-" + string(self._index) }}
       methodName: decode
       inputs:
         stdout: ${{ steps["dev-source-command-0"].outputs.stdout }}
@@ -173,7 +173,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: prod-source-assets
+      behaviorName: ${{ "irw-" + run.id + "-prod-source-assets-" + string(self._index) }}
       methodName: read
       inputs:
         action: source_access
@@ -195,10 +195,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      behaviorName: ${{ "irw-" + run.id + "-prod-source-command-" + string(self._index) }}
       methodName: script
       globalArgs:
-        name: ${{ "instance-route-workload-" + run.id }}
+        name: ${{ "irw-" + run.id + "-prod-source-command-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -232,7 +232,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: prod-source-decode
+      behaviorName: ${{ "irw-" + run.id + "-prod-source-" + string(self._index) }}
       methodName: decode
       inputs:
         stdout: ${{ steps["prod-source-command-0"].outputs.stdout }}
@@ -255,10 +255,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      behaviorName: ${{ "irw-" + run.id + "-runtime-identity-" + string(self._index) }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-route-workload-" + run.id }}
+        name: ${{ "irw-" + run.id + "-runtime-identity-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -297,7 +297,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "instance-route-pool-" + string(inputs.intent.instance_id) }}
+      behaviorName: ${{ "irw-" + run.id + "-runtime-pool-" + string(self._index) }}
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.connection.nodeHost }}
@@ -333,7 +333,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-route-workload'
-      behaviorName: runtime-pool-proof
+      behaviorName: ${{ "irw-" + run.id + "-runtime-pool-proof-" + string(self._index) }}
       methodName: verifyPool
       inputs:
         expected: ${{ self.part.pool_sha256 }}
@@ -360,10 +360,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      behaviorName: ${{ "irw-" + run.id + "-runtime-validate-" + string(self._index) }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-route-workload-" + run.id }}
+        name: ${{ "irw-" + run.id + "-runtime-validate-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -408,10 +408,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      behaviorName: ${{ "irw-" + run.id + "-runtime-reload-" + string(self._index) }}
       methodName: exec
       globalArgs:
-        name: ${{ "instance-route-workload-" + run.id }}
+        name: ${{ "irw-" + run.id + "-runtime-reload-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}

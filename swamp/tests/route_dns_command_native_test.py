@@ -76,7 +76,7 @@ if Path(sys.argv[0]).name=='dnsmasq' and os.environ.get('FIXTURE_FAIL'):raise Sy
         workflow = patch(workflow)
         for step in workflow["jobs"][0]["steps"]:
             self.assertEqual(step.pop("target"), "orbit-node-209")
-            self.assertEqual(step.pop("labels"), {"node": "209"})
+            self.assertNotIn("labels", step)
             args = step["task"].get("inputs", {}).get("argv", [])
             if args[:1] == ["sudo"]:
                 args.pop(0)

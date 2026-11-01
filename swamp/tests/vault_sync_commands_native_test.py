@@ -310,6 +310,11 @@ class VaultSyncNative(VaultSyncFixture):
 
     def test_recorded_orphan_is_deleted_and_unrecorded_copy_is_preserved(self):
         self.intent["wanted"] = []
+        self.intent["ledger"].append({
+            **self.intent["ledger"][0],
+            "source": "database-user:8",
+            "cipher_id": "second",
+        })
         self.input_file.write_text(json.dumps(self.inputs))
         cipher = {
             "source": "database-user:7",
@@ -323,6 +328,7 @@ class VaultSyncNative(VaultSyncFixture):
                 {
                     "ciphers": [
                         {**cipher, "id": "published"},
+                        {**cipher, "id": "second", "source": "database-user:8"},
                         {**cipher, "id": "copy"},
                     ],
                     "writes": [],
@@ -333,8 +339,10 @@ class VaultSyncNative(VaultSyncFixture):
         self.run_sync()
         state = json.loads(self.state.read_text())
         self.assertEqual(state["writes"], [])
-        self.assertEqual(state["deletes"], ["published"])
+        self.assertEqual(state["deletes"], ["published", "second"])
         self.assertEqual([row["id"] for row in state["ciphers"]], ["copy"])
+        for index in range(2):
+            self.cli("model", "get", f"vault-sync-7-delete-{index}")
 
     def test_early_failures_clean_cache_and_emit_failure(self):
         for command in ("config", "login", "unlock"):

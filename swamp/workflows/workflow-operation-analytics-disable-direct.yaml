@@ -51,8 +51,6 @@ jobs:
   steps:
   - name: caddy
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -73,8 +71,6 @@ jobs:
   steps:
   - name: dns
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: workflow
       workflowIdOrName: route-dns-publish
@@ -95,8 +91,6 @@ jobs:
   steps:
   - name: dns-grace
     target: orbit-node-209
-    labels:
-      node: '209'
     guard: ${{ inputs.intent.dns.size() == 0 }}
     task:
       type: workflow
@@ -110,8 +104,6 @@ jobs:
   steps:
   - name: certificate
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: workflow
       workflowIdOrName: route-certificate-remove
@@ -134,8 +126,6 @@ jobs:
   steps:
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: command/shell
