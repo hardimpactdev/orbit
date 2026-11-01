@@ -6,9 +6,9 @@ covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table}.php}
-  - swamp/{extensions/behaviors/operations/tools/**,workflows/workflow-operation-tool-*-209.yaml}
+  - apps/gateway/app/Data/Tools/**
   - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
-  - apps/gateway/app/{Data/Tools/**,Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}}
+  - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
   - apps/gateway/app/Actions/Doctor/Intent/RuntimeDoctorIntent.php
 ---
 
