@@ -35,7 +35,7 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         $authority = $this->authorize($operation, $callerNodeId, $runId);
         $repository = GitHubRepository::fromOrigin($authority['repository']);
         $credentials = $this->store->credentials();
-        $credential = $repository !== null && $credentials !== null
+        $credential = $repository !== null && $credentials !== null && $this->github->repositoryInstallation($credentials, $repository) !== null
             ? $this->github->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => ['contents' => 'read']]))
             : null;
         try {
