@@ -19,6 +19,12 @@ final readonly class InstalledToolInventory
         private bool $complete = true,
     ) {}
 
+    /** @return list<string> */
+    public function packages(): array
+    {
+        return array_values(array_unique([...array_keys($this->versionsByPackage), ...$this->unverifiablePackages]));
+    }
+
     public function versionFor(string $package): ?string
     {
         $versions = $this->versionsByPackage[$package] ?? [];

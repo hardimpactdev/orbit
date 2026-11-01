@@ -40,6 +40,7 @@ describe('tool responses', function (): void {
                 'manager' => 'vp',
                 'package' => '@openai/codex',
                 'version_constraint' => '^0.150',
+                'repository' => null,
                 'status' => 'installed',
                 'installed_version' => '0.150.0',
                 'failed_operation' => null,
@@ -194,6 +195,7 @@ describe('tool responses', function (): void {
                     'manager' => 'vp',
                     'package' => '@openai/codex',
                     'version_constraint' => '^0.150',
+                    'repository' => null,
                     'status' => 'installed',
                     'installed_version' => '0.150.0',
                     'failed_operation' => null,
@@ -492,6 +494,7 @@ function tool_response_data(): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => '^0.150',
+        'repository' => null,
         'status' => 'installed',
         'installed_version' => '0.150.0',
         'failed_operation' => null,
@@ -514,3 +517,9 @@ function tool_response_sdk_trace(Throwable $exception): string
 
     return print_r($sdkFrames, return: true);
 }
+
+it('round trips repository intent on Tool reads', function (): void {
+    $data = [...tool_response_data(), 'repository' => ['name' => 'vendor', 'suites' => ['preview']]];
+    $response = ToolResponse::fromGatewayData($data, tool_response_request_id());
+    expect($response->repository)->toBe($data['repository'])->and($response->toArray()['repository'])->toBe($data['repository']);
+});

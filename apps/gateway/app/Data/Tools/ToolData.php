@@ -14,6 +14,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ToolData extends Data
 {
+    /** @param array<string, mixed>|null $repository */
     public function __construct(
         public int $id,
         public int $nodeId,
@@ -25,11 +26,12 @@ final class ToolData extends Data
         public ?string $failedOperation,
         public ?string $errorCode,
         public ?string $outcome,
+        public ?array $repository = null,
     ) {}
 
     public static function fromModel(Tool $tool, ?ToolOutcome $outcome = null, ?ToolObjectStatus $status = null): self
     {
-        $tool->loadMissing('manager');
+        $tool->loadMissing('manager', 'aptRepository');
 
         return new self(
             id: $tool->id,
@@ -42,6 +44,7 @@ final class ToolData extends Data
             failedOperation: $tool->failed_operation?->value,
             errorCode: $tool->error_code,
             outcome: $outcome?->value,
+            repository: $tool->aptRepository?->definition,
         );
     }
 }

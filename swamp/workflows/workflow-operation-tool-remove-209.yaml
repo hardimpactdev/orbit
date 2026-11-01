@@ -1,6 +1,7 @@
 id: 5c48c4ee-452a-4dd5-8f14-5d3e1b681445
 name: operation-tool-remove-209
 vaults: []
+queueTimeout: 60
 inputs:
   type: object
   properties:
@@ -147,9 +148,23 @@ jobs:
       behaviorName: '${{ "tool-remove-after-" + run.id + "-" + string(self._index) }}'
       methodName: observe
       inputs: {input: '${{ self.package }}', observation: '${{ steps["after_query-0"].outputs }}'}
+  - name: repository_cleanup
+    target: orbit-node-209
+    allowFailure: true
+    forEach: *active
+    writes: true
+    dependsOn: [{step: before, condition: {type: succeeded}}, {step: after, condition: {type: always}}]
+    guard: '${{ !("remove_repository" in inputs.intent) || !inputs.intent.remove_repository || !steps["before-0"].outputs.ready || (steps["before-0"].outputs.present && (!("after-0" in steps) || steps["after-0"].status!="succeeded" || !steps["after-0"].outputs.ready || steps["after-0"].outputs.present)) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/timeout","180","/usr/bin/python3","-I","-c",steps["before_assets-0"].outputs.repository_body,"cleanup",steps["before_assets-0"].outputs.repository_json] }}'}
   - name: result
     target: orbit-node-209
-    dependsOn: [{step: after, condition: {type: always}}]
+    dependsOn: [{step: after, condition: {type: always}}, {step: repository_cleanup, condition: {type: always}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'

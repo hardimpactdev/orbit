@@ -2,6 +2,14 @@ import { z } from "npm:zod@4.4.3";
 import { constraintMatches } from "./constraints.ts";
 
 export const Manager = z.enum(["apt", "composer", "vp", "brew", "brew-cask"]);
+export const Repository = z.object({
+  name: z.string().max(63).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).refine((v) => !["caddy", "php"].includes(v)),
+  uris: z.array(z.url().startsWith("https://")).min(1).max(16),
+  suites: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)).min(1).max(16),
+  components: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)).min(1).max(16),
+  architectures: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/)).min(1).max(16).optional(),
+  signing_key: z.object({ url: z.url().startsWith("https://"), fingerprint: z.string().regex(/^(?:[A-F0-9]{40}|[A-F0-9]{64})$/) }).strict(),
+}).strict();
 export const Input = z.object({
   node_id: z.number().int().positive(),
   manager: Manager,
@@ -13,6 +21,8 @@ export const Input = z.object({
   tool_status: z.string().nullable().default(null),
   installed_version: z.string().nullable().default(null),
   intent_only: z.boolean().default(false),
+  repository: Repository.nullable().default(null),
+  remove_repository: z.boolean().default(false),
   materialize: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 export type ToolInput = z.infer<typeof Input>;

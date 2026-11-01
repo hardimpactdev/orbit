@@ -67,15 +67,15 @@ Deno.test("each shipped manager query compiles with public data bound as data", 
   }
   assertThrows(() => behavior.methods.assert.execute({ ok: false }));
 });
-Deno.test("four-step graph has one official SSH query, fixed209 placement and full pins", async () => {
+Deno.test("adoption graph has an official SSH query and read-only repository check, fixed209 placement and full pins", async () => {
   const source = await Deno.readTextFile(new URL("../../../../workflows/workflow-operation-tool-adopt-209.yaml", import.meta.url));
   const root = parse(source) as { jobs: { steps: { target: string; labels?: unknown; task: { behaviorType: string; globalArgs?: { transport: { hostKeys: string } }; inputs: { sudo?: boolean } } }[] }[] };
   assertEquals(source.trimEnd().split("\n").length <= 200, true);
   const steps = root.jobs[0].steps;
-  assertEquals(steps.length, 4);
+  assertEquals(steps.length, 5);
   for (const step of steps) { assertEquals(step.target, "orbit-node-209"); assertEquals(step.labels, undefined); }
   const ssh = steps.filter((s) => s.task.behaviorType === "@swamp/ssh");
-  assertEquals(ssh.length, 1);
+  assertEquals(ssh.length, 2);
   assertEquals(ssh[0].task.inputs.sudo, false);
   assertEquals(ssh[0].task.globalArgs?.transport.hostKeys, "${{ inputs.ssh.target.host_keys }}");
 });

@@ -14,7 +14,7 @@ The `tool` family manages packages on a Node. A Tool is one package that Orbit m
 | Command | Result |
 | --- | --- |
 | [`tool:manager:list`](#orbit-toolmanagerlist) | List the managers a Node supports and their state. |
-| [`tool:scan`](#orbit-toolscan) | Discover installed Homebrew and Vite+ packages without taking ownership. |
+| [`tool:scan`](#orbit-toolscan) | Discover installed apt, Homebrew and Vite+ packages without taking ownership. |
 | [`tool:adopt`](#orbit-tooladopt) | Register one supported installed package without changing it. |
 | [`tool:install`](#orbit-toolinstall) | Install one package, and install its manager first when needed. |
 | [`tool:list`](#orbit-toollist) | List the Tools on a Node. |
@@ -34,7 +34,7 @@ orbit tool:manager:list --node=ID [--json]
 
 ## orbit tool:scan
 
-Read installed Homebrew formulae, casks, and Vite+ global packages for one Node. The result distinguishes registered ownership, dependencies, adoption support, and each manager's scan state. It changes no packages or Tool records. An unsuccessful scan is explicit, not an empty successful inventory. The HTTP shape, scan states, and error codes are in [Discover installed packages](/reference/tools#discover-installed-packages).
+Read installed apt packages, Homebrew formulae, casks, and Vite+ global packages for one Node. The result distinguishes registered ownership, dependencies, adoption support, and each manager's scan state. It changes no packages or Tool records. An unsuccessful scan is explicit, not an empty successful inventory. The HTTP shape, scan states, and error codes are in [Discover installed packages](/reference/tools#discover-installed-packages).
 
 Human output shows the Node, the inspection time, and one row for each manager's scan state. It then shows one row for each package from a `complete` manager: manager, package, kind, version, dependency, Tool ID when the package is registered, and adoption. An unsupported package includes its block token. A null version, including a non-SemVer formula revision or cask version, is an em dash. A manager that is `absent`, `unsupported`, `incomplete`, or `conflicting` is named separately, because its empty package list is not an inventory. JSON output is that inventory plus `request_id`.
 
@@ -47,7 +47,7 @@ orbit tool:scan --node=ID [--json]
 Take ownership of one supported installed package. The Gateway checks its live state again and records intent without reinstalling or updating it.
 
 ```bash
-orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--yes] [--idempotency-key=KEY] [--json]
+orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--repository=JSON] [--yes] [--idempotency-key=KEY] [--json]
 ```
 
 Use `brew` for a Core formula, `brew-cask` for a supported official macOS cask, `vp` for a package in the enrolled account's Vite+ global scope, or `apt` or `composer` on Linux. The optional SemVer constraint must accept the installed version. A repeated adoption with the same intent is unchanged. A missing or unsupported package or a conflicting constraint fails without creating a Tool. The HTTP body, outcomes, and error codes are in [Adopt a Tool](/reference/tools#adopt-a-tool).
@@ -61,7 +61,7 @@ The Operation result includes the observed installed version and `outcome`. `app
 Install one package on a Node.
 
 ```bash
-orbit tool:install [package] --node=ID [--manager=MANAGER] [--constraint=CONSTRAINT] [--idempotency-key=KEY] [--json]
+orbit tool:install [package] --node=ID [--manager=MANAGER] [--constraint=CONSTRAINT] [--repository=JSON] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -105,7 +105,7 @@ orbit tool:show <tool> [--json]
 Update one Tool to the manager's current candidate.
 
 ```bash
-orbit tool:update <tool> [--idempotency-key=KEY] [--json]
+orbit tool:update <tool> [--repository=JSON] [--idempotency-key=KEY] [--json]
 ```
 
 The result is `applied` when the version changed and `unchanged` when it did not. It is `blocked_by_constraint` when the candidate falls outside the stored constraint. The Tool then stays as it is.
@@ -130,3 +130,13 @@ For a [role-owned PHP package](/reference/tools#role-owned-php-packages), such a
 
 - [`node`](/cli/node) adds the Nodes that run the managers.
 - [`doctor`](/cli/doctor) reports Tool drift without changing packages.
+
+## Signed apt repository input
+
+`tool:install`, `tool:adopt`, and `tool:update` accept `--repository='<JSON object>'`. The fields and Rex preview definition are in [Signed apt repositories](/reference/tools#signed-apt-repositories). The Gateway validates the same object through API and MCP input. Install and adoption can share an existing name with an identical definition. Update replaces the shared definition under the same name; omitting the option keeps it.
+
+```bash
+orbit tool:install rex --node=NODE_ID --manager=apt --repository='{"name":"rex","uris":["https://pkgs.superlogical.com/rex/apt"],"suites":["preview"],"components":["main"],"architectures":["amd64"],"signing_key":{"url":"https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg","fingerprint":"E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}'
+```
+
+To change suites later, pass the full definition with `"suites":["stable"]` to `orbit tool:update TOOL_ID --repository='<JSON object>'`. Stable must have a published InRelease. Tool reads and apt scan rows return the stored repository definition. Removal deletes its source and key only after the last Tool using it is removed.

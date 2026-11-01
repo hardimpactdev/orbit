@@ -30,6 +30,7 @@ final readonly class ToolInventoryPackage
 
     public const string BLOCK_AUTHORIZATION = 'authorization_required';
 
+    /** @param array<string, mixed>|null $repository */
     public function __construct(
         public ToolManagerName $manager,
         public string $package,
@@ -40,6 +41,7 @@ final readonly class ToolInventoryPackage
         public ?int $toolId,
         public string $adoption,
         public ?string $adoptionBlock,
+        public ?array $repository = null,
     ) {
         if ($package === '' || strlen($package) > 255) {
             throw new InvalidArgumentException('A Homebrew inventory package name is invalid.');
@@ -88,6 +90,7 @@ final readonly class ToolInventoryPackage
         }
 
         $kindMatches = match ($manager) {
+            ToolManagerName::Apt => $packageKind === ToolInventoryPackageKind::Deb,
             ToolManagerName::Brew => $packageKind === ToolInventoryPackageKind::Formula,
             ToolManagerName::BrewCask => $packageKind === ToolInventoryPackageKind::Cask,
             ToolManagerName::Vp => $packageKind === ToolInventoryPackageKind::Global,

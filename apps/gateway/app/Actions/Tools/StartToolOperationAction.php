@@ -5,22 +5,21 @@ declare(strict_types=1);
 namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerIntent;
-use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
+use App\Domain\Tools\ToolPackageProtection;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
-use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
+use App\Http\Requests\Tools\AptRepositoryRules;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -35,13 +34,14 @@ final readonly class StartToolOperationAction
         private ToolManagerRegistry $managers,
         private ToolNodeEligibility $eligibility,
         private VersionConstraint $constraints,
-        private NodeBootstrapPackageCatalog $bootstrapPackages,
+        private ToolPackageProtection $protection,
     ) {}
 
-    public function execute(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected = null): Operation
+    /** @param array<string, mixed>|null $repository */
+    public function execute(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected = null, ?array $repository = null): Operation
     {
         try {
-            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected): Operation {
+            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository): Operation {
                 $node = Node::query()->lockForUpdate()->findOrFail($nodeId);
                 $manager = $this->manager($node, $managerName);
                 if (! $manager->validatePackage($package)) {
@@ -73,18 +73,43 @@ final readonly class StartToolOperationAction
                 if ($verb !== 'install' && $record !== null && $record->status !== LifecycleStatus::Active) {
                     $this->refuse('tool.manager_unavailable');
                 }
-                $protected = $this->protectedPackages($node, $manager->name());
+                $protected = $this->protection->forNode($node, $manager->name());
                 if (in_array($package, $protected, true) && ! $roleOwned) {
                     $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : 'tool.package_protected');
                 }
 
-                $intentOnly = $roleOwned || ($verb === 'remove' && $tool?->status === ToolStatus::Failed
+                new AptRepositoryRules()->validate($repository, $managerName);
+                $currentRepository = $tool?->aptRepository;
+                if ($currentRepository !== null && $repository !== null && $repository['name'] !== $currentRepository->name) {
+                    $this->refuse('tool.repository_conflict');
+                }
+                $repositoryRecord = $currentRepository;
+                if ($repository !== null) {
+                    $repositoryRecord ??= AptRepository::query()->where('node_id', $nodeId)->where('name', $repository['name'])->first();
+                    if ($repositoryRecord !== null && $repositoryRecord->definition != $repository && $verb !== 'update'
+                        && Tool::query()->where('apt_repository_id', $repositoryRecord->id)->exists()) {
+                        $this->refuse('tool.repository_conflict');
+                    }
+                    $repositoryRecord ??= AptRepository::query()->create(['node_id' => $nodeId, 'name' => $repository['name'], 'definition' => $repository]);
+                    if ($repositoryRecord->definition != $repository) {
+                        $repositoryRecord->update(['definition' => $repository]);
+                    }
+                }
+                if ($verb === 'update' && $tool !== null && $repositoryRecord !== null) {
+                    $tool->update(['apt_repository_id' => $repositoryRecord->id]);
+                }
+                $repository = $repositoryRecord?->definition;
+                $removeRepository = $verb === 'remove' && $repositoryRecord !== null
+                    && ! Tool::query()->where('apt_repository_id', $repositoryRecord->id)->where('id', '!=', $tool?->id)->exists();
+
+                $intentOnly = $roleOwned || ($verb === 'remove' && $repository === null && $tool?->status === ToolStatus::Failed
                     && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint,
+                    'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
                     'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
@@ -124,26 +149,6 @@ final readonly class StartToolOperationAction
         }
 
         return $manager;
-    }
-
-    /** @return list<string> */
-    private function protectedPackages(Node $node, ToolManagerName $manager): array
-    {
-        if ($manager === ToolManagerName::Vp) {
-            return ['pnpm'];
-        }
-        if ($manager === ToolManagerName::Brew) {
-            return ['wireguard-tools', 'wireguard-go'];
-        }
-        if ($manager !== ToolManagerName::Apt) {
-            return [];
-        }
-        $packages = [...$this->bootstrapPackages->forNode($node), 'openssh-server', 'wireguard-tools', ...new RecipeLoader()->load()->gitPackages];
-        foreach (RoleName::cases() as $role) {
-            $packages = [...$packages, ...$this->bootstrapPackages->forRole($node, $role)];
-        }
-
-        return array_values(array_unique($packages));
     }
 
     private function refuse(string $code, int $status = 409): never

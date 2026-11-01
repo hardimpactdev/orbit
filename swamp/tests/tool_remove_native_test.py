@@ -94,12 +94,40 @@ class ToolRemoveNative(NativeTestCase):
         self.assertEqual(len([r for r in self.calls() if r['action']=='remove']),1)
 
 
+    def test_shared_repository_is_retained_and_last_reference_cleanup_retries_when_absent(self):
+        self.input['intent']['repository'] = REPOSITORY
+        (self.repo/'repository').write_text('managed repository')
+        self.run_remove()
+        self.assertTrue((self.repo/'repository').exists())
+        self.input['intent']['remove_repository'] = True
+        self.run_remove()
+        self.assertFalse((self.repo/'repository').exists())
+        self.run_remove()
+        self.assertEqual(sum(c['action']=='remove' for c in self.calls()), 1)
+        self.assertEqual(sum(c['action']=='repository_cleanup' for c in self.calls()), 2)
+
+
+REPOSITORY = {'name':'vendor','uris':['https://packages.example.test/apt'],'suites':['preview'],'components':['main'],'signing_key':{'url':'https://packages.example.test/key.gpg','fingerprint':'A'*40}}
+
 SCRIPT = r"""
 import ast,json,sys
 from pathlib import Path
 args=sys.argv[1:]
 assert OWN in args and 'IdentitiesOnly=yes' in args
-body=sys.stdin.read();tree=ast.parse(body)
+body=sys.stdin.read()
+if not body and 'managed apt repository phase' in args[-1]:
+ import shlex
+ command=shlex.split(args[-1]);action=command[-2]
+ assert action in ('prepare','cleanup') and 'sudo' in args[-1]
+ with Path(AUDIT).open('a') as out:out.write(json.dumps({'action':'repository_'+action,'manager':'apt'})+'\n')
+ marker=Path(AUDIT).with_name('repository')
+ error=Path(AUDIT).with_name('repository-error')
+ if action=='prepare':
+  if error.exists():print(json.dumps({'ready':False,'error_code':error.read_text()}));raise SystemExit(0)
+  marker.write_text(command[-1])
+ else:marker.unlink(missing_ok=True)
+ print('{"ready":true}');raise SystemExit(0)
+tree=ast.parse(body)
 node=next(n for n in tree.body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id in ('QUERY_INPUT','REMOVE_INPUT'))
 value=ast.literal_eval(node.value.args[0]) if isinstance(node.value,ast.Call) else ast.literal_eval(node.value)
 input=json.loads(value)

@@ -38,7 +38,7 @@ final readonly class ToolsResponse
         $this->requestId = GatewayRequestId::fromTransport($requestId) ?? '';
     }
 
-    /** @return array{tools: list<array<string, bool|int|string|null>>, request_id: string} */
+    /** @return array{tools: list<array<string, mixed>>, request_id: string} */
     public function toArray(): array
     {
         return [

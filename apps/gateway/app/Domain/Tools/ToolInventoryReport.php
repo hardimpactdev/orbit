@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 /**
  * The read-only inventory for one Node.
- * Managers stay in brew, brew-cask, vp order. Nothing here is stored.
+ * Managers stay in brew, brew-cask, vp, apt order. Nothing here is stored.
  */
 final readonly class ToolInventoryReport
 {
@@ -28,15 +28,15 @@ final readonly class ToolInventoryReport
             throw new InvalidArgumentException('A tool inventory observation time must be UTC.');
         }
 
-        $expected = [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp];
+        $expected = [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp, ToolManagerName::Apt];
 
         if (count($managers) !== count($expected)) {
-            throw new InvalidArgumentException('A tool inventory returns brew, brew-cask, and vp.');
+            throw new InvalidArgumentException('A tool inventory returns brew, brew-cask, vp, and apt.');
         }
 
         foreach ($expected as $index => $manager) {
             if ($managers[$index]->manager !== $manager) {
-                throw new InvalidArgumentException('A tool inventory returns brew, brew-cask, and vp.');
+                throw new InvalidArgumentException('A tool inventory returns brew, brew-cask, vp, and apt.');
             }
         }
     }
