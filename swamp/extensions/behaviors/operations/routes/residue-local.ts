@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { certificateActions } from "../certificates/actions.ts";
 import { certificateProgram } from "../certificates/system.ts";
-import { convergeFirewall, convergeRouteLan } from "./firewall-local.ts";
+import { convergeFirewall, removeRouteLan } from "./firewall-local.ts";
 import type { runLocalProgram } from "./local-program.ts";
 
 const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
@@ -99,7 +99,7 @@ export async function cleanRouteResidue(
     if ("error_code" in result) return result;
   }
   for (const rule of input.firewall) {
-    const result = await convergeRouteLan(rule, deps.program, signal);
+    const result = await removeRouteLan(rule, deps.program, signal);
     if ("error_code" in result) return result;
   }
   if (input.ingress !== null) {
