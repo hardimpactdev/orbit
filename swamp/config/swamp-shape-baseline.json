@@ -443,15 +443,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/valkey_acl_local.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/docker",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/database/valkey_client.ts",
       "rule": "custom-control",
       "count": 2,
@@ -1488,14 +1479,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/dns-publication.ts",
       "rule": "custom-control",
       "count": 5,
@@ -1539,14 +1522,6 @@
       "evidence": [
         "/usr/bin/python3",
         "/usr/bin/timeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/mutation-steps.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {
