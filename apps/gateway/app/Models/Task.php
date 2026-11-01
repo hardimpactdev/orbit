@@ -81,6 +81,7 @@ use LogicException;
  * @property string|null $pending_resolution_reason
  * @property int|null $pending_resolution_comment_id
  * @property int|null $resolution_delivered_comment_id
+ * @property array<string,mixed>|null $maintenance
  * @property string $title
  * @property string $brief
  * @property TaskOrchestration|null $orchestration
@@ -223,6 +224,7 @@ final class Task extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'maintenance',
         'created_by_node_id',
         'orchestration',
         'watched_pr_completion',
@@ -581,6 +583,7 @@ final class Task extends Model
     protected function casts(): array
     {
         return [
+            'maintenance' => 'array',
             'created_by_node_id' => 'integer',
             'orchestration' => TaskOrchestration::class,
             'type' => TaskType::class,

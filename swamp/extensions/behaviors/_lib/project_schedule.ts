@@ -1,6 +1,5 @@
 import { z } from "npm:zod@4";
-import { type DependencyProject } from "./dependency_projects.ts";
-import { type Http } from "./gateway_stage.ts";
+import { type DependencyProject } from "./dependency_project_schema.ts";
 import { canonical, sha256 } from "./repository_analysis.ts";
 import {
   BatchPlanSchema,
@@ -22,12 +21,6 @@ export const ScheduleReceiptSchema = z.object({
   supersededBy: z.string().optional(),
 }).strict();
 export type ScheduleReceipt = z.infer<typeof ScheduleReceiptSchema>;
-export interface ScheduleStore {
-  http: Http;
-  read: (key: string) => Promise<ScheduleReceipt | null>;
-  save: (receipt: ScheduleReceipt) => Promise<void>;
-}
-
 /** Weekly slots use Monday UTC; scheduled and manual invocation share a receipt. */
 export function scheduleKey(
   project: number,
@@ -39,85 +32,6 @@ export function scheduleKey(
     day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
   }
   return `${project}-${mode}-${day.toISOString().slice(0, 10)}`;
-}
-
-/** Exact saved-request reconciliation is shared by create retries and reservation expiry. */
-export async function findScheduledGroup(
-  receipt: ScheduleReceipt,
-  http: Http,
-): Promise<string | null> {
-  const response = await http(
-    "GET",
-    `/api/v1/task-groups?project_id=${receipt.projectId}`,
-  );
-  if (response.status !== 200 || !Array.isArray(response.body?.data)) {
-    throw new Error(
-      "cannot reconcile scheduled group creation: Orbit evidence is unreadable; slot retained",
-    );
-  }
-  const matches = (response.body.data as Record<string, unknown>[]).filter(
-    (g) =>
-      g.project_id === receipt.projectId && g.brief === receipt.request.brief &&
-      g.orchestration === "external",
-  );
-  if (!matches.length) return null;
-  if (
-    matches.length !== 1 || !Number.isSafeInteger(matches[0].id) ||
-    Number(matches[0].id) <= 0
-  ) {
-    throw new Error(
-      `scheduled group ${receipt.key} has an uncertain create: matching Orbit groups are ambiguous; slot retained`,
-    );
-  }
-  return `tg-${matches[0].id}`;
-}
-
-/** Group creation is not keyed at the Gateway: never resend an uncertain POST. */
-export async function ensureProjectGroup(
-  desired: ScheduleReceipt,
-  store: ScheduleStore,
-): Promise<ScheduleReceipt> {
-  let receipt = await store.read(desired.key);
-  if (
-    receipt &&
-    (receipt.projectId !== desired.projectId || receipt.mode !== desired.mode ||
-      canonical(receipt.request) !== canonical(desired.request) ||
-      canonical(receipt.targets ?? null) !== canonical(desired.targets ?? null))
-  ) {
-    throw new Error("scheduled group input conflict");
-  }
-  receipt ??= desired;
-  if (receipt.workItem) return receipt;
-  if (receipt.attempted) {
-    const workItem = await findScheduledGroup(receipt, store.http);
-    if (!workItem) {
-      throw new Error(
-        `scheduled group ${receipt.key} has an uncertain create; reconcile its saved request before retrying`,
-      );
-    }
-    receipt = { ...receipt, workItem };
-    await store.save(receipt);
-    return receipt;
-  }
-  receipt = { ...receipt, attempted: true };
-  await store.save(receipt);
-  const response = await store.http(
-    "POST",
-    "/api/v1/task-groups",
-    receipt.request,
-  );
-  const group = response.body?.data as Record<string, unknown> | undefined;
-  if (
-    response.status !== 201 || !Number.isSafeInteger(group?.id) ||
-    Number(group?.id) <= 0 || group?.project_id !== receipt.projectId
-  ) {
-    throw new Error(
-      `scheduled group ${receipt.key} create was not confirmed; reconcile before retrying`,
-    );
-  }
-  receipt = { ...receipt, workItem: `tg-${group!.id}` };
-  await store.save(receipt);
-  return receipt;
 }
 
 /** Typed Orbit handoff requirements; routine no-change and read-only scans need no diff. */

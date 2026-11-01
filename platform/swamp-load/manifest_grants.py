@@ -18,9 +18,16 @@ def scopes(policy):
         ('vault', policy['vaults'], 'vault', ['write', 'read']),
     ]:
         for entry in entries:
-            if entry['actions'] != actions or not re.fullmatch(r'[a-z][a-z0-9_-]*', entry[name]):
+            expected = actions
+            if kind == 'workflow' and 'publishes_inputs' in entry:
+                if entry['publishes_inputs'] is not True:
+                    raise ValueError('invalid_schedule_producer')
+                expected = ['run', 'read', 'write']
+            elif 'publishes_inputs' in entry:
+                raise ValueError('invalid_schedule_producer')
+            if entry['actions'] != expected or not re.fullmatch(r'[a-z][a-z0-9_-]*', entry[name]):
                 raise ValueError('invalid_exact_scope')
-            row = {'subject': SUBJECT, 'effect': 'allow', 'actions': actions,
+            row = {'subject': SUBJECT, 'effect': 'allow', 'actions': expected,
                    'resource': {'kind': kind, 'pattern': entry[name]}}
             if kind == 'vault':
                 key = entry['key_pattern']

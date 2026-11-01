@@ -1,10 +1,7 @@
 id: 00e7b9ff-4117-499d-9b7d-a482ecd3f6b7
 name: dependency-upgrade
-labels: { pool: migration, node: "209" }
-description: >-
-  Historical host-scratch plan, not task-VM adoption: scan the inventory, compare it
-  with Packagist and npm, assert the plan is sound, and stop for approval when
-  a major upgrade is planned.
+description: Read an admitted scratch checkout and return a native dependency plan
+  without host dispatch.
 tags: {}
 inputs:
   properties:
@@ -12,100 +9,145 @@ inputs:
       type: boolean
       default: false
       description: Stop at the approval gate even when no major upgrade is planned
+    checkoutDir:
+      type: string
+      pattern: ^/
+    branch:
+      type: string
+      pattern: ^[A-Za-z0-9][A-Za-z0-9_./-]*$
+  required:
+  - checkoutDir
+  - branch
 reports:
-  skip: ["@swamp/workflow-summary"]
+  skip:
+  - '@swamp/workflow-summary'
 jobs:
+- name: plan
+  description: "scan \u2192 plan \u2192 assert"
+  steps:
+  - name: fetch
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-fetch-" + run.id }}
+      methodName: execute
+      inputs:
+        run: git -C "$ORBIT_CHECKOUT" fetch --quiet -- origin "$ORBIT_BRANCH"
+        env:
+          ORBIT_CHECKOUT: ${{ inputs.checkoutDir }}
+          ORBIT_BRANCH: ${{ inputs.branch }}
+  - name: head
+    target: orbit-node-209
+    dependsOn:
+    - step: fetch
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-head-" + run.id }}
+      methodName: execute
+      inputs:
+        run: git -C "$ORBIT_CHECKOUT" rev-parse --verify "FETCH_HEAD^{commit}"
+        env:
+          ORBIT_CHECKOUT: ${{ inputs.checkoutDir }}
+  - name: scan
+    description: Exact-commit manifests and lockfiles from the scratch checkout
+    task:
+      type: model_method
+      modelIdOrName: orbit-deps
+      methodName: scan
+      inputs:
+        checkoutDir: ${{ inputs.checkoutDir }}
+        branch: ${{ inputs.branch }}
+        commit: ${{ steps.head.outputs.stdout }}
+    dependsOn:
+    - step: head
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    target: orbit-node-209
   - name: plan
-    description: scan → plan → assert
-    steps:
-      - name: scan
-        description: Exact-commit manifests and lockfiles from the scratch checkout
-        task:
-          type: model_method
-          modelType: "@nckrtl/native-host-method"
-          modelName: native-upgrade-scan
-          methodName: upgrade_scan
-        dependsOn: []
-        weight: 0
-        allowFailure: false
-      - name: plan
-        description: dependency-planner records the upgrade-plan
-        task:
-          type: model_method
-          modelType: "@nckrtl/native-host-method"
-          modelName: native-upgrade-plan
-          methodName: upgrade_plan
-        dependsOn:
-          - step: scan
-            condition:
-              type: succeeded
-        weight: 0
-        allowFailure: false
-      - name: plan-matches-scan
-        task:
-          type: assert
-          expr: >-
-            data.latest("orbit-deps", "upgrade-plan").attributes.commit
-            == data.latest("orbit-deps", "inventory").attributes.commit
-          message: The plan was built from a different commit than the scan
-          severity: high
-        dependsOn:
-          - step: plan
-            condition:
-              type: succeeded
-        weight: 0
-        allowFailure: false
-      - name: every-subtask-has-packages
-        task:
-          type: assert
-          expr: >-
-            data.latest("orbit-deps", "upgrade-plan").attributes.subtasks.all(s, size(s.packages) > 0)
-          message: A subtask has no packages
-          severity: high
-        dependsOn:
-          - step: plan
-            condition:
-              type: succeeded
-        weight: 0
-        allowFailure: false
-      - name: registries-answered
-        task:
-          type: assert
-          expr: >-
-            data.latest("orbit-deps", "upgrade-plan").attributes.counts.unknown == 0
-          message: >-
-            ${{ data.latest("orbit-deps", "upgrade-plan").?attributes.?counts.?unknown.orValue(0) }}
-            packages could not be looked up in their registry
-          severity: medium
-        dependsOn:
-          - step: plan
-            condition:
-              type: succeeded
-        weight: 0
-        allowFailure: false
+    description: dependency-planner records the upgrade-plan
+    task:
+      type: model_method
+      modelIdOrName: orbit-deps
+      methodName: plan
+      inputs:
+        inventory: ${{ steps.scan.outputs }}
+    dependsOn:
+    - step: scan
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    target: orbit-node-209
+  - name: plan-matches-scan
+    task:
+      type: assert
+      expr: steps.plan.outputs.commit == steps.scan.outputs.commit
+      message: The plan was built from a different commit than the scan
+      severity: high
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    target: orbit-node-209
+  - name: every-subtask-has-packages
+    task:
+      type: assert
+      expr: steps.plan.outputs.subtasks.all(s, size(s.packages) > 0)
+      message: A subtask has no packages
+      severity: high
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    target: orbit-node-209
+  - name: registries-answered
+    task:
+      type: assert
+      expr: steps.plan.outputs.counts.unknown == 0
+      message: ${{ data.latest("orbit-deps", "upgrade-plan").?attributes.?counts.?unknown.orValue(0)
+        }} packages could not be looked up in their registry
+      severity: medium
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    target: orbit-node-209
+  dependsOn: []
+  weight: 0
+  target: orbit-node-209
+- name: approve
+  description: Approval gate when the plan has a major upgrade (stub)
+  dependsOn:
+  - job: plan
+    condition:
+      type: succeeded
+  steps:
+  - name: approve-majors
+    description: A human approves the major upgrades before any subtask starts
+    guard: "${{ !inputs.requireApproval\n    && !data.latest(\"orbit-deps\", \"upgrade-plan\"\
+      ).attributes.majorsExist }}"
+    task:
+      type: manual_approval
+      prompt: The upgrade plan contains major upgrades. Review it with swamp data
+        query 'modelName == "orbit-deps" && name == "upgrade-plan"' --select 'attributes.subtasks.filter(s,
+        s.major)' --json
+      timeout: 604800
     dependsOn: []
     weight: 0
-  - name: approve
-    description: Approval gate when the plan has a major upgrade (stub)
-    dependsOn:
-      - job: plan
-        condition:
-          type: succeeded
-    steps:
-      - name: approve-majors
-        description: A human approves the major upgrades before any subtask starts
-        guard: >-
-          ${{ !inputs.requireApproval
-              && !data.latest("orbit-deps", "upgrade-plan").attributes.majorsExist }}
-        task:
-          type: manual_approval
-          prompt: >-
-            The upgrade plan contains major upgrades. Review it with
-            swamp data query 'modelName == "orbit-deps" && name == "upgrade-plan"'
-            --select 'attributes.subtasks.filter(s, s.major)' --json
-          timeout: 604800
-        dependsOn: []
-        weight: 0
-        allowFailure: false
-    weight: 0
+    allowFailure: false
+    target: orbit-node-209
+  weight: 0
+  target: orbit-node-209
 version: 1

@@ -52,9 +52,10 @@ async function run(
   globalThis.fetch = (input) => {
     const url = String(input);
     assert(
-      /^https:\/\/(repo\.packagist\.org\/p2\/|registry\.npmjs\.org\/)/.test(
-        url,
-      ),
+      /^https:\/\/(repo\.packagist\.org\/p2\/|registry\.npmjs\.org\/)/
+        .test(
+          url,
+        ),
     );
     requests.push(url);
     return Promise.resolve(response(url));
@@ -62,8 +63,7 @@ async function run(
   let failure: unknown = null;
   const started = performance.now();
   try {
-    await behavior.methods.plan.execute({}, {
-      readResource: () => Promise.resolve(inv),
+    await behavior.methods.plan.execute({ inventory: inv }, {
       writeResource: (
         _spec: string,
         _name: string,
@@ -207,7 +207,11 @@ Deno.test("R1 npm stable/prerelease and Composer compatibility remain usable", a
     "1.2.0",
   ]);
   for (
-    const versions of [["1.0"], ["1.0.0.9"], ["1.0.0", "dev-main", "1.1.0-dev"]]
+    const versions of [["1.0"], ["1.0.0.9"], [
+      "1.0.0",
+      "dev-main",
+      "1.1.0-dev",
+    ]]
   ) {
     const compatible = await run(
       inventory(),
@@ -284,7 +288,9 @@ Deno.test("existing package selection, aliases, ranges and caret major policy re
   assertEquals(aliased.failure, null);
   assertEquals(aliased.requests, ["https://registry.npmjs.org/one"]);
   assertEquals(
-    (aliased.plan.subtasks as { packages: { name: string; to: string }[] }[])[0]
+    (aliased.plan.subtasks as {
+      packages: { name: string; to: string }[];
+    }[])[0]
       .packages[0].name,
     "alias",
   );
@@ -295,7 +301,9 @@ Deno.test("existing package selection, aliases, ranges and caret major policy re
   const skipped = await run(
     inventory("npm", [dep("local", "workspace:*")]),
     () => {
-      throw new Error("unsupported constraints must not query a registry");
+      throw new Error(
+        "unsupported constraints must not query a registry",
+      );
     },
   );
   assertEquals(skipped.requests, []);
@@ -330,7 +338,9 @@ Deno.test("inventory reads only the selected commit and refuses malformed commit
     );
     await Deno.writeTextFile(
       lock,
-      JSON.stringify({ packages: [{ name: "acme/one", version: "1.0.0" }] }),
+      JSON.stringify({
+        packages: [{ name: "acme/one", version: "1.0.0" }],
+      }),
     );
     await git("add", ".");
     await git(
@@ -351,7 +361,9 @@ Deno.test("inventory reads only the selected commit and refuses malformed commit
     );
     await Deno.writeTextFile(
       lock,
-      JSON.stringify({ packages: [{ name: "acme/one", version: "2.0.0" }] }),
+      JSON.stringify({
+        packages: [{ name: "acme/one", version: "2.0.0" }],
+      }),
     );
     assertEquals(
       await buildInventory(dir, first),
@@ -412,7 +424,9 @@ Deno.test("shared dependency scan needs only a checkout and branch and launches 
     );
     await Deno.writeTextFile(
       `${dir}/composer.lock`,
-      JSON.stringify({ packages: [{ name: "acme/one", version: "1.0.0" }] }),
+      JSON.stringify({
+        packages: [{ name: "acme/one", version: "1.0.0" }],
+      }),
     );
     await git("add", ".");
     await git(
@@ -433,7 +447,9 @@ Deno.test("shared dependency scan needs only a checkout and branch and launches 
     class ObservedCommand extends Original {
       constructor(command: string | URL, options?: Deno.CommandOptions) {
         commands.push(String(command));
-        if (command !== "git") throw new Error("Unexpected network client");
+        if (command !== "git") {
+          throw new Error("Unexpected network client");
+        }
         super(command, options);
       }
     }
@@ -443,11 +459,11 @@ Deno.test("shared dependency scan needs only a checkout and branch and launches 
     });
     changedCommand = true;
     let saved: Record<string, unknown> | undefined;
-    await behavior.methods.scan.execute({}, {
-      globalArgs: behavior.globalArguments.parse({
-        checkoutDir: dir,
-        branch: "main",
-      }),
+    await behavior.methods.scan.execute({
+      checkoutDir: dir,
+      branch: "main",
+      commit: expectedCommit,
+    }, {
       writeResource: (spec, name, value) => {
         assertEquals([spec, name], ["inventory", "inventory"]);
         saved = value;

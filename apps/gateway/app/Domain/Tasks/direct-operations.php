@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Tasks\DependencyMergeProjection;
 use App\Domain\Tasks\TaskAnalysisProjection;
+use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCheckProjection;
+use App\Domain\Tasks\TaskMaintenanceProjection;
 use App\Domain\Tasks\TaskParkProjection;
 use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\Tasks\TaskPublishProjection;
@@ -13,7 +15,7 @@ use App\Domain\Tasks\TaskTurnProjection;
 
 $vmProvision = (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.provision'];
 
-return ['tasks.provision' => [
+return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'result']], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'result'], 'execution_copies' => (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies']], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'result'], 'execution_copies' => (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies']], 'tasks.provision' => [
     'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class,
     'workflow_inputs' => true, 'terminal_result' => ['job' => 'provision', 'step' => 'result'],
     'execution_copies' => [...$vmProvision['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-git-[1-9][0-9]*$']],

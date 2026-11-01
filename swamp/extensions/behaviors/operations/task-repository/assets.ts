@@ -4,7 +4,12 @@ import { AnalysisInput, ScriptInput } from "./input.ts";
 const Args = z.object({
     operation_id: z.number().int().positive(),
     node_id: z.number().int().positive(),
-    kind: z.enum(["tasks.script", "tasks.analyze"]),
+    kind: z.enum([
+        "tasks.script",
+        "tasks.analyze",
+        "tasks.cancel",
+        "tasks.maintenance_finish",
+    ]),
     intent: z.record(z.string(), z.unknown()),
 });
 const Assets = z.object({
@@ -33,10 +38,19 @@ export const behavior = {
                     value: unknown,
                 ): Promise<unknown>;
             }) => {
-                const input = args.kind === "tasks.script"
-                    ? ScriptInput.parse(args.intent)
-                    : AnalysisInput.parse(args.intent);
-                if (input.node_id !== args.node_id) {
+                const input =
+                    ["tasks.cancel", "tasks.maintenance_finish"].includes(
+                            args.kind,
+                        )
+                        ? args.intent
+                        : args.kind === "tasks.script"
+                        ? ScriptInput.parse(args.intent)
+                        : AnalysisInput.parse(args.intent);
+                if (
+                    !["tasks.cancel", "tasks.maintenance_finish"].includes(
+                        args.kind,
+                    ) && input.node_id !== args.node_id
+                ) {
                     throw new Error("Wrong task VM Node");
                 }
                 const result = args.kind === "tasks.script"

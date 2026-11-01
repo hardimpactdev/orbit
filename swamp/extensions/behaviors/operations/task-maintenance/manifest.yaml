@@ -1,0 +1,13 @@
+manifestVersion: 1
+name: "@nckrtl/task-maintenance"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Captured maintenance policy and separate official SSH package actions.
+behaviors:
+  - operations/task-maintenance/metadata.ts
+additionalFiles:
+  - scripts/workspace_files.py
+  - scripts/command.py
+  - scripts/manifest.py
+  - scripts/snapshot.py

@@ -34,6 +34,8 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
                 ]);
             }
 
+            app(TaskMaintenanceContinuation::class)->apply($projected);
+
             return $projected;
         });
     }

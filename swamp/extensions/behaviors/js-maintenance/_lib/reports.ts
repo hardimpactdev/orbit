@@ -171,7 +171,7 @@ function finish(
     ]),
   );
 }
-function npmAdvisories(
+export function npmAdvisories(
   data: Record<string, unknown>,
   js: Workspace,
   packages: Record<string, unknown>,
@@ -245,7 +245,7 @@ function npmAdvisories(
   }
   return finish(result);
 }
-function bunAdvisories(
+export function bunAdvisories(
   data: Record<string, unknown>,
   js: Workspace,
   packages: Record<string, unknown>,

@@ -77,6 +77,8 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
                 $group->update(['status' => TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
             }
 
+            app(TaskMaintenanceContinuation::class)->apply($projected);
+
             return $projected;
         });
     }

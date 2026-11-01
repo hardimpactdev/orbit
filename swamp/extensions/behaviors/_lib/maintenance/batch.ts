@@ -2,6 +2,7 @@ import { localFilesystem } from "../../operations/_lib/local-worker.ts";
 // @deno-types="npm:@types/semver@7.7.1"
 import { satisfies, validRange } from "npm:semver@7.7.2";
 import { z } from "npm:zod@4";
+export { z };
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
   command,

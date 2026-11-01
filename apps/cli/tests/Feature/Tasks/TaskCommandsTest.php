@@ -19,7 +19,9 @@ use Illuminate\Support\Str;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
@@ -326,7 +328,13 @@ describe('requests', function (): void {
     ]);
 
     it('cancels with --yes without reading the group first', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-cancel/cancelled'));
+        $operation = ['id' => 42, 'kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => 1,
+            'status' => 'succeeded', 'sequence' => 4, 'result' => ['cleanup_complete' => true]];
+        $mock = MockClient::global([
+            CancelTaskGroupRequest::class => MockResponse::make(['data' => $operation], 202),
+            ShowOperationRequest::class => MockResponse::make(['data' => $operation]),
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit']]),
+        ]);
 
         expect(Artisan::call('tasks:cancel', ['group' => '1', '--yes' => true, '--json' => true]))->toBe(0);
 

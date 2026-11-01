@@ -2,6 +2,8 @@
   "version": 2,
   "principal": "user:orbit-gateway",
   "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^project-dependency-read-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^project-dependency-auth-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-(?:git-operation-[1-9][0-9]*|destroy-[1-9][0-9]*-teardown-[0-9]+)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^(?:instance-git-operation-[1-9][0-9]*|instance-git-operation-[1-9][0-9]*-setup-[0-9]+|instance-create-environment-input-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*-setup-[0-9]+|instance-create-environment-result-[1-9][0-9]*|instance-create-environment-result-[1-9][0-9]*-setup-[0-9]+|instance-create-[1-9][0-9]*|instance-create-[1-9][0-9]*-setup-[0-9]+)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$", "actions": ["write", "read"]},
@@ -44,6 +46,10 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^task-provision-git-[1-9][0-9]*$", "actions": ["write", "read"]}
   ],
   "workflows": [
+    {"workflow": "project-observe", "actions": ["run", "read"]},
+    {"workflow": "maintenance-projects", "publishes_inputs": true, "actions": ["run", "read", "write"]},
+    {"workflow": "project-detect", "actions": ["run", "read"]},
+    {"workflow": "project-routine", "actions": ["run", "read"]},
     {"workflow": "operation-task-provision", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-credentials-reset", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-role", "actions": ["run", "read"]},
@@ -139,6 +145,8 @@
     {"workflow": "operation-schedule-run", "actions": ["run", "read"]},
     {"workflow": "operation-task-analyze", "actions": ["run", "read"]},
     {"workflow": "operation-task-check", "actions": ["run", "read"]},
+    {"workflow": "operation-task-maintenance", "actions": ["run", "read"]},
+    {"workflow": "operation-task-cancel", "actions": ["run", "read"]},
     {"workflow": "operation-task-park", "actions": ["run", "read"]},
     {"workflow": "operation-task-publish", "actions": ["run", "read"]},
     {"workflow": "operation-task-script", "actions": ["run", "read"]},

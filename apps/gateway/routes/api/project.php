@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ProjectDependenciesController;
 use App\Http\Controllers\Api\ProjectDependencyReadTokenController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
+use App\Http\Controllers\Api\ProjectMaintenanceController;
 use App\Http\Controllers\Api\ProjectRuntimeDefinitionsController;
 use App\Http\Controllers\Api\ProjectsController;
 use App\Http\Middleware\RecordCommandActivity;
@@ -22,6 +23,8 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
+    Route::post('projects/{project}/maintenance/detect', [ProjectMaintenanceController::class, 'detect'])->whereNumber('project')->name('project:maintenance:detect');
+    Route::post('projects/{project}/maintenance/routine', [ProjectMaintenanceController::class, 'routine'])->whereNumber('project')->name('project:maintenance:routine');
     Route::get('projects/{project}/dependencies', [ProjectDependenciesController::class, 'show'])->whereNumber('project')->name('project:dependencies:show');
     Route::get('projects', [ProjectsController::class, 'index'])->name('project:list');
     Route::get('projects/{project}', [ProjectsController::class, 'show'])->name('project:show');
