@@ -7,6 +7,7 @@ use App\Actions\Nodes\AssignRoleAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
+use App\Domain\Nodes\NodePhpPackagesInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
@@ -15,6 +16,8 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -40,6 +43,45 @@ beforeEach(function (): void {
     config(['swamp_workers.nodes' => []]);
     DB::beginTransaction();
 });
+
+it('captures AppProd PHP through the recipe installer instead of generic APT aliases', function (): void {
+    $node = FleetFixtures::node('production-native', [RoleName::AppProd]);
+    $assignment = $node->roles()->where('role', RoleName::AppProd)->sole();
+    $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false);
+    $recipe = new RecipeLoader()->load();
+    $versions = NodeRecipeProgram::phpVersions($recipe, app(NodeRecipeProgram::class)->tools($node, $recipe));
+
+    $captured = app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot);
+
+    expect($captured['intent']['php'])->toBe(app(NodePhpPackagesInput::class)->forNode($node, $versions))
+        ->and($captured['intent']['php']['extras'])->toBe('keep')
+        ->and($captured['intent']['php']['fpm'])->toBe('none')
+        ->and($captured['intent']['prerequisites']['packages'])->not->toContain('php-curl', 'php-xml')
+        ->and($captured['intent']['javascript'])->toBe($snapshot['javascript']);
+    foreach ($captured['intent']['php']['versions'] as $build) {
+        foreach ($build['packages'] as $package) {
+            expect($package['sha256'])->toMatch('/\A[a-f0-9]{64}\z/D');
+        }
+    }
+});
+it('captures AppProd after the real convergence claim without changing recipe lifecycle policy', function (): void {
+    $node = FleetFixtures::node('production-claimed', [RoleName::AppProd]);
+    $node->forceFill(['agent_secret_hash' => str_repeat('d', 64)])->save();
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token']);
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::AppProd, true);
+    $intent = app(DirectOperation::class)->workflowInputs($operation)['intent'];
+
+    expect($intent['role'])->toBe('app-prod')
+        ->and($intent['php']['versions'])->not->toBeEmpty()
+        ->and($node->roles()->sole()->status->value)->toBe('provisioning');
+    expect(fn () => app(NodeRecipeProgram::class)->tools($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'Every assigned role must be active before recipe convergence.');
+});
+
 afterEach(function (): void {
     if (DB::transactionLevel() > 0) {
         DB::rollBack();

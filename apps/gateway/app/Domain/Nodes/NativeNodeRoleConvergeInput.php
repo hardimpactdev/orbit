@@ -7,6 +7,8 @@ namespace App\Domain\Nodes;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeNodeRolePublicationInput;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -27,7 +29,7 @@ final readonly class NativeNodeRoleConvergeInput
     /** Implemented forward contributions; owning parents validate role policy and required duties. */
     public static function supportsContribution(Node $node, RoleName $role): bool
     {
-        return $node->platform === 'linux' && in_array($role, [RoleName::Database, RoleName::Ingress, RoleName::WebSocket], true);
+        return $node->platform === 'linux' && in_array($role, [RoleName::Database, RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd], true);
     }
 
     /** @param array<string,mixed> $snapshot
@@ -51,7 +53,14 @@ final readonly class NativeNodeRoleConvergeInput
         }
         foreach ($entries as $artifact) {
             $artifact = ValidatedData::object($artifact);
-            if ($artifact['required'] === true && ! in_array($artifact['name'], in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket], true) ? ['agent', 'peer-dns', 'caddy-package', 'caddy'] : ['agent', 'peer-dns'], true)) {
+            $supported = ['agent', 'peer-dns'];
+            if (in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd], true)) {
+                $supported = [...$supported, 'caddy-package', 'caddy'];
+            }
+            if ($assignment->role === RoleName::AppProd) {
+                $supported[] = 'php-runtime';
+            }
+            if ($artifact['required'] === true && ! in_array($artifact['name'], $supported, true)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'An applicable role footprint has no native action.', 422);
             }
         }
@@ -60,11 +69,23 @@ final readonly class NativeNodeRoleConvergeInput
             'created' => $snapshot['created'], 'role' => $assignment->role->value, 'user' => $node->user,
             'agent_sha256' => $snapshot['agent_sha256'], 'prerequisites' => $snapshot['prerequisites'],
             'ssh' => $ssh,
-            ...(in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket], true) ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),
+            ...(in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd], true) ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),
                 'caddy_package' => AgentCaddyPackage::input(), 'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $assignment->role)] : []),
             'footprint' => $footprint, 'cli' => $snapshot['cli'], 'metrics_fleet' => null];
 
         $participants = [209, $node->id];
+        if ($assignment->role === RoleName::AppProd) {
+            $recipe = new RecipeLoader()->load();
+            $versions = NodeRecipeProgram::phpVersions($recipe, app(NodeRecipeProgram::class)->toolsForRoles($node, $recipe, array_values($node->roles->map(static fn (NodeRole $role): RoleName => $role->role)->all())));
+            $intent['php'] = app(NodePhpPackagesInput::class)->forNode($node, $versions);
+            $intent['javascript'] = $snapshot['javascript'];
+            $prerequisites = ValidatedData::object($intent['prerequisites']);
+            $prerequisites['packages'] = array_values(array_filter(
+                ValidatedData::stringList($prerequisites['packages']),
+                static fn (string $package): bool => ! str_starts_with($package, 'php-'),
+            ));
+            $intent['prerequisites'] = $prerequisites;
+        }
         if ($assignment->role === RoleName::WebSocket) {
             $runtime = ValidatedData::object($snapshot['runtime']);
             if (($runtime['node_id'] ?? null) !== $node->id || ($runtime['assignment_id'] ?? null) !== $assignment->id

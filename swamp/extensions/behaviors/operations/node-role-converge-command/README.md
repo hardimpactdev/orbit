@@ -1,14 +1,12 @@
 # Native role convergence
 
 `operation-node-role-converge-209` executes existing Database-only and
-Ingress-only and WebSocket-only assignments from209 when no serving Metrics fleet needs
-reconciliation. All three use the same `node-role-converge` factory: account,
+Ingress-only, WebSocket-only and AppProd-only assignments from209 when no serving Metrics fleet needs
+reconciliation. All four use the same `node-role-converge` factory: account,
 observer binary, packages, peer DNS, observer files/service, CLI, and typed
 terminal contribution. Ingress also installs pinned Caddy, enables its service,
 publishes the complete admitted catalog through `operation-route-caddy`, then
-applies canonical firewall arguments with `roleFirewallSteps`. Each expansion
-and removal is a visible official SSH exec action; native assertions require
-every admitted action to succeed. Failure before the
+applies canonical firewall expansion and pruning in one bounded script-file phase. Failure before the
 firewall prevents its action. Required Caddy/firewall failures fail the role;
 observer, peer DNS and CLI failures remain explicit follow-ups.
 
@@ -27,7 +25,7 @@ No transport, policy engine, credential or worker is added.
 
 The exported `roleConvergeSteps(name, intentExpr, fullGlobals, dependency?, guard?, options?)` shares this graph with composing roots. `preparedToolsExpr` verifies same-Node complete OS coverage and suppresses only generic package installation. `observerDigestExpr` selects the existing private observer digest. `executionSecretsExpr` selects public vault references containing `observer` and, for WebSocket, `runtime_material`. Private values use whole vault reads on SSH stdin. No recipe/tool installer is imported.
 
-`RoleConvergeReceipt` is schema1 with Node/assignment/role identity, role/runtime/certificate/publication proof, baseline, footprint, CLI and follow-up. The final step is `<name>_role_result` (or `role_result` with empty prefix). Optional role lists must bind completed admission-job context before effects. Forward composition does not provide complete roleless enrollment or deferred parent restoration/finalization. These remain unsupported; this slice does not unblock complete node.add.
+`RoleConvergeReceipt` is schema1 with Node/assignment/role identity, role/runtime/certificate/publication proof, baseline, footprint, CLI and follow-up. The final step is `<name>_role_result` (or `role_result` with empty prefix). It reads only named public statuses and the successful CLI output. Optional role lists must bind completed admission-job context before effects. Forward composition does not provide complete roleless enrollment or deferred parent restoration/finalization. These remain unsupported; this slice does not unblock complete node.add.
 
 For direct embedding, that step exposes the receipt fields flat:
 `steps["<name>_role_result"].outputs.role_proven`, `outputs.node_id`, and the
@@ -38,7 +36,9 @@ direct form.
 
 Owning add and relocation parents can capture a supported contribution after recording the actual assignment. `NativeNodeRoleConvergeInput::supportsContribution(Node, RoleName)` has no worker or sole-role requirement. `capture(Node, NodeRole, snapshot)` preserves `snapshot.created` and verifies the stored assignment plus snapshot identity. `created` is required in native intent and survives successful and failed receipts. Other roles on the Node do not themselves refuse capture; missing required artifact or Metrics contributions still do. This is forward contribution support, not acceptance of a complete add, relocation or enrollment parent. The existing private renderer is `NodeRoleRuntimeSource::resolveRoleMaterial(snapshot, ownerNodeId)`; the execution-copy runtime key is `node-role-{operation_id}-runtime_material`.
 
-WebSocket uses visible source, Composer, private environment, release/unit validation, service activation, listener observation, restoration and release cleanup actions. A source or validation failure before cutover leaves the running service untouched. Cleanup keeps the current and captured prior releases after success. A failed cutover retains its candidate for same-child resume; a failed pre-cutover candidate is removed. Its complete captured PHP/Caddy/DNS catalogs use the canonical Route children. The Gateway records certificate and serving state from terminal outputs. AppDev, AppProd and Analytics remain on their existing paths.
+WebSocket uses visible source, Composer, private environment, release/unit validation, service activation, listener observation, restoration and release cleanup actions. A source or validation failure before cutover leaves the running service untouched. Cleanup keeps the current and captured prior releases after success. A failed cutover retains its candidate for same-child resume; a failed pre-cutover candidate is removed. Its complete captured PHP/Caddy/DNS catalogs use the canonical Route children. The Gateway records certificate and serving state from terminal outputs. AppDev and Analytics remain on their existing paths.
+
+The shared contribution resolves its canonical public supplier files once before optional fan-out and stages them once per contribution and run. Account, observer installation, prerequisites, observer configuration, PHP footprint and CLI run as bounded script-file phases. AppProd prerequisites retain Composer scope checks, pinned PHP, JavaScript installation and Caddy ordering in their existing order. A same-Node prepared-tool proof skips OS and JavaScript installation while retaining Composer scope checks, PHP and Caddy ordering. Peer DNS uses the canonical native network child, without the old network program.
 
 The WebSocket child resolves its public script bundle once, then executes account, checkout, dependencies, environment, unit, activation and verify as one script-file action per legacy phase. Each action uses official pinned SSH exec under coreutils `timeout`; every step has `queueTimeout: 30`. The terminal supplier receives only named phase statuses. It never receives the whole native context.
 

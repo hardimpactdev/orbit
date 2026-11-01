@@ -21,25 +21,61 @@ class DatabaseRoleNative(NativeTestCase):
         for name in ['caddy-input.ts']:
             shutil.copy(ROOT/'extensions/behaviors/operations/routes'/name,routes)
         # Unselected children must still be registered with their real public schemas.
-        for name in ['node-role-websocket','node-role-publication','node-role-certificate-publish']:
+        for name in ['node-role-websocket','node-role-publication','node-role-certificate-publish','operation-fleet-peer-dns']:
             flow=yaml.safe_load((ROOT/('workflows/workflow-'+name+'.yaml')).read_text())
+            flow.pop('target',None)
             flow['jobs']=[{'name':'fixture','steps':[{'name':'result','task':{'type':'assert','expr':'true','severity':'high','message':'Fixture boundary'}}]}]
             (self.repo/('workflows/workflow-'+name+'.yaml')).write_text(yaml.safe_dump(flow,sort_keys=False))
         self.cli('extension','pull','@swamp/ssh@2026.10.23.1')
         self.audit=self.repo/'calls.jsonl'
         self.failure=self.repo/'fail'
         binary=self.repo/'fixture-ssh'
-        binary.write_text('#!'+sys.executable+'\n'+'''import ast,json,sys
+        binary.write_text('#!'+sys.executable+'\n'+'''import ast,json,sys,shlex,os
 from pathlib import Path
 if '-M' in sys.argv or '-O' in sys.argv:raise SystemExit(0)
 def finish(action,result):
  with Path(AUDIT).open('a') as stream:stream.write(json.dumps({'action':action})+'\\n')
  if Path(FAILURE).exists() and Path(FAILURE).read_text()==action:raise SystemExit(1)
  print(json.dumps(result));raise SystemExit(0)
+body=sys.stdin.read()
+command=shlex.split(sys.argv[-1])
+if '/usr/bin/env' in command:
+ index=command.index('/usr/bin/env')+1
+ while index<len(command) and '=' in command[index]:
+  key,value=command[index].split('=',1);os.environ[key]=value;index+=1
+if '/usr/bin/mkdir' in command:
+ Path(command[-1]).mkdir(parents=True,exist_ok=True);raise SystemExit(0)
+if '/usr/bin/python3' in command and '-B' in command:
+ phase=Path(command[-1]).name
+ data=json.loads(os.environ.get('ORBIT_ROLE_INPUT','{}'));intent=data.get('intent',{})
+ def record(action):
+  with Path(AUDIT).open('a') as stream:stream.write(json.dumps({'action':action})+'\\n')
+  if Path(FAILURE).exists() and Path(FAILURE).read_text()==action:raise SystemExit(1)
+ if phase=='account.py':finish('account',{'user':'orbit','group':'orbit','home':'/home/orbit'})
+ if phase=='observer_install.py':finish('install',{'installed':True,'changed':False,'sha256':intent['agent_sha256']})
+ if phase=='phase_prerequisites.py':
+  if intent['role'] in ['ingress','websocket','app-prod']:record('caddy_package')
+  if intent['role']=='app-prod':
+   record('app_prerequisites');record('php_build')
+   if not data['prepared_tools'] and intent['javascript'] is not None:record('javascript')
+   record('caddy_ordering')
+  elif not data['prepared_tools']:record('packages')
+  print('{"ready":true}');raise SystemExit(0)
+ if phase=='phase_caddy_service.py':finish('service',{})
+ if phase=='phase_firewall.py':record('firewall');finish('firewall_prune',{})
+ if phase=='phase_observer.py':
+  if body!=os.environ['ORBIT_TEST_OBSERVER_DIGEST']:raise SystemExit(1)
+  finish('file',{'ready':True,'changed':False})
+ if phase=='phase_php_runtime.py':
+  record('php_runtime')
+  if Path(FAILURE).exists() and Path(FAILURE).read_text()=='php_runtime_refusal':raise SystemExit(1)
+  print('{"ready":true}');raise SystemExit(0)
+ if phase=='phase_cli.py':finish('cli',{'installed':None,'configured':True})
+ raise SystemExit('Unknown role phase '+phase)
+if 'resolvectl' in sys.argv[-1]:finish('dns',{})
 if 'caddy validate' in sys.argv[-1]:finish('caddy_validate',{})
 if 'systemctl' in sys.argv[-1]:finish('service',{})
 if 'ufw' in sys.argv[-1]:finish('firewall_prune' if '--force' in sys.argv[-1] else 'firewall',{})
-body=sys.stdin.read()
 if '/etc/caddy/Caddyfile' in sys.argv[-1]:finish('caddy_write',{})
 if 'Verify the existing observer identity' in sys.argv[-1]:
  import os
@@ -70,6 +106,9 @@ if Path(FAILURE).exists() and Path(FAILURE).read_text()==action:raise SystemExit
 print(json.dumps(result))
 '''.replace('AUDIT',repr(str(self.audit))).replace('FAILURE',repr(str(self.failure))))
         binary.chmod(0o700)
+        scp=self.repo/'fixture-scp'
+        scp.write_text('#!'+sys.executable+'\nimport shutil,sys\nfrom pathlib import Path\nsrc=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(":",1)[1]);shutil.copytree(src,dst,dirs_exist_ok=True)\n')
+        scp.chmod(0o700)
         identity=self.repo/'identity';identity.write_text('synthetic fixture only')
         source=(ROOT/'extensions/behaviors/operations/node-role-converge-command/workflows.ts').as_uri()
         program='import {roleWorkflow,dispatcherWorkflow} from '+json.dumps(source)+';console.log(JSON.stringify([roleWorkflow(),dispatcherWorkflow()]));'
@@ -80,7 +119,7 @@ print(json.dumps(result))
                 for step in job['steps']:
                     self.assertEqual(step.pop('target'),'orbit-node-209')
                     task=step['task']
-                    if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
+                    if task.get('behaviorType')=='@swamp/ssh':task['globalArgs'].update(sshBinary=str(binary),scpBinary=str(scp))
             (self.repo/'workflows'/('workflow-'+flow['name']+'.yaml')).write_text(yaml.safe_dump(flow,sort_keys=False))
         caddy=yaml.safe_load((ROOT/'workflows/workflow-operation-route-caddy.yaml').read_text())
         for job in caddy['jobs']:
@@ -88,8 +127,13 @@ print(json.dumps(result))
             for step in job['steps']:
                 self.assertEqual(step.pop('target'),'orbit-node-209');self.assertNotIn('labels',step)
                 task=step['task']
-                if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
+                if task.get('behaviorType')=='@swamp/ssh':task['globalArgs'].update(sshBinary=str(binary),scpBinary=str(scp))
         (self.repo/'workflows/workflow-operation-route-caddy.yaml').write_text(yaml.safe_dump(caddy,sort_keys=False))
+        dns_path=self.repo/'workflows/workflow-operation-fleet-peer-dns.yaml'
+        dns=yaml.safe_load(dns_path.read_text())
+        globals_={'name':'dns-fixture','sshBinary':str(binary),'transport':{'kind':'ssh','user':'${{ inputs.intent.ssh.target.user }}','port':22,'identityFile':'${{ inputs.intent.ssh.identity_file }}'},'hosts':[{'name':'target','address':'${{ inputs.intent.ssh.target.host }}','transport':{'hostKeys':'${{ inputs.intent.ssh.target.host_keys }}'}}]}
+        dns['jobs']=[{'name':'dns','steps':[{'name':'result','task':{'type':'behavior','behaviorType':'@swamp/ssh','behaviorName':'dns-fixture','methodName':'exec','globalArgs':globals_,'inputs':{'hosts':'name:target','argv':['/usr/bin/resolvectl','status','orbit']}}}]}]
+        dns_path.write_text(yaml.safe_dump(dns,sort_keys=False))
         self.input={'operation_id':7,'node_id':5,'kind':'node.role_converge','execution_secrets':{},'intent':{
           'role':'database','assignment_id':17,'node_id':5,'created':False,'user':'orbit','agent_sha256':'a'*64,'prerequisites':{'packages':['docker.io'],'releases':['resolute']},
           'ssh':{'identity_file':str(identity),'target':{'host':'dev.invalid','user':'orbit','port':22,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}},
@@ -187,13 +231,13 @@ export const behavior={type:"@nckrtl/role-retained-fixture",version:"2026.11.01.
                 self.assertFalse(result['role_proven'])
                 actions=[json.loads(line)['action'] for line in self.audit.read_text().splitlines()]
                 if failure=='caddy_package':
-                    self.assertNotIn('packages',actions);self.assertEqual(result['failed_step'],'caddy-package')
+                    self.assertNotIn('packages',actions);self.assertEqual(result['failed_step'],'prerequisites')
                 if failure not in ['firewall','firewall_prune']:self.assertNotIn('firewall',actions)
                 if failure=='firewall':self.assertNotIn('firewall_prune',actions)
 
     def test_prefixed_same_parent_factory_consumes_prepared_tools_without_apt(self):
         source=(ROOT/'extensions/behaviors/operations/node-role-converge-command/root_steps.ts').as_uri()
-        globals_={'name':'prefixed-role','sshBinary':str(self.repo/'fixture-ssh'),'transport':{'kind':'ssh','user':'${{ inputs.intent.candidate.user }}','identityFile':self.input['intent']['ssh']['identity_file'],'port':22},'hosts':[{'name':'target','address':'dev.invalid','transport':{'hostKeys':self.input['intent']['ssh']['target']['host_keys']}}]}
+        globals_={'name':'prefixed-role','sshBinary':str(self.repo/'fixture-ssh'),'scpBinary':str(self.repo/'fixture-scp'),'transport':{'kind':'ssh','user':'${{ inputs.intent.candidate.user }}','identityFile':self.input['intent']['ssh']['identity_file'],'port':22},'hosts':[{'name':'target','address':'dev.invalid','transport':{'hostKeys':self.input['intent']['ssh']['target']['host_keys']}}]}
         program='import {roleConvergeSteps} from '+json.dumps(source)+';console.log(JSON.stringify(roleConvergeSteps("enrolled","inputs.intent.roles[0]",'+json.dumps(globals_)+',undefined,undefined,{preparedToolsExpr:"inputs.prepared",observerDigestExpr:"vault.get(inputs.execution_secrets.observer.vault,inputs.execution_secrets.observer.key)"})));'
         steps=json.loads(subprocess.run([os.environ.get('DENO_BIN','/tmp/lane4-deno-2.9.8/deno'),'eval',program],check=True,capture_output=True,text=True).stdout)
         for step in steps:self.assertEqual(step.pop('target'),'orbit-node-209')
@@ -247,6 +291,7 @@ export const behavior={type:"@nckrtl/role-supplier-fixture",version:"2026.11.01.
             flow=yaml.safe_load(path.read_text())
             args={'action':action}
             if action=='certificate':args['parent_run_id']='${{ inputs.parent_run_id }}'
+            flow.pop('target',None)
             flow['jobs']=[{'name':'fixture','steps':[{'name':'result','task':{'type':'behavior','behaviorType':'@nckrtl/role-supplier-fixture','behaviorName':action+'-fixture','methodName':'complete','inputs':args}}]}]
             path.write_text(yaml.safe_dump(flow,sort_keys=False))
         _,result=self.run_role()

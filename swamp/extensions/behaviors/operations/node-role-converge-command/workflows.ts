@@ -6,7 +6,7 @@ const on = (
     step: string,
     type = "succeeded",
 ) => [{ step, condition: { type } }];
-const target = { target: "orbit-node-209" };
+const target = { target: "orbit-node-209", queueTimeout: 30 };
 const references = {
     type: "object",
     additionalProperties: {
@@ -79,13 +79,8 @@ export function roleWorkflow() {
                     type: "behavior",
                     behaviorType: "@nckrtl/node-role-converge-result",
                     behaviorName: "database-result",
-                    methodName: "assemble",
-                    inputs: {
-                        intent: ex("inputs.intent"),
-                        steps: ex(
-                            "steps",
-                        ),
-                    },
+                    methodName: "relay",
+                    inputs: { result: ex("steps.role_result.outputs") },
                 },
             }],
         }],
@@ -142,7 +137,7 @@ export function dispatcherWorkflow() {
                 },
                 task: {
                     type: "workflow",
-                    workflowIdOrName: "node-role-converge-retained",
+                    workflowIdOrName: "operation-node-role-add-direct",
                     inputs: {
                         operation_id: ex("inputs.operation_id"),
                         node_id: ex("inputs.node_id"),

@@ -1,12 +1,5 @@
-import { roleFirewallSteps } from "./firewall_steps.ts";
-import {
-    roleActionSteps,
-    rolePackageSteps,
-} from "../node-role-command/steps.ts";
-import {
-    roleObserverInstallSteps,
-    roleObserverSteps,
-} from "./observer_steps.ts";
+import { roleResultInputs } from "./result_inputs.ts";
+import { roleBaselinePhases, rolePhase } from "./phase_steps.ts";
 type Fields = Record<string, unknown>;
 const ex = (s: string) => "${{ " + s + " }}";
 const on = (
@@ -55,62 +48,12 @@ export function roleConvergeSteps(
 ): Fields[] {
     const qualify = (key: string) => name ? name + "_" + key : key;
     const secrets = "__ROLE_EXECUTION_SECRETS__";
-    const steps: Fields[] = [
-        ...roleActionSteps(
-            "account",
-            "account",
-            '{"user":inputs.intent.user}',
-            globals,
-        ),
-        ...roleObserverInstallSteps(
-            "observer_install",
-            '({"url":inputs.intent.footprint.payloads.agent.url,"sha256":inputs.intent.agent_sha256})',
-            globals,
-            "account",
-        ),
-        ...select(
-            roleActionSteps(
-                "caddy_package",
-                "caddy_package",
-                "self.caddy",
-                globals,
-                "observer_install",
-            ),
-            "caddy",
-            'inputs.intent.role in ["ingress","websocket"] ? [inputs.intent.caddy_package] : []',
-        ),
-        ...(options.preparedToolsExpr
-            ? [{
-                name: "packages",
-                ...target,
-                dependsOn: on("observer_install"),
-                task: {
-                    type: "assert",
-                    expr: "steps.prepared_admission.outputs.ready",
-                    severity: "high",
-                    message:
-                        "Prepared tools must cover every required OS package",
-                },
-            }]
-            : rolePackageSteps(
-                "packages",
-                "inputs.intent.prerequisites",
-                globals,
-                "observer_install",
-            )),
-    ];
-    const packageAsset = steps.find((step) =>
-        step.name ===
-            (options.preparedToolsExpr ? "packages" : "packages_assets")
-    )!;
-    packageAsset.dependsOn = [
-        ...on("observer_install"),
-        ...on("caddy_package", "always"),
-    ];
-    packageAsset.guard = ex(
-        'steps.exists(k,k.startsWith("caddy_package") && steps[k].status != "succeeded")',
+    const steps = roleBaselinePhases(
+        globals,
+        Boolean(options.preparedToolsExpr),
     );
-    const ingress = 'inputs.intent.role == "ingress" ? [inputs.intent] : []';
+    const ingress =
+        'inputs.intent.role in ["ingress","app-prod"] ? [inputs.intent] : []';
     steps.push(...select(
         [{
             name: "runtime",
@@ -178,10 +121,11 @@ export function roleConvergeSteps(
                         hosts: "name:target",
                         sudo: true,
                         argv: [
-                            "/usr/bin/systemctl",
-                            "enable",
-                            "--now",
-                            "caddy.service",
+                            "/usr/bin/timeout",
+                            "30",
+                            "/usr/bin/python3",
+                            "-B",
+                            ex('__ROLE_STAGE__+"/phase_caddy_service.py"'),
                         ],
                     },
                 },
@@ -227,10 +171,11 @@ export function roleConvergeSteps(
                     hosts: "name:target",
                     sudo: true,
                     argv: [
-                        "/usr/bin/systemctl",
-                        "enable",
-                        "--now",
-                        "caddy.service",
+                        "/usr/bin/timeout",
+                        "30",
+                        "/usr/bin/python3",
+                        "-B",
+                        ex('__ROLE_STAGE__+"/phase_caddy_service.py"'),
                     ],
                 },
             },
@@ -265,120 +210,99 @@ export function roleConvergeSteps(
         "role",
         'inputs.intent.role == "websocket" ? [inputs.intent] : []',
     ));
-    steps.push(
-        ...roleFirewallSteps(
-            "firewall",
-            "inputs.intent",
-            globals,
-            "publication",
-        ),
+    const firewall = rolePhase(
+        "firewall",
+        "phase_firewall",
+        globals,
+        60,
+        "packages",
     );
-    const firewallFirst = steps.find((s) => s.name === "firewall_expand")!;
-    firewallFirst.dependsOn = [
+    const firewallTask = firewall.task as Fields;
+    const firewallIdentity = ex(
+        '"role-firewall-"+run.id+"-"+string(self._index)',
+    );
+    firewallTask.behaviorName = firewallIdentity;
+    firewallTask.globalArgs = { ...globals, name: firewallIdentity };
+    firewall.forEach = {
+        item: "firewall",
+        in: ex(
+            'inputs.intent.role in ["ingress","websocket","app-prod"] ? [inputs.intent.firewall] : []',
+        ),
+    };
+    firewall.dependsOn = [
+        ...on("packages"),
         ...on("caddy", "always"),
         ...on("publication", "always"),
     ];
-    for (
-        const step of steps.filter((s) => String(s.name).startsWith("firewall"))
-    ) {
-        step.guard = ex(
-            'steps.packages.status != "succeeded" || ' +
-                '(inputs.intent.role == "ingress" && !("caddy-0" in steps && steps["caddy-0"].status == "succeeded")) || ' +
-                '(inputs.intent.role == "websocket" && !("publication-0" in steps && steps["publication-0"].status == "succeeded"))',
-        );
-    }
-    function action(
-        name: string,
-        methodName: string,
-        input: Fields,
-        dependency: string,
-        guard?: string,
-    ) {
-        steps.push({
-            name: name + "_assets",
-            ...target,
-            dependsOn: on(dependency),
-            ...(guard ? { guard: ex(guard) } : {}),
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/node-role-converge-command",
-                behaviorName: name + "-assets",
-                methodName,
-                inputs: input,
-            },
-        }, {
-            name: name + "_command",
-            ...target,
-            writes: true,
-            dependsOn: on(name + "_assets"),
-            task: {
-                type: "behavior",
-                behaviorType: "@swamp/ssh",
-                behaviorName: globals.name,
-                methodName: "script",
-                globalArgs: globals,
-                inputs: {
-                    hosts: "name:target",
-                    sudo: true,
-                    interpreter: "python3",
-                    script: ex(
-                        'steps["' + name + '_assets"].outputs.script_body',
-                    ),
-                },
-            },
-        }, {
-            name,
-            ...target,
-            dependsOn: on(name + "_command"),
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/node-role-converge-command",
-                behaviorName: name + "-result",
-                methodName: methodName === "cli" ? "cli_result" : "dns_result",
-                inputs: {
-                    stdout: ex('steps["' + name + '_command"].outputs.stdout'),
-                },
-            },
-        });
-    }
-    // DNS has a singleton native fan-out. Its only task data is self-bound, so an
-    // absent network does not resolve missing fields before the skip guard.
-    const start = steps.length;
-    action("peer_dns", "dns", {
-        dns_server: ex("self.dns.dns_server"),
-        public_key: ex("self.dns.public_key"),
-        domains: ex("self.dns.domains"),
-    }, "packages");
-    select(
-        steps.slice(start),
-        "dns",
-        "inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns]",
+    firewall.guard = ex(
+        '(inputs.intent.role in ["ingress","app-prod"] && !("caddy-0" in steps && steps["caddy-0"].status == "succeeded")) || (inputs.intent.role == "websocket" && !("publication-0" in steps && steps["publication-0"].status == "succeeded"))',
     );
+    steps.push(firewall);
+    const transport = globals.transport as Fields;
+    const host = (globals.hosts as Fields[])[0];
+    steps.push({
+        name: "peer_dns",
+        ...target,
+        forEach: {
+            item: "dns",
+            in: ex(
+                "inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns]",
+            ),
+        },
+        dependsOn: on("packages"),
+        task: {
+            type: "workflow",
+            workflowIdOrName: "operation-fleet-peer-dns",
+            inputs: {
+                operation_id: ex("inputs.operation_id"),
+                node_id: ex("inputs.node_id"),
+                kind: "fleet.peer_dns",
+                execution_secrets: {},
+                intent: {
+                    server: ex("self.dns.dns_server"),
+                    dns_server: ex("self.dns.dns_server"),
+                    public_key: ex("self.dns.public_key"),
+                    domains: ex("self.dns.domains"),
+                    ssh: {
+                        control_node_id: 209,
+                        identity_file: transport.identityFile,
+                        target: {
+                            host: host.address,
+                            user: transport.user,
+                            port: transport.port,
+                            host_keys: (host.transport as Fields).hostKeys,
+                        },
+                    },
+                },
+            },
+        },
+    });
     steps.push(
-        ...roleObserverSteps(
-            "observer",
-            "inputs.intent",
+        rolePhase(
+            "php_runtime",
+            "phase_php_runtime",
             globals,
-            "account",
-            "__ROLE_OBSERVER_DIGEST__",
-            "steps.observer_install.outputs.changed",
+            120,
             "packages",
+            {
+                guard: '! ("php-runtime" in inputs.intent.footprint.payloads)',
+            },
         ),
     );
-    action(
-        "cli",
-        "cli",
-        {
-            user: ex("inputs.intent.cli.user"),
-            release: ex("inputs.intent.cli.release"),
-            profile: ex("inputs.intent.cli.profile"),
-        },
-        "packages",
-        "inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null",
+    steps.push(
+        rolePhase("observer", "phase_observer", globals, 120, "packages", {
+            stdin: "__ROLE_OBSERVER_DIGEST__",
+            delivery: true,
+        }),
     );
+    steps.push(rolePhase("cli", "phase_cli", globals, 240, "packages", {
+        guard:
+            "inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null",
+    }));
     for (const step of steps) {
         delete step.labels;
         step.allowFailure = true;
+        step.queueTimeout = 30;
     }
 
     if (options.preparedToolsExpr) {
@@ -440,6 +364,10 @@ export function roleConvergeSteps(
             (!value.startsWith("${{") && key !== "expr")
         ) return value;
         let out = value.replaceAll("inputs.intent", intent).replaceAll(
+            "__ROLE_STAGE__",
+            JSON.stringify("/tmp/orbit-role-" + (name ? name + "-" : "")) +
+                "+run.id",
+        ).replaceAll(
             "__PREPARED_TOOLS__",
             options.preparedToolsExpr ?? "null",
         ).replaceAll(
@@ -459,6 +387,10 @@ export function roleConvergeSteps(
                 .replaceAll(
                     "steps[" + JSON.stringify(source) + "]",
                     "steps[" + JSON.stringify(dest) + "]",
+                )
+                .replaceAll(
+                    "steps[" + JSON.stringify(source + "-"),
+                    "steps[" + JSON.stringify(dest + "-"),
                 )
                 .replaceAll(
                     "steps[" + JSON.stringify(source + "-0") + "]",
@@ -525,12 +457,9 @@ export function roleConvergeSteps(
             behaviorType: "@nckrtl/node-role-converge-result",
             behaviorName: qualify("role-result"),
             methodName: "assemble",
-            inputs: {
-                intent: ex(intent),
-                steps: ex("steps"),
-                prefix: name ? name + "_" : "",
-            },
+            inputs: roleResultInputs(intent, name ? name + "_" : ""),
         },
     });
+    for (const step of steps) step.queueTimeout = 30;
     return steps;
 }

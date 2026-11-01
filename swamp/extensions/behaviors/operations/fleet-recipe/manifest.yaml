@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/fleet-recipe-command'
-version: 2026.11.01.7
+version: 2026.11.01.8
 visibility: private
 license: MIT
 description: Shared signed recipe policies and single-action host programs.
@@ -10,7 +10,15 @@ behaviors:
   - operations/fleet-recipe/observer_assets.ts
   - operations/fleet-recipe/fleet_release.ts
   - operations/fleet-recipe/runtime_assets.ts
+  - operations/fleet-recipe/role_phase_assets.ts
 additionalFiles:
+  - role_phases/common.py
+  - role_phases/prerequisites.py
+  - role_phases/observer.py
+  - role_phases/php_runtime.py
+  - role_phases/cli.py
+  - role_phases/firewall.py
+  - role_phases/caddy_service.py
   - scripts/recipe.py
   - scripts/role_prerequisites.py
   - scripts/caddy_ordering.py

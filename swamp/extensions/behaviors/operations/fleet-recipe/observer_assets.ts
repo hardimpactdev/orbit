@@ -1,11 +1,10 @@
 import { CliInstallInput, CliInstallResult } from "../fleet/cli_install.ts";
-import { NETWORK_PROGRAM } from "../node/network_native_program.ts";
 import { z } from "npm:zod@4.4.3";
 export const RoleConvergeIntent = z.object({
     schema_version: z.literal(1).optional(),
     node_id: z.number().int().positive(),
     assignment_id: z.number().int().positive(),
-    role: z.enum(["database", "ingress", "websocket"]),
+    role: z.enum(["database", "ingress", "websocket", "app-prod"]),
     created: z.boolean(),
     prerequisites: z.object({
         packages: z.array(z.string()),
@@ -61,13 +60,20 @@ const ObserverDelivery = z.object({
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 
+export const observerHomePolicy = {
+    protected_prefixes: ["/home/", "/root/"],
+    protection: "ProtectHome=tmpfs",
+    binding: "BindReadOnlyPaths=-",
+};
 /** The same checkout access policy as NodeAgentSshExecutor, resolved from the observed account. */
 export function observerFiles(raw: unknown) {
     const args = ObserverFilesInput.parse(raw);
     const root = args.apps_root ?? args.home + "/apps";
-    const access = "ProtectHome=tmpfs" +
-        (root.startsWith("/home/") || root.startsWith("/root/")
-            ? "\nBindReadOnlyPaths=-" + root
+    const access = observerHomePolicy.protection +
+        (observerHomePolicy.protected_prefixes.some((prefix) =>
+                root.startsWith(prefix)
+            )
+            ? "\n" + observerHomePolicy.binding + root
             : "");
     return ObserverFiles.parse({
         configuration: args.configuration,
@@ -85,7 +91,7 @@ type Context = {
 /** Read and shape public assets only. All effects run in official SSH steps. */
 export const behavior = {
     type: "@nckrtl/node-role-converge-command",
-    version: "2026.11.01.3",
+    version: "2026.11.01.4",
     resources: {
         cli: {
             schema: CliInstallResult,
@@ -179,16 +185,6 @@ export const behavior = {
                 return result;
             },
         },
-        dns_result: {
-            description: "Decode canonical DNS repair; refusals are failures",
-            arguments: z.object({ stdout: z.string() }).strict(),
-            execute: async (args: { stdout: string }, ctx: Context) => {
-                z.object({}).strict().parse(JSON.parse(args.stdout));
-                const result = { ready: true, changed: true };
-                await ctx.writeResource("result", "result", result);
-                return result;
-            },
-        },
         cli_result: {
             description: "Decode the canonical public CLI outcome",
             arguments: z.object({ stdout: z.string() }).strict(),
@@ -198,30 +194,6 @@ export const behavior = {
                 return result;
             },
         },
-        dns: {
-            description: "Bind only the canonical peer DNS repair action",
-            arguments: z.object({
-                dns_server: z.ipv4(),
-                public_key: z.string().regex(/^[A-Za-z0-9+/]{43}=$/),
-                domains: z.array(z.string().regex(/^[a-z0-9.-]+$/)),
-            }).strict(),
-            execute: async (args: unknown, ctx: Context) => {
-                const message = {
-                    name: "wireguard.repair-peer-dns",
-                    input: args,
-                };
-                const result = {
-                    script_body: NETWORK_PROGRAM.replace(
-                        "message=json.loads(raw)",
-                        "message=json.loads(" +
-                            JSON.stringify(JSON.stringify(message)) + ")",
-                    ),
-                };
-                await ctx.writeResource("assets", "assets", result);
-                return result;
-            },
-        },
-
         observer_delivery: {
             description:
                 "Prove the canonical observer delivery matches the admitted pin",

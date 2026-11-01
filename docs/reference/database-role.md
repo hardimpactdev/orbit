@@ -7,6 +7,8 @@ covers:
 
 # Database role
 
+Database role convergence uses the shared native role contribution on the Swamp control Node. Official SSH reaches the Database Node using its recorded host keys. Public assets resolve once; account inspection, pinned observer delivery and prerequisites each run as one script-file phase under an execution timeout. Every native step has a queue timeout. The terminal contribution records named phase outcomes, and observer, peer DNS and CLI failures remain explicit follow-ups. No Swamp worker is required on the Database Node.
+
 The `database` role makes sure a Node can run Docker. It marks the Node as a host for shared database Processes. The role owns no database container: shared MySQL or Postgres containers are Node [Processes](/reference/processes-and-schedules). A Node without this role can still run such a Process when Docker is present. The [database connection](/reference/database-connections) registry does not need the role either.
 
 ## Add and converge
