@@ -2,8 +2,12 @@
 import copy
 import importlib.util
 import ipaddress
+import os
+import stat
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).parent / 'scripts/allowlist.py'
 spec = importlib.util.spec_from_file_location('allowlist', SCRIPT)
@@ -141,6 +145,27 @@ class AllowlistTest(unittest.TestCase):
         module.converge(value)
         self.assertEqual([row['source'] for row in self.ufw.rows[:3]], ['0.0.0.0/1', '128.0.0.0/1', 'Anywhere'])
         self.assertEqual([row['to'] for row in self.ufw.rows[:3]], ['7297:7299/udp'] * 3)
+
+
+    def test_lock_is_created_root_style_0600_and_a_loose_or_linked_lock_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(module, 'LOCK_UID', os.getuid()):
+            lock = Path(directory) / 'orbit-firewall.lock'
+            with mock.patch.object(module, 'LOCK', str(lock)):
+                previous = os.umask(0o022)
+                try:
+                    with module.transaction_lock():
+                        pass
+                finally:
+                    os.umask(previous)
+                self.assertEqual(stat.S_IMODE(lock.stat().st_mode), 0o600)
+                lock.chmod(0o644)
+                with self.assertRaisesRegex(RuntimeError, 'firewall.lock_failed'), module.transaction_lock():
+                    pass
+                lock.unlink()
+                lock.symlink_to(Path(directory) / 'elsewhere')
+                with self.assertRaisesRegex(RuntimeError, 'firewall.lock_failed'), module.transaction_lock():
+                    pass
+                self.assertFalse((Path(directory) / 'elsewhere').exists())
 
 
 if __name__ == '__main__':

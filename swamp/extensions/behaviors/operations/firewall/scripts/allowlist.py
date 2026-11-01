@@ -1,10 +1,17 @@
 """Converge one comment-owned ordered UFW source allowlist on the target Node."""
+import contextlib
 import fcntl
 import ipaddress
 import json
+import os
 import re
+import stat
 import subprocess
 import sys
+
+# The Route firewall program shares this lock and refuses any file that is not root-owned 0600.
+LOCK = '/run/lock/orbit-firewall.lock'
+LOCK_UID = 0
 
 
 def command(args):
@@ -122,6 +129,21 @@ def converge(intent):
     return {'backend': 'active'}
 
 
+@contextlib.contextmanager
+def transaction_lock():
+    parent = os.lstat(os.path.dirname(LOCK))
+    if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != LOCK_UID or os.path.islink(LOCK):
+        raise RuntimeError('firewall.lock_failed')
+    descriptor = os.open(LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != LOCK_UID or stat.S_IMODE(info.st_mode) != 0o600:
+            raise RuntimeError('firewall.lock_failed')
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
+
 def main():
     intent = json.loads(sys.argv[1])
     rule = intent['rule']
@@ -139,8 +161,7 @@ def main():
         if ipaddress.ip_network(source, strict=False).version != 4:
             raise RuntimeError('firewall.input_invalid')
     # UFW needs one host-level transaction for numbered deletes and insertion.
-    with open('/run/lock/orbit-firewall.lock', 'a', encoding='utf-8') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with transaction_lock():
         print(json.dumps(converge(intent)))
 
 
