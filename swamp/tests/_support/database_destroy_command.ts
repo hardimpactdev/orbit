@@ -4,6 +4,7 @@ import { behavior as planBehavior } from "../../extensions/behaviors/operations/
 export async function destroyDatabase(
     intent: Record<string, unknown>,
     password: string,
+    afterAction?: (action: string) => void,
 ) {
     const scratch = await Deno.makeTempDir({ prefix: "orbit-destroy-effect-" });
     let plan = "{}";
@@ -38,6 +39,7 @@ export async function destroyDatabase(
         }
         const result = JSON.parse(stdout);
         if (!output.success) throw result;
+        afterAction?.(name);
         return result;
     };
     let selected: { databases: string[]; users: string[] } | undefined;
