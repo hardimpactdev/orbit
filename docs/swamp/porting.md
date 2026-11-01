@@ -5,7 +5,7 @@ description: "Steps, template, native mapping and anti-patterns for porting a le
 
 # Port a kind to Swamp
 
-Start every kind PR from this page. Review every kind PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, native workflow and old executor deletion together. Agents load it through the [swamp-port skill](https://github.com/hardimpactdev/orbit/blob/main/.claude/skills/swamp-port/SKILL.md). Lane 26 owns this page and adds a lesson after every merged port.
+Start every kind PR from this page. Review every kind PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, native workflow and old executor deletion together. Agents load it through the [swamp-port skill](https://github.com/hardimpactdev/orbit/blob/main/.claude/skills/swamp-port/SKILL.md). Lane 26 owns this page and adds a lesson after every merged port; the per-PR detail is in [Swamp port retros](/swamp/porting-retros).
 
 ## Translate a legacy command
 
@@ -39,21 +39,13 @@ inputs:
     kind: {type: string, enum: [REPLACE_KIND]}
     intent:
       type: object
-      properties:
-        start_tag: {type: string, minLength: 1}
-        public_value: {type: string}
+      properties: {start_tag: {type: string, minLength: 1}, public_value: {type: string}}
       required: [start_tag, public_value]
       additionalProperties: false
     execution_secrets:
       type: object
       properties:
-        credential:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^REPLACE_KEY_PATTERN$'}
-          required: [vault, key]
-          additionalProperties: false
+        credential: {type: object, required: [vault, key], additionalProperties: false, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^REPLACE_KEY_PATTERN$'}}}
       required: [credential]
       additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -132,13 +124,19 @@ The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A 
 | Run budget | Set it from the measured p95 with headroom, not a guess. PLAN sets the `instance.create` policy: under 10 s, budget 60 s. That is a target, not measured proof. |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | Phase timeout | Each phase script runs under coreutils `timeout <phase budget>`, inside `run:` or as the first `@swamp/ssh` `argv` items. |
-| `queueTimeout` | Every step gets one, so it fails fast when no worker is free. Set it on the workflow so every step inherits it. F8 replaces the guide's inherit-600 s rule. |
+| `queueTimeout` | Every step gets one, so it fails fast when no worker is free. Set it on the workflow so every step inherits it. Guide rule 6 follows F8 here. |
+
+## Prove the kind (F10)
+
+A kind whose behavior changes merges only with a receipt from `bin/swamp-proof <kind>`. It creates two disposable task VMs on shark. The control VM runs pinned official Swamp and official extensions with a throwaway datastore and vault, and loads the PR branch's `swamp/`. The target VM plays the Node and is reached over `@swamp/ssh`, as 209 reaches Nodes. The command runs the kind with real intent inputs, runs the F9 parity tests, measures phase timings against F8, writes the receipt to the PR and destroys both VMs.
+
+A proof that loads `swamp/` into production serve or logs in to 209 is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior, even when the PR title says "retire" (#2257, #2259). Only deletion, docs and test PRs fix forward. A PR that fixes a live user-facing outage may merge without a receipt if it says so; the extensions lane then proves it live right after the load.
 
 ## Keep steps few
 
 Step count is the dominant cost of a run: op 6639 took 957 s for 4.6 s of SSH work. Until the extensions lane reports the cause, one script per Node per phase does the reads, precondition checks, writes and result JSON. Never wrap an SSH call in TypeScript envelope and decode steps; #2261 reached 66 steps that way. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. A typed result step returns `{stdout}` itself, with no `printf` step after it. Resolve assets once, outside `forEach`.
 
-Count the native steps of a typical run against the legacy calls. More than about two steps per legacy call needs a written reason in the PR, and each extra step names the Node change or guard it serves. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. This follows PLAN F9 and "How a kind converts" item 2; guide rule 3 still says one action per step and needs a matching update.
+Count the native steps of a typical run against the legacy calls. More than about two steps per legacy call needs a written reason in the PR, and each extra step names the Node change or guard it serves. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. This follows PLAN F9 and "How a kind converts" item 2, which set guide rule 3 to "one action group is one step".
 
 ## Fan out over computed data
 
@@ -191,8 +189,7 @@ Use the native feature in the right column. Custom code is allowed only where th
 | A secret or input into a script on another Node | `@swamp/ssh` `exec` with `argv: [timeout, N, python3, -I, -c, <asset body>, <public args>]` and one whole `vault.get` on `stdin`. `env` uses `SendEnv`, which needs `AcceptEnv` and sudo `env_keep`; assume neither | [`@swamp/ssh`](https://github.com/swamp-club/swamp-extensions/tree/main/ssh) |
 | Script in a TypeScript string | Script file in manifest `additionalFiles`, resolved with `context.extensionFile`, or YAML `run: \|` | [additionalFiles](https://swamp-club.com/manual/reference/extensions/manifest#additionalfiles) |
 | File, package, unit or firewall writes over SSH | `@swamp/cfgmgmt` `file`, `systemd`, `firewall`, `exec`, behind a host-key pin preflight as [`firewall.direct`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-direct.yaml) does; else `@swamp/ssh` | [`@swamp/cfgmgmt`](https://github.com/swamp-club/swamp-extensions/tree/main/cfgmgmt) |
-| Progress, result or admission POSTs to the Gateway | Step outputs and terminal projection; native schedules with full intent through `SwampSchedulePublisher` | [Data access](https://swamp-club.com/manual/reference/data#cel-access), [Schedules](https://swamp-club.com/manual/reference/workflows#triggerschedule) |
-| Cancel flag polled by steps | Native `swamp workflow cancel`; steps honour `context.signal` | [Cancellation](https://swamp-club.com/manual/reference/workflows#execution-cancellation) |
+| Progress, result, admission or cancel traffic between steps and the Gateway | Step outputs and terminal projection; native schedules through `SwampSchedulePublisher`; native cancel, with steps honouring `context.signal` | [Schedules](https://swamp-club.com/manual/reference/workflows#triggerschedule), [Cancellation](https://swamp-club.com/manual/reference/workflows#execution-cancellation) |
 
 ## Anti-patterns
 
@@ -202,9 +199,9 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | --- | --- | --- |
 | `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `target: orbit-node-209`, then `@swamp/ssh` |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |
-| A many-action TypeScript behavior, an agent action call or port, a spawn wrapper, or TypeScript that rewrites a shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file (#2281) | One step per action group in native `command/shell` or `@swamp/ssh`; pass public input as argv after the body |
+| A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body |
 | `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read an earlier job's outputs, or fan out in a child workflow |
-| Dereferencing outputs of a failed or skipped step, or all-pairs `always` dependencies with a global failure guard | CEL fails with `No such key`; #2261 has about 35 edges on one step | Read `"x" in steps && steps.x.status`; chain jobs with `dependsOn` on `succeeded` |
+| Reading failed or skipped outputs, all-pairs `always` edges, the whole `${{ steps }}` map in a result step, or an echo step after it | CEL fails with `No such key`; #2261 and #2253 grew dozens of edges | Read `"x" in steps && steps.x.status` for the steps you need; chain jobs on `succeeded` |
 | Strict format checks on a third-party token | GitHub stateless tokens contain dots; the check refused a valid mint | Check only documented properties: length, scope, expiry |
 | A kind without a measured p95 and budget, or a non-default Swamp setting without a PLAN row | Runs wait for minutes, as op 6639 did; deviations hide from audit | [Set the time budget](#set-the-time-budget); record reason and removal condition in PLAN |
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault it reads; `vaults: []` when none is a convention |
@@ -218,11 +215,11 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 Continue ports in the approved shape while live admission proof is pending. Use this checklist for every kind PR and its review.
 
 - [ ] Follow the [translation steps](#translate-a-legacy-command) and avoid every [anti-pattern](#anti-patterns).
-- [ ] Keep the legacy phase order, or state the reason for each change. State native steps per legacy call; over about two needs a reason.
+- [ ] Keep the legacy phase order, or give a reason for each change. State the expanded step count of a typical run and the steps per legacy call.
 - [ ] Name the core feature and official extension checked. Use defaults, and record each deviation's measured reason and removal condition in PLAN.
 - [ ] Delete the old executor and everything only it used. Remove baseline rows in the last commit, after the last rebase.
 - [ ] Report Orbit and Swamp net lines separately. Keep the diff under GitHub's 20,000-line limit so the audit can read it.
-- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing kind attaches its F10 proof receipt from `bin/swamp-proof <kind>`. Without them the review fails.
+- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing kind attaches its [F10 receipt](#prove-the-kind-f10). Without them the review fails.
 
 Check the completed port and report what the evidence proves.
 
@@ -237,13 +234,16 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 
 | Source, newest first | Lesson |
 | --- | --- |
+| Retro #2248 | Legacy polled UpCloud until the VM started; a one-shot observe fails on real runs. Waiting for provider state is an open question with sub-orchestrator A. |
+| #2258 | Swamp rejects a grant pattern with a quantified group that holds `+` or `*`, such as `(?:-setup-[0-9]+)?`, at grant time. Expand to a flat alternation and run `bin/check-grant-patterns.ts`. |
+| #2259 | Name each `forEach` model from `self._index`, give `@swamp/ssh` `globalArgs.name` the same expression, and stay within 64 characters. |
+| #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
-| PLAN F10 | A behavior-changing kind merges only with a proof receipt: real Swamp on 209 against a disposable task VM, F9 parity tests and the F8 budget. |
-| PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, legacy edge cases carried over, legacy feature tests as parity tests. |
+| PLAN F10 (A, 2026-11-01) | `bin/swamp-proof` runs the kind on two shark task VMs with throwaway Swamp state; no production serve, no 209 login. Live-outage fixes merge first and get a live proof. |
+| PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
 | v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
 | Orchestrator, lane 27 diagrams, #2281 | Count native steps against legacy calls; over about two per call needs a reason. #2281 ran about 22 steps for about 6 calls, rewrote a script's source, and stopped after one failed item. |
-| Retro #2261, #2237, #2262, #2271 | TypeScript envelope and decode steps around each SSH call made 66- and 26-step workflows. A nonzero exit without `ignoreExitCode` lost #2271's `error_code`. |
+| Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, per-phase window asserts and one `exec` per command gave up to 15 steps per legacy call. |
 | Lane 9 create consult | A Node never returns a secret to the Gateway. Generate Gateway-owned secrets at admission; a step returns only public output, such as `.env.example` defaults. |
-| #2266 instance create | Refuse a precondition such as `instance.branch_in_use` before the first write, inside the action script since #2273. Accept documented token formats; GitHub stateless tokens contain dots. |
-| #2266, lane 5 and v2 review on e459 | Later steps read skipped outputs, and a nonzero `command/shell` exit drops all outputs. Use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |
+| #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |
