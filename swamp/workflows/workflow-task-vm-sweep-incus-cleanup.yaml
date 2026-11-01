@@ -1,0 +1,83 @@
+id: 173eb9d7-0388-4e4c-99de-39a1229c9201
+name: task-vm-sweep-incus-cleanup
+description: Native forEach cleanup of the selected immutable orphan inventory.
+vaults: []
+inputs:
+  type: object
+  properties:
+    scope:
+      type: object
+    resources:
+      type: array
+      items:
+        type: object
+    ssh_execution:
+      type: object
+  required:
+  - scope
+  - resources
+  - ssh_execution
+  additionalProperties: false
+jobs:
+- name: cleanup
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-sweep-input'
+      behaviorName: ${{ "swp-assets-"+run.id + "-"+string(self._index) }}
+      methodName: assets
+      inputs:
+        scope: ${{ inputs.scope }}
+        resource: ${{ self.resource }}
+    forEach:
+      item: resource
+      in: ${{ inputs.resources }}
+  - name: remove
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "swp-remove-"+run.id + "-"+string(self._index) }}
+      methodName: script
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["assets-"+string(self._index)].outputs.script_body }}
+      globalArgs:
+        name: ${{ "swp-host-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    forEach:
+      item: resource
+      in: ${{ inputs.resources }}
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "swp-result-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' ''{"cleaned":true}''
+
+          '
+    dependsOn:
+    - step: remove
+      condition:
+        type: succeeded
+queueTimeout: 60

@@ -1575,29 +1575,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/sweep_incus_host.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/incus",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/sweep.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/sweep.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/upcloud_image_api.ts",
       "rule": "custom-control",
       "count": 3,
@@ -1628,10 +1605,8 @@
     {
       "file": "extensions/behaviors/operations/task-vms/upcloud_sweep.ts",
       "rule": "custom-control",
-      "count": 4,
-      "evidence": [
-        "setTimeout"
-      ]
+      "count": 1,
+      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/task-vms/upcloud_sweep.ts",
