@@ -18,11 +18,19 @@ describe(OperationKinds::class, function (): void {
         expect(OperationKinds::InstanceTarget)->toMatch(OperationKinds::TargetTypePattern);
     });
 
-    it('discovers only native workflow declarations across domains', function (): void {
+    it('discovers native workflows and the two Gateway custody jobs across domains', function (): void {
         $definitions = OperationKinds::definitions();
+        $gatewayKinds = ['github.app_register', 'github.app_sync'];
 
-        expect($definitions)->toHaveKeys(['route.caddy_converge', 'database_server.create']);
+        expect($definitions)->toHaveKeys(['route.caddy_converge', 'database_server.create', ...$gatewayKinds]);
         foreach ($definitions as $kind => $definition) {
+            if (in_array($kind, $gatewayKinds, true)) {
+                expect($definition)->toBe(['executor' => 'gateway']);
+                expect(OperationKinds::executor($kind))->toBe('gateway');
+
+                continue;
+            }
+
             expect($definition)->toHaveKeys(['workflow', 'projection'])
                 ->not->toHaveKeys(['runs', 'children', 'completion_contract', 'execution']);
             expect(is_a($definition['projection'], DirectOperationProjection::class, true))->toBeTrue();
