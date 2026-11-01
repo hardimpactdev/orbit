@@ -3,7 +3,7 @@ name: "@nckrtl/project-orbit-website"
 version: 2026.10.28.1
 visibility: private
 license: MIT
-description: orbit-website maintenance configuration and schedules.
+description: orbit-website maintenance configuration.
 repository: https://github.com/hardimpactdev/orbit-swamp
 behaviors:
   - projects/orbit-website/mod.ts
@@ -11,9 +11,7 @@ include:
   - _lib/project_extension.ts
   - _lib/dependency_project_schema.ts
   - _lib/maintenance/policy_schema.ts
-workflows:
-  - workflow-project-orbit-website-routine.yaml
-  - workflow-project-orbit-website-detect.yaml
+workflows: []
 additionalFiles:
   - README.md
   - LICENSE

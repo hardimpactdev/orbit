@@ -1,0 +1,25 @@
+id: eefb6690-519c-4416-a89c-c43c1c34ec97
+name: project-routine
+description: Shared Project routine entrypoint; the Gateway selects the project input.
+reports:
+  skip: ["@swamp/workflow-summary"]
+inputs:
+  type: object
+  additionalProperties: false
+  required: [projectId]
+  properties:
+    projectId: {type: integer, minimum: 1}
+jobs:
+  - name: start
+    steps:
+      - name: routine
+        target: orbit-node-209
+        labels: {pool: migration, node: "209"}
+        task:
+          type: model_method
+          modelType: "@nckrtl/orbit-gateway"
+          modelName: orbit-gateway
+          methodName: schedule_project
+          inputs:
+            projectId: '${{ inputs.projectId }}'
+            mode: routine

@@ -52,6 +52,10 @@ export const behavior = {
   globalArguments: z.object({}), methods: { probe: {
     description: "Nested method from a placed coordinator", arguments: z.object({}),
     execute: async (_: unknown, ctx: { signal?: AbortSignal; queryData: (p: string) => Promise<unknown[]> }) => {
+      await callWorkerModel(ctx, {
+        modelType: "@nckrtl/dependency-scanner", name: "dependency-scanner-20",
+        method: "scan", arguments: { projectId: 20, runId: "native-host-proof" },
+      });
       const result = await callWorkerModel(ctx, {
         modelType: "@nckrtl/dependency-scanner", name: "dependency-scanner-21",
         method: "scan", arguments: { projectId: 21, runId: "coordinator-proof" },
@@ -118,10 +122,7 @@ export const behavior = {
                 'labels': {'pool': 'migration', 'node': '209'}, 'queueTimeout': 10, 'affinity': True,
                 'jobs': [{'name': 'proof', 'steps': [
                     {'name': 'remote', 'task': {'type': 'model_method', 'modelType': '@fixture/remote-refusal', 'modelName': 'refusal', 'methodName': 'probe'}},
-                    {'name': 'native', 'dependsOn': [{'step': 'remote', 'condition': {'type': 'succeeded'}}],
-                     'task': {'type': 'model_method', 'modelType': '@nckrtl/native-host-method', 'modelName': 'native-scan', 'methodName': 'project_scan',
-                              'inputs': {'projectId': 20, 'runId': 'native-host-proof'}}},
-                    {'name': 'coordinator', 'dependsOn': [{'step': 'native', 'condition': {'type': 'succeeded'}}],
+                    {'name': 'coordinator', 'dependsOn': [{'step': 'remote', 'condition': {'type': 'succeeded'}}],
                      'task': {'type': 'model_method', 'modelType': '@fixture/native-coordinator', 'modelName': 'coordinator', 'methodName': 'probe'}},
                     {'name': 'stage', 'dependsOn': [{'step': 'coordinator', 'condition': {'type': 'succeeded'}}],
                      'task': {'type': 'model_method', 'modelType': '@nckrtl/orbit-stage', 'modelName': 'stage-proof', 'methodName': 'report',

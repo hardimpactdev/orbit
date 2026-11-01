@@ -9,8 +9,6 @@ export const SWAMP_REPOSITORY =
   "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp";
 const HOME = "/home/orbit";
 const targets = {
-  project_scan: ["@nckrtl/dependency-scanner", "scan", 300],
-  project_routine: ["orbit-gateway", "schedule_project", 180],
   project_work: ["orbit-gateway", "project_work", 120],
   dependency_prs: ["dependency-pr-reader", "refresh", 120],
   package_admit: ["orbit-gateway", "admit_package", 180],
@@ -19,14 +17,6 @@ const targets = {
 } as const;
 export type HostAction = keyof typeof targets;
 const schemas = {
-  project_scan: z.object({
-    projectId: z.number().int().positive(),
-    runId: z.string().min(1).max(256),
-  }).strict(),
-  project_routine: z.object({
-    projectId: z.number().int().positive(),
-    mode: z.literal("routine"),
-  }).strict(),
   project_work: z.object({}).strict(),
   dependency_prs: z.object({}).strict(),
   package_admit: PackageTargetSchema,
@@ -46,16 +36,10 @@ export async function executeHostMethod(
     graceMs: 10_000,
   },
 ) {
-  const value: Record<string, unknown> = schemas[action].parse(input);
+  const value = schemas[action].parse(input);
   const [definition, method, seconds] = targets[action];
   await executeInvocation(
-    [
-      definition,
-      method,
-      ...(action === "project_scan"
-        ? [`dependency-scanner-${value.projectId}`]
-        : []),
-    ],
+    [definition, method],
     value,
     seconds,
     signal,
@@ -293,7 +277,7 @@ async function executeInvocation(
 
 export const behavior = {
   type: "@nckrtl/native-host-method",
-  version: "2026.10.30.2",
+  version: "2026.11.01.1",
   globalArguments: z.object({}),
   methods: Object.fromEntries(
     (Object.keys(targets) as HostAction[]).map((action) => [action, {
