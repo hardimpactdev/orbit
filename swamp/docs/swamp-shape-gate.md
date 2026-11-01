@@ -10,6 +10,8 @@ old rules. Changing current rules, limits or exclusions cannot admit new debt
 under the frozen rules. Actual debt removal and approved classification fixes do
 not require stale allowances.
 
+When native workflows replace an execution helper, remove the helper and its baseline entries after checking that no production import or registration uses it. Remove tests that exercise only that retired path; keep the native workflow tests that cover the supported behavior.
+
 One approved HTTP-only extraction has explicit source accounting: the unchanged
 `curlQuote`, `proxyHttpConfig` and `proxyGatewayRequest` declarations move from
 `operations/_lib/node-proxy.ts` to `node-proxy-http.ts`. The checker compares all

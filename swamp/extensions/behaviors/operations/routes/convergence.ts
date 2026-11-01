@@ -36,17 +36,3 @@ export const RouteIntent = z.object({
     public: z.boolean(),
     web_root: z.string().nullable(),
 });
-export function nativeRouteDnsGrace(signal?: AbortSignal) {
-    return new Promise<void>((resolve, reject) => {
-        signal?.throwIfAborted();
-        const abort = () => {
-            clearTimeout(timer);
-            reject(signal?.reason);
-        };
-        const timer = setTimeout(() => {
-            signal?.removeEventListener("abort", abort);
-            resolve();
-        }, 31000);
-        signal?.addEventListener("abort", abort, { once: true });
-    });
-}
