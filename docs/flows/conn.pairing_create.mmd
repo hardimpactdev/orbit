@@ -1,0 +1,91 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4, env_import vault pattern. docs/reference/conn.md#pairing-operations.
+  %% status: draft
+  %% command: none · Conn API (conn-pairing-create)
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane T3 icon=server pill=target tone=purple
+  participant CLI as Conn / MCP<br/>Conn app · MCP
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant T3 as T3 server<br/>T3 auth API
+  CLI->>GW: Pair with env-beast<br/>POST conn/…/env-beast/pairings
+  %%> Command:
+  %%> - `POST /api/v1/conn/environments/env-beast/pairings` from the Conn app on the phone
+  %%> - syntax: the MCP tool `conn-pairing-create` with `environment`
+  %%> Input:
+  %%> - the registered T3 server; the calling Node, such as `phone`, is who gets paired
+  %%> Not included:
+  %%> - there is no `orbit` command
+  Note over GW: Check the server<br/>task #5170 · session to vault
+  %%> Requirements:
+  %%> - the `conn` extension is on; the caller is an active Node; Conn needs no access grant
+  %%> - env-beast is registered and the Gateway's admin session there has not expired, else `conn.session_expired`
+  %%> What it does:
+  %%> - records pairing 7 with a unique client label, such as `phone via Orbit k3j9x0qa`
+  %%> - pushes the admin session to the Swamp vault as `conn-session-5170` after commit (R3)
+  %%> Why a run:
+  %%> - calling T3's API is an effect; the Gateway's only execution primitives are mint and sign
+  %%> Result:
+  %%> - task #5170 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-conn-pairing-create
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the T3 server URL, the client label, and the vault key names; never the session
+  GW-->>CLI: 202 Accepted<br/>task #5170
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller waits on the task and shows its progress; the run takes about a second
+  SW->>T3: Mint a pairing link<br/>POST /api/auth/pairing-token
+  %%> How:
+  %%> - one HTTPS request from 209, with the admin session from `vault.get`
+  %%> What it does:
+  %%> - asks T3 for a one-time pairing token with T3's administrative scopes and the admitted client label
+  Note over SW: Store the link in vault<br/>conn-pairing-url-5170
+  %%> What it does:
+  %%> - writes the `pairing_url` to the vault key `conn-pairing-url-5170`
+  %%> Not included:
+  %%> - the link never goes into step outputs, the run's result or a log
+  alt T3 returned a link
+    T3-->>SW: one-time token · 5 min
+    %%> Returns:
+    %%> - the token and its expiry
+    SW-->>GW: Run succeeded<br/>terminal event · expiry
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    %%> Returns:
+    %%> - only public metadata: the expiry
+    Note over GW: Read the link once<br/>empty the key · task done
+    %%> What it does:
+    %%> - reads `conn-pairing-url-5170` once, keeps the link encrypted on pairing 7, then overwrites the key with an empty value, because Swamp has no vault delete
+    %%> Result:
+    %%> - pairing 7 gets its issued and expiry times; task #5170 succeeds
+  else T3 refuses or no reply
+    T3--xSW: 401 or no answer
+    %%> When:
+    %%> - T3 refuses the admin session, cannot be reached, or answers with invalid data
+    SW--xGW: Run failed<br/>conn.* error_code
+    %%> The Gateway reads:
+    %%> - the failed step and its safe error code, such as `conn.session_rejected`
+    Note over GW: Mark pairing 7 failed<br/>task failed · ask again
+    %%> Result:
+    %%> - pairing 7 is marked failed; task #5170 fails
+    %%> On the T3 server:
+    %%> - a link minted before a lost reply stays unused and expires within minutes; that is harmless
+    %%> Retry:
+    %%> - ask again; it is a new task with a new label
+  end
+  loop wait with progress until terminal
+    CLI->>GW: operation:show #5170
+    %%> What it does:
+    %%> - waits on the task and shows each step label as progress
+    GW-->>CLI: progress, then pairing_url
+    %%> Returns:
+    %%> - the progress, and on success the `pairing_url` once; the Gateway then clears it from pairing 7
+    %%> Next:
+    %%> - the device opens the link right away and pairs; a second read gets 409
+  end
