@@ -134,7 +134,7 @@ A phase script may wait for external state, such as a VM started, an image ready
 | Item | Rule |
 | --- | --- |
 | Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live runs when they exist, otherwise native harness runs. State the sample size. |
-| Run budget | Set it from the measured p95 with headroom. Unmeasured: the longest successful native run times 1.5, never a flat 300 s. `instance.create` targets under 10 s, budget 60 s (policy, not proof). |
+| Run budget | Every kind gets a Gateway expiry, and a measured p95 with headroom wins. Without one, use 30 minutes until the first success, then the longest successful run times 1.5. `instance.create` has a 60 s budget. |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | Phase timeout | Each phase script runs under coreutils `timeout <phase budget>`, inside `run:` or as the first `@swamp/ssh` `argv` items. |
 | `queueTimeout` | Every step gets an explicit one (guide rule 6), never the serve's 600 s default. A workflow-level value reaches every step through the manual's resolution order. Keep it below the run budget. |
@@ -244,6 +244,6 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | PLAN F10, F12, F13, F14 | Port inside a versioned dev topology through `bin/swamp-proof`; the PR carries the receipt, which names the topology version. Topologies are built from Node roles. |
 | #2304 (B) | Legacy edge cases include values the Gateway rewrites before execution, such as setup macros. A runner that discards child output makes every failure unreadable. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
-| PLAN F8, F11, orchestrator rulings | Measured p95 per kind, else the longest successful run times 1.5. Topologies die after 60 minutes without a run (8 h at most); one-shot proof runs 45 minutes after creation. |
+| PLAN F8, F11, orchestrator rulings | Every kind gets an expiry: measured budget, else 30 minutes until the first success, then the longest successful run times 1.5. Topologies die after 60 minutes without a run (8 h at most). |
 | Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, window asserts and one `exec` per command gave up to about 20 steps per legacy call (#2253). #2248's one-shot observe regressed legacy polling. |
 | #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |
