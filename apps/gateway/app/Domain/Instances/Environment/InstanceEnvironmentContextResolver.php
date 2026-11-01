@@ -134,7 +134,7 @@ final readonly class InstanceEnvironmentContextResolver
                 [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved],
                 strict: true,
             )
-            || $environment !== 'production'
+            || ! in_array($environment, ['development', 'production'], true)
             || ! is_bool($sourceIsLaravel)
             || ! is_string($instance->provisioning_step)
             || ! str_starts_with($instance->provisioning_step, 'clone-')

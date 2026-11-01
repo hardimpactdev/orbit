@@ -9,21 +9,29 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Stores the native source result; no source inspection or completion contract. */
-final readonly class InstanceRegisterResult implements DirectOperationProjection
+final readonly class InstanceRegisterResult implements DirectOperationProjection, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct, private RecordEventBroadcaster $broadcaster) {}
 
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
+
     public function input(Operation $operation): array
     {
-        return $operation->input;
+        return ['intent' => [...$operation->input, 'kind' => $operation->kind, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))], 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation

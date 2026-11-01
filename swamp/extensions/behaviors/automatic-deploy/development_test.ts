@@ -26,6 +26,7 @@ function fixture() {
     requests: { method: string; path: string; body: unknown; key?: string }[] =
       [];
   const history: Row[] = [], starts: string[] = [];
+  const source = { head: B };
   let holder = false,
     lost = false,
     busy = false,
@@ -46,7 +47,7 @@ function fixture() {
     else if (path === "/api/v1/instances") data = listed;
     else if (path === "/api/v1/instances/7") data = instance;
     else if (path.endsWith("/deployments")) data = history;
-    else if (path.endsWith("/head")) data = { head: B };
+    else if (path.endsWith("/head")) data = source;
     else if (path.includes("/operations?")) {
       data = holder && path.endsWith("queued")
         ? [{ ...operation, target_type: "instance", target_id: 7 }]
@@ -72,7 +73,7 @@ function fixture() {
         (memory.get("development-7")?.pending as { key: string }).key,
         key,
       );
-      assertEquals(commit, B);
+      assertEquals(commit, source.head);
       if (busy) throw new PolicyError("operation.target_busy", "Busy", 110);
       starts.push(key);
       if (lost) throw new Error("Lost admission reply");
@@ -108,13 +109,14 @@ function fixture() {
       return Promise.resolve({ name });
     },
   };
-  const run = () => tickDevelopment(http, ctx, admissions, now);
+  const run = (at = now) => tickDevelopment(http, ctx, admissions, at);
   return {
     instance,
     listed,
     memory,
     requests,
     history,
+    source,
     starts,
     operation,
     run,
@@ -204,6 +206,62 @@ Deno.test("terminal work without history cannot authorize a new effect", async (
     100,
   );
 });
+Deno.test("interrupted development deploys settle, back off and re-admit the head", async () => {
+  const f = fixture();
+  await f.run();
+  Object.assign(f.operation, {
+    status: "interrupted",
+    error_code: "operation.native_failed",
+    result: { deployment_id: 1 },
+  });
+  f.history.push(failed(1));
+  await f.run();
+  assertEquals(f.memory.get("development-7")?.pending, null);
+  assertEquals(f.memory.get("development-7")?.result, "failed");
+  await f.run();
+  assertEquals(f.memory.get("development-7")?.result, "backing_off");
+  assertEquals(f.starts.length, 1);
+  await f.run("2026-10-31T05:10:00.000Z");
+  assertEquals(f.starts.length, 2);
+  assertEquals(f.starts[0] === f.starts[1], false);
+});
+
+Deno.test("interrupted development deploy without evidence backs off once then admits the current head", async () => {
+  for (const result of [null, {}]) {
+    const f = fixture();
+    await f.run();
+    Object.assign(f.operation, {
+      status: "interrupted",
+      error_code: "operation.native_failed",
+      result,
+    });
+    // An orphaned running history row is not terminal deployment evidence.
+    f.history.push({
+      ...failed(1),
+      status: "running",
+      commit: null,
+      finished_at: null,
+    });
+    await f.run();
+    assertEquals(f.memory.get("development-7")?.pending, null);
+    assertEquals(f.memory.get("development-7")?.result, "failed");
+    assertEquals(f.history[0].status, "running");
+    f.source.head = "c".repeat(40);
+    await f.run("2026-10-31T05:09:59.000Z");
+    assertEquals(f.memory.get("development-7")?.result, "backing_off");
+    assertEquals(f.starts.length, 1);
+    // Use a fresh policy invocation with persisted state, not an in-memory timer.
+    f.operation.status = "queued";
+    await f.run("2026-10-31T05:10:00.000Z");
+    assertEquals(f.starts.length, 2);
+    assertEquals(f.starts[1].endsWith(f.source.head), true);
+    assertEquals(f.starts[0] === f.starts[1], false);
+    await f.run("2026-10-31T05:11:00.000Z");
+    assertEquals(f.starts.length, 2);
+    assertEquals(f.memory.get("development-7")?.result, "deploying");
+  }
+});
+
 Deno.test("a definite start failure releases pending intent for the next scheduled admission", async () => {
   for (const code of ["swamp.start_refused", "swamp.start_unavailable"]) {
     for (const lost of [false, true]) {
@@ -262,6 +320,11 @@ Deno.test("an uncertain or executed failure without history retains pending inte
         error_code: "swamp.start_refused",
         attempts: 0,
         result: null,
+      },
+      {
+        status: "interrupted",
+        error_code: "operation.native_failed",
+        result: { deployment_id: 999 },
       },
       {
         status: "failed",

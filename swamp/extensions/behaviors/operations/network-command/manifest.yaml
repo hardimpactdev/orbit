@@ -1,0 +1,16 @@
+manifestVersion: 1
+name: '@nckrtl/network-command'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public WireGuard action assets and typed results; effects use official SSH on209.
+behaviors:
+  - operations/network-command/assets.ts
+additionalFiles:
+  - scripts/common.py
+  - scripts/prepare_key.py
+  - scripts/hub_peer.py
+  - scripts/peer_config.py
+  - scripts/apply_peer.py
+  - scripts/dns_inspect.py
+  - scripts/dns_persist.py

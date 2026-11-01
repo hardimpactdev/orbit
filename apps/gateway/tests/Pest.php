@@ -143,6 +143,8 @@ function deployment_api_fixture(): array
         'public_ssh_host' => '192.0.2.141',
         'wireguard_ip' => '10.44.0.141',
         'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519',
+        'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
     ]);
     $owner->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create([

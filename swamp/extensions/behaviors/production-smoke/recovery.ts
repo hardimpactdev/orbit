@@ -328,7 +328,7 @@ export function lifecycleMethod(
               !same(ControlRequest.strip().parse(op.input), life.redeploy) ||
               op.input.commit !== life.redeploy.expected.commit
             ) throw new Error("Redeploy identity changed.");
-            if (["failed", "cancelled"].includes(op.status)) {
+            if (["failed", "cancelled", "interrupted"].includes(op.status)) {
               await alert();
               return await save("assistance_required", op.error_code);
             }
@@ -451,7 +451,7 @@ export function lifecycleMethod(
             state.status = "pending";
           } else if (
             receipt.operation &&
-            !["succeeded", "failed", "cancelled"].includes(
+            !["succeeded", "failed", "cancelled", "interrupted"].includes(
               receipt.operation.status,
             )
           ) {

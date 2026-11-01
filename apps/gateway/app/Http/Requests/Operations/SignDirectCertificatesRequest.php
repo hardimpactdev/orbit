@@ -22,7 +22,7 @@ final class SignDirectCertificatesRequest extends OperationPeerRequest
         return [
             'run_id' => ['required', 'uuid'],
             'restoring' => ['sometimes', 'boolean:strict'],
-            'requests' => ['required', 'array', 'list', 'min:1', 'max:64'],
+            'requests' => ['required', 'array', 'list', 'min:1', 'max:256'],
             'requests.*' => ['required', 'array:node_id,scope,state,request_base64'],
             'requests.*.node_id' => ['required', 'integer:strict', 'min:1'],
             'requests.*.scope' => ['required', 'string', 'max:100', 'regex:/\A[a-z][a-z0-9-]*\z/D'],

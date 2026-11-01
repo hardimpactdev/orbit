@@ -103,7 +103,9 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
-`DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Core imports neither extension.
+`DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Core imports neither extension. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
+
+The issuer checks its admitted repository and current run before and after minting, returns only native vault descriptors, and revokes a fresh credential if authority changes. An omitted issuer keeps the fixed-grant mint policy. This adds no endpoint or private-input reader.
 
 `ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; the AI router tags its collector guard from its provider. The action receives all guards through `#[Tag]` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
 
@@ -188,3 +190,7 @@ Each plug-in point is a typed interface. It states what an extension may change 
 Routes and migrations load on every install. The Gateway caches its routes, and the OpenAPI document and the MCP tools are generated from them. Loading them from a database switch would make those artifacts and the schema depend on runtime state.
 
 An extension is not a Composer package, a separate process, or something to install at runtime. Nothing outside this repository installs one, so a package for each extension would add lock file and tooling churn for no gain.
+
+### Public captures at native termination
+
+A native family may declare `terminal_result.captures` beside its fixed terminal step. Each named capture selects one fixed job and step, and optionally one output field. The shared terminal reader includes only successful selected outputs from the same bound run. Existing terminal fields take precedence. This preserves public source and environment-key facts when cancellation skips the final aggregate. Private values remain in their named vault output; no family history reader or progress callback runs.

@@ -511,14 +511,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/firewall/direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/cli_install_program.ts",
       "rule": "custom-control",
       "count": 5,
@@ -533,43 +525,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/fleet/docker_migration_direct.ts",
-      "rule": "custom-control",
-      "count": 4,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/docker_migration_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/docker_migration_direct.ts",
-      "rule": "inline-script",
-      "count": 94,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/docker_migration_direct.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/docker_migration_direct.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/maintenance.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -581,20 +536,6 @@
       "file": "extensions/behaviors/operations/fleet/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
-      "rule": "agent-dynamic",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
-      "rule": "gateway-http",
-      "count": 2,
       "evidence": [
         "<unknown> <unknown>"
       ]
@@ -679,7 +620,7 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
       "rule": "inline-script",
-      "count": 241,
+      "count": 227,
       "evidence": []
     },
     {
@@ -710,16 +651,10 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
       "rule": "gateway-http",
-      "count": 5,
+      "count": 1,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_local.ts",
@@ -884,241 +819,6 @@
     {
       "file": "extensions/behaviors/operations/instance-environment/sync.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/children.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/clone_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/create_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_root.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_steps.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_system.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_teardown.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/destroy_teardown.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/mod.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setInterval",
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/production_home_system.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control",
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/production_home_system.ts",
-      "rule": "inline-script",
-      "count": 212,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/production_home_system.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
-      "rule": "secret-output",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/register_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/rename_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/session.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/session.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_archive.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/git",
-        "/usr/bin/python3",
-        "/usr/bin/tar"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_root.ts",
-      "rule": "private-material",
       "count": 1,
       "evidence": []
     },
@@ -1364,30 +1064,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/docker_migration_system.ts",
-      "rule": "custom-control",
-      "count": 13,
-      "evidence": [
-        "embedded-control",
-        "lock"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/docker_migration_system.ts",
-      "rule": "inline-script",
-      "count": 1216,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/docker_migration_system.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/enrollment_configure.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -1507,14 +1183,6 @@
       "rule": "inline-script",
       "count": 296,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/network_root.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/node/observer_install_system.ts",
@@ -1956,7 +1624,7 @@
     {
       "file": "extensions/behaviors/operations/routes/firewall-program.ts",
       "rule": "inline-script",
-      "count": 311,
+      "count": 260,
       "evidence": []
     },
     {
@@ -2092,111 +1760,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/driver.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/driver.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_runtime.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_runtime.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/sudo",
-        "/usr/bin/systemctl"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_runtime.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_runtime.ts",
-      "rule": "secret-argv",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "multi-action",
-      "count": 4,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo",
-        "/usr/bin/systemctl",
-        "incus"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "private-material",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
-      "rule": "secret-argv",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/guest_system.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/guest_system.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/incus",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/guest_system.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/guest_system.ts",
-      "rule": "secret-argv",
-      "count": 2,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/image_build_direct.ts",
       "rule": "agent-action",
       "count": 2,
@@ -2326,141 +1889,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/incus_direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/incus_local.ts",
-      "rule": "agent-action",
-      "count": 1,
-      "evidence": [
-        "incus.vm"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/incus_local.ts",
-      "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/lifecycle_intent_direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/lifecycle.ts",
-      "rule": "custom-control",
-      "count": 4,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/mod.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setInterval"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/model_keys_native.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/model_keys.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/model_keys.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> /v0/management/api-keys",
-        "<unknown> /v1/models"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/model_keys.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/native-fixture.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/native-fixture.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/pi_delivery.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/pi_native.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/pi_native.ts",
-      "rule": "inline-script",
-      "count": 272,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/provider_create.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/provider_create.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/provider_create.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/provider_incus.ts",
       "rule": "multi-action",
       "count": 3,
@@ -2471,20 +1899,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/provision_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/runtime.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/sweep_incus_host.ts",
       "rule": "multi-action",
       "count": 2,
@@ -2492,20 +1906,6 @@
         "/usr/bin/incus",
         "/usr/bin/sudo"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/sweep-native-fixture.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/sweep-native-fixture.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/task-vms/sweep.ts",
@@ -2581,14 +1981,6 @@
     },
     {
       "file": "extensions/behaviors/operations/tasks/cancellation.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/provision.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": [
@@ -2742,6 +2134,14 @@
       "evidence": []
     },
     {
+      "file": "workflows/workflow-group-fanout.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "groups/conflict-${{ self.conflict.workItem }}"
+      ]
+    },
+    {
       "file": "workflows/workflow-group-run.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -2758,32 +2158,6 @@
       "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-behavior",
-      "count": 4,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-implement.yaml",
-      "rule": "vault-placement",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "groups/conflict-${{ self.conflict.workItem }}"
-      ]
     },
     {
       "file": "workflows/workflow-instance-route-workload.yaml",
@@ -2804,32 +2178,6 @@
         "workload/served",
         "workload/served-assets",
         "workload/served-command"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-database-server-destroy.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "inspect/inspect-${{ self.member.slot }}"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-instance-destroy.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 2,
-      "evidence": [
-        "cleanup/cleanup-${{ self.member.node_id }}",
-        "databases/database-${{ self.work.key }}"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-instance-transfer.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 2,
-      "evidence": [
-        "recover-leaves/remove-candidate-certificates",
-        "retirement/retire-artifacts"
       ]
     },
     {
@@ -2859,6 +2207,24 @@
       "evidence": [
         "deletions/delete"
       ]
+    },
+    {
+      "file": "workflows/workflow-production-smoke.yaml",
+      "rule": "unknown-behavior",
+      "count": 4,
+      "evidence": []
+    },
+    {
+      "file": "workflows/workflow-production-smoke.yaml",
+      "rule": "unknown-workflow",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "workflows/workflow-stage-implement.yaml",
+      "rule": "vault-placement",
+      "count": 1,
+      "evidence": []
     },
     {
       "file": "workflows/workflow-task-check-ci.yaml",

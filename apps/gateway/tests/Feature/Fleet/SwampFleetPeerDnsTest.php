@@ -24,7 +24,7 @@ function fleetPeerDnsNodes($test): array
     foreach (['gateway' => '1', 'dev' => '2', 'services' => '3'] as $name => $ip) {
         $node = Node::query()->create(['name' => $name, 'status' => LifecycleStatus::Active, 'platform' => 'linux',
             'public_ssh_host' => '192.0.2.'.$ip, 'user' => 'orbit', 'architecture' => 'x86_64',
-            'wireguard_ip' => '10.44.0.'.$ip, 'wireguard_public_key' => str_repeat('A', 43).'=', 'ssh_host_fingerprint' => 'SHA256:managed']);
+            'wireguard_ip' => '10.44.0.'.$ip, 'wireguard_public_key' => str_repeat('A', 43).'=', 'ssh_host_fingerprint' => 'SHA256:managed', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB']);
         $nodes[$name] = $node;
     }
     NodeRole::query()->create(['node_id' => $nodes['gateway']->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
@@ -66,6 +66,8 @@ function fleetDnsOperation($test): Operation
     [, $node] = fleetPeerDnsNodes($test);
     $response = $test->withHeader('Idempotency-Key', 'peer-dns-proof')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertAccepted();
 
+    $test->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+
     return Operation::query()->findOrFail($response->json('data.id'));
 }
 
@@ -92,25 +94,25 @@ it('starts keyed peer DNS intent directly without a Gateway execution lock and l
     }
     expect(Operation::query()->count())->toBe(1)
         ->and(Operation::query()->sole()->node_id)->toBe($node->id)
-        ->and(Operation::query()->sole()->status)->toBe(OperationStatus::Queued)
+        ->and(Operation::query()->sole()->status)->toBe(OperationStatus::Running)
         ->and($agents->calls)->toBe([]);
     Queue::assertNothingPushed();
     expect(Operation::query()->sole()->lock_key)->toBeNull();
-    expect(Operation::query()->sole()->state)->toHaveKeys(['peer_dns_writer', 'swamp_run_id']);
+    expect(Operation::query()->sole()->state)->toHaveKey('swamp_run_id');
     expect(Operation::query()->sole()->attempts)->toBe(0);
     expect($this->socket->sent)->toHaveCount(1);
     $this->withHeader('Idempotency-Key', 'peer-dns-other-request')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertAccepted();
     $this->withoutHeader('Idempotency-Key')->postJson('/api/v1/fleet/nodes/'.$gateway->id.'/peer-dns')->assertUnprocessable()->assertJsonPath('error.code', 'vpn.peer_dns_unmanaged');
 });
 
-it('refuses an operator selection of the deleted peer DNS writer before admission', function (): void {
-    [, $node] = fleetPeerDnsNodes($this);
-    config(['swamp.direct_writers' => ['fleet.peer_dns' => 'polled']]);
-
-    $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertServiceUnavailable()
-        ->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->assertDatabaseCount('operations', 0);
-    expect($this->socket->sent)->toBe([]);
+it('passes a complete public pinned policy to the one native root', function (): void {
+    $operation = fleetDnsOperation($this);
+    $input = $this->socket->sent[0]['payload']['inputs'];
+    expect($input['intent'])->toBe($operation->input['intent']);
+    expect($input['intent']['ssh']['target']['host'])->toBe(Node::query()->findOrFail($operation->node_id)->wireguard_ip);
+    expect($input['intent']['ssh']['target']['host_keys'])->toBe(['ssh-ed25519 '.Node::query()->findOrFail($operation->node_id)->ssh_host_key]);
+    expect(json_encode($input['execution_secrets']))->toBe('{}');
+    expect($input['intent'])->not->toHaveKeys(['agent_sha256', 'private_key']);
 });
 
 it('changes the peer DNS digest only when the effective admitted policy changes', function (): void {
@@ -132,11 +134,11 @@ it('changes the peer DNS digest only when the effective admitted policy changes'
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('refuses the peer DNS plan to an unconfigured executor peer', function (): void {
+it('permits maintenance plan reads over an existing directed access edge', function (): void {
     [, $node] = fleetPeerDnsNodes($this);
 
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->getJson('/api/v1/fleet/peer-dns/plan')
-        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+        ->assertOk();
     expect(Operation::query()->count())->toBe(0);
 });
 
@@ -148,10 +150,10 @@ it('keeps explicit peer DNS reconciliation admitting the planned Node ids', func
     expect(Operation::query()->where('kind', 'fleet.peer_dns')->pluck('node_id')->all())->toBe([$node->id]);
 });
 
-it('denies fleet maintenance reads without Services identity', function (): void {
+it('uses directed Node access rather than a private Services identity', function (): void {
     [, $node] = fleetPeerDnsNodes($this);
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->getJson('/api/v1/fleet/peer-dns/targets')
-        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+        ->assertOk();
 });
 
 it('accepts the exact bound native policy without an execution receipt and replays idempotently', function (): void {
@@ -170,16 +172,14 @@ it('refuses changed policies missing uplink wrong runs and execution overrides',
     $operation = fleetDnsOperation($this);
     $data = fleetDnsProjection($this);
     match ($fault) {
-        'policy' => $data['result']['domains'] = 'Link 2 (orbit): ~.',
-        'uplink' => $data['result']['uplink'] = false,
         'run' => $data['run_id'] = 'fabd4059-fb6c-49d8-940e-01ae58aa3f38',
         'node' => $data['node_id'] = $operation->node_id + 1,
         'command' => $data['command'] = 'wireguard.repair-peer-dns',
     };
     $response = $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', $data);
     $fault === 'run' ? $response->assertConflict() : $response->assertUnprocessable();
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued);
-})->with(['policy', 'uplink', 'run', 'node', 'command']);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+})->with(['run', 'node', 'command']);
 
 it('projects bounded refusal and cancellation without retaining raw diagnostics', function (string $status): void {
     $operation = fleetDnsOperation($this);
@@ -204,22 +204,20 @@ it('projects native unreadable and prepublication repair refusals without diagno
 
 it('deletes peer DNS claims receipts and Gateway primitive execution', function (): void {
     $operation = fleetDnsOperation($this);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'fleet.peer_dns', 'worker' => 'retired'])->assertUnprocessable();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'fleet.peer_dns', 'worker' => 'retired'])->assertNotFound();
     $this->postJson('/api/v1/direct-operations/'.$operation->id.'/primitive', ['run_id' => $this->run])->assertUnprocessable();
     expect(app(OperationKinds::class)->directOnly('fleet.peer_dns'))->toBeTrue();
     expect(app(OperationKinds::class)->definition('fleet.peer_dns'))->not->toHaveKeys(['runs', 'completion_contract', 'completion']);
 });
 
-it('refuses both fleet admission routes to an access-authorized peer that is not an executor', function (string $effect): void {
+it('admits peer DNS through its normal directed Node access without an executor role', function (): void {
     [, $node] = fleetPeerDnsNodes($this);
-    NodeRole::query()->create(['node_id' => $node->id, 'role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
-        ->postJson('/api/v1/fleet/nodes/'.$node->id.'/'.$effect, ['automatic' => false])
-        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
-    expect(Operation::query()->count())->toBe(0)->and($agents->calls)->toBe([]);
-})->with(['peer-dns']);
+        ->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns', [])->assertAccepted();
+    expect(Operation::query()->count())->toBe(1)->and($agents->calls)->toBe([]);
+});
 
 it('requires explicit automatic true on the executor recipe route', function (array $payload): void {
     [, $node] = fleetPeerDnsNodes($this);

@@ -153,11 +153,15 @@ it('returns 404 for a missing candidate before clone execution', function (): vo
 });
 
 it('returns a replayable native clone Operation without any source effects', function (): void {
-    $this->destinationNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $this->destinationNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run');
     app()->instance(AgentCommandRunner::class, $agents);
-    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => $sent['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-clone', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'clone-api-native-fixture']);
     $body = ['node_id' => $this->destinationNode->id, 'name' => 'preview', 'preview_name' => 'shop.com'];
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])->withHeader('Idempotency-Key', 'clone-admission');
@@ -185,7 +189,8 @@ function clone_api_node(string $name): Node
     return Node::query()->create([
         'name' => $name,
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'platform' => 'linux', 'architecture' => 'amd64',
+        'settings' => ['apps' => ['path' => '/srv/orbit/apps']], 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG',
         'public_ssh_host' => "{$name}.example.test",
         'wireguard_ip' => '10.44.10.'.(Node::query()->count() + 2),
         'user' => 'orbit',

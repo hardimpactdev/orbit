@@ -70,7 +70,6 @@ function cancel_subtask(Task $group, TaskStatus $status, int $position = 1): Tas
 }
 
 beforeEach(function (): void {
-    bind_task_node_reachability();
     app(TaskExtensionState::class)->enable();
     $this->publisher = Mockery::mock(TaskPullRequestPublisher::class);
     $this->publisher->shouldNotReceive('publish', 'push', 'pushHandoff');

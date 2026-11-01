@@ -6,9 +6,11 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -21,6 +23,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
@@ -82,26 +86,30 @@ final readonly class TaskProvisionIntent
                 'task_workspace_routed' => false, 'task_workspace_owner_id' => $group->id,
                 'status' => InstanceState::Reserved, 'first_setup_pending' => true,
             ]);
-            $setup = ['instance_id' => $instance->id, 'project_id' => $project->id,
-                'environment' => 'development', 'list' => 'setup',
-                'execution' => ['variant' => 'checkout', 'user' => $node->user, 'directory' => $checkout->value, 'seed_path' => '', 'seed_commit' => ''],
-                'steps' => array_map(static fn ($step): array => ['name' => $step->name,
-                    'command_digest' => hash('sha256', $step->command), 'timeout_seconds' => $step->timeoutSeconds], $this->steps->ordered($project, LifecyclePhase::Setup))];
+            $values = app(LogRedactor::class)->valuesFor($instance);
+            $setup = array_map(function ($step) use ($values): array {
+                if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
+                    throw new ResourceOperationException('tasks.provision_refused', 'Setup commands must contain no credential values.', 422);
+                }
+                $command = $step->toArray();
+
+                return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
+            }, $this->steps->ordered($project, LifecyclePhase::Setup));
+            $copies = ValidatedData::object($input['execution_secrets']);
+            $git = app(RepositoryReadAccess::class)->for($project->repository_url, $project->source_access);
+            if (! $git->isEmpty()) {
+                $copies['git_authorization'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+                    'task-provision-git-'.$vm->id, $git->variables['GIT_CONFIG_VALUE_0']);
+            }
             $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
-                'project_id' => $project->id, 'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
-                'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $project->id],
-                'direct_provisioning' => ['instance_id' => $instance->id, 'project_id' => $project->id,
-                    'node_id' => $node->id, 'node_user' => $node->user, 'environment' => 'development',
-                    'user' => $node->user, 'checkout' => $checkout->value, 'application' => $checkout->value,
+                'project_id' => $project->id, 'eligible' => true,
+                'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
+                    'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
+                    'branch' => $instance->branch_override, 'default_branch' => $project->default_branch,
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
-                    'source' => ['repository' => $project->repository_url, 'checkout' => $checkout->value,
-                        'root' => $sourceRoot->value, 'user' => $node->user, 'prepare_id' => $instance->source_prepare_id, 'seed_repository' => null],
-                    'resolve' => ['instance_name' => $instance->name, 'default_branch' => $project->default_branch,
-                        'branch_override' => $instance->branch_override, 'seed_commit' => null, 'network' => true,
-                        'protocols' => config('orbit.git.checkout_protocols', ['https'])],
-                    'setup' => $setup, 'already_active' => false, 'retained_source' => null]];
-            $input['private_bindings'] = [...ValidatedData::object($input['private_bindings']), 'git_read' => ['owner_node_id' => $node->id, 'read_node_ids' => [$node->id], 'write_node_ids' => []]];
+                    'setup' => $setup], 'execution_secrets' => $copies,
+                'ssh_identity' => app(SwampSshExecutionInput::class)->identity()];
             $group->taskable()->associate($instance);
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 

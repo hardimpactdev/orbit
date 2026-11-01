@@ -24,6 +24,9 @@ final class SwampRunSubscriber
     /** @var array<string,int> */
     private array $requests = [];
 
+    /** @var array<int,true> One lookup per uncertain Operation in this observer, never a timer retry. */
+    private array $lookedUp = [];
+
     private float $connectionBackoff = 0.0;
 
     private float $connectedAt = 0.0;
@@ -49,7 +52,7 @@ final class SwampRunSubscriber
             return;
         }
         foreach (Operation::query()->whereIn('kind', $kinds)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
-            ->whereNotNull('state->swamp_run_id')->lazyById() as $operation) {
+            ->where(fn ($query) => $query->whereNotNull('state->swamp_run_id')->orWhere('error_code', 'swamp.start_uncertain'))->lazyById() as $operation) {
             $this->follow($operation->id);
         }
     }
@@ -68,8 +71,19 @@ final class SwampRunSubscriber
             return;
         }
         $definition = app(DirectOperation::class)->definition($operation->kind);
+        if ($definition !== null && app(DirectOperation::class)->usesNativeTerminal($operation)
+            && ! isset($operation->state['swamp_run_id']) && $operation->error_code === 'swamp.start_uncertain'
+            && ! isset($this->lookedUp[$operationId])) {
+            $this->lookedUp[$operationId] = true;
+            try {
+                app(SwampCommandStep::class)->recoverUnbound($operation);
+                $operation->refresh();
+            } catch (Throwable $exception) {
+                $this->log->warning('The native start lookup is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
+            }
+        }
         $run = $operation->state['swamp_run_id'] ?? null;
-        if (! isset($definition['terminal_result']) || ! is_string($run) || ! Str::isUuid($run)
+        if ($definition === null || ! app(DirectOperation::class)->usesNativeTerminal($operation) || ! is_string($run) || ! Str::isUuid($run)
             || ($this->following[$operationId]['run'] ?? null) === $run) {
             return;
         }

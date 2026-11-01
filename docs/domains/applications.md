@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*,InstanceLifecycle*,RegistrationLifecycleExecution,InstanceDatabaseIntent}.php
   - apps/gateway/app/Domain/Instances/Registration/**
-  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier}.php
   - apps/gateway/{app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php},database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/{Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php,Services/Git/**}
   - apps/agent/src/commands/{registration,registration_tests}.rs
@@ -24,7 +24,7 @@ This page follows an Instance from creation to removal. Each step links to the p
 | Create a development checkout | `instance:create` | [Create a development Instance](#create-a-development-instance) |
 | Adopt an existing checkout | `instance:register` | [Register an existing checkout](#register-an-existing-checkout) |
 | Run application commands | `instance:setup` | [Instance setup and teardown](/reference/instance-setup) |
-| Create a production copy | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
+| Clone development source | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
 | Deploy production code | `instance:deploy` | [Production release layout](/reference/deployments) |
 | Record a renamed branch or move its domain | `instance:rename` | [Record a renamed branch](#record-a-renamed-branch) |
 | Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
@@ -308,3 +308,7 @@ A Project knows its own dependency and cache folders. Copying only the root miss
 ### One application model
 
 The Instance is the only runnable application model. Orbit keeps no conversion tooling and no compatibility path for other models. Two models would double every lifecycle rule and every check.
+
+## Native source inspection
+
+Development registration and branch rename run from Node 209 through official SSH using captured checkout intent and pinned host keys. Git observations and environment-file protection are separate native steps. The Gateway records the terminal source result from the commits feed; steps do not read intent or report progress through callbacks. Registration adopts the checkout in place. Rename records a branch that is already checked out and never changes Git HEAD.

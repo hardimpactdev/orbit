@@ -22,7 +22,7 @@ class DirectConvergeNative(NativeTestCase):
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/node', 'node-worker', 'operations/routes', 'operations/certificates')
         target = self.repo / 'extensions/behaviors'
         (target / 'operations/fleet').mkdir()
-        for name in ['contract.ts', 'peer_dns_local.ts']:
+        for name in ['contract.ts']:
             shutil.copy(ROOT / 'extensions/behaviors/operations/fleet' / name, target / 'operations/fleet' / name)
         module = target / 'operations/node/converge_direct.ts'
         module.write_text('import {fixtureHttp, fixtureAction} from "./converge_direct_native_fixture.ts";\n' + module.read_text().replace('export const behavior = nodeConverge();', 'export const behavior = nodeConverge(fixtureAction, () => fixtureHttp);'))

@@ -2,6 +2,14 @@
   "version": 2,
   "principal": "user:orbit-gateway",
   "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^instance-(?:git-operation-[1-9][0-9]*|destroy-[1-9][0-9]*-teardown-[0-9]+)$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^instance-(?:git-operation-|create-environment-(?:input-|result-)|create-)[1-9][0-9]*(?:-setup-[0-9]+)?$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^instance-git-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^instance-clone-environment-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$", "actions": ["write", "read"]},
+
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-credentials-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-clone-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-upcloud-token$", "actions": ["write", "read"]},
@@ -22,6 +30,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-token-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-user-create-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-create-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-update-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
@@ -31,9 +40,11 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^bootstrap-identity-node-14$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^analytics-plausible-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^vault-sync-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]}
+    {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^task-provision-git-[1-9][0-9]*$", "actions": ["write", "read"]}
   ],
   "workflows": [
+    {"workflow": "operation-task-provision", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-credentials-reset", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-role", "actions": ["run", "read"]},
     {"workflow": "task-check-ci", "actions": ["run", "read"]},
@@ -129,25 +140,21 @@
     {"workflow": "operation-task-analyze", "actions": ["run", "read"]},
     {"workflow": "operation-task-check", "actions": ["run", "read"]},
     {"workflow": "operation-task-park", "actions": ["run", "read"]},
-    {"workflow": "operation-task-provision", "actions": ["run", "read"]},
     {"workflow": "operation-task-publish", "actions": ["run", "read"]},
     {"workflow": "operation-task-script", "actions": ["run", "read"]},
     {"workflow": "operation-task-turn", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-cache-fill", "actions": ["run", "read"]},
-    {"workflow": "operation-task-vm-enroll", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-image-build", "actions": ["run", "read"]},
-    {"workflow": "operation-task-vm-incus", "actions": ["run", "read"]},
-    {"workflow": "operation-task-vm-prepare-runtime", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-provision", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-resume", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-sweep", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-upcloud-image-build", "actions": ["run", "read"]},
-    {"workflow": "operation-task-vms", "actions": ["run", "read"]},
     {"workflow": "operation-tool-adopt-209", "actions": ["run", "read"]},
     {"workflow": "operation-tool-remove-209", "actions": ["run", "read"]},
     {"workflow": "operation-tool-write-209", "actions": ["run", "read"]},
     {"workflow": "operation-vault-direct", "actions": ["run", "read"]},
     {"workflow": "operation-vault-sync", "actions": ["run", "read"]},
-    {"workflow": "operation-websocket-registry", "actions": ["run", "read"]}
+    {"workflow": "operation-websocket-registry", "actions": ["run", "read"]},
+    {"workflow": "operation-task-vm-destroy", "actions": ["run", "read"]}
   ]
 }

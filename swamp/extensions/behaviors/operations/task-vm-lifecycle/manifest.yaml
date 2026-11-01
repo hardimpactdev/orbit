@@ -6,6 +6,8 @@ license: MIT
 description: Public lifecycle intent and provider result shaping; official SSH and native steps own effects.
 behaviors:
   - operations/task-vm-lifecycle/metadata.ts
+  - operations/task-vm-lifecycle/destroy.ts
+  - operations/task-vm-lifecycle/enrollment.ts
   - operations/task-vm-lifecycle/ssh_input.ts
 additionalFiles:
   - scripts/upcloud.py

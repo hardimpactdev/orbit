@@ -10,10 +10,10 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\DirectOperationWorkflowInput;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessInstallationBatch;
 use App\Domain\Routes\NativeRouteTransferPlan;
-use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -22,26 +22,21 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
-/** The native parent chooses execution order. These bounded callbacks only change domain state. */
-final readonly class NativeInstanceTransferProjection implements DirectOperationProjection, DirectOperationPublicView, DirectOperationWorkflowInput
+/** Stores the physical placement selected by the native terminal result, including later retirement failures. */
+final readonly class NativeInstanceTransferProjection implements DirectOperationProjection, DirectOperationPublicView, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct, private NativeRouteTransferPlan $routes) {}
 
-    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    public function native(Operation $operation): bool
     {
-        if (! in_array($operation->kind, ['instance.transfer', 'instance.transfer_rollback'], true)
-            || ! in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The Node is not an admitted transfer participant.', 403);
-        }
+        return true;
     }
 
-    public function workflowInput(Operation $operation): array
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
-        $source = app(ProcessInstallationBatch::class)->nativeInput($operation, 'source_installations');
-        $destination = app(ProcessInstallationBatch::class)->nativeInput($operation, 'destination_installations');
-
-        return ['intent' => ['source_processes' => $source['members'], 'destination_processes' => $destination['members']],
-            'execution_secrets' => [...$source['execution_secrets'], ...$destination['execution_secrets']]];
+        if (! in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
+            throw $this->conflict();
+        }
     }
 
     public function input(Operation $operation): array
@@ -52,13 +47,28 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
     public function publicInput(Operation $operation, int $callerNodeId): array
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
-        $transfer = InstanceTransfer::query()->findOrFail(ValidatedData::string($operation->input['transfer_id']));
-        $plan = ValidatedData::object($operation->input['direct_transfer']);
-        $plan['cutover'] = $transfer->cutover_at !== null;
-        $plan['completed'] = $transfer->completed_at !== null;
 
-        return [...$this->routes->publicInput($operation, $callerNodeId), 'direct_transfer' => $plan,
-            'process_runtime' => app(InstanceTransferProcesses::class)->input($operation, $callerNodeId)];
+        return ['direct_transfer' => $operation->input['direct_transfer'], 'process_runtime' => app(InstanceTransferProcesses::class)->input($operation, $callerNodeId)];
+    }
+
+    public function workflowInput(Operation $operation): array
+    {
+        $plan = ValidatedData::object($operation->input['direct_transfer']);
+        $publication = ValidatedData::object($operation->input['route_publication']);
+        $instance = Instance::query()->findOrFail($operation->target_id);
+        $processes = $copies = [];
+        foreach (['source', 'destination'] as $side) {
+            $batch = app(ProcessInstallationBatch::class)->nativeInput($operation, $side.'_installations');
+            $processes[$side] = array_map(static fn (array $member): array => [...$member,
+                'control_intent' => Arr::only(ValidatedData::object($member['intent']), ['control', 'ssh_execution']),
+                'stop_intent' => ['ssh_execution' => ValidatedData::object($member['intent'])['ssh_execution'],
+                    'control' => [...Arr::only(ValidatedData::object(ValidatedData::object($member['intent'])['control']), ['process_id', 'runtime', 'name', 'on_demand']), 'vite' => null]],
+                'secret_field' => 'node_'.ValidatedData::integer($member['node_id']).'_member_'.ValidatedData::integer($member['id'])], $batch['members']);
+            $copies = [...$copies, ...$batch['execution_secrets']];
+        }
+
+        return ['intent' => [...$plan, 'route_mutations' => $publication['route_mutations'], 'workloads' => $publication['workloads'], 'processes' => $processes],
+            'execution_secrets' => [...ValidatedData::object($publication['execution_secrets']), ...$copies]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -71,18 +81,11 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
             if ($transfer->instance_id !== $instance->id || $operation->node_id !== $transfer->source_node_id) {
                 throw $this->conflict();
             }
-            $result = Arr::only(ValidatedData::object($data['result'] ?? []), ['checkpoint', 'error_code', 'recovered']);
+            $result = Arr::only(ValidatedData::object($data['result'] ?? []), ['cutover', 'restored', 'transfer_id', 'error_code']);
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             $snapshot = ValidatedData::object($operation->input['route_transfer']);
-            if (! $operation->status->terminal() && $status === OperationStatus::Running) {
-                $checkpoint = $result['checkpoint'] ?? null;
-                if ($checkpoint === 'cutover' && $transfer->cutover_at === null) {
-                    if ($operation->cancel_requested_at !== null || $instance->node_id !== $transfer->source_node_id
-                        || $instance->checkout_path !== $transfer->source_path) {
-                        throw $this->conflict();
-                    }
-                    app(ScheduleTargetUseGuard::class)->assertInstanceStable($instance);
-                    app(NativeInstanceTransferIntent::class)->assertSupported($instance, $transfer->sqlite_source_path);
+            if (! $operation->status->terminal() && $status->terminal()) {
+                if (($result['cutover'] ?? false) === true && $transfer->cutover_at === null) {
                     app(InstanceTransferProcesses::class)->cutover($instance, $transfer, ValidatedData::object($operation->input['process_installations']));
                     $instance->update(['node_id' => $transfer->destination_node_id, 'name' => $transfer->destination_name,
                         'checkout_path' => $transfer->destination_path, 'source_layout' => InstanceSourceLayout::Checkout,
@@ -90,43 +93,25 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                         'vite_port' => DB::table('vite_port_assignments')->where('instance_id', $instance->id)->where('node_id', $transfer->destination_node_id)->value('port'),
                         'ssr_port' => DB::table('ssr_port_assignments')->where('instance_id', $instance->id)->where('node_id', $transfer->destination_node_id)->value('port')]);
                     $this->routes->cutover($snapshot);
-                    $transfer->update(['cutover_at' => now(), 'status' => InstanceTransferStatus::InProgress,
-                        'current_step' => InstanceTransferStep::Cutover, 'failed_step' => null, 'error_code' => null]);
-                } elseif ($checkpoint === 'rollback') {
-                    if ($transfer->cutover_at !== null) {
-                        throw $this->conflict();
-                    }
+                    $transfer->update(['cutover_at' => now(), 'current_step' => InstanceTransferStep::Cutover]);
+                }
+                if (($result['restored'] ?? false) === true && $transfer->cutover_at === null) {
                     $this->routes->rollback($snapshot);
-                    $transfer->update(['destination_route_id' => null, 'status' => InstanceTransferStatus::Failed,
-                        'current_step' => InstanceTransferStep::Reserved, 'recovery_evidence' => null]);
-                } elseif ($checkpoint === 'retire') {
-                    if ($transfer->cutover_at === null || $instance->node_id !== $transfer->destination_node_id) {
-                        throw $this->conflict();
-                    }
+                    $transfer->update(['destination_route_id' => null]);
+                }
+                if ($status === OperationStatus::Succeeded && $transfer->cutover_at !== null) {
                     $this->routes->retire($snapshot);
                     foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
                         DB::table($table)->where('instance_id', $instance->id)->where('node_id', $transfer->source_node_id)->delete();
                     }
-                } elseif ($checkpoint !== 'cutover') {
-                    throw $this->conflict();
-                }
-            }
-            if (! $operation->status->terminal() && $status === OperationStatus::Succeeded) {
-                if ($operation->kind === 'instance.transfer') {
-                    if ($transfer->cutover_at === null || $instance->node_id !== $transfer->destination_node_id) {
-                        throw $this->conflict();
-                    }
                     $transfer->update(['status' => InstanceTransferStatus::Completed, 'current_step' => InstanceTransferStep::Completed,
                         'completed_at' => now(), 'failed_step' => null, 'error_code' => null, 'recovery_evidence' => null]);
-                } elseif ($transfer->cutover_at !== null) {
-                    throw $this->conflict();
+                } else {
+                    $transfer->update(['status' => InstanceTransferStatus::Failed, 'error_code' => $data['error_code'] ?? $result['error_code'] ?? 'instance.transfer_failed']);
                 }
             }
-            if ($status->terminal()) {
-                $result = ['instance_id' => $instance->id, 'transfer_id' => $transfer->id,
-                    'node_id' => $instance->node_id, 'cutover' => $transfer->cutover_at !== null,
-                    ...Arr::only($result, ['error_code', 'recovered'])];
-            }
+            $result = ['instance_id' => $instance->id, 'transfer_id' => $transfer->id,
+                'node_id' => $instance->node_id, ...$result];
 
             return $this->direct->project($operation, $data, $result);
         });

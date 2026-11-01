@@ -58,7 +58,7 @@ final readonly class StartSwampRun
                 throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
             }
             $outcome = 'started';
-            if (isset($declaration['terminal_result'])) {
+            if (app(DirectOperation::class)->usesNativeTerminal($operation)) {
                 app(OperationBroadcaster::class)->changed($operation, true);
             }
         } catch (Throwable $exception) {
@@ -137,19 +137,24 @@ final readonly class StartSwampRun
 
     private function fail(Operation $operation, string $code): void
     {
-        DB::transaction(function () use ($operation, $code): void {
+        $uncertain = DB::transaction(function () use ($operation, $code): bool {
             $this->lock($operation);
             if ($operation->status->terminal()) {
-                return;
+                return false;
             }
             if ($code === 'swamp.start_uncertain') {
                 app(OperationStore::class)->change($operation, ['error_code' => $code]);
 
-                return;
+                return true;
             }
             app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                 'error_code' => $code, 'current_step' => null, 'failed_step' => null, 'lock_key' => null]);
+
+            return false;
         });
+        if ($uncertain && app(DirectOperation::class)->usesNativeTerminal($operation)) {
+            DB::afterCommit(fn () => app(OperationBroadcaster::class)->changed($operation, true));
+        }
     }
 
     private function lock(Operation $operation): void

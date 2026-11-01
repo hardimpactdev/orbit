@@ -335,7 +335,9 @@ export function failureMethod(
             ) throw new Error("Rollback receipt identity changed.");
             if (receipt.operation) {
               checkOp(receipt.operation);
-              if (["failed", "cancelled"].includes(receipt.operation.status)) {
+              if (["failed", "cancelled", "interrupted"].includes(
+                receipt.operation.status,
+              )) {
                 return await finish(
                   "assistance_required",
                   receipt.operation.error_code ??

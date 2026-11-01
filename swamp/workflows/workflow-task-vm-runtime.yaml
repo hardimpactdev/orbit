@@ -1,0 +1,573 @@
+id: ecba7071-63ee-4dbf-a293-b2d60c476a2e
+name: task-vm-runtime
+description: Install the pinned Pi artifact and configure its canonical Process via209 official SSH.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: runtime
+  target: orbit-node-209
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-pi-assets'
+      behaviorName: ${{ "vm-pi-assets-"+run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: prepare-guest-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "vm-runtime-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -m
+        - '0700'
+        - -p
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: copy-guest-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-task-vm-runtime-"+run.id }}
+        recursive: true
+        direction: to
+    dependsOn:
+    - step: prepare-guest-assets
+      condition:
+        type: succeeded
+  - name: inspect
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/pi_inspect.py" }}
+        - ${{ string(inputs.intent.task_vm_id) }}
+        - ${{ inputs.intent.runtime.pi_sha256 }}
+        sudo: true
+    dependsOn:
+    - step: copy-guest-assets
+      condition:
+        type: succeeded
+  - name: inspection
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-pi-assets'
+      behaviorName: ${{ "vm-pi-assets-"+run.id }}
+      methodName: inspection
+      inputs:
+        task_vm_id: ${{ inputs.intent.task_vm_id }}
+        sha256: ${{ inputs.intent.runtime.pi_sha256 }}
+        stdout: ${{ steps.inspect.outputs.stdout }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+  - name: prepare-local-artifact
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'install -d -m 0700 -- "$ORBIT_STAGE"
+
+          '
+        env:
+          ORBIT_STAGE: ${{ "/tmp/orbit-task-vm-runtime-"+run.id }}
+    dependsOn:
+    - step: inspection
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspection.outputs.current }}
+  - name: fetch-artifact
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-pi-source-"+run.id }}
+      methodName: copy
+      globalArgs:
+        name: ${{ "vm-pi-source-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.pi_artifact.ssh_execution.target.user }}
+          port: ${{ inputs.intent.pi_artifact.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.pi_artifact.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.pi_artifact.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.pi_artifact.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        src: ${{ inputs.intent.pi_artifact.path }}
+        dst: ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/pi.bin" }}
+        direction: from
+    dependsOn:
+    - step: prepare-local-artifact
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspection.outputs.current }}
+  - name: deliver-artifact
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/pi.bin" }}
+        dst: ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/pi.bin" }}
+        direction: to
+    dependsOn:
+    - step: fetch-artifact
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspection.outputs.current }}
+  - name: stage-artifact
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/pi_stage.py" }}
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/pi.bin" }}
+        - ${{ inputs.intent.runtime.pi_sha256 }}
+        sudo: true
+    dependsOn:
+    - step: deliver-artifact
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspection.outputs.current }}
+  - name: install
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/pi_install.py" }}
+        - ${{ string(inputs.intent.task_vm_id) }}
+        - ${{ inputs.intent.runtime.pi_sha256 }}
+        sudo: true
+    dependsOn:
+    - step: stage-artifact
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspection.outputs.current }}
+  - name: verify-artifact
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/pi_verify.py" }}
+        - ${{ string(inputs.intent.task_vm_id) }}
+        - ${{ inputs.intent.runtime.pi_sha256 }}
+        sudo: true
+    dependsOn:
+    - step: inspection
+      condition:
+        type: succeeded
+    - step: install
+      condition:
+        type: always
+  - name: trust
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/image_trust.py" }}
+        sudo: true
+        stdin: ${{ inputs.intent.certificate_json }}
+    dependsOn:
+    - step: verify-artifact
+      condition:
+        type: succeeded
+  - name: model-configuration
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/pi_model.py" }}
+        - ${{ inputs.intent.runtime.origin }}
+        - ${{ inputs.intent.models_json }}
+        stdin: ${{ vault.get(inputs.execution_secrets.model_key.vault,inputs.execution_secrets.model_key.key) }}
+    dependsOn:
+    - step: trust
+      condition:
+        type: succeeded
+  - name: bearer-file
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/pi_token.py" }}
+        stdin: ${{ vault.get(inputs.execution_secrets.pi_token.vault,inputs.execution_secrets.pi_token.key) }}
+    dependsOn:
+    - step: model-configuration
+      condition:
+        type: succeeded
+  - name: unit
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/install
+        - -D
+        - -m
+        - '0644'
+        - -o
+        - root
+        - -g
+        - root
+        - /dev/stdin
+        - ${{ inputs.intent.runtime.process.unit_path }}
+        stdin: ${{ inputs.intent.process_unit }}
+        sudo: true
+    dependsOn:
+    - step: bearer-file
+      condition:
+        type: succeeded
+  - name: reload
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - daemon-reload
+        sudo: true
+    dependsOn:
+    - step: unit
+      condition:
+        type: succeeded
+  - name: service
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - enable
+        - ${{ inputs.intent.runtime.process.unit_name }}
+        sudo: true
+    dependsOn:
+    - step: reload
+      condition:
+        type: succeeded
+  - name: restart
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - restart
+        - ${{ inputs.intent.runtime.process.unit_name }}
+        sudo: true
+    dependsOn:
+    - step: service
+      condition:
+        type: succeeded
+  - name: verify-process
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - is-active
+        - --quiet
+        - ${{ inputs.intent.runtime.process.unit_name }}
+        sudo: true
+    dependsOn:
+    - step: restart
+      condition:
+        type: succeeded
+  - name: probe
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - -c
+        - "import json\nimport sys\nimport urllib.request\nfrom pathlib import Path\nvalue=json.load(sys.stdin)\ntoken=Path('/home/orbit/.pi/agent/orbit-token').read_text().strip()\n\
+          request=urllib.request.Request(value['pi_url'].rstrip('/')+'/capabilities',headers={'Authorization':'Bearer\
+          \ '+token})\ntry:\n    with urllib.request.urlopen(request,timeout=10) as response:\n        if response.status!=200:raise\
+          \ ValueError('not ready')\nexcept Exception:\n    print('task_vm.resume_failed',file=sys.stderr)\n    raise SystemExit(1)\n\
+          print(json.dumps({'pi_ready':True}))\n"
+        stdin: ${{ inputs.intent.runtime_json }}
+        timeoutSec: 30
+    dependsOn:
+    - step: verify-process
+      condition:
+        type: succeeded
+  - name: receipt
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      methodName: execute
+      inputs:
+        run: '/usr/bin/python3 -B - <<''PYTHON''
+
+          import json
+
+          import os
+
+
+          print(json.dumps({"task_vm_id":int(os.environ["ORBIT_VM_ID"]),"guest_node_id":int(os.environ["ORBIT_GUEST_ID"]),"process_id":int(os.environ["ORBIT_PROCESS_ID"]),"ready":True}))
+
+          PYTHON
+
+          '
+        env:
+          ORBIT_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_GUEST_ID: ${{ string(inputs.intent.guest_node_id) }}
+          ORBIT_PROCESS_ID: ${{ string(inputs.intent.runtime.process.process_id) }}
+    dependsOn:
+    - step: probe
+      condition:
+        type: succeeded
+  - name: cleanup-guest
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-runtime-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id }}
+        sudo: true
+    dependsOn:
+    - step: receipt
+      condition:
+        type: always
+    - step: prepare-guest-assets
+      condition:
+        type: completed
+  - name: cleanup-local
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'rm -rf -- "$ORBIT_STAGE"
+
+          '
+        env:
+          ORBIT_STAGE: ${{ "/tmp/orbit-task-vm-runtime-"+run.id }}
+    dependsOn:
+    - step: receipt
+      condition:
+        type: always
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      methodName: execute
+      inputs:
+        run: '/usr/bin/python3 -B - <<''PYTHON''
+
+          import json
+
+          import os
+
+
+          print(json.dumps({"task_vm_id":int(os.environ["ORBIT_VM_ID"]),"guest_node_id":int(os.environ["ORBIT_GUEST_ID"]),"process_id":int(os.environ["ORBIT_PROCESS_ID"]),"ready":True}))
+
+          PYTHON
+
+          '
+        env:
+          ORBIT_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_GUEST_ID: ${{ string(inputs.intent.guest_node_id) }}
+          ORBIT_PROCESS_ID: ${{ string(inputs.intent.runtime.process.process_id) }}
+    dependsOn:
+    - step: receipt
+      condition:
+        type: succeeded
+    - step: cleanup-guest
+      condition:
+        type: succeeded
+    - step: cleanup-local
+      condition:
+        type: succeeded

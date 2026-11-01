@@ -14,18 +14,6 @@ export function localFixture(
   const call = (name: string, input: Record<string, unknown>, mutates = true) =>
     dispatch({ name, input, mutates, sudo: true });
   return {
-    inspectDevelopment: (home) =>
-      call("inspectDevelopment", home, false) as ReturnType<
-        DeploySourceLocal["inspectDevelopment"]
-      >,
-    resolveDevelopment: (home, input) =>
-      call("resolveDevelopment", { ...home, ...input }) as ReturnType<
-        DeploySourceLocal["resolveDevelopment"]
-      >,
-    checkoutDevelopment: (home, input) =>
-      call("checkoutDevelopment", { ...home, ...input }) as ReturnType<
-        DeploySourceLocal["checkoutDevelopment"]
-      >,
     prepareRelease: (home, input) =>
       call("prepareRelease", { ...home, ...input }) as ReturnType<
         DeploySourceLocal["prepareRelease"]

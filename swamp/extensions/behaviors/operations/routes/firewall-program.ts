@@ -251,62 +251,11 @@ def route(payload):
             if observed!=backend or not any(row['shape']==expected for row in rows): raise Refusal('firewall.verify_failed')
     else: raise Refusal('firewall.input_invalid')
     return dict(matches=True)
-def named_shape(payload):
-    name=payload['name']
-    if not isinstance(payload['node_id'],int) or isinstance(payload['node_id'],bool) or payload['node_id']<1 or not re.fullmatch(r'[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?',name): raise Refusal('firewall.input_invalid')
-    if payload['protocol'] not in ('tcp','udp') or payload['port']=='any': raise Refusal('firewall.input_invalid')
-    source=payload['source']
-    return normalized_shape(dict(comment=f"orbit:node:{payload['node_id']}:firewall:{name}",action=payload['action'],direction='in',source=source,destination='any',port=payload['port'],protocol=payload['protocol'],in_interface=None,out_interface=None,family=None if source=='any' else 'v6' if ':' in source else 'v4'))
-
-def same_named_shape(expected,observed):
-    return all(expected[key]==observed[key] for key in ('action','source','port','protocol'))
-
-def named_owned(rows,expected):
-    shapes=[];families=set()
-    for row in rows:
-        if row['comment']!=expected['comment']: continue
-        shape=row['shape']
-        if shape is None or shape['direction']!='in' or shape['destination']!='any' or shape['port']=='any' or shape['protocol']=='any' or shape['in_interface'] is not None or shape['out_interface'] is not None or shape['family'] in families: raise Refusal('firewall.rule_collision')
-        shapes.append(shape);families.add(shape['family'])
-    if len(shapes)>1 and any(not same_named_shape(expected,shape) for shape in shapes) or len(shapes)>(2 if expected['family'] is None else 1): raise Refusal('firewall.rule_collision')
-    return shapes
-
-def named_arguments(shape,remove=False,observed=False):
-    args=['delete'] if remove else ['prepend'] if shape['action']=='allow' else []
-    source=('::/0' if shape['family']=='v6' else '0.0.0.0/0') if observed and shape['source']=='any' else shape['source']
-    destination='::/0' if observed and shape['family']=='v6' else 'any'
-    return args+[shape['action'],'in','from',source,'to',destination,'port',shape['port'],'proto',shape['protocol'],'comment',shape['comment']]
-
-def named_change(args,code):
-    if ufw(args)[0]!=0: raise Refusal(code)
-
-def named_rule(payload):
-    expected=named_shape(payload)
-    if payload['operation'] not in ('converge','remove'): raise Refusal('firewall.input_invalid')
-    backend,rows=status()
-    if backend=='inactive': return dict(backend=backend)
-    if backend!='active': raise Refusal('firewall.status_failed')
-    owned=named_owned(rows,expected)
-    if payload['operation']=='remove':
-        if not owned: return dict(backend='absent')
-        exact=all(same_named_shape(expected,shape) for shape in owned)
-        named_change(named_arguments(expected if exact else owned[0],True,not exact),'firewall.remove_failed')
-        if named_owned(status()[1],expected): raise Refusal('firewall.remove_verify_failed')
-        return dict(backend='absent')
-    if ownership(rows,expected)=='exact': return dict(backend=backend)
-    if owned and not all(same_named_shape(expected,shape) for shape in owned):
-        named_change(named_arguments(owned[0],True,True),'firewall.reconcile_failed')
-    named_change(named_arguments(expected),'firewall.apply_failed')
-    backend,rows=status();named_owned(rows,expected)
-    if backend!='active' or ownership(rows,expected)!='exact': raise Refusal('firewall.verify_failed')
-    return dict(backend=backend)
-
 def main(payload):
     try:
         with transaction_lock():
             if payload['mode']=='rules': return rules(payload)
             if payload['mode']=='route': return route(payload)
-            if payload['mode']=='named': return named_rule(payload)
             raise Refusal('firewall.input_invalid')
     except Refusal as error: return dict(error_code=error.code)
     except (ValueError,TypeError,KeyError,OSError,UnicodeError): return dict(error_code='firewall.input_invalid')

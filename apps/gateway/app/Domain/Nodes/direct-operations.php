@@ -35,7 +35,8 @@ return ['node.worker_known_hosts' => [
 ], ...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
-    'private_material' => ['configuration' => 'node.vpn_configuration'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'network', 'step' => 'result'],
 ], 'node.agent_rekey' => [
     'workflow' => 'operation-node-agent-rekey',
     'writer_config' => 'swamp.direct_writers',

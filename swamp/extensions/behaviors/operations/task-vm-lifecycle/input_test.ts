@@ -121,3 +121,9 @@ Deno.test("provider input retains original VM and canonical209 SSH", () => {
     );
     assertThrows(() => ProviderInput.parse({ ...cloud, provider_id: null }));
 });
+
+Deno.test("inspect reports absence and running state without requesting mutation", () => {
+    assertEquals(observation(incus, "inspect", "[]"), {state:"absent",disk:null,change:false});
+    assertEquals(receipt(incus, "inspect", vm("Running")).running, true);
+    assertEquals(observation(incus, "inspect", vm("Running")).change, false);
+});

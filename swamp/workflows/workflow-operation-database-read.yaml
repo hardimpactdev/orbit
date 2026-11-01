@@ -96,12 +96,9 @@ inputs:
 jobs:
 - name: read
   target: orbit-node-209
-  labels: &id001
-    node: '209'
   steps:
   - name: assets
     target: orbit-node-209
-    labels: *id001
     writes: false
     task:
       type: behavior
@@ -112,7 +109,6 @@ jobs:
         intent: ${{ inputs.intent }}
   - name: directory
     target: orbit-node-209
-    labels: *id001
     writes: false
     allowFailure: true
     task:
@@ -142,7 +138,6 @@ jobs:
         - 1
   - name: copy
     target: orbit-node-209
-    labels: *id001
     writes: false
     allowFailure: true
     dependsOn:
@@ -166,7 +161,6 @@ jobs:
         recursive: true
   - name: prepared
     target: orbit-node-209
-    labels: *id001
     writes: false
     dependsOn:
     - step: copy
@@ -179,8 +173,6 @@ jobs:
       message: Database read command files unavailable.
   - name: sql
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: false
     allowFailure: true
     dependsOn:
@@ -222,8 +214,6 @@ jobs:
     guard: ${{ inputs.intent.driver == "sqlite" }}
   - name: sqlite
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: false
     allowFailure: true
     dependsOn:
@@ -266,8 +256,6 @@ jobs:
     guard: ${{ inputs.intent.driver != "sqlite" }}
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: assets
       condition:
@@ -301,8 +289,6 @@ jobs:
           : -1) }}'
   - name: cleanup
     target: orbit-node-209
-    labels: &id003
-      node: '209'
     guard: ${{ steps.result.outputs.exitCode != 0 }}
     allowFailure: true
     writes: true
@@ -338,7 +324,6 @@ jobs:
         - 1
   - name: accept_result
     target: orbit-node-209
-    labels: *id003
     dependsOn:
     - step: result
       condition:

@@ -14,7 +14,11 @@ covers:
 
 # Docker CE migration
 
-Migration is one native Swamp Operation (`fleet.docker_migrate`). Use `orbit node:migrate-docker <Node>` through the Gateway. Add `--dry-run` to read a plan, `--yes` for migration, or `--yes --restore-policies` after manual CE recovery. The SDK and API return an Operation; its result contains the plan or bounded final report. The CLI follows the Operation. Swamp runs the package transaction, Process reconciliation and final health checks on the owning Node. Private Process commands and environment use the shared private-material endpoint.
+Migration is one native Swamp Operation (`fleet.docker_migrate`). Use `orbit node:migrate-docker <Node>` through the Gateway. Add `--dry-run` to read a plan, `--yes` for migration, or `--yes --restore-policies` after manual CE recovery. The SDK and API return an Operation; its result contains the plan or bounded final report. The CLI follows the Operation.
+
+Swamp places every step on 209 and reaches the admitted Node through pinned official SSH. Inventory, restart-policy changes, container stops, image preservation, metadata backup, the package transaction, engine start, readiness, optional fallback, Process child workflows and the final check are separate native steps. The Gateway supplies public Process definitions at admission. It copies only their environments to the existing execution-input vault; native Process steps resolve those names and pass values through stdin.
+
+Admission uses the generic Operation target hold `docker_migrate:node:<id>`. It refuses a second migration root for that Node; terminal projection releases the hold. Other Nodes remain independent.
 
 The internal Gateway Artisan command records the same asynchronous intent. It returns the admitted Operation instead of a host report. The frozen agent remains unchanged and is not called for effects.
 
@@ -26,7 +30,7 @@ Nick runs this procedure. Beast has non-Orbit containers, including ofide, mailp
 
 1. Schedule downtime for every container. Verify independent backups of databases, named volumes and bind mounts. Keep a protected byte-for-byte copy of `/etc/docker/daemon.json`. Pause deployments and scheduled fleet maintenance.
 2. Run `php artisan node:migrate-docker Beast --dry-run` and follow the Operation.
-3. Resolve any refusal before the window. Dry-run reads the Node and checks registry access but writes no files, stops nothing and does not run apt update.
+3. Resolve any refusal before the window. Dry-run checks inventory and registry access. It stages public run scripts without creating migration state or changing the workload.
 4. Run `php artisan node:migrate-docker Beast --yes`. Migrate only one Node at a time. Run the Shark command after Beast passes its checks.
 5. Follow the Operation and check every container's final state in its JSON result. Verify application traffic, database contents, monitoring and DNS.
 6. On Beast, confirm `nvidia` appears in `docker info` and compare `/etc/docker/daemon.json` byte for byte with its saved copy.
@@ -37,15 +41,17 @@ Read the plan for Shark too. Review container names, recipe pins, source backups
 
 ## Safety and recovery
 
-The dry-run `space` report shows required archive/commit bytes, the 2 GiB apt margin, available bytes and whether they fit on the journal filesystem. Free enough space before starting. Migration refuses before disabling restart policies or stopping containers if the estimate does not fit.
+The plan reports `space.sufficient`. It checks the sizes of archives and commits, plus a 2 GiB APT margin, against free space on the inventory filesystem. Free enough space before starting. Migration refuses before disabling restart policies or stopping containers if the estimate does not fit.
 
-The command records complete Docker inspect documents for every container, image, network and volume in `/var/lib/orbit/docker-migration/inventory.json`, with a root-only directory and files. This includes environment secrets: never attach the journal to a task or copy it into logs. The public report exposes names, state and Process IDs, not inspect data. The journal pins the recipe identity; resume using the same checkout. Run the same command with `--yes` after a failure.
+The command records complete Docker inspect documents for every container, image, network and volume in `/var/lib/orbit/docker-migration/inventory.json`, with a root-only directory and files. This includes environment secrets: never attach the journal to a task or copy it into logs. The public report exposes names, state and Process IDs, not inspect data.
 
-The Gateway calls typed native commands: `docker.plan-migration`, `docker.prepare-migration`, `docker.restore-migration-policies`, and `docker.report-migration`. The agent owns inventory, package changes and the private recovery journal. The Gateway supplies recorded Process specs and reconciles Processes after preparation.
+The inventory pins the recipe and its original native-run identity. Shutdown image tags include that identity, so an older inventory cannot supply the new shutdown snapshot. An inventory without this identity refuses before effects; archive it only through the protected cleanup procedure. Inspect the failed native step, then use `swamp workflow resume operation-fleet-docker-migrate --run <run-id> --from <failed-step>` with the original source and inputs. Do not admit a second migration over an unsettled native root.
 
-Mutations run under the agent's transient systemd supervisor and shared package lock. Their time limit is one hour, including child processes and lock waits. Termination stops the whole control group. A timeout or lost result does not prove that the transaction completed. Check the `orbit-command-docker-*` unit with `systemctl` and `journalctl`, wait for it to exit, then resume with the same recipe. Resume repairs interrupted dpkg before retrying.
+Native history owns action ordering and recovery. The protected host inventory contains the original Docker configuration and retained image and metadata artifacts. It does not dispatch steps. The agent performs no migration action. Managed containers use the shared native Process installer as child workflows; no child Gateway Operations are created.
 
-The journal records each stage, including `swapping` before apt removes anything. Resume repairs interrupted dpkg configuration and dependencies before retrying the swap. Only loaded Docker and containerd units are stopped. Apt uses the normal locks, configuration and logs with recipe snapshot sources. It retains the original inventory and checks the current state rather than taking a new baseline. Do not delete the journal or run Docker prune.
+Official SSH owns command execution, timeout and cancellation. A lost result does not prove that an action completed. Inspect the native step and its host artifact before native resume. Package repair and installation remain one guarded APT transaction using the tool's own locks. No family supervisor, sleep loop or custom daemon retry runs.
+
+Native history records each action. The APT transaction writes its recovery marker before removing any package. Repeating that transaction repairs interrupted dpkg configuration and dependencies before retrying the swap. The native stop step names docker.service, docker.socket and containerd.service. A missing unit refuses that step. Apt uses the normal locks, configuration and logs with recipe snapshot sources. It retains the original inventory and checks the current state rather than taking a new baseline. Do not delete the journal or run Docker prune.
 
 The transaction replaces `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin` and any `docker-ce-rootless-extras` with `docker.io`, `containerd`, `docker-buildx` and `docker-compose-v2`. It pins Docker and containerd to the recipe, using authenticated recipe snapshot indexes. It also removes `docker-model-plugin` when installed and refuses unrelated package removals or downgrades. An apt simulation refuses removal of unrelated packages. Orbit removes Docker repository entries after writing byte-for-byte backups directly in `/etc/apt`, using the same helper as recipe source retirement. Mixed or unrecognized Docker source entries refuse. `/etc/docker/daemon.json` stays byte-for-byte unchanged, including the nvidia runtime.
 
@@ -53,7 +59,7 @@ Before the swap, the journal records the storage driver and effective storage ro
 
 The offline copy reads Docker container, image, volume and network metadata from the recorded Docker root and containerd metadata databases from the recorded containerd root while both daemons are stopped. `metadata_roots` in `inventory.json` maps the stable `metadata/docker` and `metadata/containerd` backup directories to their original restore destinations.
 
-After the swap, bounded daemon startup retries precede checks of the recorded Docker root and every image, container and volume. The command mounts each container layer with the changes API and starts and stops one recorded container with its restart policy disabled. All restart policies remain disabled until verification passes.
+After the swap, engine start and a single readiness inspection are separate steps. The inspection checks the recorded Docker root and every image, container and volume. Native steps mount container layers through the changes API. Separate start and stop steps probe one originally-running unmanaged container; a start refusal selects the explicitly approved fallback. All restart policies remain disabled until verification passes; a failed readiness check requires inspection and native resume.
 
 Engine startup failure or unreadable state refuses until the operator repeats the command with `--fallback`. This explicit choice selects a fresh Docker data root under the journal directory and a systemd drop-in. The journal stays at `/var/lib/orbit/docker-migration` so recovery can find it without a working engine. The drop-in uses `--data-root=<journal>/engine` and a private config copy in the journal with only `data-root` removed, avoiding a duplicate flag/config setting. The original daemon.json, Docker root and containerd directories are not renamed or deleted.
 
@@ -69,9 +75,9 @@ Changed non-Orbit writable layers are committed and saved once after a clean sto
 
 Fallback loads these archives before recreating containers. Orbit writable layers are disposable, but their readability is still checked with `/changes` after downgrade; their stored specs and data mounts are the recovery contract. The original image tags are restored locally.
 
-Orbit Processes are reconciled from the Gateway's stored specs. Containers that were stopped stay stopped; desired-running Orbit Processes restart. A partial recreate resumes by checking the already-created artifact against its inventory configuration. All original container names appear in the final report, with state and health. The report waits up to two minutes for starting health checks. Missing containers, incorrect running states, failed Process reconciliation or failed health checks fail the command.
+Orbit Processes are reconciled from the Gateway's stored specs. Containers that were stopped stay stopped; desired-running Orbit Processes restart. A partial recreate resumes by checking the already-created artifact against its inventory configuration. All original container names appear in the final report, with state and health. The report checks health once. A starting or unhealthy container fails this step; inspect it before native resume. Missing containers, incorrect running states, failed Process reconciliation or failed health checks fail the command.
 
-The command checks registry access before stopping when a pullable digest is available. It refuses foreign image platforms, unsupported mounts, Swarm, namespace sharing, links and auto-remove. Bind, named volume and tmpfs mounts are accepted. A refusal after stopping but before the swap restarts only containers that were running at inventory time, except an archive/commit failure: containers stay stopped so resuming can finish the same shutdown snapshot without committing it twice. It also refuses plugin volumes or logging, volume driver options and non-bridge custom networks.
+The command checks registry access before stopping when a pullable digest is available. It refuses foreign image platforms, unsupported mounts, Swarm, namespace sharing, links and auto-remove. Bind, named volume and tmpfs mounts are accepted. A failed step leaves the captured containers stopped for inspection and native resume. No family rollback supervisor starts a workload behind native history. It also refuses plugin volumes or logging, volume driver options and non-bridge custom networks.
 
 Inventory uses the CE engine's latest API. Nondefault settings outside the Ubuntu engine's API 1.52 contract refuse rather than disappearing during recreation. Fallback preserves non-Orbit writable layers in committed images; keep application data in volumes for independent backup. Final container states are reported on failure as well as success. Resume compares effective daemon defaults instead of treating omitted fields as drift.
 
@@ -99,7 +105,7 @@ Docker 29.7/29.8 and containerd 2.3 are newer than the recipe's Docker 29.1 and 
 
 There is no automatic engine rollback. Before the window, retain the installed CE package versions and obtain their deb files and dependencies independently, including each installed CE plugin and `docker-model-plugin` if present. Keep these debs in a dedicated restore directory with no unrelated packages. Keep the apt source backups, the metadata backup under the journal, and independent data backups. A metadata copy is not a backup of volume contents.
 
-If apt fails after removing CE, leave containers stopped and rerun the same recipe command with `--yes`. The `swapping` stage runs `dpkg --configure -a` and a simulated, guarded `apt-get -f install` before retrying the pinned install. This path does not need a working Docker socket. Do not remove the journal or restart services by hand during verification.
+If apt fails after removing CE, leave containers stopped and resume the original native `packages` step. Its transaction runs `dpkg --configure -a` and a simulated, guarded `apt-get -f install` before retrying the pinned install. This path does not need a working Docker socket. Do not remove the journal or restart services by hand during verification.
 
 If the downgraded engine cannot mount the recorded layers, review the failure states and run `php artisan node:migrate-docker Beast --yes --fallback` (or Shark). This starts a fresh engine and loads saved local images and committed layers. It never deletes original metadata or volume data.
 

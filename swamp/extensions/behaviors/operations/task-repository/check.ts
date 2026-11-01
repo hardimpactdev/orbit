@@ -259,7 +259,7 @@ export function finish(args: Record<string, unknown>) {
 /** Pure public check data and native asset paths. Commands and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         public: {
             description: "Public check observations",

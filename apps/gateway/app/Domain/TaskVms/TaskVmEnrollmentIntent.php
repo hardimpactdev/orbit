@@ -6,7 +6,6 @@ namespace App\Domain\TaskVms;
 
 use App\Actions\Processes\RecordProcessIntentAction;
 use App\Data\Processes\AddProcessData;
-use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationAdmission;
@@ -21,7 +20,6 @@ use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
-use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
@@ -89,61 +87,6 @@ final readonly class TaskVmEnrollmentIntent
                     'process' => [...$installation, 'agent_sha256' => $pin, 'retired' => null]],
             ];
         });
-    }
-
-    /** Admitted placement, references and private-field custody for this same native root.
-     * @return array<string,mixed>
-     */
-    public function privateInput(TaskVm $vm, int $rootNodeId, bool $providerCreate = false): array
-    {
-        $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'Enrollment requires its reserved guest Node.');
-        $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($query) => $query
-            ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
-        $issuerId = filter_var(config('dependency_detection.services_node_id'), FILTER_VALIDATE_INT);
-        $issuer = is_int($issuerId) ? Node::query()->find($issuerId) : null;
-        if ($issuer === null || $issuer->status !== LifecycleStatus::Active) {
-            throw new TaskVmException('operation.kind_unavailable', 'The native worker issuer is unavailable.', 503);
-        }
-        $network = app(VpnConfigurationRepository::class)->forPeer($node);
-        $hub = app(NodeWireGuardInput::class)->captureForTaskVm($node, $gateway);
-        $routerNodeId = $this->keys->ownerNodeId();
-        $host = $this->executionNode($vm);
-        $bindings = [];
-        foreach ([
-            'installation' => [$node->id, [$node->id], []],
-            'model_key' => [$node->id, [$gateway->id, $node->id], []],
-            'pi_token' => [$node->id, [$node->id], []],
-            'model_router' => [$routerNodeId, [$gateway->id], []],
-            'secret_hash' => [$node->id, [$host->id], [$host->id]],
-            'pi_artifact_file' => [$node->id, [$node->id], []],
-            'configuration' => [$network->server->id, [$gateway->id], []],
-            'first_visit' => [$node->id, [$host->id], []],
-            'provider_bootstrap' => [$node->id,
-                $providerCreate && $vm->provider === TaskVmProviderKind::UpCloud ? [$gateway->id] : [],
-                $providerCreate && $vm->provider === TaskVmProviderKind::UpCloud ? [$gateway->id] : []],
-        ] as $field => [$owner, $readers, $writers]) {
-            $bindings[$field] = ['owner_node_id' => $owner, 'read_node_ids' => array_values(array_unique($readers)), 'write_node_ids' => $writers];
-        }
-        $references = [];
-        foreach (['installation' => 'task_vm.installation', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token',
-            'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact',
-            'first_visit' => 'task_vm.first_visit'] as $field => $source) {
-            $references[$field] = ['$secret' => $source, 'id' => $vm->id];
-        }
-        $references['secret_hash'] = ['$secret' => 'node.agent_secret_hash', 'id' => $node->id];
-        $references['configuration'] = ['$secret' => 'node.vpn_configuration', 'id' => $network->server->id];
-        if ($providerCreate && $vm->provider === TaskVmProviderKind::UpCloud) {
-            $references['provider_bootstrap'] = ['$secret' => 'task_vm.provider_bootstrap', 'id' => $vm->id];
-        }
-
-        return [...$references, 'participant_node_ids' => array_values(array_unique([$rootNodeId, $host->id, $gateway->id, $issuer->id, $node->id, $network->server->id, $routerNodeId])),
-            'private_bindings' => $bindings, 'gateway_node_id' => $gateway->id, 'issuer_node_id' => $issuer->id,
-            'model_router_node_id' => $routerNodeId, 'model_origin' => $this->keys->origin(),
-            '_wireguard' => $hub,
-            'network' => ['server_public_key' => $network->serverPublicKey, 'endpoint' => $network->endpoint,
-                'address' => $network->peerAddress, 'subnet' => $network->subnet, 'dns_server' => $network->dnsServer, 'domains' => [$network->domain]],
-            'pi_artifact' => ['path' => $this->settings->piArtifactPath, 'sha256' => $this->settings->piArtifactSha256],
-        ];
     }
 
     private function reserveNode(TaskVm $vm): Node

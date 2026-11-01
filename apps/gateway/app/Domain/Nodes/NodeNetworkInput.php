@@ -22,6 +22,12 @@ final readonly class NodeNetworkInput
     /** @return array<string,mixed> */
     public function capture(Node $node, bool $rolelessOperator = false): array
     {
+        return [...$this->capturePublic($node, $rolelessOperator), 'agent_sha256' => app(AgentDelivery::class)->pin($node)];
+    }
+
+    /** @return array<string,mixed> */
+    public function capturePublic(Node $node, bool $rolelessOperator = false): array
+    {
         $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->sole();
         $subnet = Ipv4Subnet::from($this->vpn->subnet());
         $publicPath = rtrim(Config::string('orbit.home'), '/').'/wireguard/public.key';
@@ -33,7 +39,7 @@ final readonly class NodeNetworkInput
             throw $this->invalid();
         }
         $roleless = $rolelessOperator;
-        $snapshot = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => app(AgentDelivery::class)->pin($node), 'hub_id' => $hub->id, 'existing_key' => $node->wireguard_public_key, 'architecture' => $node->architecture,
+        $snapshot = ['schema_version' => 1, 'node_id' => $node->id, 'hub_id' => $hub->id, 'existing_key' => $node->wireguard_public_key, 'architecture' => $node->architecture,
             'peer' => ['server_public_key' => $publicKey, 'endpoint' => $endpoint, 'address' => $node->wireguard_ip.'/'.$subnet->prefixLength(),
                 'subnet' => $subnet->value(), 'dns_server' => $this->dns->server($node, $hub->wireguard_ip),
                 'domains' => $roleless ? [$this->vpn->domain()] : $this->dns->domains($node),

@@ -117,7 +117,7 @@ export async function ensureWorker(
     ) {
       throw new Error("worker operation identity differs");
     }
-    if (["failed", "cancelled"].includes(String(op.status))) {
+    if (["failed", "cancelled", "interrupted"].includes(String(op.status))) {
       if (op.error_code === "tasks.worker_enrollment_expired") {
         return await rotate(session, true);
       }

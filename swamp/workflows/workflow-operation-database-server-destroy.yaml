@@ -40,13 +40,10 @@ inputs:
 jobs:
 - name: prepare
   target: orbit-node-209
-  labels: &id001
-    node: '209'
   dependsOn: []
   steps:
   - name: assets
     target: orbit-node-209
-    labels: *id001
     guard: ${{ inputs.intent.process_id == null }}
     writes: false
     task:
@@ -63,7 +60,6 @@ jobs:
           on_demand: false
   - name: controls
     target: orbit-node-209
-    labels: *id001
     writes: false
     task:
       type: behavior
@@ -74,7 +70,6 @@ jobs:
         intent: ${{ inputs.intent }}
   - name: directory
     target: orbit-node-209
-    labels: *id001
     guard: ${{ inputs.intent.process_id == null }}
     allowFailure: true
     writes: false
@@ -105,7 +100,6 @@ jobs:
         - 1
   - name: copy
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: directory
       condition:
@@ -130,7 +124,6 @@ jobs:
         recursive: true
   - name: prepared
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: assets
       condition:
@@ -153,7 +146,6 @@ jobs:
       message: Database Process command files unavailable.
 - name: inspect
   target: orbit-node-209
-  labels: *id001
   dependsOn:
   - job: prepare
     condition:
@@ -161,7 +153,6 @@ jobs:
   steps:
   - name: inspect-${{ self.member.slot }}
     target: orbit-node-209
-    labels: *id001
     forEach:
       item: member
       in: ${{ steps.controls.outputs.controls }}
@@ -170,8 +161,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
-      globalArgs: *id002
+      behaviorName: ${{ "dbdi-" + run.id + "-" + string(self._index) }}
+      globalArgs:
+        <<: *id002
+        name: ${{ "dbdi-" + run.id + "-" + string(self._index) }}
       methodName: exec
       inputs:
         hosts: name:server
@@ -190,7 +183,6 @@ jobs:
         - 1
 - name: plan
   target: orbit-node-209
-  labels: *id001
   dependsOn:
   - job: inspect
     condition:
@@ -201,7 +193,6 @@ jobs:
   steps:
   - name: plan
     target: orbit-node-209
-    labels: *id001
     writes: false
     task:
       type: behavior
@@ -213,7 +204,6 @@ jobs:
         steps: ${{ steps }}
   - name: checked
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: plan
       condition:
@@ -226,7 +216,6 @@ jobs:
       message: Database Process ownership inspection refused.
 - name: remove
   target: orbit-node-209
-  labels: *id001
   dependsOn:
   - job: plan
     condition:
@@ -234,7 +223,6 @@ jobs:
   steps:
   - name: remove-${{ self.member.slot }}
     target: orbit-node-209
-    labels: *id001
     forEach:
       item: member
       in: ${{ steps.plan.outputs.controls }}
@@ -251,7 +239,6 @@ jobs:
         member: ${{ self.member }}
 - name: result
   target: orbit-node-209
-  labels: *id001
   dependsOn:
   - job: prepare
     condition:
@@ -268,7 +255,6 @@ jobs:
   steps:
   - name: result
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-destroy-metadata'
@@ -281,7 +267,6 @@ jobs:
           "remove-" + c.slot) : [] }}'
   - name: accept_result
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: result
       condition:

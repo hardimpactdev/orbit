@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
+use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -37,7 +37,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations): void
     {
         foreach (TaskVm::query()->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {
-            app(StartTaskVmLifecycleOperationAction::class)->execute($retired->id, 'destroy');
+            app(StartTaskVmDestroyAction::class)->execute($retired->id);
         }
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host,$node]) {
             $operations->execute($node->id, 'incus');

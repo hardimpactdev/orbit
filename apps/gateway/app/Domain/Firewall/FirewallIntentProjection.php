@@ -23,7 +23,7 @@ final readonly class FirewallIntentProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        return ['node_id' => $operation->node_id, ...array_intersect_key($operation->input, array_flip(['name', 'action', 'source', 'port', 'protocol']))];
+        return ['intent' => $operation->input['firewall'], 'execution_secrets' => []];
     }
 
     /** @param array<string, mixed> $data */

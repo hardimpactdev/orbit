@@ -79,7 +79,7 @@ export function productionSmoke(
 ) {
   return {
     type: "@nckrtl/production-smoke",
-    version: "2026.10.28.4",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     resources: {
       repair: {
@@ -379,7 +379,9 @@ export function productionSmoke(
               }
               if (
                 receipt.operation &&
-                ["failed", "cancelled"].includes(receipt.operation.status)
+                ["failed", "cancelled", "interrupted"].includes(
+                  receipt.operation.status,
+                )
               ) {
                 state.status = "unknown";
                 state.reason = receipt.operation.error_code ??

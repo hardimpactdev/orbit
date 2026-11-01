@@ -18,11 +18,13 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -50,6 +52,9 @@ final readonly class StartDevelopmentInstanceCreateAction
 
         return DB::transaction(function () use ($data, $caller, $requestId): Operation {
             $project = Project::query()->findOrFail($data->projectId);
+            if ($project->source_access === ProjectSourceAccess::GhCli) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires anonymous or scoped GitHub App repository access.', 503);
+            }
             $node = Node::query()->findOrFail($data->nodeId);
             $this->assertDefaults($project);
             $this->assertPlacement($node);
@@ -101,14 +106,12 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'node_id' => $node->id, 'initial_status' => $instance->status->value, 'first_setup_pending' => $instance->first_setup_pending,
                 'user' => $node->user, 'source_root' => $sourceRoot,
                 'participant_node_ids' => [$node->id],
-                'seed_repository' => $instance->seed_repository, 'seed_commit' => $instance->seed_commit,
+                'seed_repository' => $instance->seed_repository, 'seed_commit' => $instance->seed_commit, 'seed_path' => $instance->seed_path,
                 'source_layout' => $instance->source_layout,
                 'route_id' => null, 'route_domain' => null,
                 'setup_digest' => $digest(LifecyclePhase::Setup), 'teardown_digest' => $digest(LifecyclePhase::Teardown),
             ];
-            $input['git_read'] = ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']];
-            $input['environment_material'] = ['$secret' => 'instance.environment_sync', 'id' => $input['instance_id']];
-            $input['setup_programs'] = ['$secret' => 'instance.provisioning_setup', 'id' => $input['instance_id']];
+            $input['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode($node);
             $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
