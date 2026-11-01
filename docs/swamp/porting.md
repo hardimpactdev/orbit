@@ -14,7 +14,7 @@ Work through these steps in order before you fill the template.
 1. **Start from the legacy sequence (F9).** The pre-Swamp Gateway action is the spec. Read it at the migration baseline with `git show 6291bb036:<path>`. Note each phase and the Node it changes.
 2. **One legacy phase, one step.** Each legacy phase becomes one action group: one script-file step on one Node. It keeps the phase's legacy edge cases.
 3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature). Prefer an official model (`@swamp/ssh`, `@swamp/cfgmgmt`) over a script. Record what you checked for the PR body.
-4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Every secret becomes a `{vault, key}` descriptor under `execution_secrets`.
+4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission, with Gateway macros such as `@orbit/ci-caches` resolved. Secrets become `{vault, key}` descriptors.
 5. **Refuse first, then print the result.** The action script checks preconditions before its first write. It prints one public JSON object. Then set the [time budget](#set-the-time-budget).
 6. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
 7. **Delete the old path in the same PR.** Remove the executor, its tests, scripts and callbacks, and its `swamp-shape-baseline.json` rows.
@@ -221,12 +221,12 @@ Continue ports in the approved shape while live admission proof is pending. Use 
 - [ ] Delete the old executor and everything only it used. Remove baseline rows in the last commit, after the last rebase.
 - [ ] Report Orbit and Swamp net lines separately. Keep the diff under GitHub's 20,000-line limit so the audit can read it.
 - [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing kind attaches its [F10 receipt](#prove-the-kind-f10). Without them the review fails.
+- [ ] Every workflow, children included, sets an explicit `queueTimeout`.
 
 Check the completed port and report what the evidence proves.
 
 - [ ] Cover success and refusal. Check redacted failure detail, cancellation and interrupted projection.
-- [ ] Validate completed YAML with the pinned native runtime. Run focused native tests and script lint.
-- [ ] Run Gateway admission, identity and projection tests.
+- [ ] Validate completed YAML with the pinned native runtime. Run focused native tests, script lint, and Gateway admission, identity and projection tests.
 - [ ] Separate source conformance from checks, served-source uptake and live/grant evidence. Cite this page in the review.
 
 ## Changelog
@@ -240,7 +240,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2281, lanes 17 and 27 | F9 means the legacy code and tests at `6291bb036`: its sweep stops a host at the first failure. Over two steps per legacy call needs a reason; #2281 ran 22 for 6. |
 | #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
-| #2310 (B7 outage) | A `data.query` in step inputs grew with every capture, to 847 records and 117 MB in one dispatch. Read one stable record with `data.latest`. |
+| #2304, #2310, lane 17 | Resolve Gateway macros such as `@orbit/ci-caches` at admission. Read one stable record with `data.latest`, not `data.query`. Five workflows and `database.clone` lacked `queueTimeout`. |
 | PLAN F10, F12 | `bin/swamp-proof` proves on two shark task VMs with throwaway Swamp state on a versioned topology, never production serve or 209. Receipts name the topology version. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
