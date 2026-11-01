@@ -1,8 +1,8 @@
 # Native role convergence
 
 `operation-node-role-converge-209` executes existing Database-only and
-Ingress-only, WebSocket-only and AppProd-only assignments from209 when no serving Metrics fleet needs
-reconciliation. All four use the same `node-role-converge` factory: account,
+Ingress-only, WebSocket-only, AppProd-only and AppDev-only assignments from209 when no serving Metrics fleet needs
+reconciliation. All five use the same `node-role-converge` factory: account,
 observer binary, packages, peer DNS, observer files/service, CLI, and typed
 terminal contribution. Ingress also installs pinned Caddy, enables its service,
 publishes the complete admitted catalog through `operation-route-caddy`, then
