@@ -394,13 +394,13 @@ Every Unix user on a Node reaches the Gateway from the Node's WireGuard address,
 | Item | Value |
 | --- | --- |
 | File | `/etc/orbit/agent/secret`, `root:root` mode `0600`, in `/etc/orbit/agent`, `root:root` mode `0700` |
-| Contents | 64 lowercase hexadecimal characters: 32 random bytes from the Gateway |
+| Contents | 64 lowercase hexadecimal characters: 32 random bytes generated on the Node |
 | On the Gateway | Only the SHA-256 hash, in the Node record. The API never returns it. |
 | Sent by the agent | `Authorization: Bearer {secret}` on every Gateway request |
 
 The agent reads the file when it starts. It exits with an error when the file is missing or malformed, and systemd starts it again after 2 seconds. The Gateway compares the hashes in constant time.
 
-Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone direct footprint convergence sets `allow_secret_rotation=false`: a missing or mismatched secret refuses before writes, and the returned hash stays inside the private callback. Deleting the secret and running standalone `node:converge` does not rotate it. Coordinate planned rotation through the credential owner; there is no scheduled rotation.
+Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone direct footprint convergence sets `allow_secret_rotation=false`: a missing or mismatched secret refuses before writes, and only its public verifier is returned to the native result. Deleting the secret and running standalone `node:converge` does not rotate it. Coordinate planned rotation through the credential owner; there is no scheduled rotation.
 
 Retained configuration that permits rotation writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. The next converge verifies and repairs any mismatch.
 
@@ -408,23 +408,17 @@ Retained Gateway enrollment and role callers serialize agent configuration under
 
 ### Recover a lost agent secret reply
 
-Swamp `agent.configure` returns its new hash only in the first live response. The Gateway stores it encrypted on the owning Node. It also reads exact plaintext SHA-256 hashes written by an older release. The encryption migration is reversible and does not encrypt an already encrypted value again, so rollback and roll-forward preserve the accepted secret. The target receipt holds a presence marker and cannot recover that hash. If the live response is lost before storage, keep the uncertain Operation open and run this operator command on the Gateway:
+The frozen `agent.configure` command returns a public SHA-256 verifier. The Gateway stores it encrypted on the owning Node. The secret itself stays on the Node. If a configure response is lost before projection, keep the uncertain Operation open and run this operator command on the Gateway:
 
 ```bash
 php artisan orbit:node-agent-rekey <node-id> <operation-id>
 ```
 
-Use the `node.converge` ID that owns the uncertain `footprint-agent` run. Recovery requires an active Linux Node with its own selected worker, the original started configure run with no result, and the original Node hold. The original attempt's kernel lease must be free: a slow configure that still holds it is not uncertain recovery work. The Gateway probes that existing lease at admission, intent read and private hash storage; it holds no execution lease across native recovery.
+Use the unfinished `node.converge` Operation that owns the admitted Node footprint. Recovery requires an active managed Linux Node, its stored SSH host keys, and an exact native binding on that source Operation. Finished or foreign Operations cannot authorize recovery. Admission captures public configuration and the approved 209 SSH descriptor without contacting the Node.
 
-Finished, foreign or superseded Operations cannot authorize recovery. An existing parent-owned receipt keeps its original ownership check; recovery creates no child. The command only records a `node.agent_rekey` intent. It never runs SSH, an agent command, a child Operation or a Gateway wait. Workerless Nodes, including VPN and usexit, refuse rekey; there is no PHP execution path.
+The recovery workflow runs on 209 and invokes the frozen agent's existing `agent.configure` command through official pinned SSH. It generates the secret on the Node, where the secret remains. Only the SHA-256 verifier leaves the Node, as public result stdout. The Gateway records that verifier from terminal projection. No private-output callback, execution-copy vault, worker credential or target worker is needed.
 
-Swamp validates the admitted configuration and pin on the exact Node worker. The original configuration must keep that Node's existing worker enabled under its configured account. Recovery passes `worker_credentials: null`, so it preserves and validates existing root-owned credential files. It never replays an enrollment reference or mints credentials. Swamp holds its stable per-Node method lock through configure and private hash storage. The hash stays inside the effect callback and protected private-output request. Arguments, resources, results and error text contain no hash.
-
-Observe the returned Operation through the normal API. Acknowledgement does not prove recovery. The default `--attempt=1` is an idempotent request identity; repeat it after a lost admission reply. After a terminal refusal or cancellation, supply another positive attempt number to request a new recovery. Swamp observes cancellation before its effect checkpoint. A later Gateway cancellation request is ignored by this attempt, including a resume, so rotation can reconcile and store its hash before settlement. A native abort before invoke still cancels without a Node effect.
-
-Invalid safe input is a bounded pre-effect refusal. Configure, memory, worker-readiness or storage errors that may follow rotation remain unresolved. No PHP retry or completion marker changes the original uncertain receipt.
-
-Only a succeeded recovery proves encrypted hash storage. Cancel the original uncertain Operation, then start a fresh converge. A successful converge is not a recovery source. A positive canary uses a disposable x86_64 Node with its own worker: start a retained converge, stop that worker during `footprint-agent` configure, wait until the original attempt releases its lease, then run recovery and verify agent authentication with the stored hash. Do not interrupt a production Node to create this condition or use a successful Operation to force rotation.
+Observe the returned Operation through the normal API. The default `--attempt=1` retains its idempotent admission identity; an explicit later attempt requests a fresh recovery. Native cancellation and resume own execution. A lost command response remains uncertain; do not infer a verifier or completion from host health. The original configure Operation retains its own outcome.
 
 ## Gateway view
 

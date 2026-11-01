@@ -6,37 +6,45 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Nodes\NodeAgentHashSource;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
-/** Bounded projection only. Recovery sequencing and validation belong to Swamp. */
+/** The public verifier is stored only from the bound native terminal result. */
 final readonly class NodeAgentRekeyProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        if (! $operation->status->terminal() && app(NodeAgentHashSource::class)->ownerId($operation) !== $operation->node_id) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The recovery source no longer owns this Node.', 422);
-        }
-
-        return ValidatedData::object($operation->input['_agent_rekey'] ?? []);
+        return ['intent' => ValidatedData::object($operation->input['_agent_rekey'])];
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $code = $data['error_code'] ?? null;
-        $result = match ($data['status']) {
-            'succeeded' => ['rekeyed' => true, 'restarted' => true],
-            'failed' => ['rekeyed' => false, 'error_code' => $code],
+        $status = OperationStatus::from(ValidatedData::string($data['status']));
+        $raw = ValidatedData::object($data['result'] ?? []);
+        $verifier = $raw['verifier_hash'] ?? null;
+        if ($status === OperationStatus::Succeeded && (($raw['rekeyed'] ?? null) !== true
+            || ! is_string($verifier) || preg_match('/\A[a-f0-9]{64}\z/D', $verifier) !== 1)) {
+            throw new ResourceOperationException('operation.result_invalid', 'Native recovery must return its public verifier.', 422);
+        }
+        $result = match ($status) {
+            OperationStatus::Succeeded => ['rekeyed' => true, 'restarted' => true],
+            OperationStatus::Failed => ['rekeyed' => false, 'error_code' => $data['error_code']],
             default => [],
         };
-        $raw = ValidatedData::object($data['result'] ?? []);
-        if (count($raw) !== count($result) || array_any($result, static fn ($value, $key) => ($raw[$key] ?? null) !== $value)
-            || ($data['status'] === 'failed' ? ! in_array($code, ['agent.version_mismatch', 'agent.update_busy', 'node.agent_rekey_unavailable'], true) : $code !== null)) {
-            throw new ResourceOperationException('operation.result_invalid', 'Only a bounded native recovery outcome is accepted.', 422);
-        }
 
-        return app(DirectOperation::class)->project($operation, $data, $result);
+        return DB::transaction(function () use ($operation, $data, $status, $result, $verifier): Operation {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            $terminal = $operation->status->terminal();
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            if (! $terminal && $status === OperationStatus::Succeeded) {
+                Node::query()->findOrFail($operation->node_id)->forceFill(['agent_secret_hash' => $verifier])->save();
+            }
+
+            return $projected;
+        });
     }
 }

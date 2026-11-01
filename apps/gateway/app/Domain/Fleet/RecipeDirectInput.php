@@ -7,20 +7,15 @@ namespace App\Domain\Fleet;
 use App\Actions\Fleet\PlanNodeRecipeAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeConvergeInput;
-use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
-use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
-use App\Support\ValidatedData;
 
 /** Desired records only. Native recipe checkpoints own every host inspection and effect. */
 final readonly class RecipeDirectInput
@@ -57,19 +52,7 @@ final readonly class RecipeDirectInput
         foreach ($versions as $version) {
             $phpNames = [...$phpNames, ...$recipe->php($version)->packages];
         }
-        $footprint = $this->footprint->capture($node, true, false);
-        unset($footprint['secret_hash']);
-
-        $payloads = ValidatedData::object($footprint['payloads']);
-        if (isset($payloads['route-residue'])) {
-            $residue = ValidatedData::object($payloads['route-residue']);
-            $lan = app(NativeRouteLanInput::class);
-            $residue['lan'] = ['node_id' => $node->id, 'rules' => $lan->changes([], $lan->forSites($node, app(DevelopmentSiteRepository::class)->all())), 'migrate' => true];
-            $residue['ingress_commands'] = $residue['ingress'] === null ? null : app(NodeRoleFirewallInput::class)->convergeCommands($node, RoleName::Ingress);
-            unset($residue['ingress'], $residue['firewall']);
-            $payloads['route-residue'] = $residue;
-            $footprint['payloads'] = $payloads;
-        }
+        $footprint = $this->footprint->captureNative($node, true, false);
 
         return ['node_id' => $node->id, 'identity' => $recipe->identity, 'snapshot' => $recipe->snapshot,
             'agent_sha256' => $recipe->agentDigest((string) $node->architecture), 'cli_version' => $cli->version,

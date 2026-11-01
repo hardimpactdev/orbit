@@ -35,7 +35,7 @@ const dependency = (job: string, type = "succeeded") => ({
 });
 
 export function footprintWorkflow(
-  role: boolean,
+  role: true,
   relocateRole = false,
 ) {
   const behavior = role ? "node-role-add-direct" : "node-converge-direct";
@@ -304,7 +304,6 @@ export function footprintWorkflow(
 
 export function generatedFootprintWorkflows() {
   return [
-    footprintWorkflow(false),
     footprintWorkflow(true),
     footprintWorkflow(true, true),
     roleRemovalWorkflow(),

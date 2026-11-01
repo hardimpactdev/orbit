@@ -15,9 +15,11 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
+Standalone `node.converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings discovers the account and calls the frozen agent's storage command. Converge installs the pinned observer, applies its captured footprint as native steps, and calls existing `agent.configure` without rotating the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials. The Gateway projects the terminal result and records settings or completed footprint artifacts.
+
 ### Per-Node Swamp worker
 
-The operator selects Linux Nodes through the `ORBIT_SWAMP_WORKER_NODES` JSON array, default `[]`, exposed as `swamp_workers.nodes`. A Node read reports this intent as `swamp_worker_selected`. Update the agent fleet before selecting the first Node: the worker configuration changed from a boolean to a table, and old agents must never receive that table. `node.converge` records the desired footprint in the Gateway; Swamp runs its agent installation and configuration steps.
+The operator selects Linux Nodes through the `ORBIT_SWAMP_WORKER_NODES` JSON array, default `[]`, exposed as `swamp_workers.nodes`. A Node read reports this intent as `swamp_worker_selected`. Update the agent fleet before selecting the first Node: the worker configuration changed from a boolean to a table, and old agents must never receive that table. The standalone converge path does not enroll or configure a worker.
 
 The configuration contains the admitted Node ID and configured `user`. Converge installs the checksum-pinned Swamp binary, public Orbit CA and persistent `orbit-node-worker.service`. The binary download stays in a private directory beside its destination, outside memory-backed command scratch. Verification and atomic publication stream the file, so installation does not allocate memory in proportion to its size. It uses the existing account and passwordless sudo. Task VM hosts are supported; task VM Nodes retain their separate worker lifecycle. No worker account or sudo rule is created.
 

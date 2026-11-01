@@ -29,11 +29,11 @@ final class NodeFootprintsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
-    #[StartsOperation('node.converge', secretInputs: ['worker_credentials'])]
+    #[StartsOperation('node.converge')]
     public function converge(ConvergeNodeFootprintRequest $request, Node $node, StartNodeConvergeAction $action): JsonResponse
     {
         return response()->json([
-            'data' => OperationData::fromModel($action->execute($node, $request->force(), requestId: $request->attributes->getString('orbit.request_id'), workerCredentials: $request->workerCredentials()))->toArray(),
+            'data' => OperationData::fromModel($action->execute($node, $request->force(), requestId: $request->attributes->getString('orbit.request_id')))->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ], 202);
     }
