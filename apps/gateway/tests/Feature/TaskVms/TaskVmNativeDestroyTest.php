@@ -403,6 +403,7 @@ it('captures cancellation of its exclusive routed workspace without touching the
 
     expect($captured['workspace_routes'])->toHaveCount(1)
         ->and($captured['workspace_routes'][0]['route_id'])->toBe($route->id)
+        ->and($captured['workspace_routes'][0]['route_mutations'])->toHaveKeys(['artifacts', 'forward'])->not->toHaveKey('restore')
         ->and(array_column($captured['workspace_routes'][0]['route_mutations']['forward']['publications'], 'node_id'))->not->toContain($workspace->node_id)
         ->and($route->fresh()->status->value)->toBe('retiring')
         ->and($workspace->fresh())->not->toBeNull();

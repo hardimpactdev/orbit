@@ -60,8 +60,8 @@ class RouteMutationFixture(NativeTestCase):
                     "host_keys": [PIN],
                     "serves_routes": True,
                     **{
-                        side: {"caddy": {}, "php": {}, "dns": {"digest": side}}
-                        for side in ("before", "prepared", "withdrawn", "after")
+                        side: {"caddy": 0, "php": 0, "dns": index}
+                        for index, side in enumerate(("before", "prepared", "withdrawn", "after"))
                     },
                 }
                 for node in (9, 10)
@@ -74,7 +74,7 @@ class RouteMutationFixture(NativeTestCase):
             "execution_secrets": {
                 "route_material_0": {"vault": "orbit-control-inputs", "key": "fixture"}
             },
-            "intent": {"route_mutations": {"forward": self.plan, "restore": self.plan}},
+            "intent": {"route_mutations": {"schema_version": 2, "artifacts": {"caddy": [{}], "php": [{}], "dns": [{"digest": side} for side in ("before", "prepared", "withdrawn", "after")]}, "forward": self.plan, "restore": self.plan}},
         }
         script = """import json,os
 from pathlib import Path

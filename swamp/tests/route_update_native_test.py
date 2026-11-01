@@ -177,7 +177,7 @@ class RouteTargetNative(RouteUpdateNative):
             "certificates": self.plan["prepare_certificates"],
             "lan": [{"node_id": 9}],
             "publications": [
-                {**row, "before": row["before"]["caddy"], "after": row["prepared"]["caddy"], "direction": "forward"}
+                {**row, "before": row["before"]["caddy"], "after": row["prepared"]["caddy"], "direction": "forward", "alternatives": [0]}
                 for row in self.plan["publications"]
             ],
             "probes": [{"node_id": 9, "probe": {"address": "10.0.0.10", "port": 443, "domain": "app.test"}}],

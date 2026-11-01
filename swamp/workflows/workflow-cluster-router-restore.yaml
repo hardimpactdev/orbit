@@ -76,8 +76,8 @@ jobs:
           host_keys: ${{ self.part.host_keys }}
           control_node_id: ${{ self.part.control_node_id }}
           connection: ${{ self.part.connection }}
-          before: ${{ self.part.before.php }}
-          after: ${{ self.part.after.php }}
+          before: ${{ inputs.intent.route_mutations.artifacts.php[self.part.before.php] }}
+          after: ${{ inputs.intent.route_mutations.artifacts.php[self.part.after.php] }}
           direction: restore
         execution_secrets: {}
     allowFailure: true
@@ -160,11 +160,11 @@ jobs:
           host_keys: ${{ self.part.host_keys }}
           control_node_id: ${{ self.part.control_node_id }}
           connection: ${{ self.part.connection }}
-          before: ${{ self.part.after.caddy }}
-          after: ${{ self.part.before.caddy }}
+          before: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.after.caddy] }}
+          after: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.before.caddy] }}
           direction: forward
           retain_removed: true
-          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+          alternatives: ${{ [inputs.intent.route_mutations.artifacts.caddy[self.part.before.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.prepared.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.withdrawn.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.after.caddy]]
             }}
         execution_secrets: {}
     allowFailure: true
@@ -193,9 +193,9 @@ jobs:
           control_node_id: ${{ self.part.control_node_id }}
           connection: ${{ self.part.connection }}
           host_keys: ${{ self.part.host_keys }}
-          before: ${{ self.part.before.dns }}
-          after: ${{ self.part.before.dns }}
-          alternatives: ${{ [self.part.before.dns,self.part.prepared.dns,self.part.withdrawn.dns,self.part.after.dns]
+          before: ${{ inputs.intent.route_mutations.artifacts.dns[self.part.before.dns] }}
+          after: ${{ inputs.intent.route_mutations.artifacts.dns[self.part.before.dns] }}
+          alternatives: ${{ [inputs.intent.route_mutations.artifacts.dns[self.part.before.dns],inputs.intent.route_mutations.artifacts.dns[self.part.prepared.dns],inputs.intent.route_mutations.artifacts.dns[self.part.withdrawn.dns],inputs.intent.route_mutations.artifacts.dns[self.part.after.dns]]
             }}
         execution_secrets: {}
     allowFailure: true
@@ -203,8 +203,8 @@ jobs:
     target: orbit-node-209
     forEach:
       item: part
-      in: '${{ inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns != null && p.before.dns.digest
-        != p.after.dns.digest) ? [{}] : [] }}'
+      in: '${{ inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns != null && inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest
+        != inputs.intent.route_mutations.artifacts.dns[p.after.dns].digest) ? [{}] : [] }}'
     guard: ${{ !(!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")) || steps.exists(key,
       key.startsWith("restore_") && steps[key].status == "failed") }}
     dependsOn:
@@ -252,11 +252,11 @@ jobs:
           host_keys: ${{ self.part.host_keys }}
           control_node_id: ${{ self.part.control_node_id }}
           connection: ${{ self.part.connection }}
-          before: ${{ self.part.after.caddy }}
-          after: ${{ self.part.before.caddy }}
+          before: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.after.caddy] }}
+          after: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.before.caddy] }}
           direction: forward
           retain_removed: false
-          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+          alternatives: ${{ [inputs.intent.route_mutations.artifacts.caddy[self.part.before.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.prepared.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.withdrawn.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.after.caddy]]
             }}
         execution_secrets: {}
     allowFailure: true
@@ -362,7 +362,7 @@ jobs:
           restore_dns: ${{ size(inputs.intent.route_mutations.restore.publications.filter(p,p.before.dns != null))
             }}
           restore_dns_grace: '${{ size(inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns
-            != null && p.before.dns.digest != p.after.dns.digest) ? [{}] : []) }}'
+            != null && inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest != inputs.intent.route_mutations.artifacts.dns[p.after.dns].digest) ? [{}] : []) }}'
           restore_restore_caddy: ${{ size(inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes))
             }}
           restore_cleanup: ${{ size(inputs.intent.route_mutations.restore.cleanup) }}

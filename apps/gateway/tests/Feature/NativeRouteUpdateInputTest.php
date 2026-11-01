@@ -7,6 +7,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeRouteNodeRender;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\NativeRouteUpdateInput;
 use App\Domain\Routes\NativeRouteUpdateProjection;
 use App\Domain\Routes\NativeRouteWorkloadPreparation;
@@ -67,7 +68,7 @@ it('freezes a reserved rename without changing stored serving state', function (
         ->and($capture['intent']['result_route_id'])->toBe($replacement->id)
         ->and($route->fresh()->domain)->toBe('development.snapshot.old.test')
         ->and($replacement->fresh()->sites_published)->toBeFalse();
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($publication['before']['caddy']['content'])->toContain($route->domain)->not->toContain($replacement->domain)
         ->and($publication['prepared']['caddy']['content'])->toContain($route->domain, $replacement->domain, '-hostname-change')
         ->and($publication['after']['caddy']['content'])->toContain($replacement->domain)->not->toContain($route->domain, '-hostname-change')
@@ -87,22 +88,22 @@ it('keeps pending replacements entirely in database intent', function (): void {
 
 it('renders a prospective web root and its shared pools without early DB changes', function (): void {
     $capture = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public']);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($publication['after']['caddy']['content'])->toContain('/srv/snapshot/docs/public')
         ->and($publication['before']['caddy']['content'])->not->toContain('/srv/snapshot/docs/public')
         ->and($this->route->fresh()->web_root)->toBeNull()
         ->and($capture['intent']['route_mutations']['restore']['routes'][0]['domain'])->toBe($this->route->domain);
 });
 
-it('preserves unrelated sites in all captured publications', function (): void {
+it('omits unrelated sites from all captured publication deltas', function (): void {
     $other = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $this->node->id,
         'domain' => 'unrelated.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $other->customProxy()->create(['node_id' => $this->node->id, 'upstream' => 'http://127.0.0.1:8088']);
     $other->update(['status' => 'active', 'sites_published' => true]);
     $capture = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public']);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     foreach (['before', 'prepared', 'withdrawn', 'after'] as $stage) {
-        expect($publication[$stage]['caddy']['content'])->toContain('unrelated.test');
+        expect($publication[$stage]['caddy']['content'])->not->toContain('unrelated.test');
     }
 });
 

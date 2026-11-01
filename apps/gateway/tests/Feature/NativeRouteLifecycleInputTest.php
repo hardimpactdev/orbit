@@ -7,6 +7,8 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteLifecycleInput;
 use App\Domain\Routes\NativeRouteMutationInput;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
+use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteTargetInput;
 use App\Domain\Routes\RouteEnvironmentMaterialSource;
@@ -21,8 +23,10 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
+use Illuminate\Support\Arr;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -70,7 +74,7 @@ it('captures actual before and immutable create after without early publication'
     $route = $this->routes['pool'];
     $route->update(['status' => 'pending', 'sites_published' => false]);
     $capture = app(NativeRouteLifecycleInput::class)->capture($route->fresh(), ['mode' => 'converge']);
-    $pub = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->nodes['old']->id);
+    $pub = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['old']->id);
     expect($pub['before']['caddy']['content'])->not->toContain('pool.target.test')
         ->and($pub['after']['caddy']['content'])->toContain('pool.target.test')
         ->and($capture['intent']['route_mutations']['restore']['certificates'])->toBe([])
@@ -81,7 +85,7 @@ it('captures actual before and immutable create after without early publication'
 it('captures withdrawal without changing the actual serving catalog or associations', function (): void {
     $route = $this->routes['pool'];
     $capture = app(NativeRouteLifecycleInput::class)->capture($route, [], true);
-    $pub = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->nodes['old']->id);
+    $pub = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['old']->id);
     expect($pub['before']['caddy']['content'])->toContain('pool.target.test')
         ->and($pub['after']['caddy']['content'])->not->toContain('pool.target.test')
         ->and($capture['intent']['route_mutations']['forward']['cleanup'])->not->toBeEmpty()
@@ -141,8 +145,11 @@ function lifecycle_project(Operation $op, string $projection, string $status): O
 it('captures configured Laravel material for an unpublished initial Route', function (): void {
     $route = $this->routes['pool'];
     $route->update(['status' => 'pending', 'sites_published' => false]);
+    $this->routes['pool']->update(['web_root' => 'public']);
     $instance = $this->instances['old'];
-    $instance->update(['source_is_laravel' => true]);
+    $this->nodes['old']->roles()->where('role', 'app-prod')->delete();
+    $this->nodes['old']->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $instance->update(['source_is_laravel' => true, 'selected_php_version' => '8.4']);
     $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}']);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
@@ -185,7 +192,7 @@ it('captures public creation with automatic HTTPS and immutable Process checks',
     $route->update(['status' => 'pending', 'sites_published' => false, 'publication' => 'public']);
     $capture = app(NativeRouteLifecycleInput::class)->capture($route->fresh(), []);
     $forward = $capture['intent']['route_mutations']['forward'];
-    $publication = collect($forward['publications'])->firstWhere('node_id', $ingress->id);
+    $publication = collect($forward['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $ingress->id);
     expect($capture['intent']['public_activated'])->toBeTrue()
         ->and($publication['before']['caddy']['content'])->not->toContain($route->domain)
         ->and($publication['after']['caddy']['content'])->toContain($route->domain)->not->toContain('/orbit-certificates/route-'.$route->id.'-ingress/')
@@ -203,8 +210,8 @@ it('captures public creation with automatic HTTPS and immutable Process checks',
 it('preserves the target supplier workload TLS site during shared preparation', function (): void {
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
     $publication = collect($capture['intent']['preparation']['publications'])->firstWhere('node_id', $this->nodes['new']->id);
-    expect($publication['before']['content'])->toContain('source.target.test')->not->toContain('pool.target.test')
-        ->and($publication['after']['content'])->toContain('source.target.test', 'pool.target.test', 'app-instance-'.$this->instances['new']->id.'-hostname-change');
+    expect($capture['intent']['route_mutations']['artifacts']['caddy'][$publication['before']]['content'])->toContain('source.target.test')->not->toContain('pool.target.test')
+        ->and($capture['intent']['route_mutations']['artifacts']['caddy'][$publication['after']]['content'])->toContain('source.target.test', 'pool.target.test', 'app-instance-'.$this->instances['new']->id.'-hostname-change');
 });
 
 it('probes only staged private workload TLS and verifies the public listener after publication', function (bool $colocated): void {
@@ -219,7 +226,7 @@ it('probes only staged private workload TLS and verifies the public listener aft
     expect(array_column(array_column($checks, 'probe'), 'address'))->toBe($colocated ? [] : [$this->nodes['old']->wireguard_ip])
         ->and($capture['intent']['verifications'][0]['probe'])->toMatchArray(['address' => $ingress->wireguard_ip, 'port' => 443, 'domain' => $route->domain])
         ->and($route->fresh()->sites_published)->toBeFalse();
-    $published = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $ingress->id);
+    $published = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $ingress->id);
     expect($published['after']['caddy']['content'])->toContain($route->domain)->not->toContain('/orbit-certificates/route-'.$route->id.'-ingress/');
 })->with(['Ingress is the target' => true, 'separate Ingress' => false]);
 
@@ -272,7 +279,7 @@ it('captures prospective public WebSocket handlers without changing stored bindi
     $desired['sites'] = array_map($transform, $previous['sites']);
     $candidate = $before->map(fn ($site) => $site->domain === $route->domain ? $transform($site) : $site);
     $capture = $policy->capture([$previous], [$desired], [$desired], [$previous], $before, $candidate, [], static fn (Closure $render): array => $render());
-    $publications = $capture['route_mutations']['forward']['publications'];
+    $publications = array_map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row), $capture['route_mutations']['forward']['publications']);
     $edge = array_values(array_filter($publications, fn (array $part): bool => $part['node_id'] === $ingress->id))[0];
     expect(str_contains($edge['before']['caddy']['content'], '/app/route-seam-key'))->toBe($detach)
         ->and(str_contains($edge['after']['caddy']['content'], '/app/route-seam-key'))->toBe(! $detach)
@@ -284,9 +291,9 @@ it('captures prospective public WebSocket handlers without changing stored bindi
         ->and(collect($publications)->where('serves_routes', true)->pluck('node_id')->sort()->values()->all())
         ->toBe($before->where('domain', $route->domain)->pluck('nodeId')->unique()->sort()->values()->all())
         ->and(Operation::query()->count())->toBe(0);
+    expect($capture['route_mutations']['forward']['routes'][0]['certificate_scopes'])->toBe($capture['route_mutations']['restore']['routes'][0]['certificate_scopes']);
     foreach ($publications as $part) {
-        expect($part['after']['dns'])->toBe($part['before']['dns'])
-            ->and($part['after']['certificate_scopes'])->toBe($part['before']['certificate_scopes']);
+        expect($part['after']['dns'])->toBe($part['before']['dns']);
     }
 })->with(['attach' => false, 'detach' => true]);
 
@@ -297,7 +304,7 @@ it('withdraws Router Caddy and DNS while excluding the workspace Node that will 
     $capture = app(NativeRouteLifecycleInput::class)->capture($route, [], removing: true, deletedWorkloadNodeId: $guest->id);
 
     $forward = $capture['intent']['route_mutations']['forward'];
-    $router = collect($forward['publications'])->firstWhere('node_id', $this->nodes['router']->id);
+    $router = collect($forward['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['router']->id);
     expect(array_column($forward['publications'], 'node_id'))->not->toContain($guest->id)
         ->and($router['before']['caddy']['content'])->toContain($route->domain)
         ->and($router['after']['caddy']['content'])->not->toContain($route->domain)
@@ -305,4 +312,59 @@ it('withdraws Router Caddy and DNS while excluding the workspace Node that will 
         ->and($forward['prepare_certificates'])->toBe([])
         ->and(array_column($forward['cleanup'], 'node_id'))->toContain($this->nodes['router']->id)->not->toContain($guest->id)
         ->and($capture['execution_secrets'])->toBe([]);
+});
+
+it('keeps a one Route withdrawal below 100 KB on a 126 site Node', function (): void {
+    $node = $this->nodes['old'];
+    $node->roles()->where('role', 'app-prod')->delete();
+    $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $instances = $routes = $targets = [];
+    for ($i = 0; $i < 125; $i++) {
+        $instances[] = ['id' => 10001 + $i, 'project_id' => $this->instances['old']->project_id, 'node_id' => $node->id,
+            'name' => 'survivor-'.$i, 'checkout_path' => '/home/orbit/projects/targets/survivor-'.$i,
+            'status' => 'active', 'provisioning_step' => 'active', 'selected_php_version' => '8.4', 'source_is_laravel' => false];
+        $routes[] = ['id' => 20001 + $i, 'kind' => 'app', 'project_id' => $this->instances['old']->project_id, 'cluster_id' => $this->routes['pool']->cluster_id,
+            'domain' => 'survivor-'.$i.'.target.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending', 'sites_published' => false];
+        $targets[] = ['route_id' => 20001 + $i, 'instance_id' => 10001 + $i, 'position' => 0];
+    }
+    Instance::query()->insert($instances);
+    Route::query()->insert($routes);
+    RouteTarget::query()->insert($targets);
+    Route::query()->where('id', '>=', 20001)->update(['status' => 'active', 'sites_published' => true]);
+    $whole = app(NativeRoutePublicationInput::class)->snapshot($node, app(DevelopmentSiteRepository::class)->all());
+    expect(count($whole['caddy']['blocks']))->toBeGreaterThanOrEqual(126);
+
+    $capture = app(NativeRouteLifecycleInput::class)->capture($this->routes['pool'], [], removing: true);
+
+    expect(strlen(json_encode($capture['intent'], JSON_THROW_ON_ERROR)))->toBeLessThan(100000);
+});
+
+it('omits unused composing restoration and its private copies while standalone removal retains both', function (): void {
+    $this->routes['pool']->update(['web_root' => 'public']);
+    $instance = $this->instances['old'];
+    $this->nodes['old']->roles()->where('role', 'app-prod')->delete();
+    $this->nodes['old']->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $instance->update(['source_is_laravel' => true, 'selected_php_version' => '8.4']);
+    $instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'synthetic-withdrawal-key']);
+    $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}']);
+    config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/root.pem', 'swamp.run_token' => 'synthetic-token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+        'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+
+    $composing = app(NativeRouteLifecycleInput::class)->capture($this->routes['pool']->fresh(), [], removing: true, restorable: false);
+
+    expect($composing['intent']['route_mutations'])->not->toHaveKey('restore')
+        ->and($composing['execution_secrets'])->toBe([])
+        ->and($socket->sent)->toBe([]);
+
+    $standalone = app(NativeRouteLifecycleInput::class)->capture($this->routes['pool']->fresh(), [], removing: true);
+
+    expect($standalone['intent']['route_mutations'])->toHaveKey('restore')
+        ->and($standalone['execution_secrets'])->not->toBeEmpty()
+        ->and(collect($socket->sent)->pluck('payload.key')->all())->each->toContain('-restore-')
+        ->and($composing['intent']['route_mutations']['forward'])->toBe($standalone['intent']['route_mutations']['forward'])
+        ->and(array_map(static fn (array $leaf): array => Arr::except($leaf, 'version'), $composing['certificates']))
+        ->toBe(array_map(static fn (array $leaf): array => Arr::except($leaf, 'version'), $standalone['certificates']));
 });
