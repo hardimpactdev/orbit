@@ -21,7 +21,7 @@ beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'Native source', 'slug' => 'native-source',
         'type' => 'node-package', 'repository_url' => 'https://github.com/example/native-source.git', 'root' => '.', 'default_branch' => 'main']);
     $this->node = Node::query()->create(['name' => 'native-source', 'status' => 'active', 'platform' => 'linux',
-        'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
+        'architecture' => 'amd64', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     orbit_test_set_app_placement_role($this->node, false);
     $this->instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
         'name' => 'proof', 'checkout_path' => '/srv/apps/native-source/proof', 'source_layout' => 'checkout', 'status' => 'reserved',

@@ -62,3 +62,5 @@ The native run stops each admitted Schedule and Process before database removal.
 ## Keep unfinished transfer history
 
 Removing an Instance preserves closed transfer history by clearing its Instance association after native success. An unfinished transfer must be settled by its owning workflow before Instance removal can proceed. The Gateway does not infer cleanup from a missing Instance or admit a child removal.
+
+Development removal runs on control Node209 through official SSH. It captures source facts in native data, removes admitted Schedule and Process artifacts through their canonical native children, withdraws complete Route publications, runs the captured teardown commands and finalizes each owned source. The terminal subscriber records removal; steps do not read intent or report progress through Gateway callbacks. Production removal is outside this development conversion.

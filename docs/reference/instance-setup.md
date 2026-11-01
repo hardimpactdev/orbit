@@ -98,7 +98,7 @@ Client migration: older MCP, SDK and CLI clients expect a synchronous setup resu
 
 A native create failure retains its reserved Instance and owned checkout with a bounded failure code. Retry the same create after its root is terminal, or use [Instance removal](/reference/instance-removal). Create does not start a rollback or cleanup child.
 
-The native `instance:create` root runs its setup list after source and environment preparation, before recording the Instance as active. It currently refuses Route, database and runtime-definition combinations before reservation. Setup steps receive two variables:
+The development `instance:create` root runs from control Node209 through official SSH with its complete admitted input and stored host pins. Source, environment and each setup command are separate native steps. The Gateway records source identity, managed environment keys and activation from the terminal result. The root runs its setup list after source and environment preparation, before recording the Instance as active. It currently refuses Route, database and runtime-definition combinations before reservation. Setup steps receive two variables:
 
 | Variable | Value |
 | --- | --- |

@@ -9,11 +9,16 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
+use App\Domain\Routes\NativeRouteCertificateInput;
+use App\Domain\Routes\NativeRouteMutationInput;
+use App\Domain\Routes\NativeRouteRemovalIntent;
 use App\Domain\Routes\RouteStatus;
-use App\Domain\Routes\RouteWithdrawalArtifacts;
 use App\Domain\Schedules\ScheduleOperationAdmission;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -24,7 +29,6 @@ use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-use LogicException;
 
 /** Records owned dev-removal facts. Swamp owns ordering, effects and recovery. */
 final readonly class DirectInstanceDestroyIntent
@@ -33,7 +37,6 @@ final readonly class DirectInstanceDestroyIntent
         private ProcessOperationAdmission $processes,
         private ScheduleOperationAdmission $schedules,
         private PrepareOwnedDatabaseDestructionAction $databases,
-        private RouteWithdrawalArtifacts $routes,
     ) {}
 
     /** Records intent atomically after source/Route validation.
@@ -81,6 +84,24 @@ final readonly class DirectInstanceDestroyIntent
         if ($attached->modelKeys() !== $routeIds) {
             throw new ResourceOperationException('instance.removal_conflict', 'The complete attached Route inventory changed.', 409);
         }
+        $routePolicy = app(NativeRouteMutationInput::class);
+        $sites = app(DevelopmentSiteRepository::class);
+        $beforeSites = $sites->all();
+        $previousRoutes = [];
+        foreach ($parentOwnsRoutes ? [] : $attached as $route) {
+            $removalInventory = app(NativeRouteRemovalIntent::class)->capture($route);
+            $leaves = [];
+            $nodeIds = [];
+            foreach ($removalInventory['nodes'] as $participant) {
+                $target = Node::query()->findOrFail($participant['node_id']);
+                $nodeIds[] = $target->id;
+                foreach ($participant['certificate_scopes'] as $scope) {
+                    $leaves[] = app(NativeRouteCertificateInput::class)->scopeInput($target, $scope);
+                }
+            }
+            $previousRoutes[] = ['route_id' => $route->id, 'domain' => $route->domain,
+                'intent' => ['node_ids' => $nodeIds, 'certificates' => $leaves], 'sites' => $sites->routeSites($route), 'url_writes' => []];
+        }
         $removal = InstanceRemoval::query()->firstOrCreate(['id' => $input['removal_id']], [
             'requested_instance_id' => $input['instance_id'], 'requested_name' => $input['name'],
             'force' => $input['force'], 'inventory_digest' => $input['inventory_digest'], 'total' => count($members),
@@ -90,11 +111,15 @@ final readonly class DirectInstanceDestroyIntent
             throw new ResourceOperationException('instance.removal_conflict', 'The admitted removal set changed.', 409);
         }
         $node = Node::query()->findOrFail(ValidatedData::integer($input['node_id']));
+        if ($node->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('route.withdrawal_node_unavailable', 'Withdrawal requires its active admitted Node.', 409);
+        }
         if ($node->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
             throw new ResourceOperationException('instance.destroy_unsupported', 'Development removal requires its configured non-root Node account.', 409);
         }
         $local = [];
         $runtime = ['processes' => [], 'schedules' => []];
+        $nativeProcesses = [];
         $teardown = [];
         foreach ($members as $member) {
             $instance = Instance::query()->with('project')->findOrFail(ValidatedData::integer($member['instance_id']));
@@ -127,7 +152,9 @@ final readonly class DirectInstanceDestroyIntent
                 'own_units' => RemoteDevelopmentInstanceSourceRemoval::ownUnits($instance),
             ];
             foreach (Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->orderBy('id')->get() as $process) {
-                $runtime['processes'][] = Arr::only($this->processes->inputFor($process, 'destroy'), ['process_id', 'runtime', 'name', 'vite']);
+                $control = $this->processes->inputFor($process, 'destroy');
+                $nativeProcesses[] = Arr::only($control, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
+                $runtime['processes'][] = Arr::only($control, ['process_id', 'runtime', 'name', 'vite']);
             }
             foreach (Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instance->id)->orderBy('id')->get() as $schedule) {
                 $runtime['schedules'][] = Arr::only($this->schedules->inputFor($schedule, 'destroy', cascade: true), ['id', 'group', 'cascade']);
@@ -144,30 +171,20 @@ final readonly class DirectInstanceDestroyIntent
             Route::query()->whereKey($routeIds)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
         }
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
-        $routes = Route::query()->with('targets')->whereKey($routeIds)->orderBy('id')->get();
-        $withdrawals = [];
-        $nodes = [$node->id];
-        foreach ($parentOwnsRoutes ? [] : $ids as $id) {
-            $target = Instance::query()->with(['node', 'project'])->findOrFail($id);
-            $artifact = $this->routes->forDevelopmentRemoval($target,
-                $routes->filter(static fn (Route $route): bool => $route->targets->contains('instance_id', $id)));
-            $withdrawals[] = $artifact;
-            $nodes = [...$nodes, ...$this->participantIds($artifact['nodes']), ...$this->participantIds($artifact['dns'])];
-        }
-        $nodes = array_values(array_unique($nodes));
-        sort($nodes);
-
-        $databaseNodes = array_values(array_unique(array_column($databases['servers'], 'node_id')));
-        $participants = array_values(array_unique([...$nodes, ...$databaseNodes]));
-
-        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $participants, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+        $captured = $routePolicy->capture($previousRoutes, [], [], [], $beforeSites, $sites->all(), array_values(array_unique(array_merge(...array_map(static fn (array $row): array => $row['intent']['node_ids'], $previousRoutes)))), static fn (\Closure $render): array => $render());
+        $ssh = app(SwampSshExecutionInput::class)->forNode($node);
+        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes,
+            'participant_node_ids' => array_values(array_unique([$node->id, ...$captured['participant_node_ids']])),
+            'environment' => 'development',
+            'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
             'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
-            'php' => ['$secret' => 'instance.destroy_php', 'id' => $input['instance_id']],
             'database_material' => ['$secret' => 'database.intent', 'id' => $databases['intent_id']],
-            'private_bindings' => ['database_material' => ['owner_node_id' => $node->id, 'read_node_ids' => $databaseNodes, 'write_node_ids' => []]],
+            'private_bindings' => ['database_material' => ['owner_node_id' => $node->id, 'read_node_ids' => array_values(array_unique(array_column($databases['servers'], 'node_id'))), 'write_node_ids' => []]],
+            'native_destroy' => ['ssh_execution' => $ssh, 'native_runtime' => [...$runtime, 'processes' => $nativeProcesses], 'route_mutations' => $captured['route_mutations'],
+                'execution_secrets' => $captured['execution_secrets']],
             'direct_destroy' => [
                 'node_id' => $node->id, 'node_user' => $node->user, 'members' => $local, 'runtime' => $runtime,
-                'teardown' => $teardown, 'routes' => $withdrawals, 'publication_node_ids' => $nodes,
+                'teardown' => $teardown, 'routes' => [], 'publication_node_ids' => $captured['participant_node_ids'],
                 'database' => $databases,
             ],
         ];
@@ -200,13 +217,6 @@ final readonly class DirectInstanceDestroyIntent
         }
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
         $detail = ValidatedData::object($saved['direct_destroy']);
-        $detail['routes'] = array_map(static function (array $route): array {
-            $php = ValidatedData::object($route['php']);
-            $php['configurations'] = (object) ValidatedData::object($php['configurations']);
-            $route['php'] = $php;
-
-            return $route;
-        }, InstanceLifecycleInput::members(['members' => $detail['routes']]));
         if ($input['force'] === true) {
             $independent = array_all(InstanceLifecycleInput::members($saved), static fn (array $member): bool => $member['source_layout'] !== 'checkout');
             $detail['members'] = array_map(static fn (array $member): array => [...$member, 'force' => true,
@@ -215,15 +225,5 @@ final readonly class DirectInstanceDestroyIntent
         }
 
         return [...$saved, 'force' => $input['force'], 'direct_destroy' => $detail];
-    }
-
-    /** @return list<int> */
-    private function participantIds(mixed $artifacts): array
-    {
-        if (! is_array($artifacts) || ! array_is_list($artifacts)) {
-            throw new LogicException('Route withdrawal requires a participant artifact list.');
-        }
-
-        return array_map(static fn (mixed $artifact): int => ValidatedData::integer(ValidatedData::object($artifact)['node_id']), $artifacts);
     }
 }

@@ -106,9 +106,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'route_id' => null, 'route_domain' => null,
                 'setup_digest' => $digest(LifecyclePhase::Setup), 'teardown_digest' => $digest(LifecyclePhase::Teardown),
             ];
-            $input['git_read'] = ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']];
-            $input['environment_material'] = ['$secret' => 'instance.environment_sync', 'id' => $input['instance_id']];
-            $input['setup_programs'] = ['$secret' => 'instance.provisioning_setup', 'id' => $input['instance_id']];
+            $input['ssh_execution'] = app(\App\Infrastructure\Swamp\SwampSshExecutionInput::class)->forNode($node);
             $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);

@@ -1,0 +1,53 @@
+id: e8bc85c5-e568-46d8-8818-2ba87659ef75
+name: instance-project-command
+description: One admitted private Project lifecycle command over official SSH.
+vaults:
+  - orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+    node_id:
+      type: integer
+    kind:
+      type: string
+    intent:
+      type: object
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+  additionalProperties: false
+jobs:
+  - name: command
+    target: orbit-node-209
+    steps:
+      - name: project-execute
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-projec-0-" + run.id }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "id-project-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ inputs.intent.script }}'
+            timeoutSec: '${{ inputs.intent.timeout_seconds }}'
+            stdin: '${{ vault.get(inputs.intent.reference.vault,inputs.intent.reference.key) }}'

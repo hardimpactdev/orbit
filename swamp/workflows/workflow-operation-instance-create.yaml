@@ -1,254 +1,1997 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
-description: One native Instance create root with placed source and environment steps.
-writes: true
-vaults: []
+description: Development Instance create from209 through separately placed official SSH actions.
+vaults:
+  - orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [instance.create] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: instance.create
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            const: orbit-control-inputs
+          key:
+            type: string
+        required:
+          - vault
+          - key
+        additionalProperties: false
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: provisioning
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
+  - name: prepare
+    target: orbit-node-209
     steps:
-      - name: prepare
+      - name: create-local-directory
+        target: orbit-node-209
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: stage
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-local-" + run.id }}'
+          methodName: execute
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: prepare
-      - name: resolve
+            run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
+            env:
+              ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-" + run.id }}'
+      - name: create-mint-assets
+        target: orbit-node-209
         dependsOn:
-          - step: prepare
-            condition: { type: succeeded }
+          - step: create-local-directory
+            condition:
+              type: succeeded
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: stage
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "idm-create-1-" + run.id }}'
+          methodName: paths
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: resolve
-      - name: profile
+            intent: '${{ inputs.intent }}'
+      - name: create-mint
+        target: orbit-node-209
         dependsOn:
-          - step: resolve
-            condition: { type: succeeded }
+          - step: create-mint-assets
+            condition:
+              type: succeeded
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: stage
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-mint-" + run.id }}'
+          methodName: execute
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: profile
-            source: '${{ {"branch": steps.resolve.outputs.branch, "commit": steps.resolve.outputs.commit} }}'
-      - name: template
+            run: python3 -B "$ORBIT_MINT_FILE"
+            env:
+              ORBIT_MINT_FILE: '${{ steps["create-mint-assets"].outputs.directory + "/mint.py" }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
+      - name: source-prepare-assets
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-0-" + run.id }}'
+          methodName: read
+          inputs:
+            action: prepare_directory
+            input: '${{ inputs.intent }}'
         dependsOn:
-          - step: profile
-            condition: { type: succeeded }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: stage
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: template
-            source: '${{ {"branch": steps.resolve.outputs.branch, "commit": steps.resolve.outputs.commit} }}'
-      - name: environment
+          - step: create-mint
+            condition:
+              type: succeeded
+      - name: source-prepare-read
+        target: orbit-node-209
         dependsOn:
-          - step: template
-            condition: { type: succeeded }
+          - step: source-prepare-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: stage
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-1-" + run.id }}'
+          methodName: script
+          globalArgs: &ref_2
+            name: '${{ "source-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: environment
-      - name: vp
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-prepare-assets"].outputs.script_body }}'
+      - name: source-prepared
+        target: orbit-node-209
         dependsOn:
-          - step: environment
-            condition: { type: succeeded }
+          - step: source-prepare-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: stage
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-2-" + run.id }}'
+          methodName: decode
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: vp
-      - name: setup
+            observation: '${{ steps["source-prepare-read"].outputs }}'
+      - name: source-init
+        target: orbit-node-209
         dependsOn:
-          - step: vp
-            condition: { type: succeeded }
+          - step: source-prepared
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: '${{ !steps["source-prepared"].outputs.created || (inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null) }}'
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: stage
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-3-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: setup
-      - name: complete
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - init
+              - '--quiet'
+      - name: source-worktree
+        target: orbit-node-209
         dependsOn:
-          - step: setup
-            condition: { type: succeeded }
+          - step: source-init
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: '${{ !steps["source-prepared"].outputs.created || !(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null) }}'
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: finish
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-4-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-      - name: failure_prepare
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-C'
+              - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
+              - worktree
+              - add
+              - '--no-checkout'
+              - '--detach'
+              - '--'
+              - '${{ inputs.intent.source.checkout }}'
+              - '${{ inputs.intent.resolve.seed_commit == null ? "HEAD" : inputs.intent.resolve.seed_commit }}'
+      - name: source-origin-assets
+        target: orbit-node-209
         dependsOn:
-          - step: prepare
-            condition: { type: failed }
+          - step: source-worktree
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-5-" + run.id }}'
+          methodName: read
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: prepare
-      - name: failure_resolve
+            action: origin
+            input:
+              checkout: '${{ inputs.intent.source.checkout }}'
+              allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
+      - name: source-origin-read
+        target: orbit-node-209
         dependsOn:
-          - step: resolve
-            condition: { type: failed }
+          - step: source-origin-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-6-" + run.id }}'
+          methodName: script
+          globalArgs: *ref_2
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: resolve
-      - name: failure_profile
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-origin-assets"].outputs.script_body }}'
+      - name: source-origin-proof
+        target: orbit-node-209
         dependsOn:
-          - step: profile
-            condition: { type: failed }
+          - step: source-origin-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-7-" + run.id }}'
+          methodName: origin
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: profile
-      - name: failure_template
+            expected: '${{ inputs.intent.source.repository }}'
+            observation: '${{ steps["source-origin-read"].outputs }}'
+            allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
+      - name: source-origin-configure
+        target: orbit-node-209
         dependsOn:
-          - step: template
-            condition: { type: failed }
+          - step: source-origin-proof
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: '${{ steps["source-origin-read"].outputs.stdout != "" }}'
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-8-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: template
-      - name: failure_environment
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - config
+              - remote.origin.url
+              - '${{ inputs.intent.source.repository }}'
+      - name: source-git-directory
+        target: orbit-node-209
         dependsOn:
-          - step: environment
-            condition: { type: failed }
+          - step: source-origin-configure
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-9-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: environment
-      - name: failure_vp
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - rev-parse
+              - '--absolute-git-dir'
+      - name: source-marker-assets
+        target: orbit-node-209
         dependsOn:
-          - step: vp
-            condition: { type: failed }
+          - step: source-git-directory
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-10-" + run.id }}'
+          methodName: read
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: vp
-      - name: failure_setup
+            action: mark_source
+            input:
+              checkout: '${{ inputs.intent.source.checkout }}'
+              prepare_id: '${{ inputs.intent.source.prepare_id }}'
+              git_directory: '${{ steps["source-git-directory"].outputs.stdout }}'
+      - name: source-marker-read
+        target: orbit-node-209
         dependsOn:
-          - step: setup
-            condition: { type: failed }
+          - step: source-marker-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-11-" + run.id }}'
+          methodName: script
+          globalArgs: *ref_2
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: setup
-      - name: failure_complete
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-marker-assets"].outputs.script_body }}'
+      - name: source-paths
+        target: orbit-node-209
         dependsOn:
-          - step: complete
-            condition: { type: failed }
+          - step: source-marker-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-create"
-          behaviorName: '${{ "instance-create-" + run.id }}'
-          methodName: fail
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-12-" + run.id }}'
+          methodName: paths
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: complete
+            intent: '${{ inputs.intent }}'
+      - name: source-scripts-directory
+        target: orbit-node-209
+        dependsOn:
+          - step: source-paths
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-13-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/mkdir
+              - '-p'
+              - '${{ "/tmp/orbit-source-" + run.id + "-source" }}'
+      - name: source-scripts-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: source-scripts-directory
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "source-copy-" + run.id }}'
+          methodName: copy
+          globalArgs: *ref_2
+          inputs:
+            hosts: 'name:target'
+            src: '${{ steps["source-paths"].outputs.directory }}'
+            dst: '${{ "/tmp/orbit-source-" + run.id + "-source/" }}'
+            recursive: true
+            direction: to
+      - name: source-fetch
+        target: orbit-node-209
+        dependsOn:
+          - step: source-scripts-copy
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: '${{ !inputs.intent.resolve.network || (inputs.intent.retained_source != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-15-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-source-" + run.id + "-source/scripts/fetch.py" }}'
+              - '${{ inputs.intent.source.checkout }}'
+              - '${{ inputs.intent.source.repository }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key) }}'
+      - name: source-refs
+        target: orbit-node-209
+        dependsOn:
+          - step: source-fetch
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-16-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - for-each-ref
+              - '--format=%(refname)'
+              - refs/heads
+              - refs/remotes/origin
+      - name: source-selected
+        target: orbit-node-209
+        dependsOn:
+          - step: source-refs
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-17-" + run.id }}'
+          methodName: select
+          inputs:
+            resolve: '${{ inputs.intent.resolve }}'
+            refs: '${{ steps["source-refs"].outputs }}'
+      - name: source-checkout
+        target: orbit-node-209
+        dependsOn:
+          - step: source-selected
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: '${{ inputs.intent.retained_source != null }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-18-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - checkout
+              - '--quiet'
+              - '--no-track'
+              - '-B'
+              - '${{ steps["source-selected"].outputs.branch }}'
+              - '${{ steps["source-selected"].outputs.reference }}'
+      - name: source-commit
+        target: orbit-node-209
+        dependsOn:
+          - step: source-checkout
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-19-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_2
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - rev-parse
+              - '--verify'
+              - 'HEAD^{commit}'
+      - name: source-profile-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: source-commit
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-20-" + run.id }}'
+          methodName: read
+          inputs:
+            action: profile
+            input: '${{ inputs.intent }}'
+      - name: source-profile-read
+        target: orbit-node-209
+        dependsOn:
+          - step: source-profile-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-21-" + run.id }}'
+          methodName: script
+          globalArgs: *ref_2
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-profile-assets"].outputs.script_body }}'
+      - name: source-result
+        target: orbit-node-209
+        dependsOn:
+          - step: source-profile-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-22-" + run.id }}'
+          methodName: provisioningResult
+          inputs:
+            intent: '${{ inputs.intent }}'
+            profile: '${{ steps["source-profile-read"].outputs }}'
+            branch: '${{ steps["source-selected"].outputs.branch }}'
+            commit: '${{ steps["source-commit"].outputs }}'
+      - name: env-template-asset
+        target: orbit-node-209
+        dependsOn:
+          - step: source-result
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-env-0-" + run.id }}'
+          methodName: read
+          inputs:
+            action: template
+            input:
+              application: '${{ inputs.intent.application }}'
+              destination: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
+      - name: env-template
+        target: orbit-node-209
+        dependsOn:
+          - step: env-template-asset
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-env-1-" + run.id }}'
+          methodName: script
+          globalArgs: &ref_3
+            name: '${{ "id-env-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["env-template-asset"].outputs.script_body }}'
+      - name: env-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: env-template
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-env-2-" + run.id }}'
+          methodName: copy
+          globalArgs: *ref_3
+          inputs:
+            hosts: 'name:target'
+            src: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
+            dst: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
+            direction: from
+      - name: env-capture
+        target: orbit-node-209
+        dependsOn:
+          - step: env-copy
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-create-environment'
+          behaviorName: '${{ "idm-env-3-" + run.id }}'
+          methodName: capture
+          inputs:
+            path: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
+            env: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
+            profile: '${{ steps["source-result"].outputs }}'
+            reference: '${{ inputs.intent.environment_output }}'
+            directory: '${{ inputs.intent.application }}'
+      - name: env-write-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: env-capture
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-env-4-" + run.id }}'
+          methodName: read
+          inputs:
+            action: write_environment
+            input: {}
+      - name: env-scripts-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: env-write-assets
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-env-5-" + run.id }}'
+          methodName: copy
+          globalArgs: *ref_3
+          inputs:
+            hosts: 'name:target'
+            src: '${{ steps["env-write-assets"].outputs.script_file }}'
+            dst: '${{ "/tmp/orbit-instance-" + run.id + "/write_environment.py" }}'
+            direction: to
+      - name: env-write
+        target: orbit-node-209
+        dependsOn:
+          - step: env-scripts-copy
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-env-6-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_3
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-" + run.id + "/write_environment.py" }}'
+            stdin: '${{ vault.get(inputs.intent.environment_output.vault,inputs.intent.environment_output.key) }}'
+  - name: vp-capture
+    target: orbit-node-209
+    dependsOn:
+      - job: prepare
+        condition:
+          type: succeeded
+    steps:
+      - name: vp-local-directory
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "vp-local-"+run.id }}'
+          methodName: execute
+          inputs:
+            run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
+            env:
+              ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-"+run.id }}'
+      - name: vp-project-asset
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-local-directory
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-assets'
+          behaviorName: '${{ "idm-vp-1-" + run.id }}'
+          methodName: read
+          inputs:
+            action: project_material
+            input:
+              application: '${{ inputs.intent.application }}'
+              destination: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+      - name: vp-project
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-project-asset
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-vp-2-" + run.id }}'
+          methodName: script
+          globalArgs: &ref_4
+            name: '${{ "id-vp-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["vp-project-asset"].outputs.script_body }}'
+      - name: vp-private-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-project
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-vp-3-" + run.id }}'
+          methodName: copy
+          globalArgs: *ref_4
+          inputs:
+            hosts: 'name:target'
+            src: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+            dst: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+            direction: from
+      - name: vp-requirements
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-private-copy
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-vp-4-" + run.id }}'
+          methodName: capture
+          inputs:
+            path: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+  - name: vp-install
+    target: orbit-node-209
+    dependsOn:
+      - job: vp-capture
+        condition:
+          type: succeeded
+    steps:
+      - name: vp-manager-assets
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-tool-setup-assets'
+          behaviorName: '${{ "idm-vp-0-" + run.id + "-" + string(self._index) }}'
+          methodName: read
+          inputs:
+            setup: '${{ inputs.intent.vp_setup }}'
+        forEach: &ref_0
+          item: runtime
+          in: >-
+            ${{ steps["vp-requirements"].outputs.manager_required ? (steps["vp-requirements"].outputs.runtime == null ? [] :
+            [steps["vp-requirements"].outputs.runtime]) : [] }}
+      - name: vp-manager
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-manager-assets
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-vp-1-" + run.id + "-" + string(self._index) }}'
+          methodName: script
+          globalArgs: &ref_5
+            name: '${{ "id-vp-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["vp-manager-assets-0"].outputs.manager_body }}'
+            sudo: true
+        forEach: *ref_0
+      - name: vp-manager-ready
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-manager-assets
+            condition:
+              type: always
+          - step: vp-manager
+            condition:
+              type: always
+        task:
+          type: assert
+          expr: >-
+            !(steps["vp-requirements"].outputs.manager_required && steps["vp-requirements"].outputs.runtime != null) || ("vp-manager-0" in steps &&
+            steps["vp-manager-0"].status == "succeeded")
+          severity: high
+          message: The admitted VP manager was not prepared.
+      - name: vp-cli
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-manager-ready
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-vp-3-" + run.id + "-" + string(self._index) }}'
+          methodName: exec
+          globalArgs: *ref_5
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - '${{ self.runtime.store+"/bin/vp" }}'
+              - '--version'
+            env: &ref_6
+              VP_HOME: '${{ self.runtime.store }}'
+        forEach: &ref_1
+          item: runtime
+          in: '${{ steps["vp-requirements"].outputs.runtime == null ? [] : [steps["vp-requirements"].outputs.runtime] }}'
+      - name: vp-cli-ready
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-cli
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-vp-4-" + run.id + "-" + string(self._index) }}'
+          methodName: cli
+          inputs:
+            runtime: '${{ self.runtime }}'
+            observation: '${{ steps["vp-cli-0"].outputs }}'
+        forEach: *ref_1
+      - name: vp-install
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-cli-ready
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-vp-5-" + run.id + "-" + string(self._index) }}'
+          methodName: exec
+          globalArgs: *ref_5
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - '${{ self.runtime.store+"/bin/vp" }}'
+              - '-C'
+              - '${{ inputs.intent.application }}'
+              - env
+              - install
+              - '${{ "node@"+self.runtime.node_version }}'
+              - >-
+                ${{
+                self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)
+                }}
+            env: *ref_6
+        forEach: *ref_1
+      - name: vp-inventory
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-install
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-vp-6-" + run.id + "-" + string(self._index) }}'
+          methodName: exec
+          globalArgs: *ref_5
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - '${{ self.runtime.store+"/bin/vp" }}'
+              - '-C'
+              - '${{ inputs.intent.application }}'
+              - env
+              - list
+              - '--json'
+            env: *ref_6
+        forEach: *ref_1
+      - name: vp-verify
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-inventory
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-vp-7-" + run.id + "-" + string(self._index) }}'
+          methodName: verify
+          inputs:
+            runtime: '${{ self.runtime }}'
+            inventory: '${{ steps["vp-inventory-0"].outputs }}'
+        forEach: *ref_1
+      - name: vp-result
+        target: orbit-node-209
+        dependsOn:
+          - step: vp-manager-assets
+            condition:
+              type: always
+          - step: vp-manager
+            condition:
+              type: always
+          - step: vp-manager-ready
+            condition:
+              type: always
+          - step: vp-cli
+            condition:
+              type: always
+          - step: vp-cli-ready
+            condition:
+              type: always
+          - step: vp-install
+            condition:
+              type: always
+          - step: vp-inventory
+            condition:
+              type: always
+          - step: vp-verify
+            condition:
+              type: always
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-vp-requirements'
+          behaviorName: '${{ "idm-vp-8-" + run.id }}'
+          methodName: result
+          inputs:
+            name: vp
+            steps: '${{ steps }}'
+  - name: create
+    target: orbit-node-209
+    dependsOn:
+      - job: prepare
+        condition:
+          type: always
+      - job: vp-install
+        condition:
+          type: always
+    steps:
+      - name: finish-prepared
+        target: orbit-node-209
+        task:
+          type: assert
+          expr: '"vp-result" in steps && steps["vp-result"].status == "succeeded" && steps["vp-result"].outputs.ready == true'
+          severity: high
+          message: Instance preparation did not finish.
+      - name: finish-setup-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-prepared
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-finish-1-" + run.id }}'
+          methodName: read
+          inputs:
+            action: run_project_step
+            input: {}
+      - name: finish-setup-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-assets
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-finish-2-" + run.id }}'
+          methodName: copy
+          globalArgs:
+            name: '${{ "id-finish-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            src: '${{ steps["finish-setup-assets"].outputs.script_file }}'
+            dst: '${{ "/tmp/orbit-instance-" + run.id + "/run_project_step.py" }}'
+            direction: to
+      - name: finish-setup-0
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-copy
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>0?inputs.intent.setup_commands[0].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>0?inputs.execution_secrets[inputs.intent.setup_commands[0].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=0 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-1
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-0
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>1?inputs.intent.setup_commands[1].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>1?inputs.execution_secrets[inputs.intent.setup_commands[1].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=1 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-2
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-1
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>2?inputs.intent.setup_commands[2].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>2?inputs.execution_secrets[inputs.intent.setup_commands[2].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=2 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-3
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-2
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>3?inputs.intent.setup_commands[3].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>3?inputs.execution_secrets[inputs.intent.setup_commands[3].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=3 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-4
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-3
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>4?inputs.intent.setup_commands[4].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>4?inputs.execution_secrets[inputs.intent.setup_commands[4].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=4 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-5
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-4
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>5?inputs.intent.setup_commands[5].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>5?inputs.execution_secrets[inputs.intent.setup_commands[5].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=5 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-6
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-5
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>6?inputs.intent.setup_commands[6].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>6?inputs.execution_secrets[inputs.intent.setup_commands[6].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=6 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-7
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-6
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>7?inputs.intent.setup_commands[7].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>7?inputs.execution_secrets[inputs.intent.setup_commands[7].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=7 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-8
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-7
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>8?inputs.intent.setup_commands[8].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>8?inputs.execution_secrets[inputs.intent.setup_commands[8].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=8 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-9
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-8
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>9?inputs.intent.setup_commands[9].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>9?inputs.execution_secrets[inputs.intent.setup_commands[9].secret_field]:inputs.execution_secrets.git_read }}
+        guard: '${{ size(inputs.intent.setup_commands)<=9 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-10
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-9
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>10?inputs.intent.setup_commands[10].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>10?inputs.execution_secrets[inputs.intent.setup_commands[10].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=10 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-11
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-10
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>11?inputs.intent.setup_commands[11].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>11?inputs.execution_secrets[inputs.intent.setup_commands[11].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=11 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-12
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-11
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>12?inputs.intent.setup_commands[12].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>12?inputs.execution_secrets[inputs.intent.setup_commands[12].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=12 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-13
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-12
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>13?inputs.intent.setup_commands[13].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>13?inputs.execution_secrets[inputs.intent.setup_commands[13].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=13 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-14
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-13
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>14?inputs.intent.setup_commands[14].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>14?inputs.execution_secrets[inputs.intent.setup_commands[14].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=14 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-15
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-14
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>15?inputs.intent.setup_commands[15].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>15?inputs.execution_secrets[inputs.intent.setup_commands[15].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=15 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-16
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-15
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>16?inputs.intent.setup_commands[16].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>16?inputs.execution_secrets[inputs.intent.setup_commands[16].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=16 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-17
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-16
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>17?inputs.intent.setup_commands[17].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>17?inputs.execution_secrets[inputs.intent.setup_commands[17].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=17 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-18
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-17
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>18?inputs.intent.setup_commands[18].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>18?inputs.execution_secrets[inputs.intent.setup_commands[18].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=18 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-19
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-18
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>19?inputs.intent.setup_commands[19].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>19?inputs.execution_secrets[inputs.intent.setup_commands[19].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=19 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-20
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-19
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>20?inputs.intent.setup_commands[20].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>20?inputs.execution_secrets[inputs.intent.setup_commands[20].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=20 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-21
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-20
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>21?inputs.intent.setup_commands[21].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>21?inputs.execution_secrets[inputs.intent.setup_commands[21].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=21 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-22
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-21
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>22?inputs.intent.setup_commands[22].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>22?inputs.execution_secrets[inputs.intent.setup_commands[22].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=22 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-23
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-22
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>23?inputs.intent.setup_commands[23].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>23?inputs.execution_secrets[inputs.intent.setup_commands[23].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=23 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-24
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-23
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>24?inputs.intent.setup_commands[24].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>24?inputs.execution_secrets[inputs.intent.setup_commands[24].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=24 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-25
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-24
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>25?inputs.intent.setup_commands[25].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>25?inputs.execution_secrets[inputs.intent.setup_commands[25].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=25 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-26
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-25
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>26?inputs.intent.setup_commands[26].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>26?inputs.execution_secrets[inputs.intent.setup_commands[26].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=26 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-27
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-26
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>27?inputs.intent.setup_commands[27].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>27?inputs.execution_secrets[inputs.intent.setup_commands[27].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=27 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-28
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-27
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>28?inputs.intent.setup_commands[28].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>28?inputs.execution_secrets[inputs.intent.setup_commands[28].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=28 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-29
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-28
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>29?inputs.intent.setup_commands[29].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>29?inputs.execution_secrets[inputs.intent.setup_commands[29].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=29 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-30
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-29
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>30?inputs.intent.setup_commands[30].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>30?inputs.execution_secrets[inputs.intent.setup_commands[30].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=30 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-setup-31
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-setup-30
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: workflow
+          workflowIdOrName: instance-project-command
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent:
+              ssh_execution: '${{ inputs.intent.ssh_execution }}'
+              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+              timeout_seconds: '${{ size(inputs.intent.setup_commands)>31?inputs.intent.setup_commands[31].timeout_seconds:60 }}'
+              reference: >-
+                ${{
+                size(inputs.intent.setup_commands)>31?inputs.execution_secrets[inputs.intent.setup_commands[31].secret_field]:inputs.execution_secrets.git_read
+                }}
+        guard: '${{ size(inputs.intent.setup_commands)<=31 || steps.exists(key,steps[key].status=="failed") }}'
+      - name: finish-result
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-prepared
+            condition:
+              type: always
+          - step: finish-setup-assets
+            condition:
+              type: always
+          - step: finish-setup-copy
+            condition:
+              type: always
+          - step: finish-setup-0
+            condition:
+              type: always
+          - step: finish-setup-1
+            condition:
+              type: always
+          - step: finish-setup-2
+            condition:
+              type: always
+          - step: finish-setup-3
+            condition:
+              type: always
+          - step: finish-setup-4
+            condition:
+              type: always
+          - step: finish-setup-5
+            condition:
+              type: always
+          - step: finish-setup-6
+            condition:
+              type: always
+          - step: finish-setup-7
+            condition:
+              type: always
+          - step: finish-setup-8
+            condition:
+              type: always
+          - step: finish-setup-9
+            condition:
+              type: always
+          - step: finish-setup-10
+            condition:
+              type: always
+          - step: finish-setup-11
+            condition:
+              type: always
+          - step: finish-setup-12
+            condition:
+              type: always
+          - step: finish-setup-13
+            condition:
+              type: always
+          - step: finish-setup-14
+            condition:
+              type: always
+          - step: finish-setup-15
+            condition:
+              type: always
+          - step: finish-setup-16
+            condition:
+              type: always
+          - step: finish-setup-17
+            condition:
+              type: always
+          - step: finish-setup-18
+            condition:
+              type: always
+          - step: finish-setup-19
+            condition:
+              type: always
+          - step: finish-setup-20
+            condition:
+              type: always
+          - step: finish-setup-21
+            condition:
+              type: always
+          - step: finish-setup-22
+            condition:
+              type: always
+          - step: finish-setup-23
+            condition:
+              type: always
+          - step: finish-setup-24
+            condition:
+              type: always
+          - step: finish-setup-25
+            condition:
+              type: always
+          - step: finish-setup-26
+            condition:
+              type: always
+          - step: finish-setup-27
+            condition:
+              type: always
+          - step: finish-setup-28
+            condition:
+              type: always
+          - step: finish-setup-29
+            condition:
+              type: always
+          - step: finish-setup-30
+            condition:
+              type: always
+          - step: finish-setup-31
+            condition:
+              type: always
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-finish-35-" + run.id }}'
+          methodName: create_result
+          inputs:
+            intent: '${{ inputs.intent }}'
+            steps: '${{ steps }}'
+      - name: accepted
+        target: orbit-node-209
+        dependsOn:
+          - step: finish-result
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: 'steps["finish-result"].outputs.ready == true'
+          severity: high
+          message: The development Instance action did not complete.
