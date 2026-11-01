@@ -1,14 +1,6 @@
 import { z } from "npm:zod@4.4.3";
-import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../_lib/direct.ts";
-import {
-  DirectArgs,
-  directOperation,
-  GatewayOperation,
-} from "../_lib/direct.ts";
 import { type LocalCommand, localProcessAction } from "./native-action.ts";
 import { Input } from "./process-input.ts";
-import { Preparation, startActions, startMethods } from "./start.ts";
 
 const Kind = z.enum([
   "process.start",
@@ -16,16 +8,7 @@ const Kind = z.enum([
   "process.restart",
   "process.destroy",
 ]);
-const Args = DirectArgs.extend({
-  kind: Kind.exclude(["process.stop", "process.destroy"]),
-  node_id: z.number().int().positive(),
-});
 const State = z.string().regex(/^[a-z][a-z_-]{0,63}$/);
-const Result = z.union([
-  z.object({ ready: z.literal(true), state: State.optional() }).strict(),
-  z.object({ error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/) }).strict(),
-]);
-type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 type Invoke = (
   name: LocalCommand,
   input: Record<string, unknown>,
@@ -78,58 +61,3 @@ export function processAction(invoke: Invoke = localProcessAction) {
       : { ready: true, state: State.parse(status.state) };
   };
 }
-export function processControl(
-  makeHttp = (ctx: Context) =>
-    gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  action = processAction(),
-  start = startActions(),
-) {
-  return {
-    type: "@nckrtl/process-control",
-    version: "2026.11.01.2",
-    globalArguments: Globals,
-    resources: {
-      startPreparation: {
-        description: "Public same-root startup branch data",
-        schema: Preparation,
-        lifetime: "1d",
-        garbageCollection: 1,
-      },
-    },
-    methods: {
-      ...startMethods(makeHttp, start),
-      control: {
-        description: "Apply admitted Process control on its exact Node worker",
-        arguments: Args,
-        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-          const gateway = new GatewayOperation(makeHttp(ctx), args);
-          return await directOperation(
-            args,
-            gateway,
-            (input) => {
-              const admitted = Input.parse(input);
-              if (admitted.vite !== null) {
-                throw new Error(
-                  "Vite startup needs its native preparation steps",
-                );
-              }
-              return action(args.kind, admitted, ctx.signal);
-            },
-            (result) => {
-              const bounded = Result.parse(result);
-              if (
-                !("error_code" in bounded) &&
-                !("state" in bounded)
-              ) {
-                throw new Error("Process state is required");
-              }
-              return bounded;
-            },
-            ctx.signal,
-          );
-        },
-      },
-    },
-  };
-}
-export const behavior = processControl();

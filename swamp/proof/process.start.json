@@ -1,0 +1,56 @@
+{
+  "kind": "process.start",
+  "workflow": "operation-process-control",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "processes",
+      "bind": "process",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "start-${proof.run}",
+        "runtime": "systemd",
+        "command": [
+          "/usr/bin/sleep",
+          "infinity"
+        ],
+        "start": false
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "processes/${process.id}/start"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Set boot policy",
+      "job": "runtime",
+      "step": "Set boot policy",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Control the Process",
+      "job": "runtime",
+      "step": "Control the Process",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Verify the state",
+      "job": "runtime",
+      "step": "Verify the state",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/process/parity.py",
+    "running"
+  ]
+}

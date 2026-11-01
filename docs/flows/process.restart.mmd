@@ -90,6 +90,11 @@ sequenceDiagram
     %%> What it does:
     %%> - checks once that the Vite port listener belongs to this Process
   end
+  opt explicit start only
+    SW->>N: Mark it awake<br/>install -D <awake marker>
+    %%> Skipped for restart:
+    %%> - a restart keeps the hibernation wake policy; only `process:start` marks the Instance awake
+  end
   SW->>N: Clean up<br/>remove the run directory
   %%> What it does:
   %%> - removes the run directory after a successful run

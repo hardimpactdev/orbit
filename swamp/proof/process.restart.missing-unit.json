@@ -1,0 +1,51 @@
+{
+  "kind": "process.restart.missing-unit",
+  "workflow": "operation-process-control",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "processes",
+      "bind": "process",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "missing-${proof.run}",
+        "runtime": "systemd",
+        "command": [
+          "/usr/bin/sleep",
+          "infinity"
+        ],
+        "start": false
+      }
+    }
+  ],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "rm -f /etc/systemd/system/orbit-process-${process.id}-missing-${proof.run}.service && systemctl daemon-reload"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "processes/${process.id}/restart"
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "Set boot policy",
+      "job": "runtime",
+      "step": "Set boot policy",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/process/parity.py",
+    "failed"
+  ]
+}

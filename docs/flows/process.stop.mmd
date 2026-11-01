@@ -52,6 +52,14 @@ sequenceDiagram
   %%> - copies the shipped scripts into that directory
   %%> How:
   %%> - Swamp reaches the Node over SSH from 209 with the official `@swamp/ssh` behavior, the `swamp` role SSH identity and the Node's pinned host keys
+  opt start or restart only
+    SW->>N: Check the release<br/>check_release.py
+    %%> Skipped for stop:
+    %%> - the shared workflow checks a production release only before a start or restart
+    SW->>N: Publish the dev route<br/>child operation-process-vite
+    %%> Skipped for stop:
+    %%> - stop needs no Vite traffic preparation
+  end
   SW->>N: Set boot policy<br/>systemctl disable
   %%> What it does:
   %%> - disables the systemd unit, so it does not start at boot
@@ -67,6 +75,14 @@ sequenceDiagram
   %%> - checks once that the Process is stopped
   %%> Result:
   %%> - this step's output is the projected result: `ready` and the observed state
+  opt Vite start or restart only
+    SW->>N: Check the listener<br/>lifecycle_listener.py
+    %%> Skipped for stop:
+    %%> - a stopped Process has no listener to check
+    SW->>N: Mark it awake<br/>install -D <awake marker>
+    %%> Skipped for stop:
+    %%> - only `process:start` marks the Instance awake
+  end
   SW->>N: Clean up<br/>remove the run directory
   %%> What it does:
   %%> - removes the run directory after a successful run

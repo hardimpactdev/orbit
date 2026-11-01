@@ -1,0 +1,62 @@
+{
+  "kind": "process.destroy",
+  "workflow": "operation-process-destroy",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "processes",
+      "bind": "process",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "destroy-${proof.run}",
+        "runtime": "systemd",
+        "command": [
+          "/usr/bin/sleep",
+          "infinity"
+        ],
+        "start": true
+      }
+    }
+  ],
+  "request": {
+    "method": "DELETE",
+    "path": "processes/${process.id}"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Disable it",
+      "job": "process",
+      "step": "Disable it",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Stop it",
+      "job": "process",
+      "step": "Stop it",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Remove the unit",
+      "job": "process",
+      "step": "Remove the unit",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Reload systemd",
+      "job": "process",
+      "step": "Reload systemd",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/process/parity.py",
+    "removed"
+  ]
+}

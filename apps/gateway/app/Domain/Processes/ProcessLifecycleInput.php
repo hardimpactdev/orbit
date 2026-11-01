@@ -92,10 +92,10 @@ final readonly class ProcessLifecycleInput
             if ($installation['has_environment']) {
                 $copies['environment'] = $this->steps->executionCopy('orbit-control-inputs', $environmentKey, $environment);
             }
-            if (isset($input['vite_plan'])) {
-                $intent['vite_plan'] = $input['vite_plan'];
-                $intent['caddy_publication'] = app(NativeCaddyPublicationInput::class)->forNode($node);
-            }
+        }
+        if (isset($input['vite_plan'])) {
+            $intent['vite_plan'] = $input['vite_plan'];
+            $intent['caddy_publication'] = app(NativeCaddyPublicationInput::class)->forNode($node);
         }
 
         return ['intent' => $intent, 'execution_secrets' => $copies];

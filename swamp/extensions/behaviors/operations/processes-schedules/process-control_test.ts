@@ -1,5 +1,5 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
-import { processAction, processControl } from "./process-control.ts";
+import { assertEquals } from "jsr:@std/assert@1.0.14";
+import { processAction } from "./process-control.ts";
 const input = {
   process_id: 7,
   agent_sha256: "a".repeat(64),
@@ -7,12 +7,6 @@ const input = {
   name: "orbit-process-7-proof.service",
   on_demand: false,
   vite: null,
-};
-const args = {
-  operation_id: 17,
-  node_id: 9,
-  run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
-  kind: "process.start" as const,
 };
 for (
   const kind of [
@@ -92,64 +86,6 @@ Deno.test("an agent refusal stops the action before runtime status", async () =>
     error_code: "process.name_collision",
   });
   assertEquals(seen, ["process.control"]);
-});
-function fixture() {
-  const current = {
-    id: 17,
-    kind: args.kind as string,
-    node_id: 9,
-    status: "queued",
-    input: { ...input } as Record<string, unknown>,
-    result: null,
-    cancel_requested: false,
-  };
-  let effects = 0;
-  const calls: unknown[] = [];
-  const action = processAction(() => {
-    effects++;
-    return Promise.resolve({ state: "active" });
-  });
-  const control = processControl(() => (method, _path, body) => {
-    calls.push({ method, body });
-    return Promise.resolve({ status: 200, body: { data: current } });
-  }, action);
-  const ctx = {
-    globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "test-ca" },
-  };
-  return { current, control, ctx, calls, effects: () => effects };
-}
-Deno.test("shared Process binding projects bounded results without execution relay", async () => {
-  const f = fixture();
-  assertEquals(await f.control.methods.control.execute(args, f.ctx), {
-    status: "succeeded",
-  });
-  assertEquals(f.effects(), 2);
-  assertEquals(f.calls.length, 3);
-});
-Deno.test("a foreign Node refuses before any Process effect", async () => {
-  const f = fixture();
-  f.current.node_id = 8;
-  await assertRejects(() => f.control.methods.control.execute(args, f.ctx));
-  assertEquals(f.effects(), 0);
-});
-Deno.test("cancellation and an already projected success do not repeat control", async () => {
-  for (const terminal of [true, false]) {
-    const f = fixture();
-    f.current.cancel_requested = true;
-    f.current.status = terminal ? "succeeded" : "queued";
-    assertEquals(await f.control.methods.control.execute(args, f.ctx), {
-      status: terminal ? "succeeded" : "cancelled",
-    });
-    assertEquals(f.effects(), 0);
-  }
-});
-Deno.test("a Vite plan or unadmitted command refuses before local execution", async () => {
-  for (const extra of [{ command: "private" }, { vite: { instance_id: 8 } }]) {
-    const f = fixture();
-    Object.assign(f.current.input, extra);
-    await assertRejects(() => f.control.methods.control.execute(args, f.ctx));
-    assertEquals(f.effects(), 0);
-  }
 });
 
 Deno.test("native destroy passes only the exact admitted Vite environment", async () => {

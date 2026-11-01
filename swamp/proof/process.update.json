@@ -1,0 +1,75 @@
+{
+  "kind": "process.update",
+  "workflow": "operation-process-create",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "processes",
+      "bind": "process",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "update-${proof.run}",
+        "runtime": "systemd",
+        "command": [
+          "/usr/bin/sleep",
+          "infinity"
+        ],
+        "start": true
+      }
+    }
+  ],
+  "request": {
+    "method": "PATCH",
+    "path": "processes/${process.id}",
+    "body": {
+      "command": [
+        "/usr/bin/sleep",
+        "86400"
+      ]
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Write the unit",
+      "job": "process",
+      "step": "Write the unit",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Reload systemd",
+      "job": "process",
+      "step": "Reload systemd",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Apply the unit state",
+      "job": "process",
+      "step": "Apply the unit state",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Restart if changed",
+      "job": "process",
+      "step": "Restart if changed",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Verify it runs",
+      "job": "process",
+      "step": "Verify it runs",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/process/parity.py",
+    "running",
+    "86400"
+  ]
+}

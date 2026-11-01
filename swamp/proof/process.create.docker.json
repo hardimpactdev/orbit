@@ -1,0 +1,56 @@
+{
+  "kind": "process.create.docker",
+  "workflow": "operation-process-create",
+  "topology": "minimal",
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "request": {
+    "method": "POST",
+    "path": "processes",
+    "body": {
+      "target_type": "node",
+      "target_id": "${node.target}",
+      "name": "docker-${proof.run}",
+      "runtime": "docker",
+      "image": "busybox:1.36",
+      "command": [
+        "sleep",
+        "infinity"
+      ],
+      "start": true
+    }
+  },
+  "phases": [
+    {
+      "name": "Pull the image",
+      "job": "process",
+      "step": "Pull the image",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Create container, no env",
+      "job": "process",
+      "step": "Create container, no env",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Apply the container state",
+      "job": "process",
+      "step": "Apply the container state",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Verify it runs",
+      "job": "process",
+      "step": "Verify it runs",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/process/parity.py",
+    "running"
+  ]
+}

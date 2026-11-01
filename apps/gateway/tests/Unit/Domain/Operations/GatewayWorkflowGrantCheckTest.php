@@ -25,9 +25,9 @@ it('rejects a newly declared Horizon workflow without a matching grant intent', 
 });
 
 it('rejects run-only and read-only intent rather than implying the other action', function (array $actions): void {
-    $definitions = ['process.stop' => ['workflow' => 'operation-process-stop']];
+    $definitions = ['process.stop' => ['workflow' => 'operation-process-control']];
     $policy = ['version' => 2, 'vaults' => [], 'principal' => 'user:orbit-gateway', 'workflows' => [
-        ['workflow' => 'operation-process-stop', 'actions' => $actions],
+        ['workflow' => 'operation-process-control', 'actions' => $actions],
     ]];
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
@@ -35,9 +35,9 @@ it('rejects run-only and read-only intent rather than implying the other action'
 })->with([['actions' => ['run']], ['actions' => ['read']]]);
 
 it('rejects broader or malformed intended policy', function (array $change): void {
-    $definitions = ['process.stop' => ['workflow' => 'operation-process-stop']];
+    $definitions = ['process.stop' => ['workflow' => 'operation-process-control']];
     $policy = ['version' => 2, 'vaults' => [], 'principal' => 'user:orbit-gateway', 'workflows' => [
-        ['workflow' => 'operation-process-stop', 'actions' => ['run', 'read']],
+        ['workflow' => 'operation-process-control', 'actions' => ['run', 'read']],
     ]];
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, array_replace($policy, $change)))
@@ -46,14 +46,14 @@ it('rejects broader or malformed intended policy', function (array $change): voi
     'different principal' => [['principal' => 'user:other']],
     'other schema' => [['version' => 3]],
     'extra authority field' => [['credentials' => []]],
-    'non-list entries' => [['workflows' => ['named' => ['workflow' => 'operation-process-stop', 'actions' => ['run', 'read']]]]],
+    'non-list entries' => [['workflows' => ['named' => ['workflow' => 'operation-process-control', 'actions' => ['run', 'read']]]]],
     'wildcard' => [['workflows' => [['workflow' => '*', 'actions' => ['run', 'read']]]]],
-    'broader action' => [['workflows' => [['workflow' => 'operation-process-stop', 'actions' => ['run', 'read', 'write']]]]],
-    'conditional entry' => [['workflows' => [['workflow' => 'operation-process-stop', 'actions' => ['run', 'read'], 'condition' => 'true']]]],
-    'duplicate action' => [['workflows' => [['workflow' => 'operation-process-stop', 'actions' => ['run', 'run', 'read']]]]],
+    'broader action' => [['workflows' => [['workflow' => 'operation-process-control', 'actions' => ['run', 'read', 'write']]]]],
+    'conditional entry' => [['workflows' => [['workflow' => 'operation-process-control', 'actions' => ['run', 'read'], 'condition' => 'true']]]],
+    'duplicate action' => [['workflows' => [['workflow' => 'operation-process-control', 'actions' => ['run', 'run', 'read']]]]],
     'duplicate workflow' => [['workflows' => [
-        ['workflow' => 'operation-process-stop', 'actions' => ['run', 'read']],
-        ['workflow' => 'operation-process-stop', 'actions' => ['run', 'read']],
+        ['workflow' => 'operation-process-control', 'actions' => ['run', 'read']],
+        ['workflow' => 'operation-process-control', 'actions' => ['run', 'read']],
     ]]],
 ]);
 

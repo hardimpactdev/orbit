@@ -536,7 +536,7 @@ p.write_text(json.dumps(s))
             "--run",
             self.run["id"],
             "--from",
-            "service",
+            "Apply the unit state",
         )
         self.assertEqual(self.unit.stat().st_ino, inode)
         self.assertTrue(self.current()["active"])
@@ -555,10 +555,6 @@ p.write_text(json.dumps(s))
             {"index": index, "path": path} for index, path in enumerate(paths)
         ]
         self.run_lifecycle()
-        names = []
-        for index in range(2):
-            model = json.loads(
-                self.cli("model", "get", f"process-mount-17-{index}").stdout
-            )
-            names.append(model["name"])
-        self.assertEqual(names, ["process-mount-17-0", "process-mount-17-1"])
+        expected = [f"process-mount-{self.run['id']}-{index}" for index in range(2)]
+        names = [json.loads(self.cli("model", "get", name).stdout)["name"] for name in expected]
+        self.assertEqual(names, expected)

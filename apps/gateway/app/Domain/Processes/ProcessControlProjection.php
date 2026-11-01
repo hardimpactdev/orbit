@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\CaddyPublicationPlan;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -23,17 +22,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        if (in_array($operation->kind, ['process.create', 'process.update', 'process.destroy'], true)) {
-            return app(ProcessLifecycleInput::class)->forOperation($operation);
-        }
-
-        $input = $this->inputFor($operation->kind, $operation->input, (int) $operation->node_id);
-
-        return $operation->kind === 'process.stop'
-            ? ['intent' => ['control' => Arr::except($input, ['agent_sha256']),
-                'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
-                'execution_secrets' => []]
-            : $input;
+        return app(ProcessLifecycleInput::class)->forOperation($operation);
     }
 
     /** @param array<string,mixed> $intent

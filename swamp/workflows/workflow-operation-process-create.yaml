@@ -4,15 +4,29 @@ description: Create or update one Process through official cfgmgmt and SSH on209
 vaults:
 - orbit-control-inputs
 queueTimeout: 30
-inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [process.create, process.update]},
-    intent: {type: object}, execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]},
-          key: {type: string, pattern: '^process-((create|update)-operation-[1-9][0-9]*|instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*)$'}}, required: [vault, key], additionalProperties: false}}}, required: [operation_id,
-    node_id, kind, intent, execution_secrets], additionalProperties: false}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [process.create, process.update]}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^process-((create|update)-operation-[1-9][0-9]*|instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*)$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
 - name: process
   target: orbit-node-209
   steps:
-  - name: account
+  - name: 'Check the account'
     target: orbit-node-209
     task:
       type: behavior
@@ -24,19 +38,19 @@ jobs:
               inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {name: account, hosts: [target], argv: [/usr/bin/getent, passwd, '${{ has(inputs.intent.installation) && has(inputs.intent.installation.account_user)
             ? inputs.intent.installation.account_user : inputs.intent.ssh_execution.target.user }}'], sudo: false}
-  - name: assets
+  - name: 'Resolve check assets'
     target: orbit-node-209
-    dependsOn: [{step: account, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Check the account', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
       behaviorName: ${{ "process-assets-" + run.id }}
       methodName: lifecycle
-      inputs: {control: '${{ inputs.intent.control }}', account: '${{ steps.account.outputs.stdout }}', installation: '${{ inputs.intent.installation }}', marker: '${{
+      inputs: {control: '${{ inputs.intent.control }}', account: '${{ steps["Check the account"].outputs.stdout }}', installation: '${{ inputs.intent.installation }}', marker: '${{
           has(inputs.intent.vite_plan) ? inputs.intent.vite_plan.awake.marker : "" }}'}
-  - name: prepare
+  - name: 'Make the asset directory'
     target: orbit-node-209
-    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Resolve check assets', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -44,20 +58,20 @@ jobs:
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
       inputs: {name: prepare, hosts: [target], argv: [/usr/bin/mkdir, -m, '0700', -p, '${{ "/tmp/orbit-process-" + run.id }}'], sudo: false}
-  - name: copy
+  - name: 'Copy check assets'
     target: orbit-node-209
-    dependsOn: [{step: prepare, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Make the asset directory', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: copy
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: scripts, direction: to, hosts: [target], src: '${{ steps.assets.outputs.scripts_directory }}', dst: '${{ "/tmp/orbit-process-" + run.id }}',
+      inputs: {name: scripts, direction: to, hosts: [target], src: '${{ steps["Resolve check assets"].outputs.scripts_directory }}', dst: '${{ "/tmp/orbit-process-" + run.id }}',
         recursive: true}
-  - name: intent
+  - name: 'Write the intent file'
     target: orbit-node-209
-    dependsOn: [{step: copy, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Copy check assets', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -65,31 +79,31 @@ jobs:
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ "/tmp/orbit-process-" + run.id + "/intent.json" }}',
-        ensure: present, content: '${{ steps.assets.outputs.intent_json }}', owner: root, group: root, mode: '0600'}
+        ensure: present, content: '${{ steps["Resolve check assets"].outputs.intent_json }}', owner: root, group: root, mode: '0600'}
       inputs: {}
-  - name: inspect
+  - name: 'Inspect the Process'
     target: orbit-node-209
-    dependsOn: [{step: intent, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Write the intent file', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: inspect, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', /usr/bin/python3, '${{
+      inputs: {name: inspect, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, '${{
             "/tmp/orbit-process-" + run.id + "/scripts" + "/inspect.py" }}'], sudo: true}
-  - name: observation
+  - name: 'Read the observation'
     target: orbit-node-209
-    dependsOn: [{step: inspect, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Inspect the Process', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
       behaviorName: ${{ "process-observation-" + run.id }}
       methodName: decode
-      inputs: {stdout: '${{ steps.inspect.outputs.stdout }}'}
-  - name: release
+      inputs: {stdout: '${{ steps["Inspect the Process"].outputs.stdout }}'}
+  - name: 'Check the release'
     target: orbit-node-209
-    dependsOn: [{step: observation, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.installation.desired != "running" || !has(inputs.intent.control.directory) }}
     task:
       type: behavior
@@ -97,11 +111,11 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: release, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', /usr/bin/python3, '${{
+      inputs: {name: release, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, '${{
             "/tmp/orbit-process-" + run.id + "/scripts" + "/check_release.py" }}'], sudo: true}
-  - name: mounts
+  - name: 'Check required mounts'
     target: orbit-node-209
-    dependsOn: [{step: observation, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" }}
     task:
       type: behavior
@@ -113,9 +127,9 @@ jobs:
     forEach:
       item: mount
       in: '${{ has(inputs.intent.mounts) ? inputs.intent.mounts : [{"path":"/","index":0}] }}'
-  - name: retired
+  - name: 'Remove the retired unit'
     target: orbit-node-209
-    dependsOn: [{step: observation, condition: {type: succeeded}}, {step: release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: mounts,
+    dependsOn: [{step: 'Read the observation', condition: {type: succeeded}}, {step: 'Check the release', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check required mounts',
         condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.installation.retired == null }}
     task:
@@ -134,10 +148,10 @@ jobs:
             vite: null
           ssh_execution: ${{ inputs.intent.ssh_execution }}
         execution_secrets: {}
-  - name: environment
+  - name: 'Write the environment'
     target: orbit-node-209
-    dependsOn: [{step: retired, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: release, condition: {type: or, conditions: [{type: succeeded},
-            {type: skipped}]}}, {step: mounts, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: observation, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Remove the retired unit', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check the release', condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: 'Check required mounts', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || !inputs.intent.installation.has_environment || steps.exists(key, steps[key].status == "failed") }}
     task:
       type: behavior
@@ -145,14 +159,14 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: environment, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', /usr/bin/python3, '${{
+      inputs: {name: environment, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, '${{
             "/tmp/orbit-process-" + run.id + "/scripts" + "/lifecycle_environment.py" }}', '${{ "/tmp/orbit-process-" + run.id + "/intent.json" }}'], sudo: true,
         stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'}
-  - name: unit
+  - name: 'Write the unit'
     target: orbit-node-209
-    dependsOn: [{step: retired, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: release, condition: {type: or, conditions: [{type: succeeded},
-            {type: skipped}]}}, {step: mounts, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: observation, condition: {type: succeeded}},
-      {step: environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Remove the retired unit', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check the release', condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: 'Check required mounts', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Read the observation', condition: {type: succeeded}},
+      {step: 'Write the environment', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || steps.exists(key, steps[key].status == "failed") }}
     task:
       type: behavior
@@ -161,11 +175,11 @@ jobs:
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ "/etc/systemd/system/" + inputs.intent.control.name
-          }}', ensure: present, content: '${{ steps.assets.outputs.unit }}', owner: root, group: root, mode: '0644'}
+          }}', ensure: present, content: '${{ steps["Resolve check assets"].outputs.unit }}', owner: root, group: root, mode: '0644'}
       inputs: {}
-  - name: reload
+  - name: 'Reload systemd'
     target: orbit-node-209
-    dependsOn: [{step: unit, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Write the unit', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
@@ -175,61 +189,20 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: systemctl daemon-reload}
       inputs: {}
-  - name: vite-directory
+  - name: 'Publish the dev route'
     target: orbit-node-209
-    dependsOn: [{step: reload, condition: {type: succeeded}}]
-    guard: ${{ !has(inputs.intent.vite_plan) }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: ${{ "process-vite-directory-" + run.id }}
-      methodName: apply
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: /etc/orbit/vite, ensure: present, owner: root, group: root,
-        mode: '0755'}
-      inputs: {}
-  - name: vite-environment
-    target: orbit-node-209
-    dependsOn: [{step: vite-directory, condition: {type: succeeded}}]
-    guard: ${{ !has(inputs.intent.vite_plan) }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "process-vite-environment-" + run.id }}
-      methodName: apply
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ has(inputs.intent.vite_plan) ? inputs.intent.vite_plan.environment.path
-          : "/unused" }}', ensure: present, content: '${{ has(inputs.intent.vite_plan) ? inputs.intent.vite_plan.environment.content : "" }}', owner: root, group: root,
-        mode: '0644'}
-      inputs: {}
-  - name: suspend
-    target: orbit-node-209
-    dependsOn: [{step: vite-environment, condition: {type: succeeded}}]
-    guard: ${{ !has(inputs.intent.vite_plan) }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-ssh-" + run.id }}
-      methodName: exec
-      globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: suspend, hosts: [target], argv: [/usr/bin/rm, -f, '${{ has(inputs.intent.vite_plan) ? (inputs.intent.vite_plan.suspend.marker) : "" }}'], sudo: true}
-  - name: caddy
-    target: orbit-node-209
-    dependsOn: [{step: suspend, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Reload systemd', condition: {type: succeeded}}]
     guard: ${{ !has(inputs.intent.vite_plan) }}
     task:
       type: workflow
-      workflowIdOrName: operation-route-caddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: {caddy_publication: '${{ has(inputs.intent.caddy_publication) ? inputs.intent.caddy_publication : {} }}'}
-        execution_secrets: {}
-  - name: stop-transitioning
+      workflowIdOrName: operation-process-vite
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {vite_plan: '${{ has(inputs.intent.vite_plan)
+              ? inputs.intent.vite_plan : {} }}', caddy_publication: '${{ has(inputs.intent.caddy_publication) ? inputs.intent.caddy_publication : {} }}', ssh_execution: '${{
+              inputs.intent.ssh_execution }}'}, execution_secrets: {}}
+  - name: 'Stop a transitioning unit'
     target: orbit-node-209
-    dependsOn: [{step: reload, condition: {type: succeeded}}, {step: caddy, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "stopped" || !(steps.observation.outputs.state in ["activating","deactivating","reloading"])
+    dependsOn: [{step: 'Reload systemd', condition: {type: succeeded}}, {step: 'Publish the dev route', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "stopped" || !(steps["Read the observation"].outputs.state in ["activating","deactivating","reloading"])
       || steps.exists(key, steps[key].status == "failed") }}
     task:
       type: behavior
@@ -239,9 +212,9 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "systemctl stop " + inputs.intent.control.name }}'}
       inputs: {}
-  - name: service
+  - name: 'Apply the unit state'
     target: orbit-node-209
-    dependsOn: [{step: reload, condition: {type: succeeded}}, {step: caddy, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: stop-transitioning,
+    dependsOn: [{step: 'Reload systemd', condition: {type: succeeded}}, {step: 'Publish the dev route', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Stop a transitioning unit',
         condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || steps.exists(key, steps[key].status == "failed") }}
     task:
@@ -253,10 +226,10 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', enabled: '${{ inputs.intent.installation.desired
           == "running" && !inputs.intent.control.on_demand }}', ensure: '${{ inputs.intent.installation.desired == "running" ? "running" : "stopped" }}'}
       inputs: {}
-  - name: restart-changed
+  - name: 'Restart if changed'
     target: orbit-node-209
-    dependsOn: [{step: service, condition: {type: succeeded}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !(steps.observation.outputs.state in ["active", "reloading"])
+    dependsOn: [{step: 'Apply the unit state', condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !(steps["Read the observation"].outputs.state in ["active", "reloading"])
       || (!inputs.intent.installation.activation_pending && size(data.latest("process-unit-" + run.id, inputs.intent.ssh_execution.target.host).attributes.changes)
       == 0) }}
     task:
@@ -267,10 +240,10 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}'}
       inputs: {}
-  - name: pull
+  - name: 'Pull the image'
     target: orbit-node-209
-    dependsOn: [{step: retired, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: release, condition: {type: or, conditions: [{type: succeeded},
-            {type: skipped}]}}, {step: mounts, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: observation, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Remove the retired unit', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check the release', condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: 'Check required mounts', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "docker" || steps.exists(key, steps[key].status == "failed") }}
     task:
       type: behavior
@@ -282,21 +255,21 @@ jobs:
           pull " + (has(inputs.intent.installation.definition) ? inputs.intent.installation.definition.image : "unused") }}', notIf: '${{ "docker --host=unix:///var/run/docker.sock
           image inspect " + (has(inputs.intent.installation.definition) ? inputs.intent.installation.definition.image : "unused") }}'}
       inputs: {}
-  - name: stop-replaced
+  - name: 'Stop the old container'
     target: orbit-node-209
-    dependsOn: [{step: pull, condition: {type: succeeded}}]
-    guard: ${{ inputs.intent.control.runtime != "docker" || !steps.observation.outputs.present || steps.observation.outputs.spec == inputs.intent.installation.spec }}
+    dependsOn: [{step: 'Pull the image', condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.control.runtime != "docker" || !steps["Read the observation"].outputs.present || steps["Read the observation"].outputs.spec == inputs.intent.installation.spec }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: stop-replaced, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', ORBIT_PROCESS_OPERATION=stop,
+      inputs: {name: stop-replaced, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', ORBIT_PROCESS_OPERATION=stop,
           /usr/bin/python3, '${{ "/tmp/orbit-process-" + run.id + "/scripts/control.py" }}'], sudo: true}
-  - name: remove-replaced
+  - name: 'Remove the old container'
     target: orbit-node-209
-    dependsOn: [{step: stop-replaced, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Stop the old container', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "docker" }}
     task:
       type: behavior
@@ -304,11 +277,11 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: remove-replaced, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', /usr/bin/python3,
+      inputs: {name: remove-replaced, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3,
           '${{ "/tmp/orbit-process-" + run.id + "/scripts/remove_container.py" }}'], sudo: true}
-  - name: container
+  - name: 'Create the container'
     target: orbit-node-209
-    dependsOn: [{step: pull, condition: {type: succeeded}}, {step: remove-replaced, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Pull the image', condition: {type: succeeded}}, {step: 'Remove the old container', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "docker" || !inputs.intent.installation.has_environment }}
     task:
       type: behavior
@@ -316,12 +289,12 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: container, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', /usr/bin/python3, '${{
+      inputs: {name: container, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, '${{
             "/tmp/orbit-process-" + run.id + "/scripts" + "/lifecycle_container.py" }}', '${{ "/tmp/orbit-process-" + run.id + "/intent.json" }}'], sudo: true, stdin: '${{
           vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'}
-  - name: container-public
+  - name: 'Create container, no env'
     target: orbit-node-209
-    dependsOn: [{step: pull, condition: {type: succeeded}}, {step: remove-replaced, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Pull the image', condition: {type: succeeded}}, {step: 'Remove the old container', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "docker" || inputs.intent.installation.has_environment }}
     task:
       type: behavior
@@ -329,12 +302,12 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: container-public, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', /usr/bin/python3,
+      inputs: {name: container-public, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3,
           '${{ "/tmp/orbit-process-" + run.id + "/scripts" + "/lifecycle_container.py" }}', '${{ "/tmp/orbit-process-" + run.id + "/intent.json" }}'], sudo: true,
         stdin: '{}'}
-  - name: container-state
+  - name: 'Apply the container state'
     target: orbit-node-209
-    dependsOn: [{step: container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: container-public, condition: {type: or, conditions: [
+    dependsOn: [{step: 'Create the container', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Create container, no env', condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "docker" || steps.exists(key, steps[key].status == "failed") }}
     task:
@@ -346,10 +319,10 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "docker --host=unix:///var/run/docker.sock container
           " + (inputs.intent.installation.desired == "running" ? "start " : "stop ") + inputs.intent.control.name }}'}
       inputs: {}
-  - name: verify
+  - name: 'Verify it runs'
     target: orbit-node-209
-    dependsOn: [{step: service, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: restart-changed, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}, {step: container-state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Apply the unit state', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Restart if changed', condition: {type: or, conditions: [
+            {type: succeeded}, {type: skipped}]}}, {step: 'Apply the container state', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status == "failed") }}
     task:
       type: behavior
@@ -357,11 +330,11 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: verify, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', '${{ "ORBIT_PROCESS_DESIRED="
+      inputs: {name: verify, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_DESIRED="
             + inputs.intent.installation.desired }}', /usr/bin/python3, '${{ "/tmp/orbit-process-" + run.id + "/scripts" + "/verify.py" }}'], sudo: true}
-  - name: listener
+  - name: 'Check the listener'
     target: orbit-node-209
-    dependsOn: [{step: verify, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Verify it runs', condition: {type: succeeded}}]
     guard: ${{ !has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" }}
     task:
       type: behavior
@@ -369,12 +342,12 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: listener, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps.assets.outputs.control_json }}', '${{ has(inputs.intent.vite_plan)
+      inputs: {name: listener, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ has(inputs.intent.vite_plan)
             ? ("ORBIT_PROCESS_PORT=" + string(inputs.intent.vite_plan.listener.port)) : "" }}', /usr/bin/python3, '${{ "/tmp/orbit-process-" + run.id + "/scripts"
             + "/lifecycle_listener.py" }}'], sudo: true}
-  - name: awake-directory
+  - name: 'Prepare the awake marker'
     target: orbit-node-209
-    dependsOn: [{step: verify, condition: {type: succeeded}}, {step: listener, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Verify it runs', condition: {type: succeeded}}, {step: 'Check the listener', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ !has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" }}
     task:
       type: behavior
@@ -382,10 +355,10 @@ jobs:
       behaviorName: ${{ "process-ssh-" + run.id }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
-      inputs: {name: awake-directory, hosts: [target], argv: [/usr/bin/mkdir, -p, '${{ steps.assets.outputs.marker_directory }}'], sudo: true}
-  - name: awake
+      inputs: {name: awake-directory, hosts: [target], argv: [/usr/bin/mkdir, -p, '${{ steps["Resolve check assets"].outputs.marker_directory }}'], sudo: true}
+  - name: 'Mark it awake'
     target: orbit-node-209
-    dependsOn: [{step: awake-directory, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Prepare the awake marker', condition: {type: succeeded}}]
     guard: ${{ !has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" }}
     task:
       type: behavior
@@ -394,9 +367,9 @@ jobs:
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
       inputs: {name: awake, hosts: [target], argv: [/usr/bin/touch, '${{ has(inputs.intent.vite_plan) ? (inputs.intent.vite_plan.awake.marker) : "" }}'], sudo: true}
-  - name: cleanup
+  - name: 'Clean up'
     target: orbit-node-209
-    dependsOn: [{step: verify, condition: {type: succeeded}}, {step: awake, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Verify it runs', condition: {type: succeeded}}, {step: 'Mark it awake', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status == "failed") }}
     task:
       type: behavior
@@ -405,9 +378,9 @@ jobs:
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
       inputs: {name: cleanup, hosts: [target], argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-process-" + run.id }}'], sudo: true}
-  - name: result
+  - name: 'Report the result'
     target: orbit-node-209
-    dependsOn: [{step: cleanup, condition: {type: succeeded}}]
+    dependsOn: [{step: 'Clean up', condition: {type: succeeded}}]
     guard: ${{ steps.exists(key, steps[key].status == "failed") }}
     task:
       type: behavior
@@ -415,4 +388,4 @@ jobs:
       behaviorName: ${{ "process-result-" + run.id }}
       methodName: execute
       inputs:
-        run: printf '%s\n' '${{ steps.verify.outputs.stdout }}'
+        run: printf '%s\n' '${{ steps["Verify it runs"].outputs.stdout }}'

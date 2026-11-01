@@ -1,94 +1,168 @@
 id: fe404a82-4210-4047-b440-5f385b8e49c3
 name: operation-process-control
-description: One directly admitted Process control on its exact Node worker.
+description: Start, stop or restart one Process from 209 through official SSH to its admitted Node, with separate boot policy, control and verification.
 vaults: []
+queueTimeout: 30
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: {
-      type: string,
-      enum: [
-        process.start,
-        process.restart,
-      ],
-    }
-  required: [operation_id, node_id, kind]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [process.start, process.stop, process.restart]}
+    intent:
+      type: object
+      properties:
+        control:
+          type: object
+          properties:
+            process_id: {type: integer, minimum: 1}
+            runtime: {type: string, enum: [systemd, docker]}
+            name: {type: string, pattern: '^orbit-process-[1-9][0-9]*-[a-z0-9-]+(?:\.service)?$'}
+            on_demand: {type: boolean}
+            directory: {type: string, pattern: '^/'}
+            vite: {default: null}  # null, or the admitted Vite environment path and Instance
+          required: [process_id, runtime, name, on_demand, vite]
+          additionalProperties: false
+        ssh_execution: {type: object}
+        vite_plan: {type: object}
+        caddy_publication: {type: object}
+      required: [control, ssh_execution]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-  - name: node
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    writes: true
-    steps:
-      - name: control
-        guard: '${{ inputs.kind in ["process.start", "process.restart"] }}'
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/process-control"
-          behaviorName: '${{ "process-control-node-" + string(inputs.node_id) }}'
-          methodName: control
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-      - name: prepare-start
-        guard: '${{ !(inputs.kind in ["process.start", "process.restart"]) }}'
-        dependsOn: [
-          {
-            step: control,
-            condition: {
-              type: or,
-              conditions: [{ type: succeeded }, { type: skipped }],
-            },
-          },
-        ]
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/process-control"
-          behaviorName: '${{ "process-control-node-" + string(inputs.node_id) }}'
-          methodName: prepareStart
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-      - name: caddy
-        guard: '${{ !data.latest("process-control-node-" + string(inputs.node_id), "start-" + run.id).attributes.vite || !data.latest("process-control-node-" + string(inputs.node_id), "start-" + run.id).attributes.proceed }}'
-        dependsOn: [{ step: prepare-start, condition: { type: succeeded } }]
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/route-publication"
-          behaviorName: '${{ "route-publication-node-" + string(inputs.node_id) }}'
-          methodName: publishCaddy
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-      - name: activate-start
-        guard: '${{ !(inputs.kind in ["process.start", "process.restart"]) }}'
-        dependsOn:
-          - step: prepare-start
-            condition: { type: succeeded }
-          - step: caddy
-            condition: {
-              type: or,
-              conditions: [
-                { type: succeeded },
-                { type: failed },
-                { type: skipped },
-              ],
-            }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/process-control"
-          behaviorName: '${{ "process-control-node-" + string(inputs.node_id) }}'
-          methodName: activateStart
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            preparation: '${{ data.latest("process-control-node-" + string(inputs.node_id), "start-" + run.id).attributes }}'
-            publication_status: '${{ has(steps.caddy) ? steps.caddy.status : "skipped" }}'
+- name: runtime
+  target: orbit-node-209
+  steps:
+  - name: 'Resolve check assets'
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/process-command-assets'
+      behaviorName: ${{ "process-control-assets-" + run.id }}
+      methodName: read
+      inputs: {control: '${{ inputs.intent.control }}'}
+  - name: 'Make the asset directory'
+    target: orbit-node-209
+    dependsOn: [{step: 'Resolve check assets', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "process-control-ssh-" + run.id }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
+            }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
+      inputs: {hosts: 'name:target', argv: [mkdir, -p, '${{ "/tmp/orbit-process-control-" + run.id }}']}
+  - name: 'Copy check assets'
+    target: orbit-node-209
+    dependsOn: [{step: 'Make the asset directory', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: copy
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', src: '${{ steps["Resolve check assets"].outputs.scripts_directory }}', dst: '${{ "/tmp/orbit-process-control-" + run.id + "/" }}', direction: to,
+        recursive: true}
+    # Start and restart of a production Process need its admitted release directory.
+  - name: 'Check the release'
+    target: orbit-node-209
+    dependsOn: [{step: 'Copy check assets', condition: {type: succeeded}}]
+    guard: ${{ !has(inputs.intent.control.directory) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-"
+            + run.id + "/scripts/check_release.py" }}'], sudo: true}
+  - name: 'Publish the dev route'
+    target: orbit-node-209
+    dependsOn: [{step: 'Check the release', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Copy check assets', condition: {type: succeeded}}]
+    guard: ${{ !has(inputs.intent.vite_plan) }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-vite
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {vite_plan: '${{ has(inputs.intent.vite_plan)
+              ? inputs.intent.vite_plan : {} }}', caddy_publication: '${{ has(inputs.intent.caddy_publication) ? inputs.intent.caddy_publication : {} }}', ssh_execution: '${{
+              inputs.intent.ssh_execution }}'}, execution_secrets: {}}
+    # Stop disables; start and restart enable unless the Process starts on demand (legacy enable --now, disable --now).
+  - name: 'Set boot policy'
+    target: orbit-node-209
+    dependsOn: [{step: 'Check the release', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Publish the dev route', condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: 'Copy check assets', condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.control.runtime != "systemd" || (inputs.kind != "process.stop" && inputs.intent.control.on_demand) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_ENABLE=" + (inputs.kind ==
+              "process.stop" ? "disable" : "enable") }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-" + run.id + "/scripts/enable.py" }}'], sudo: true}
+  - name: 'Control the Process'
+    target: orbit-node-209
+    dependsOn: [{step: 'Set boot policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check the release', condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: 'Publish the dev route', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Copy check assets', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_OPERATION=" + (inputs.kind == "process.stop" ? "stop" : (inputs.kind
+              == "process.start" ? "start" : "restart")) }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-" + run.id + "/scripts/control.py" }}'], sudo: true}
+  - name: 'Verify the state'
+    target: orbit-node-209
+    dependsOn: [{step: 'Control the Process', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_DESIRED=" + (inputs.kind ==
+              "process.stop" ? "stopped" : "running") }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-" + run.id + "/scripts/verify.py" }}'], sudo: true}
+  - name: 'Check the listener'
+    target: orbit-node-209
+    dependsOn: [{step: 'Verify the state', condition: {type: succeeded}}]
+    guard: ${{ !has(inputs.intent.vite_plan) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_PORT=" + (has(inputs.intent.vite_plan)
+              ? string(inputs.intent.vite_plan.listener.port) : "0") }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-" + run.id + "/scripts/lifecycle_listener.py"
+              }}'], sudo: true}
+    # Only an explicit start wakes Vite traffic, as legacy did.
+  - name: 'Mark it awake'
+    target: orbit-node-209
+    dependsOn: [{step: 'Check the listener', condition: {type: succeeded}}]
+    guard: ${{ !has(inputs.intent.vite_plan) || inputs.kind != "process.start" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: [install, -D, -m, '0644', /dev/null, '${{ has(inputs.intent.vite_plan) ? inputs.intent.vite_plan.awake.marker : "" }}'], sudo: true}
+  - name: 'Clean up'
+    target: orbit-node-209
+    dependsOn: [{step: 'Verify the state', condition: {type: succeeded}}, {step: 'Mark it awake', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    # A failed run keeps its scripts for a resumed run.
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-control-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: [rm, -rf, --, '${{ "/tmp/orbit-process-control-" + run.id }}'], sudo: true}

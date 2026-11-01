@@ -1,7 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
-import { startActions, StartInput, startMethods } from "./start.ts";
+import { startActions, StartInput } from "./start.ts";
 import type { localProcessAction } from "./native-action.ts";
-import type { Http } from "../../automatic-deploy/gateway.ts";
 
 const input = {
   process_id: 7,
@@ -160,89 +159,6 @@ Deno.test("foreign Vite instance path marker listener or content refuses before 
     false,
   );
 });
-Deno.test("same-root start skips ended/cancelled preparation and refuses foreign Node before effects", async () => {
-  const f = fixture();
-  const current = {
-    id: 17,
-    kind: "process.start",
-    node_id: 9,
-    status: "queued",
-    cancel_requested: false,
-    input: vite,
-  };
-  const http: Http = () =>
-    Promise.resolve({ status: 200, body: { data: current } });
-  const methods = startMethods(() => http, f.actions);
-  const args = {
-    operation_id: 17,
-    kind: "process.start" as const,
-    node_id: 9,
-    run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
-  };
-  const recorded: unknown[] = [];
-  const ctx = {
-    writeResource: (
-      _spec: string,
-      name: string,
-      value: Record<string, unknown>,
-    ) => {
-      recorded.push(value);
-      return Promise.resolve({ name });
-    },
-    globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "unused" },
-  };
-  current.node_id = 8;
-  await assertRejects(() => methods.prepareStart.execute(args, ctx));
-  current.node_id = 9;
-  current.cancel_requested = true;
-  await methods.prepareStart.execute(args, ctx);
-  assertEquals(recorded.at(-1), { vite: true, proceed: false });
-  current.status = "succeeded";
-  await methods.prepareStart.execute(args, ctx);
-  assertEquals(recorded.at(-1), { vite: true, proceed: false });
-  assertEquals(f.calls, []);
-});
-Deno.test("a failed Caddy native step projects a bounded parent failure without starting its Process", async () => {
-  const f = fixture();
-  const posts: Record<string, unknown>[] = [];
-  const http: Http = (method, _path, body) => {
-    if (method === "POST") posts.push(body as Record<string, unknown>);
-    return Promise.resolve({
-      status: 200,
-      body: {
-        data: {
-          id: 17,
-          kind: "process.start",
-          node_id: 9,
-          status: "queued",
-          cancel_requested: false,
-          input: vite,
-          result: null,
-        },
-      },
-    });
-  };
-  const methods = startMethods(() => http, f.actions);
-  await assertRejects(
-    () =>
-      methods.activateStart.execute({
-        operation_id: 17,
-        kind: "process.start",
-        node_id: 9,
-        run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
-        preparation: { vite: true, proceed: true },
-        publication_status: "failed",
-      }, {
-        globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "unused" },
-      }),
-    Error,
-    "process.caddy_failed",
-  );
-  assertEquals(f.calls, []);
-  assertEquals(posts.map((p) => p.status), ["running", "failed"]);
-  assertEquals(posts.at(-1)?.result, { error_code: "process.caddy_failed" });
-});
-
 Deno.test("Vite restart stops before environment preparation and starts after publication without an awake marker", async () => {
   const f = fixture();
   assertEquals(await f.actions.prepare(vite, undefined, "process.restart"), {

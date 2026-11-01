@@ -1182,14 +1182,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/processes-schedules/process-control.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/processes-schedules/process-system.ts",
       "rule": "custom-control",
       "count": 3,
@@ -1233,14 +1225,6 @@
       "count": 1,
       "evidence": [
         "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/start.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {

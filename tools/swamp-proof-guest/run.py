@@ -121,8 +121,11 @@ def main():
         if reply.get('operation', {}).get('status') != 'succeeded':
             receipt.update(proof_pass=False, error='prepare failed', prepare_reply=reply)
             return receipt
+        if 'bind' in request:
+            # An Operation request binds its target, such as the Process it created.
+            context[request['bind'] + '.id'] = reply['operation']['target_id']
     for argv in fixture.get('before_target', []):
-        on_target(up['target']['key'], argv)
+        on_target(up['target']['key'], bind(argv, context))
     reply = gateway({**bind(fixture['request'], context), 'caller': operator, 'key': f'proof-{run_id}-request'}, fixture['budget_seconds'])
     operation = reply.get('operation') or {}
     receipt.update(http_status=reply.get('http_status'), operation=operation, admit_seconds=reply.get('admit_seconds'),

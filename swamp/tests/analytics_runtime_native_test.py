@@ -69,6 +69,7 @@ class AnalyticsRuntimeNative(NativeTestCase):
             "workflow-operation-analytics-update-direct.yaml",
             "workflow-operation-process-create.yaml",
             "workflow-operation-process-destroy.yaml",
+            "workflow-operation-process-vite.yaml",
         ):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:

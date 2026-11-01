@@ -1,0 +1,54 @@
+id: 0392e20f-4cd0-4035-993e-79917039312b
+name: operation-process-vite
+description: Prepare one Vite dev Process before it starts, from 209 over official SSH and cfgmgmt; create, start and restart share it.
+vaults: []
+# Keep `inputs` in flow style: bin/check-flows reads a block-style `kind` line as the kind's owning workflow, and this child owns none.
+queueTimeout: 30
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [process.create, process.update,
+        process.start, process.restart]}, intent: {type: object, properties: {vite_plan: {type: object}, caddy_publication: {type: object}, ssh_execution: {type: object}},
+      required: [vite_plan, caddy_publication, ssh_execution], additionalProperties: false}, execution_secrets: {type: object, additionalProperties: false}}, required: [
+    operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
+jobs:
+- name: vite
+  target: orbit-node-209
+  steps:
+  - name: suspend
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-vite-ssh-" + run.id }}
+      methodName: exec
+      globalArgs: {name: '${{ "process-vite-ssh-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port
+            }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {
+              hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {name: suspend, hosts: [target], argv: [/usr/bin/rm, -f, '${{ inputs.intent.vite_plan.suspend.marker }}'], sudo: true}
+  - name: directory
+    target: orbit-node-209
+    dependsOn: [{step: suspend, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ "process-vite-directory-" + run.id }}
+      methodName: apply
+      globalArgs: &node {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: /etc/orbit/vite, ensure: present, owner: root, group: root, mode: '0755'}
+      inputs: {}
+  - name: environment
+    target: orbit-node-209
+    dependsOn: [{step: directory, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "process-vite-environment-" + run.id }}
+      methodName: apply
+      globalArgs: {<<: *node, path: '${{ inputs.intent.vite_plan.environment.path }}', content: '${{ inputs.intent.vite_plan.environment.content }}', mode: '0644'}
+      inputs: {}
+  - name: caddy
+    target: orbit-node-209
+    dependsOn: [{step: environment, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: '${{ inputs.intent.caddy_publication
+            }}'}, execution_secrets: {}}

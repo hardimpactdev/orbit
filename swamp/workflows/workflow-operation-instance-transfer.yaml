@@ -3,6 +3,7 @@ name: operation-instance-transfer
 description: >-
   Move one captured development checkout through native209 SSH, Process and
   Route children.
+queueTimeout: 30
 vaults:
   - orbit-control-inputs
 inputs:
@@ -278,7 +279,7 @@ jobs:
           in: '${{ inputs.intent.processes.source }}'
         task:
           type: workflow
-          workflowIdOrName: operation-process-stop
+          workflowIdOrName: operation-process-control
           inputs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'

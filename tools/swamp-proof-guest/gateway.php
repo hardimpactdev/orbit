@@ -109,7 +109,7 @@ do {
 } while (microtime(true) < $deadline);
 $subscriber->close();
 echo json_encode(['http_status' => $response->getStatusCode(), 'operation' => [
-    'id' => $operation->id, 'kind' => $operation->kind, 'status' => $operation->status->value, 'error_code' => $operation->error_code,
+    'id' => $operation->id, 'kind' => $operation->kind, 'target_id' => $operation->target_id, 'status' => $operation->status->value, 'error_code' => $operation->error_code,
     'input' => $operation->input, 'result' => $operation->result, 'swamp_run_id' => $operation->state['swamp_run_id'] ?? null,
 ], 'admit_seconds' => round($admitted - $started, 2), 'terminal_seconds' => round(microtime(true) - $started, 2)]), PHP_EOL;
 exit($operation->status->terminal() ? 0 : 2);

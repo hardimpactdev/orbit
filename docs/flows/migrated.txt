@@ -1,1 +1,7 @@
 # Kinds whose Swamp workflow step names must equal the Swamp steps in their chart.
+process.create
+process.destroy
+process.restart
+process.start
+process.stop
+process.update
