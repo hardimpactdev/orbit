@@ -52,12 +52,6 @@ final readonly class TopologyVerifier
                 )),
             ],
         ];
-        foreach ($recipe->workloadNodes() as $node) {
-            if (array_intersect($node->roles, ['app-dev', 'app-prod', 'ingress', 'router']) === []) {
-                continue;
-            }
-            $probes['caddy.'.$node->key] = ['node' => $node->key, 'arguments' => []];
-        }
         $probes['operator.gateway'] = ['node' => 'operator', 'arguments' => []];
         if ($source->mounted) {
             foreach ($recipe->checkoutNodeKeys() as $node) {

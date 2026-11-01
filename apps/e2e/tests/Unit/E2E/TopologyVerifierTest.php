@@ -93,12 +93,10 @@ describe('TopologyVerifier', function () {
         ]],
         'router spare' => [['spare+router'], [
             'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
-            'caddy.spare' => 'spare',
             'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.operator' => 'operator',
         ]],
         'full' => [['app-dev', 'app-prod', 'app-prod-2'], [
             'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
-            'caddy.app-dev' => 'app-dev', 'caddy.app-prod' => 'app-prod', 'caddy.app-prod-2' => 'app-prod-2',
             'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.app-dev' => 'app-dev', 'source.operator' => 'operator',
         ]],
     ]);
@@ -127,7 +125,7 @@ describe('TopologyVerifier', function () {
         $sha = str_repeat('a', 40);
         $incus = new FakeIncus()->install();
         $target = verifierTopology($incus, TopologyRecipe::compose(['app-dev']));
-        $failures = ['caddy.app-dev' => 2, 'operator.gateway' => PHP_INT_MAX];
+        $failures = ['wireguard.reachability' => 2, 'operator.gateway' => PHP_INT_MAX];
         $incus->respond(verifierResponder($sha, $failures));
 
         $report = new TopologyVerifier(new IncusHost, 1, 0)
@@ -139,6 +137,7 @@ describe('TopologyVerifier', function () {
             ->and($report->probes['operator.gateway']['observed'])->toContain('operator.gateway is not ready')
             ->and($report->failedSummary())->toContain('operator.gateway (expected passing evidence for source')
             ->and($runs['service.gateway'])->toBe(1)
+            ->and($runs['wireguard.reachability'])->toBe(3)
             ->and($runs['operator.gateway'])->toBeGreaterThan(1);
     });
 

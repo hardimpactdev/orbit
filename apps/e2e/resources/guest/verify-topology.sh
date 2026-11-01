@@ -18,22 +18,6 @@ source_root=/home/orbit/orbit
 source_marker=/var/lib/orbit-e2e/source-state
 mount_token=$source_root/.e2e/mount-token
 
-# A Node Caddy build writes one live Caddyfile with every site of the Node.
-built_caddyfile() {
-  local live_main
-  live_main=$(readlink -f -- /etc/caddy/Caddyfile) || return 1
-  case "$live_main" in
-    /etc/caddy/orbit-versions/*/Caddyfile) ;;
-    *) return 1 ;;
-  esac
-  [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]]
-}
-caddy_ready() {
-  built_caddyfile || { echo 'no Node Caddy build wrote /etc/caddy/Caddyfile' >&2; return 1; }
-  [[ "$(systemctl is-active caddy 2>/dev/null)" == active ]] || { echo 'caddy is not active' >&2; return 1; }
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || { echo 'the Caddyfile is invalid' >&2; return 1; }
-}
-
 case "$probe" in
   service.swamp)
     /usr/local/bin/converge-swamp.py verify >/dev/null
@@ -100,11 +84,6 @@ case "$probe" in
       names+=("$name")
     done
     expected="$(IFS=,; printf '%s' "${names[*]}"):wireguard-route+ping"
-    observed=$expected
-    ;;
-  caddy.*)
-    caddy_ready
-    expected='caddy=active,config=valid,node-caddy-build'
     observed=$expected
     ;;
   operator.gateway)

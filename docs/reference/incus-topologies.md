@@ -170,15 +170,15 @@ The harness changes guests only through Orbit commands and its own guest scripts
 
 ### Readiness
 
-Readiness runs these probes on the Nodes the topology has. A probe that fails is retried until the readiness window ends; then the topology fails with every failed probe and its last output.
+Readiness proves the topology Gateway runtime, Swamp serve and worker, recorded role intent, and WireGuard reachability. Workload roles are recorded but are not converged by `up`. Proof receipts must record `workload_roles: recorded_not_converged`: native app-dev/app-prod role convergence is not yet available. A proof that needs a workload service must converge it through its normal product path before checking it. A failed probe is retried until the readiness window ends; then acquisition fails with its last output.
 
 | Probe | Node | Passes when |
 | --- | --- | --- |
 | `nodes.registered` | `gateway` | `orbit node:list` shows exactly the declared Nodes, each `active` with the roles from the table and its entry, and the operator roleless |
+| `service.swamp` | `gateway` | Serve is ready, worker `orbit-node-209` is enrolled with `node=209`, and served workflows match the staged source |
 | `service.gateway` | `gateway` | Caddy and PHP-FPM are active |
 | `service.vpn` | `gateway` | `wg-quick@orbit` is active |
 | `wireguard.reachability` | `gateway` | Every other Node answers a ping on its WireGuard address |
-| `caddy.<node>` | `app-dev`, `app-prod`, `app-prod-2` | Caddy is active and its Caddyfile, written by a [Node Caddy build](/reference/caddy-configuration#node-caddy-build), is valid |
 | `operator.gateway` | `operator` | `orbit gateway:status` answers through the operator's own topology profile |
 | `source.<node>` | checkout Nodes | The worktree is mounted and its guest source marker matches the host |
 
