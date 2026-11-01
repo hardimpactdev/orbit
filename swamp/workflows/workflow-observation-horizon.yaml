@@ -1,8 +1,6 @@
 id: 09fb7a5a-6b19-4fb6-8f14-16382563f822
 name: observation-horizon
-description: One bounded read-only horizon observation per native scheduled tick.
-trigger:
-  schedule: '45 */10 * * * *'
+description: One bounded read-only horizon observation; unscheduled while doctor.inspect is removed.
 jobs:
 - name: observe
   target: orbit-node-209

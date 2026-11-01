@@ -1,8 +1,6 @@
 id: fb550568-ab07-4eb4-b5f4-db92e5780dc0
 name: observation-collection
-description: One bounded read-only fleet observation per native scheduled tick.
-trigger:
-  schedule: '15 */10 * * * *'
+description: One bounded read-only fleet observation; unscheduled while doctor.inspect is removed.
 jobs:
 - name: observe
   target: orbit-node-209
