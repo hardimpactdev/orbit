@@ -5,7 +5,10 @@ import {
   invokeLocalEnvironment,
 } from "./local.ts";
 export type { EnvironmentInvoke } from "./local.ts";
-import type { GatewayOperation } from "../_lib/direct.ts";
+import {
+  type GatewayOperation,
+  DirectOperationRefused,
+} from "../_lib/direct.ts";
 import { instanceActions } from "../processes-schedules/instance.ts";
 import { StartInput } from "../processes-schedules/start.ts";
 import { refreshProductionCache } from "../php/runtime_local.ts";
@@ -133,16 +136,18 @@ export async function synchronizeEnvironment(
           return value;
         };
         stage = "preflight";
+        const inspected = await call("instance.inspect-environment-sync", input);
+        // The program answers a refused check with `state: refused`; inspection never writes.
+        if (inspected.state === "refused") {
+          throw new EnvironmentRefusal("env.write_preflight_failed", stage);
+        }
         const inspection = z.object({
-          preflight: z.object({ state: z.string() }),
+          preflight: z.object({ state: z.literal("ok") }),
           existing: z.object({
             state: z.string(),
             content: z.string().nullable().optional(),
           }).nullable(),
-        }).parse(await call("instance.inspect-environment-sync", input));
-        if (inspection.preflight.state !== "ok") {
-          throw new EnvironmentRefusal("env.sync_preflight_failed", stage);
-        }
+        }).parse(inspected);
         if (inspection.existing?.state === "ok") {
           const encoded = inspection.existing.content;
           if (typeof encoded !== "string") {
@@ -230,8 +235,12 @@ export async function synchronizeEnvironment(
         throw new Error("Environment private callback failed");
       }
     });
-  } catch {
+  } catch (error) {
     if (refusal !== undefined) throw refusal;
+    // The Gateway refused the material, for example env.reference_unavailable; nothing was written.
+    if (error instanceof DirectOperationRefused) {
+      throw new EnvironmentRefusal(error.code, stage);
+    }
     throw new EnvironmentRefusal("env.sync_unconfirmed", stage);
   } finally {
     accepting = false;

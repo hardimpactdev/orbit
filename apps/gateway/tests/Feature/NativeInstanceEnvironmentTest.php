@@ -6,6 +6,7 @@ use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
@@ -38,6 +39,14 @@ it('renders native environment material without a Gateway Node preflight and kee
         'keys' => ['API_TOKEN'], 'owned_keys' => ['OLD'], 'testing' => null])
         ->and(json_encode($operation->input))->not->toContain('synthetic-private-value')
         ->and(json_encode($value))->toBe('"[REDACTED]"');
+});
+
+it('keeps the public refusal code when the private read cannot render a reference', function (): void {
+    [$operation, $instance] = nativeEnvironmentOperation();
+    $instance->environmentValues()->create(['env_key' => 'LEFTOVER', 'env_value' => '{{unknown}}']);
+
+    expect(fn () => app(OperationSecrets::class)->hydrate($operation, '', $operation->input, ['environment_material' => 'instance.environment_sync']))
+        ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe(['env.reference_unavailable', 409]));
 });
 
 it('refuses a substituted native environment identity before protected rendering', function (string $field): void {

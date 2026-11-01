@@ -73,7 +73,7 @@ Every refusal is one error envelope with a stable code.
 | --- | --- |
 | `403` | `peer.identity_unknown` or `node_access.required`. |
 | `404` | No record matches the path. |
-| `409` | A guard refused the change and the Gateway changed nothing. The code names the guard, for example `node.has_roles`, `cluster.router_required`, or `env.operation_busy`. |
+| `409` | A guard refused the change and the Gateway changed nothing. The code names the guard, for example `node.has_roles`, `cluster.router_required`, or `operation.target_busy`. |
 | `422` | The body failed validation: `validation.failed` with the failed rule in `details`, or a family code such as `env.configuration_invalid`. |
 | `503` | A dependency is unavailable, for example `ca.unavailable`. |
 

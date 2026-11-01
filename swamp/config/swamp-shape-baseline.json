@@ -251,7 +251,7 @@
     {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
       "rule": "private-material",
-      "count": 13,
+      "count": 12,
       "evidence": []
     },
     {

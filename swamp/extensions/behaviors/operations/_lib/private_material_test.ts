@@ -1,5 +1,5 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { GatewayOperation } from "./direct.ts";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
+import { GatewayOperation, DirectOperationRefused } from "./direct.ts";
 const identity = {
   operation_id: 17,
   kind: "sample.apply",
@@ -107,4 +107,40 @@ Deno.test("private material helper ignores direct/nested/private getters and sta
   }
   assertEquals(getters, 0);
   assertEquals(serializations, 0);
+});
+
+Deno.test("a Gateway refusal of private material keeps only its validated code", async () => {
+  let called = false;
+  const refusing = (body: unknown) =>
+    new GatewayOperation(
+      () => Promise.resolve({ status: 409, body }),
+      identity,
+    );
+  const refusal = await assertRejects(
+    () =>
+      refusing({
+        error: {
+          code: "env.reference_unavailable",
+          message: "private-sentinel",
+          details: { key: "private-sentinel" },
+        },
+      }).withPrivateMaterial(() => {
+        called = true;
+        return Promise.resolve();
+      }),
+    DirectOperationRefused,
+    "Direct Operation request did not succeed",
+  );
+  assertEquals(refusal.code, "env.reference_unavailable");
+  assertEquals(JSON.stringify(refusal).includes("private-sentinel"), false);
+  assertEquals(called, false);
+  assertThrows(() => new DirectOperationRefused("Private Sentinel"));
+  const unsafe = [{ error: { code: "Private Sentinel" } }, "private-sentinel"];
+  for (const body of [...unsafe, null]) {
+    await assertRejects(
+      () => refusing(body).withPrivateMaterial(() => Promise.resolve()),
+      Error,
+      "Private material callback failed",
+    );
+  }
 });

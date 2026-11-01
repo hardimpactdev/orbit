@@ -42,6 +42,18 @@ const Outcome = z.object({
     result: DirectResult.nullable(),
     cancel_requested: z.boolean(),
 });
+/** A public Operation error code; it never carries a value. */
+const ErrorCode = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
+/** A Gateway refusal envelope; its code is public, and the message is never read. */
+const Refusal = z.object({ error: z.object({ code: ErrorCode }) });
+/** Carries only the validated Gateway refusal code; never the message, details or material. */
+export class DirectOperationRefused extends Error {
+    readonly code: string;
+    constructor(code: unknown) {
+        super("Direct Operation request did not succeed");
+        this.code = ErrorCode.parse(code);
+    }
+}
 /** Retained legacy client: each request is a single fail-closed attempt. */
 export class GatewayOperation {
     constructor(
@@ -53,15 +65,18 @@ export class GatewayOperation {
         suffix: string,
         body?: Record<string, unknown>,
     ): Promise<unknown> {
-        const response = await this.http(
+        const reply = await this.http(
             method,
             `/api/v1/direct-operations/${this.args.operation_id}${suffix}`,
             body,
         );
-        if (response.status < 200 || response.status >= 300) {
-            throw new Error("Direct Operation request did not succeed");
+        if (reply.status < 200 || reply.status >= 300) {
+            const refused = Refusal.safeParse(reply.body).data?.error.code;
+            throw refused === undefined
+                ? new Error("Direct Operation request did not succeed")
+                : new DirectOperationRefused(refused);
         }
-        return z.object({ data: z.unknown() }).parse(response.body).data;
+        return z.object({ data: z.unknown() }).parse(reply.body).data;
     }
     async read(signal?: AbortSignal): Promise<unknown> {
         // A pre-cancelled legacy invocation still reads its bound row so the
@@ -89,7 +104,9 @@ export class GatewayOperation {
                 ),
             );
             await use(material);
-        } catch {
+        } catch (error) {
+            // A Gateway refusal carries only its validated public code.
+            if (error instanceof DirectOperationRefused) throw error;
             // A fetch/schema/callback error can contain private material. Never forward its text.
             throw new Error("Private material callback failed");
         }
@@ -206,7 +223,7 @@ export async function directOperation(
 }
 
 function safeCode(code: unknown): string {
-    if (!z.string().regex(/^[a-z0-9_.-]{1,100}$/).safeParse(code).success) {
+    if (!ErrorCode.safeParse(code).success) {
         throw new Error("Invalid direct Operation refusal");
     }
     return code as string;

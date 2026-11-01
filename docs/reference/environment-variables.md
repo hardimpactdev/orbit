@@ -76,7 +76,7 @@ Import and update return `instance_id`, `operation`, `changed`, and `key_count`.
 
 The Instance must be active and have complete placement. The Node must have exactly one active `app-dev` or `app-prod` role; without one, the Gateway returns `instance.placement_unavailable` (409).
 
-Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{instance.domain}}`; then the Gateway needs an authoritative Route and returns `env.reference_unavailable` (409) if it cannot resolve one. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
+Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{instance.domain}}`; then the Gateway needs an authoritative Route. Without one, the synchronization Operation fails with `env.reference_unavailable`. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
 
 ## Native environment synchronization
 
@@ -143,7 +143,7 @@ The Gateway checks the complete result before it stores any part of an import or
 
 ## Synchronize
 
-Synchronization takes one snapshot of the Instance, any authoritative Route, and the stored configuration. It resolves `{{instance.domain}}` to the Route's domain when one is present and resolves `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering returns `env.reference_unavailable` (409) before the file changes.
+Synchronization takes one snapshot of the Instance, any authoritative Route, and the stored configuration. It resolves `{{instance.domain}}` to the Route's domain when one is present and resolves `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering fails the Operation with `env.reference_unavailable` before the file changes.
 
 The Gateway resolves stored placement and renders the protected values without contacting the Node. The native worker runs `instance.inspect-environment-sync` locally before replacement. It checks the user, path, directory permission, file type and owner, read-only storage and free space, then reads existing workload keys. A failed preflight leaves `.env` unchanged.
 
@@ -169,7 +169,7 @@ Development synchronization changes only `.env` and `.env.testing`. The placed S
 
 Production synchronization refreshes the runtime on every request, even when `.env` is unchanged. It rebuilds an existing Laravel configuration cache into a private candidate, boots Artisan against it and replaces the old cache only after success. An uncached application stays uncached. It then refreshes the dedicated FPM OPcache through the canonical PHP action and restarts active Processes whose desired state is running and whose `restart_on_deploy` setting is true. All steps run on the admitted Node within the same native root. A failed cache build preserves the previous cache and prevents FPM refresh and Process restarts. A missing current release skips runtime refresh.
 
-The Gateway records the native outcome and updates the list of owned keys only after success. A failed root preserves the previous key list and pending-runtime marker. Repeat synchronization after correcting the bounded error.
+The Gateway records the native outcome and updates the list of owned keys only after success. A failed root preserves the previous key list. Repeat synchronization after correcting the bounded error.
 
 The Gateway takes one consistent snapshot of the Instance owner, any authoritative Route, and complete stored configuration. It resolves `{{instance.domain}}` from the Route when available and `{{instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A Route is required only when a stored value uses the domain placeholder; a missing Route or unavailable reference then stops synchronization before replacement. An incomplete Route transition also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
@@ -218,7 +218,7 @@ Laravel import creates an application's `APP_KEY` only when the source value is 
 
 ## Errors
 
-Import, update, and the start of synchronization return these codes in the Orbit error envelope, with the HTTP status shown. A synchronization Operation that fails records its code in `error_code`; those rows show `Operation`. None of the codes contains a value.
+Import, update, and the start of synchronization return these codes in the Orbit error envelope, with the HTTP status shown. A synchronization Operation that fails records its code in `error_code`; those rows show `Operation`. When the Gateway refuses the worker's read of the protected values, the Operation records that refusal code, for example `operation.finished` or `operation.execution_forbidden`, with `failed_step` `material`. None of the codes contains a value.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -227,10 +227,11 @@ Import, update, and the start of synchronization return these codes in the Orbit
 | `instance.placement_unavailable` | 409 | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 | `env.import_conflict` | 409 | Import without `replace` found a key that is already stored. |
 | `env.import_source_missing` | 404 | The recorded source `.env` file does not exist; fix or restore the file before importing. |
-| `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. |
-| `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
+| `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. During synchronization, an oversized rendered file fails the Operation with this code. |
+| `env.reference_unavailable` | Operation | A placeholder is left over after rendering. `.env` stays unchanged. |
 | `operation.target_busy` | 409 | Another operation holds the Instance. |
 | `env.configuration_missing` | 409 | Synchronization found no stored configuration. Import or store values first. |
+| `env.write_preflight_failed` | Operation | The check of the user, path, file, owner, storage, or free space refused. `.env` stays unchanged. |
 | `env.sync_unconfirmed` | Operation | Swamp cannot confirm the write. Repeat synchronization. |
 | `env.config_cache_refresh_failed` | Operation | Config cache preparation failed or was unconfirmed. A failed build keeps the old cache; an unconfirmed result may have replaced it. FPM opcache was not reset. |
 | `env.php_runtime_refresh_failed` | Operation | Config cache preparation completed, but FPM opcache refresh failed. |
