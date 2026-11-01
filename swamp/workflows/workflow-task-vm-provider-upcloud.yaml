@@ -1,6 +1,7 @@
 id: c45e0963-7699-4f7c-88d3-54fbe75a749e
 name: task-vm-provider-upcloud
-description: Create the exact admitted UpCloud VM from209; no guest worker or Gateway callback.
+description: Create the exact admitted UpCloud VM from209; bounded external start observation.
+queueTimeout: 10
 vaults:
 - orbit-control-inputs
 inputs:
@@ -53,6 +54,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
     dependsOn: []
+    queueTimeout: 10
   - name: list
     target: orbit-node-209
     task:
@@ -61,18 +63,17 @@ jobs:
       behaviorName: ${{ "cloud-"+run.id }}
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" list
-
-          '
+        run: |
+          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" list
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key) }}
     dependsOn:
     - step: input
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: plans
     target: orbit-node-209
     task:
@@ -81,18 +82,17 @@ jobs:
       behaviorName: ${{ "cloud-"+run.id }}
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" plans
-
-          '
+        run: |
+          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" plans
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key) }}
     dependsOn:
     - step: input
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: choose
     target: orbit-node-209
     task:
@@ -111,6 +111,7 @@ jobs:
     - step: plans
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: create
     target: orbit-node-209
     task:
@@ -119,22 +120,20 @@ jobs:
       behaviorName: ${{ "cloud-"+run.id }}
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" create
-
-          '
+        run: |
+          exec timeout --verbose 45 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" create
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key) }}
           ORBIT_CLOUD_CHOICE: ${{ steps.choose.outputs.input_json }}
-          ORBIT_PROVIDER_BOOTSTRAP: ${{ vault.get(inputs.execution_secrets.bootstrap.vault,inputs.execution_secrets.bootstrap.key)
-            }}
+          ORBIT_PROVIDER_BOOTSTRAP: ${{ vault.get(inputs.execution_secrets.bootstrap.vault,inputs.execution_secrets.bootstrap.key) }}
     dependsOn:
     - step: choose
       condition:
         type: succeeded
     allowFailure: true
+    queueTimeout: 10
   - name: discover
     target: orbit-node-209
     task:
@@ -143,14 +142,12 @@ jobs:
       behaviorName: ${{ "cloud-"+run.id }}
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
-
-          '
+        run: |
+          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key) }}
     dependsOn:
     - step: create
       condition:
@@ -158,6 +155,7 @@ jobs:
     - step: choose
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: selected
     target: orbit-node-209
     task:
@@ -173,6 +171,7 @@ jobs:
     - step: discover
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: inspect
     target: orbit-node-209
     task:
@@ -181,19 +180,18 @@ jobs:
       behaviorName: ${{ "cloud-"+run.id }}
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
-
-          '
+        run: |
+          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key) }}
           ORBIT_CLOUD_CHOICE: ${{ steps.selected.outputs.input_json }}
     dependsOn:
     - step: selected
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: observed
     target: orbit-node-209
     task:
@@ -209,6 +207,7 @@ jobs:
     - step: inspect
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: start
     target: orbit-node-209
     task:
@@ -217,20 +216,19 @@ jobs:
       behaviorName: ${{ "cloud-"+run.id }}
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" start
-
-          '
+        run: |
+          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" start
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key) }}
           ORBIT_CLOUD_CHOICE: ${{ steps.observed.outputs.input_json }}
     dependsOn:
     - step: observed
       condition:
         type: succeeded
     allowFailure: true
+    queueTimeout: 10
   - name: observe
     target: orbit-node-209
     task:
@@ -239,14 +237,12 @@ jobs:
       behaviorName: ${{ "cloud-"+run.id }}
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
-
-          '
+        run: |
+          exec timeout --verbose 240 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" wait-started
         env:
-          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.wait_script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key) }}
           ORBIT_CLOUD_CHOICE: ${{ steps.observed.outputs.input_json }}
     dependsOn:
     - step: start
@@ -255,6 +251,7 @@ jobs:
     - step: observed
       condition:
         type: succeeded
+    queueTimeout: 10
   - name: provider
     target: orbit-node-209
     task:
@@ -270,3 +267,4 @@ jobs:
     - step: observe
       condition:
         type: succeeded
+    queueTimeout: 10

@@ -17,7 +17,7 @@ class UpCloudCompositionNative(unittest.TestCase):
         self.vm = composition.TaskVmProvisionComposition()
         self.vm.setUp()
         self.addCleanup(self.vm.doCleanups)
-        for script in ('upcloud.py', 'upcloud_create.py'):
+        for script in ('upcloud_api.py', 'upcloud.py', 'upcloud_create.py'):
             shutil.copy(self.cloud.repo / 'extensions/behaviors/operations/task-vm-lifecycle/scripts' / script,
                         self.vm.repo / 'extensions/behaviors/operations/task-vm-lifecycle/scripts' / script)
         for name in ('task-vm-provider-upcloud', 'task-vm-provider-power'):
@@ -145,8 +145,10 @@ class UpCloudCompositionNative(unittest.TestCase):
         self.assertFalse(self.vm.events.exists())
         self.assertEqual(sum(method == 'DELETE' for method, _ in self.cloud.calls), 1)
 
-    def test_prefix_failure_cleans_unknown_uuid_without_guest_actions(self):
+    def test_start_timeout_retains_unknown_uuid_without_guest_actions(self):
         self.cloud.state = 'maintenance'
+        path = self.vm.repo / 'workflows/workflow-task-vm-provider-upcloud.yaml'
+        path.write_text(path.read_text().replace('timeout --verbose 240 ', 'timeout --verbose 1 '))
         self.vm.run_root(False)
         # Transitional state cannot be safely powered/deleted. Discovery retains
         # the exact VM for normal native observation/resume, never false success.

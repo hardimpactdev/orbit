@@ -133,7 +133,7 @@ raise SystemExit(result.returncode)
         server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
         thread=Thread(target=server.serve_forever,daemon=True);thread.start()
         self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
-        api=self.repo/'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py'
+        api=self.repo/'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py'
         api.write_text(api.read_text().replace('https://api.upcloud.com/1.3','http://127.0.0.1:'+str(server.server_port)))
         self.cli('vault','create','local_encryption','orbit-control-inputs')
         self.cli('vault','put','orbit-control-inputs','task-vm-upcloud-token',input=self.cloud_token)

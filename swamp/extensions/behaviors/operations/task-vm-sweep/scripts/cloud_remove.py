@@ -4,7 +4,7 @@ import os
 import sys
 import urllib.error
 
-from upcloud import api
+from upcloud_api import api
 
 
 def owned(current, data):

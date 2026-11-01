@@ -1,0 +1,80 @@
+{
+  "fixture_only": true,
+  "workflow": "task-vm-provider-upcloud",
+  "scope": "Disposable loopback HTTP API and scratch official Swamp; not a topology or paid-server receipt.",
+  "queue_timeout_seconds": 10,
+  "envelope": {
+    "operation_id": 7005,
+    "node_id": 14,
+    "kind": "tasks.provision",
+    "intent": {
+      "task_vm_id": 42,
+      "node_id": 14,
+      "host_node_id": null,
+      "guest_node_id": 142,
+      "gateway_node_id": 14,
+      "model_router_node_id": 6,
+      "provider": "upcloud",
+      "provider_id": null,
+      "name": "tvm-42",
+      "image_fingerprint": "00000000-0000-4000-8000-000000000001",
+      "recipe_identity": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "vm": null,
+      "create": null,
+      "bootstrap_host_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG",
+      "ssh_identity": {
+        "control_node_id": 209,
+        "identity_file": "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+        "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"
+      },
+      "upcloud": {
+        "zone": "fi-hel1",
+        "plan": "test-plan",
+        "disk_gb": 20,
+        "max_vms": 2,
+        "source_template": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    "execution_secrets": {
+      "upcloud": {
+        "vault": "orbit-control-inputs",
+        "key": "task-vm-upcloud-token"
+      },
+      "bootstrap": {
+        "vault": "orbit-control-inputs",
+        "key": "task-vm-provider-bootstrap-42"
+      }
+    }
+  },
+  "secrets": "Generated/mock fixture values owned by UpCloudProviderNative.setUp; never production credentials.",
+  "phases": [
+    {
+      "name": "list",
+      "budget_seconds": 15
+    },
+    {
+      "name": "plans",
+      "budget_seconds": 15
+    },
+    {
+      "name": "create",
+      "budget_seconds": 45
+    },
+    {
+      "name": "discover",
+      "budget_seconds": 15
+    },
+    {
+      "name": "inspect",
+      "budget_seconds": 15
+    },
+    {
+      "name": "start",
+      "budget_seconds": 15
+    },
+    {
+      "name": "observe",
+      "budget_seconds": 240
+    }
+  ]
+}

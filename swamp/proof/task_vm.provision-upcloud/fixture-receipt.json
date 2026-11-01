@@ -1,0 +1,211 @@
+{
+  "fixture_only": true,
+  "scope": "Official pinned e459 local scratch workflow graphs; disposable loopback UpCloud API; synthetic secrets and SSH boundary fixtures. No paid server or fleet action.",
+  "swamp_pin": "20261031.063736.0-sha.e459d219",
+  "source_files_sha256": {
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/cloud_input.ts": "2d972c3166ec26a3f99caf13aaf4990334e5bb36502058280c880afd42f85af6",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/cloud_input_test.ts": "7529eeba1ea0d41b2ab5fe974b9ae0bbc57585d7e27318f0277d93c20476e0f2",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/destroy.ts": "06f710fa31fcad5370b0399088434934486b31d94bd05d78631e16d39f62fc0b",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/enrollment.ts": "b043853c6c8e7c03443ea80646ca0c8faf0120a3d01610b3e8ce6c0e5170ef56",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/input.ts": "c00f5ce0f27de4541651b468880b39a9f809a740b570f278ba2f37a507715aa6",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/input_test.ts": "c13e0329a7376fb5a6d53c32b4f7087621d012e0e29301933c13d806bd2101b0",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/metadata.ts": "c58f30f0e5018416b70107e689703276f9de4e5daf974d8c3bd19fb11a92838c",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/provision_input.ts": "f990a21541c5150a30bb297719f0639606d471871ed6efea9b059eaa593d593d",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/ssh_input.ts": "acf8c662b55b60c02ac2a1dba3ca42c279ff974fe0d738fa7f5babb2f8054157",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/ssh_firewall.py": "23e35896009bcfa908b5bf00d3577a4b63b7aea2f3a9dc4720e05f33982c7851",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/ssh_firewall_test.py": "e634f4674655a1aca90aa20f2a2ecdbf593d32a762fcdd4b6542f9d2f0f70592",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py": "8a143374b933e0987c7b7e36cc6aac75854a7927acb8f0884a9e1e0fb5c8edf8",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py": "04faa708a25629519a86886e7c30b09986f3537b98943896aa65d563ac874c26",
+    "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_create.py": "787339420a97cadae46c1bc96998344be0406e511a0a3067a03f4f1d51cfcf6b",
+    "swamp/workflows/workflow-task-vm-provider-upcloud.yaml": "870b2121888d66e4b6d8b9880f9b411e81ec640748d7dcad2094b52eb97d810d",
+    "swamp/tests/task_vm_upcloud_provider_native_test.py": "901a39bf397e5c7d30764a093ffa46518b29e05d33ad92397cf40ee5452c6b50",
+    "swamp/tests/task_vm_upcloud_wait_test.py": "5ed9a02e2e1f028c58c890f190d544c1a103e19bbf9d6d4690e11279806cc40f"
+  },
+  "provider_native": {
+    "test_file": "swamp/tests/task_vm_upcloud_provider_native_test.py",
+    "tests": 9,
+    "passed": 9,
+    "elapsed_seconds": 98.215,
+    "cases": [
+      "test_bad_start_state_fails_without_another_create_or_start",
+      "test_create_and_lost_response_observation_never_duplicate_and_never_expose_bootstrap",
+      "test_foreign_detail_uuid_never_reaches_start_or_ready",
+      "test_foreign_label_refuses_before_create_or_power",
+      "test_label_less_list_is_verified_by_detail_before_start",
+      "test_new_server_maintenance_without_address_waits_until_started_without_duplicate_mutation",
+      "test_server_disappearing_during_start_poll_fails_without_another_read_or_write",
+      "test_start_phase_timeout_fails_without_retrying_the_mutation",
+      "test_unknown_uuid_discovery_stop_delete_and_absence_are_native_steps"
+    ],
+    "successful_run_sample": 4,
+    "nearest_rank_p95_ms": 4273,
+    "runs": [
+      {
+        "id": "52f1627c-5867-41dd-85dd-9cca5a4f08a6",
+        "status": "failed",
+        "duration": 4518
+      },
+      {
+        "id": "b8cf4059-d559-4a34-b300-be453133712d",
+        "status": "succeeded",
+        "duration": 1613
+      },
+      {
+        "id": "f2dc61e2-998f-4e7d-b33c-1a2e6dd7c8ff",
+        "status": "succeeded",
+        "duration": 1537
+      },
+      {
+        "id": "d56dc173-4238-4afa-bdfa-23cec0bfe27d",
+        "status": "failed",
+        "duration": 1165
+      },
+      {
+        "id": "86d1e95a-b008-4f56-a3a8-35f44bb2100c",
+        "status": "failed",
+        "duration": 517
+      },
+      {
+        "id": "e12843ab-886a-4e25-8f7e-dc83a8c81f4a",
+        "status": "succeeded",
+        "duration": 1330
+      },
+      {
+        "id": "c5a11cf3-1c4f-4cb6-b416-eba118fced42",
+        "status": "succeeded",
+        "duration": 4273
+      },
+      {
+        "id": "f3129b2d-f8f1-4eea-8a63-6a9fdf1ffd4c",
+        "status": "failed",
+        "duration": 1300
+      },
+      {
+        "id": "eb6f0a32-824b-4f5f-bbf7-a268a86456fb",
+        "status": "failed",
+        "duration": 2245
+      }
+    ],
+    "longest_successful_run_phases": {
+      "fixture_only": true,
+      "id": "c5a11cf3-1c4f-4cb6-b416-eba118fced42",
+      "status": "succeeded",
+      "startedAt": "2026-11-01T13:41:17.308Z",
+      "completedAt": "2026-11-01T13:41:21.581Z",
+      "duration": 4273,
+      "phases": [
+        {
+          "name": "input",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:17.313Z",
+          "completedAt": "2026-11-01T13:41:17.363Z",
+          "duration": 50
+        },
+        {
+          "name": "list",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:17.365Z",
+          "completedAt": "2026-11-01T13:41:17.529Z",
+          "duration": 164
+        },
+        {
+          "name": "plans",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:17.365Z",
+          "completedAt": "2026-11-01T13:41:17.709Z",
+          "duration": 344
+        },
+        {
+          "name": "choose",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:17.715Z",
+          "completedAt": "2026-11-01T13:41:17.736Z",
+          "duration": 21
+        },
+        {
+          "name": "create",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:17.741Z",
+          "completedAt": "2026-11-01T13:41:17.893Z",
+          "duration": 152
+        },
+        {
+          "name": "discover",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:17.898Z",
+          "completedAt": "2026-11-01T13:41:18.037Z",
+          "duration": 139
+        },
+        {
+          "name": "selected",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:18.043Z",
+          "completedAt": "2026-11-01T13:41:18.060Z",
+          "duration": 17
+        },
+        {
+          "name": "inspect",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:18.067Z",
+          "completedAt": "2026-11-01T13:41:18.204Z",
+          "duration": 137
+        },
+        {
+          "name": "observed",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:18.210Z",
+          "completedAt": "2026-11-01T13:41:18.231Z",
+          "duration": 21
+        },
+        {
+          "name": "start",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:18.238Z",
+          "completedAt": "2026-11-01T13:41:18.381Z",
+          "duration": 143
+        },
+        {
+          "name": "observe",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:18.389Z",
+          "completedAt": "2026-11-01T13:41:21.534Z",
+          "duration": 3145
+        },
+        {
+          "name": "provider",
+          "status": "succeeded",
+          "startedAt": "2026-11-01T13:41:21.541Z",
+          "completedAt": "2026-11-01T13:41:21.563Z",
+          "duration": 22
+        }
+      ]
+    }
+  },
+  "unit": {
+    "tests": 5,
+    "passed": 5
+  },
+  "deno": {
+    "tests": 76,
+    "passed": 76
+  },
+  "budgets": {
+    "provider_critical_path_seconds": 345,
+    "provider_review_allowance_seconds": 375,
+    "ssh_preparation_review_allowance_seconds": 600,
+    "queue_timeout_seconds": 10,
+    "live_computed_operation_budget_seconds": 1800,
+    "budget_evaluation": "Derived from released #2348 source and normal Gateway successful-history read; no live helper invocation or new Operation."
+  },
+  "not_verified": [
+    "real UpCloud API/provider latency",
+    "F13 topology",
+    "600-second aggregate SSH preparation cap"
+  ],
+  "composition_native": {
+    "test_file": "swamp/tests/task_vm_upcloud_composition_native_test.py",
+    "tests": 9,
+    "passed": 9,
+    "elapsed_seconds": 210.564
+  }
+}

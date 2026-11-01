@@ -214,7 +214,7 @@ Deno.test("poll proofs follow only sibling shipped modules and reject tolerant h
   assert((await findings(source, tolerant)).length > 0);
 });
 Deno.test("the shipped UpCloud strict sibling read passes; its tolerant API cannot poll", async () => {
-  const helper = Deno.readTextFileSync(new URL("../extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py", import.meta.url));
+  const helper = Deno.readTextFileSync(new URL("../extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py", import.meta.url));
   const waiting = externalPoll.slice(externalPoll.indexOf("def wait_started"));
   const findings = (method: string) => phaseControls(new Map([
     ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],

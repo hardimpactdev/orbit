@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/task-vm-sweep-input"
-version: 2026.11.01.1
+version: 2026.11.01.5
 visibility: private
 license: MIT
 description: Public sweep ownership selection; native209 SSH and provider steps own cleanup.

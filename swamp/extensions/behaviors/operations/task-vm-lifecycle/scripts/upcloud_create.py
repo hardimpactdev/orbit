@@ -4,7 +4,7 @@ import os
 import sys
 import urllib.error
 
-from upcloud import api, public_server
+from upcloud_api import api, public_server
 
 
 def execute(intent, stage):
@@ -46,7 +46,7 @@ def execute(intent, stage):
     if stage == 'start':
         if choice['state'] == 'stopped':
             api('POST', 'server/' + provider_id + '/start', {'server': {}})
-        elif choice['state'] != 'started':
+        elif choice['state'] not in ('started', 'maintenance'):
             raise ValueError('unsettled')
         return {'provider_id': provider_id}
     if stage == 'observe':

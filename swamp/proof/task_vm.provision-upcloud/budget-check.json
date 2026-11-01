@@ -1,0 +1,33 @@
+{
+  "observed_at": "2026-11-01T13:45:09Z",
+  "kind": "task_vm.provision",
+  "scope": "read-only source-and-history derivation for a bound run, not an admitted Operation",
+  "policy_release": "b5394b4df0e4992f659ee998092ccf1895fc364c",
+  "release_evidence": "/home/nckrtl/swamp-execution/evidence/F8-run-timeout-20261101/live-check.json",
+  "release_verified_at": "2026-11-01T13:01:30.338Z",
+  "history_read": {
+    "tool": "operation_list",
+    "filters": {
+      "kind": "task_vm.provision",
+      "status": "succeeded"
+    },
+    "rows": 0,
+    "request_id": "823cca45-a7f2-49bd-9d40-ecf6c35eedc6"
+  },
+  "history_window_days": 14,
+  "history_p95_seconds": null,
+  "longest_success_seconds": null,
+  "computed_bound_run_budget_seconds": 1800,
+  "provider_planning_allowance_seconds": 375,
+  "ssh_preparation_planning_allowance_seconds": 600,
+  "planning_total_seconds": 975,
+  "planning_allowance_fits": true,
+  "live_helper_invoked": false,
+  "new_admissions": 0,
+  "budget_rows_added": 0,
+  "limitations": [
+    "No successful standalone provision history exists in this read, so no history p95 can be reported.",
+    "975 seconds excludes other enrollment, queues and rollback.",
+    "This is not an end-to-end phase-sum proof or real UpCloud latency measurement."
+  ]
+}
