@@ -186,3 +186,33 @@ Deno.test("official named tuples and shared aliases compare exactly without weak
         "role",
     ]);
 });
+
+Deno.test("named tuples cannot hide drift of an explicit role comment owner", () => {
+    const report = inspectionResult({
+        stdout: "Status: active\n80/tcp ALLOW IN Anywhere # orbit:router:9\n",
+        expected: [
+            {
+                name: "web",
+                shape: {
+                    ...shape,
+                    comment: "orbit:node:9:firewall:web",
+                    source: "any",
+                    port: "80",
+                },
+            },
+            {
+                name: "router",
+                shape: {
+                    ...shape,
+                    comment: "orbit:router:9",
+                    source: "any",
+                    port: "443",
+                },
+            },
+        ],
+    });
+    assertEquals(report.comparison.live.map((row) => [row.name, row.match]), [[
+        "router",
+        "drift",
+    ]]);
+});

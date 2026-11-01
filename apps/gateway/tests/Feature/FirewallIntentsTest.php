@@ -186,3 +186,12 @@ it('holds the shared Node firewall admission while a named contribution is being
         ->and($first->input['firewall']['tuples'])->toBe([['port' => 45678, 'ensure' => 'present']]);
     expect($socket->sent)->toHaveCount(1);
 });
+
+it('retains a tuple still required by the canonical Node firewall catalog', function (): void {
+    $this->rule->update(['port' => '22', 'source' => 'any']);
+
+    $input = app(FirewallMutationInput::class)->capture($this->rule, true);
+
+    expect($input['tuples'])->toBe([['port' => 22, 'ensure' => 'present']]);
+    expect(array_column($input['managed_survivors'], 'comment'))->toContain('orbit:public-ssh-recovery');
+});

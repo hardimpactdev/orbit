@@ -157,10 +157,10 @@ export function inspectionResult(input: z.infer<typeof Args>) {
         });
     };
     const classified = live.map((rule) => {
-        const candidates = expected.filter((e) =>
-            e.shape.comment === rule.comment ||
-            named(e.shape) && exact(rule, e.shape)
-        );
+        const owners = expected.filter((e) => e.shape.comment === rule.comment);
+        const candidates = owners.length
+            ? owners
+            : expected.filter((e) => named(e.shape) && exact(rule, e.shape));
         return view(
             rule,
             candidates.length === 0
@@ -199,7 +199,7 @@ export function inspectionResult(input: z.infer<typeof Args>) {
 }
 export const behavior = {
     type: "@nckrtl/firewall-inspection",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         result: {
             schema: z.object({ stdout: z.string(), exitCode: z.literal(0) }),

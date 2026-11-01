@@ -1948,7 +1948,7 @@
     {
       "file": "extensions/behaviors/operations/routes/firewall-program.ts",
       "rule": "inline-script",
-      "count": 311,
+      "count": 260,
       "evidence": []
     },
     {

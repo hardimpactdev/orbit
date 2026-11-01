@@ -134,6 +134,14 @@ with Path(os.environ['FIREWALL_STATE']).open('r+') as file:
         self.run_root(success=False)
         self.assertEqual(self.read()['rules'], [])
 
+    def test_shared_legacy_tuple_is_kept_without_deleting_another_owner(self):
+        row = {'port': '45678', 'protocol': 'tcp', 'source': 'any', 'action': 'allow', 'comment': 'orbit:node:9:firewall:canary'}
+        self.save({'active': True, 'effects': [], 'rules': [row]})
+        self.configure(removing=True, retained=(45678,))
+        self.run_root()
+        self.assertEqual(self.read()['rules'], [row])
+        self.assertEqual(self.read()['effects'], [])
+
     def test_range_removal_preserves_shared_port_and_unrelated_rules(self):
         self.intent['rule']['port'] = '45678:45680'
         self.save({'active': True, 'effects': [], 'rules': [{'port': '45678:45680', 'protocol': 'tcp', 'source': 'any', 'action': 'allow', 'comment': 'orbit:node:9:firewall:canary'}, {'port': '443', 'protocol': 'tcp', 'source': 'any', 'action': 'allow', 'comment': 'operator'}]})

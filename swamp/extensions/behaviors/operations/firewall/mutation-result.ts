@@ -68,6 +68,7 @@ export function observe(raw: unknown) {
         `orbit:node:${intent.rule.node_id}:firewall:${intent.rule.name}`;
     return {
         legacy: intent.ensure === "absent" &&
+            intent.tuples.some((tuple) => tuple.ensure === "absent") &&
             stdout.split(/\r?\n/).some((line) =>
                 line.split(/\s+#\s*/)[1]?.trim() === tag
             ),
@@ -104,18 +105,12 @@ export const behavior = {
     resources: {
         preflight: {
             schema: z.object({ ready: z.literal(true) }),
-            lifetime: "1d",
-            garbageCollection: 10,
         },
         observation: {
             schema: z.object({ legacy: z.boolean() }),
-            lifetime: "1d",
-            garbageCollection: 10,
         },
         result: {
             schema: z.object({ stdout: z.string(), exitCode: z.literal(0) }),
-            lifetime: "1d",
-            garbageCollection: 10,
         },
     },
     methods: {

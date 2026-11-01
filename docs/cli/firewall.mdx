@@ -42,7 +42,7 @@ Role convergence passes desired and removed shapes to the canonical Swamp `conve
 
 The first role convergence removes `orbit:public-ssh-recovery`. So a Node with an active role does not list public port 22 as intended. The managed list comes from the same catalog that convergence applies.
 
-In the live list, each live rule has a `match` value. `exact` means it equals a managed or operator rule. `drift` means its comment names such a rule but the rule differs. `unmanaged` means its comment names no managed or operator rule, or it has no comment. A managed or operator rule that is absent from UFW is listed as missing. An inactive, absent, or unreachable UFW returns no live rows. The web app lists the live rules, shows `drift` and `unmanaged` rules in red, and flags missing rules. When it cannot read live UFW, it shows the operator rules and the managed catalog instead.
+In the live list, each live rule has a `match` value. `exact` means it equals a managed or operator rule. `drift` means its comment names such a rule but the rule differs. `unmanaged` means neither its comment nor its tuple matches recorded intent. A managed or operator rule that is absent from UFW is listed as missing. An inactive, absent, or unreachable UFW returns no live rows. The web app lists the live rules, shows `drift` and `unmanaged` rules in red, and flags missing rules. When it cannot read live UFW, it shows the operator rules and the managed catalog instead.
 
 ## orbit firewall:inspect
 
@@ -107,7 +107,7 @@ If authorized overlap narrowing occurred, restore the exact previous operator re
 
 ## Rules and names
 
-Every command accepts `--json` and requires `--node` with a numeric Node ID. A rule name is 1 through 63 characters of lowercase letters, digits, dots, underscores, and hyphens, starting and ending with a letter or digit; it cannot contain a colon, so an operator name never collides with an `orbit:` rule. The name identifies a Gateway intent record. The official model converges its tuple; historical `orbit:node:<node-id>:firewall:<name>` comments are removed when that contribution is deleted.
+Every command accepts `--json` and requires `--node` with a numeric Node ID. A rule name is 1 through 63 characters of lowercase letters, digits, dots, underscores, and hyphens, starting and ending with a letter or digit; it cannot contain a colon, so an operator name never collides with an `orbit:` rule. The name identifies a Gateway intent record. The official model converges its tuple; old `orbit:node:<node-id>:firewall:<name>` comments are removed when the last contribution to their tuple is removed.
 
 All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
 
@@ -195,7 +195,7 @@ orbit firewall:remove office-postgres --node=7
 orbit firewall:remove office-postgres --node=7 --yes --json
 ```
 
-The Gateway marks the rule `removing` and returns its Operation. Swamp removes the named contribution through the official firewall model on209. Another recorded name keeps any shared tuple. A visible official SSH step removes the selected historical named comment before tuple convergence; no target worker or agent action runs. Completion removes the Gateway record. A failure leaves the rule `failed` with the step that stopped; repeat the command with a new admission key after fixing the cause.
+The Gateway marks the rule `removing` and returns its Operation. Swamp removes the named contribution through the official firewall model on Node 209. Another recorded name or the canonical Node firewall catalog keeps any shared tuple. A visible official SSH step removes the selected old named rule when its tuple has ports to withdraw, before tuple convergence; no target worker or agent action runs. Completion removes the Gateway record. A failure leaves the rule `failed` with the step that stopped; repeat the command with a new admission key after fixing the cause.
 
 Declining, Ctrl-C, or end of input before removal exits 1 with `input.cancelled`. Noninteractive removal without `--yes` exits 1 with `input.confirmation_required` and an instruction to supply `--yes`. Refused confirmations send no removal request. Existing lookup, authorization, and safety errors retain their codes.
 
@@ -203,7 +203,7 @@ Use `--idempotency-key=KEY` to retry the same admission without creating another
 
 ## Error codes
 
-The CLI validates the name, source, protocol, and port before it sends a request. The Gateway returns admission errors. Node execution errors appear on the final Operation.
+The CLI validates the name, source, protocol, and port before it sends a request. The Gateway returns admission errors. Native diagnostic reasons appear in Swamp history. If execution stops before the result step, the final Operation reports `operation.native_failed`.
 
 | Error code | Meaning |
 | --- | --- |
@@ -224,9 +224,9 @@ The CLI validates the name, source, protocol, and port before it sends a request
 
 ## Execution and ownership
 
-The official `@swamp/cfgmgmt/firewall` model manages source, protocol, action and numeric port tuples. Names remain Gateway intent labels. Port ranges fan out into numeric tuples; removal retains ports contributed by another recorded name. The native result proves tuple presence or absence, not that a broader earlier rule permits traffic. The official model appends new rules; the former allow-specific prepend policy is retired.
+The official `@swamp/cfgmgmt/firewall` model manages source, protocol, action and numeric port tuples. Names remain Gateway intent labels. Port ranges fan out into numeric tuples; removal retains ports contributed by another recorded name. The native result proves tuple presence or absence, not that a broader earlier rule permits traffic. The official model appends new rules; new allow rules use this ordering.
 
-Before any remote action, the209 worker requires the admitted target key in its published `~/.ssh/known_hosts` snapshot. Missing or different entries fail with `firewall.known_hosts_unpublished`. The official model uses its standard SSH connection and host-key defaults; this port does not add a custom transport or update known_hosts. A pinned official SSH read then refuses inactive UFW before the model can select another backend. Native steps return the final result; they never fetch intent or post progress to the Gateway.
+Before any remote action, the Node 209 worker requires the admitted target key in its published `~/.ssh/known_hosts` snapshot. Missing or different entries fail with `firewall.known_hosts_unpublished`. The official model uses its standard SSH connection and host-key defaults; this port does not add a custom transport or update known_hosts. A pinned official SSH read then refuses inactive UFW before the model can select another backend. Native steps return the final result; they never fetch intent or post progress to the Gateway.
 
 ## Why it works this way
 
