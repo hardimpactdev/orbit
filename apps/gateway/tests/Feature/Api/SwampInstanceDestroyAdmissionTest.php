@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\InstanceDestroyProjection;
+use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceDestroySourceInspection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
@@ -35,7 +35,7 @@ beforeEach(function (): void {
     $accounts->shouldNotReceive('resolve');
     app()->instance(ManagedUserAccountResolver::class, $accounts);
     $this->node = Node::query()->create(['name' => 'dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit',
-        'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     NodeRole::query()->create(['node_id' => $this->node->id, 'role' => RoleName::AppDev, 'status' => 'active']);
     $this->node->accessibleNodes()->attach($this->node);
     $project = Project::query()->create(['name' => 'Removal proof', 'slug' => 'removal-proof', 'type' => 'monorepo',
@@ -126,7 +126,7 @@ it('does not accept an unrelated key for a deleted target', function (): void {
 it('records native source refusals after admission without deleting the Instance', function (bool $force): void {
     $id = $this->deleteJson($this->path, ['force' => $force])->assertAccepted()->json('data.id');
     $operation = Operation::query()->findOrFail($id);
-    app(InstanceDestroyProjection::class)->apply($operation, [
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, [
         'run_id' => $operation->state['swamp_run_id'], 'status' => 'failed',
         'started_at' => '2026-10-31T04:00:00Z', 'finished_at' => '2026-10-31T04:00:01Z',
         'result' => ['error_code' => 'instance.source_branch_mismatch', 'failed_step' => 'capture_sources'],
@@ -153,7 +153,7 @@ it('records the owning database snapshot before marking the Instance Removing', 
     $operation = Operation::query()->findOrFail($id);
 
     expect($operation->input['source_pending'])->toBeTrue()
-        ->and($operation->input['direct_destroy']['databases'][0]['connections'][0]['connection_id'])->toBe($database->id)
+        ->and($operation->input['direct_destroy']['database']['sqlite'][0]['connection_id'])->toBe($database->id)
         ->and($operation->input['direct_destroy']['teardown'][0]['user'])->toBe('orbit')
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing);
     expect(fn () => $database->update(['path' => $this->instance->checkout_path.'/replacement.sqlite']))
@@ -214,10 +214,10 @@ it('admits a new native retry after terminal failure using the same immutable so
         'linked_worktree_paths' => [$this->instance->checkout_path],
         'worktree_inventory' => base64_encode('worktree '.$this->instance->checkout_path."\0\0"),
         'origin' => $this->instance->project->repository_url]], 'inventory_digest' => str_repeat('d', 64)];
-    app(InstanceDestroyProjection::class)->apply($first, [
+    app(DevelopmentInstanceDestroyProjection::class)->apply($first, [
         'run_id' => $first->state['swamp_run_id'], 'status' => 'running', 'started_at' => '2026-10-31T04:00:00Z',
         'result' => ['source_inspection' => $captured], 'error_code' => null]);
-    app(InstanceDestroyProjection::class)->apply($first, [
+    app(DevelopmentInstanceDestroyProjection::class)->apply($first, [
         'run_id' => $first->state['swamp_run_id'], 'status' => 'failed', 'started_at' => '2026-10-31T04:00:00Z',
         'finished_at' => '2026-10-31T04:00:01Z', 'result' => ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'],
         'error_code' => 'instance.destroy_failed']);
@@ -230,7 +230,7 @@ it('admits a new native retry after terminal failure using the same immutable so
     $retried = Operation::query()->findOrFail($next);
     expect($retried->input)->toBe($saved)
         ->and($retried->state['swamp_run_id'])->not->toBe($first->state['swamp_run_id'])
-        ->and($retried->input['direct_destroy']['databases'][0]['connections'][0]['connection_id'])->toBe($database->id)
+        ->and($retried->input['direct_destroy']['database']['sqlite'][0]['connection_id'])->toBe($database->id)
         ->and($this->socket->sent)->toHaveCount(2);
     expect(Operation::query()->count())->toBe(2);
     $executable = app(InstanceDestroySourceInspection::class)->executable(Operation::query()->findOrFail($next)->input);

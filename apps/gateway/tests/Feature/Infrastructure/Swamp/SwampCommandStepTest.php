@@ -241,3 +241,50 @@ it('refuses a binding replaced while history is in flight', function (): void {
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe('replacement-run');
     expect($this->node->fresh()->architecture)->toBeNull();
 });
+
+it('preserves declared successful public captures when cancellation skips the terminal step', function (): void {
+    $hook = new class implements DirectOperationResultHook
+    {
+        public function input(Operation $operation): array
+        {
+            return [];
+        }
+
+        public function validate(Operation $operation, array $result, OperationStatus $status): array
+        {
+            return $result;
+        }
+
+        public function complete(Operation $operation, OperationOutcome $outcome): void {}
+    };
+    app()->instance($hook::class, $hook);
+    $selector = ['job' => 'bootstrap', 'step' => 'probe-host', 'captures' => [
+        'source' => ['job' => 'bootstrap', 'step' => 'captured'],
+        'keys' => ['job' => 'bootstrap', 'step' => 'seeded', 'field' => 'keys'],
+        'unconfirmed' => ['job' => 'bootstrap', 'step' => 'unconfirmed'],
+    ]];
+    app()->instance(DirectOperation::class, new DirectOperation([new class($hook::class, $selector) implements DirectOperationContribution
+    {
+        public function __construct(private readonly string $hook, private readonly array $selector) {}
+
+        public function definitions(): array
+        {
+            return ['test.native_capture' => ['workflow' => 'operation-test-native-capture', 'projection' => DirectOperationResultProjection::class,
+                'result_hook' => $this->hook, 'terminal_result' => $this->selector]];
+        }
+    }]));
+    $this->operation->update(['kind' => 'test.native_capture']);
+    $this->history['workflowName'] = 'operation-test-native-capture';
+    $this->history['inputs']['kind'] = 'test.native_capture';
+    $this->history['status'] = 'cancelled';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'captured', 'status' => 'succeeded', 'outputs' => ['instance_id' => 17]],
+        ['name' => 'seeded', 'status' => 'succeeded', 'outputs' => ['keys' => ['APP_KEY'], 'reference' => ['vault' => 'orbit-control-inputs', 'key' => 'named-output']]],
+        ['name' => 'unconfirmed', 'status' => 'failed', 'outputs' => ['ready' => true]],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'cancelled'], $selector);
+    expect($result->status)->toBe(OperationStatus::Cancelled)
+        ->and($result->result)->toBe(['source' => ['instance_id' => 17], 'keys' => ['APP_KEY']])
+        ->and($this->socket->sent)->toHaveCount(1);
+});

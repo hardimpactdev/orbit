@@ -13,7 +13,6 @@ import { PhpPublication, publishPhp as applyPhp } from "./php.ts";
 import { runLocalProgram } from "./local-program.ts";
 import { DnsPublication, publishPrivateDns, runPrivateDns } from "./dns.ts";
 import { convergeFirewall } from "./firewall-local.ts";
-import { publishDestroyPhp } from "../instance-lifecycle/destroy_php.ts";
 
 const Args = DirectArgs.extend({
   kind: z.literal("route.private_dns_publish"),
@@ -73,7 +72,6 @@ export function publication(
   invokeDns = runPrivateDns,
   invokePhp = runLocalProgram,
   invokeFirewall = runLocalProgram,
-  destroyPhp = publishDestroyPhp,
 ) {
   return {
     type: "@nckrtl/route-publication",
@@ -139,57 +137,6 @@ export function publication(
             invokeFirewall,
             args.recovery ? undefined : ctx.signal,
           );
-          if ("error_code" in result) throw new Error(result.error_code);
-          return result;
-        },
-      },
-      withdrawInstancePhp: {
-        description:
-          "Publish the removing Instance Node's current private PHP pools",
-        arguments: DirectArgs.extend({
-          kind: z.literal("instance.destroy"),
-          node_id: z.number().int().positive(),
-        }),
-        execute: async (
-          args: z.infer<typeof DirectArgs> & { node_id: number },
-          ctx: Context,
-        ) => {
-          await freshParticipant(makeHttp(ctx), args, ctx.signal);
-          return await destroyPhp(
-            args.node_id,
-            new GatewayOperation(makeHttp(ctx), args),
-            ctx.signal,
-          );
-        },
-      },
-      withdrawInstanceDns: {
-        description:
-          "Publish a removing Instance participant's fresh private DNS catalog",
-        arguments: DirectArgs.extend({
-          kind: z.literal("instance.destroy"),
-          target_node_id: z.number().int().positive(),
-        }),
-        execute: async (
-          args: z.infer<typeof DirectArgs> & { target_node_id: number },
-          ctx: Context,
-        ) => {
-          const current = await freshParticipant(
-            makeHttp(ctx),
-            args,
-            ctx.signal,
-          );
-          const rows = z.array(z.object({ dns: z.array(DnsPublication) }))
-            .parse(current.input.withdrawal_publications);
-          const selected = rows.flatMap((row) => row.dns).filter((node) =>
-            node.node_id === args.target_node_id
-          );
-          if (
-            !selected.length ||
-            selected.some((row) =>
-              JSON.stringify(row) !== JSON.stringify(selected[0])
-            )
-          ) throw new Error("route.withdrawal_invalid");
-          const result = await publishPrivateDns(selected[0], invokeDns);
           if ("error_code" in result) throw new Error(result.error_code);
           return result;
         },

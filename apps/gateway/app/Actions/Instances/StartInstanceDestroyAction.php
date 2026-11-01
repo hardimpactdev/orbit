@@ -18,6 +18,7 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
@@ -49,6 +50,9 @@ final readonly class StartInstanceDestroyAction
         $kind = InstanceDestroyKind::forInstance($instance);
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
+        }
+        if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
         }
         $snapshot = $this->snapshot($instance, $force);
 

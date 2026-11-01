@@ -1,7 +1,7 @@
 import { assertEquals, assertMatch, assertRejects } from "jsr:@std/assert@1";
-import type { DestroyReadCall } from "./destroy_system.ts";
+import type { DestroyReadCall } from "./destroy_inspection.ts";
 import { inspectDestroySources } from "./destroy_inspection.ts";
-import { DestroyRefusal } from "./destroy_local.ts";
+import { DestroyRefusal } from "./destroy_refusal.ts";
 
 const checkout = "/srv/apps/proof/main";
 const input = () => ({
