@@ -202,25 +202,14 @@ it('renders credentials in human output without leaking them in errors', functio
         ->and($output)->toContain('22222222-2222-4222-8222-222222222222');
 });
 
-it('enables Metrics on an explicit node and sends the node payload', function (): void {
+it('enables Metrics on an explicit node and follows its native Operation', function (): void {
     $mock = MockClient::global([
-        EnableMetricsRequest::class => MockResponse::make([
-            'data' => ['node_id' => 7, 'status' => 'active'],
-            'meta' => ['request_id' => '66666666-6666-4666-8666-666666666666'],
-        ]),
+        EnableMetricsRequest::class => metrics_cli_exporter_operation('metrics.enable', 7),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.enable', 7),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
     ]);
-
-    [$exit, $output] = metrics_cli_display('metrics:enable', ['node' => '7']);
-    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
-
-    expect($exit)->toBe(0)
-        ->and($output)->toContain('Metrics operation completed for node #7.')
-        ->and($flat)->toContain('Status active')
-        ->and($flat)->toContain('Request ID 66666666-6666-4666-8666-666666666666')
-        ->and($output)->not->toContain('Publication');
-
-    $mock->assertSentCount(1);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 7]);
+    $this->artisan('metrics:enable', ['node' => '7', '--json' => true])->expectsOutputToContain('"kind":"metrics.enable"')->assertSuccessful();
+    $mock->assertSent(static fn ($request): bool => $request instanceof EnableMetricsRequest && $request->body()->all() === ['node_id' => 7]);
 });
 
 it('refuses non-interactive disable without --force before reading status', function (): void {
@@ -263,25 +252,15 @@ it('requires --force before --purge-data without reading status', function (): v
     expect($mock->getLastPendingRequest())->toBeNull();
 });
 
-it('sends the force and purge disable payload', function (): void {
+it('sends the force and purge disable payload and follows its native Operation', function (): void {
     $mock = MockClient::global([
-        DisableMetricsRequest::class => MockResponse::make([
-            'data' => ['node_id' => 7, 'status' => 'removed'],
-            'meta' => ['request_id' => '77777777-7777-4777-8777-777777777777'],
-        ]),
+        DisableMetricsRequest::class => metrics_cli_exporter_operation('metrics.disable', 7),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.disable', 7),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
     ]);
-
-    $this
-        ->artisan('metrics:disable', ['--force' => true, '--purge-data' => true, '--json' => true])
-        ->expectsOutput(json_encode([
-            'node_id' => 7,
-            'status' => 'removed',
-            'request_id' => '77777777-7777-4777-8777-777777777777',
-        ], JSON_THROW_ON_ERROR))
-        ->assertExitCode(0);
-
+    $this->artisan('metrics:disable', ['--force' => true, '--purge-data' => true, '--json' => true])->expectsOutputToContain('"kind":"metrics.disable"')->assertSuccessful();
+    $mock->assertSent(static fn ($request): bool => $request instanceof DisableMetricsRequest && $request->body()->all() === ['force' => true, 'purge_data' => true]);
     $mock->assertNotSent(ShowMetricsStatusRequest::class);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['force' => true, 'purge_data' => true]);
 });
 
 it('returns field=node when non-interactive enable omits the node', function (): void {
@@ -334,45 +313,23 @@ it('excludes an inactive node from the enable data list', function (): void {
         ->and($rows)->not->toHaveKey(4);
 });
 
-it('warns when a Metrics disable leaves the Gateway publication uncleaned', function (): void {
-    $mock = MockClient::global([
-        DisableMetricsRequest::class => MockResponse::make([
-            'data' => ['node_id' => 7, 'status' => 'removed', 'publication' => 'uncleaned'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+it('returns failure when the native role workflow fails', function (): void {
+    MockClient::global([
+        DisableMetricsRequest::class => metrics_cli_exporter_operation('metrics.disable', 7, 'failed'),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.disable', 7, 'failed'),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
     ]);
-
-    [$exit, $output] = metrics_cli_display('metrics:disable', ['--force' => true]);
-    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
-
-    expect($exit)->toBe(0)
-        ->and($output)->toContain('Disabled Metrics; publication not cleaned.')
-        ->and($output)->toContain('Metrics operation completed for node #7.')
-        ->and($flat)->toContain('Publication uncleaned')
-        ->and($output)->toContain(
-            'Publication not cleaned: no single active Gateway. The metrics.orbit route, certificate, and DNS record remain on the Gateway.',
-        )
-        ->and($flat)->toContain('Request ID '.metrics_cli_request_id());
-
-    $mock->assertNotSent(ShowMetricsStatusRequest::class);
+    $this->artisan('metrics:disable', ['--force' => true, '--json' => true])->expectsOutputToContain('"error_code":"operation.native_failed"')->assertExitCode(1);
 });
 
-it('renders no uncleaned warning for a cleaned Metrics disable', function (): void {
+it('renders a completed native Metrics role in human output', function (): void {
     MockClient::global([
-        DisableMetricsRequest::class => MockResponse::make([
-            'data' => ['node_id' => 7, 'status' => 'removed', 'publication' => 'cleaned'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+        DisableMetricsRequest::class => metrics_cli_exporter_operation('metrics.disable', 7),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.disable', 7),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
     ]);
-
     [$exit, $output] = metrics_cli_display('metrics:disable', ['--force' => true]);
-    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
-
-    expect($exit)->toBe(0)
-        ->and($output)->toContain('Disabled Metrics.')
-        ->and($flat)->toContain('Publication cleaned')
-        ->and($output)->not->toContain('Publication not cleaned')
-        ->and($output)->not->toContain('publication not cleaned');
+    expect($exit)->toBe(0)->and($output)->toContain('Metrics')->not->toContain('Publication not cleaned');
 });
 
 it('resets credentials through the focused request and renders exact JSON', function (): void {
@@ -415,22 +372,17 @@ it('enables Metrics on a node given by name', function (): void {
             ],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
-        EnableMetricsRequest::class => MockResponse::make([
-            'data' => ['node_id' => 2, 'status' => 'active'],
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
+        EnableMetricsRequest::class => metrics_cli_exporter_operation('metrics.enable', 2),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.enable', 2),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
     ]);
 
     $this
         ->artisan('metrics:enable', ['node' => 'app-dev', '--json' => true])
-        ->expectsOutput(json_encode([
-            'node_id' => 2,
-            'status' => 'active',
-            'request_id' => metrics_cli_request_id(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->expectsOutputToContain('"kind":"metrics.enable"')
         ->assertSuccessful();
 
-    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 2]);
+    $mock->assertSent(static fn ($request): bool => $request instanceof EnableMetricsRequest && $request->body()->all() === ['node_id' => 2]);
 });
 
 it('rejects an unknown node name before any Metrics mutation', function (): void {

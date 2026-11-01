@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Metrics\AdmitMetricsExporterAction;
+use App\Actions\Metrics\AdmitMetricsRoleAction;
 use App\Data\Metrics\MetricsCredentialsData;
-use App\Data\Metrics\MetricsMutationData;
 use App\Data\Metrics\MetricsStatusData;
 use App\Data\Operations\OperationData;
 use App\Domain\Metrics\MetricsCredentialManager;
-use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -26,14 +25,16 @@ use Illuminate\Http\Request;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class MetricsController extends Controller
 {
-    public function store(EnableMetricsRequest $request, MetricsRoleManager $manager): JsonResponse
+    #[StartsOperation('metrics.enable')]
+    public function store(EnableMetricsRequest $request, AdmitMetricsRoleAction $action): JsonResponse
     {
-        return $this->response($request, $manager->enable($request->nodeId()), 201);
+        return response()->json(['data' => OperationData::fromModel($action->execute($request->nodeId(), true))->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
-    public function destroy(RemoveMetricsRequest $request, MetricsRoleManager $manager): JsonResponse
+    #[StartsOperation('metrics.disable')]
+    public function destroy(RemoveMetricsRequest $request, AdmitMetricsRoleAction $action): JsonResponse
     {
-        return $this->response($request, $manager->remove($request->force(), $request->purgeData()));
+        return response()->json(['data' => OperationData::fromModel($action->execute(null, false, $request->force(), $request->purgeData()))->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
     public function status(Request $request, MetricsStatusReader $reader): JsonResponse
@@ -67,7 +68,7 @@ final class MetricsController extends Controller
 
     private function response(
         Request $request,
-        MetricsMutationData|MetricsStatusData|MetricsCredentialsData $result,
+        MetricsStatusData|MetricsCredentialsData $result,
         int $status = 200,
     ): JsonResponse {
         return response()->json([

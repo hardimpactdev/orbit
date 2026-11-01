@@ -429,3 +429,13 @@ class MetricsExporterNative(NativeTestCase):
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait(timeout=5)
+
+    def test_composed_role_child_updates_target_without_republishing_runtime(self):
+        self.intent['compose_only'] = True
+        history, state = self.run_exporter()
+        self.assertEqual(history['status'], 'succeeded')
+        calls = [c['step'] for c in state['calls']]
+        self.assertIn('started', calls)
+        self.assertIn('firewall', calls)
+        self.assertFalse(set(calls) & {'candidate', 'validate', 'publish', 'prometheus', 'verify', 'remove_candidate'})
+        self.assertEqual(state['loaded'], 'old')

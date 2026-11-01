@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Metrics;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -35,9 +35,9 @@ final class DisableMetricsRequest extends GatewayRequest implements HasBody
         return ['force' => $this->force, 'purge_data' => $this->purgeData];
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): MetricsMutationResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
     {
-        return MetricsMutationResponse::fromGatewayData(
+        return OperationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
         );

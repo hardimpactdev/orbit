@@ -178,6 +178,7 @@ jobs:
   steps:
   - name: candidate
     <<: *effect
+    guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/file'
@@ -198,6 +199,7 @@ jobs:
   - name: validate
     dependsOn: [{step: candidate, condition: *done}]
     <<: *effect
+    guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *ssh
       behaviorName: '${{ "metrics-validate-" + run.id }}'
@@ -212,6 +214,7 @@ jobs:
   - name: publish
     dependsOn: [{step: validate, condition: *done}]
     <<: *effect
+    guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/file'
@@ -220,6 +223,7 @@ jobs:
   - name: prometheus
     dependsOn: [{step: publish, condition: *done}]
     <<: *effect
+    guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/docker_container'
@@ -229,6 +233,7 @@ jobs:
   - name: verify
     dependsOn: [{step: prometheus, condition: *done}]
     <<: *effect
+    guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *ssh
       behaviorName: '${{ "metrics-ready-" + run.id }}'
@@ -237,6 +242,7 @@ jobs:
   - name: remove_candidate
     dependsOn: [{step: verify, condition: *done}]
     <<: *effect
+    guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/file'
