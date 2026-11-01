@@ -5,7 +5,7 @@ const LanRule = z.object({
     model_name: z.string().regex(/^[a-z0-9-]+$/),
     port: z.number().int().min(1).max(65535),
     protocol: z.enum(["tcp", "udp"]),
-    source: z.ipv4(),
+    source: z.union([z.ipv4(), z.literal("any")]),
     ensure: z.enum(["present", "absent"]),
 }).strict();
 const LanPlan = z.object({
@@ -19,14 +19,16 @@ function tupleKeys(status: string): Set<string> {
     return new Set(
         status.split("\n").flatMap((line) => {
             const row = line.trim().match(
-                /^(\d+)\/(tcp|udp)\s+ALLOW(?:\s+IN)?\s+([0-9.]+)\s*$/,
+                /^(\d+)\/(tcp|udp)(?:\s+\(v6\))?\s+ALLOW(?:\s+IN)?\s+(Anywhere|[0-9.]+)(?:\s+\(v6\))?(?:\s+#.*)?\s*$/,
             );
             return row ? [`${Number(row[1])}/${row[2]}/${row[3]}`] : [];
         }),
     );
 }
 const tupleKey = (rule: z.infer<typeof LanRule>) =>
-    `${rule.port}/${rule.protocol}/${rule.source}`;
+    `${rule.port}/${rule.protocol}/${
+        rule.source === "any" ? "Anywhere" : rule.source
+    }`;
 export function neededLanRules(plan: z.infer<typeof LanPlan>, status: string) {
     const current = tupleKeys(status);
     return plan.rules.filter((rule) =>
@@ -88,7 +90,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         lan_changes: {
             schema: z.object({

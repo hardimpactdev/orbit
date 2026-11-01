@@ -1,6 +1,6 @@
 id: 4977fbb9-658c-4d9c-a984-d003f4dbe225
 name: route-ingress-apply
-description: Apply the public ingress port policy through the official firewall model.
+description: Converge public ingress through the canonical pinned tuple child.
 vaults: []
 inputs:
   type: object
@@ -19,72 +19,46 @@ inputs:
       type: object
       additionalProperties: false
   required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
   additionalProperties: false
 jobs:
-- name: firewall
-  steps:
-  - name: pins
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ingress-" + run.id }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "route-ingress-" + run.id }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/true
-  - name: apply
-    target: orbit-node-209
-    dependsOn:
-    - {step: pins, condition: {type: succeeded}}
-    forEach:
-      item: rule
-      in: ${{ inputs.intent.rule.rules }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/firewall'
-      behaviorName: ${{ "route-ingress-port-" + string(self.rule.port) }}
-      methodName: apply
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        nodePort: ${{ inputs.intent.connection.nodePort }}
-        become: true
-        port: ${{ self.rule.port }}
-        protocol: tcp
-        action: allow
-        direction: in
-        ensure: ${{ self.rule.ensure }}
-      inputs: {}
-  - name: result
-    target: orbit-node-209
-    dependsOn:
-    - {step: pins, condition: {type: always}}
-    - {step: apply, condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-update-result'
-      behaviorName: route-ingress-result
-      methodName: firewall
-      inputs:
-        rules: ${{ inputs.intent.rule.rules }}
-        steps: ${{ steps }}
+  - name: firewall
+    steps:
+      - name: converge
+        target: orbit-node-209
+        task:
+          type: workflow
+          workflowIdOrName: route-lan-apply
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            execution_secrets: {}
+            intent:
+              control_node_id: 209
+              connection: '${{ inputs.intent.connection }}'
+              host_keys: '${{ inputs.intent.host_keys }}'
+              rule:
+                node_id: '${{ inputs.intent.rule.node_id }}'
+                migrate: false
+                rules: >-
+                  ${{ inputs.intent.rule.rules.map(r, {"model_name": "public-" +
+                  string(r.port), "port": r.port, "protocol": "tcp", "source":
+                  "any", "ensure": r.ensure}) }}
+      - name: result
+        target: orbit-node-209
+        dependsOn:
+          - step: converge
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/route-update-result'
+          behaviorName: route-ingress-result
+          methodName: firewall
+          inputs:
+            ready: '${{ steps.converge.outputs.result.ready }}'

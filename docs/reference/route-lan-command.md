@@ -3,6 +3,8 @@ title: Route LAN firewall
 description: Converge shared Node source tuples through official pinned SSH.
 ---
 
+The same pinned tuple child also applies the admitted public Ingress TCP80/443 rules, with explicit `source: any` and migration disabled. Its observation and verification distinguish these rules from source-specific LAN rules.
+
 Route LAN allows TCP443 from the recorded Router LAN source to the workload Node. The Router still connects to the workload's recorded LAN address. The firewall rule has no destination or Route comment. Route sites already bind both LAN and WireGuard; WireGuard-only control sites keep their Caddy VPN-client guard. A missing configured LAN hop still fails publication without a WireGuard fallback.
 
 `NativeRouteLanInput::forSites(Node, Collection)` derives unique `(port, protocol, source)` tuples from the complete published or prospective site catalog. `changes(before, desired)` keeps every required tuple present and removes only tuples absent from the desired set. Two Routes sharing a tuple share one allowance. Withdrawal of the first keeps it; withdrawal of the last removes it. Node identity and rule intent remain distinct from execution placement.
