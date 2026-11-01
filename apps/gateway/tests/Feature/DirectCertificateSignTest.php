@@ -210,7 +210,7 @@ it('signs the exact admitted enrollment target before terminal identity activati
     $this->node->update(['status' => $status]);
     $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'input' => [
         'certificates' => [$this->leaf], 'enrollment' => ['existed' => $status === LifecycleStatus::Failed],
-        'intent' => ['node_id' => $this->node->id, 'candidate' => ['node_id' => $this->node->id]],
+        'intent' => ['node_id' => $this->node->id, 'candidate' => ['node_id' => $this->node->id], 'role_certificates' => ['leaves' => [$this->leaf]]],
     ]]);
     $this->postJson($this->path, $this->body)->assertOk()->assertJsonPath('data.certificates.0.node_id', $this->node->id);
     expect($this->node->refresh()->status)->toBe($status);
@@ -220,7 +220,7 @@ it('does not extend enrollment signing to an unbound or foreign inactive Node', 
     direct_sign_enrollment_declaration();
     $this->node->update(['status' => LifecycleStatus::Provisioning]);
     $input = ['certificates' => [$this->leaf], 'enrollment' => ['existed' => false],
-        'intent' => ['node_id' => $this->node->id, 'candidate' => ['node_id' => $this->node->id]]];
+        'intent' => ['node_id' => $this->node->id, 'candidate' => ['node_id' => $this->node->id], 'role_certificates' => ['leaves' => [$this->leaf]]]];
     $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'input' => $input]);
     match ($change) {
         'foreign' => $this->operation->update(['target_id' => 209, 'node_id' => 209]),
@@ -235,6 +235,33 @@ it('does not extend enrollment signing to an unbound or foreign inactive Node', 
     $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
 })->with(['foreign', 'intent', 'candidate', 'reservation', 'removing']);
+
+it('selects the admitted enrollment Route certificate phase instead of its aggregate union', function (bool $restoring): void {
+    direct_sign_enrollment_declaration();
+    $prior = [...$this->leaf, 'domain' => 'prior.orbit'];
+    $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'input' => [
+        'certificates' => [$this->leaf, $prior],
+        'intent' => ['node_id' => $this->node->id, 'candidate' => ['node_id' => $this->node->id],
+            'role_certificates' => ['leaves' => []], 'route_mutations' => [
+                'forward' => ['prepare_certificates' => [], 'certificates' => [$this->leaf]],
+                'restore' => ['certificates' => [$prior]],
+            ]],
+    ]]);
+    $domain = $restoring ? 'prior.orbit' : 'example.orbit';
+    $this->body['restoring'] = $restoring;
+    $this->body['requests'][0]['request_base64'] = base64_encode(direct_sign_csr($domain));
+    $response = $this->postJson($this->path, $this->body)->assertOk();
+    $certificate = base64_decode($response->json('data.certificates.0.certificate_base64'), true);
+    expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain);
+})->with([false, true]);
+
+it('does not authorize an aggregate-only enrollment certificate', function (): void {
+    direct_sign_enrollment_declaration();
+    $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'input' => [
+        'certificates' => [$this->leaf], 'intent' => ['role_certificates' => ['leaves' => []]],
+    ]]);
+    $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
+});
 
 function direct_sign_enrollment_declaration(): void
 {

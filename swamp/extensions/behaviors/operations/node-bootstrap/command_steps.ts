@@ -3,7 +3,7 @@ const expr = (source: string) => "${{ " + source + " }}";
 const placement = { target: "orbit-node-209" };
 const after = (step: string) => [{ step, condition: { type: "succeeded" } }];
 
-/** Collect public trust once; only the accepted full pin can authenticate or mutate. */
+/** Collect once, then compare the admitted fingerprint before platform reads or mutations. */
 export function bootstrapCommandSteps(
     name: string,
     intent: string,

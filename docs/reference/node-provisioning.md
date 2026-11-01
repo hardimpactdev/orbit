@@ -813,9 +813,16 @@ The source suppliers accept the actual Node and an immutable `NodeEnrollmentCand
 
 The native lowers run on a worker on209 through official SSH with admitted full host keys. A pending candidate publication must bind to the parent's verified host-key output before an effect. That binding does not collect a key or compare a fingerprint itself. The complete parent owns first contact and the admitted fingerprint check. These lowers install no Swamp binary or worker and mint no token on a target.
 
-The role union selects the recipe's exact tool versions and artifact digests at admission. OS packages use one placed official SSH execution of the fixed APT installer. Application roles additionally use the fixed JavaScript/Vite+ installer and Composer scope preparation. These installers are shipped files. They accept the captured role input and create no Tool operations or Tool rows. They do not import the retained Tool manager dispatcher. The canonical account, Caddy and package lower exports remain available to role parents.
+### Enrollment prerequisites
+
+The role union selects the recipe's exact tool versions and artifact digests at admission. OS packages use one placed official SSH execution of the fixed APT installer. Application roles additionally use the fixed JavaScript/Vite+ installer and Composer scope preparation.
+
+These installers are shipped files. They accept the captured role input and create no Tool operations or Tool rows. They do not import the retained Tool manager dispatcher. The canonical account, Caddy and package lower exports remain available to role parents.
+
+### Parent restoration
 
 The complete same-root role execution and restoration factory is still pending. Available prerequisite, certificate, publication, observer and Metrics lowers do not by themselves prove a complete role or enrollment. The owning parent must retain snapshots through settlement and prove restoration before reporting rollback success.
 
-
 A WireGuard address change requires a bootstrap SSH endpoint separate from both the prior and candidate WireGuard address. The same admitted connection must remain reachable for DNS publication and network restoration. Admission performs only settings grammar and database checks; native account discovery validates effective storage paths before any storage action. A roleless Node without an explicit apps root has no storage duty.
+
+Enrollment signs its captured role leaves from `intent.role_certificates.leaves`. Route signing selects the admitted forward preparation and final leaves, or the admitted restoration leaves. The aggregate certificate list is not a signing lookup: the same Node and scope can have different forward and prior domains.

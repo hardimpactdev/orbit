@@ -91,7 +91,9 @@ final readonly class SignDirectCertificatesAction
             'node.role_add', 'node.role_converge' => ['_role.certificates.leaves'],
             'node.role_relocate' => ['_relocate.certificates.leaves'],
             'node.role_remove' => ['_role_remove.certificates.leaves'],
-            'node.add' => ['certificates'],
+            'node.add' => ['intent.role_certificates.leaves', ...($restoring
+                ? ['intent.route_mutations.restore.certificates']
+                : ['intent.route_mutations.forward.prepare_certificates', 'intent.route_mutations.forward.certificates'])],
             'node.remove' => $restoring ? ['_removal.restore_certificates'] : [],
             'instance.transfer' => ['route_transfer.target.certificates'],
             default => [],
