@@ -14,8 +14,11 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Jobs\Operations\ProjectSwampTerminal;
 use App\Jobs\Operations\RecoverUnboundSwampRun;
+use App\Models\Activity;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
@@ -429,13 +432,27 @@ it('settles a timed out unbound hold only after the exact native lookup proves a
     expect($history->sent[0]['payload']['inputs']['operation_id'])->toBe((string) $operation->id);
 })->with(['absent', 'matching', 'mismatch', 'ambiguous', 'stale workflow', 'stale key']);
 
-it('projects queued or simultaneous terminal notices once after the deadline without a false timeout', function (bool $beforeDeadline): void {
+it('projects queued or simultaneous terminal notices once after the deadline without a false timeout', function (bool $beforeDeadline, string $kind): void {
     Bus::fake([ProjectSwampTerminal::class]);
     config(['swamp.run_token' => 'fixture.run', 'swamp.read_token' => 'fixture.read',
         'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
-    $operation = budgetOperation('node.bootstrap_probe');
+    config(['orbit.releases.alert_webhook_url' => 'https://hooks.example.test/budget-alert',
+        'orbit.releases.alert_webhook_secret' => 'fixture-signing-key']);
+    Http::fake(['https://hooks.example.test/budget-alert' => Http::response('', 200)]);
+    $operation = budgetOperation($kind);
+    if ($kind === 'instance.create') {
+        $project = Project::query()->create(['name' => 'Budget source', 'slug' => 'budget-source', 'type' => 'node-package',
+            'repository_url' => 'https://github.com/example/budget-source.git', 'root' => '.', 'default_branch' => 'main']);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $operation->node_id,
+            'name' => 'budget-proof', 'checkout_path' => '/srv/apps/budget-source/proof', 'source_layout' => 'checkout', 'status' => 'active']);
+        $operation->update(['target_type' => 'instance', 'target_id' => $instance->id,
+            'input' => ['instance_id' => $instance->id, 'run_budget_seconds' => 60, 'direct_provisioning' => ['already_active' => true]]]);
+    }
+    $definition = app(DirectOperation::class)->definition($kind);
+    $budget = OperationRunBudgets::seconds($operation);
+    expect($budget)->toBe($kind === 'instance.create' ? 60 : 1800);
     $start = now()->toISOString();
-    $finish = now()->addSeconds(1799)->toISOString();
+    $finish = now()->addSeconds($budget - 1)->toISOString();
     $events = new FakeSwampEventSocket;
     $subscriber = new SwampRunSubscriber($events, new NullLogger, static fn (): float => now()->getTimestamp());
     $subscriber->pass();
@@ -443,9 +460,9 @@ it('projects queued or simultaneous terminal notices once after the deadline wit
     $events->push(['type' => 'run.attached', 'id' => $request['id'], 'payload' => [
         'runId' => $operation->state['swamp_run_id'], 'kind' => 'workflow-run']]);
     $subscriber->pass();
-    $this->travel($beforeDeadline ? 1799 : 1804)->seconds();
+    $this->travel($beforeDeadline ? $budget - 1 : $budget + 4)->seconds();
     $events->push(['type' => 'event', 'id' => $request['id'], 'event' => ['seq' => 5, 'kind' => 'completed', 'run' => [
-        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded']]]);
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => $definition['workflow'], 'status' => 'succeeded']]]);
     $subscriber->pass();
     $this->travel($beforeDeadline ? 5 : 0)->seconds();
     $subscriber->pass();
@@ -454,11 +471,12 @@ it('projects queued or simultaneous terminal notices once after the deadline wit
     Bus::assertDispatchedTimes(ProjectSwampTerminal::class, 1);
     $history = new FakeRoutePublicationSocket;
     $history->reply = static fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => [
-        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded',
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => $definition['workflow'], 'status' => 'succeeded',
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => $start, 'completedAt' => $finish,
-        'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'outputs' => ['exitCode' => 0,
-            'stdout' => '{"probed":true,"architecture":"x86_64","public_key":"public-fixture"}']]]]],
+        'jobs' => [['name' => $definition['terminal_result']['job'], 'steps' => [['name' => $definition['terminal_result']['step'], 'outputs' => ['exitCode' => 0,
+            'stdout' => json_encode($kind === 'instance.create' ? ['ready' => true, 'instance_id' => $operation->input['instance_id'], 'already_active' => true]
+                : ['probed' => true, 'architecture' => 'x86_64', 'public_key' => 'public-fixture'], JSON_THROW_ON_ERROR)]]]]],
     ]]]];
     app()->instance(WebSocketClient::class, $history);
 
@@ -468,7 +486,9 @@ it('projects queued or simultaneous terminal notices once after the deadline wit
     expect($operation->fresh()->error_code)->toBeNull();
     expect($operation->fresh()->cancel_requested_at)->toBeNull();
     expect($history->sent)->toHaveCount(1);
-})->with([true, false]);
+    Http::assertNothingSent();
+    expect(Activity::query()->where('command', 'instance:failure-alert')->exists())->toBeFalse();
+})->with([[true, 'node.bootstrap_probe'], [false, 'node.bootstrap_probe'], [true, 'instance.create']]);
 
 it('uses own history or thirty minutes for kinds without an explicit measured budget', function (string $kind): void {
     $operation = budgetOperation($kind, ['input' => []]);
