@@ -29,8 +29,7 @@ class FakeHost:
         self.failure = None
         self.changed = False
         self.evidence = {"workflows": [{"id": "workflow", "equal": True}],
-                         "extension_audit": {"checked": 1, "matched": 1, "deleted": ["retired/type"]},
-                         "drain": {"queried_at": "now", "active_running_run_ids": ["live-root"]}}
+                         "extension_audit": {"checked": 1, "matched": 1, "deleted": ["retired/type"]}}
 
     def call(self, name):
         self.calls.append(name)
@@ -83,13 +82,13 @@ class PublicationTest(unittest.TestCase):
         return {**request("accept"), "receipt_hash": prepared["receipt_hash"]}
 
 
-    def test_prepare_loads_only_pinned_source_and_keeps_custody_with_live_runs(self):
+    def test_prepare_loads_only_pinned_source_and_keeps_custody_without_a_drain(self):
         receipt = self.prepare()
         self.assertEqual(receipt["state"], "awaiting_gateway_verification")
         self.assertEqual(receipt["disk_sha"], SHA)
         self.assertEqual(receipt["restarts"], 0)
         self.assertEqual(receipt["worker_restarts"], 0)
-        self.assertEqual(receipt["drain"]["active_running_run_ids"], ["live-root"])
+        self.assertNotIn("drain", receipt)
         self.assertEqual(self.host.calls, ["preflight", "stage:" + SHA, "reload", "grants", "verify", "health", "unchanged"])
         self.assertTrue((self.state / "pending.json").is_file())
         self.assertNotIn("configured_token_proof", receipt)
@@ -105,7 +104,7 @@ class PublicationTest(unittest.TestCase):
 
     def test_invalid_identity_changes_nothing(self):
         for changes in ({"release_sha": "main"}, {"release_id": OTHER[:12]}, {"target_node_id": 13},
-                        {"gateway_release_record": 0}, {"attempt_id": "../../other"}):
+                        {"gateway_release_record": 0}, {"attempt_id": "../../other"}, {"action": "restart"}):
             with self.subTest(changes=changes), self.assertRaises(loader.Refused):
                 loader.process({**request(), **changes}, self.host, self.state)
             self.assertFalse(self.state.exists())
@@ -174,7 +173,6 @@ class DefinitionVerificationTest(unittest.TestCase):
         self.audit = {"checked": 2, "matched": 2, "errors": [], "mismatches": [], "scope": "source versions", "limit": "not bytes"}
         self.calls = []
         self.bad_inventory = False
-        self.runs = [{"id": "live-run", "status": "running"}]
 
     def native(self, *args, remote=False):
         self.calls.append((args, remote))
@@ -183,8 +181,6 @@ class DefinitionVerificationTest(unittest.TestCase):
         if args[:2] == ("workflow", "get"):
             self.assertEqual(args[2], "changed-id")
             return self.served if remote else self.disk
-        if args[:2] == ("run", "history"):
-            return {"runs": self.runs}
         raise AssertionError(args)
 
     def verify(self):
@@ -215,13 +211,14 @@ class DefinitionVerificationTest(unittest.TestCase):
         with self.assertRaisesRegex(loader.Refused, "served_workflow_mismatch"):
             self.verify()
 
-    def test_failed_existing_version_audit_and_unreadable_drain_fail_closed(self):
+    def test_hot_reload_verification_never_depends_on_active_run_history(self):
+        result = self.verify()
+        self.assertNotIn("drain", result)
+        self.assertFalse(any(call[0][:2] == ("run", "history") for call in self.calls))
+
+    def test_failed_existing_version_audit_fails_closed(self):
         self.audit["matched"] = 1
         with self.assertRaisesRegex(loader.Refused, "served_extension_version_mismatch"):
-            self.verify()
-        self.audit["matched"] = 2
-        self.runs = None
-        with self.assertRaisesRegex(loader.Refused, "native_drain_unreadable"):
             self.verify()
 
 
