@@ -21,6 +21,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\UpCloudApi;
+use App\Models\Cluster;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -167,7 +168,7 @@ it('captures a Tasks owned workspace without deleting its records or relaxing st
         ->and($this->vm->fresh()->pi_token)->toBe('retained-pi')->and(Operation::query()->count())->toBe(0);
 });
 
-it('refuses a foreign or routed workspace before capturing Node removal', function (string $change): void {
+it('refuses a foreign workspace before capturing Node removal', function (string $change): void {
     $workspace = destroyOwnedWorkspace($this->vm);
     if ($change === 'project') {
         $other = Project::query()->create(['name' => 'Foreign', 'slug' => 'foreign', 'repository_url' => 'https://github.com/acme/foreign']);
@@ -176,8 +177,6 @@ it('refuses a foreign or routed workspace before capturing Node removal', functi
         Instance::query()->whereKey($workspace->id)->update(['task_workspace_owner_id' => null]);
     } elseif ($change === 'node') {
         Instance::query()->whereKey($workspace->id)->update(['node_id' => $this->host->id]);
-    } elseif ($change === 'routed') {
-        Instance::query()->whereKey($workspace->id)->update(['task_workspace_routed' => true]);
     } else {
         $copy = $workspace->replicate();
         $copy->name = 'other-workspace';
@@ -188,7 +187,7 @@ it('refuses a foreign or routed workspace before capturing Node removal', functi
     expect(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace))->toThrow(ResourceOperationException::class);
     expect($this->vm->fresh()->node->status)->toBe(LifecycleStatus::Failed)
         ->and($workspace->fresh())->not->toBeNull()->and(Operation::query()->count())->toBe(0);
-})->with(['project', 'owner', 'node', 'routed', 'other-instance']);
+})->with(['project', 'owner', 'node', 'other-instance']);
 
 it('keeps protected resources strict while capturing the exact workspace', function (string $resource): void {
     $workspace = destroyOwnedWorkspace($this->vm);
@@ -389,3 +388,77 @@ it('projects the complete Tasks ending parent without deleting records at admiss
     expect(Instance::query()->find($workspace->id))->toBeNull()->and($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($group->fresh()->taskable_id)->toBeNull()->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed);
 });
+
+it('captures cancellation of its exclusive routed workspace without touching the stopped guest', function (): void {
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $workspace->update(['task_workspace_routed' => true]);
+    $route = Route::query()->create(['project_id' => $workspace->project_id, 'node_id' => $workspace->node_id,
+        'domain' => 'owned-workspace.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $workspace->id, 'position' => 0]);
+
+    $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
+
+    expect($captured['workspace_routes'])->toHaveCount(1)
+        ->and($captured['workspace_routes'][0]['route_id'])->toBe($route->id)
+        ->and(array_column($captured['workspace_routes'][0]['route_mutations']['forward']['publications'], 'node_id'))->not->toContain($workspace->node_id)
+        ->and($route->fresh()->status->value)->toBe('retiring')
+        ->and($workspace->fresh())->not->toBeNull();
+});
+
+it('refuses shared and foreign workspace Routes without recording withdrawal', function (string $change): void {
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $workspace->update(['task_workspace_routed' => true]);
+    $foreign = Project::query()->create(['name' => 'Foreign route', 'slug' => 'foreign-route', 'repository_url' => 'https://example.test/foreign']);
+    if ($change === 'shared') {
+        $cluster = Cluster::query()->create(['name' => 'Shared cleanup', 'tld' => 'shared.test', 'state' => 'active']);
+        foreach ([$this->vm->node, $this->host] as $node) {
+            $node->update(['cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+            $node->roles()->delete();
+            $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+        }
+        $route = Route::query()->create(['project_id' => $workspace->project_id, 'cluster_id' => $cluster->id,
+            'domain' => 'shared-workspace.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $workspace->id, 'position' => 0]);
+        $other = Instance::query()->create(['project_id' => $workspace->project_id, 'node_id' => $this->host->id, 'name' => 'shared-other', 'checkout_path' => '/home/orbit/apps/shared-other', 'status' => InstanceState::Reserved]);
+        $route->targets()->create(['instance_id' => $other->id, 'position' => 1]);
+    } else {
+        $route = Route::query()->create(['project_id' => $foreign->id, 'node_id' => $workspace->node_id,
+            'domain' => 'foreign-workspace.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    }
+    $priorStatus = $this->vm->fresh()->node->status;
+
+    expect(fn () => DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace)))->toThrow(ResourceOperationException::class);
+    expect($route->fresh()->status->value)->toBe('pending')->and($workspace->fresh())->not->toBeNull()
+        ->and($this->vm->fresh()->node->status)->toBe($priorStatus);
+})->with(['shared', 'project']);
+
+it('cleans a completed group residual workspace and keeps it completed', function (bool $workspacePresent): void {
+    enable_operation_queue();
+    app(TaskExtensionState::class)->enable();
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $group = Task::topLevel()->findOrFail($this->vm->group_id);
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    if (! $workspacePresent) {
+        $group->taskable()->dissociate();
+        $group->save();
+        $workspace->delete();
+    } else {
+        $workspace->update(['task_workspace_routed' => true]);
+        $route = Route::query()->create(['project_id' => $workspace->project_id, 'node_id' => $workspace->node_id,
+            'domain' => 'completed-workspace.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $workspace->id, 'position' => 0]);
+    }
+    $run = '8ba8f6c9-0a5e-44da-9710-4bde40935894';
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-cancel', 'runId' => $run]]];
+    app()->instance(WebSocketClient::class, $socket);
+
+    $operation = app(TaskCancelIntent::class)->start($group, 'fixture', null);
+
+    expect(app(TaskCancelIntent::class)->input($operation)['intent']['task_vm_id'])->toBe($this->vm->id);
+    app(TaskCancelProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['group_id' => $group->id, 'instance_id' => $workspacePresent ? $workspace->id : null, 'cleanup_complete' => true, 'vm' => destroyCompleteResult($this->vm)]]);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->fresh()->taskable_id)->toBeNull()
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed)
+        ->and(Instance::query()->find($workspace->id))->toBeNull()->and(Route::query()->count())->toBe(0);
+})->with(['workspace' => true, 'vm-only' => false]);

@@ -20,7 +20,7 @@ final readonly class NativeRouteLifecycleInput
     /** @param array<string,mixed> $input
      * @return array{intent:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
-    public function capture(Route $route, array $input, bool $removing = false): array
+    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null): array
     {
         $route->loadMissing(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
         $metadata = ['route_id' => $route->id, 'result_route_id' => $route->id, 'effectful' => $removing || ($input['mode'] ?? null) !== 'state_only',
@@ -29,13 +29,22 @@ final readonly class NativeRouteLifecycleInput
         if (! $metadata['effectful']) {
             return ['intent' => $metadata, 'certificates' => [], 'participant_node_ids' => [209], 'execution_secrets' => []];
         }
-        $beforeSites = $this->sites->all();
-        $prior = $this->mutations->route($route, environment: false);
+        if ($deletedWorkloadNodeId !== null && ! $removing) {
+            throw new \LogicException('Only workspace removal may exclude its deleted workload Node.');
+        }
+        $beforeSites = $this->sites->all()->reject(static fn (DevelopmentSite $site): bool => $site->nodeId === $deletedWorkloadNodeId)->values();
+        $inventory = $removing ? app(NativeRouteRemovalIntent::class)->captureMany(collect([$route]), excludedEffectNodeIds: $deletedWorkloadNodeId === null ? [] : [$deletedWorkloadNodeId]) : null;
+        $prior = $deletedWorkloadNodeId === null ? $this->mutations->route($route, environment: false)
+            : ['route_id' => $route->id, 'domain' => $route->domain, 'intent' => ['node_ids' => array_column($inventory['nodes'] ?? [], 'node_id'), 'certificates' => []], 'sites' => [], 'url_writes' => []];
+        $prior['intent']['node_ids'] = array_values(array_filter(ValidatedData::integerList($prior['intent']['node_ids']), static fn (int $id): bool => $id !== $deletedWorkloadNodeId));
         $prior['sites'] = array_values($beforeSites->where('domain', $route->domain)->all());
         $prior['intent']['certificates'] = array_values(array_filter(RouteExecutionProof::objects($prior['intent']['certificates']),
             static fn (array $leaf): bool => array_any($prior['sites'], static fn (DevelopmentSite $site): bool => $site->nodeId === $leaf['node_id'] && ($site->certificateScope ?? $site->scope) === $leaf['scope'])));
         $prior['url_writes'] = [];
         foreach ($route->targets as $target) {
+            if ($target->instance->node_id === $deletedWorkloadNodeId) {
+                continue;
+            }
             foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($route, $target->instance->node_id,
                 ['workloads' => [['instance_id' => $target->instance_id, 'node_id' => $target->instance->node_id, 'production' => $target->instance->placedOnAppProd()]]], false, urlsOnly: $removing) as $write) {
                 $prior['url_writes'][] = ['node_id' => $target->instance->node_id, ...$write];
@@ -52,6 +61,9 @@ final readonly class NativeRouteLifecycleInput
             $row['intent']['certificates'] = [];
             $row['url_writes'] = [];
             foreach ($route->targets as $target) {
+                if ($target->instance->node_id === $deletedWorkloadNodeId) {
+                    continue;
+                }
                 foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($candidate, $target->instance->node_id,
                     ['workloads' => [['instance_id' => $target->instance_id, 'node_id' => $target->instance->node_id, 'production' => $target->instance->placedOnAppProd()]]], true, [$route->id => $candidate], urlsOnly: true) as $write) {
                     $row['url_writes'][] = ['node_id' => $target->instance->node_id, ...$write];
@@ -59,7 +71,6 @@ final readonly class NativeRouteLifecycleInput
             }
             $desired = [$row];
         }
-        $inventory = $removing ? app(NativeRouteRemovalIntent::class)->capture($route) : null;
         $extra = $inventory === null ? [] : ValidatedData::integerList(array_column($inventory['nodes'], 'node_id'));
         $capture = $this->mutations->capture([$prior], $desired, $desired, [$prior], $beforeSites, $beforeSites,
             array_values(array_unique([...ValidatedData::integerList($prior['intent']['node_ids']), ...$extra])), static fn (Closure $render): array => $render());
@@ -78,6 +89,9 @@ final readonly class NativeRouteLifecycleInput
         }
         $instances = [];
         foreach ($route->targets as $target) {
+            if ($target->instance->node_id === $deletedWorkloadNodeId) {
+                continue;
+            }
             $instances[$target->instance_id] = $target->instance;
             $metadata['workloads'][] = app(NativeRouteWorkloadPreparation::class)->capture($target->instance, $route, $candidate, $removing);
         }

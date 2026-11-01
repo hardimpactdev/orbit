@@ -72,10 +72,8 @@ final readonly class TaskCancelIntent
                     || $workspace->node_id !== $vm->node_id)) {
                     throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned TaskVM workspace.', 409);
                 }
-                if ($workspace === null && $vm instanceof TaskVm && $vm->state->value !== 'destroyed') {
-                    throw new ResourceOperationException('tasks.workspace_ownership_refused', 'The live group VM must retain its owned workspace for cleanup.', 409);
-                }
-                $capture = $workspace instanceof Instance ? $this->destroy->captureForWorkspace($vm, $workspace) : [];
+                $capture = $workspace instanceof Instance ? $this->destroy->captureForWorkspace($vm, $workspace)
+                    : ($vm instanceof TaskVm && $vm->state !== TaskVmState::Destroyed ? $this->destroy->capture($vm) : []);
                 $steps = $workspace instanceof Instance && $vm->state === TaskVmState::Ready
                     && ! in_array($workspace->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true) ? app(ProjectLifecycleStepStore::class)->ordered($group->project, LifecyclePhase::Teardown) : [];
                 $values = $workspace instanceof Instance ? app(LogRedactor::class)->valuesFor($workspace) : [];
@@ -88,7 +86,7 @@ final readonly class TaskCancelIntent
                 }, $steps);
 
                 return $this->start->execute($kind, 'task_group', $group->id, isset($capture['node_id']) ? ValidatedData::integer($capture['node_id']) : 209, [
-                    ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
+                    'workspace_routes' => [], 'task_vm_id' => null, ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
                     'instance_id' => $workspace?->id, 'checkout_path' => $workspace?->checkout_path,
                     'ssh_execution' => $teardown !== [] && $workspace instanceof Instance ? app(SwampSshExecutionInput::class)->forNode($workspace->node) : null,
                     'teardown' => $teardown,
@@ -112,7 +110,8 @@ final readonly class TaskCancelIntent
                     ->where('status', 'succeeded')->where('result->outcome', 'passed')->exists()) {
                 throw new ResourceOperationException('tasks.not_settling', 'Native maintenance cleanup requires its passed no-change work or ended published PR.', 409);
             }
-        } elseif ($group->status === TaskGroupStatus::Completed || (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $group->pr_url)) {
+        } elseif (($group->status === TaskGroupStatus::Completed && $group->taskable_id === null
+            && ! TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists()) || (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $group->pr_url)) {
             throw new ResourceOperationException('tasks.not_cancellable', 'A completed group or a settling group with a PR cannot be cancelled.', 409);
         }
         if (TaskFinalReview::reconcileRemovalPush($group) !== null) {
@@ -130,8 +129,8 @@ final readonly class TaskCancelIntent
             throw new ResourceOperationException('operation.execution_forbidden', 'Cancellation no longer owns its admitted group workspace.', 422);
         }
 
-        if ($group->taskable_id !== null) {
-            $workspace = Instance::query()->findOrFail($group->taskable_id);
+        if (($operation->input['task_vm_id'] ?? null) !== null) {
+            $workspace = $group->taskable_id === null ? null : Instance::query()->findOrFail($group->taskable_id);
             $vm = TaskVm::query()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']));
             $this->destroy->ownedForWorkspace($vm, $workspace, $operation->input, $operation->id);
         }
