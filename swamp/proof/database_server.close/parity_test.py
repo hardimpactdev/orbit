@@ -195,6 +195,13 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(value["workflow"], flow["name"])
         self.assertEqual(value["topology"], ["app-dev+database"])
         self.assertEqual(value["queue_timeout_seconds"], flow.get("queueTimeout"))
+        self.assertIs(type(value["budget_seconds"]), int)
+        self.assertIs(type(value["queue_timeout_seconds"]), int)
+        self.assertLess(0, value["queue_timeout_seconds"])
+        self.assertLess(value["queue_timeout_seconds"], value["budget_seconds"])
+        self.assertTrue(all(type(phase["budget_seconds"]) is int and
+                            0 < phase["budget_seconds"] <= value["budget_seconds"]
+                            for phase in value["phases"]))
         self.assertEqual(value["request"]["operation"], "$.id")
         self.assertEqual([call["argv"][1] for call in value["prepare"]],
                          ["process:create", "database:create", "database:server:create", "database:destroy"])

@@ -8,6 +8,20 @@ Before admission, the hook checks the exact owned Process, named volume, private
 
 The workload observer captures Docker and ACL data locally and emits only fixed booleans. It does not read a Gateway password or return ACL hashes. The PHP SDK omits `default_open` from CLI server output, so this fixture verifies the effective and saved access state independently rather than inventing that field. The adopted passwordless connection must be absent. Both hooks run from the staged repository root with repo-relative paths and the frozen `PROOF_*` environment.
 
-This is draft fixture preparation, not a topology receipt or a measured F8 budget. The 1,800-second ceiling is the unmeasured default; null queue timeout records the workflow's missing explicit `queueTimeout`. Phase mappings are observations of the current workflow. Foreign-client refusal, failed-save compensation and unknown-access recovery still need separate topology variants; local checker tests do not prove them. D owns the execution receipt. Topology teardown owns the disposable Process, server, volume and marker; this fixture deletes none of them. Connection 47 and historical target-v2 cleanup are excluded.
+This is draft fixture preparation, not a topology receipt or measured native p95. The current close path has no successful sample in the saved caller-visible list; the 1,800-second default below applies. Earlier-shape closes are excluded. Foreign-client refusal, failed-save compensation and unknown-access recovery still need separate topology variants; local checker tests do not prove them. D owns the execution receipt. Topology teardown owns the disposable Process, server, volume and marker; this fixture deletes none of them. Connection 47 and historical target-v2 cleanup are excluded.
 
 Run local checker tests with `python3 -I swamp/proof/database_server.close/parity_test.py`. They allocate no infrastructure and start no Operation.
+
+## Budget binding
+
+These fixtures are stacked on #2404 at `aa7604ea772b629d074ad8587de36932defc49ae`, whose explicit workflow queue timeout is 30 seconds. Test that staged product source with the canonical #2314 runner (lane 25's branch until it reaches main). Every fixture records queue 30, strictly below its run budget. No workflow or shared Operations regression is changed here. #2404 and these drafts wait for D's receipts; no topology run is implied.
+
+The saved Gateway succeeded-list snapshot is from 2026-11-01 14:40:14Z. Samples belong to the current SSH execution paths below. The existing policy applies `max(60, ceil(longest_seconds * 1.5 / 60) * 60)`; no current-shape success in this snapshot uses 1800. Raw values are shown separately. This caller-visible snapshot is not complete 14-day native history, and zero selected successes does not prove no historical success. These are kind-wide budgets, not engine-specific or p95 measurements.
+
+| Kind | Current execution path | Successes | Longest seconds | Raw × 1.5 | Budget seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `database_server.close` | #2169/024e7e4599 | 0 | — | — | 1800 |
+
+Earlier-shape Operations excluded: 5610, 5604.
+
+Each phase ceiling is capped at the kind budget. Those ceilings are not additive and are not measured phase budgets. Supplementary parity calls retain their bounded transport timeout. The source classification and raw values come from `evidence/database-queue-timeouts-current-shape-fixture-budgets.json` in the execution evidence directory; the same table is recorded in #2404.
