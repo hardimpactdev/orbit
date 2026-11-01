@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS R3 (root password by server vault key), 5 (swamp role SSH identity), round 2 bugs (always-run cleanup).
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md.
   %% status: draft
+  %% command: database:create
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -9,25 +10,142 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as DB server Node<br/>reached over ssh
-  CLI->>GW: database:create<br/>{slug: shop, server: mysql-1}
-  Note over GW: Validate, make password<br/>record connection + task
-  GW->>SW: Store owner password<br/>database-create-intent-5121
-  GW->>SW: Start run, full intent<br/>operation-database-create
-  GW-->>CLI: 202 Accepted<br/>task #5121
-  SW->>N: Copy action scripts<br/>@swamp/ssh · swamp role identity
-  SW->>N: Create owner, database<br/>vault.get server key, owner key
-  Note over N: Probe, create user, grant<br/>create database in container
-  Note over SW: Remove /tmp scripts<br/>always-run step, pass or fail
-  alt every action exits 0
-    N-->>SW: exit 0 per action
-    SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Connection active<br/>attach to Instance if instance_id
-  else an action fails
-    N--xSW: exit 1, step output
-    SW--xGW: Run failed<br/>error_code
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5121
-    GW-->>CLI: status + result
+  participant N as Node 12<br/>beast-mysql server
+  CLI->>GW: database:create shop<br/>--server=beast-mysql --instance=42
+  %%> Command:
+  %%> - `orbit database:create shop --server=beast-mysql --instance=42`
+  %%> - syntax: `<slug> --server=SERVER [--instance=ID] [--locale=C|C.UTF-8] [--test-processes=N]`
+  %%> - or, to register an existing database: `<slug> --driver=DRIVER [--host=HOST] [--port=PORT] [--database=NAME] [--path=PATH] [--username=USER] [--password=SECRET] [--node=NODE]`
+  %%> - on a Valkey server: `<slug> --server=SERVER --pattern=PATTERN ... --allow=RULE ... [--database=INDEX]`
+  %%> Input:
+  %%> - the connection slug as the argument: lowercase kebab, at most 63 characters
+  %%> - with `--server`: the Database server that gets the new database
+  %%> - with `--instance`: the Instance that owns the database and gets it attached under prefix `DB`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, reserve the name<br/>connection: creating · task #5121
+  %%> Requirements:
+  %%> - the slug `shop` is free (`database.slug_conflict`)
+  %%> - with `--server`: Database server `beast-mysql` is active, and your Node has an access grant to Node 12
+  %%> - with `--instance`: Instance 42 exists, and the server is MySQL or PostgreSQL (`database.driver_unsupported` for Valkey)
+  %%> - `--locale` and `--test-processes` only on PostgreSQL; `--pattern` and `--allow` only on Valkey
+  %%> - no database removal runs on `beast-mysql`; the Gateway holds one lock per Database server
+  %%> Builds:
+  %%> - the names from the slug: database `shop`, test database `shop_test`, owner `<project>_<instance>`
+  %%> - a new owner password, or the existing one when Instance 42 already has an owner on this server
+  %%> Decides:
+  %%> - whether this is a registration of an existing database, or a new database on a server
+  alt registration, no --server
+    Note over GW: Record the connection<br/>R1: no run · password encrypted
+    %%> When:
+    %%> - `--driver` registers a database that already exists, for example on another host or a SQLite file
+    %%> Result:
+    %%> - connection `shop` is recorded, with its password encrypted
+    %%> - no task and no Swamp run start (R1); nothing changes on any Node
+    GW-->>CLI: 201 Created<br/>connection shop
+    %%> What you get:
+    %%> - the connection record at once; there is nothing to follow
+  else new database on a server
+    GW->>SW: Store the owner password<br/>database-create-intent-5121
+    %%> What it does:
+    %%> - puts the owner password into the Swamp vault on Node 209, after the task is committed (R3)
+    %%> Not included:
+    %%> - the server's admin password; it is already in the vault under the server's own key `database-server-3-admin`
+    %%> Why:
+    %%> - secrets go Gateway → vault → step; workflow inputs carry only vault key names
+    GW->>SW: Start run, full intent<br/>operation-database-create
+    %%> What it does:
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the driver, database names, owner name, test pool size and locale
+    %%> - the vault key names `database-create-intent-5121` and `database-server-3-admin`
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    GW-->>CLI: 202 Accepted<br/>task #5121
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5121
+    %%> How:
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+    %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
+    %%> What it does:
+    %%> - copies the shipped action scripts into `/tmp/orbit-database-create-5121`
+    SW->>N: Check names are free<br/>probe owner and databases
+    %%> What it does:
+    %%> - checks that the database names and the owner are unused, or already belong to this connection
+    %%> Refuses:
+    %%> - a name the server already has for something else (`database.name_conflict`); nothing changes
+    %%> How:
+    %%> - each script runs the fixed `mysql`, `psql` or Valkey client inside the server container
+    %%> - the step reads both passwords with `vault.get` and passes them on standard input, never in argv
+    SW->>N: Create the owner<br/>login with the owner password
+    %%> What it does:
+    %%> - creates the owner login, or keeps it when it already exists with this password
+    %%> Per driver:
+    %%> - MySQL, PostgreSQL: one owner per Instance on a server; a second database for Instance 42 reuses it
+    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous`
+    SW->>N: Create the databases<br/>shop, shop_test, test pool
+    %%> What it does:
+    %%> - creates the primary database, and with `--instance` the test database
+    %%> Per driver:
+    %%> - PostgreSQL: also `shop_test_test_1` to `_8`, with the chosen locale and `TEMPLATE template0`
+    %%> - Valkey: no database; the connection records index 1, checked against the live server
+    SW->>N: Grant the owner access<br/>only its own databases
+    %%> What it does:
+    %%> - grants the owner its databases and test databases, nothing else
+    %%> Per driver:
+    %%> - MySQL: one grant per database, plus one for the test prefix
+    %%> - PostgreSQL: revokes PUBLIC access, then grants the public schema to the owner
+    %%> - Valkey: `ACL SAVE`, so the user survives a restart
+    SW->>N: Check the owner login<br/>log in as the owner
+    %%> What it does:
+    %%> - logs in as the owner and checks it reaches each new database
+    %%> Why:
+    %%> - the connection only counts as active when the server accepts it
+    SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5121
+    %%> When:
+    %%> - always, after the steps above, whether they passed or failed
+    %%> What it does:
+    %%> - removes `/tmp/orbit-database-create-5121`, so no scripts stay on Node 12
+    %%> If it fails:
+    %%> - the task result does not change; the directory holds no secrets
+    alt every step passes
+      N-->>SW: owner logs in
+      %%> Returns:
+      %%> - the check passed for every database
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Activate the connection<br/>attach to Instance 42 · DB
+      %%> Result:
+      %%> - connection `shop` becomes active, linked to `beast-mysql`, with Node 12's address and port
+      %%> - with `--instance`: Instance 42 owns it and gets its `DB_*` keys; run `env:sync` to install them
+      %%> - task #5121 succeeds
+    else a step fails
+      N--xSW: name taken or exit ≠ 0
+      %%> When:
+      %%> - a name is taken, SQL fails, SSH fails, or the owner cannot log in
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code
+      Note over GW: Mark the connection failed<br/>task failed · rerun after a fix
+      %%> Result:
+      %%> - connection `shop` stays reserved, marked failed, with its encrypted owner password
+      %%> - task #5121 fails
+      %%> On the Node:
+      %%> - an owner or database created before the failure stays; there is no rollback
+      %%> - that is safe: the name check accepts objects that already belong to this connection
+      %%> Retry:
+      %%> - run the same command again; it reuses the reservation and finishes the missing steps
+      %%> - a changed request is a conflict (`database.slug_conflict`)
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5121
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
   end
