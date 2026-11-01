@@ -17,13 +17,10 @@ import {
   Globals,
 } from "../_lib/direct.ts";
 import { localProcessAction } from "./native-action.ts";
-import { Creation } from "./create.ts";
-import { installProcess } from "./process-installation.ts";
 import { startActions, StartInput } from "./start.ts";
 
 export const InstanceKind = z.enum([
   "process.restart_instance",
-  "process.install_instance_definitions",
 ]);
 const Args = DirectArgs.extend({
   kind: InstanceKind,
@@ -87,70 +84,45 @@ export function instanceActions(
 ) {
   return {
     prepare: async (
-      kind: z.infer<typeof InstanceKind>,
       members: z.infer<typeof InstanceManifest>["members"],
       signal?: AbortSignal,
     ) => {
       let vite = false;
-      {
-        for (const member of members) {
-          const control = kind === "process.restart_instance"
-            ? StartInput.parse(member.input)
-            : Creation.parse(member.input).control;
-          vite ||= control.vite_plan !== undefined;
-          const result = await traffic.prepare(
-            control,
-            signal,
-            kind === "process.restart_instance"
-              ? "process.restart"
-              : "process.start",
-          );
-          if ("error_code" in result) {
-            return { vite, proceed: false, error_code: result.error_code };
-          }
+      for (const member of members) {
+        const control = StartInput.parse(member.input);
+        vite ||= control.vite_plan !== undefined;
+        const result = await traffic.prepare(
+          control,
+          signal,
+          "process.restart",
+        );
+        if ("error_code" in result) {
+          return {
+            vite,
+            proceed: false,
+            error_code: result.error_code,
+          };
         }
       }
       return { vite, proceed: true };
     },
     apply: async (
-      kind: z.infer<typeof InstanceKind>,
       member: z.infer<typeof InstanceManifest>["members"][number],
-      privateMaterial: Pick<GatewayOperation, "withPrivateMaterial">,
       publicationStatus: "succeeded" | "failed" | "skipped",
       signal?: AbortSignal,
     ): Promise<z.infer<typeof MemberResult>> => {
-      const control = kind === "process.restart_instance"
-        ? StartInput.parse(member.input)
-        : Creation.parse(member.input).control;
+      const control = StartInput.parse(member.input);
       if (
-        control?.vite_plan !== undefined && publicationStatus !== "succeeded"
+        control.vite_plan !== undefined &&
+        publicationStatus !== "succeeded"
       ) {
         return { id: member.id, error_code: "process.caddy_failed" };
       }
-      let result = kind === "process.restart_instance"
-        ? await traffic.activate(
-          StartInput.parse(member.input),
-          signal,
-          "process.restart",
-        )
-        : await installProcess(
-          Creation.parse(member.input).installation,
-          privateMaterial,
-          signal,
-          invoke,
-        );
-      if (
-        kind === "process.install_instance_definitions" &&
-        !("error_code" in result)
-      ) {
-        const creation = Creation.parse(member.input);
-        if (
-          creation.installation.desired === "running" &&
-          creation.control.vite_plan !== undefined
-        ) {
-          result = await traffic.verify(creation.control, signal);
-        }
-      }
+      const result = await traffic.activate(
+        control,
+        signal,
+        "process.restart",
+      );
       return MemberResult.parse({ id: member.id, ...result });
     },
   };
@@ -171,16 +143,9 @@ export function instanceMethods(
       parent.node_id !== args.node_id
     ) throw new Error("Instance runtime parent differs");
     for (const member of parent.input.members) {
-      if (args.kind === "process.restart_instance") {
-        const input = StartInput.parse(member.input);
-        if (input.process_id !== member.id) {
-          throw new Error("Process member differs");
-        }
-      } else if (args.kind === "process.install_instance_definitions") {
-        const input = Creation.parse(member.input);
-        if (input.control.process_id !== member.id) {
-          throw new Error("Process member differs");
-        }
+      const input = StartInput.parse(member.input);
+      if (input.process_id !== member.id) {
+        throw new Error("Process member differs");
       }
     }
     return { gateway, parent };
@@ -201,7 +166,7 @@ export function instanceMethods(
         if (plan.proceed) {
           Object.assign(
             plan,
-            await actions.prepare(args.kind, parent.input.members, ctx.signal),
+            await actions.prepare(parent.input.members, ctx.signal),
           );
         }
         const handle = await ctx.writeResource(
@@ -226,42 +191,34 @@ export function instanceMethods(
         },
         ctx: Context,
       ) => {
-        const { gateway, parent } = await read(args, ctx);
-        if (["succeeded", "failed", "cancelled"].includes(parent.status)) {
+        const { parent } = await read(args, ctx);
+        if (
+          ["succeeded", "failed", "cancelled"].includes(parent.status)
+        ) {
           return { status: parent.status };
         }
         const member = parent.input.members.find((m) =>
           m.id === args.member_id
         );
         if (!member) throw new Error("Unknown Instance member");
-        const plan = Plan.parse(await ctx.readResource(planName(args.run_id)));
-        if (!plan.proceed || parent.cancel_requested || ctx.signal?.aborted) {
+        const plan = Plan.parse(
+          await ctx.readResource(planName(args.run_id)),
+        );
+        if (
+          !plan.proceed || parent.cancel_requested ||
+          ctx.signal?.aborted
+        ) {
           throw new Error("Instance runtime is not prepared");
         }
         let result: z.infer<typeof MemberResult>;
         if (plan.vite && args.publication_status !== "succeeded") {
-          result = { id: member.id, error_code: "process.caddy_failed" };
-        } else {
-          const privateMember = {
-            withPrivateMaterial: async (
-              use: (material: Record<string, unknown>) => Promise<void>,
-            ) => {
-              await gateway.withPrivateMaterial(async (material) => {
-                const values = z.record(
-                  z.string(),
-                  z.record(z.string(), z.unknown()),
-                ).parse(material.installations);
-                if (!Object.hasOwn(values, String(member.id))) {
-                  throw new Error("Missing Instance member installation");
-                }
-                await use(values[String(member.id)]);
-              });
-            },
+          result = {
+            id: member.id,
+            error_code: "process.caddy_failed",
           };
+        } else {
           result = await actions.apply(
-            args.kind,
             member,
-            privateMember,
             args.publication_status,
             ctx.signal,
           );
@@ -299,7 +256,9 @@ export function instanceMethods(
               throw new Error("Instance result member differs");
             }
             members.push(outcome);
-            if ("error_code" in outcome) code ??= outcome.error_code;
+            if ("error_code" in outcome) {
+              code ??= outcome.error_code;
+            }
           }
           return code ? { error_code: code, members } : {
             ready: true,
@@ -313,7 +272,8 @@ export function instanceMethods(
             z.object({
               ready: z.literal(true),
               members: z.array(MemberResult).max(4096),
-              process_ids: z.array(z.number().int().positive()).max(4096)
+              process_ids: z.array(z.number().int().positive())
+                .max(4096)
                 .optional(),
             }).strict(),
             z.object({
@@ -334,7 +294,7 @@ export function instanceRuntime(
 ) {
   return {
     type: "@nckrtl/instance-runtime",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     globalArguments: Globals,
     resources: instanceResources,
     methods: instanceMethods(makeHttp, invoke, startActions(invoke)),

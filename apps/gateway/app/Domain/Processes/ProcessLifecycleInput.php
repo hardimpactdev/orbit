@@ -8,8 +8,10 @@ use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
@@ -18,8 +20,30 @@ final readonly class ProcessLifecycleInput
 {
     public function __construct(private ProcessOperationSecrets $secrets, private SwampCommandStep $steps) {}
 
-    /** @return array<string,mixed> */
+    /** @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>} */
     public function forOperation(Operation $operation): array
+    {
+        return $this->build($operation, str_replace('.', '-', $operation->kind).'-operation-'.$operation->id);
+    }
+
+    /** @param array{id:int,input:array<string,mixed>} $member
+     * @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>}
+     */
+    public function forInstanceMember(Operation $parent, array $member): array
+    {
+        $process = Process::query()->findOrFail($member['id']);
+        if ($parent->kind !== 'process.install_instance_definitions' || $parent->target_type !== 'instance'
+            || $parent->target_id !== ($parent->input['instance_id'] ?? null)
+            || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $parent->target_id
+            || ! Instance::query()->whereKey($parent->target_id)->where('node_id', $parent->node_id)->exists()) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The runtime member belongs to another owner.', 422);
+        }
+
+        return $this->build(ProcessInstanceOperation::member($parent, $member), 'process-instance-operation-'.$parent->id.'-member-'.$member['id']);
+    }
+
+    /** @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>} */
+    private function build(Operation $operation, string $environmentKey): array
     {
         $input = $operation->input;
         $node = Node::query()->findOrFail($operation->node_id);
@@ -53,7 +77,7 @@ final readonly class ProcessLifecycleInput
                 $intent['mounts'][] = ['index' => $index, 'path' => $path];
             }
             if ($installation['has_environment']) {
-                $copies['environment'] = $this->steps->executionCopy('orbit-control-inputs', str_replace('.', '-', $operation->kind).'-operation-'.$operation->id, $environment);
+                $copies['environment'] = $this->steps->executionCopy('orbit-control-inputs', $environmentKey, $environment);
             }
             if (isset($input['vite_plan'])) {
                 $intent['vite_plan'] = $input['vite_plan'];

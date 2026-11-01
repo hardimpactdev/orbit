@@ -1998,16 +1998,10 @@
     {
       "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
       "rule": "gateway-http",
-      "count": 3,
+      "count": 2,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/process-control.ts",
@@ -3142,14 +3136,6 @@
       "evidence": [
         "recover-leaves/remove-candidate-certificates",
         "retirement/retire-artifacts"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-process-install-instance-definitions.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "members/member-${{ string(self.member) }}"
       ]
     },
     {
