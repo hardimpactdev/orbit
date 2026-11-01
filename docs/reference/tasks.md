@@ -375,6 +375,8 @@ A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one
 
 One group uses one task VM and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
 
+A declared native Operation with the same `task_group` target and a nonterminal status makes the group busy. A new key returns `operation.target_busy`; the original key still replays its Operation. This lookup also finds the group's operation for cancellation. It uses the recorded target, kind and status, without requiring a writer stamp or `lock_key`. Terminal Operations and unrelated targets do not block admission.
+
 ## Tasks and subtasks
 
 List, show, and `tasks:question:list` accept any authorized peer. Update and the subtask create, update, and destroy operations are served by the Node that holds the task's workspace, or by the Gateway for a task without one. The other operations require Gateway access.
