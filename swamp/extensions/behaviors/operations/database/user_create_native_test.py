@@ -53,9 +53,9 @@ path.write_text(json.dumps(value));print(json.dumps(result));sys.exit(code)
         key=self.repo/'fixture-key';key.write_text('fixture key');key.chmod(0o600)
         self.workflow=yaml.safe_load((ROOT/'workflows/workflow-operation-database-user-create.yaml').read_text())
         for job in self.workflow['jobs']:
-            job.pop('target');job.pop('labels')
+            self.assertEqual(job.pop('target'),'orbit-node-209');self.assertNotIn('labels',job)
             for step in job['steps']:
-                self.assertEqual(step.pop('target'),'orbit-node-209');self.assertEqual(step.pop('labels'),{'node':'209'})
+                self.assertEqual(step.pop('target'),'orbit-node-209');self.assertNotIn('labels',step)
                 if step['task'].get('behaviorType')=='@swamp/ssh':
                     args=step['task']['globalArgs'];args['sshBinary']=str(fake);args['scpBinary']=str(scp);args['transport']['identityFile']=str(key)
         self.save()

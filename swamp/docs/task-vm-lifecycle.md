@@ -2,7 +2,7 @@
 
 Task VM provider actions run on Swamp Node209. Incus commands reach the admitted host through official `@swamp/ssh`. UpCloud HTTPS requests run on209 with a descriptor from the shared vault copy. Plain Task VMs have no Swamp worker or token.
 
-`task-vm-provider-power` accepts the authoritative `operation_id`, `node_id`, `kind`, full public provider `intent`, descriptor-only `execution_secrets`, and an `action` of `start`, `stop` or `delete`. The public provider intent binds `task_vm_id`, `name`, `provider`, `provider_id`, `vm` and `host_ssh_execution`. Incus uses the recorded project/name; UpCloud uses the recorded UUID, title and `orbit-task-vm` label.
+`task-vm-provider-power` accepts the authoritative `operation_id`, `node_id`, `kind`, full public provider `intent`, descriptor-only `execution_secrets`, and an `action` of `inspect`, `start`, `stop` or `delete`. The public provider intent binds `task_vm_id`, `name`, `provider`, `provider_id`, `vm` and `host_ssh_execution`. Incus uses the recorded project/name; UpCloud uses the recorded UUID, title and `orbit-task-vm` label.
 
 Each run observes the VM, performs one action if required, and observes its postcondition once. A transition that is still pending fails that native step. Resume the native run after inspecting its report; there is no family polling loop or hard-stop fallback. Deletion requires stopped power. UpCloud deletion removes the server storage and backups with the provider's delete request.
 
@@ -27,3 +27,11 @@ The hub's task-VM subnet policy must also admit209 TCP22. Guest readiness does n
 Image admission installs the canonical209 public key. Image preparation enables `ssh.service`; the smoke VM must report the service active before image promotion. The existing image executor remains otherwise unchanged by this urgent SSH repair.
 
 The image executor retains its existing boot, cleanup and progress behavior. This repair adds placed209 SSH enable/check steps; it does not claim the remaining image conversion defects are closed.
+
+## Incus provision and destruction
+
+`task-vm-provision` receives the full public allocation/enrollment intent and vault descriptors, then creates the exact recorded Incus image, bootstraps the guest through the host, publishes its peer, configures model/Pi access and returns complete readiness. Its child-input SSH map is frozen before official SSH actions. The Gateway records209 access and the full host pin only from terminal success. UpCloud provision remains unavailable.
+
+`task-vm-destroy` observes the provider first, stops a running VM, requires same-VM model-key revocation, deletes the provider VM, and runs the canonical `operation-node-remove` workflow as a child with the original root IDs and kind. A deleted-machine flag skips the reachability probe and all guest actions. Required external DNS, peer, hub, router and Metrics participants remain in the canonical capture. Node and Process records, VM destruction and credential clearing are projected only after complete native success. Failure retains credentials and the admitted cleanup intent; provider absence alone is insufficient.
+
+VMs with an owned workspace or Route remain refused until that resource's native parent removes it. Approved unpublished work also refuses destruction. UpCloud lifecycle work outside the accepted existing resume/park lower remains a follow-up; this cut adds no UpCloud create or destroy admission.

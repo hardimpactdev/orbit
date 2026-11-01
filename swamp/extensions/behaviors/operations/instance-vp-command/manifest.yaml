@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: "@nckrtl/instance-vp-command"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Native Project VP environment preparation through the stock CLI.
+behaviors:
+  - operations/instance-vp-command/assets.ts
+  - operations/instance-vp-command/requirements.ts
+additionalFiles:
+  - scripts/project_material.py

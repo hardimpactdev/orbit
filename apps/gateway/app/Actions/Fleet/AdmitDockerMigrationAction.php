@@ -22,6 +22,6 @@ final readonly class AdmitDockerMigrationAction
         }
 
         return $this->start->execute('fleet.docker_migrate', 'node', $node->id, $node->id,
-            $this->intent->input($node, $recipe, $mode, $fallback), $triggeredBy, $requestId);
+            $this->intent->input($node, $recipe, $mode, $fallback), $triggeredBy, $requestId, lockKey: 'docker_migrate:node:'.$node->id);
     }
 }

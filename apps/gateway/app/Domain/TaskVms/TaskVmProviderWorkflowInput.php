@@ -29,7 +29,7 @@ final readonly class TaskVmProviderWorkflowInput
 
         return [
             'provider_input' => ['task_vm_id' => $vm->id, 'name' => $vm->name, 'provider' => $vm->provider->value,
-                'provider_id' => $vm->provider_id, 'vm' => $location === null ? null : ['project' => $location->project, 'name' => $vm->name],
+                'provider_id' => $vm->provider_id, 'vm' => $location === null ? null : ['project' => $location->project, 'name' => $vm->name, 'pool' => $location->pool],
                 'host_ssh_execution' => $host instanceof Node ? $this->ssh->forNode($host) : null],
             'execution_secrets' => $incus ? [] : ['upcloud' => $this->commands->executionCopy('orbit-control-inputs', 'task-vm-upcloud-token', $this->upcloud->token())],
         ];

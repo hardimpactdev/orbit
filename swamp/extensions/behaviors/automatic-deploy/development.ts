@@ -65,7 +65,7 @@ const Instance = z.object({
   }),
 });
 const terminal = (status: string) =>
-  ["succeeded", "failed", "cancelled"].includes(status);
+  ["succeeded", "failed", "cancelled", "interrupted"].includes(status);
 
 /** Development policy uses public records and normal keyed admissions; it executes no Node action. */
 export async function tickDevelopment(

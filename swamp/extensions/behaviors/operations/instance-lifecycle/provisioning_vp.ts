@@ -1,8 +1,6 @@
+import { ProvisioningRefusal } from "./source_profile.ts";
 import { prepareDeployVp } from "../instance-deploy/deploy_vp.ts";
-import {
-  type Provisioning,
-  ProvisioningRefusal,
-} from "./provisioning_source.ts";
+import { type Provisioning } from "./provisioning_source.ts";
 export { vpRequirements as provisioningVpRequirements } from "../instance-deploy/vp_requirements.ts";
 export type ProvisioningVpPort = Parameters<typeof prepareDeployVp>[2];
 type Plan = Pick<

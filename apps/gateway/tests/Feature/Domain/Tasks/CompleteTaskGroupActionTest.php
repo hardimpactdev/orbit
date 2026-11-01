@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
-use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -19,7 +18,6 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
 use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -62,31 +60,17 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
     return $group->fresh(['project', 'taskable']) ?? $group;
 }
 
-it('removes the shared App instance and marks a settling group completed', function (TaskGroupStatus $status): void {
+it('completes a settling group after native ending removed its workspace', function (TaskGroupStatus $status): void {
     app(TaskExtensionState::class)->enable();
     $group = complete_group($status);
     $instanceId = $group->taskable_id;
-    $remover = new class implements InstanceRemover
-    {
-        /** @var list<array{0: int, 1: bool}> */
-        public array $calls = [];
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $this->calls[] = [$instance->id, $force];
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
+    $group->workspace()->firstOrFail()->delete();
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
         ->and($completed->taskable_id)->toBeNull()
         ->and($completed->settled_at)->not->toBeNull()
-        ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and(Instance::query()->find($instanceId))->toBeNull();
 })->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
 
@@ -99,74 +83,30 @@ it('never removes a user Instance named and branched like the workspace of the g
     $group->save();
     $workspace->delete();
     $user = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $workspace->node_id, 'name' => $name, 'branch_override' => $name, 'checkout_path' => '/srv/orbit/apps/complete-app/'.$name, 'status' => 'source_resolved']);
-    $remover = new class implements InstanceRemover
-    {
-        /** @var list<int> */
-        public array $calls = [];
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $this->calls[] = $instance->id;
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
-        ->and($remover->calls)->toBe([])
         ->and(Instance::query()->find($user->id))->name->toBe($name)->branch_override->toBe($name);
 });
 
-it('is idempotent for an already completed group and retries a leftover workspace', function (): void {
+it('keeps a refused workspace attached when completing an already completed group again', function (): void {
     app(TaskExtensionState::class)->enable();
     $group = complete_group(TaskGroupStatus::Completed);
     $instanceId = $group->taskable_id;
-    $remover = new class implements InstanceRemover
-    {
-        /** @var list<array{0: int, 1: bool}> */
-        public array $calls = [];
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $this->calls[] = [$instance->id, $force];
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
     $again = app(CompleteTaskGroupAction::class)->execute($completed);
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
         ->and($again->status)->toBe(TaskGroupStatus::Completed)
-        ->and($remover->calls)->toBe([[$instanceId, true]])
-        ->and($again->taskable_id)->toBeNull()
-        ->and(Instance::query()->find($instanceId))->toBeNull();
+        ->and($again->taskable_id)->toBe($instanceId)
+        ->and($again->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+        ->and(Instance::query()->find($instanceId))->not->toBeNull();
 });
 
 it('marks the group completed and reports the removal failure when the workspace cannot be removed', function (): void {
     app(TaskExtensionState::class)->enable();
-    $remover = new class implements InstanceRemover
-    {
-        public bool $fail = true;
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            if ($this->fail) {
-                throw new ResourceOperationException('instance.force_failed', 'The Node is unreachable.', 409);
-            }
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
     $group = complete_group();
     TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose a mirror.');
     $instanceId = $group->taskable_id;
@@ -178,10 +118,10 @@ it('marks the group completed and reports the removal failure when the workspace
         ->and($completed->assistance_requested)->toBeTrue()
         ->and($completed->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
         ->and($completed->assistance_question)->toBeNull()
-        ->and($completed->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
+        ->and($completed->assistance_reason)->toBe('Workspace removal failed: Task workspace removal requires its native ending DAG.')
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
 
-    $remover->fail = false;
+    $group->workspace()->firstOrFail()->delete();
     $retried = app(CompleteTaskGroupAction::class)->execute($completed);
 
     expect($retried->status)->toBe(TaskGroupStatus::Completed)
@@ -225,7 +165,7 @@ function complete_ended_read(?string $state): void
     ]);
 }
 
-it('complete ended cancels open subtasks through the API and removes the workspace', function (TaskGroupStatus $status, string $state): void {
+it('complete ended cancels open subtasks and retains a workspace awaiting native removal', function (TaskGroupStatus $status, string $state): void {
     app(TaskExtensionState::class)->enable();
     complete_ended_read($state);
     $group = complete_group($status);
@@ -262,31 +202,15 @@ it('complete ended cancels open subtasks through the API and removes the workspa
     $checks = new FakeTaskCheckRunner;
     app()->instance(TaskCheckRunner::class, $checks);
     $level = DB::transactionLevel();
-    $remover = new class($group->id, $level) implements InstanceRemover
-    {
-        public function __construct(private int $groupId, private int $level) {}
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            expect($force)->toBeTrue()
-                ->and(DB::transactionLevel())->toBe($this->level)
-                ->and(Task::topLevel()->findOrFail($this->groupId)->status)->toBe(TaskGroupStatus::Completed)
-                ->and(Task::query()->where('parent_id', $this->groupId)->whereIn('status', ['todo', 'running', 'reviewing'])->exists())->toBeFalse();
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
 
     $this->postJson("/api/v1/task-groups/{$group->id}/complete")
-        ->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.assistance_requested', false)->assertJsonPath('data.taskable_id', null);
+        ->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.assistance_requested', true)->assertJsonPath('data.taskable_id', $instanceId);
 
     expect($group->fresh()->watched_pr_completion)->toBe($state)
         ->and($group->fresh()->merged_at?->toIso8601ZuluString())->toBe($state === 'merged' ? '2026-10-08T10:00:00Z' : null)
         ->and($group->fresh()->ended_at)->not->toBeNull()
         ->and($group->fresh()->pr_url)->toBe('https://github.com/hardimpactdev/orbit/pull/543')
-        ->and($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
         ->and($group->fresh()->settled_at)->not->toBeNull()
         ->and($group->tasks()->orderBy('position')->get()->map(fn (Task $task): TaskStatus => $task->status)->all())->toBe([TaskStatus::Cancelled, TaskStatus::Cancelled, TaskStatus::Cancelled, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
         ->and($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled)
@@ -296,7 +220,7 @@ it('complete ended cancels open subtasks through the API and removes the workspa
         ->and($driver->calls)->toBe([['operation' => 'interrupt', 'thread' => 'implementer'], ['operation' => 'interrupt', 'thread' => 'reviewer']])
         ->and($driver->interruptTransactionLevels)->toBe([$level, $level])
         ->and($checks->cancelTransactionLevels)->toBe([$level])
-        ->and(Instance::query()->find($instanceId))->toBeNull();
+        ->and(Instance::query()->find($instanceId))->not->toBeNull();
     Http::assertSentCount(3);
 })->with([TaskGroupStatus::Running, TaskGroupStatus::Reviewing])->with(['merged', 'closed']);
 
@@ -362,20 +286,6 @@ it('complete ended revalidates and stops a replacement reviewer and check before
         ]);
     };
     $instanceId = $group->taskable_id;
-    $remover = new class($driver, $checks, $fail) implements InstanceRemover
-    {
-        public function __construct(private FakeAgentDriver $driver, private FakeTaskCheckRunner $checks, private bool $fail) {}
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            expect(array_column($this->driver->calls, 'thread'))->toBe($this->fail ? ['implementer', 'replacement-reviewer', 'replacement-reviewer'] : ['implementer', 'replacement-reviewer'])
-                ->and($this->checks->cancels)->toBe(2);
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
 
     if ($fail) {
         expect(fn () => app(CompleteTaskGroupAction::class)->execute($group))->toThrow(ResourceOperationException::class);
@@ -388,39 +298,26 @@ it('complete ended revalidates and stops a replacement reviewer and check before
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
-        ->and($completed->taskable_id)->toBeNull()
-        ->and($completed->assistance_requested)->toBeFalse()
+        ->and($completed->taskable_id)->toBe($instanceId)
+        ->and($completed->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
         ->and($task->fresh()->status)->toBe(TaskStatus::Cancelled)
         ->and($task->checks()->firstOrFail()->status)->toBe(TaskCheckStatus::Cancelled)
-        ->and(Instance::query()->find($instanceId))->toBeNull();
+        ->and(Instance::query()->find($instanceId))->not->toBeNull()
+        ->and(array_column($driver->calls, 'thread'))->toBe($fail ? ['implementer', 'replacement-reviewer', 'replacement-reviewer'] : ['implementer', 'replacement-reviewer'])
+        ->and($checks->cancels)->toBe(2);
     if ($fail) {
         Http::assertNothingSent();
     }
 })->with([false, true]);
 
-it('complete ended retries workspace removal after the completion commit without GitHub', function (): void {
+it('complete ended retains refusal after its commit and retries native cleanup without GitHub', function (): void {
     app(TaskExtensionState::class)->enable();
     complete_ended_read('closed');
     $group = complete_group(TaskGroupStatus::Running);
     $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544']);
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Open', 'brief' => 'Cancel.', 'status' => TaskStatus::Todo]);
-    $remover = new class implements InstanceRemover
-    {
-        public bool $fail = true;
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            if ($this->fail) {
-                throw new RuntimeException('Stopped before workspace removal.');
-            }
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
-    // Propagate the injected crash rather than handling it as a manual cleanup failure.
-    expect(fn () => app(CompleteTaskGroupAction::class)->execute($group, finishWhenRemovalFails: false))->toThrow(RuntimeException::class);
+    // Merge cleanup propagates the native-removal refusal after committing completion.
+    expect(fn () => app(CompleteTaskGroupAction::class)->execute($group, finishWhenRemovalFails: false))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
 
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed)
         ->and($group->fresh()->watched_pr_completion)->toBe('closed')
@@ -428,7 +325,7 @@ it('complete ended retries workspace removal after the completion commit without
         ->and($group->fresh()->taskable_id)->not->toBeNull();
     Http::assertSentCount(3);
     Http::fake();
-    $remover->fail = false;
+    $group->workspace()->firstOrFail()->delete();
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
 

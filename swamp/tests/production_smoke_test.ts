@@ -291,7 +291,7 @@ Deno.test("smoke opt-in does not change an existing dependency work identity", (
   );
 });
 
-for (const status of ["failed", "cancelled"]) {
+for (const status of ["failed", "cancelled", "interrupted"]) {
   for (const hasResult of [false, true]) {
     Deno.test(`${status} operation with ${hasResult ? "unknown" : "no"} result is unknown`, async () => {
       const f = new Fixture();
@@ -462,7 +462,7 @@ Deno.test("a stalled configuration refresh cannot send after its tick has aborte
   assertEquals(f.stored.size, 0);
 });
 
-for (const status of ["failed", "cancelled"]) {
+for (const status of ["failed", "cancelled", "interrupted"]) {
   Deno.test(`${status} operation cannot establish a baseline from an inconsistent pass`, async () => {
     const f = new Fixture();
     await f.tick("baseline");

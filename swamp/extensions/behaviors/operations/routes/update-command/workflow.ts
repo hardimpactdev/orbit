@@ -1,3 +1,4 @@
+import { nodeCertificateGroups } from "../../certificates/batch_steps.ts";
 import { routeMutationSteps } from "../mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
@@ -148,6 +149,9 @@ function workloadMutationWorkflow(
     failureCode: string,
 ): Fields {
     const steps: Fields[] = [];
+    const certificateNodes = nodeCertificateGroups(
+        "inputs.intent.preparation.certificates",
+    );
     const names = () => steps.map((s) => String(s.name));
     const failure = kind === "route.create"
         ? 'inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-") || k.startsWith("verify-")) && steps[k].status == "failed"))'
@@ -193,7 +197,11 @@ function workloadMutationWorkflow(
                 forEach: {
                     item: "part",
                     in: expr(
-                        `inputs.intent.effectful ? inputs.intent.preparation.${list} : []`,
+                        `inputs.intent.effectful ? ${
+                            list === "certificates"
+                                ? certificateNodes
+                                : "inputs.intent.preparation." + list
+                        } : []`,
                     ),
                 },
                 guard: expr(
@@ -235,7 +243,13 @@ function workloadMutationWorkflow(
             "prepare-certificates",
             "certificates",
             "route-certificate-publish",
-            connection("leaf"),
+            {
+                ...connection("leaves"),
+                node_id: expr("self.part.node_id"),
+                leaves: expr(
+                    "inputs.intent.preparation.certificates.filter(leaf,leaf.node_id == self.part.node_id)",
+                ),
+            },
             { parent_run_id: expr("run.id"), restoring: false },
         );
         preparation(
@@ -332,8 +346,8 @@ function workloadMutationWorkflow(
                     ? {
                         preparation_counts: expr(
                             kind === "route.create"
-                                ? 'inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes), "prepare-upstream": "upstream_firewalls" in inputs.intent.preparation ? size(inputs.intent.preparation.upstream_firewalls) : 0, "verify": "verifications" in inputs.intent ? size(inputs.intent.verifications) : 0} : {}'
-                                : 'inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes)} : {}',
+                                ? `inputs.intent.effectful ? {"prepare-certificates": size(${certificateNodes}), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes), "prepare-upstream": "upstream_firewalls" in inputs.intent.preparation ? size(inputs.intent.preparation.upstream_firewalls) : 0, "verify": "verifications" in inputs.intent ? size(inputs.intent.verifications) : 0} : {}`
+                                : `inputs.intent.effectful ? {"prepare-certificates": size(${certificateNodes}), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes)} : {}`,
                         ),
                     }
                     : {}),

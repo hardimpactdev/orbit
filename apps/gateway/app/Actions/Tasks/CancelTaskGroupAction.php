@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
@@ -15,11 +13,9 @@ use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
-use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -28,7 +24,6 @@ final readonly class CancelTaskGroupAction
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
         private RemoveTaskWorkspaceAction $workspace,
-        private NodeReachabilityProbe $reachability,
     ) {}
 
     public function execute(Task $group): Task
@@ -58,9 +53,9 @@ final readonly class CancelTaskGroupAction
         // cancelled, so cancel leaves it alone and only removes what the claim attached before the cancel landed.
         $claimInFlight = $this->workspace->claimInFlight($group) && $group->taskable_id === null;
         $instance = $claimInFlight ? null : $group->workspace()->first();
-        // An unreachable Node cannot accept a push or a removal. Cancel still ends the group and keeps the Instance,
-        // so the sweep can delete the checkout later. A Node that answers keeps the fail-closed path below.
-        $offlineId = $instance instanceof Instance && ($poweredOff || $this->nodeUnreachable($instance)) ? $instance->id : null;
+        // A provider-confirmed power-off keeps the workspace for later cleanup. Otherwise preservation
+        // and removal must succeed; missing observations do not authorize skipping that work.
+        $offlineId = $instance instanceof Instance && $poweredOff ? $instance->id : null;
 
         if ($instance instanceof Instance && $offlineId === null) {
             $this->teardownWorkspace($group, $instance);
@@ -141,18 +136,6 @@ final readonly class CancelTaskGroupAction
             }
             throw $exception;
         }
-    }
-
-    /** The probe is the one check that separates a Node that is gone from a Node that answered and refused. */
-    private function nodeUnreachable(Instance $instance): bool
-    {
-        // A parked VM is intentionally offline; normal removal starts it before preservation.
-        if (TaskVm::forNode($instance->node_id)?->state === TaskVmState::Parked) {
-            return false;
-        }
-        $instance->loadMissing('node');
-
-        return $this->reachability->degradation($instance->node) === ExporterDegradationReason::Unreachable;
     }
 
     /** A refused removal keeps the checkout and the Instance row, asks for assistance, and returns the error. */

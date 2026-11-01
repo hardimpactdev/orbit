@@ -1,0 +1,22 @@
+manifestVersion: 1
+name: "@nckrtl/instance-source-command"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public checkout observations and terminal Instance source results.
+behaviors:
+  - operations/instance-source-command/assets.ts
+additionalFiles:
+  - scripts/inspect.py
+  - scripts/protect_environment.py
+  - scripts/prepare_directory.py
+  - scripts/fetch.py
+  - scripts/profile.py
+  - scripts/transfer_probe.py
+  - scripts/transfer_archive.py
+  - scripts/transfer_install.py
+  - scripts/transfer_remove.py
+  - scripts/write_environment.py
+  - scripts/mint.py
+  - scripts/mark_source.py
+  - scripts/origin.py

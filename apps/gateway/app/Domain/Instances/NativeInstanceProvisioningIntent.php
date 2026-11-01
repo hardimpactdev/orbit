@@ -12,7 +12,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
-use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -75,20 +74,18 @@ final readonly class NativeInstanceProvisioningIntent
     public function clone(Instance $instance, array $input): array
     {
         $instance->loadMissing(['node', 'project']);
-        $user = (string) $instance->production_user;
-        $root = $instance->root ?? $instance->project->root;
-        if (! is_string($root) || $user !== 'orbit-app-'.$instance->project_id
-            || $instance->production_home !== '/home/'.$user || $instance->routes()->exists()) {
+        $user = $instance->node->user;
+        if (! $instance->placedOnAppDev() || $instance->routes()->exists()) {
             $this->unavailable();
         }
-        $home = ['user' => $user, 'home' => $instance->production_home];
 
-        return [...$this->common($instance, 'production', $user),
-            'home' => $home, 'source' => [...$home, 'repository' => $input['repository'], 'instance' => $instance->id],
-            'resolve' => ['relative_root' => $root, 'application_suffix' => ProductionApplicationPaths::suffix($root),
-                'branch' => $input['branch'], 'clone_target' => true],
-            'candidate' => $input['candidate'],
-            'already_active' => $instance->clone_completed_at !== null,
+        return [...$this->common($instance, 'development', $user),
+            'vp_setup' => app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp),
+            'source' => ['repository' => $input['repository'], 'checkout' => $instance->checkout_path,
+                'root' => $input['source_root'], 'user' => $user, 'seed_repository' => null, 'prepare_id' => $instance->source_prepare_id],
+            'resolve' => ['instance_name' => $instance->name, 'default_branch' => $instance->project->default_branch,
+                'branch_override' => $input['branch'], 'require_branch' => true, 'seed_commit' => null, 'network' => true],
+            'candidate' => $input['candidate'], 'already_active' => $instance->clone_completed_at !== null,
             'retained_source' => $instance->clone_completed_at !== null ? ['branch' => $instance->branch,
                 'commit' => $instance->starting_commit, 'php_version' => $instance->selected_php_version,
                 'laravel' => $instance->source_is_laravel] : null];

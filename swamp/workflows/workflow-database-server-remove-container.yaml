@@ -57,13 +57,10 @@ inputs:
 jobs:
 - name: container
   target: orbit-node-209
-  labels: &id001
-    node: '209'
   dependsOn: []
   steps:
   - name: stop
     target: orbit-node-209
-    labels: *id001
     guard: ${{ !inputs.member.present || !inputs.member.stop }}
     allowFailure: true
     writes: true
@@ -101,7 +98,6 @@ jobs:
         - 1
   - name: remove
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: stop
       condition:
@@ -133,7 +129,6 @@ jobs:
         - 1
   - name: result
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: remove
       condition:

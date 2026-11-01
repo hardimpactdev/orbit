@@ -82,12 +82,9 @@ inputs:
 jobs:
 - name: user
   target: orbit-node-209
-  labels: &id001
-    node: '209'
   steps:
   - name: assets
     target: orbit-node-209
-    labels: *id001
     writes: false
     task:
       type: behavior
@@ -98,7 +95,6 @@ jobs:
         intent: ${{ inputs.intent }}
   - name: directory
     target: orbit-node-209
-    labels: *id001
     writes: false
     allowFailure: true
     task:
@@ -128,7 +124,6 @@ jobs:
         - 1
   - name: copy
     target: orbit-node-209
-    labels: *id001
     writes: false
     allowFailure: true
     dependsOn:
@@ -152,7 +147,6 @@ jobs:
         recursive: true
   - name: prepared
     target: orbit-node-209
-    labels: *id001
     writes: false
     dependsOn:
     - step: copy
@@ -165,7 +159,6 @@ jobs:
       message: SQL user command files unavailable.
   - name: wal
     target: orbit-node-209
-    labels: *id001
     guard: ${{ !(inputs.intent.driver == "pgsql" && inputs.intent.replication) }}
     writes: false
     allowFailure: true
@@ -195,7 +188,6 @@ jobs:
         stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
   - name: wal_checked
     target: orbit-node-209
-    labels: *id001
     writes: false
     dependsOn:
     - step: wal
@@ -212,7 +204,6 @@ jobs:
       message: Replication user WAL check refused.
   - name: apply
     target: orbit-node-209
-    labels: *id001
     writes: true
     allowFailure: true
     dependsOn:
@@ -241,8 +232,6 @@ jobs:
         stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
   - name: grant
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: true
     allowFailure: true
     dependsOn:
@@ -282,7 +271,6 @@ jobs:
     guard: ${{ !has(steps.apply.outputs) || steps.apply.outputs.exitCode != 0 }}
   - name: result
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: assets
       condition:
@@ -319,7 +307,6 @@ jobs:
         steps: ${{ steps }}
   - name: cleanup
     target: orbit-node-209
-    labels: *id001
     allowFailure: true
     writes: true
     dependsOn:
@@ -345,7 +332,6 @@ jobs:
     guard: ${{ steps.result.outputs.exitCode != 0 }}
   - name: accept_result
     target: orbit-node-209
-    labels: *id001
     dependsOn:
     - step: result
       condition:

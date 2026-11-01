@@ -2,7 +2,6 @@ import { Container } from "./container-input.ts";
 import { z } from "npm:zod@4.4.3";
 import { ProcessInstallation } from "./installation-input.ts";
 export { ProcessInstallation } from "./installation-input.ts";
-import type { GatewayOperation } from "../_lib/direct.ts";
 import { processSystem, type ProcessSystemCommand } from "./process-system.ts";
 import {
   processAccountContent,
@@ -39,31 +38,11 @@ type Invoke = (
   admittedDigest: string | undefined,
   signal?: AbortSignal,
 ) => Promise<Record<string, unknown>>;
-const localProcess: Invoke = (name, input, _digest, signal) =>
-  processSystem()(name, input, signal);
-
-/** Compose installation inside an existing native root, with no private fetch or projection. */
+/** Retained TaskVM consumer supplies already resolved material, never a Gateway reader. */
 export function installProcessLocal(
   input: z.infer<typeof ProcessInstallation>,
   material: z.infer<typeof ProcessInstallationMaterial>,
   transport: SystemTransport = localSystemCommand,
-  signal?: AbortSignal,
-): Promise<ProcessInstallationOutcome> {
-  return installProcessWithTransport(
-    input,
-    {
-      withPrivateMaterial: async (use) => await use({ installation: material }),
-    },
-    transport,
-    signal,
-  );
-}
-
-/** Existing parent callback and canonical transport; no child root or projection. */
-export function installProcessWithTransport(
-  input: z.infer<typeof ProcessInstallation>,
-  privateMaterial: Pick<GatewayOperation, "withPrivateMaterial">,
-  transport: SystemTransport,
   signal?: AbortSignal,
 ): Promise<ProcessInstallationOutcome> {
   const action = processSystem(
@@ -75,9 +54,9 @@ export function installProcessWithTransport(
       return { code: result.success ? 0 : 1, stdout: result.stdout };
     },
   );
-  return installProcess(
+  return installProcessMaterial(
     input,
-    privateMaterial,
+    material,
     signal,
     (name, value, _digest, abort) => action(name, value, abort),
     (content, user, abort) =>
@@ -86,15 +65,15 @@ export function installProcessWithTransport(
 }
 
 /** Reusable local DAG action. The parent owns traffic steps and final projection. */
-export async function installProcess(
+export async function installProcessMaterial(
   input: z.infer<typeof ProcessInstallation>,
-  privateMaterial: Pick<GatewayOperation, "withPrivateMaterial">,
-  signal?: AbortSignal,
-  invoke: Invoke = localProcess,
+  material: unknown,
+  signal: AbortSignal | undefined,
+  invoke: Invoke,
   resolveAccount: (
     content: string,
     user: string,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
   ) => Promise<string> = (content, user, abort) =>
     processAccountContent(content, user, undefined, abort),
 ): Promise<ProcessInstallationOutcome> {
@@ -110,124 +89,122 @@ export async function installProcess(
   };
   let outcome: ProcessInstallationOutcome | undefined;
   try {
-    await privateMaterial.withPrivateMaterial(async (material) => {
-      const installation = ProcessInstallationMaterial.parse(
-        material.installation,
+    const installation = ProcessInstallationMaterial.parse(material);
+    if (installation.runtime !== admitted.runtime) {
+      throw new Error("Process runtime differs");
+    }
+    if (
+      installation.runtime === "systemd" && admitted.runtime === "systemd"
+    ) {
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(installation.content),
       );
-      if (installation.runtime !== admitted.runtime) {
-        throw new Error("Process runtime differs");
+      const hash = Array.from(
+        new Uint8Array(digest),
+        (byte) => byte.toString(16).padStart(2, "0"),
+      ).join("");
+      if (hash !== admitted.content_hash) {
+        throw new Error("Process unit differs");
       }
-      if (
-        installation.runtime === "systemd" && admitted.runtime === "systemd"
-      ) {
-        const digest = await crypto.subtle.digest(
-          "SHA-256",
-          new TextEncoder().encode(installation.content),
+      if (admitted.account_user !== undefined) {
+        installation.content = await resolveAccount(
+          installation.content,
+          admitted.account_user,
+          signal,
         );
-        const hash = Array.from(
-          new Uint8Array(digest),
-          (byte) => byte.toString(16).padStart(2, "0"),
-        ).join("");
-        if (hash !== admitted.content_hash) {
-          throw new Error("Process unit differs");
-        }
-        if (admitted.account_user !== undefined) {
-          installation.content = await resolveAccount(
-            installation.content,
-            admitted.account_user,
-            signal,
-          );
-        } else if (installation.content.includes(ProcessAccountHome)) {
-          throw new Error("Process account template is unbound");
-        }
+      } else if (installation.content.includes(ProcessAccountHome)) {
+        throw new Error("Process account template is unbound");
       }
+    }
+    if (
+      installation.runtime === "docker" && admitted.runtime === "docker" &&
+      installation.spec !== admitted.spec
+    ) throw new Error("Process spec differs");
+    const refused = (result: Record<string, unknown>): boolean => {
+      if (result.error_code === undefined) return false;
+      outcome = { error_code: Code.parse(result.error_code) };
+      return true;
+    };
+    if (admitted.directory !== undefined) {
+      const release = await call("process.check-release", {
+        directory: admitted.directory,
+      });
+      if (refused(release)) return outcome!;
+      if (release.available !== true) {
+        outcome = { error_code: "process.release_unavailable" };
+        return outcome!;
+      }
+    }
+    if (admitted.retired !== null) {
       if (
-        installation.runtime === "docker" && admitted.runtime === "docker" &&
-        installation.spec !== admitted.spec
-      ) throw new Error("Process spec differs");
-      const refused = (result: Record<string, unknown>): boolean => {
-        if (result.error_code === undefined) return false;
-        outcome = { error_code: Code.parse(result.error_code) };
-        return true;
-      };
-      if (admitted.directory !== undefined) {
-        const release = await call("process.check-release", {
-          directory: admitted.directory,
-        });
-        if (refused(release)) return;
-        if (release.available !== true) {
-          outcome = { error_code: "process.release_unavailable" };
-          return;
-        }
-      }
-      if (admitted.retired !== null) {
-        if (
-          refused(
-            await call("process.remove", {
-              process_id: admitted.process_id,
-              ...admitted.retired,
-              vite: null,
-            }),
-          )
-        ) return;
-      }
-      if (
-        installation.runtime === "systemd" && admitted.runtime === "systemd"
-      ) {
-        const staged = await call("process.stage-unit", {
+        refused(
+          await call("process.remove", {
+            process_id: admitted.process_id,
+            ...admitted.retired,
+            vite: null,
+          }),
+        )
+      ) return outcome!;
+    }
+    if (
+      installation.runtime === "systemd" && admitted.runtime === "systemd"
+    ) {
+      const staged = await call("process.stage-unit", {
+        process_id: admitted.process_id,
+        unit: admitted.name,
+        content: installation.content,
+        environment: installation.environment,
+        required_mount_paths: admitted.required_mount_paths ?? [],
+      });
+      if (refused(staged)) return outcome!;
+      const stage = z.object({
+        staged: z.boolean(),
+        previous: z.boolean(),
+        state: State.nullable(),
+      }).parse(staged);
+      const settled = stage.state ===
+        (admitted.desired === "running" ? "active" : "inactive");
+      if (stage.staged || admitted.activation_pending || !settled) {
+        const activated = await call("process.activate-unit", {
           process_id: admitted.process_id,
           unit: admitted.name,
-          content: installation.content,
-          environment: installation.environment,
+          desired: admitted.desired,
+          on_demand: admitted.on_demand,
           required_mount_paths: admitted.required_mount_paths ?? [],
+          change: stage.staged
+            ? stage.previous ? "replace" : "create"
+            : "reload",
         });
-        if (refused(staged)) return;
-        const stage = z.object({
-          staged: z.boolean(),
-          previous: z.boolean(),
-          state: State.nullable(),
-        }).parse(staged);
-        const settled = stage.state ===
-          (admitted.desired === "running" ? "active" : "inactive");
-        if (stage.staged || admitted.activation_pending || !settled) {
-          const activated = await call("process.activate-unit", {
-            process_id: admitted.process_id,
-            unit: admitted.name,
-            desired: admitted.desired,
-            on_demand: admitted.on_demand,
-            required_mount_paths: admitted.required_mount_paths ?? [],
-            change: stage.staged
-              ? stage.previous ? "replace" : "create"
-              : "reload",
-          });
-          if (refused(activated)) return;
-          if (
-            z.object({ backup_left: z.boolean() }).parse(activated).backup_left
-          ) {
-            outcome = { error_code: "process.systemd_converge_failed" };
-            return;
-          }
-        }
-      } else if (
-        installation.runtime === "docker" && admitted.runtime === "docker"
-      ) {
+        if (refused(activated)) return outcome!;
         if (
-          refused(
-            await call("process.converge-container", {
-              process_id: admitted.process_id,
-              container: admitted.name,
-              desired: admitted.desired,
-              spec: admitted.spec,
-              ...installation.definition,
-            }),
-          )
-        ) return;
+          z.object({ backup_left: z.boolean() }).parse(activated).backup_left
+        ) {
+          outcome = {
+            error_code: "process.systemd_converge_failed",
+          };
+          return outcome!;
+        }
       }
-      const status = await call("process.status", artifact);
-      if (!refused(status)) {
-        outcome = { ready: true, state: State.parse(status.state) };
-      }
-    });
+    } else if (
+      installation.runtime === "docker" && admitted.runtime === "docker"
+    ) {
+      if (
+        refused(
+          await call("process.converge-container", {
+            process_id: admitted.process_id,
+            container: admitted.name,
+            desired: admitted.desired,
+            spec: admitted.spec,
+            ...installation.definition,
+          }),
+        )
+      ) return outcome!;
+    }
+    const status = await call("process.status", artifact);
+    if (!refused(status)) {
+      outcome = { ready: true, state: State.parse(status.state) };
+    }
   } catch {
     throw new Error("Private Process installation did not complete");
   }

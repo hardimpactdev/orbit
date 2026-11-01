@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -143,9 +144,10 @@ final readonly class NativeRouteMutationInput
     }
 
     /** @param array<int,Route> $candidates
+     * @param  array<int,Instance>  $placements
      * @return CapturedRoute
      */
-    public function route(Route $route, array $candidates = [], bool $environment = true): array
+    public function route(Route $route, array $candidates = [], array $placements = [], bool $environment = true): array
     {
         $intent = $route->isAnalyticsTracking() ? app(AnalyticsRoutePlan::class)->capture($route) : app(NativeRouteConvergenceIntent::class)->forRoute($route, ['mode' => 'placement']);
         if ($route->isAnalyticsTracking()) {
@@ -153,7 +155,7 @@ final readonly class NativeRouteMutationInput
         }
         $writes = [];
         foreach ($environment ? ValidatedData::integerList($intent['workload_node_ids']) : [] as $nodeId) {
-            foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($route, $nodeId, $intent, candidates: $candidates) as $write) {
+            foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($route, $nodeId, $intent, candidates: $candidates, placements: $placements) as $write) {
                 $writes[] = ['node_id' => $nodeId, ...$write];
             }
         }

@@ -50,7 +50,7 @@ jobs:
   - name: restore_prepare_certificates
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.restore.certificates }}
+      in: "${{ inputs.intent.route_mutations.restore.certificates.filter(item,inputs.intent.route_mutations.restore.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope) }}"
     guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
     dependsOn: []
     task:
@@ -61,12 +61,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          leaf: ${{ self.part }}
-          control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          {"leaves":"${{ inputs.intent.route_mutations.restore.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":209,"connection":"${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: true
@@ -417,7 +412,7 @@ jobs:
         stage: ${{ self.stage }}
         mode: restore
         required:
-          restore_prepare_certificates: ${{ size(inputs.intent.route_mutations.restore.certificates) }}
+          restore_prepare_certificates: "${{ size(inputs.intent.route_mutations.restore.certificates.filter(item,inputs.intent.route_mutations.restore.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)) }}"
           restore_php: ${{ size(inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes)) }}
           restore_lan: ${{ size(inputs.intent.route_mutations.restore.lan) }}
           restore_ingress: ${{ size(inputs.intent.route_mutations.restore.ingress) }}

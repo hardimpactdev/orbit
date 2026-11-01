@@ -1,0 +1,154 @@
+id: 28982dd3-3ca6-4f83-8573-3fa64887f89c
+name: task-vm-incus-first-visit
+description: Observe guest availability, cloud-init and its public host key through the trusted Incus
+  host.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.provision
+      - tasks.provision
+    intent:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  additionalProperties: false
+jobs:
+- name: guest
+  target: orbit-node-209
+  steps:
+  - name: guest-available
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-incus-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-incus-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/incus
+        - --project
+        - ${{ inputs.intent.vm.project }}
+        - exec
+        - --mode=non-interactive
+        - --user
+        - '0'
+        - --group
+        - '0'
+        - --
+        - ${{ inputs.intent.name }}
+        - /usr/bin/true
+        timeoutSec: 30
+  - name: cloud-init
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-incus-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-incus-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/incus
+        - --project
+        - ${{ inputs.intent.vm.project }}
+        - exec
+        - --mode=non-interactive
+        - --user
+        - '0'
+        - --group
+        - '0'
+        - --
+        - ${{ inputs.intent.name }}
+        - /usr/bin/cloud-init
+        - status
+        - --wait
+        timeoutSec: 600
+    dependsOn:
+    - step: guest-available
+      condition:
+        type: succeeded
+  - name: guest-key
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-incus-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-incus-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/incus
+        - --project
+        - ${{ inputs.intent.vm.project }}
+        - exec
+        - --mode=non-interactive
+        - --user
+        - '0'
+        - --group
+        - '0'
+        - --
+        - ${{ inputs.intent.name }}
+        - /usr/bin/cat
+        - /etc/ssh/ssh_host_ed25519_key.pub
+    dependsOn:
+    - step: cloud-init
+      condition:
+        type: succeeded

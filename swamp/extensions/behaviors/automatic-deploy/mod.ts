@@ -53,7 +53,7 @@ export function automaticDeploy(
 ) {
   return {
     type: "@nckrtl/automatic-deploy",
-    version: "2026.10.31.3",
+    version: "2026.11.01.1",
     globalArguments: z.object({
       gatewayUrl: z.string().url().default("https://gateway.orbit"),
       caFile: z.string().default(
@@ -110,7 +110,7 @@ export function automaticDeploy(
                 for (const event of state.events) {
                   if (
                     event.receipt &&
-                    ["succeeded", "failed", "cancelled"].includes(
+                    ["succeeded", "failed", "cancelled", "interrupted"].includes(
                       String(event.receipt.status),
                     )
                   ) continue;

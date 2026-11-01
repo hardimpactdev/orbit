@@ -99,7 +99,8 @@ final readonly class SignDirectCertificatesAction
             'node.role_relocate' => ['_relocate.certificates.leaves'],
             'node.role_remove' => ['_role_remove.certificates.leaves'],
             'node.remove' => $restoring ? ['_removal.restore_certificates'] : [],
-            'instance.transfer' => ['route_transfer.target.certificates'],
+            'instance.transfer' => $restoring ? ['route_publication.route_mutations.restore.certificates']
+                : ['route_publication.route_mutations.forward.prepare_certificates', 'route_publication.route_mutations.forward.certificates'],
             default => [],
         };
         $leaves = [];

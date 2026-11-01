@@ -105,11 +105,11 @@ A resource observation job checks every parked VM once a minute, including group
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
-The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp performs provider creation, bootstrap, WireGuard publication, worker enrollment, model-key issue, Pi runtime preparation, source checkout and Project setup as placed steps in that run. No PHP executor or waiting-read loop runs these effects.
+The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp composes the canonical Task VM provision child for provider creation, bootstrap, WireGuard publication, model-key issue and Pi runtime preparation. Separate steps on Node 209 clone source, copy a Git bundle through official SSH, resolve its profile and run the captured Project setup commands in order. Plain Task VMs have no Swamp worker. No PHP executor or waiting-read loop runs these effects.
 
 Full capacity or a missing promoted image for the current recipe returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available.
 
-The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It issues the existing Node worker credentials itself; caller-supplied worker credentials are unavailable for this parent.
+The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials.
 
 Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, guest Node, start commit and immutable analysis pin. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
@@ -166,7 +166,7 @@ The CLI follows the operation with the shared operation display. It accepts `--i
 
 The MCP tool `tasks-worker` takes the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
 
-To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling native provision ends the group `cancelled`; it does not claim VM removal. Group cancellation keeps the existing rule for an unreachable Node without a possibly running worker: end the group, keep the workspace, and request removal assistance. A worker stop must be confirmed first.
+To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling native provision ends the group `cancelled`; it does not claim VM removal. Only after the provider confirms power-off may cancellation end the group while retaining its offline workspace and requesting removal assistance. Otherwise preservation and removal must succeed. Missing or stale observations do not authorize skipping them. A worker stop must be confirmed first.
 
 #### Start a group worker
 
@@ -174,7 +174,7 @@ To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first
 
 The operation holds the group target, resumes a parked VM through the normal wake path, then starts or replaces the worker under the workspace lease. It preserves the group, checkout, and task state. A fresh key and token replace the previous worker; replaying a key returns its original operation without restarting anything. An expired staged credential fails before a resume or any new VM allocation. Worker startup never allocates another VM.
 
-Native provision installs the initial Node worker. A replacement worker requires `tasks.worker` on that same group. Cancelling a waiting worker operation discards its staged enrollment; ending the group also stops any running worker.
+Plain Task VMs have no Swamp worker. Native provision supplies the Pi runtime and public Node metadata; Tasks work runs from Node 209 over official SSH.
 
 #### Check an external group
 
@@ -182,7 +182,7 @@ Native provision installs the initial Node worker. A replacement worker requires
 
 A workspace is required (`409 tasks.no_workspace`). A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
 
-Separate native steps validate the paths, snapshot the workspace, run baseline setup in order, run the Project check, collect file and command deliverables and snapshot the checked tree. A command marked `fails_on_base` runs in a separate step on an archive of its start commit, with installed dependencies and only the declared test paths overlaid. Commands receive no GitHub or Gateway credentials. Their public output is redacted and bounded. A changed checked tree returns `changed`; failed commands or unmet deliverables return `failed`.
+Separate native steps validate the paths, snapshot the workspace, run baseline setup in order, run the Project check, collect file and command deliverables and snapshot the checked tree. A command marked `fails_on_base` runs in a separate step on an archive of its start commit, with installed dependencies and only the declared test paths overlaid. Commands receive no GitHub or Gateway credentials. Their public output is redacted and bounded. A changed checked tree returns `changed`; failed commands or unmet deliverables return `failed`. A failed Project check keeps its output and leaves skipped command deliverables unmet; it creates no candidate.
 
 A passing handoff creates its candidate commit in the VM. A Git reference transaction records the candidate under `refs/orbit/check-operations/{operation}` with HEAD. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
 
@@ -239,9 +239,9 @@ Every path names a file relative to the repository root, encoded in UTF-8 and at
 
 Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. The manifest has at most 256 entries and at most 32 KiB of RFC 8785 canonical JSON. `plan_sha256` hashes that entire canonical manifest; all SHA-256 values use lowercase hex. Shared JSON/hash fixtures fix encoding across native consumers. Overflow refuses the whole inventory; no path is dropped.
 
-`base`, `head`, and `tree` are full Git object IDs in the repository's object format, resolved in the owned task VM, never branch names. The base is the group's recorded initial merge base with `origin/main`, fixed across children.
+`base`, `head`, and `tree` are full Git object IDs in the repository's object format, resolved in the owned task VM, never branch names. The base is the group's recorded initial merge base with the admitted Project default branch, fixed across children.
 
-Provision calls `analysis-base` in the existing task-check program. It finds the merge base of the Instance's starting commit and local `refs/remotes/origin/main`. A missing starting commit, local ref, or common ancestor leaves the base unavailable; it never falls back to the current HEAD.
+Provision observes the initial checkout once after source preparation. It finds the merge base of the Instance's starting commit and the local remote ref for the admitted Project default branch. A missing starting commit, local ref, or common ancestor leaves the base unavailable; it never falls back to the current HEAD.
 
 Analysis performs no fetch, merge, or base adoption. Use the successful provision operation's [public pin](#public-provision-identity) for `base`, never infer it from `starting_commit` or a later remote ref. This contract exposes no base-update path. Any separately authorized future base-update contract must keep old evidence and require a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
 
@@ -1142,8 +1142,8 @@ Cancel uses forced [Instance removal](/reference/instance-removal), including Pr
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
 - **VM task settling without a pull request.** The first cancel queues the push and returns `tasks.push_failed` with `Cancel again in a minute.` A later cancel finds the push done and ends the task.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
-- **Node unreachable.** Cancel ends the task and keeps its Instance attached. It requests `removal_failure` assistance with `Workspace removal failed: The Node is unreachable.`
-- **Retry after an unreachable Node.** Once the Node returns, direct cancel and the sweep push eligible approved commits before removal. A failed or pending push keeps the workspace.
+- **Confirmed VM power-off.** Cancel ends the task and keeps its Instance attached after the provider confirms power-off. It requests `removal_failure` assistance. Missing or stale Node observations do not permit this shortcut.
+- **Retry after power-off.** Once the VM is available, cancel retries preservation and removal. A failed or pending push keeps the workspace.
 - **Removal refused.** Cancel returns the error and keeps the task. The task requests `removal_failure` assistance in every status.
 
 Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.

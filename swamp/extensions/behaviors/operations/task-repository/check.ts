@@ -80,11 +80,12 @@ export function localResult(
     const error = all.find((item) => typeof item.error_code === "string");
     if (error) return { ...error, check_id: input.check_id };
     const commands = Object.fromEntries(
-        input.deliverables.filter((item) => item.type === "command").map(
+        input.deliverables.filter((item) => item.type === "command").flatMap(
             (item, index) => {
                 const current = get("deliverable-" + index),
                     base = get("base-" + index);
-                return [item.id, {
+                if (Object.keys(current).length === 0) return [];
+                return [[item.id, {
                     ...current,
                     ...(item.fails_on_base
                         ? {
@@ -93,7 +94,7 @@ export function localResult(
                             base_output: base.output,
                         }
                         : {}),
-                }];
+                }]];
             },
         ),
     );
@@ -258,7 +259,7 @@ export function finish(args: Record<string, unknown>) {
 /** Pure public check data and native asset paths. Commands and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.10.31.1",
+    version: "2026.11.01.2",
     resources: {
         public: {
             description: "Public check observations",

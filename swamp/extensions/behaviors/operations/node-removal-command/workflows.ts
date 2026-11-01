@@ -116,8 +116,12 @@ function workflow(
     // An empty fan-out is skipped. A skipped successor of a failed phase must
     // never reopen the cleanup chain: every later step sees the original failure.
     for (const step of steps) {
+        const prior = typeof step.guard === "string"
+            ? step.guard.slice(3, -2).trim()
+            : "";
         step.guard = ex(
-            'steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled")',
+            'steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled")' +
+                (prior ? " || (" + prior + ")" : ""),
         );
     }
     // A native empty forEach has no concrete step result. Phase jobs provide
@@ -228,7 +232,7 @@ export function roleRemovalWorkflow() {
             ...action(
                 name,
                 method,
-                `inputs.intent.${field}.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host)`,
+                `inputs.intent.${field}.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host))`,
                 prior,
             ),
         );
@@ -292,7 +296,7 @@ export function roleRemovalWorkflow() {
         ...action(
             "certificates",
             "remove_certificate",
-            "inputs.intent.certificates.filter(c,!inputs.offline || c.ssh.target.host != inputs.intent.ssh.target.host)",
+            "inputs.intent.certificates.filter(c,!inputs.offline || (inputs.intent.ssh == null || c.ssh.target.host != inputs.intent.ssh.target.host))",
             "dns",
         ),
     );
@@ -342,6 +346,9 @@ export function nodeRemovalWorkflow() {
         {
             name: "probe",
             ...placed,
+            guard: ex(
+                "has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted",
+            ),
             dependsOn: dep("assets"),
             task: {
                 type: "behavior",
@@ -360,7 +367,9 @@ export function nodeRemovalWorkflow() {
         },
         {
             ...resource("preflight", "preflight", {
-                stdout: ex("steps.probe.outputs.stdout"),
+                stdout: ex(
+                    `has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted ? '{"reachable":false}' : steps.probe.outputs.stdout`,
+                ),
                 offline: ex("inputs.intent.offline"),
                 has_ssh: ex("inputs.intent.ssh != null"),
             }),
@@ -378,7 +387,7 @@ export function nodeRemovalWorkflow() {
                 inputs: {
                     operation_id: ex("inputs.operation_id"),
                     node_id: ex("inputs.node_id"),
-                    kind: "node.remove",
+                    kind: ex("inputs.kind"),
                     intent: ex("self.role"),
                     execution_secrets: {},
                     offline: ex("steps.preflight.outputs.offline"),

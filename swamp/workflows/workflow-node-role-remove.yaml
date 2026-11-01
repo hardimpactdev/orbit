@@ -47,7 +47,7 @@ jobs:
       - name: stop_units_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "stop_units-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_0 {item: action, in: '${{ inputs.intent.stop_units.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_0 {item: action, in: '${{ inputs.intent.stop_units.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: stop_units
         target: orbit-node-209
@@ -65,7 +65,7 @@ jobs:
       - name: remove_units_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "remove_units-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_1 {item: action, in: '${{ inputs.intent.remove_units.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_1 {item: action, in: '${{ inputs.intent.remove_units.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: remove_units
         target: orbit-node-209
@@ -83,7 +83,7 @@ jobs:
       - name: remove_footprints_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "remove_footprints-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_footprint, input: '${{ self.action.input }}'}}
-        forEach: &ref_2 {item: action, in: '${{ inputs.intent.remove_footprints.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_2 {item: action, in: '${{ inputs.intent.remove_footprints.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: remove_footprints
         target: orbit-node-209
@@ -101,7 +101,7 @@ jobs:
       - name: reload_units_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "reload_units-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: reload_units, input: '${{ self.action.input }}'}}
-        forEach: &ref_3 {item: action, in: '${{ inputs.intent.reload_units.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_3 {item: action, in: '${{ inputs.intent.reload_units.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: reload_units
         target: orbit-node-209
@@ -119,7 +119,7 @@ jobs:
       - name: stop_containers_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "stop_containers-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_container, input: '${{ self.action.input }}'}}
-        forEach: &ref_4 {item: action, in: '${{ inputs.intent.stop_containers.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_4 {item: action, in: '${{ inputs.intent.stop_containers.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: stop_containers
         target: orbit-node-209
@@ -137,7 +137,7 @@ jobs:
       - name: remove_containers_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "remove_containers-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_container, input: '${{ self.action.input }}'}}
-        forEach: &ref_5 {item: action, in: '${{ inputs.intent.remove_containers.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_5 {item: action, in: '${{ inputs.intent.remove_containers.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: remove_containers
         target: orbit-node-209
@@ -155,7 +155,7 @@ jobs:
       - name: ci_project_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "ci_project-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: ci_project, input: '${{ self.action.input }}'}}
-        forEach: &ref_6 {item: action, in: '${{ inputs.intent.ci_host.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_6 {item: action, in: '${{ inputs.intent.ci_host.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: ci_project
         target: orbit-node-209
@@ -173,7 +173,7 @@ jobs:
       - name: firewall_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "firewall-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: firewall, input: '${{ self.action.input }}'}}
-        forEach: &ref_7 {item: action, in: '${{ inputs.intent.firewall.filter(a,!inputs.offline || a.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_7 {item: action, in: '${{ inputs.intent.firewall.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: firewall
         target: orbit-node-209
@@ -224,7 +224,7 @@ jobs:
       - name: certificates_assets
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "certificates-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_certificate, input: '${{ self.action.input }}'}}
-        forEach: &ref_8 {item: action, in: '${{ inputs.intent.certificates.filter(c,!inputs.offline || c.ssh.target.host != inputs.intent.ssh.target.host) }}'}
+        forEach: &ref_8 {item: action, in: '${{ inputs.intent.certificates.filter(c,!inputs.offline || (inputs.intent.ssh == null || c.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: certificates
         target: orbit-node-209

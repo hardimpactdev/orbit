@@ -46,6 +46,7 @@ class Certificates(harness.NativeTestCase):
         ):
             if path.name not in (
                 "script_assets.ts",
+                "node_batch.ts",
                 "input.ts",
                 "signing.ts",
                 "role-input.ts",

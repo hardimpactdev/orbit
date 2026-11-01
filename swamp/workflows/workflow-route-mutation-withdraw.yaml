@@ -50,7 +50,7 @@ jobs:
   - name: withdraw_prepare_certificates
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.prepare_certificates }}
+      in: ${{ inputs.intent.route_mutations.forward.prepare_certificates.filter(item,inputs.intent.route_mutations.forward.prepare_certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope) }}
     guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
     dependsOn: []
     task:
@@ -61,12 +61,11 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          leaf: ${{ self.part }}
+          leaves: ${{ inputs.intent.route_mutations.forward.prepare_certificates.filter(leaf,leaf.node_id == self.part.node_id) }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
+          node_id: ${{ self.part.node_id }}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: false
@@ -90,10 +89,8 @@ jobs:
         intent:
           rule: ${{ self.part }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
         execution_secrets: {}
     allowFailure: true
   - name: withdraw_ingress
@@ -118,10 +115,8 @@ jobs:
         intent:
           rule: ${{ self.part }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
         execution_secrets: {}
     allowFailure: true
   - name: withdraw_dns
@@ -159,8 +154,7 @@ jobs:
   - name: withdraw_dns_grace
     forEach:
       item: part
-      in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest !=
-        p.after.dns.digest) ? [{}] : [] }}'
+      in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest != p.after.dns.digest) ? [{}] : [] }}'
     guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
     dependsOn:
     - step: withdraw_prepare_certificates
@@ -223,8 +217,7 @@ jobs:
           after: ${{ self.part.after.caddy }}
           direction: forward
           retain_removed: false
-          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
-            }}
+          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy] }}
         execution_secrets: {}
     allowFailure: true
   - name: withdraw_php
@@ -306,10 +299,8 @@ jobs:
         intent:
           write: ${{ self.part }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
         execution_secrets:
           material: ${{ inputs.execution_secrets[self.part.secret_field] }}
     allowFailure: true
@@ -353,10 +344,8 @@ jobs:
         intent:
           leaf: ${{ self.part }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: false
@@ -404,10 +393,8 @@ jobs:
         intent:
           rule: ${{ self.part }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
         execution_secrets: {}
     allowFailure: true
   - name: withdraw_retire_ingress
@@ -456,10 +443,8 @@ jobs:
         intent:
           rule: ${{ self.part }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
-            }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
-            }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
         execution_secrets: {}
     allowFailure: true
   - name: withdraw
@@ -509,14 +494,12 @@ jobs:
         stage: ${{ self.stage }}
         mode: forward
         required:
-          withdraw_prepare_certificates: ${{ size(inputs.intent.route_mutations.forward.prepare_certificates) }}
+          withdraw_prepare_certificates: ${{ size(inputs.intent.route_mutations.forward.prepare_certificates.filter(item,inputs.intent.route_mutations.forward.prepare_certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)) }}
           withdraw_lan: ${{ size(inputs.intent.route_mutations.forward.lan) }}
           withdraw_ingress: ${{ size(inputs.intent.route_mutations.forward.ingress) }}
           withdraw_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null)) }}
-          withdraw_dns_grace: '${{ size(inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null &&
-            p.before.dns.digest != p.after.dns.digest) ? [{}] : []) }}'
-          withdraw_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
-            }}
+          withdraw_dns_grace: '${{ size(inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest != p.after.dns.digest) ? [{}] : []) }}'
+          withdraw_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}
           withdraw_php: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}
           withdraw_urls: ${{ size(inputs.intent.route_mutations.forward.url_writes) }}
           withdraw_cleanup: ${{ size(inputs.intent.route_mutations.forward.cleanup) }}

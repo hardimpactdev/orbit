@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: '@nckrtl/fleet-docker-assets'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public Docker migration metadata and shipped single-action scripts.
+behaviors:
+  - operations/fleet-docker/assets.ts
+additionalFiles:
+  - scripts/actions.py
+  - scripts/docker_inventory.py

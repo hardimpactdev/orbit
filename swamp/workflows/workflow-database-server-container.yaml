@@ -23,10 +23,9 @@ inputs:
 jobs:
 - name: container
   target: orbit-node-209
-  labels: {node: '209'}
   steps:
   - name: inspect
-    <<: &remote {target: orbit-node-209, labels: {node: '209'}, allowFailure: true}
+    <<: &remote {target: orbit-node-209, allowFailure: true}
     guard: ${{ !(true) }}
     writes: false
     task:
@@ -36,7 +35,7 @@ jobs:
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '', inspect.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
         okExitCodes: [0, 1]
   - name: plan
-    <<: &placed {target: orbit-node-209, labels: {node: '209'}}
+    <<: &placed {target: orbit-node-209}
     dependsOn: [{step: inspect, condition: {type: always}}]
     writes: false
     task:

@@ -17,7 +17,9 @@ return [
     'fleet.docker_migrate' => [
         'workflow' => 'operation-fleet-docker-migrate',
         'projection' => DockerMigrationProjection::class,
-        'private_material' => ['processes' => 'fleet.docker_processes'],
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'result', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$']],
     ],
     'fleet.rollout' => [
         'workflow' => 'operation-fleet-rollout',
@@ -30,11 +32,14 @@ return [
     'fleet.peer_dns' => [
         'workflow' => 'operation-fleet-peer-dns',
         'projection' => PeerDnsProjection::class,
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'dns', 'step' => 'result'],
     ],
     'fleet.recipe_pr' => [
         'workflow' => 'operation-fleet-recipe-pr',
         'projection' => RecipePrProjection::class,
         'github_token' => ['repository' => 'hardimpactdev/orbit', 'permissions' => ['contents' => 'write', 'pull_requests' => 'write', 'checks' => 'read']],
-        'private_material' => ['github' => 'github.installation'],
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'github', 'step' => 'result'],
     ],
 ];

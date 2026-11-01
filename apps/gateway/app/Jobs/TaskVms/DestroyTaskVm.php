@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
+use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
@@ -13,8 +13,8 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 {
     use TaskVmRowJob;
 
-    public function handle(StartTaskVmLifecycleOperationAction $operations): void
+    public function handle(StartTaskVmDestroyAction $operations): void
     {
-        $operations->execute($this->taskVmId, 'destroy');
+        $operations->execute($this->taskVmId);
     }
 }

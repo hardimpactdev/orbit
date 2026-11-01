@@ -22,17 +22,6 @@ const process = (name: string, input: Record<string, unknown>) => {
     assert(input.directory === home + "/current");
     return Promise.resolve({ available: true });
   }
-  if (name === "process.stage-unit") {
-    assert(input.content === secret() + "-unit");
-    return Promise.resolve({
-      staged: true,
-      previous: false,
-      state: "inactive",
-    });
-  }
-  if (name === "process.activate-unit") {
-    return Promise.resolve({ backup_left: false });
-  }
   if (name === "process.control") {
     assert(input.operation === "restart");
     return Promise.resolve({ state: "active" });
@@ -127,12 +116,15 @@ const root = deployDirect({
             binary: "/home/orbit/.local/share/vp/bin/vp",
           });
         }
-        if (mode === "version") return Promise.resolve({ version: "0.1.0" });
-        if (mode === "inspect") return Promise.resolve({ installed: [true] });
+        if (mode === "version") {
+          return Promise.resolve({ version: "0.1.0" });
+        }
+        if (mode === "inspect") {
+          return Promise.resolve({ installed: [true] });
+        }
         throw new Error("Unexpected VP effect");
       },
     },
-    process,
     processControl: process,
     account: (user) => {
       assert(user === "orbit-app-102");
@@ -162,17 +154,24 @@ export const behavior = {
   methods: {
     run: {
       ...root.methods.run,
-      execute: (
+      execute: async (
         args: Parameters<typeof root.methods.run.execute>[0],
         context: Parameters<typeof root.methods.run.execute>[1],
-      ) =>
-        root.methods.run.execute(args, {
+      ) => {
+        const ctx = {
           ...context,
           globalArgs: {
             gatewayUrl: Deno.env.get("ORBIT_DEPLOY_TEST_URL")!,
             caFile: Deno.env.get("ORBIT_DEPLOY_TEST_CA")!,
           },
-        }),
+        };
+        const prepared = await root.methods.prepareProduction.execute(
+          args,
+          ctx,
+        );
+        if (!("ready" in prepared)) return prepared;
+        return await root.methods.finishProduction.execute(args, ctx);
+      },
     },
   },
 };

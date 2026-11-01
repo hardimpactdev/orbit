@@ -1,0 +1,1072 @@
+id: 46c86e06-0241-416c-987b-c195e0522990
+name: task-vm-enrollment
+description: Bootstrap and enroll one admitted provider guest using complete public SSH inputs.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.provision
+      - tasks.provision
+    intent:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum:
+          - incus
+      required:
+      - provider
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+    guest:
+      type: object
+    provider:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - guest
+  - provider
+  additionalProperties: false
+jobs:
+- name: enrollment
+  target: orbit-node-209
+  steps:
+  - name: bootstrap-account-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-command'
+      behaviorName: ${{ "vm-bootstrap-input-"+run.id }}
+      methodName: read
+      inputs:
+        action: account
+        user: ${{ inputs.intent.user }}
+        command: ${{ inputs.intent.bootstrap }}
+        artifact:
+          url: ${{ inputs.intent.agent_artifact_url }}
+          sha256: ${{ inputs.intent.agent_sha256 }}
+  - name: bootstrap-account
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["bootstrap-account-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: bootstrap-account-assets
+      condition:
+        type: succeeded
+  - name: bootstrap-authorized_key-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-command'
+      behaviorName: ${{ "vm-bootstrap-input-"+run.id }}
+      methodName: read
+      inputs:
+        action: authorized_key
+        user: ${{ inputs.intent.user }}
+        command: ${{ inputs.intent.bootstrap }}
+        artifact:
+          url: ${{ inputs.intent.agent_artifact_url }}
+          sha256: ${{ inputs.intent.agent_sha256 }}
+    dependsOn:
+    - step: bootstrap-account
+      condition:
+        type: succeeded
+  - name: bootstrap-authorized_key
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["bootstrap-authorized_key-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: bootstrap-authorized_key-assets
+      condition:
+        type: succeeded
+  - name: bootstrap-sudo-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-command'
+      behaviorName: ${{ "vm-bootstrap-input-"+run.id }}
+      methodName: read
+      inputs:
+        action: sudo
+        user: ${{ inputs.intent.user }}
+        command: ${{ inputs.intent.bootstrap }}
+        artifact:
+          url: ${{ inputs.intent.agent_artifact_url }}
+          sha256: ${{ inputs.intent.agent_sha256 }}
+    dependsOn:
+    - step: bootstrap-authorized_key
+      condition:
+        type: succeeded
+  - name: bootstrap-sudo
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["bootstrap-sudo-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: bootstrap-sudo-assets
+      condition:
+        type: succeeded
+  - name: bootstrap-observer-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-command'
+      behaviorName: ${{ "vm-bootstrap-input-"+run.id }}
+      methodName: read
+      inputs:
+        action: observer
+        user: ${{ inputs.intent.user }}
+        command: ${{ inputs.intent.bootstrap }}
+        artifact:
+          url: ${{ inputs.intent.agent_artifact_url }}
+          sha256: ${{ inputs.intent.agent_sha256 }}
+    dependsOn:
+    - step: bootstrap-sudo
+      condition:
+        type: succeeded
+  - name: bootstrap-observer
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["bootstrap-observer-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: bootstrap-observer-assets
+      condition:
+        type: succeeded
+  - name: bootstrap-verify-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-command'
+      behaviorName: ${{ "vm-bootstrap-input-"+run.id }}
+      methodName: read
+      inputs:
+        action: verify
+        user: ${{ inputs.intent.user }}
+        command: ${{ inputs.intent.bootstrap }}
+        artifact:
+          url: ${{ inputs.intent.agent_artifact_url }}
+          sha256: ${{ inputs.intent.agent_sha256 }}
+    dependsOn:
+    - step: bootstrap-observer
+      condition:
+        type: succeeded
+  - name: bootstrap-verify
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["bootstrap-verify-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: bootstrap-verify-assets
+      condition:
+        type: succeeded
+  - name: observer-identity-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-command'
+      behaviorName: ${{ "vm-bootstrap-input-"+run.id }}
+      methodName: observer_identity
+      inputs: {}
+    dependsOn:
+    - step: bootstrap-verify
+      condition:
+        type: succeeded
+  - name: observer-identity
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["observer-identity-assets"].outputs.script_body] }}
+        sudo: false
+        stdin: ${{ inputs.intent.observer_digest_json }}
+    dependsOn:
+    - step: observer-identity-assets
+      condition:
+        type: succeeded
+  - name: observer-configuration
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/orbit/agent/config.toml",inputs.intent.agent.configuration]
+          }}
+        sudo: false
+    dependsOn:
+    - step: observer-identity
+      condition:
+        type: succeeded
+  - name: observer-ca
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/orbit/agent/ca.pem",inputs.intent.agent.certificate]
+          }}
+        sudo: false
+    dependsOn:
+    - step: observer-configuration
+      condition:
+        type: succeeded
+  - name: observer-unit
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/systemd/system/orbit-agent.service",inputs.intent.agent.unit]
+          }}
+        sudo: false
+    dependsOn:
+    - step: observer-ca
+      condition:
+        type: succeeded
+  - name: peer-snapshot-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: read
+      inputs:
+        action: snapshot
+        input: ${{ {} }}
+    dependsOn:
+    - step: observer-unit
+      condition:
+        type: succeeded
+  - name: peer-snapshot-command
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-snapshot-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: peer-snapshot-assets
+      condition:
+        type: succeeded
+  - name: peer-snapshot
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["peer-snapshot-command"].outputs.stdout }}
+    dependsOn:
+    - step: peer-snapshot-command
+      condition:
+        type: succeeded
+  - name: peer-key-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: read
+      inputs:
+        action: prepare_key
+        input: ${{ {"existing_key":inputs.intent.network_input.existing_key} }}
+    dependsOn:
+    - step: peer-snapshot
+      condition:
+        type: succeeded
+  - name: peer-key-command
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-key-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: peer-key-assets
+      condition:
+        type: succeeded
+  - name: peer-key
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["peer-key-command"].outputs.stdout }}
+    dependsOn:
+    - step: peer-key-command
+      condition:
+        type: succeeded
+  - name: hub-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "vm-node-hub-command-"+run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent.hub_input }}
+        mode: publish
+        prepared_peer: ${{ {"node_id":inputs.intent.guest_node_id,"public_key":steps["peer-key"].outputs.public_key} }}
+    dependsOn:
+    - step: peer-key
+      condition:
+        type: succeeded
+  - name: hub
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+      methodName: script
+      globalArgs:
+        name: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.hub_ssh_execution.target.user }}
+          port: ${{ inputs.intent.hub_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.hub_ssh_execution.identity_file }}
+        hosts:
+        - name: hub
+          address: ${{ inputs.intent.hub_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.hub_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["hub-assets"].outputs.script_body }}
+    dependsOn:
+    - step: hub-assets
+      condition:
+        type: succeeded
+    writes: true
+  - name: peer-publish-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: read
+      inputs:
+        action: publish
+        input: ${{ {"peer":inputs.intent.network_input.peer} }}
+    dependsOn:
+    - step: hub
+      condition:
+        type: succeeded
+  - name: peer-publish-command
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-publish-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: peer-publish-assets
+      condition:
+        type: succeeded
+  - name: peer-publish
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["peer-publish-command"].outputs.stdout }}
+    dependsOn:
+    - step: peer-publish-command
+      condition:
+        type: succeeded
+  - name: peer-enable
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/systemctl","enable","wg-quick@orbit.service"] }}
+        sudo: false
+    dependsOn:
+    - step: peer-publish
+      condition:
+        type: succeeded
+  - name: peer-start
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/systemctl","restart","wg-quick@orbit.service"] }}
+        sudo: false
+    dependsOn:
+    - step: peer-enable
+      condition:
+        type: succeeded
+  - name: peer-dns-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: read
+      inputs:
+        action: record_dns
+        input: ${{ {"peer":inputs.intent.network_input.peer,"snapshot":steps["peer-snapshot"].outputs} }}
+    dependsOn:
+    - step: peer-start
+      condition:
+        type: succeeded
+  - name: peer-dns-command
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-dns-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: peer-dns-assets
+      condition:
+        type: succeeded
+  - name: peer-dns
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["peer-dns-command"].outputs.stdout }}
+    dependsOn:
+    - step: peer-dns-command
+      condition:
+        type: succeeded
+  - name: private-ssh
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-ssh-prepare
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent:
+          guest_node_id: ${{ inputs.intent.guest_node_id }}
+          name: ${{ inputs.intent.name }}
+          user: ${{ inputs.intent.user }}
+          provider: ${{ inputs.intent.provider }}
+          node: ${{ inputs.intent.node }}
+          ssh_identity: ${{ inputs.intent.ssh_identity }}
+          ssh_execution: ${{ inputs.guest.ssh_execution }}
+          provider_input:
+            vm: ${{ inputs.intent.vm }}
+            host_ssh_execution: ${{ inputs.intent.host_ssh_execution }}
+    dependsOn:
+    - step: peer-dns
+      condition:
+        type: succeeded
+  - name: observer-reload
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-private-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-private-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.guest.ssh_execution.target.user }}
+          port: ${{ inputs.guest.ssh_execution.target.port }}
+          identityFile: ${{ inputs.guest.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.guest.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.guest.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - daemon-reload
+        sudo: true
+    dependsOn:
+    - step: private-ssh
+      condition:
+        type: succeeded
+  - name: observer-start
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-private-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-private-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.guest.ssh_execution.target.user }}
+          port: ${{ inputs.guest.ssh_execution.target.port }}
+          identityFile: ${{ inputs.guest.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.guest.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.guest.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - enable
+        - --now
+        - orbit-agent.service
+        sudo: true
+    dependsOn:
+    - step: observer-reload
+      condition:
+        type: succeeded
+  - name: model
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-model-issue
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent.model_intent }}
+        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor}
+          }}
+    dependsOn:
+    - step: observer-start
+      condition:
+        type: succeeded
+  - name: runtime
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-runtime
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent:
+          task_vm_id: ${{ inputs.intent.task_vm_id }}
+          guest_node_id: ${{ inputs.intent.guest_node_id }}
+          user: ${{ inputs.intent.user }}
+          runtime: ${{ inputs.intent.runtime }}
+          pi_artifact: ${{ inputs.intent.pi_artifact }}
+          process_unit: ${{ inputs.intent.process_unit }}
+          models_json: ${{ inputs.intent.models_json }}
+          certificate_json: ${{ inputs.intent.certificate_json }}
+          runtime_json: ${{ inputs.intent.runtime_json }}
+          ssh_execution: ${{ inputs.guest.ssh_execution }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn:
+    - step: model
+      condition:
+        type: succeeded
+  - name: receipt
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment-input'
+      behaviorName: ${{ "vm-enrollment-input-"+run.id }}
+      methodName: terminal
+      inputs:
+        intent: ${{ inputs.intent }}
+        provider: ${{ inputs.provider }}
+        guest: ${{ inputs.guest }}
+        peer: ${{ steps["peer-key"].outputs }}
+        model_stdout: ${{ steps.model.outputs.result.stdout }}
+        runtime_stdout: ${{ steps.runtime.outputs.result.stdout }}
+        observer_stdout: ${{ steps["observer-identity"].outputs.stdout }}
+    dependsOn:
+    - step: runtime
+      condition:
+        type: succeeded
+  - name: model-revoke
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-model-revoke
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent.model_intent }}
+        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor}
+          }}
+    dependsOn:
+    - step: receipt
+      condition:
+        type: or
+        conditions:
+        - type: failed
+        - type: skipped
+    - step: model
+      condition:
+        type: completed
+  - name: hub-restore-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "vm-node-hub-command-"+run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent.hub_input }}
+        mode: restore-publish
+        prepared_peer: ${{ {"node_id":inputs.intent.guest_node_id,"public_key":steps["peer-key"].outputs.public_key} }}
+    dependsOn:
+    - step: receipt
+      condition:
+        type: or
+        conditions:
+        - type: failed
+        - type: skipped
+    - step: hub
+      condition:
+        type: completed
+    - step: peer-key
+      condition:
+        type: succeeded
+    - step: model-revoke
+      condition:
+        type: always
+  - name: hub-restore
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+      methodName: script
+      globalArgs:
+        name: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.hub_ssh_execution.target.user }}
+          port: ${{ inputs.intent.hub_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.hub_ssh_execution.identity_file }}
+        hosts:
+        - name: hub
+          address: ${{ inputs.intent.hub_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.hub_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["hub-restore-assets"].outputs.script_body }}
+    dependsOn:
+    - step: hub-restore-assets
+      condition:
+        type: succeeded
+    writes: true
+  - name: peer-restore-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: read
+      inputs:
+        action: restore
+        input: ${{ {"snapshot":steps["peer-snapshot"].outputs} }}
+    dependsOn:
+    - step: receipt
+      condition:
+        type: or
+        conditions:
+        - type: failed
+        - type: skipped
+    - step: peer-snapshot
+      condition:
+        type: succeeded
+    - step: hub-restore
+      condition:
+        type: always
+  - name: peer-restore
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-restore-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: peer-restore-assets
+      condition:
+        type: succeeded
+  - name: peer-cleanup-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: ${{ "vm-node-peer-command-"+run.id }}
+      methodName: read
+      inputs:
+        action: cleanup
+        input: ${{ {"snapshot":steps["peer-snapshot"].outputs} }}
+    dependsOn:
+    - step: peer-snapshot
+      condition:
+        type: succeeded
+    - step: receipt
+      condition:
+        type: succeeded
+    - step: peer-restore
+      condition:
+        type: always
+  - name: peer-cleanup
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-first-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-first-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-cleanup-assets"].outputs.script_body] }}
+        sudo: false
+    dependsOn:
+    - step: peer-cleanup-assets
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: receipt
+      condition:
+        type: succeeded
+    - step: peer-cleanup
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment-input'
+      behaviorName: ${{ "vm-enrollment-result-"+run.id }}
+      methodName: forward
+      inputs:
+        receipt: ${{ steps.receipt.outputs }}

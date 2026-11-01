@@ -1,10 +1,8 @@
 id: 855a0c69-2eab-4eea-8488-0b63b2312cb1
 name: operation-route-removal
-description: >-
-  Immutable Route workload mutation and restoration through official209
-  publication children.
+description: Immutable Route workload mutation and restoration through official209 publication children.
 vaults:
-  - orbit-control-inputs
+- orbit-control-inputs
 inputs:
   type: object
   properties:
@@ -17,8 +15,8 @@ inputs:
     kind:
       type: string
       enum:
-        - route.destroy
-        - route.withdraw
+      - route.destroy
+      - route.withdraw
     intent:
       type: object
     execution_secrets:
@@ -30,247 +28,232 @@ inputs:
           vault:
             type: string
             enum:
-              - orbit-control-inputs
+            - orbit-control-inputs
           key:
             type: string
-            pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
         required:
-          - vault
-          - key
+        - vault
+        - key
   required:
-    - operation_id
-    - node_id
-    - kind
-    - intent
-    - execution_secrets
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
-  - name: readiness
-    steps:
-      - name: reachable
-        target: orbit-node-209
-        forEach:
-          item: part
-          in: '${{ inputs.intent.route_mutations.forward.publications }}'
-        allowFailure: true
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "route-readiness-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs:
-            name: '${{ "route-readiness-" + run.id + "-" + string(self._index) }}'
-            transport:
-              kind: ssh
-              user: '${{ self.part.connection.nodeUser }}'
-              identityFile: '${{ self.part.connection.nodeIdentityFile }}'
-              port: '${{ self.part.connection.nodePort }}'
-            hosts:
-              - name: target
-                address: '${{ self.part.connection.nodeHost }}'
-                transport:
-                  hostKeys: '${{ self.part.host_keys }}'
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/true
-      - name: selection
-        target: orbit-node-209
-        dependsOn:
-          - step: reachable
-            condition:
-              type: always
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/route-update-result'
-          behaviorName: route-removal-selection
-          methodName: select
-          inputs:
-            intent: '${{ inputs.intent }}'
-            steps: '${{ steps }}'
-  - name: update
-    steps:
-      - name: prepare
-        target: orbit-node-209
-        forEach:
-          item: workload
-          in: '${{ steps.selection.outputs.intent.workloads }}'
-        dependsOn: []
-        task:
-          type: workflow
-          workflowIdOrName: instance-route-workload
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              node_id: '${{ self.workload.node_id }}'
-              instance_id: '${{ self.workload.instance_id }}'
-              connection: '${{ self.workload.connection }}'
-              host_keys: '${{ self.workload.host_keys }}'
-              plan: '${{ self.workload.prepare }}'
-            execution_secrets: {}
-      - name: forward
-        target: orbit-node-209
-        dependsOn:
-          - step: prepare
-            condition:
-              type: always
-        guard: >-
-          ${{ !steps.selection.outputs.intent.effectful ||
-          steps.exists(k,k.startsWith("prepare-") && steps[k].status ==
-          "failed") }}
-        task:
-          type: workflow
-          workflowIdOrName: route-mutation-withdraw
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent: '${{ steps.selection.outputs.intent }}'
-            execution_secrets: '${{ inputs.execution_secrets }}'
-            parent_run_id: '${{ run.id }}'
-      - name: retire
-        target: orbit-node-209
-        forEach:
-          item: workload
-          in: '${{ steps.selection.outputs.intent.workloads }}'
-        dependsOn:
-          - step: prepare
-            condition:
-              type: always
-          - step: forward
-            condition:
-              type: always
-        guard: >-
-          ${{ !("forward" in steps) || steps.forward.status != "succeeded" ||
-          !steps.forward.outputs.result.ready }}
-        task:
-          type: workflow
-          workflowIdOrName: instance-route-workload
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              node_id: '${{ self.workload.node_id }}'
-              instance_id: '${{ self.workload.instance_id }}'
-              connection: '${{ self.workload.connection }}'
-              host_keys: '${{ self.workload.host_keys }}'
-              plan: '${{ self.workload.selected }}'
-            execution_secrets: {}
-      - name: restore-workload
-        target: orbit-node-209
-        forEach:
-          item: workload
-          in: '${{ steps.selection.outputs.intent.workloads }}'
-        dependsOn:
-          - step: prepare
-            condition:
-              type: always
-          - step: forward
-            condition:
-              type: always
-          - step: retire
-            condition:
-              type: always
-        guard: >-
-          ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in
-          steps) || steps.forward.status != "succeeded" ||
-          !steps.forward.outputs.result.ready ||
-          steps.exists(k,k.startsWith("retire-") && steps[k].status ==
-          "failed"))) }}
-        task:
-          type: workflow
-          workflowIdOrName: instance-route-workload
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              node_id: '${{ self.workload.node_id }}'
-              instance_id: '${{ self.workload.instance_id }}'
-              connection: '${{ self.workload.connection }}'
-              host_keys: '${{ self.workload.host_keys }}'
-              plan: '${{ self.workload.restore }}'
-            execution_secrets: {}
-      - name: restore
-        target: orbit-node-209
-        dependsOn:
-          - step: prepare
-            condition:
-              type: always
-          - step: forward
-            condition:
-              type: always
-          - step: retire
-            condition:
-              type: always
-          - step: restore-workload
-            condition:
-              type: always
-        guard: >-
-          ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in
-          steps) || steps.forward.status != "succeeded" ||
-          !steps.forward.outputs.result.ready ||
-          steps.exists(k,k.startsWith("retire-") && steps[k].status ==
-          "failed"))) }}
-        task:
-          type: workflow
-          workflowIdOrName: route-mutation-restore
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent: '${{ steps.selection.outputs.intent }}'
-            execution_secrets: '${{ inputs.execution_secrets }}'
-            parent_run_id: '${{ run.id }}'
-      - name: result
-        target: orbit-node-209
-        dependsOn:
-          - step: prepare
-            condition:
-              type: always
-          - step: forward
-            condition:
-              type: always
-          - step: retire
-            condition:
-              type: always
-          - step: restore-workload
-            condition:
-              type: always
-          - step: restore
-            condition:
-              type: always
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/route-update-result'
-          behaviorName: route-update-result
-          methodName: read
-          inputs:
-            effectful: '${{ steps.selection.outputs.intent.effectful }}'
-            failure_code: route.withdrawal_failed
-            route_id: '${{ steps.selection.outputs.intent.route_id }}'
-            result_route_id: '${{ steps.selection.outputs.intent.result_route_id }}'
-            workload_count: '${{ size(steps.selection.outputs.intent.workloads) }}'
-            steps: '${{ steps }}'
-            admitted: '${{ steps.selection.outputs.admitted }}'
-            retained_on_nodes: '${{ steps.selection.outputs.retained_on_nodes }}'
-      - name: complete
-        target: orbit-node-209
-        dependsOn:
-          - step: result
-            condition:
-              type: always
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/route-update-result'
-          behaviorName: route-update-complete
-          methodName: complete
-          inputs:
-            stdout: '${{ steps.result.outputs.stdout }}'
+- name: readiness
+  steps:
+  - name: reachable
+    target: orbit-node-209
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-readiness-" + run.id + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "route-readiness-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.part.connection.nodeUser }}
+          identityFile: ${{ self.part.connection.nodeIdentityFile }}
+          port: ${{ self.part.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ self.part.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ self.part.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/true
+  - name: selection
+    target: orbit-node-209
     dependsOn:
-      - job: readiness
-        condition:
-          type: always
+    - step: reachable
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-removal-selection
+      methodName: select
+      inputs:
+        intent: ${{ inputs.intent }}
+        steps: ${{ steps }}
+- name: update
+  steps:
+  - name: prepare
+    target: orbit-node-209
+    forEach:
+      item: workload
+      in: ${{ steps.selection.outputs.intent.workloads }}
+    dependsOn: []
+    task:
+      type: workflow
+      workflowIdOrName: instance-route-workload
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.workload.node_id }}
+          instance_id: ${{ self.workload.instance_id }}
+          connection: ${{ self.workload.connection }}
+          host_keys: ${{ self.workload.host_keys }}
+          plan: ${{ self.workload.prepare }}
+        execution_secrets: {}
+  - name: forward
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    guard: ${{ !steps.selection.outputs.intent.effectful || steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+    task:
+      type: workflow
+      workflowIdOrName: route-mutation-withdraw
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ steps.selection.outputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        parent_run_id: ${{ run.id }}
+  - name: retire
+    target: orbit-node-209
+    forEach:
+      item: workload
+      in: ${{ steps.selection.outputs.intent.workloads }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready }}
+    task:
+      type: workflow
+      workflowIdOrName: instance-route-workload
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.workload.node_id }}
+          instance_id: ${{ self.workload.instance_id }}
+          connection: ${{ self.workload.connection }}
+          host_keys: ${{ self.workload.host_keys }}
+          plan: ${{ self.workload.selected }}
+        execution_secrets: {}
+  - name: restore-workload
+    target: orbit-node-209
+    forEach:
+      item: workload
+      in: ${{ steps.selection.outputs.intent.workloads }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    - step: retire
+      condition:
+        type: always
+    guard: ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))) }}
+    task:
+      type: workflow
+      workflowIdOrName: instance-route-workload
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.workload.node_id }}
+          instance_id: ${{ self.workload.instance_id }}
+          connection: ${{ self.workload.connection }}
+          host_keys: ${{ self.workload.host_keys }}
+          plan: ${{ self.workload.restore }}
+        execution_secrets: {}
+  - name: restore
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    - step: retire
+      condition:
+        type: always
+    - step: restore-workload
+      condition:
+        type: always
+    guard: ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))) }}
+    task:
+      type: workflow
+      workflowIdOrName: route-mutation-restore
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ steps.selection.outputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        parent_run_id: ${{ run.id }}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: forward
+      condition:
+        type: always
+    - step: retire
+      condition:
+        type: always
+    - step: restore-workload
+      condition:
+        type: always
+    - step: restore
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-update-result
+      methodName: read
+      inputs:
+        effectful: ${{ steps.selection.outputs.intent.effectful }}
+        failure_code: route.withdrawal_failed
+        route_id: ${{ steps.selection.outputs.intent.route_id }}
+        result_route_id: ${{ steps.selection.outputs.intent.result_route_id }}
+        workload_count: ${{ size(steps.selection.outputs.intent.workloads) }}
+        steps: ${{ steps }}
+        admitted: ${{ steps.selection.outputs.admitted }}
+        retained_on_nodes: ${{ steps.selection.outputs.retained_on_nodes }}
+  - name: complete
+    target: orbit-node-209
+    dependsOn:
+    - step: result
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-update-complete
+      methodName: complete
+      inputs:
+        stdout: ${{ steps.result.outputs.stdout }}
+  dependsOn:
+  - job: readiness
+    condition:
+      type: always

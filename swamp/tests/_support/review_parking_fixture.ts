@@ -134,7 +134,7 @@ export function evidenceHttp(
         data: {
           ...operation,
           ...(invalid === "foreign" ? { target_id: 999 } : {}),
-          status: ["queued", "failed", "cancelled"].includes(invalid)
+          status: ["queued", "failed", "cancelled", "interrupted"].includes(invalid)
             ? invalid
             : "succeeded",
         },

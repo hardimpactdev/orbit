@@ -707,7 +707,7 @@ Writable native deploy calls share the per-Node model lock. A native active-effe
 
 A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start or a terminal operation without either definite start failure retains its pending intent until its outcome is known.
 
-Swamp owns development automatic-deploy discovery, branch checks, backoff, retry limits and admission. The existing automatic deployment workflow keeps its minute cadence. Discovery uses the Gateway’s canonical policy eligibility, including ambiguous or inactive role placement. The native deadline is 900 seconds plus the sum of admitted command timeouts, so every accepted Project list fits. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.
+Swamp owns development automatic-deploy discovery, branch checks, backoff, retry limits and admission. An `interrupted` Operation is terminal, like a failed Operation: after its deployment evidence is settled, the policy applies the normal failure backoff before admitting the branch head again. The existing automatic deployment workflow keeps its minute cadence. Discovery uses the Gateway’s canonical policy eligibility, including ambiguous or inactive role placement. The native deadline is 900 seconds plus the sum of admitted command timeouts, so every accepted Project list fits. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.
 
 ## Native production deployment
 

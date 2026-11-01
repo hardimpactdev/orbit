@@ -1,3 +1,4 @@
+import { classifyProvisioningProfile, ProvisioningRefusal } from "./source_profile.ts";
 import {
   assert,
   assertEquals,
@@ -9,12 +10,10 @@ import type { NodeCall } from "../_lib/node-agent.ts";
 import { runLocalSource } from "./source_system.ts";
 import { provisioningRoot } from "./provisioning_root.ts";
 import {
-  classifyProvisioningProfile,
   CloneCandidate,
   inspectProvisioningCandidate,
   prepareProvisioningSource,
   Provisioning,
-  ProvisioningRefusal,
   resolveProvisioningSource,
 } from "./provisioning_source.ts";
 import { provisioningVpRequirements } from "./provisioning_vp.ts";

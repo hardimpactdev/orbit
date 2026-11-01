@@ -1,3 +1,5 @@
+import projectEnvironmentRuntime from "../task-repository/scripts/project_environment.py" with { type: "text" };
+
 /** Shared cache-baseline policy for Instance setup and Task baseline checks. */
 export const ciCacheImportProgram = String
   .raw`# The task workspace's @orbit/ci-caches setup step: import the Pint and PHPStan caches of only the recorded code baseline's ref from the Gateway mirror.
@@ -27,6 +29,7 @@ fi
 
 /** Trusted workflow code executed once as the app user, never as a service or broker. */
 export const appStepRuntime = String.raw`
+${projectEnvironmentRuntime}
 import ctypes,fcntl,hashlib,json,os,pwd,re,selectors,signal,subprocess,sys,time
 from pathlib import Path
 LIMIT=2048
@@ -95,22 +98,7 @@ try:
   if not stat.S_ISREG(st.st_mode) or st.st_uid!=uid or st.st_gid!=gid or st.st_mode&0o022 or st.st_size>1048576:refuse('instance.step_layout_invalid')
   with os.fdopen(envfd,'r',encoding='utf-8') as f:dotenv=f.read(1048577)
  if len(dotenv.encode())>1048576:refuse()
- env={}
- def unescape(match):return {'n':chr(10),'r':chr(13),chr(92):chr(92),chr(34):chr(34),'$':'$'}[match.group(1)]
- for line in dotenv.splitlines():
-  if not line.strip() or line.lstrip().startswith('#'):continue
-  match=re.fullmatch(r'([A-Za-z_][A-Za-z0-9_]{0,254})=(.*)',line)
-  if not match:refuse()
-  key,text=match.groups()
-  if key.startswith(('LD_','BASH_')) or '\0' in text:refuse()
-  if text.startswith('"'):
-   if not text.endswith('"') or len(text)<2:refuse()
-   text=text[1:-1]
-   if re.search(r'\\(?![nr\\"$])',text):refuse()
-   text=re.sub(r'\\([nr\\"$])',unescape,text)
-  elif '"' in text or "'" in text:refuse()
-  if key in env or len(text.encode())>65536 or len(env)>=1024:refuse()
-  env[key]=text
+ env=parse_project_environment(dotenv)
  secrets=set(line for text in env.values() for line in text.splitlines() if line)
  disabled=len(secrets)>4096
  secrets=sorted(secrets,key=len,reverse=True)[:4096]

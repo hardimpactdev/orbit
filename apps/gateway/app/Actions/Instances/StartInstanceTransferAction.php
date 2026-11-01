@@ -19,6 +19,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\NativeRouteTransferPlan;
+use App\Domain\Routes\NativeRouteTransferPublication;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStateResolver;
@@ -31,6 +32,7 @@ use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Validates immutable transfer placement and records intent without moving source or runtime. */
@@ -62,21 +64,14 @@ final readonly class StartInstanceTransferAction
             $processes = app(InstanceTransferProcesses::class)->capture($transfer);
             $routePlan = app(NativeRouteTransferPlan::class)->capture($transfer);
             $plan = app(NativeInstanceTransferIntent::class)->capture($transfer);
+            $publication = app(NativeRouteTransferPublication::class)->capture($routePlan, ValidatedData::object($processes['destination_installations']));
 
             return $this->operations->execute('instance.transfer', 'instance', $instance->id, $transfer->source_node_id, [
                 'direct_transfer' => $plan, 'route_transfer' => $routePlan, 'process_installations' => $processes,
                 'participant_node_ids' => $routePlan['participant_node_ids'],
                 'environment_fields' => [(string) $source->id => 'source_route_environment', (string) $destination->id => 'destination_route_environment'],
-                'private_bindings' => [
-                    'source_installations' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
-                    'destination_installations' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
-                    'source_route_environment' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
-                    'destination_route_environment' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
-                ],
-                'source_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
-                'destination_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
-                'source_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
-                'destination_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
+                'route_publication' => $publication,
+                'certificates' => $publication['certificates'],
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'transfer_id' => $transfer->id,
                 'created' => $existing === null, 'node_id' => $transfer->source_node_id,
                 'destination_node_id' => $transfer->destination_node_id, 'destination_path' => $transfer->destination_path,
