@@ -2,7 +2,7 @@
 
 Comparison base: `c036958fa167ef8e365332169743cd35732b5e44` (PR merge base). Includes the imported Nodes checkpoints. Counts describe this draft; it does not meet the requested net-negative target yet. Recompute after the parent/residue deletion is complete.
 
-Gateway app +379, Gateway tests +357, Docs/other +18, Swamp +4048.
+Gateway app +379, Gateway tests +357, Docs/other +20, Swamp +5396.
 
 | File | Added | Deleted | Net | Reason |
 | --- | ---: | ---: | ---: | --- |
@@ -22,10 +22,18 @@ Gateway app +379, Gateway tests +357, Docs/other +18, Swamp +4048.
 | `apps/gateway/tests/Feature/Infrastructure/Routes/NativeRouteResidueProjectionTest.php` | +36 | −0 | +36 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
 | `docs/reference/database-role.md` | +2 | −0 | +2 | Document native contribution boundaries, source cleanup and remaining parent limits. |
 | `docs/reference/node-provisioning.md` | +19 | −3 | +16 | Document native contribution boundaries, source cleanup and remaining parent limits. |
+| `docs/reference/node-role-certificates.md` | +2 | −0 | +2 | Document the consumed role supplier and its unchanged public/private contract. |
 | `swamp/config/gateway-workflow-grants.json` | +1 | −1 | +0 | Keep existing exact workflow and secret scopes aligned with native parent registration. |
 | `swamp/config/swamp-shape-baseline.json` | +0 | −31 | -31 | Remove obsolete allowances for extracted or deleted legacy source; add none. |
+| `swamp/extensions/behaviors/operations/certificates/README.md` | +1 | −1 | +0 | Document the consumed role supplier and its unchanged public/private contract. |
 | `swamp/extensions/behaviors/operations/certificates/native_test.py` | +75 | −26 | +49 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
+| `swamp/extensions/behaviors/operations/certificates/role_native_test.py` | +24 | −0 | +24 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
 | `swamp/extensions/behaviors/operations/certificates/script_actions_test.py` | +55 | −27 | +28 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
+| `swamp/extensions/behaviors/operations/certificates/scripts/role_cleanup.py` | +3 | −3 | +0 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
+| `swamp/extensions/behaviors/operations/certificates/scripts/role_paths.py` | +2 | −1 | +1 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
+| `swamp/extensions/behaviors/operations/certificates/scripts/role_publish.py` | +5 | −5 | +0 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
+| `swamp/extensions/behaviors/operations/certificates/scripts/role_request.py` | +3 | −3 | +0 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
+| `swamp/extensions/behaviors/operations/certificates/scripts/role_verify.py` | +3 | −3 | +0 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
 | `swamp/extensions/behaviors/operations/fleet-recipe/README.md` | +15 | −0 | +15 | Keep a sole shipped provider for extracted prerequisites, Caddy ordering and bounded role phase scripts. |
 | `swamp/extensions/behaviors/operations/fleet-recipe/assets.ts` | +14 | −3 | +11 | Keep a sole shipped provider for extracted prerequisites, Caddy ordering and bounded role phase scripts. |
 | `swamp/extensions/behaviors/operations/fleet-recipe/manifest.yaml` | +28 | −1 | +27 | Keep a sole shipped provider for extracted prerequisites, Caddy ordering and bounded role phase scripts. |
@@ -65,7 +73,7 @@ Gateway app +379, Gateway tests +357, Docs/other +18, Swamp +4048.
 | `swamp/extensions/behaviors/operations/integrations/mod_test.ts` | +18 | −0 | +18 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
 | `swamp/extensions/behaviors/operations/integrations/registration.json` | +1 | −4 | -3 | Align owning role capture, registration and projection with native parent inputs and output facts. |
 | `swamp/extensions/behaviors/operations/integrations/websocket_runtime_system.ts` | +2 | −0 | +2 | Align owning role capture, registration and projection with native parent inputs and output facts. |
-| `swamp/extensions/behaviors/operations/node-role-converge-command/README.md` | +51 | −5 | +46 | Consume Nodes-owned typed contribution capture and collapsed shared phase factory. |
+| `swamp/extensions/behaviors/operations/node-role-converge-command/README.md` | +57 | −5 | +52 | Consume Nodes-owned typed contribution capture and collapsed shared phase factory. |
 | `swamp/extensions/behaviors/operations/node-role-converge-command/actions_test.ts` | +187 | −7 | +180 | Consume Nodes-owned typed contribution capture and collapsed shared phase factory. |
 | `swamp/extensions/behaviors/operations/node-role-converge-command/composition.ts` | +101 | −0 | +101 | Consume Nodes-owned typed contribution capture and collapsed shared phase factory. |
 | `swamp/extensions/behaviors/operations/node-role-converge-command/firewall_steps.ts` | +0 | −67 | -67 | Consume Nodes-owned typed contribution capture and collapsed shared phase factory. |
@@ -107,13 +115,22 @@ Gateway app +379, Gateway tests +357, Docs/other +18, Swamp +4048.
 | `swamp/proof/node.role_add/database.json` | +97 | −0 | +97 | Replace synthetic proof inputs with real F13 CLI variants and Node parity; no receipt claim. |
 | `swamp/proof/node.role_add/ingress.json` | +118 | −0 | +118 | Replace synthetic proof inputs with real F13 CLI variants and Node parity; no receipt claim. |
 | `swamp/proof/node.role_add/websocket.json` | +107 | −0 | +107 | Replace synthetic proof inputs with real F13 CLI variants and Node parity; no receipt claim. |
+| `swamp/proof/node.role_converge/README.md` | +13 | −0 | +13 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/app-prod.json` | +174 | −0 | +174 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/database.json` | +138 | −0 | +138 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/ingress.json` | +150 | −0 | +150 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/parity.py` | +206 | −0 | +206 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/parity_test.py` | +302 | −0 | +302 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/prepare.py` | +71 | −0 | +71 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/prepare_test.py` | +78 | −0 | +78 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
+| `swamp/proof/node.role_converge/websocket.json` | +185 | −0 | +185 | Consume frozen supplier F13 convergence variants and parity; use canonical certificate filenames; no receipt claim. |
 | `swamp/proof/node.role_relocate/websocket.json` | +150 | −0 | +150 | Replace synthetic proof inputs with real F13 CLI variants and Node parity; no receipt claim. |
 | `swamp/tests/_support/websocket_role_ssh.py` | +79 | −0 | +79 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
-| `swamp/tests/node_app_prod_role_native_test.py` | +76 | −0 | +76 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
-| `swamp/tests/node_database_role_native_test.py` | +135 | −9 | +126 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
+| `swamp/tests/node_app_prod_role_native_test.py` | +76 | −0 | +76 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
+| `swamp/tests/node_database_role_native_test.py` | +135 | −9 | +126 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
 | `swamp/tests/node_role_parent_native_test.py` | +152 | −0 | +152 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
 | `swamp/tests/node_role_prefix_native_test.py` | +45 | −0 | +45 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
-| `swamp/tests/node_websocket_role_native_test.py` | +150 | −0 | +150 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
+| `swamp/tests/node_websocket_role_native_test.py` | +150 | −0 | +150 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
 | `swamp/workflows/workflow-node-role-converge.yaml` | +29 | −45 | -16 | Generate native action graph from sole owning factory; maintain existing UUID and dependencies. |
 | `swamp/workflows/workflow-node-role-publication.yaml` | +29 | −0 | +29 | Generate native action graph from sole owning factory; maintain existing UUID and dependencies. |
 | `swamp/workflows/workflow-node-role-websocket.yaml` | +38 | −0 | +38 | Consume shared WebSocket phase collapse and preserve activation/recovery parity. |

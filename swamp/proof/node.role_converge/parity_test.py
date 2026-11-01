@@ -205,6 +205,31 @@ class RoleParity(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing-websocket-target-publication"):
             PARITY.target_publication(intent)
 
+    def test_websocket_parity_reads_the_caddy_reverb_pair(self):
+        root_hash = "a" * 64
+        certificate = PARITY.role_certificate(
+            {
+                "certificates": {
+                    "leaves": [
+                        {
+                            "scope": "role-websocket",
+                            "domain": "reverb.orbit",
+                            "version": "a" * 16,
+                            "root_hash": root_hash,
+                        }
+                    ]
+                }
+            }
+        )
+        self.assertEqual(
+            certificate,
+            {
+                "leaf": "/etc/caddy/orbit-websocket-cert-current/reverb.pem",
+                "root": "/etc/caddy/orbit-websocket-cert-current/root-ca.pem",
+                "root_hash": root_hash,
+            },
+        )
+
     def test_websocket_stale_caddy_or_wrong_admitted_root_fails_actual_host_check(self):
         for refusal in ["caddy-catalog-differs", "admitted-root-differs"]:
             with (
