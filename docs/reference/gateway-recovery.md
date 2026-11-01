@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
-  - apps/gateway/app/**/GatewayReleases/**
+  - '{platform/swamp-load/**,apps/gateway/app/**/GatewayReleases/**}'
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
 ---
@@ -104,6 +104,18 @@ The Gateway reads the current link and the release inventory itself, as the Gate
 The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. Run release commands through that link, as `php /home/orbit/orbit/apps/gateway/artisan`. A shell that changed into the directory before a switch still runs the release it entered. A release directory is never changed after it is prepared. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable. Preparation makes the Gateway cache directory private (`0700`), independent of the preparing process's umask; PHP-FPM and release commands use the same service account.
 
 The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset or empty, the version is the full commit in the release's `REVISION` file, so `bin/deploy-verify --sha` works without an env edit. Without either, the version is `dev`. Leave `APP_VERSION` out of the shared env file in the release layout; a set value always wins.
+
+### Install the pinned Swamp loader
+
+The pinned loader ships before the Gateway release runner requires it. This transition leaves release checks unchanged. The load owner installs the entry from one reviewed commit on Node 209 with `python3 platform/swamp-load/install_release_load.py --sha <full-commit>`, using the existing privileged publication path. The installer checks the checkout and script bytes against that commit, publishes an immutable package, and atomically points `/usr/local/libexec/orbit-swamp-release-load.py` at it. Under the host publication lock, the installer also adds the pending-marker guard to the existing main publisher before publishing the new entry. An unknown publisher revision refuses installation. Installation does not load Swamp or restart a service. A second release can require the entry after its installation receipt is verified.
+
+The entry accepts one `orbit.swamp.release-load.v1` JSON request on stdin. Its identity contains `release_sha`, the 12-character `release_id`, `gateway_release_record`, `target_node_id: 209`, and a unique `attempt_id`. The trusted release runner attests that it holds `GatewayReleaseLock::run` for that same active release. Credentials stay in existing protected files. The loader takes the existing host publication lock, stages exactly the admitted commit, hot reloads Serve, reconciles that commit's exact grant manifest, and verifies current-source extension versions and all exposed workflow definitions. It never chooses a newer main commit, cancels work, or restarts Serve or workers.
+
+A `prepare` request returns `awaiting_gateway_verification` with public source, runtime, health, grant and definition evidence. It retains a durable pending marker. The future release integration verifies the configured Gateway run token and CA path inside its release-lock callback, then sends `accept` with the same identity and the exact prepared receipt digest. Only that acknowledgement produces `verified` and removes the pending marker. PHP or SSH death leaves it pending. A failed or uncertain attempt requires operator inspection; another attempt cannot silently replace it. Repeating an accepted acknowledgement reads the same receipt without loading again.
+
+Any unreadable source, refused native call, changed runtime, grant conflict, or difference between served definitions and source blocks acceptance. The release runner must pause and keep the old Gateway release live. No successful native process exit alone proves acceptance. The entry reports a bounded public code and checkpoint without command output, inputs or credentials.
+
+Workflow equality covers the official `workflow.get` fields, excluding its local path. That API omits some placement and `forEach` fields, so the receipt does not prove complete parsed workflow authority. Extension version equality does not prove bundle bytes or helper freshness. Deleted registrations and ambiguous source versions appear explicitly in the receipt; the loader claims no full-registry equality. Ambiguous current source and missing official extension files fail closed. Serve `run.history {active:true}` supplies the active-run receipt; these runs do not block a hot reload, and none is inferred terminal. Any later restart support needs a fresh authoritative active-run check under both locks.
 
 ### Prepare a release
 
