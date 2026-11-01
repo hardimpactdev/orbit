@@ -197,6 +197,34 @@ it('validates the entire admitted selector batch before signing', function (): v
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
 });
 
+it('accepts a full Node certificate batch while checking every admitted selector', function (int $count): void {
+    $leaves = [];
+    $requests = [];
+    for ($index = 1; $index <= $count; $index++) {
+        $leaves[] = [...$this->leaf, 'scope' => 'route-'.$index.'-router'];
+        $requests[] = ['node_id' => $this->node->id, 'scope' => 'route-'.$index.'-router', 'state' => 'current'];
+    }
+    $requests[$count - 1] = [...$requests[$count - 1], 'state' => 'request', 'request_base64' => $this->body['requests'][0]['request_base64']];
+    $this->operation->update(['kind' => 'cluster.router_set', 'input' => ['certificates' => $leaves]]);
+    $before = $this->operation->fresh()->toArray();
+
+    $this->postJson($this->path, ['run_id' => $this->runId, 'requests' => $requests])->assertOk()
+        ->assertJsonCount(1, 'data.certificates')->assertJsonPath('data.certificates.0.scope', 'route-'.$count.'-router');
+
+    expect($this->operation->fresh()->toArray())->toBe($before)
+        ->and(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(1);
+})->with([120, 256]);
+
+it('refuses an oversized Node batch before issuing any certificate', function (): void {
+    $requests = array_fill(0, 257, ['node_id' => $this->node->id, 'scope' => 'route-31', 'state' => 'current']);
+    $before = $this->operation->fresh()->toArray();
+
+    $this->postJson($this->path, ['run_id' => $this->runId, 'requests' => $requests])->assertUnprocessable();
+
+    expect($this->operation->fresh()->toArray())->toBe($before)
+        ->and(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
+});
+
 it('rejects duplicate scope selectors instead of signing twice', function (): void {
     $this->body['requests'][] = $this->body['requests'][0];
     $this->postJson($this->path, $this->body)->assertConflict();

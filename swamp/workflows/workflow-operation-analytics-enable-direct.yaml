@@ -366,13 +366,18 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
+        intent:
+          node_id: ${{ self.item.leaf.node_id }}
+          leaves: ${{ inputs.intent.certificates.filter(cert,cert.leaf.node_id == self.item.leaf.node_id).map(cert,cert.leaf) }}
+          control_node_id: 209
+          connection: ${{ self.item.connection }}
+          host_keys: ${{ self.item.host_keys }}
         execution_secrets: {}
         parent_run_id: ${{ run.id }}
         restoring: false
     forEach:
       item: item
-      in: ${{ inputs.intent.certificates }}
+      in: ${{ inputs.intent.certificates.filter(item,inputs.intent.certificates.filter(first,first.leaf.node_id == item.leaf.node_id)[0].leaf.scope == item.leaf.scope) }}
 - name: router
   dependsOn:
   - job: certificates

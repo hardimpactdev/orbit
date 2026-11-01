@@ -1,3 +1,4 @@
+import { nodeCertificateGroups } from "../../certificates/batch_steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
 const coordinator = { target: "orbit-node-209" };
@@ -69,11 +70,20 @@ export function routeMutationSteps(
         };
     }
     function certificates(suffix: string, list: string, remove = false) {
+        // Select the first immutable leaf per Node; retain missing-publication
+        // failures instead of silently filtering foreign leaves out of the plan.
+        const nodes = nodeCertificateGroups(list);
         child(
             suffix,
             remove ? "route-certificate-remove" : "route-certificate-publish",
-            list,
-            targetIntent("leaf"),
+            remove ? list : nodes,
+            remove ? targetIntent("leaf") : {
+                ...targetIntent("leaves"),
+                node_id: expr("self.part.node_id"),
+                leaves: expr(
+                    `${list}.filter(leaf,leaf.node_id == self.part.node_id)`,
+                ),
+            },
             {},
             { parent_run_id: expr(parentRunId), restoring: mode === "restore" },
         );

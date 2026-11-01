@@ -16,7 +16,11 @@ try:
     run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
     if not re.fullmatch(r"[1-9][0-9]*", operation):
         raise ValueError("Invalid operation")
-    raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
+    if os.environ["ORBIT_CERTIFICATE_MODE"] == "node":
+        with open(os.environ["ORBIT_CERTIFICATE_REQUESTS_FILE"]) as source:
+            raw = [json.load(source)["requests"]]
+    else:
+        raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
     if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
         leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
         raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]

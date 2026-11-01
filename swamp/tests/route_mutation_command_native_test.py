@@ -43,8 +43,8 @@ class RouteMutationFixture(NativeTestCase):
                     "certificate_scopes": [{"node_id": 9, "scope": "route-31-router"}],
                 }
             ],
-            "prepare_certificates": [{"node_id": 9}, {"node_id": 10}],
-            "certificates": [{"node_id": 9}],
+            "prepare_certificates": [{"node_id": 9, "scope": "route-31-router"}, {"node_id": 10, "scope": "route-31-router"}, {"node_id": 9, "scope": "route-32-router"}],
+            "certificates": [{"node_id": 9, "scope": "route-31-router"}],
             "cleanup": [{"node_id": 9}],
             "url_writes": [{"node_id": 9, "secret_field": "route_material_0"}],
             "lan": [{"node_id": 9}],
@@ -80,7 +80,7 @@ class RouteMutationFixture(NativeTestCase):
 from pathlib import Path
 audit=Path(os.environ['FIXTURE_AUDIT'])
 action=os.environ['FIXTURE_ACTION']
-with audit.open('a') as output:output.write(json.dumps({'action':action,'kind':os.environ['FIXTURE_KIND'],'operation_id':int(os.environ['FIXTURE_OP']),'node_id':int(os.environ['FIXTURE_NODE'])})+'\\n')
+with audit.open('a') as output:output.write(json.dumps({'action':action,'kind':os.environ['FIXTURE_KIND'],'operation_id':int(os.environ['FIXTURE_OP']),'node_id':int(os.environ['FIXTURE_NODE']),'scopes':os.environ['FIXTURE_LEAVES'].split(',') if os.environ['FIXTURE_LEAVES'] else []})+'\\n')
 marker=audit.with_suffix('.failed')
 if os.environ.get('FIXTURE_FAIL')==action and not marker.exists():marker.touch();raise SystemExit(1)
 print('{"ready":true}')
@@ -110,6 +110,7 @@ print('{"ready":true}')
                         "FIXTURE_KIND": "${{ inputs.kind }}",
                         "FIXTURE_OP": "${{ string(inputs.operation_id) }}",
                         "FIXTURE_NODE": "${{ string(inputs.node_id) }}",
+                        "FIXTURE_LEAVES": '${{ has(inputs.intent.leaves) ? inputs.intent.leaves.map(leaf,leaf.scope).join(",") : "" }}',
                     },
                 },
             }
@@ -178,7 +179,12 @@ class RouteMutationNative(RouteMutationFixture):
         )
         self.assertTrue(terminal["outputs"]["ready"])
         self.assertEqual(terminal["outputs"]["routes"][0]["route_id"], 31)
+        self.assertEqual(terminal["outputs"]["contributions"]["forward_prepare_certificates"], 2)
+        self.assertEqual(len([step for step in history["jobs"][0]["steps"] if step["name"].startswith("forward_prepare_certificates-")]), 2)
         calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        certificate_calls = [call for call in calls if call["action"] == "route-certificate-publish"]
+        self.assertEqual(sorted(len(call["scopes"]) for call in certificate_calls[:2]), [1, 2])
+        self.assertEqual({scope for call in certificate_calls[:2] for scope in call["scopes"]}, {"route-31-router", "route-32-router"})
         self.assertEqual(len(calls), 20)
         self.assertTrue(
             all(

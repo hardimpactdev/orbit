@@ -25,6 +25,8 @@ remains on the admitted effect Node.
 `signCertificateBatch(leaves, flatRequests, native_stdout)` only decodes public
 output; it reads no vault and launches no program.
 
+The existing signing endpoint accepts up to 256 admitted request records per Node batch. Authorization and certificate policy stay in the Gateway.
+
 The batch resource is
 `{certificates:[{node_id,scope,certificate_base64,root_certificate_base64}]}`.
 Decoding refuses missing, duplicate, foreign or private output. The Gateway owns
@@ -84,3 +86,9 @@ Standalone workflows run every step on Node209 and use the admitted approved SSH
 Standalone removal reloads the disk configuration before its fresh scope check. Reload failure prevents deletion. Parent workflows using the lower must supply the same successful-reload dependency. Script metadata uses the required resource declaration fields with the standard infinite lifetime and ten-version retention.
 
 Run every certificate action with `python3 -B`. This prevents privileged Python from creating root-owned bytecode in shared asset directories. Cleanup stays unprivileged and removes only the run-specific public scripts after successful inspection. Parent workflows must preserve this invocation flag.
+
+## Route Node batches
+
+`route-certificate-publish` receives one Node and its immutable `leaves` array. It stages the scripts once, requests the Node batch, copies the public CSR file back through official SSH and runs the existing Gateway signer. Separate native steps publish the signed public bundles through SSH stdin, install the shared trust anchor once and inspect every scope and version. The result lists every admitted leaf. Official ControlMaster uses the same root-and-Node fleet identity across those steps; each Node child owns one distinct SSH model for its serial actions. A native resume may reconnect through the official defaults. No connection supervisor or custom transport is added.
+
+Public batches stay out of shell arguments and large environment values. The Gateway CA and target private keys keep their existing custody. Successful inspection precedes cleanup; a failed child retains its staged assets and local candidate keys for native resume. The parent owns compensation from its immutable reverse publication plan.

@@ -28,6 +28,26 @@ class RouteCertificateNative(_fixture.Certificates):
 
     def setUp(self):
         _fixture.Certificates.setUp(self)
+        # Official copy returns the public CSR file as well as staging scripts.
+        (self.tools / "scp").write_text(
+            "#!"
+            + sys.executable
+            + "\n"
+            + """import shutil,sys
+from pathlib import Path
+def local(value):return Path(value.split(':',1)[-1])
+src,dst=map(local,sys.argv[-2:])
+if src.is_dir():shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
+else:shutil.copyfile(src,dst)
+"""
+        )
+        ssh = self.tools / "ssh"
+        ssh.write_text(
+            ssh.read_text().replace(
+                "any(str(a).endswith('/inspect.py') for a in argv)",
+                "(any(str(a).endswith('/inspect.py') for a in argv) or (any(str(a).endswith('/node_batch.py') for a in argv) and 'inspect' in argv))",
+            )
+        )
         self.copy_behaviors("operations/routes/mutation-command")
         dependency = (
             self.repo
@@ -72,7 +92,7 @@ class RouteCertificateNative(_fixture.Certificates):
                 self.repo / f"workflows/workflow-route-certificate-{mode}.yaml"
             ).write_text(raw)
 
-    def run_child(self, mode="publish", restoring=False, success=True):
+    def run_child(self, mode="publish", restoring=False, success=True, leaves=None):
         leaf = (
             self.leaf
             if mode == "publish"
@@ -92,7 +112,14 @@ class RouteCertificateNative(_fixture.Certificates):
             "restoring": restoring,
             "execution_secrets": {},
             "intent": {
-                "leaf": leaf,
+                **(
+                    {
+                        "node_id": leaf["node_id"],
+                        "leaves": leaves or [leaf, {**leaf, "scope": "route-8-router"}],
+                    }
+                    if mode == "publish"
+                    else {"leaf": leaf}
+                ),
                 "control_node_id": 209,
                 "connection": {
                     "nodeHost": "fixture",
@@ -131,7 +158,7 @@ class RouteCertificateNative(_fixture.Certificates):
         self.assertFalse((self.home / ".orbit/certificates/route-7-router").exists())
         self.assertEqual(list(self.fixture.glob("staging-*")), [])
 
-    def test_signer_refusal_skips_publication_and_still_cleans_assets(self):
+    def test_signer_refusal_skips_publication_and_retains_assets_for_resume(self):
         self.refuse = True
         failed = self.run_child(success=False)
         self.assertEqual(failed["status"], "failed")
@@ -139,6 +166,107 @@ class RouteCertificateNative(_fixture.Certificates):
         self.assertFalse(
             (self.home / ".orbit/certificates/route-7-router/current").exists()
         )
+        self.assertTrue(list(self.fixture.glob("staging-*")))
+
+    def test120_real_csrs_use_one_signing_request_without_large_environment_values(
+        self,
+    ):
+        leaves = [
+            {**self.leaf, "scope": f"route-{index + 1}-router"} for index in range(120)
+        ]
+        result = self.run_child(leaves=leaves)
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(len(self.signs), 1)
+        self.assertEqual(len(self.signs[0][1]["requests"]), 120)
+        self.assertGreater(len(json.dumps(self.signs[0][1])), 131072)
+        steps = result["jobs"][0]["steps"]
+        self.assertEqual(
+            len([step for step in steps if step["name"] == "copy-assets"]), 1
+        )
+        self.assertEqual(len(steps[-1]["outputs"]["leaves"]), 120)
+
+    def test_partial_publication_refuses_parent_success_and_resumes_without_signing_again(
+        self,
+    ):
+        marker = self.fixture / "fail-second-publish"
+        marker.touch()
+        script = (
+            self.repo
+            / "extensions/behaviors/operations/certificates/scripts/publish.py"
+        )
+        script.write_text(
+            script.read_text().replace(
+                "def publish(leaf):",
+                "def publish(leaf):\n    if leaf['scope'] == 'route-8-router' and __import__('pathlib').Path("
+                + repr(str(marker))
+                + ").exists():\n        raise ValueError('certificate.fixture_publish_failed')",
+            )
+        )
+        failed = self.run_child(success=False)
+        self.assertEqual(failed["status"], "failed")
+        publication = next(
+            step for step in failed["jobs"][0]["steps"] if step["name"] == "publish"
+        )
+        self.assertIn("route-8-router", publication["error"])
+        self.assertIn("certificate.fixture_publish_failed", publication["error"])
+        self.assertFalse(
+            any(
+                step["name"] == "result" and step["status"] == "succeeded"
+                for step in failed["jobs"][0]["steps"]
+            )
+        )
+        first = self.home / ".orbit/certificates/route-7-router/current/key.pem"
+        before = first.read_bytes()
+        self.assertFalse(
+            (self.home / ".orbit/certificates/route-8-router/current").exists()
+        )
+        marker.unlink()
+        result = json.loads(
+            self.cli(
+                "workflow",
+                "resume",
+                "route-certificate-publish",
+                "--run",
+                failed["id"],
+                "--from",
+                "publish",
+            ).stdout
+        )
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(first.read_bytes(), before)
+        self.assertEqual(len(self.signs), 1)
+        history = json.loads(
+            self.cli("workflow", "history", "get", result["id"]).stdout
+        )
+        terminal = next(
+            step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+        )
+        self.assertEqual(len(terminal["outputs"]["leaves"]), 2)
+
+    def test_inspection_resume_reuses_published_keys_and_does_not_sign_again(self):
+        marker = self.fixture / "fail-inspect"
+        marker.touch()
+        failed = self.run_child(success=False)
+        key = self.home / ".orbit/certificates/route-7-router/current/key.pem"
+        before = key.read_bytes()
+        self.assertTrue(list(self.fixture.glob("staging-*")))
+        self.assertEqual(len(self.signs), 1)
+        self.assertEqual(len(self.signs[0][1]["requests"]), 2)
+        marker.unlink()
+        resumed = json.loads(
+            self.cli(
+                "workflow",
+                "resume",
+                "route-certificate-publish",
+                "--run",
+                failed["id"],
+                "--from",
+                "inspect",
+            ).stdout
+        )
+        self.assertEqual(resumed["status"], "succeeded")
+        self.assertEqual(key.read_bytes(), before)
+        self.assertEqual(len(self.signs), 1)
         self.assertEqual(list(self.fixture.glob("staging-*")), [])
 
 

@@ -90,7 +90,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         lan_changes: {
             schema: z.object({
@@ -286,39 +286,6 @@ export const behavior = {
                     }),
                 ],
             }),
-        },
-        certificateResult: {
-            description:
-                "Decode the canonical leaf inspection after publication",
-            arguments: z.object({
-                leaf: z.object({ node_id: Id, scope: z.string() })
-                    .passthrough(),
-                stdout: z.string(),
-            }),
-            execute: async (
-                args: {
-                    leaf: { node_id: number; scope: string };
-                    stdout: string;
-                },
-                ctx: Context,
-            ) => {
-                z.object({ present: z.literal(true) }).parse(
-                    JSON.parse(args.stdout),
-                );
-                return {
-                    dataHandles: [
-                        await ctx.writeResource(
-                            "contribution",
-                            "contribution",
-                            {
-                                ready: true,
-                                node_id: args.leaf.node_id,
-                                scope: args.leaf.scope,
-                            },
-                        ),
-                    ],
-                };
-            },
         },
         certificateRemoved: {
             description:
