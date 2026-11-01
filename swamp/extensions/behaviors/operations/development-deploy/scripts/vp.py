@@ -5,8 +5,11 @@ import re
 import stat
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from common import ACCOUNT, INPUT, MODE, ROOT, emit, environment, need
+if TYPE_CHECKING:
+    from common import ACCOUNT, INPUT, MODE, ROOT, emit, environment, need
+
 
 
 def scope():

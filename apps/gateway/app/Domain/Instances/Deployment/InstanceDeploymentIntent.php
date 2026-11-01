@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Projects\DevelopmentDeployStep;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
@@ -48,7 +49,7 @@ final readonly class InstanceDeploymentIntent
             $development = $this->development->ordered($instance->project);
             $steps = array_map(static fn (DevelopmentDeployStep $step): array => [
                 'name' => $step->name, 'phase' => 'before_activation', 'required' => $step->required,
-                'timeout_seconds' => $step->timeoutSeconds, 'command_digest' => hash('sha256', $step->command),
+                'timeout_seconds' => $step->timeoutSeconds, 'command_digest' => hash('sha256', GatewaySetupSteps::owns($step->command) ? GatewaySetupSteps::script($step->command) : $step->command),
             ], $development);
 
             return [

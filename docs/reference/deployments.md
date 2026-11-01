@@ -13,7 +13,7 @@ covers:
 
 # Instance releases
 
-Development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
+Development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Source preparation, Vite preparation and the ordered application phase are native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
 
 Production deployment uses the same direct parent with a release layout and the admitted Project account. Unported kinds return `operation.kind_unavailable`; no polled executor remains. Rollback stays production-only, and development rollback refuses `deployment_config.unavailable` because checkouts have no retained releases.
 
@@ -173,7 +173,9 @@ Swamp executes each deployment and rollback as an [operation](/reference/operati
 
 ### Pinned commits and automatic callers
 
-`instance:deploy --commit=SHA` sends `{"commit":"SHA"}` to the existing deploy endpoint. Omit `commit` to keep the manual branch-head behavior. SHA is exactly 40 or 64 lowercase hexadecimal characters. The Gateway checks Instance eligibility and the Project's recorded repository identity before admission. The queued source-preparation step checks the managed repository binding and requires the commit on the deployment branch's first-parent chain before environment sync, user steps or activation. Invalid membership ends the operation with `deployment.commit_not_on_branch`; a moved head either still contains the pinned commit or fails. It never substitutes the new head. Development defaults use the Project default branch.
+`instance:deploy --commit=SHA` sends `{"commit":"SHA"}` to the existing deploy endpoint. Omit `commit` to keep the manual branch-head behavior. SHA is exactly 40 or 64 lowercase hexadecimal characters. The Gateway checks Instance eligibility and the Project's recorded repository identity before admission. The queued source-preparation step checks the managed repository binding before environment sync, user steps or activation. Production requires the commit on the deployment branch's first-parent chain. Development retains the legacy ancestry check: the fetched default branch must contain the commit. Invalid membership ends the operation with `deployment.commit_not_on_branch`; a moved head either still contains the pinned commit or fails. It never substitutes the new head.
+
+Development defaults use the Project default branch.
 
 `POST /api/v1/instances/{instance}/deploy/automatic` and MCP `instance-deploy-automatic` start the same `instance.deploy` operation with automatic origin. They require a commit, an `Idempotency-Key`, an eligible production Instance with automatic deployment enabled, and Gateway Node access.
 
@@ -693,7 +695,11 @@ The kind uses the direct writer by default. The per-kind setting cannot select t
 
 Default development checkouts use `operation-instance-deploy-direct`, with separate native actions placed on 209 and official `@swamp/ssh` targeting the admitted Node account and stored host keys. The Gateway freezes the Node placement, repository, branch, ordered Project command digests and timeouts. It copies the exact commands to Operation-scoped vault keys before starting one native run. Command bytes, target dotenv values, registry settings and GitHub tokens stay out of workflow inputs and history. Development rollback refuses `deployment_config.unavailable` because development checkouts have no retained releases.
 
-The DAG separates fetch, source checks, cleanup, checkout, Vite+ preparation, each Project command and final checkout inspection. The existing runtime for app steps checks command digests and directories. It clears the environment, enforces deadlines and cleans up descendants. Commands arrive through official SSH stdin and their output is suppressed. Required failures prevent every later command and final success. Best-effort failures record one warning and allow later commands. Only a verified native success advances the Instance seed.
+The source-preparation phase fetches, checks the target, removes obsolete nested artifacts and checks out the exact commit. Vite+ preparation runs next. One application phase checks the whole command bundle before running the ordered commands, then checks the final branch and commit. Each command keeps its own timeout. Commands arrive through official SSH stdin and run from anonymous temporary files with mode0600; private command bytes never enter process arguments. Required failures prevent later commands and final success. Best-effort failures keep a bounded warning with the command name and exit status, even after later noisy output.
+
+Only a verified native success advances the Instance seed. A refused source phase records the explicit pin or resolved target commit when known.
+
+Native dependencies and guards own phase ordering. Official SSH owns transport. Git's execution-only environment supplies the minted HTTP credential and normalizes both supported GitHub SSH URL forms to HTTPS. The phase scripts keep the legacy checkout and ordered-command rules; they add no transport, lock, retry loop or supervisor.
 
 The shared terminal subscriber reads the bound native result and records the deployment once; development has no result callback, private-material read or Gateway command executor.
 

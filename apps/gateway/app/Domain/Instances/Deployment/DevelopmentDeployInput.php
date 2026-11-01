@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
@@ -35,6 +36,7 @@ final readonly class DevelopmentDeployInput
         }
 
         return ['ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
+            'command_timeout_seconds' => 60 + array_sum(array_map(static fn ($step): int => $step->timeoutSeconds, $this->steps->ordered($instance->project))),
             'manager' => $needsVp ? ['node_id' => $instance->node_id, 'user' => $instance->node->user, 'manager' => 'vp',
                 'platform' => 'linux', 'architecture' => $instance->node->architecture, 'kind' => 'tool.manager_converge',
                 'setup' => app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp)] : null,
@@ -53,17 +55,17 @@ final readonly class DevelopmentDeployInput
         if (! is_array($captured) || count($commands) !== count($captured)) {
             throw $this->forbidden();
         }
-        $copies = [];
+        $programs = [];
         foreach ($commands as $index => $command) {
+            $program = GatewaySetupSteps::owns($command->command) ? GatewaySetupSteps::script($command->command) : $command->command;
             $entry = ValidatedData::object($captured[$index]);
             if ($entry !== ['name' => $command->name, 'phase' => 'before_activation', 'required' => $command->required,
-                'timeout_seconds' => $command->timeoutSeconds, 'command_digest' => hash('sha256', $command->command)]) {
+                'timeout_seconds' => $command->timeoutSeconds, 'command_digest' => hash('sha256', $program)]) {
                 throw $this->forbidden();
             }
+            $programs[] = $program;
         }
-        foreach ($commands as $index => $command) {
-            $copies['step_'.$index] = $this->copies->executionCopy('orbit-control-inputs', 'development-deploy-operation-'.$operation->id.'-step-'.$index, $command->command);
-        }
+        $copies = $programs === [] ? [] : ['commands' => $this->copies->executionCopy('orbit-control-inputs', 'development-deploy-operation-'.$operation->id.'-commands', json_encode($programs, JSON_THROW_ON_ERROR))];
 
         return ['intent' => [...$input, ...$runtime], 'execution_secrets' => $copies];
     }

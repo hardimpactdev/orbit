@@ -1,10 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import {
-    checked,
-    observation,
-    runtime,
-    summary,
-} from "../development-deploy/mod.ts";
+import { checked, observation, runtime } from "../development-deploy/mod.ts";
+import { phaseResult } from "../development-deploy/phases.ts";
 const receipt = (value: unknown) => ({ stdout: JSON.stringify(value) });
 Deno.test("native development barriers reject typed failures before later actions", () => {
     assertEquals(checked(receipt({ ready: true, commit: "a".repeat(40) })), {
@@ -28,24 +24,23 @@ Deno.test("native development barriers reject typed failures before later action
     assertThrows(() => observation({ stdout: "not JSON" }));
 });
 Deno.test("native result retains failure and optional warnings without application output", () => {
-    const result = summary({
-        dev_app_0: {
-            status: "succeeded",
-            outputs: receipt({
-                ready: true,
-                warning: true,
-                output: "not admitted",
-            }),
-        },
-        dev_check: {
+    const result = phaseResult(
+        {
             status: "succeeded",
             outputs: receipt({
                 ready: false,
                 error_code: "deployment.checkout_dirty",
             }),
         },
-        dev_check_check: { status: "failed" },
-    }, 12);
+        {
+            status: "succeeded",
+            outputs: receipt({
+                ready: true,
+                warnings: 1,
+                output: "not admitted",
+            }),
+        },
+    );
     assertEquals(result.warnings, 1);
     assertEquals(result.error_code, "deployment.checkout_dirty");
     assertEquals(result.commit, null);
@@ -53,16 +48,16 @@ Deno.test("native result retains failure and optional warnings without applicati
 });
 Deno.test("only completed native inspection produces successful development commit", () => {
     const commit = "a".repeat(40);
-    const result = summary({
-        dev_inspect: {
+    const result = phaseResult(
+        {
             status: "succeeded",
             outputs: receipt({ ready: true, commit }),
         },
-        dev_inspect_check: { status: "succeeded" },
-    }, 12);
+        { status: "succeeded", outputs: receipt({ ready: true, warnings: 0 }) },
+    );
     assertEquals(result.commit, commit);
     assertEquals(result.failed_step, null);
-    assertEquals(summary({}, 12).error_code, "operation.native_failed");
+    assertEquals(phaseResult(null, null).error_code, "operation.native_failed");
 });
 
 Deno.test("native Vite pins enforce locked Node engines and global Vite version without raw package data", () => {

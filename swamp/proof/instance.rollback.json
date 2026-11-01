@@ -1,0 +1,170 @@
+{
+  "kind": "instance.rollback",
+  "workflow": "operation-instance-rollback-direct",
+  "topology": [
+    "app-dev",
+    "app-prod+ingress"
+  ],
+  "budget_seconds": 900,
+  "queue_timeout_seconds": 10,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "project:create",
+        "proof-deploy-${proof.run}",
+        "laravel-app",
+        "${proof.repo.url}",
+        "--json"
+      ],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:create",
+        "${capture.project_id}",
+        "${topology.app-dev.node_id}",
+        "default",
+        "--json"
+      ],
+      "capture": {
+        "candidate_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:clone",
+        "${capture.candidate_id}",
+        "${topology.app-prod.node_id}",
+        "proof-${proof.run}",
+        "--preview-name=proof-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "instance_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:deploy-step:create",
+        "${capture.instance_id}",
+        "proof-before",
+        "--command=id -un > .proof-deploy-user; printf 'before\\n' > .proof-deploy-phases",
+        "--phase=before_activation",
+        "--timeout=30",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:deploy-step:create",
+        "${capture.instance_id}",
+        "proof-after",
+        "--command=printf 'after\\n' >> .proof-deploy-phases",
+        "--phase=after_activation",
+        "--timeout=30",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:deploy",
+        "${capture.instance_id}",
+        "--json"
+      ],
+      "capture": {
+        "release_a": "$.result.release"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:deploy",
+        "${capture.instance_id}",
+        "--json"
+      ],
+      "capture": {
+        "release_b": "$.result.release"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "instance:rollback",
+      "${capture.instance_id}",
+      "--release=${capture.release_a}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "instance_id": "${capture.instance_id}",
+    "release": "${capture.release_a}",
+    "deployment": {
+      "variant": "rollback",
+      "project_id": "${capture.project_id}",
+      "user": "orbit-app-${capture.project_id}",
+      "home": "/home/orbit-app-${capture.project_id}",
+      "php": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "rollback_selection",
+      "job": "rollback",
+      "step": "selection",
+      "budget_seconds": 120
+    },
+    {
+      "name": "activation",
+      "job": "rollback",
+      "step": "activation",
+      "budget_seconds": 30
+    },
+    {
+      "name": "php_refresh",
+      "job": "rollback",
+      "step": "php_refresh",
+      "budget_seconds": 120
+    },
+    {
+      "name": "process_restart",
+      "job": "rollback",
+      "step": "process_restart",
+      "budget_seconds": 120
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/instance.deploy/parity.py",
+      "--variant",
+      "rollback",
+      "--node",
+      "app-prod",
+      "--instance",
+      "${capture.instance_id}",
+      "--release",
+      "${capture.release_a}"
+    ],
+    "cases": [
+      "requested-release-selected",
+      "selected-release-retained",
+      "current-link-matches-selection",
+      "dedicated-php-service-active",
+      "automatic-policy-paused"
+    ]
+  }
+}

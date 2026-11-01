@@ -1,0 +1,175 @@
+{
+  "kind": "instance.deploy",
+  "workflow": "operation-instance-deploy-direct",
+  "topology": [
+    "app-dev",
+    "app-prod+ingress"
+  ],
+  "budget_seconds": 600,
+  "queue_timeout_seconds": 10,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "project:create",
+        "proof-deploy-${proof.run}",
+        "laravel-app",
+        "${proof.repo.url}",
+        "--json"
+      ],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:create",
+        "${capture.project_id}",
+        "${topology.app-dev.node_id}",
+        "default",
+        "--json"
+      ],
+      "capture": {
+        "candidate_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:clone",
+        "${capture.candidate_id}",
+        "${topology.app-prod.node_id}",
+        "proof-${proof.run}",
+        "--preview-name=proof-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "instance_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:deploy-step:create",
+        "${capture.instance_id}",
+        "proof-before",
+        "--command=id -un > .proof-deploy-user; printf 'before\\n' > .proof-deploy-phases",
+        "--phase=before_activation",
+        "--timeout=30",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:deploy-step:create",
+        "${capture.instance_id}",
+        "proof-after",
+        "--command=printf 'after\\n' >> .proof-deploy-phases",
+        "--phase=after_activation",
+        "--timeout=30",
+        "--json"
+      ]
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "instance:deploy",
+      "${capture.instance_id}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "instance_id": "${capture.instance_id}",
+    "node_id": "${topology.app-prod.node_id}",
+    "deployment": {
+      "variant": "production",
+      "project_id": "${capture.project_id}",
+      "user": "orbit-app-${capture.project_id}",
+      "home": "/home/orbit-app-${capture.project_id}",
+      "php": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "source_preparation",
+      "job": "deploy",
+      "step": "source",
+      "budget_seconds": 90
+    },
+    {
+      "name": "environment_sync",
+      "job": "deploy",
+      "step": "environment",
+      "budget_seconds": 45
+    },
+    {
+      "name": "before_activation",
+      "job": "deploy",
+      "step": "before_activation",
+      "budget_seconds": 90
+    },
+    {
+      "name": "activation",
+      "job": "deploy",
+      "step": "activation",
+      "budget_seconds": 30
+    },
+    {
+      "name": "runtime_definitions",
+      "job": "deploy",
+      "step": "runtime_definitions",
+      "budget_seconds": 60
+    },
+    {
+      "name": "php_refresh",
+      "job": "deploy",
+      "step": "php_refresh",
+      "budget_seconds": 60
+    },
+    {
+      "name": "process_restart",
+      "job": "deploy",
+      "step": "process_restart",
+      "budget_seconds": 60
+    },
+    {
+      "name": "after_activation",
+      "job": "deploy",
+      "step": "after_activation",
+      "budget_seconds": 60
+    },
+    {
+      "name": "cleanup",
+      "job": "deploy",
+      "step": "cleanup",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/instance.deploy/parity.py",
+      "--variant",
+      "production",
+      "--node",
+      "app-prod",
+      "--instance",
+      "${capture.instance_id}"
+    ],
+    "cases": [
+      "selected-release-retained",
+      "current-link-matches-selection",
+      "project-command-account",
+      "project-command-order",
+      "dedicated-php-service-active"
+    ]
+  }
+}
