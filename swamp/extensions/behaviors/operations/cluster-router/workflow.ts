@@ -161,7 +161,7 @@ export function clusterRouterWorkflow(): Fields {
         name: "operation-cluster-router",
         description:
             "One immutable Router transition on209 through shared native publication children.",
-        vaults: [],
+        vaults: ["orbit-control-inputs"],
         inputs: envelope,
         jobs: [{ name: "router", steps }],
     };
@@ -234,7 +234,7 @@ export function publicationWorkflow(mode: "forward" | "restore"): Fields {
         name: `cluster-router-${mode}`,
         description:
             "Shared Route publication with exact contribution proof and public recovery summary.",
-        vaults: [],
+        vaults: ["orbit-control-inputs"],
         inputs: {
             ...envelope,
             properties: {

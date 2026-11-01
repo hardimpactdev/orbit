@@ -232,6 +232,27 @@ class RouteMutationNative(RouteMutationFixture):
 
 
 class RouteEnvironmentNative(NativeTestCase):
+    def test_every_environment_ancestor_declares_its_nested_child_vault(self):
+        workflows = {value["name"]: value for path in (ROOT / "workflows").glob("*.yaml")
+                     if isinstance(value := yaml.safe_load(path.read_text()), dict) and "name" in value}
+
+        def reaches_environment(name, seen):
+            if name in seen:
+                return False
+            if name == "route-environment-write":
+                return True
+            seen = seen | {name}
+            workflow = workflows[name]
+            return any(reaches_environment(child, seen)
+                       for job in workflow.get("jobs", []) for step in job.get("steps", [])
+                       if (task := step.get("task", {})).get("type") == "workflow"
+                       and (child := task.get("workflowIdOrName")) in workflows)
+
+        missing = [name for name, workflow in workflows.items()
+                   if reaches_environment(name, set())
+                   and "orbit-control-inputs" not in workflow.get("vaults", [])]
+        self.assertEqual(missing, [], "Every workflow in the nested vault read chain must declare the vault")
+
     def test_removal_root_delivers_named_material_through_its_existing_child(self):
         self.environment_write(False, removal_parent=True)
 
@@ -246,7 +267,10 @@ class RouteEnvironmentNative(NativeTestCase):
     ):
         self.environment_write(True)
 
-    def environment_write(self, update_parent, removal_parent=False, retained=False):
+    def test_route_update_restore_phase_allows_the_same_named_vault_material(self):
+        self.environment_write(True, restoring=True)
+
+    def environment_write(self, update_parent, removal_parent=False, retained=False, restoring=False):
         import pwd
         import tempfile
 
@@ -374,6 +398,9 @@ methods:{read:{description:"Return the disposable offline selection",arguments:s
                     if mode == "forward"
                     else "f11fa84e-418c-44cf-86d9-a84f46ef0146",
                     "name": "route-mutation-" + mode,
+                    "vaults": yaml.safe_load(
+                        (ROOT / ("workflows/workflow-route-mutation-" + mode + ".yaml")).read_text()
+                    )["vaults"],
                     "inputs": {"type": "object"},
                     "jobs": [
                         {
@@ -410,6 +437,12 @@ methods:{read:{description:"Return the disposable offline selection",arguments:s
                         }
                     ],
                 }
+                if restoring and mode == "forward":
+                    step = phase["jobs"][0]["steps"][0]
+                    step["task"] = {"type": "behavior", "behaviorType": "command/shell",
+                                    "behaviorName": "fixture-forward-failure", "methodName": "execute",
+                                    "inputs": {"run": "exit 1"}}
+                    phase["jobs"][0]["steps"][1]["dependsOn"][0]["condition"]["type"] = "always"
                 (
                     self.repo / ("workflows/workflow-route-mutation-" + mode + ".yaml")
                 ).write_text(yaml.safe_dump(phase, sort_keys=False))
@@ -430,17 +463,21 @@ methods:{read:{description:"Return the disposable offline selection",arguments:s
                 name,
                 "--input",
                 json.dumps(value),
+                success=not restoring,
             ).stdout
         )
         history = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
-        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(history["status"], "failed" if restoring else "succeeded")
         self.assertIn("APP_URL=https://old.test" if retained else "APP_URL=https://new.test", (path / ".env").read_text())
         self.assertIn("APP_KEY=keep-current", (path / ".env").read_text())
-        result = history["jobs"][0]["steps"][-1]["outputs"]
+        result = (next(step for step in history["jobs"][0]["steps"] if step["name"] == "result")
+                  if update_parent else history["jobs"][0]["steps"][-1])["outputs"]
         if removal_parent:
             effects = history["jobs"][1]["steps"]
             self.assertEqual(len(effects), 0 if retained else 1)
         elif update_parent:
-            self.assertTrue(json.loads(result["stdout"])["ready"])
+            projected = json.loads(result["stdout"])
+            self.assertEqual(projected["ready"], not restoring)
+            self.assertEqual(projected["restored"], restoring)
         else:
             self.assertEqual(result, {"ready": True, "route_id": 31, "instance_id": 33})

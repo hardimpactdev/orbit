@@ -1,7 +1,8 @@
 id: 52f89117-562e-409e-a91a-07969d17a37b
 name: cluster-router-restore
 description: Shared Route publication with exact contribution proof and public recovery summary.
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:
