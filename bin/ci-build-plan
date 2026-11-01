@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select CI builds from changed inputs; Swamp-only commits do not release the Gateway."""
+"""Select CI builds from changed inputs; every main commit is a Gateway release, which also loads Swamp."""
 import argparse
 import json
 from pathlib import Path
@@ -45,8 +45,8 @@ def select(paths, main=False):
             agent = True
         if not path.startswith(('apps/', 'packages/', 'docs/', '.github/', 'bin/', 'tools/', '.agents/')) and '/' in path:
             jobs = dict.fromkeys(JOBS, True)
-    jobs['web'] |= main and not swamp_only
-    return {'jobs': jobs, 'agent': agent, 'gateway_release': not swamp_only}
+    jobs['web'] |= main
+    return {'jobs': jobs, 'agent': agent, 'gateway_release': main or not swamp_only}
 
 
 def swamp_comparison_base(base, head):

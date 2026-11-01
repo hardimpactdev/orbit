@@ -91,13 +91,13 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint |
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
-| Gateway release inputs | Pass when the change includes Orbit inputs; skip Swamp-only commits so automatic releases do not queue them |
+| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow, run the Operation Deno tests and enforce the Swamp-shape gate |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
 
-Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds, including on main. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Such a change still starts no Gateway release. Other main commits build and upload Web for Gateway delivery. Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml`, run the Operation Deno tests in parallel shards with four workers per job, and enforce the Swamp-shape baseline. `Required checks` remains the single aggregate for all selected jobs.
+Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml`, run the Operation Deno tests in parallel shards with four workers per job, and enforce the Swamp-shape baseline. `Required checks` remains the single aggregate for all selected jobs.
 
 `Gateway release inputs` records whether the whole push includes Orbit inputs; both the Gateway and CLI publisher read that check instead of recomputing the last commit. The initial import ratchets against its retained Swamp source commit, recorded in `swamp/import-source.json`; once the comparison base contains `swamp/`, every run uses its actual Orbit base.
 
