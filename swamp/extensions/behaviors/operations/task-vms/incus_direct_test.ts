@@ -141,16 +141,14 @@ Deno.test("terminal replay after a lost projection reply does not repeat Incus",
   assertEquals(f.actions.length, 1);
 });
 
-Deno.test("lost Node reply records bounded failure and cannot replay the terminal root", async () => {
+Deno.test("lost Node reply fails natively and cannot replay after shared settlement", async () => {
   const f = new Fixture();
   f.loseAction = true;
   await assertRejects(() => f.execute());
-  assertEquals(f.operation.status, "failed");
-  await assertRejects(
-    () => f.execute(),
-    Error,
-    "operation.native_outcome_unknown",
-  );
+  assertEquals(f.operation.status, "running");
+  // The shared reader owns terminal settlement; this fixture has no observer.
+  f.operation.status = "failed";
+  await assertRejects(() => f.execute());
   assertEquals(f.actions.length, 1);
 });
 
@@ -164,7 +162,7 @@ Deno.test("unproven or raw command output cannot become Incus completion", async
     const f = new Fixture();
     f.result = result;
     await assertRejects(() => f.execute());
-    assertEquals(f.operation.status, "failed");
+    assertEquals(f.operation.status, "running");
   }
   const f = new Fixture();
   f.result = { error_code: "task_vm.incus_not_running" };

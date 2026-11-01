@@ -88,3 +88,5 @@ The descriptor does not prove that a target currently authorizes the existing ke
 ### Native failure observation
 
 Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. Normal operation reads retain their existing native failure check. A failed or interrupted run without selected public output records `operation.native_failed`. A family that needs a specific public error code writes it in its result step stdout. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.
+
+Unexpected errors in retained `directOperation` actions fail the native step with a fixed public code. They do not send a failed result callback. The normal shared native failure reader owns their terminal settlement. Explicit no-effect cancellation and returned domain refusals retain their existing contracts until those families switch.

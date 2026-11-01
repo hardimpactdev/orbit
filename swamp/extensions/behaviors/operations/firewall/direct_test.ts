@@ -116,15 +116,14 @@ Deno.test("lost terminal projection reads completion without repeating the actio
   assertEquals((await f.execute()).status, "succeeded");
   assertEquals(f.effects, 1);
 });
-Deno.test("uncertain action records failure and cannot repeat a terminal effect", async () => {
+Deno.test("uncertain action fails natively and cannot repeat after native settlement", async () => {
   const f = new Fixture();
   f.loseNode = true;
+  await assertRejects(() => f.execute(), Error, "operation.native_outcome_unknown");
+  assertEquals(f.operation.status, "running");
+  // The shared native-history reader settles the original failure.
+  f.operation.status = "failed";
   await assertRejects(() => f.execute());
-  await assertRejects(
-    () => f.execute(),
-    Error,
-    "operation.native_outcome_unknown",
-  );
   assertEquals(f.effects, 1);
 });
 Deno.test("bounded refusal and inactive backend fail the native run after projection", async () => {

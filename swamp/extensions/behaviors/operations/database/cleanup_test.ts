@@ -95,7 +95,7 @@ Deno.test("native retry after lost terminal projection reads the committed resul
   );
 });
 
-Deno.test("uncertain cleanup records a bounded terminal failure and never repeats effects", async () => {
+Deno.test("uncertain cleanup fails natively and a settled failure prevents repeated effects", async () => {
   const f = new Fixture();
   f.loseCleanup = true;
   await assertRejects(
@@ -103,16 +103,12 @@ Deno.test("uncertain cleanup records a bounded terminal failure and never repeat
     Error,
     "operation.native_outcome_unknown",
   );
-  assertEquals(f.calls.length, 3);
-  assertEquals(f.calls.at(-1)!.body.status, "failed");
-  assertEquals(f.calls.at(-1)!.body.result, {
-    error_code: "operation.native_outcome_unknown",
-  });
-  await assertRejects(
-    () => f.execute(),
-    Error,
-    "operation.native_outcome_unknown",
-  );
+  assertEquals(f.calls.length, 2);
+  assertEquals(f.calls.at(-1)!.body.status, "running");
+  assertEquals(f.operation.result, null);
+  // Model the existing shared native-history reader's terminal settlement.
+  f.operation.status = "failed";
+  await assertRejects(() => f.execute());
   assertEquals(f.localCalls.length, 1);
 });
 
@@ -134,7 +130,7 @@ Deno.test("unproven or malformed cleanup records a bounded failure without termi
     await assertRejects(() => f.execute());
     assertEquals(
       f.calls.filter((call) => call.path.endsWith("/result")).length,
-      2,
+      1,
     );
   }
 });

@@ -208,7 +208,7 @@ Deno.test("unrecognized typed mutation refusals remain uncertain", async () => {
     false,
   );
   await assertRejects(() => f.run());
-  assertEquals(f.projections.map((body) => body.status), ["running", "failed"]);
+  assertEquals(f.projections.map((body) => body.status), ["running"]);
 });
 
 Deno.test("an unknown mutation response remains uncertain rather than successful or cancelled", async () => {
@@ -216,7 +216,7 @@ Deno.test("an unknown mutation response remains uncertain rather than successful
   f.observed.state = "drift";
   f.repairReply = { unrecognized: true };
   await assertRejects(() => f.run());
-  assertEquals(f.projections.map((body) => body.status), ["running", "failed"]);
+  assertEquals(f.projections.map((body) => body.status), ["running"]);
 });
 
 Deno.test("lost final projection recovers by inspection without another repair", async () => {
@@ -298,6 +298,5 @@ Deno.test("aborted malformed readonly output is safe cancellation but an uncerta
   );
   assertEquals(mutation.projections.map((body) => body.status), [
     "running",
-    "failed",
   ]);
 });

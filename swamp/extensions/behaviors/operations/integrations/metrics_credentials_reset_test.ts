@@ -133,7 +133,7 @@ Deno.test("uncertain effect sanitizes private errors and leaves pending intent r
   const { f, run } = fixture();
   f.uncertain = true;
   await assertRejects(run, Error, "operation.native_outcome_unknown");
-  assertEquals(f.operation.status, "failed");
+  assertEquals(f.operation.status, "running");
   assertEquals(JSON.stringify(f.projections).includes("SENTINEL"), false);
 });
 Deno.test("unbound cancellation and terminal replay perform no private action", async () => {
