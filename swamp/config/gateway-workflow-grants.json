@@ -28,6 +28,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]}
   ],
   "workflows": [
+    {"workflow": "node-role-remove", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-hub-converge", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-exporter", "actions": ["run", "read"]},
     {"workflow": "operation-conn-pairing-create", "actions": ["run", "read"]},

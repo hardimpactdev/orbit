@@ -300,9 +300,9 @@ Doctor checks platform, architecture and free space on the root filesystem. It d
 
 ### Removal
 
-Removing a macOS Node deletes the registry row and the hub peer. It does not delete the user, uninstall Homebrew or Vite+, or edit the host tunnel. It skips the Node agent step and `firewall-recovery`. `retained_on_node` lists `user`, `package-managers`, and `host-wireguard`. A failed hub or registry step uses the normal removal rollback: the Node returns to its previous status, and a removed peer is restored when that rollback succeeds. macOS OS updates, firewall management, application hosting, and a macOS agent are separate features.
+Removing a macOS Node revokes its managed SSH access and removes the hub peer and Gateway records. It does not delete the user, uninstall Homebrew or Vite+, or edit the host tunnel. Linux service and firewall steps are skipped. `retained_on_node` reports the account, installed packages, user data and host-side WireGuard configuration that remain. A failed native step retains the Node record with failed status; the workflow does not claim a rollback or restore a withdrawn peer. macOS OS updates, firewall management, application hosting, and a macOS agent are separate features.
 
-JSON and the human `node:remove` output both report that list, so the operator can see the account, package managers, and host tunnel that remain.
+JSON and the human `node:remove` output both report that list.
 
 ## Nodes without roles
 
@@ -665,15 +665,19 @@ Peer convergence still runs over SSH. It generates or reads the peer key and ins
 
 ## Remove a Node
 
-Removal selects serving participants by their actual network, Route, private DNS and stale Route residue contributions. Global peer DNS work is needed only when removal changes the canonical routing domains. An unrelated TaskVM receives no work when that namespace stays the same. Route and DNS owners remain required even without a Node access edge; an unavailable worker refuses required work instead of hiding its owner. The hub and Metrics participants retain their separate parent-owned captures.
+Removal captures its role publication, private DNS, hub, Router firewall and Metrics participants before dispatch. Global peer DNS work runs only when removal changes the canonical routing domains. Every required participant needs its stored WireGuard address and full host pin; no participant needs its own worker.
 
-`orbit node:remove <node> [--offline] [--force] [--idempotency-key=KEY]` records one `node.remove` Operation. The Gateway captures the full public intent, stored WireGuard addresses, full host pins and vault key references before starting its native Swamp workflow. Every step runs on Node209. Host effects use official `@swamp/ssh` with the approved209 identity; removal needs no worker on the departing Node or its participants.
+`orbit node:remove <node> [--offline] [--force] [--idempotency-key=KEY]` records one `node.remove` Operation. The Gateway captures the full public intent, stored WireGuard addresses and full host pins before starting its native Swamp workflow. Every step runs on Node 209. Host effects use official `@swamp/ssh` with the approved 209 identity; removal needs no worker on the departing Node or its participants.
 
-Remove Instances, Database servers, Schedules, active Routes and user firewall rules first. The caller, Gateway, VPN and Swamp control Node are protected. Drain a task VM host and clear `settings.task_vms` before removing it. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
+Remove Instances, Database servers, Schedules, Routes and user firewall rules first, including before offline removal. Use `--force` to consent to shedding the Node’s mutable roles. Protected roles stay with their owning lifecycle. The caller, Gateway, VPN and Swamp control Node are protected. Drain a task VM host and clear `settings.task_vms` before removing it. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
 
-The parent sheds admitted roles through native workflow children, restores public SSH, removes the obsolete worker and observer footprint, revokes the departing worker credentials, and removes the managed access key last. It retains user data, package managers and unrelated SSH keys. Network and serving publications use their shared native children from209. A child failure prevents later retirement steps and keeps the Node record.
+The parent sheds admitted roles through native workflow children, restores public SSH, removes the obsolete worker and observer footprint, revokes the departing worker credentials, and then removes only its admitted management SSH keys. The hub peer withdrawal follows those target-side actions. It retains user data, package managers and unrelated SSH keys. Network and serving publications use their shared native children from Node 209. A child failure prevents later retirement steps and keeps the Node record with failed status. Cleanup does not roll back completed effects; the terminal result reports only completed work.
 
 `--offline --force` permits removal of an unreachable Node's registry membership while leaving its machine untouched. The native workflow checks reachability first. A reachable target runs ordinary cleanup. The result names the artifacts retained on an unreachable machine; offline confirmation does not fabricate their removal.
+
+### Native role child
+
+The reusable `node-role-remove` child receives the parent’s `operation_id`, `node_id` and `kind`, a schema-version1 public `intent`, empty `execution_secrets`, and the parent’s observed `offline` boolean. Its intent contains `node_id`, `assignment_id`, `role`, the pinned `ssh` connection, before/after publications, and the admitted action lists. The child returns typed `schema_version`, `node_id`, `assignment_id`, `role`, `role_removed: true` and `offline` fields. It creates no child Operation, performs no Gateway read, and leaves forward role convergence separate. Metrics removal disables its canonical fleet exporters and service publications. Role removal retains CI resources, release data and container volumes; it does not purge them.
 
 The workflow returns one public terminal result. Only successful native completion with `removed: true` deletes the Gateway Node record and its owned records; failed, cancelled or interrupted work retains them. Steps do not fetch intent, post progress or project state through Gateway callbacks. Node deletion broadcasts after the database transaction commits.
 

@@ -12,7 +12,6 @@ use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
-use App\Domain\Nodes\NodeRemovalEnvironmentSource;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -80,7 +79,7 @@ final class NodesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class, NodeRemovalEnvironmentSource::class, NodeWorkerEnrollment::class], OperationSecretSource::class);
+        $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class, NodeWorkerEnrollment::class], OperationSecretSource::class);
         $this->app->tag(NodeRoleRuntimeSource::class, OperationSecretSource::class);
         $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
         $this->app->tag(NodeWorkerEnrollment::class, OperationSecretOutputStore::class);

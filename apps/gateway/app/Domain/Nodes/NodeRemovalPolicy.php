@@ -12,7 +12,6 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\RouteCustomProxy;
 use App\Models\TaskVm;
 use App\Models\WebSocketRuntime;
 
@@ -23,6 +22,9 @@ final readonly class NodeRemovalPolicy
 
     public function protected(Node $node, Node $caller): void
     {
+        if ($node->id === 209) {
+            throw $this->conflict('node.control_removal_forbidden', 'The Swamp control Node cannot remove its own runtime.');
+        }
         $this->schedules->assertNodeRemovable($node);
         if ($node->instances()->exists()) {
             throw $this->conflict('node.has_instances', 'The Node still owns Instances.');
@@ -53,24 +55,27 @@ final readonly class NodeRemovalPolicy
 
     public function resources(Node $node, bool $offline): void
     {
-        try {
-            $this->routes->assertNodeRemovable($node);
-        } catch (ResourceOperationException $error) {
-            // Active Route refusal remains mandatory. Offline residue needs its nonactive source relations.
-            if (! $offline || $error->errorCode !== 'node.has_routes' || RouteCustomProxy::query()->where('node_id', $node->id)->exists()) {
-                throw $error;
-            }
-        }
-        if (! $offline && $node->roles()->exists()) {
-            throw $this->conflict('node.has_roles', 'Remove the Node roles, or confirm an unreachable Node with --offline --force.');
-        }
+        $this->routes->assertNodeRemovable($node);
         if ($node->firewallRules()->exists()) {
             throw $this->conflict('node.has_firewall_rules', 'The Node still owns firewall rules.');
         }
-        if (! $offline && $node->processes()->exists()) {
+        $roleProcesses = [];
+        foreach ($node->roles as $assignment) {
+            $dependencies = app(NodeRoleDependencyInspector::class)->inspect($node, $assignment->role);
+            $roleProcesses = [...$roleProcesses, ...$dependencies->processIds];
+            $runtime = app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role);
+            if (is_array($runtime) && isset($runtime['process_id'])) {
+                $roleProcesses[] = $runtime['process_id'];
+            }
+            if (! $offline && ($dependencies->instanceIds !== [] || $dependencies->workspaceIds !== [])) {
+                throw $this->conflict('node.has_role_dependents', 'Remove role-owned Instances and workspaces first.');
+            }
+        }
+        if (! $offline && $node->processes()->whereNotIn('id', $roleProcesses)->exists()) {
             throw $this->conflict('node.has_processes', 'The Node still owns Processes.');
         }
-        if (! $offline && WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
+        if (! $offline && ! $node->roles()->where('role', RoleName::WebSocket)->exists()
+            && WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
             throw $this->conflict('websocket.runtime_shutdown_required', 'Stop every Reverb process or confirm an unreachable Node with --offline --force.');
         }
     }
