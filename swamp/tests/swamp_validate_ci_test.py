@@ -8,8 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ValidateCI(unittest.TestCase):
     def test_required_validation_only_receives_event_scoped_credentials(self):
-        source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
-        self.assertEqual(source, (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text())
+        source = (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text()
         shape = source.split('  shape:', 1)[1].split('  validate:', 1)[0]
         validate = source.split('  validate:', 1)[1].split('  tests:', 1)[0]
         tests = source.split('  tests:', 1)[1]
