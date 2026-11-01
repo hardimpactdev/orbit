@@ -86,6 +86,8 @@ class RouteUpstreamFirewallNative(RouteLanFixture):
 
 
 class RouteHttpProbeNative(NativeTestCase):
+    workflow_name = "cluster-router-probe"
+
     def test_head_accepts_unauthorized_and_bypasses_proxy(self):
         self.check_response(401)
 
@@ -123,16 +125,28 @@ class RouteHttpProbeNative(NativeTestCase):
         (self.repo / "workflows/workflow-cluster-router-probe.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)
         )
+        if self.workflow_name != "cluster-router-probe":
+            root = yaml.safe_load(
+                (ROOT / f"workflows/workflow-{self.workflow_name}.yaml").read_text()
+            )
+            for job in root["jobs"]:
+                for step in job["steps"]:
+                    step.pop("target", None)
+            (self.repo / f"workflows/workflow-{self.workflow_name}.yaml").write_text(
+                yaml.safe_dump(root, sort_keys=False)
+            )
         self.cli(
             "workflow",
             "run",
-            "cluster-router-probe",
+            self.workflow_name,
             "--input",
             json.dumps(
                 {
                     "operation_id": 1,
                     "node_id": 9,
-                    "kind": "route.create",
+                    "kind": "route.public_verify"
+                    if self.workflow_name != "cluster-router-probe"
+                    else "route.create",
                     "execution_secrets": {},
                     "intent": {
                         "connection": connection,
@@ -148,3 +162,70 @@ class RouteHttpProbeNative(NativeTestCase):
             ),
         )
         self.assertEqual(received, [("HEAD", "process.test")])
+
+
+class RouteVerificationRootNative(RouteHttpProbeNative):
+    workflow_name = "operation-route-verification"
+
+    def test_failed_probe_is_a_failed_root_with_bounded_error(self):
+        root = yaml.safe_load(
+            (ROOT / "workflows/workflow-operation-route-verification.yaml").read_text()
+        )
+        for step in root["jobs"][0]["steps"]:
+            step.pop("target", None)
+        (self.repo / "workflows/workflow-operation-route-verification.yaml").write_text(
+            yaml.safe_dump(root, sort_keys=False)
+        )
+        # Substitute only the host probe child. Parent dependency/result logic remains real.
+        child = {
+            "id": "5cbf1292-9922-444b-9225-fb2b682111f7",
+            "name": "cluster-router-probe",
+            "inputs": {"type": "object"},
+            "jobs": [
+                {
+                    "name": "probe",
+                    "steps": [
+                        {
+                            "name": "probe",
+                            "task": {
+                                "type": "behavior",
+                                "behaviorType": "command/shell",
+                                "behaviorName": "probe",
+                                "methodName": "execute",
+                                "inputs": {"run": "exit 1"},
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        (self.repo / "workflows/workflow-cluster-router-probe.yaml").write_text(
+            yaml.safe_dump(child)
+        )
+        reply = json.loads(
+            self.cli(
+                "workflow",
+                "run",
+                self.workflow_name,
+                "--input",
+                json.dumps(
+                    {
+                        "operation_id": 7,
+                        "node_id": 9,
+                        "kind": "route.workload_verify",
+                        "intent": {"protocol": "tls"},
+                        "execution_secrets": {},
+                    }
+                ),
+                success=False,
+            ).stdout
+        )
+        history = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
+        result = next(
+            step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+        )
+        self.assertEqual(reply["status"], "failed")
+        self.assertEqual(
+            json.loads(result["outputs"]["stdout"]),
+            {"ready": False, "error_code": "route.certificate_invalid"},
+        )

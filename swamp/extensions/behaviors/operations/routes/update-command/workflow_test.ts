@@ -82,3 +82,42 @@ Deno.test("Route update reuses its existing children with one209selector and pha
         }
     }
 });
+
+Deno.test("Route primitive and shared publication children use one209selector", async () => {
+    for (
+        const name of [
+            "operation-route-verification",
+            "operation-route-target-unset",
+            "operation-route-publication",
+            "route-dns-publish",
+            "route-dns-grace",
+            "route-environment-write",
+            "route-certificate-publish",
+            "route-certificate-remove",
+        ]
+    ) {
+        const flow = parse(
+            await Deno.readTextFile(
+                new URL(
+                    `../../../../../workflows/workflow-${name}.yaml`,
+                    import.meta.url,
+                ),
+            ),
+        ) as {
+            target?: string;
+            jobs: {
+                target?: string;
+                steps: { target?: string; labels?: unknown }[];
+            }[];
+        };
+        for (const job of flow.jobs) {
+            for (const step of job.steps) {
+                assertEquals(
+                    step.target ?? job.target ?? flow.target,
+                    "orbit-node-209",
+                );
+                assertEquals("labels" in step, false);
+            }
+        }
+    }
+});
