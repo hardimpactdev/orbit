@@ -1525,14 +1525,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/routes/target-set.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/target-unset.ts",
       "rule": "gateway-http",
       "count": 1,
