@@ -135,38 +135,6 @@ export function incusGuest(
   const nameOfGuest = name;
   return {
     command,
-    async enableSsh() {
-      await guard();
-      const result = await invoke(
-        guestArgv(project, nameOfGuest, [
-          "/usr/bin/systemctl",
-          "enable",
-          "--now",
-          "ssh.service",
-        ]),
-        new Uint8Array(),
-        30,
-      );
-      if (!result.success) throw new Error("task_vm.image_ssh_failed");
-    },
-    async checkSsh() {
-      await guard();
-      const result = await invoke(
-        guestArgv(project, nameOfGuest, [
-          "/usr/bin/systemctl",
-          "is-active",
-          "ssh.service",
-        ]),
-        new Uint8Array(),
-        30,
-      );
-      if (
-        !result.success ||
-        new TextDecoder().decode(result.bytes).trim() !== "active"
-      ) {
-        throw new Error("task_vm.image_ssh_failed");
-      }
-    },
     async bootstrap() {
       // Incus/cloud-init report one boot observation. Native resume retries this step.
       await guard();

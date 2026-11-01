@@ -2555,21 +2555,12 @@
     },
     {
       "file": "extensions/behaviors/operations/task-vms/image_guest.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/image_guest.ts",
       "rule": "multi-action",
-      "count": 4,
+      "count": 3,
       "evidence": [
         "/usr/bin/cloud-init",
         "/usr/bin/incus",
-        "/usr/bin/sudo",
-        "/usr/bin/true"
+        "/usr/bin/sudo"
       ]
     },
     {

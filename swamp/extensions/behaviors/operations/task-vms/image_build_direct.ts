@@ -51,6 +51,7 @@ const StoredImageIntent = z.object({
   candidate_alias: z.string(),
   base_alias: z.string(),
   gateway_public_key: z.string(),
+  ssh_execution: z.record(z.string(), z.unknown()),
   certificate: z.string(),
   recipe: object,
   pi_artifact: z.object({
@@ -197,7 +198,6 @@ export async function imageStage(
       await builder.command("image.owner", {});
       await image({ kind: "prepare_metadata", name: input.name });
       await builder.command("image.boot", { lean: true });
-      await builder.enableSsh();
       break;
     case "clean":
       await builder.command("image.recipe-marker", {
@@ -232,7 +232,6 @@ export async function imageStage(
       await launch(true, fp());
       const smoke = guest(true);
       await smoke.bootstrap();
-      await smoke.checkSsh();
       await smoke.command("image.check", {
         lean_boot: true,
         firewall: false,

@@ -34,6 +34,7 @@ export const intent = () =>
     candidate_alias: "candidate-7",
     base_alias: "orbit-task-base",
     gateway_public_key: "public-key",
+    ssh_execution: {},
     certificate: "public-root",
     recipe: {
       identity: "sha256:" + "b".repeat(64),
@@ -82,12 +83,6 @@ function fixture(failSmoke = false) {
   const guest = (smoke: boolean) => ({
     bootstrap() {
       calls.push(smoke ? "smoke-boot" : "builder-boot");
-      return Promise.resolve();
-    },
-    enableSsh() {
-      return Promise.resolve();
-    },
-    checkSsh() {
       return Promise.resolve();
     },
     artifact() {
@@ -258,8 +253,6 @@ Deno.test("a systemd re-exec observation gap does not restart the running packag
   let observations = 0;
   let starts = 0;
   const guest = () => ({
-    enableSsh: () => Promise.resolve(),
-    checkSsh: () => Promise.resolve(),
     bootstrap: () => Promise.resolve(),
     artifact: () => Promise.resolve(),
     command(name: string, input: Record<string, unknown>) {
@@ -295,8 +288,6 @@ Deno.test("a systemd re-exec observation gap does not restart the running packag
 Deno.test("an uncertain phase read never retries a refused mutation", async () => {
   let starts = 0;
   const guest = () => ({
-    enableSsh: () => Promise.resolve(),
-    checkSsh: () => Promise.resolve(),
     bootstrap: () => Promise.resolve(),
     artifact: () => Promise.resolve(),
     command(name: string) {
@@ -528,8 +519,6 @@ Deno.test("artifact delivery leaves the started phase its full observation budge
   let starts = 0;
   let reads = 0;
   const guest = () => ({
-    enableSsh: () => Promise.resolve(),
-    checkSsh: () => Promise.resolve(),
     bootstrap: () => Promise.resolve(),
     artifact() {
       time.tick(1440001);
@@ -567,8 +556,6 @@ Deno.test("a continuous phase channel outage fails within sixty seconds without 
   using time = new FakeTime(0);
   let reads = 0;
   const guest = () => ({
-    enableSsh: () => Promise.resolve(),
-    checkSsh: () => Promise.resolve(),
     bootstrap: () => Promise.resolve(),
     artifact: () => Promise.resolve(),
     command(name: string) {
@@ -607,8 +594,6 @@ Deno.test("a successful phase read resets the consecutive channel outage budget"
   using time = new FakeTime(0);
   let reads = 0;
   const guest = () => ({
-    enableSsh: () => Promise.resolve(),
-    checkSsh: () => Promise.resolve(),
     bootstrap: () => Promise.resolve(),
     artifact: () => Promise.resolve(),
     command(name: string) {
@@ -636,41 +621,6 @@ Deno.test("a successful phase read resets the consecutive channel outage budget"
   await time.runMicrotasks();
   assertEquals(await result, null);
   assertEquals(reads, 101);
-});
-
-Deno.test("image prepare enables SSH and smoke refuses an inactive service", async () => {
-  const calls: string[] = [];
-  const guest = incusGuest(
-    "orbit-tasks",
-    "tvm-image-7",
-    "a".repeat(64),
-    async (args) => {
-      calls.push(args.join(" "));
-      return {
-        success: true,
-        bytes: new TextEncoder().encode(
-          args.includes("is-active") ? "active\n" : "",
-        ),
-      };
-    },
-  );
-  await guest.enableSsh();
-  await guest.checkSsh();
-  assertEquals(
-    calls.some((s) => s.includes("enable --now ssh.service")),
-    true,
-  );
-  const failed = incusGuest(
-    "orbit-tasks",
-    "tvm-image-7",
-    "a".repeat(64),
-    async () => ({ success: false, bytes: new Uint8Array() }),
-  );
-  await assertRejects(
-    () => failed.checkSsh(),
-    Error,
-    "task_vm.image_ssh_failed",
-  );
 });
 
 Deno.test("an unavailable image guest fails one cloud-init observation without a custom retry", async () => {

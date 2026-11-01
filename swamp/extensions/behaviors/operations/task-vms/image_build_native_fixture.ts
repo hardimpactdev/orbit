@@ -89,17 +89,6 @@ export function fixtureGuest(
       state.artifactDelivered = true;
       await save(state);
     },
-    async enableSsh() {
-      const state = JSON.parse(await Deno.readTextFile(file));
-      state.guest.push({name:"ssh.enable",input:{},uid:"0"});
-      await save(state);
-    },
-    async checkSsh() {
-      const state = JSON.parse(await Deno.readTextFile(file));
-      state.guest.push({name:"ssh.check",input:{},uid:"0"});
-      await save(state);
-      if(state.failSsh)throw new Error("task_vm.image_ssh_failed");
-    },
     async command(name: string, input: Record<string, unknown>) {
       const argv = guestArgv(project, nameOfGuest, [
         "/usr/local/bin/orbit-agent",

@@ -21,13 +21,26 @@ class ImageBuildNative(NativeTestCase):
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/task-vms', 'operations/node')
         module = self.repo / 'extensions/behaviors/operations/task-vms/image_build_direct.ts'
         module.write_text('import {fixtureHttp, fixtureHost, fixtureGuest, fixtureCleanup} from "./image_build_native_fixture.ts";\n' + module.read_text().replace('...imageBuildDirect()', '...imageBuildDirect(() => fixtureHttp, fixtureHost, fixtureGuest, fixtureCleanup)'))
+        fake=self.repo/'ssh'
+        fake.write_text('#!'+sys.executable+'\n'+"""import json,sys,shlex
+from pathlib import Path
+p=Path('image-build-fixture.json');s=json.loads(p.read_text());args=shlex.split(sys.argv[-1]);check='is-active' in args
+s['guest'].append({'name':'ssh.check' if check else 'ssh.enable','input':{},'uid':'0'});p.write_text(json.dumps(s))
+if check and s.get('failSsh'):raise SystemExit(1)
+if check:print('active')
+""")
+        fake.chmod(0o755)
+        self.ssh={'control_node_id':209,'identity_file':'/fixture/key','public_key':'ssh-ed25519 PUBLIC','target':{'name':'target','host':'192.0.2.13','user':'orbit','port':22,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
         workflow = ROOT / 'workflows/workflow-operation-task-vm-image-build.yaml'
         source = yaml.safe_load(workflow.read_text())
         self.assertEqual(source['jobs'][1]['target'], '${{ "orbit-node-" + string(inputs.node_id) }}')
         self.assertEqual([job['name'] for job in source['jobs']], ['admission', 'build', 'cleanup'])
         for job in source['jobs']:
-            self.assertIn('node', job.pop('labels'))
             job.pop('target')
+            for step in job['steps']:
+                if step.get('task',{}).get('behaviorType')=='@swamp/ssh':
+                    self.assertEqual(step.pop('target'),'orbit-node-209')
+                    step['task']['globalArgs']['sshBinary']=str(fake)
         (self.repo / 'workflows' / workflow.name).write_text(yaml.safe_dump(source, sort_keys=False))
         digest = hashlib.sha256(artifact_text.encode()).hexdigest()
         self.state = {'calls': [], 'actions': [], 'guest': [], 'artifactDelivered': False,
@@ -38,7 +51,7 @@ class ImageBuildNative(NativeTestCase):
                     'project': 'orbit-tasks', 'name': 'tvm-image-7', 'cidr': '10.251.77.0/24',
                     'pool': 'orbit-tasks', 'network': 'orbittask0', 'cpus': 2, 'memory': '4GiB', 'disk': '45GiB',
                     'source': 'ubuntu-26.04-vm', 'candidate_alias': 'candidate-7', 'base_alias': 'orbit-task-base',
-                    'gateway_public_key': 'public-key', 'certificate': 'public-root',
+                    'gateway_public_key': 'public-key', 'certificate': 'public-root','ssh_execution':self.ssh,
                     'recipe': {'identity': 'sha256:' + 'b' * 64, 'agent_sha256': 'a' * 64, 'pi_sha256': digest},
                     'pi_artifact': {'sha256': digest},
                     'prune': {'project': 'orbit-tasks', 'operation': {'kind': 'prune', 'pool': 'orbit-tasks',
@@ -46,6 +59,7 @@ class ImageBuildNative(NativeTestCase):
                 }}}
         self.state['operation']['input']['recipe'] = json.dumps(self.state['operation']['input']['recipe'])
         self.save()
+        self.cli('extension','pull','@swamp/ssh@2026.10.23.1')
 
     def save(self):
         (self.repo / 'image-build-fixture.json').write_text(json.dumps(self.state))
@@ -55,7 +69,7 @@ class ImageBuildNative(NativeTestCase):
 
     def run_workflow(self, success=True):
         result = self.cli('workflow', 'run', 'operation-task-vm-image-build', '--input', 'operation_id=7',
-            '--input', 'node_id=13', '--input', 'kind=task_vm.image_build', success=success)
+            '--input', 'node_id=13', '--input', 'kind=task_vm.image_build','--input','project=orbit-tasks','--input','name=tvm-image-7','--input','ssh_execution='+json.dumps(self.ssh), success=success)
         return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
     def test_full_dag_fetches_pinned_private_artifact_and_promotes_only_after_smoke_and_seed(self):

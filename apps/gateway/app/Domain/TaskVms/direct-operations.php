@@ -52,6 +52,7 @@ return ['task_vm.resume' => [
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'task_vm_image_writer',
     'projection' => TaskVmImageProjection::class,
+    'workflow_inputs' => true,
     'private_material' => ['pi_artifact_file' => 'task_vm.image_artifact'],
 ], 'task_vm.sweep_host' => [
     'workflow' => 'operation-task-vm-sweep',

@@ -45,6 +45,7 @@ final readonly class StartTaskVmImageOperationAction
             'network' => $host->network, 'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk,
             'source' => $build->source_fingerprint ?? TaskVmHost::SourceImage,
             'candidate_alias' => $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, 'base', $build->id),
+            'ssh_execution' => $this->keys->forNode($node),
             'base_alias' => $host->imageAlias, 'gateway_public_key' => $this->keys->identity()['public_key'], 'certificate' => $this->certificates->rootCertificate(),
             'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'pi_artifact' => $pi === null ? null : ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location, 'sha256' => $pi->digest],
             'pi_artifact_file' => ['$secret' => 'task_vm.image_artifact', 'id' => $build->id],
