@@ -122,7 +122,7 @@ A phase script may wait for an external system to reach a state, such as an UpCl
 | Run budget | Set it from the measured p95 with headroom, not a guess. PLAN sets the `instance.create` policy: under 10 s, budget 60 s. That is a target, not measured proof. |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | Phase timeout | Each phase script runs under coreutils `timeout <phase budget>`, inside `run:` or as the first `@swamp/ssh` `argv` items. |
-| `queueTimeout` | Every step gets one, so it fails fast when no worker is free (guide rule 6). A workflow-level value is inherited by every step. Keep it below the run budget. |
+| `queueTimeout` | Every step gets an explicit one (guide rule 6), never the serve's 600 s default. A workflow-level value reaches every step through the manual's resolution order. Keep it below the run budget. |
 
 ## Prove the kind (F10)
 
