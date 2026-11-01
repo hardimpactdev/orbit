@@ -35,6 +35,11 @@ caddy_ready() {
 }
 
 case "$probe" in
+  service.swamp)
+    /usr/local/bin/converge-swamp.py verify >/dev/null
+    expected='ready-serve:orbit-node-209:node=209'
+    observed=$expected
+    ;;
   nodes.registered)
     # Exactly the declared Nodes are active, each with at least its declared roles; the operator has none.
     [[ $# -eq 1 && "$1" =~ ^[A-Za-z0-9+/]*={0,2}$ ]] || exit 64

@@ -41,6 +41,16 @@ final readonly class TopologySwamp
         }
     }
 
+    public function start(TopologyTarget $target): void
+    {
+        $result = $this->host->exec($target->instance('gateway'), new GuestCommand(
+            ['/usr/local/bin/converge-swamp.py', 'start'], 150,
+        ));
+        if (! $result->successful()) {
+            throw new RuntimeException('e2e.swamp_start_failed: sandbox serve and worker did not become ready.');
+        }
+    }
+
     private function credential(): string
     {
         if ($this->clubTokenFile === null || $this->clubTokenFile === '') {

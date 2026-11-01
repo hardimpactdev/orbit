@@ -23,8 +23,8 @@ function guestScriptFixture(string $name, array $stubs = []): array
     }
     $script = "{$root}/{$name}";
     file_put_contents($script, str_replace(
-        ['/home/orbit', '/var/lib/orbit-e2e'],
-        ["{$root}/home", "{$root}/state"],
+        ['/home/orbit', '/var/lib/orbit-e2e', '/etc/wireguard', '/etc/ssh'],
+        ["{$root}/home", "{$root}/state", "{$root}/wireguard", "{$root}/ssh"],
         guestScriptSource($name),
     ));
     chmod($script, 0o700);
@@ -142,17 +142,16 @@ describe('Gateway convergence', function () {
             ->and(commandLog($fixture))->toBe([]);
     });
 
-    it('installs only the missing Gateway prerequisites in fixed order', function (string $missing, string $packages) {
+    it('names missing Gateway base prerequisites and leaves package installation to the base recipe', function (string $missing, string $packages) {
         $fixture = guestScriptFixture('converge-gateway.sh', [
             'dpkg-query' => "case \",\$DPKG_MISSING_PACKAGES,\" in *\",\${@: -1},\"*) exit 1 ;; esac\nprintf 'install ok installed'",
             'apt-get' => "printf '%s %s\\n' \"\$DEBIAN_FRONTEND\" \"\$*\" >> '__ROOT__/commands'",
         ]);
 
-        expect(runGuestScript($fixture, ['prerequisites'], ['DPKG_MISSING_PACKAGES' => $missing])->getExitCode())->toBe(0)
-            ->and(commandLog($fixture))->toBe([
-                'noninteractive update',
-                'noninteractive install --yes --no-install-recommends -- '.$packages,
-            ]);
+        $result = runGuestScript($fixture, ['prerequisites'], ['DPKG_MISSING_PACKAGES' => $missing]);
+        expect($result->getExitCode())->toBe(68)
+            ->and($result->getErrorOutput())->toBe('e2e.gateway_prerequisite_missing: '.$packages."\n")
+            ->and(commandLog($fixture))->toBe([]);
     })->with([
         'Caddy' => ['caddy', 'caddy'],
         'dnsmasq' => ['dnsmasq', 'dnsmasq'],
@@ -181,13 +180,47 @@ describe('Gateway convergence', function () {
         file_put_contents("{$fixture['home']}/orbit/bin/gateway-app-key", "#!/usr/bin/env bash\nprintf 'gateway-app-key %s\\n' \"\$ORBIT_HOME\" >> '{$fixture['root']}/commands'\n");
         chmod("{$fixture['home']}/orbit/bin/gateway-app-key", 0o700);
 
-        expect(runGuestScript($fixture, ['bootstrap', 'gateway'])->getExitCode())->toBe(0)
+        expect(runGuestScript($fixture, ['migrate'])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
                 "gateway-app-key {$fixture['home']}/.orbit",
                 "{$fixture['home']}/orbit/apps/gateway artisan migrate --force",
-                "{$fixture['home']}/orbit/apps/gateway artisan orbit:bootstrap gateway --no-interaction",
             ]);
     });
+
+    it('prepares and deploys the captured full commit into a separate runtime without replacing the mount', function () {
+        $fixture = guestScriptFixture('converge-gateway.sh', [
+            'sudo' => GUEST_SUDO_STUB,
+            'php' => <<<'BASH'
+                printf '%s %s %s\n' "$PWD" "$ORBIT_GATEWAY_CHECKOUT" "$*" >> '__ROOT__/commands'
+                [[ "$*" != *gateway:release:prepare* || -z "${PREPARE_FAIL:-}" ]]
+                BASH,
+        ]);
+        $sha = str_repeat('b', 40);
+
+        expect(runGuestScript($fixture, ['release', $sha])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture))->toBe([
+                "{$fixture['home']}/orbit/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:prepare {$sha} --no-interaction",
+                "{$fixture['home']}/orbit/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:deploy {$sha} --no-interaction",
+            ])
+            ->and(is_link($fixture['home'].'/orbit'))->toBeFalse();
+    });
+
+    it('does not deploy when release preparation refuses', function () {
+        $fixture = guestScriptFixture('converge-gateway.sh', [
+            'sudo' => GUEST_SUDO_STUB,
+            'php' => "printf '%s\\n' \"\$*\" >> '__ROOT__/commands'\nexit 1",
+        ]);
+        $sha = str_repeat('c', 40);
+
+        expect(runGuestScript($fixture, ['release', $sha])->getExitCode())->toBe(1)
+            ->and(commandLog($fixture))->toBe(["artisan gateway:release:prepare {$sha} --no-interaction"]);
+    });
+
+    it('refuses an uncaptured release revision before invoking the runner', function (string $revision) {
+        $fixture = guestScriptFixture('converge-gateway.sh', ['sudo' => GUEST_SUDO_STUB, 'php' => 'exit 99']);
+
+        expect(runGuestScript($fixture, ['release', $revision])->getExitCode())->toBe(64);
+    })->with(['main', 'abcd1234', str_repeat('A', 40), str_repeat('a', 39)]);
 
     it('keeps every guest script valid Bash', function () {
         $resources = dirname(__DIR__, 3).'/resources';
@@ -201,6 +234,33 @@ describe('Gateway convergence', function () {
 });
 
 describe('Node convergence', function () {
+    it('creates a guest-local WireGuard identity and exports only actual public facts for fixture seeding', function () {
+        $public = base64_encode(str_repeat('p', 32));
+        $host = base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('s', 32));
+        $fixture = guestScriptFixture('prepare-node.sh', [
+            'wg' => <<<'BASH'
+                case "$1" in
+                  genkey) printf 'genkey\n' >> '__ROOT__/commands'; printf 'private-fixture-only\n' ;;
+                  pubkey) read -r private; [[ "$private" == private-fixture-only ]]; printf '%s\n' "$FIXTURE_WG_PUBLIC" ;;
+                  *) exit 99 ;;
+                esac
+                BASH,
+        ]);
+        mkdir($fixture['root'].'/ssh');
+        file_put_contents($fixture['root'].'/ssh/ssh_host_ed25519_key.pub', 'ssh-ed25519 '.$host." fixture\n");
+
+        foreach ([1, 2] as $attempt) {
+            $result = runGuestScript($fixture, ['fixture-facts'], ['FIXTURE_WG_PUBLIC' => $public]);
+            expect($result->getExitCode())->toBe(0)
+                ->and(json_decode($result->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'wireguard_public_key' => $public, 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $host,
+                ])
+                ->and($result->getOutput().$result->getErrorOutput())->not->toContain('private-fixture-only');
+        }
+        expect(commandLog($fixture))->toBe(['genkey'])
+            ->and(fileperms($fixture['root'].'/wireguard/orbit.key') & 0777)->toBe(0600);
+    });
+
     it('provisions a workload Node with its base role, TLD, WireGuard address, and scanned host key', function (string $node, string $role, string $address) {
         $fixture = convergeNodeFixture();
 

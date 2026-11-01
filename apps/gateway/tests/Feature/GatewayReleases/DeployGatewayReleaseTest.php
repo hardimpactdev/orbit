@@ -566,6 +566,22 @@ describe('gateway:release:deploy', function (): void {
         expect($mutations)->toBe(['gateway.refresh-release-configuration', 'gateway.switch-release']);
     });
 
+    it('refuses configure on an unadopted fresh layout without creating release state', function (): void {
+        $this->app->instance(ConfigureGatewayReleaseAction::class, new ConfigureGatewayReleaseAction(
+            new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock'),
+            $this->fixture->layout,
+            $this->fixture->builder(),
+        ));
+
+        expect(Artisan::call('gateway:release:configure'))->toBe(1);
+        $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($result['step'])->toBe('configuration')
+            ->and($result['error_code'])->toBe('gateway.release_not_adopted')
+            ->and($this->fixture->agents->calls)->toBe([])
+            ->and($this->fixture->layout->currentReleaseId())->toBeNull()
+            ->and(GatewayRelease::query()->count())->toBe(0);
+    });
+
     it('refreshes the current release configuration for an env change', function (): void {
         $first = adopt_release($this->fixture);
         $this->fixture->agents->calls = [];

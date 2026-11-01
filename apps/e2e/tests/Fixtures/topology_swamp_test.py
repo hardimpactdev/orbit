@@ -1,5 +1,6 @@
 """Isolated contract tests for the topology's native setup helper."""
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
@@ -13,6 +14,30 @@ spec.loader.exec_module(module)
 
 
 class TopologySwampTest(unittest.TestCase):
+    def test_preparation_installs_assets_and_settings_without_starting_services(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            (source / 'config').mkdir(parents=True)
+            (source / 'config/official-extensions.json').write_text('{}')
+            with patch.object(module, 'ROOT', root), patch.object(module, 'SOURCE', source), \
+                    patch.object(module, 'REPO', root / 'repository'), \
+                    patch.object(module, 'private_file'), patch.object(module, 'install_binary'), \
+                    patch.object(module, 'native', return_value={'token': 'fixture-enrollment'}), \
+                    patch.object(module, 'load_source'), patch.object(module, 'token'), \
+                    patch.object(module, 'configure_gateway') as configure, patch.object(module, 'units') as units, \
+                    patch.object(module, 'run') as run, patch.object(module.sys, 'stdin', io.StringIO('fixture-club')):
+                module.prepare()
+            configure.assert_called_once_with()
+            units.assert_called_once_with()
+            self.assertFalse(any(call.args[0][0] == 'systemctl' for call in run.call_args_list))
+
+    def test_explicit_start_requires_native_serve_and_worker_readiness(self):
+        with patch.object(module, 'run') as run, patch.object(module, 'wait_ready') as ready:
+            module.start()
+        run.assert_called_once_with(['systemctl', 'enable', '--now', 'orbit-e2e-swamp.service', 'orbit-node-worker.service'])
+        ready.assert_called_once_with()
+
     def test_grants_keep_exact_principal_workflow_and_vault_key_conditions(self):
         manifest = {'principal': 'user:orbit-gateway',
                     'vaults': [{'vault': 'orbit-control-inputs', 'actions': ['write', 'read'],

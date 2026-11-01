@@ -19,6 +19,7 @@ use App\E2E\TopologyComposer;
 use App\E2E\TopologyGuestPreparer;
 use App\E2E\TopologyNodeRecipe;
 use App\E2E\TopologyReleaser;
+use App\E2E\TopologySwamp;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
 use App\E2E\WorktreeLocator;
@@ -103,6 +104,14 @@ final class AppServiceProvider extends ServiceProvider
             return new HostCapacity($app->make(IncusHost::class), $maxVms);
         });
         $this->app->singleton(TopologyGuestPreparer::class);
+        $this->app->singleton(TopologySwamp::class, function (Application $app): TopologySwamp {
+            $path = $app->make(Repository::class)->get('e2e.swamp.club_token_file');
+            if ($path !== null && ! is_string($path)) {
+                throw new \RuntimeException('The sandbox Swamp credential path must be a string.');
+            }
+
+            return new TopologySwamp($app->make(IncusHost::class), $path);
+        });
         $this->app->singleton(TopologyComposer::class);
         $this->app->singleton(
             TopologyVerifier::class,
@@ -119,6 +128,7 @@ final class AppServiceProvider extends ServiceProvider
             synchronizer: $app->make(WorktreeSynchronizer::class),
             verifier: $app->make(TopologyVerifier::class),
             guests: $app->make(TopologyGuestPreparer::class),
+            swamp: $app->make(TopologySwamp::class),
             capacity: $app->make(HostCapacity::class),
             hostPaths: $app->make(StatePaths::class),
             operation: $app->make(OperationId::class),

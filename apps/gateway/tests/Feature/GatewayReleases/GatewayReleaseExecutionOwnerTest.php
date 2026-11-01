@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseExecutionOwner;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
@@ -93,6 +94,21 @@ it('accepts the owner of the shared state without the agent and refuses drifted 
     chmod($this->pipeline->fixture->layout->environmentPath(), 0666);
     expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class)
         ->and(fileperms($this->pipeline->fixture->layout->environmentPath()) & 0777)->toBe(0666);
+});
+
+it('refuses public deploy into a fresh runtime layout before creating state or invoking release steps', function (): void {
+    $runtime = $this->pipeline->home.'/fresh-runtime';
+    $layout = new GatewayReleaseLayout($runtime.'/current/apps/gateway');
+    app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($layout, accountUid: posix_geteuid()));
+
+    expect(Artisan::call('gateway:release:deploy', ['commit' => str_repeat('a', 40)]))->toBe(1);
+    $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($result['step'])->toBe('owner')
+        ->and($result['error_code'])->toBe('gateway.release_owner_invalid')
+        ->and(is_dir($runtime))->toBeFalse()
+        ->and(GatewayRelease::query()->count())->toBe(0)
+        ->and($this->pipeline->steps)->toBe([])
+        ->and($this->pipeline->snapshots)->toBe(0);
 });
 
 it('refuses shared state of the wrong kind without changing it', function (string $fault): void {

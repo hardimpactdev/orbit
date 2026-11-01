@@ -24,9 +24,11 @@ final readonly class WorktreeSynchronizer
     /** @var list<string> */
     public const array GUEST_SCRIPTS = [
         'converge-node.sh',
+        'converge-swamp.py',
         'converge-gateway.sh',
         'converge-operator.sh',
         'prepare-node.sh',
+        'topology-ca.php',
         'verify-topology.sh',
     ];
 

@@ -3,6 +3,21 @@ set -euo pipefail
 umask 077
 mode=${1-}
 case "$mode" in
+  fixture-facts)
+    [[ $# -eq 1 ]] || exit 64
+    # Disposable topology identity only. Private bytes never leave this guest.
+    install -d -m 0700 /etc/wireguard
+    if [[ ! -e /etc/wireguard/orbit.key ]]; then
+      wg genkey >/etc/wireguard/orbit.key
+      chmod 0600 /etc/wireguard/orbit.key
+    fi
+    [[ -f /etc/wireguard/orbit.key && ! -L /etc/wireguard/orbit.key ]] || exit 66
+    public_key=$(wg pubkey </etc/wireguard/orbit.key)
+    [[ "$public_key" =~ ^[A-Za-z0-9+/]{43}=$ ]] || exit 66
+    read -r host_type host_key _ </etc/ssh/ssh_host_ed25519_key.pub
+    [[ "$host_type" == ssh-ed25519 && "$host_key" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || exit 66
+    python3 -c 'import json, sys; print(json.dumps(dict(zip(("wireguard_public_key", "ssh_host_key_type", "ssh_host_key"), sys.argv[1:]))))' "$public_key" "$host_type" "$host_key"
+    ;;
   configure-runtime)
     [[ $# -eq 1 ]] || exit 64
     [[ "$(id -u orbit):$(id -g orbit)" == 1000:1000 ]] || { echo 'The recipe base must provide orbit uid/gid 1000.' >&2; exit 67; }

@@ -225,6 +225,9 @@ def prepare():
     run(['chown', '-R', 'orbit:orbit', str(ROOT)])
     configure_gateway()
     units()
+
+
+def start():
     run(['systemctl', 'enable', '--now', 'orbit-e2e-swamp.service', 'orbit-node-worker.service'])
     wait_ready()
 
@@ -261,6 +264,10 @@ def main():
         raise RuntimeError('e2e.swamp_arguments_invalid')
     if sys.argv[1] == 'prepare':
         prepare()
+        print(json.dumps({'prepared': True, 'worker': 'orbit-node-209'}))
+        return
+    elif sys.argv[1] == 'start':
+        start()
     elif sys.argv[1] == 'refresh':
         verify()
         load_source()

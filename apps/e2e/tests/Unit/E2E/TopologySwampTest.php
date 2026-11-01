@@ -54,3 +54,17 @@ it('delivers the sandbox credential only on owned Gateway exec stdin and withhol
         ->and($incus->execs[0]['argv'])->toBe(['/usr/local/bin/converge-swamp.py', 'prepare'])
         ->and($incus->execs[0]['stdin'])->toBe($credential);
 });
+
+it('starts the prepared sandbox without another credential delivery', function (): void {
+    $target = featureTarget('TST-11');
+    $incus = new FakeIncus()->install();
+    $incus->instances[$target->instance('gateway')] = [
+        ...$incus->instances[IncusHost::TEMPLATE],
+        'status' => 'Running', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+    ];
+    $incus->respond(static fn (): array => ['', '', 0]);
+    (new TopologySwamp(new IncusHost))->start($target);
+    expect($incus->execs)->toHaveCount(1)
+        ->and($incus->execs[0]['argv'])->toBe(['/usr/local/bin/converge-swamp.py', 'start'])
+        ->and($incus->execs[0]['stdin'])->toBeNull();
+});

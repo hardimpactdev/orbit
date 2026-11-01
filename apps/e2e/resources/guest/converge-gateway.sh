@@ -3,6 +3,7 @@ set -euo pipefail
 umask 077
 checkout=/home/orbit/orbit
 gateway=$checkout/apps/gateway
+runtime_gateway=/home/orbit/runtime/current/apps/gateway
 orbit_env=(sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway DB_DATABASE=/home/orbit/.orbit/gateway.sqlite)
 # PHP is never installed here: the recipe base image carries the recipe's exact PHP build (ADR 0216).
 gateway_prerequisites() {
@@ -14,8 +15,8 @@ gateway_prerequisites() {
     fi
   done
   if ((${#missing[@]} > 0)); then
-    DEBIAN_FRONTEND=noninteractive apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends -- "${missing[@]}"
+    printf 'e2e.gateway_prerequisite_missing: %s\n' "${missing[*]}" >&2
+    return 68
   fi
 }
 case ${1-} in
@@ -28,8 +29,8 @@ case ${1-} in
       printf 'ORBIT_GATEWAY_CHECKOUT=%s\n' "$gateway" >>"$gateway/.env"
     fi
     ;;
-  bootstrap)
-    [[ $# -eq 2 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
+  migrate)
+    [[ $# -eq 1 ]]
     install -d -o orbit -g orbit -m 0700 /home/orbit/.orbit
     touch /home/orbit/.orbit/gateway.sqlite
     chown orbit:orbit /home/orbit/.orbit/gateway.sqlite
@@ -42,9 +43,23 @@ case ${1-} in
     if ! "${orbit_env[@]}" php artisan migrate --force; then
       exit 70
     fi
-    if ! "${orbit_env[@]}" php artisan orbit:bootstrap "$2" --no-interaction; then
-      exit 71
-    fi
+    ;;
+  seed)
+    [[ $# -eq 1 ]]
+    cd "$gateway"
+    "${orbit_env[@]}" php "$checkout/tools/swamp-proof-seed.php" "$gateway"
+    ;;
+  fixture-ca)
+    [[ $# -eq 1 ]] || exit 64
+    "${orbit_env[@]}" php /usr/local/bin/topology-ca.php
+    ;;
+  release)
+    [[ $# -eq 2 && "$2" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    cd "$gateway"
+    release_env=("${orbit_env[@]}" ORBIT_GATEWAY_CHECKOUT="$runtime_gateway")
+    "${release_env[@]}" php artisan gateway:release:prepare "$2" --no-interaction
+    # Deploy owns migration, switching and verification; there is no separate public switch command.
+    "${release_env[@]}" php artisan gateway:release:deploy "$2" --no-interaction
     ;;
   *) exit 64 ;;
 esac

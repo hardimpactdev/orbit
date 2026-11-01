@@ -12,6 +12,17 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
+it('renders observed public peers before fixture Node records exist', function (): void {
+    $before = Node::query()->count();
+    $rendered = new WireGuardServerConfigRenderer()->renderForPeers('10.44.0.1/24', 51820, 'VM_LOCAL_HUB_KEY', [
+        ['name' => 'app-dev', 'public_key' => 'OBSERVED_PEER_PUBLIC', 'address' => '10.44.0.2/32'],
+        ['name' => 'operator', 'public_key' => 'OBSERVED_OPERATOR_PUBLIC', 'address' => '10.44.0.5/32'],
+    ]);
+
+    expect($rendered)->toBe("[Interface]\nAddress = 10.44.0.1/24\nListenPort = 51820\nPrivateKey = VM_LOCAL_HUB_KEY\n\n[Peer]\n# app-dev\nPublicKey = OBSERVED_PEER_PUBLIC\nAllowedIPs = 10.44.0.2/32\n\n[Peer]\n# operator\nPublicKey = OBSERVED_OPERATOR_PUBLIC\nAllowedIPs = 10.44.0.5/32\n")
+        ->and(Node::query()->count())->toBe($before);
+});
+
 it('resolves peer overrides and renders the complete server peer set', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);

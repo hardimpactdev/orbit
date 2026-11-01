@@ -49,6 +49,7 @@ final readonly class TopologyAcquirer
         private WorktreeSynchronizer $synchronizer,
         private TopologyVerifier $verifier,
         private TopologyGuestPreparer $guests,
+        private TopologySwamp $swamp,
         private HostCapacity $capacity,
         private StatePaths $hostPaths,
         private OperationId $operation,
@@ -61,6 +62,7 @@ final readonly class TopologyAcquirer
     public function acquire(TopologyRequest $request, TopologyRecipe $recipe, ?Closure $progress = null): TopologyRecord
     {
         $this->assertRequestOwnership($request);
+        $this->swamp->assertCredential();
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
@@ -100,6 +102,7 @@ final readonly class TopologyAcquirer
             }
             $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree, $this->mountToken($state));
             $this->guests->prepareGatewaySchema($topology->target);
+            $this->swamp->refresh($topology->target);
             $updated = $this->withSource($topology, $source, $this->ready($topology->target, $source));
             $state->writeTopology($updated);
 

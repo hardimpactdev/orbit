@@ -14,6 +14,7 @@ use App\E2E\TopologyComposer;
 use App\E2E\TopologyGuestPreparer;
 use App\E2E\TopologyNodeRecipe;
 use App\E2E\TopologyReleaser;
+use App\E2E\TopologySwamp;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
@@ -116,15 +117,20 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $te
     $host = new IncusHost;
     $networks = new IncusNetworkLifecycle($host);
     $guests = new TopologyGuestPreparer($host, settleIntervalMicroseconds: 0);
+    $credential = $worktree.'/.e2e-club-token';
+    file_put_contents($credential, 'fixture-only-club-token');
+    chmod($credential, 0600);
+    $swamp = new TopologySwamp($host, $credential);
 
     return [
         'acquirer' => new TopologyAcquirer(
             host: $host,
             networks: $networks,
-            composer: new TopologyComposer($host, $guests, new TopologyNodeRecipe($worktree)),
+            composer: new TopologyComposer($host, $guests, new TopologyNodeRecipe($worktree), $swamp),
             synchronizer: new WorktreeSynchronizer($host, $worktree, $operation),
             verifier: new TopologyVerifier($host, 1, 0),
             guests: $guests,
+            swamp: $swamp,
             capacity: new HostCapacity($host, 24),
             hostPaths: $paths,
             operation: $operation,
@@ -223,8 +229,10 @@ describe('TopologyAcquirer', function () {
                 'prepare-node.sh configure-runtime @gateway',
                 'prepare-node.sh configure-runtime @app-dev',
                 'prepare-node.sh configure-runtime @operator',
+                'converge-swamp.py prepare @gateway',
                 'converge-gateway.sh prerequisites @gateway',
                 'converge-gateway.sh bootstrap @gateway',
+                'converge-swamp.py start @gateway',
                 'prepare-node.sh gateway-authorize @app-dev',
                 'prepare-node.sh gateway-authorize @operator',
                 'converge-node.sh provision @gateway',
@@ -232,7 +240,7 @@ describe('TopologyAcquirer', function () {
                 'converge-operator.sh grant @gateway',
                 'converge-operator.sh configure-cli @operator',
             ])
-            ->and($timings)->toBe(['reserve', 'start', 'scripts', 'bootstrap.gateway', 'enroll.app-dev', 'enroll.operator', 'compose', 'readiness'])
+            ->and($timings)->toBe(['reserve', 'start', 'scripts', 'prepare.swamp', 'bootstrap.gateway', 'start.swamp', 'enroll.app-dev', 'enroll.operator', 'compose', 'readiness'])
             ->and($topology->toArray()['nodes'])->toBe(['gateway', 'app-dev', 'operator'])
             ->and(array_keys($topology->construction->nodes))->toBe(['gateway', 'app-dev', 'operator'])
             ->and(IssueState::forWorktree('TST-9', $worktree)->requireTopology()->toArray())->toBe($topology->toArray())

@@ -25,6 +25,7 @@ final readonly class TopologyComposer
         private IncusHost $host,
         private TopologyGuestPreparer $guests,
         private TopologyNodeRecipe $recipes,
+        private TopologySwamp $swamp,
     ) {}
 
     /** @param (Closure(string, float): void)|null $progress hears each step and its seconds */
@@ -35,6 +36,9 @@ final readonly class TopologyComposer
         $gateway = $instances['gateway'];
         $gatewayAddress = $target->recipe->node('gateway')->wireGuardAddress();
         $steps = [];
+
+        StageTimer::run($progress, 'prepare.swamp', fn () => $this->swamp->prepare($target));
+        $steps['prepare.swamp'] = true;
 
         StageTimer::run($progress, 'bootstrap.gateway', function () use ($target, $gateway, $addresses): void {
             $this->guests->placeGatewayEnvironment($target);
@@ -49,6 +53,9 @@ final readonly class TopologyComposer
             $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
         });
         $steps['bootstrap.gateway'] = true;
+
+        StageTimer::run($progress, 'start.swamp', fn () => $this->swamp->start($target));
+        $steps['start.swamp'] = true;
 
         $enrolled = [...$target->recipe->workloadNodes(), $target->recipe->node('operator')];
         $key = $this->gatewayPublicKey($gateway);

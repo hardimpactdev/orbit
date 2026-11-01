@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'swamp' => ['club_token_file' => env('ORBIT_E2E_SWAMP_CLUB_TOKEN_FILE')],
     'incus' => [
         'remote' => env('ORBIT_E2E_INCUS_REMOTE', 'local'),
         'project' => env('ORBIT_E2E_INCUS_PROJECT', 'default'),

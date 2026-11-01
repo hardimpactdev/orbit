@@ -41,6 +41,7 @@ final readonly class TopologyVerifier
                 'node' => 'gateway',
                 'arguments' => [base64_encode(json_encode($recipe->assignments(), JSON_THROW_ON_ERROR))],
             ],
+            'service.swamp' => ['node' => 'gateway', 'arguments' => []],
             'service.gateway' => ['node' => 'gateway', 'arguments' => []],
             'service.vpn' => ['node' => 'gateway', 'arguments' => []],
             'wireguard.reachability' => [

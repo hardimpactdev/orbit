@@ -96,7 +96,29 @@ Before enrollment, the harness prepares pnpm through `recipe.install-javascript`
 
 Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
 
-Before the first migration, `converge-gateway.sh prerequisites` ensures that Caddy and dnsmasq are installed, installing only missing packages.
+Fixture enrollment generates each VM's WireGuard key locally and reads back only its public key. The Gateway renders its hub configuration through the same canonical WireGuard renderer used by normal Gateway management, using observed public peer facts before fixture records exist. The hub's private key stays on the Gateway. Peer private keys stay on their own VMs. The harness installs configurations through guest exec and keeps every identity out of `node-template`.
+
+Receipts mark this enrollment as `fixture-set`; seeded records exercise admission and projection, and do not prove native Node enrollment. Once native `node.add` is available, workload enrollment must use the topology CLI and only the Gateway remains seeded.
+
+Until native Gateway bootstrap supplies a CA, acquisition creates a disposable RSA-4096 root pair on the topology Gateway. The harness uses the legacy bootstrap's OpenSSL parameters and validates the pair with the Gateway's existing `OrbitRootCa` rule. The private key stays on that VM. A repeated setup retains the same valid pair; partial or invalid state refuses. Receipts record `topology_ca: fixture-set`. Signing operations use the normal Gateway signer with that pair. Native Gateway bootstrap will replace this fixture setup when available.
+
+### Local Swamp
+
+Composition prepares Swamp beside the test Gateway, with its own data and credentials. Preparation installs assets and settings without starting services. The explicit start stage starts serve and its worker and waits for readiness. It reads the runtime version and checksum from `swamp/extensions/behaviors/node-worker/config.ts`, installs the official binary and pinned official extensions, and loads the mounted worktree's definitions into a private sandbox at `/home/orbit/.orbit/swamp/repository`. The datastore, local-encryption vaults, tokens, TLS certificate and SSH identity belong only to that topology. The worker enrolls as `orbit-node-209` with `node=209`; workflows keep their normal placement and use official SSH to reach the topology Nodes.
+
+Set `ORBIT_E2E_SWAMP_CLUB_TOKEN_FILE` to an owned mode-0600 file containing the sandbox collective token. The harness sends its contents only on guest-exec stdin. It never stores the token in topology state or evidence. A missing file refuses acquisition with `e2e.swamp_club_credential_missing`; an unsafe file refuses with `e2e.swamp_club_credential_invalid`. Do not use a production credential.
+
+The Gateway connects over TLS to `127.0.0.1:19470`, verifies `swamp.orbit` with the sandbox CA, and reads its run and reader tokens from private guest files. Authorization comes from the mounted `swamp/config/gateway-workflow-grants.json`. Full `sync` refreshes the definitions and grants. `verify` requires a ready serve and the single enrolled worker. `sync --quick` does not reload Swamp or claim readiness.
+
+Read native history through the existing harness, replacing `RUN_ID` with the admitted Operation's native run ID:
+
+```bash
+bin/e2e-topology exec TASK-58 gateway --argv='["env","SWAMP_HOME=/home/orbit/.orbit/swamp/home","SWAMP_CONFIG_DIR=/home/orbit/.orbit/swamp/config","swamp","workflow","history","get","RUN_ID","--repo-dir","/home/orbit/.orbit/swamp/repository","--server","wss://localhost:19470","--token-file","/home/orbit/.orbit/swamp/credentials/operator","--ca-cert","/home/orbit/.orbit/swamp/tls/cert.pem","--json"]'
+```
+
+The mounted PR source stays at `/home/orbit/orbit`. The topology Gateway uses a separate release layout at `/home/orbit/runtime/current/apps/gateway`. Acquisition migrates its fresh database, seeds fixture records, and installs the PR through the existing release runner. Seeded active Node and role records describe fixture intent; the readiness probes must prove their actual services. The harness does not call `orbit:bootstrap`.
+
+Before the first migration, `converge-gateway.sh prerequisites` checks that Caddy and dnsmasq are installed. A missing package refuses with `e2e.gateway_prerequisite_missing` and names it. Add missing prerequisites to the base image recipe; the harness does not install them during acquisition. Every topology Node, including the Gateway, remains a VM copy of `node-template`.
 
 `orbit:node-recipe` exports public Node metadata, bootstrap input and the stored machine recipe for native bootstrap and image consumers. It emits no executable programs, agent actions or command fingerprints. The topology reads this metadata and installs the frozen observer from the mounted worktree. Guest preparation waits for stable first boot and sets test DNS; it does not stage an action agent or repair package managers. Gateway bootstrap and workload enrollment use their normal product paths; Swamp owns the effects. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image.
 

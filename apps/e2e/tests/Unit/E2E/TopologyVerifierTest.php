@@ -84,11 +84,11 @@ describe('TopologyVerifier', function () {
             ->and($report->probes['service.vpn']['evidence_ref'])->toBe('incus://'.$target->instance('gateway').'/service.vpn');
     })->with([
         'gateway only' => [[], [
-            'nodes.registered' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
+            'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
             'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.operator' => 'operator',
         ]],
         'full' => [['app-dev', 'app-prod', 'app-prod-2'], [
-            'nodes.registered' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
+            'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
             'caddy.app-dev' => 'app-dev', 'caddy.app-prod' => 'app-prod', 'caddy.app-prod-2' => 'app-prod-2',
             'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.app-dev' => 'app-dev', 'source.operator' => 'operator',
         ]],
