@@ -29,27 +29,25 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Swamp credential expiry alerts
 
-The native schedule `swamp-credential-monitor` runs every hour at minute 7 on Node 209. Its steps run on the `swamp209-services` worker, so renewing the `orbit-node-209` worker cannot stop the step that renews it, and an expired `orbit-node-209` pair can still be renewed. The `check` step reads expiry metadata only, never a value:
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the `orbit-node-209` worker. It is alert only: it reads expiry metadata and changes no credential, grant or file. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
 
-- `swamp access token list` and `swamp worker token list` through serve, with the issuer operator token;
-- `swamp auth token list` as `orbit`, for club tokens; a token with no `expiresAt` is reported as `no_expiry`;
+- `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
+- `swamp auth token list --collective nckrtl`, for club tokens; a token with no `expiresAt` is reported as `no_expiry`;
 - `openssl x509 -enddate` for the `swamp.orbit` certificate.
 
-The report keeps at most 200 rows, soonest expiry first, and drops credentials that expired more than a week ago.
+Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`. Revoked and disabled tokens are skipped. The report keeps at most 200 rows, soonest expiry first, and drops credentials that expired more than a week ago.
 
-Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`. The `renew` step then acts by credential:
-
-| Credential | Action |
+| Result | Alert reason |
 | --- | --- |
-| `orbit-node-209-access` in `/etc/orbit/swamp-worker/server.token` | Renew when `within_6h` or `expired`: `swamp access token rotate <name> --duration 24h`, then a local `swamp access token reveal`. |
-| `orbit-node-209` in `/etc/orbit/swamp-worker/enrollment.token` | Renew when `within_6h` or `expired`: `swamp worker token revoke`, then `swamp worker token create <name> --duration 24h`. |
-| Every other credential | Alert only: worker pairs held on other Nodes, Gateway, driver and issuer access tokens, club tokens and the certificate. |
+| A credential is `within_72h`, `within_6h` or `expired` | The class |
+| The `orbit-node-209-access` or `orbit-node-209` token is not listed | `missing` |
+| A native list fails, times out or changes shape | The run fails |
 
-Renewal follows the 2026-11-01 repair path. It checks owner `root`, mode `0600` and the token name, and writes a `0600` backup under `/var/lib/orbit-swamp-worker/credential-backups/<date>/`. Only then does it call the native issuer. The new value is written atomically to the existing file, read back and checked for owner and mode. The value goes only into that file; argv, step output and history carry names. The worker unit loads the files at start, so the worker uses the new pair after its next restart; renewal requests no restart. This is the swamp role administering its own existing credentials. It creates no principal and changes no grant.
+The Gateway reads the terminal `check` output through the shared scheduled-result reader. It sends event `swamp.credential_expiring` through the [signed release webhook](/reference/gateway-recovery#webhook) with each credential's kind, name, reason, expiry and hours left. Each credential, expiry and reason alerts once after a delivered webhook. While a condition holds, every run reports it again, so an undelivered alert is retried by the next run.
 
-An alert-only credential alerts when it is `within_72h`, `within_6h` or `expired`. However, a renewable credential alerts only when it is missing (`missing`), when renewal fails (`renewal_failed`) or after it expired (`expired_renewed` or `expired`), because a 24-hour worker token is always within 72 hours.
+If a monitor run does not succeed, the Gateway sends `swamp.credential_monitor_failed` once per failure streak, and `swamp.credential_monitor_recovered` when a run succeeds again. Both are retried until delivered. Each native run is projected once. The Activity command `swamp:credential-alert` records each notification and its webhook outcome.
 
-The Gateway reads the terminal `renew` output through the shared scheduled-result reader. It sends event `swamp.credential_expiring` through the [signed release webhook](/reference/gateway-recovery#webhook) with each credential's kind, name, reason, expiry and hours left. Each credential, expiry and reason alerts once after a delivered webhook; an undelivered alert is sent again by the next run. Each native run is projected once. If a monitor run does not succeed, the Gateway sends `swamp.credential_monitor_failed`. The Activity command `swamp:credential-alert` records each notification and its webhook outcome.
+Renewal stays a hand procedure. When an alert names a worker token, follow the [worker enrollment steps](/reference/node-provisioning#per-node-swamp-worker) to issue it again. Then follow the [break-glass recovery steps](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209) to restore the worker.
 
 ## Native run budgets
 

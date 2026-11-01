@@ -12,12 +12,14 @@ use Illuminate\Support\Str;
 use LogicException;
 use Throwable;
 
-/** Sends the scheduled native credential check's alerts through the signed release webhook. Swamp decides and renews. */
+/** Sends the scheduled read-only credential check's alerts through the signed release webhook. */
 final readonly class SwampCredentialAlerts implements ScheduledResultProjection
 {
     public const string Workflow = '393024cd-986d-46f7-bf26-2a500281d492';
 
-    private const array Reasons = ['within_72h', 'within_6h', 'expired', 'expired_renewed', 'renewal_failed'];
+    private const array Reasons = ['within_72h', 'within_6h', 'expired', 'missing'];
+
+    private const string Failing = 'swamp-credential-monitor:failing';
 
     public function __construct(private ReleaseAlertWebhook $webhook) {}
 
@@ -33,12 +35,19 @@ final readonly class SwampCredentialAlerts implements ScheduledResultProjection
         if ($runId === null || ! Cache::add('swamp-credential-run:'.$runId, true, now()->addDays(30))) {
             return;
         }
+        // One failure alert per failure streak and one recovery alert; each retries until delivered.
         if (($run['status'] ?? null) !== 'succeeded') {
             $status = is_string($run['status'] ?? null) ? $run['status'] : 'unknown';
-            $this->send(['event' => 'swamp.credential_monitor_failed', 'root_run_id' => $runId, 'status' => $status,
-                'text' => sprintf('The Swamp credential monitor run %s ended %s; credential expiry is unchecked.', $runId, $status)]);
+            if (! Cache::has(self::Failing) && $this->send(['event' => 'swamp.credential_monitor_failed', 'root_run_id' => $runId, 'status' => $status,
+                'text' => sprintf('The Swamp credential monitor run %s ended %s; credential expiry is unchecked.', $runId, $status)])) {
+                Cache::forever(self::Failing, true);
+            }
 
             return;
+        }
+        if (Cache::has(self::Failing) && $this->send(['event' => 'swamp.credential_monitor_recovered', 'root_run_id' => $runId,
+            'text' => sprintf('The Swamp credential monitor run %s succeeded again.', $runId)])) {
+            Cache::forget(self::Failing);
         }
         $alerts = [];
         foreach (array_slice(is_array($result['alerts'] ?? null) ? $result['alerts'] : [], 0, 64) as $alert) {

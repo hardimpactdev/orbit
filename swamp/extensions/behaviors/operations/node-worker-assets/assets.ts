@@ -11,11 +11,6 @@ import {
 export const Args = WorkerConfig.extend({ node_id: z.literal(209) });
 const KnownHostsArgs = z.object({ node_id: z.literal(209) }).strict();
 const KnownHostsAssets = z.object({ script_path: z.string() }).strict();
-const CredentialAssets = z.object({
-    check_path: z.string(),
-    renew_path: z.string(),
-})
-    .strict();
 export const Assets = z.object({
     unit: z.string(),
     checker: z.string(),
@@ -70,8 +65,8 @@ export const behavior = {
             lifetime: "infinite",
             garbageCollection: 10,
         },
-        credential_scripts: {
-            schema: CredentialAssets,
+        credential_check_script: {
+            schema: KnownHostsAssets,
             lifetime: "infinite",
             garbageCollection: 10,
         },
@@ -98,9 +93,8 @@ export const behavior = {
                 return result;
             },
         },
-        credential_scripts: {
-            description:
-                "Locate the public credential expiry check and renewal",
+        credential_check: {
+            description: "Locate the public read-only credential expiry check",
             arguments: KnownHostsArgs,
             execute: async (raw: unknown, ctx: {
                 extensionFile: (path: string) => Promise<string> | string;
@@ -111,17 +105,14 @@ export const behavior = {
                 ) => Promise<unknown>;
             }) => {
                 KnownHostsArgs.parse(raw);
-                const result = CredentialAssets.parse({
-                    check_path: await ctx.extensionFile(
+                const result = KnownHostsAssets.parse({
+                    script_path: await ctx.extensionFile(
                         "scripts/credential_check.py",
-                    ),
-                    renew_path: await ctx.extensionFile(
-                        "scripts/credential_renew.py",
                     ),
                 });
                 await ctx.writeResource(
-                    "credential_scripts",
-                    "scripts",
+                    "credential_check_script",
+                    "script",
                     result,
                 );
                 return result;

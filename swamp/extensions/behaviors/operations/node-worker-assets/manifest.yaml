@@ -11,4 +11,3 @@ additionalFiles:
   - scripts/preflight.py
   - scripts/worker_check.py
   - scripts/credential_check.py
-  - scripts/credential_renew.py
