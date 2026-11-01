@@ -79,36 +79,41 @@ class Scripts(unittest.TestCase):
 
     def test_healthy_and_existing_uninstrumented_servers_need_no_event_wait(self):
         for health in ('healthy','none'):
-            with patch.object(wait_ready,'command',return_value=subprocess.CompletedProcess([],0,health+'\n','')):
+            with patch.object(wait_ready,'command',return_value=subprocess.CompletedProcess([],0,'current-id 2026-11-01T00:00:00Z '+health+'\n','')):
                 with patch.object(wait_ready.subprocess,'Popen') as start:
                     self.assertEqual(wait_ready.wait(self.intent,self.material),{'ready':True})
                     start.assert_not_called()
 
-    def test_initial_health_inspection_has_the_readiness_deadline(self):
+    def test_initial_health_process_failure_is_bounded_without_a_family_deadline(self):
         with patch.object(wait_ready,'command',side_effect=subprocess.TimeoutExpired('inspect',120)) as inspect:
             with patch.object(wait_ready.subprocess,'Popen') as start:
                 with self.assertRaisesRegex(server_common.Refused,'database.server_not_ready'):
                     wait_ready.wait(self.intent,self.material)
-                self.assertEqual(inspect.call_args.kwargs,{'timeout':120})
+                self.assertEqual(inspect.call_args.kwargs,{})
                 start.assert_not_called()
 
-    def test_event_wait_uses_only_the_remaining_probe_budget(self):
-        event=MagicMock()
-        observed=subprocess.CompletedProcess([],0,'starting\n','')
-        with patch.object(wait_ready,'command',return_value=observed):
-            with patch.object(wait_ready.time,'monotonic',side_effect=[100,105]):
-                with patch.object(wait_ready.subprocess,'Popen',return_value=event):
-                    with patch.object(wait_ready.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'health_status: healthy\n','')) as read:
-                        self.assertEqual(wait_ready.wait(self.intent,self.material),{'ready':True})
-                        self.assertEqual(read.call_args.kwargs['timeout'],115)
-        event.stdout.close.assert_called_once()
-        event.terminate.assert_called_once()
-        event.wait.assert_called_once_with(timeout=1)
+    def test_event_stream_accepts_first_terminal_health_or_die_without_family_deadline(self):
+        for action in ('health_status: healthy','health_status: unhealthy','die'):
+            event=MagicMock()
+            with patch.object(wait_ready,'command',return_value=subprocess.CompletedProcess([],0,'current-id 2026-11-01T00:00:00Z starting\n','')):
+                with patch.object(wait_ready.subprocess,'Popen',return_value=event) as start:
+                    with patch.object(wait_ready.subprocess,'run',return_value=subprocess.CompletedProcess([],0,action+'\n','')) as read:
+                        if action=='health_status: healthy':self.assertEqual(wait_ready.wait(self.intent,self.material),{'ready':True})
+                        else:
+                            with self.assertRaisesRegex(server_common.Refused,'database.server_not_ready'):wait_ready.wait(self.intent,self.material)
+                        self.assertNotIn('timeout',read.call_args.kwargs)
+                        self.assertIn('event=health_status: unhealthy',start.call_args.args[0])
+                        self.assertIn('event=die',start.call_args.args[0])
+                        self.assertIn('container=current-id',start.call_args.args[0])
+                        self.assertIn('2026-11-01T00:00:00Z',start.call_args.args[0])
+                        self.assertNotIn('container='+self.intent['container'],start.call_args.args[0])
+            event.stdout.close.assert_called_once();event.terminate.assert_called_once()
+            event.wait.assert_called_once_with(timeout=1)
 
     def test_event_timeout_refuses_and_escalates_cleanup_with_fixed_bounds(self):
         event=MagicMock()
         event.wait.side_effect=[subprocess.TimeoutExpired('events',1),None]
-        with patch.object(wait_ready,'command',return_value=subprocess.CompletedProcess([],0,'starting\n','')):
+        with patch.object(wait_ready,'command',return_value=subprocess.CompletedProcess([],0,'current-id 2026-11-01T00:00:00Z starting\n','')):
             with patch.object(wait_ready.subprocess,'Popen',return_value=event):
                 with patch.object(wait_ready.subprocess,'run',side_effect=subprocess.TimeoutExpired('head',120)):
                     with self.assertRaisesRegex(server_common.Refused,'database.server_not_ready'):

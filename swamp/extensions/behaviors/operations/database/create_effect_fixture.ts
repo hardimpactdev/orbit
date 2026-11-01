@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { invokeSql } from "./local_sql.ts";
-import { createDatabase } from "./create.ts";
+import { createDatabase } from "../../../../tests/_support/database_create_command.ts";
 
 const randomPassword = () =>
   Array.from(
