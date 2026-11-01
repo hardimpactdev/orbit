@@ -21,8 +21,34 @@ export const behavior = {
             garbageCollection: 10,
         },
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
+        phase_assets: {
+            schema: z.object({
+                files: z.array(z.object({
+                    source: z.string(),
+                    destination: z.string(),
+                })),
+            }),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
     },
     methods: {
+        setup_assets: {
+            description:
+                "Resolve the shared ordered setup phase and its canonical command policy",
+            arguments: z.object({}).strict(),
+            execute: async (_args: Record<string, never>, ctx: Context) => {
+                const value = {
+                    files: ["create/setup.py", "scripts/run_project_step.py"]
+                        .map((path) => ({
+                            source: ctx.extensionFile(path),
+                            destination: path,
+                        })),
+                };
+                await ctx.writeResource("phase_assets", "setup", value);
+                return value;
+            },
+        },
         read: {
             description: "Bind one admitted action to its shipped script",
             arguments: z.object({

@@ -14,3 +14,4 @@ additionalFiles:
   - scripts/verify_source.py
   - scripts/finalize_source.py
   - scripts/run_project_step.py
+  - create/setup.py

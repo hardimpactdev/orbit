@@ -1,7 +1,13 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { fromFileUrl } from "jsr:@std/path@1.1.2";
 const root = fromFileUrl(new URL(".", import.meta.url));
-for (const name of ["source_actions_test.py", "project_step_test.py"]) {
+for (
+    const name of [
+        "source_actions_test.py",
+        "project_step_test.py",
+        "setup_phase_test.py",
+    ]
+) {
     Deno.test(
         "Instance source and Project command contract: " + name,
         async () => {
