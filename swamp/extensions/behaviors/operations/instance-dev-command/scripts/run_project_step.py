@@ -124,9 +124,9 @@ def holds_fragment(line: bytes) -> bool:
 
 
 # Normalize invalid UTF-8 BEFORE matching: dropping bytes afterwards could join harmless pieces into a secret.
-# Redact the whole capture first, then cut the tail, then redact the tail again for matches split at its start.
+# Redact once before cutting; the leading cut line is dropped below.
 whole = redact(bytes(captured).decode('utf-8', errors='replace').encode())
-tail = redact(whole[-TAIL_LIMIT:])
+tail = whole[-TAIL_LIMIT:]
 lines = tail.split(b'\n')
 if truncated or len(whole) > TAIL_LIMIT:
     lines = lines[1:]  # the first line may start mid-secret

@@ -103,6 +103,33 @@ class ProjectStep(unittest.TestCase):
             result = self.run_step(path, 'for ((i=0; i<5000; i++)); do printf "R\\n" >&2; done; exit 7')
             self.assertLessEqual(len(json.loads(result.stdout)['stderr'].encode()), 4096)
 
+    def test_one_letter_secret_never_matches_inside_an_inserted_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            (path / '.env').write_text('APP_KEY="R"\n')
+            result = self.run_step(path, 'printf R >&2; exit 7')
+            self.assertEqual(result.returncode, 7)
+            self.assertEqual(json.loads(result.stdout)['stderr'], '[REDACTED]')
+
+    def test_invalid_utf8_cannot_reassemble_a_512_byte_secret(self):
+        secret = hashlib.sha512(b'public-synthetic-fixture-only').hexdigest() * 4
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            command = ('python3 -c \'import os; value=b"' + secret + '"; '
+                       'os.write(2, b"\\xff".join(value[n:n+7] for n in range(0, len(value), 7)))\'; exit 7')
+            result = self.run_step(path, command)
+            self.assertEqual(result.returncode, 7)
+            output = json.loads(result.stdout)
+            self.assertNotIn(secret, output['stderr'])
+            self.assertLessEqual(len(output['stderr'].encode()), 4096)
+
+    def test_newest_line_larger_than_four_kib_keeps_nothing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_step(Path(folder), 'python3 -c \'import os; os.write(2, b"x" * 4097)\'; exit 7')
+            self.assertEqual(result.returncode, 7)
+            self.assertEqual(json.loads(result.stdout)['stderr'], '')
+
     def test_invalid_utf8_never_joins_pieces_into_a_secret_after_redaction(self):
         secret = 'unique-private-fragment-0123456789'
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:

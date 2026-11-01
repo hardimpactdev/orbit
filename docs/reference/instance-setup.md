@@ -22,7 +22,7 @@ Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` th
 
 It reads `.env` values the way phpdotenv does, including multi-line quoted values, escapes and inline comments. The runner first normalizes invalid UTF-8, so dropped bytes can never join pieces into a secret. It then redacts every known secret value in one pass across the whole captured stderr. Known secrets are stored environment values and secret-named variables.
 
-It then keeps the last 4 KiB and redacts that tail again. It drops a first line that may start mid-value, and drops any line that still holds an 8-byte fragment of a secret. It keeps only whole lines, at most 4 KiB in total. A nonzero exit still fails create.
+It then keeps the last 4 KiB without processing redaction markers again. It drops a first line that may start mid-value, and drops any line that still holds an 8-byte fragment of a secret. It keeps only whole lines, at most 4 KiB in total. If the newest line alone exceeds 4096 bytes, nothing is retained. A nonzero exit still fails create.
 
 Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps). A Project's [development deploy steps](/reference/deployments#development-deploy-steps) are a third, independent list. Setup and teardown do not run that list.
 
