@@ -249,7 +249,9 @@ it('does not attach the development-server handle to production, proxy, or unava
         ->not->toContain('reverse_proxy 127.0.0.1:5173')
         ->not->toContain('/__orbit/vite')
         ->and($unavailableConfig)
-        ->toContain('Orbit Route unavailable')
+        ->toContain('header Cache-Control "no-store"')
+        ->toContain('header Content-Type "text/plain; charset=utf-8"')
+        ->toContain('respond "Orbit Route unavailable\n" 503')
         ->not->toContain('/__orbit/vite')
         ->not->toContain('reverse_proxy');
 });
