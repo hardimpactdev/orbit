@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 
@@ -43,6 +44,23 @@ class Roles(fixture.Certificates):
                 f"KEY_ROOT = Path({str(self.target / 'role-keys')!r})",
             )
         )
+        paths.write_text(
+            paths.read_text()
+            .replace(
+                'SWAMP_HOME = Path("/home/orbit")',
+                f"SWAMP_HOME = Path({str(self.target / 'home')!r})",
+            )
+            .replace(
+                'SWAMP_ROOT = Path("/usr/local/share/ca-certificates/orbit-root.crt")',
+                f"SWAMP_ROOT = Path({str(self.ca)!r})",
+            )
+            .replace(
+                'pwd.getpwnam("orbit")',
+                'pwd.struct_passwd(("orbit", "x", os.getuid(), os.getgid(), "", str(SWAMP_HOME), "/bin/sh"))',
+            )
+            .replace('grp.getgrnam("orbit").gr_gid', "os.getgid()")
+            .replace('grp.getgrnam("caddy").gr_gid', "os.getgid()")
+        )
         publish = scripts / "role_publish.py"
         publish.write_text(
             publish.read_text().replace('grp.getgrnam("caddy").gr_gid', "os.getgid()")
@@ -57,7 +75,7 @@ if argv[:2] == ['/usr/bin/systemctl','is-active']:
     raise SystemExit(0)
 if argv[:2] == ['/usr/bin/systemctl','try-reload-or-restart']:
     if Path(INACTIVE).exists(): raise SystemExit(0)
-    with open(ACTIVATIONS,'a') as stream: stream.write('activate\\n')
+    with open(ACTIVATIONS,'a') as stream: stream.write(argv[-1]+'\\n')
     failure=Path(FAIL_ACTIVATE)
     if failure.exists(): failure.unlink();raise SystemExit(1)
     raise SystemExit(0)
@@ -175,6 +193,59 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         self.assertEqual(
             pair, {path.name: path.read_bytes() for path in self.current.iterdir()}
         )
+
+    def test_swamp_uses_its_exact_private_pair_and_existing_public_trust(self):
+        current = self.target / "home/.config/swamp/serve-tls"
+        (self.fixture / "fail-activate").touch()
+        result = self.run_role(success=False, scope="role-swamp", domain="swamp.orbit")
+        self.assertEqual("failed", result["status"])
+        self.assertFalse(
+            (current / ".pending" / self.leaf["version"] / "key.pem").exists()
+        )
+        result = json.loads(
+            self.cli(
+                "workflow",
+                "resume",
+                "node-role-certificate-publish",
+                "--run",
+                result["id"],
+                "--from",
+                "activate",
+            ).stdout
+        )
+        self.assertEqual("succeeded", result["status"])
+        self.assertEqual(
+            {"cert.pem", "key.pem"}, {p.name for p in current.iterdir() if p.is_file()}
+        )
+        for path, mode in [
+            (current, 0o700),
+            (current / "cert.pem", 0o600),
+            (current / "key.pem", 0o600),
+        ]:
+            self.assertFalse(path.is_symlink())
+            self.assertEqual(mode, stat.S_IMODE(path.stat().st_mode))
+            self.assertEqual(
+                (os.getuid(), os.getgid()), (path.stat().st_uid, path.stat().st_gid)
+            )
+        key = (current / "key.pem").read_bytes()
+        self.assertEqual(
+            ["orbit-swamp-tls.service", "orbit-swamp-tls.service"],
+            (self.fixture / "activations").read_text().splitlines(),
+        )
+        self.assertFalse((current / ".pending" / self.leaf["version"]).exists())
+        self.assertEqual("actual-root-run", self.signs[0][1]["run_id"])
+        self.secrets += (key.decode(),)
+        self.assert_private_absent(json.dumps(result))
+        (current / "key.pem").chmod(0o644)
+        current.chmod(0o755)
+        self.assertEqual(
+            "succeeded",
+            self.run_role(scope="role-swamp", domain="swamp.orbit")["status"],
+        )
+        self.assertEqual(0o600, stat.S_IMODE((current / "key.pem").stat().st_mode))
+        self.assertEqual(0o700, stat.S_IMODE(current.stat().st_mode))
+        self.assertEqual(1, len(self.signs))
+        self.assertEqual(key, (current / "key.pem").read_bytes())
 
     def test_actual_parent_composes_child_and_receives_flat_readiness(self):
         import subprocess
