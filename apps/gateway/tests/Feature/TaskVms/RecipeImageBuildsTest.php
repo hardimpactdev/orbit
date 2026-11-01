@@ -2,23 +2,32 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -211,3 +220,118 @@ it('keeps superseded and cancelled attempt ownership readable for native cleanup
     TaskVmImageBuild::query()->whereKey($op->target_id)->increment('attempt');
     $this->getJson($path.$query)->assertStatus(422)->assertJsonPath('error.code', 'operation.execution_forbidden');
 });
+
+it('fences resume once sweep cleanup owns a failed builder or smoke', function (string $suffix): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $operation->update(['status' => OperationStatus::Failed]);
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    DB::table('task_vm_image_builds')->where('id', $build->id)->update(['updated_at' => now()->subHours(25)]);
+    expect(TaskVmHostAudit::claimBuildCleanup($build->hostNode, $build->builder_vm_name.$suffix))->toBeTrue();
+    expect(fn () => app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id))
+        ->toThrow(TaskVmException::class, 'unclaimed failed build');
+    expect($build->fresh()->cleanup_started_at)->not->toBeNull();
+    $this->assertDatabaseCount('operations', 1);
+})->with(['builder' => '', 'smoke' => '-smoke']);
+
+it('rejects a stale sweep claim when a fresh image attempt wins first', function (): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $old = $build->builder_vm_name;
+    $operation->update(['status' => OperationStatus::Failed]);
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    DB::table('task_vm_image_builds')->where('id', $build->id)->update(['updated_at' => now()->subHours(25)]);
+    app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id);
+    expect($build->fresh()->attempt)->toBe(2);
+    foreach ([$old, $old.'-smoke'] as $name) {
+        expect(TaskVmHostAudit::claimBuildCleanup($build->hostNode, $name))->toBeFalse();
+    }
+    expect($build->fresh()->cleanup_started_at)->toBeNull();
+});
+
+it('rejects stale resume after sweep claims the captured failed row', function (): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $operation->update(['status' => OperationStatus::Failed]);
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    DB::table('task_vm_image_builds')->where('id', $build->id)->update(['updated_at' => now()->subHours(25)]);
+    $claimed = false;
+    DB::listen(function (QueryExecuted $query) use ($build, &$claimed): void {
+        if (! $claimed && str_starts_with($query->sql, 'select * from "task_vm_image_builds"') && str_contains($query->sql, '"cleanup_started_at" is null')) {
+            $claimed = true;
+            expect(TaskVmHostAudit::claimBuildCleanup($build->hostNode, $build->builder_vm_name))->toBeTrue();
+        }
+    });
+    expect(fn () => app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id))
+        ->toThrow(TaskVmException::class, 'Another command claimed');
+    expect($claimed)->toBeTrue()->and($build->fresh()->attempt)->toBe(1);
+    $this->assertDatabaseCount('operations', 1);
+});
+
+it('records failure on the owning build when its Operation terminates outside the phase callback', function (string $status): void {
+    $this->freezeTime();
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $build->update(['current_step' => 'recipe', 'current_program' => 'base:rust', 'steps' => [
+        ['step' => 'recipe', 'program' => 'base:rust', 'started_at' => now()->toISOString(), 'seconds' => null, 'error' => null],
+    ]]);
+
+    if ($status === 'timeout') {
+        $operation->update(['lock_key' => OperationStore::lockKey('task_vm_image', $build->id)]);
+        $this->travel(OperationRunBudgets::seconds($operation) + 1)->seconds();
+        app(ExpireOperationAction::class)->execute($operation);
+    } else {
+        app(OperationStore::class)->change($operation, ['status' => OperationStatus::from($status), 'finished_at' => now(),
+            'error_code' => $status === 'failed' ? 'operation.native_failed' : null]);
+    }
+
+    expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Failed);
+    expect($build->fresh()->steps[0]['error'])->toBe(match ($status) {
+        'timeout' => 'operation.timed_out', 'failed' => 'operation.native_failed', default => 'operation.cancelled',
+    });
+    if ($status === 'timeout') {
+        expect($operation->fresh()->lock_key)->not->toBeNull();
+        expect(ExpireOperationAction::awaitsSettlement($operation->fresh()))->toBeTrue();
+    }
+})->with(['failed', 'cancelled', 'timeout']);
+
+it('never fails a newer build attempt from a stale terminal image Operation', function (): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $build->increment('attempt');
+
+    app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'error_code' => 'operation.native_failed']);
+
+    expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Running);
+});
+
+it('starts a fresh image attempt after a successful sweep proves claimed cleanup finished', function (string $path): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'error_code' => 'operation.native_failed']);
+    TaskVmImageBuild::query()->whereKey($build->id)->update(['updated_at' => now()->subHours(25)]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => $message['payload']['workflowIdOrName'], 'runId' => '878a384f-8b8a-4066-bd17-dcad8eac3e86',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $sweep = app(StartTaskVmSweepOperationAction::class)->execute($build->host_node_id, 'incus');
+    expect($build->fresh()->cleanup_started_at)->not->toBeNull();
+    app(TaskVmSweepProjection::class)->apply($sweep, [
+        'run_id' => $sweep->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['ready' => true, 'observed_names' => [], 'deleted_names' => [$build->builder_vm_name]],
+    ]);
+
+    $retried = match ($path) {
+        'resume' => app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id),
+        'resume latest' => app(TaskVmImageBuildChain::class)->resumeLatest($build->hostNode),
+        default => app(RecipeImageBuilds::class)->reconcile(retry: true)[0],
+    };
+
+    expect($retried->id)->toBe($build->id);
+    expect($retried->state)->toBe(TaskVmImageBuildState::Running);
+    expect($retried->attempt)->toBe(2);
+    expect($retried->builder_vm_name)->toBe('tvm-image-'.$build->id.'-attempt-2');
+    expect($retried->cleanup_started_at)->toBeNull();
+    $this->assertDatabaseCount('operations', 3);
+})->with(['resume', 'resume latest', 'recipe retry']);

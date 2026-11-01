@@ -84,7 +84,7 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
             if (! $terminal && $status === OperationStatus::Running) {
                 $this->progress($build, $operation, ValidatedData::string($phase), $result);
             }
-            if (! $terminal && $status->terminal()) {
+            if (! $terminal && $status === OperationStatus::Succeeded) {
                 $this->finish($projected, $status, $code);
             }
 
@@ -119,9 +119,27 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
         $build->forceFill(['steps' => $steps, 'current_step' => $step, 'current_program' => $program])->save();
     }
 
+    /** Failure can be recorded by the Gateway timeout/cancellation path before a native callback. */
+    public function changed(Operation $operation): void
+    {
+        if ($operation->wasChanged('status') && in_array($operation->status, [OperationStatus::Failed, OperationStatus::Cancelled], true)) {
+            $this->finish($operation, $operation->status, $operation->error_code);
+        }
+    }
+
     private function finish(Operation $operation, OperationStatus $status, ?string $errorCode): void
     {
-        $build = TaskVmImageBuild::query()->findOrFail(ValidatedData::integer($operation->input['build_id']));
+        $input = $operation->input;
+        if ($operation->kind !== 'task_vm.image_build' || $operation->target_type !== 'task_vm_image'
+            || ($input['build_id'] ?? null) !== $operation->target_id || ($input['host_node_id'] ?? null) !== $operation->node_id) {
+            return;
+        }
+        $build = TaskVmImageBuild::query()->whereKey($operation->target_id)->where('host_node_id', $operation->node_id)
+            ->where('attempt', $input['attempt'] ?? null)->where('recipe_identity', $input['identity'] ?? null)
+            ->where('recipe_generation', $input['generation'] ?? null)->first();
+        if ($build === null) {
+            return;
+        }
         $changed = TaskVmImageBuild::query()->whereKey($build->id)->where('attempt', $operation->input['attempt'])
             ->where('state', TaskVmImageBuildState::Running)->whereNull('cleanup_started_at')
             ->update(['state' => $status === OperationStatus::Succeeded ? TaskVmImageBuildState::Succeeded : TaskVmImageBuildState::Failed]);

@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,7 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
                 $query = TaskVm::query()->live()->where('provider', $operation->input['provider'])
                     ->whereIn('name', ValidatedData::stringList(ValidatedData::object($operation->input['scope'])['live_names']));
                 if ($operation->input['provider'] === 'incus') {
+                    $this->completeImageCleanup($operation, $names);
                     $query->where('host_node_id', $operation->node_id);
                 }
                 foreach ($query->get() as $vm) {
@@ -82,6 +84,21 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /** @param list<string> $observed */
+    private function completeImageCleanup(Operation $operation, array $observed): void
+    {
+        $scope = ValidatedData::object($operation->input['scope']);
+        foreach (TaskVmImageBuild::query()->where('host_node_id', $operation->node_id)
+            ->whereIn('id', ValidatedData::integerList($scope['retired_build_ids']))
+            ->where('state', TaskVmImageBuildState::Failed)->whereNotNull('cleanup_started_at')
+            ->where('cleanup_started_at', '<=', $operation->created_at)->lockForUpdate()->get() as $build) {
+            $pattern = '/\Atvm-image-'.$build->id.'(?:-attempt-[0-9]+)?(?:-smoke)?\z/D';
+            if (! array_any($observed, static fn (string $name): bool => preg_match($pattern, $name) === 1)) {
+                $build->forceFill(['cleanup_started_at' => null])->save();
+            }
+        }
     }
 
     private function refuse(): never
