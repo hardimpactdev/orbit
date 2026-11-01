@@ -101,6 +101,9 @@ final readonly class SignDirectCertificatesAction
             'node.remove' => $restoring ? ['_removal.restore_certificates'] : [],
             'instance.transfer' => $restoring ? ['route_publication.route_mutations.restore.certificates']
                 : ['route_publication.route_mutations.forward.prepare_certificates', 'route_publication.route_mutations.forward.certificates'],
+            'websocket.app_attach', 'websocket.app_detach' => $restoring
+                ? ['websocket_attachment.route_mutations.restore.certificates']
+                : ['websocket_attachment.route_mutations.forward.prepare_certificates', 'websocket_attachment.route_mutations.forward.certificates'],
             default => [],
         };
         $leaves = [];
