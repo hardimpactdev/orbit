@@ -114,7 +114,7 @@ Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOpera
 
 The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A port PR without one fails review.
 
-A phase script may wait for external state, such as an UpCloud VM started, an image ready or DNS visible. It polls at a fixed interval under coreutils `timeout <phase budget>`, exits 0 on the target state, and exits nonzero with a readable F1 error on a terminal bad state or timeout. The PR states its interval and budget, part of the kind budget. Never retry a failed action this way, wait on Gateway or Orbit state, or wait outside a phase script. The shape gate still flags polling loops; such a PR passes only after lane 0b accepts this form, with no baseline row.
+A phase script may wait for external state, such as a VM started, an image ready or DNS visible. It polls at a fixed interval under coreutils `timeout <phase budget>`, exits 0 on the target state, and exits nonzero with a readable F1 error on a bad state or timeout. The PR states its interval and budget, part of the kind budget. Never retry a failed action this way, wait on Gateway or Orbit state, or wait outside a phase script. The shape gate still flags polling loops, so such a PR passes only after lane 0b accepts this form, with no baseline row.
 
 | Item | Rule |
 | --- | --- |
