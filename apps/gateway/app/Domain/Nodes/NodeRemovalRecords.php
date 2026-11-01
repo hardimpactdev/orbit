@@ -86,7 +86,7 @@ final readonly class NodeRemovalRecords
     public function fail(array $snapshot, ?string $errorCode): void
     {
         $node = Node::query()->lockForUpdate()->find(ValidatedData::integer($snapshot['node_id']));
-        if ($node === null || $node->name !== $snapshot['name']) {
+        if ($node === null) {
             return;
         }
         $failure = ['status' => LifecycleStatus::Failed, 'failed_step' => 'remove:operation', 'error_code' => $errorCode ?? 'node.remove_failed'];

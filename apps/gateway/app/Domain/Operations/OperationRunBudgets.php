@@ -31,7 +31,7 @@ final class OperationRunBudgets
 
     /**
      * A number is a fixed budget; a field name selects a server-captured admission budget. Fixed budgets are the
-     * kind owner's measured 14-day p95 of successful runs, rounded up to the next five minutes.
+     * kind owner's measured 14-day p95 of successful runs, rounded up to the next five minutes, unless a row states another basis.
      */
     private const array SecondsByKind = [
         'instance.create' => 'run_budget_seconds',
@@ -53,7 +53,7 @@ final class OperationRunBudgets
         // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
-        // workspace Route withdrawal, whose only fixed wait is the 31 s DNS grace. Replace with the 14-day p95 once
+        // workspace Route withdrawal, whose only fixed wait is the 31 s DNS grace; the rest is margin. Replace with the 14-day p95 once
         // both kinds have successful runs with a VM.
         'tasks.cancel' => 3900,
         'tasks.maintenance_finish' => 3900,

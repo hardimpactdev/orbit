@@ -503,7 +503,7 @@ The removal of other Instances moves a checkout within one filesystem only. [Ins
 
 Deletion clears the row's Pi token after the VM is gone. The Node goes before the row becomes `destroyed`, which also clears the token. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it.
 
-When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. The task VM sweep admits a `destroying` row without a group again; that admission claims the Node as `removing` again. When admission refuses one row, the sweep logs its code and still admits the other rows and sweeps the hosts.
+When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. The task VM sweep admits a `destroying` row without a group again; that admission claims the Node as `removing` again. When admission refuses one row, the sweep logs its code and still admits the other rows and sweeps the hosts. A `failed` guest Node is an ordinary member again, as for any failed Node removal: the hub keeps its peer until a later cleanup removes it. A failed Tasks cancel stays that way until the group is cancelled again.
 
 A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 

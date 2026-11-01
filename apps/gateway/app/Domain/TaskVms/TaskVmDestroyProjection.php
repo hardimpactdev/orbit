@@ -57,7 +57,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
      */
     public function failed(?TaskVm $vm, array $captured, ?string $errorCode): void
     {
-        $vm?->update(['error_code' => $errorCode ?? 'task_vm.destroy_failed', 'error_message' => 'The task VM destruction did not complete.']);
+        $vm?->update(['error_code' => $errorCode ?? 'task_vm.destroy_failed', 'error_message' => 'Task VM cleanup did not complete.']);
         if (($captured['node_removal'] ?? null) !== null) {
             $this->nodes->fail(ValidatedData::object($captured['node_removal']), $errorCode);
         }
