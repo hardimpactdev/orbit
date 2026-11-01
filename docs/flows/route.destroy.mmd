@@ -1,32 +1,144 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + single-swamp-node; DECISIONS round 2 (route.destroy cleanup in the workflow, R2) + 2 (DNS held).
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 + 2 (DNS hold) + round 2 (route.destroy cleanup runs in the workflow; the Gateway deletes the record on the terminal result), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Remove a Route).
   %% status: draft
+  %% command: route:destroy
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
+  %% lane V icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Route Node<br/>Caddy over ssh
-  CLI->>GW: route:destroy<br/>{route: 14, offline: false}
-  Note over GW: Guard, capture placements<br/>task route.destroy · rows kept
+  participant N as Route Nodes<br/>workload · Router
+  participant V as VPN Node<br/>private DNS
+  CLI->>GW: route:destroy 14<br/>--yes · --offline optional
+  %%> Command:
+  %%> - `orbit route:destroy 14 --yes`
+  %%> - syntax: `<route> [--yes] [--offline]`
+  %%> Input:
+  %%> - Route 14
+  %%> - `--offline`: skip a Node that does not answer, and list what it still needs
+  %%> Replacement:
+  %%> - on a `pending` or `failed` replacement that never moved DNS, it abandons the domain change
+  %%> - the same steps remove the replacement's site and certificates; the old URL is written back; the replaced Route stays
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI asks first; the default is No
+  %%> - without a terminal, or with `--json`, `--yes` is required
+  Note over GW: Guard, capture placements<br/>Route 14 retiring · task #5130
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 7, the Route's Node
+  %%> - no active Instance depends on Route 14 (`route.target_conflict`); remove the Instance with `instance:destroy` instead
+  %%> - the public edge of Route 14 is not live, and it is not in an active replacement pair
+  %%> - Route 14 is not an analytics tracking Route (`route.tracking_managed`)
+  %%> - no open Instance transfer owns it (`instance.transfer_incomplete`)
+  %%> Locks:
+  %%> - the projection lock and the environment owner of every target Instance
+  %%> Captures:
+  %%> - every Node the Route touches: workload, Router, Ingress, VPN Node
+  %%> - the Caddy blocks, certificate scopes, PHP-FPM pools and LAN tuples to remove
+  %%> - the DNS records without Route 14
+  %%> Result:
+  %%> - Route 14 marked `retiring`; its record stays until the result
+  %%> - task #5130 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-route-removal
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the captured removal plan, per Node
+  %%> - each Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - whether `--offline` was given
   GW-->>CLI: 202 Accepted<br/>task #5130
-  Note over SW: DNS withdrawal held<br/>native-dns-takeover-held
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  opt --offline
+    SW->>N: Check each Node answers<br/>@swamp/ssh · true
+    %%> What it does:
+    %%> - tries each Node once over `@swamp/ssh` from 209
+    %%> - a Node that does not answer is skipped by every later step
+    %%> - a Node that answers keeps every step; a failure on it still stops the removal
+  end
+  SW->>V: Remove private DNS<br/>records + catalog, then reload
+  %%> What it does:
+  %%> - removes `shop.test` from the private DNS records
+  %%> - checks the loaded catalog and a DNS reply
+  %%> Order:
+  %%> - DNS goes first, so the name stops resolving before its site leaves
+  Note over V: open: Nick decides<br/>DNS hold · native-dns-takeover
+  %%> Open:
+  %%> - DNS publication is under the DNS hold; Nick decides (rule 9)
+  %%> - until then, the run skips this step and the grace wait
+  Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
+  %%> Why:
+  %%> - resolvers that honor the TTL stop asking for the name before its site leaves
   SW->>N: Withdraw the Caddy site<br/>caddy validate, then reload
-  SW->>N: Converge PHP pool, URLs<br/>route-environment-write
-  SW->>N: Remove certs, LAN firewall<br/>route-certificate-remove · ufw
-  alt all steps succeed
+  %%> How:
+  %%> - Swamp reaches every captured Node over `@swamp/ssh` from 209
+  %%> What it does:
+  %%> - removes Route 14's site blocks on the workload, the Router and the Ingress
+  %%> - validates the Caddyfile, then reloads Caddy; never a restart (rule 7)
+  %%> Kept:
+  %%> - Caddy itself and the Node's shared runtime
+  opt development targets
+    SW->>N: Converge PHP-FPM pools<br/>php-fpm -t, then reload
+    %%> What it does:
+    %%> - right after the site leaves, converges every PHP-FPM pool on the Node of each development target
+    %%> - a pool whose working directory is gone is skipped and does not stop the removal
+    %%> Not included:
+    %%> - a production target keeps its dedicated PHP-FPM service until `instance:destroy`
+  end
+  SW->>N: Remove the certificates<br/>route-certificate-remove
+  %%> What it does:
+  %%> - removes the certificate scopes owned by Route 14 on each Node
+  %%> Refuses:
+  %%> - a scope that a remaining Caddy site still names
+  %%> Kept:
+  %%> - each target's own Instance certificate, until `instance:destroy`
+  SW->>N: Remove unused LAN rules<br/>ufw delete · Ingress 80/443
+  %%> What it does:
+  %%> - removes the Router LAN tuples on the workload Node that no published Route still needs
+  %%> - an identical tuple that another Route uses stays
+  %%> - on the Ingress, closes `orbit:ingress-http` and `orbit:ingress-https` when Route 14 was the last public Route
+  SW->>N: Check nothing is left<br/>Caddyfile, certificates, ufw
+  %%> What it does:
+  %%> - reads back each Node: no site block names `shop.test`, no Route 14 certificate scope, no removed tuple
+  %%> Why:
+  %%> - the Route only counts as removed when the Nodes show it
+  alt every step succeeds
     SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Delete captured Route rows<br/>task succeeded · retained_on_nodes
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    %%> Outputs:
+    %%> - with `--offline`: each skipped Node and the steps it still needs
+    Note over GW: Delete the Route record<br/>task succeeded · residues kept
+    %%> Result:
+    %%> - Route 14 is deleted and `shop.test` is released
+    %%> - the Instances stay, without this Route
+    %%> - a skipped Node gets a residue record; `node:converge` finishes it once the Node answers
+    %%> - task #5130 succeeds and lists `retained_on_nodes`
   else a step fails
-    Note over SW: Restore prior state<br/>route-mutation-restore
-    SW--xGW: Run failed<br/>route.withdrawal_failed
-    Note over GW: Route failed, rows kept<br/>failed_step · task failed
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    %%> - a Node that did not answer gives `route.node_unreachable`, naming the Node and `--offline`
+    Note over GW: Mark the Route failed<br/>record kept · rerun after a fix
+    %%> Result:
+    %%> - Route 14 stays, marked `failed` with `failed_step` and `error_code`
+    %%> - task #5130 fails
+    %%> On the Node:
+    %%> - what earlier steps removed stays removed; there is no rollback
+    %%> - that is safe: every step skips what is already gone
+    %%> Retry:
+    %%> - run the same command again after fixing the cause, or add `--offline` for an unreachable Node
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5130
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
