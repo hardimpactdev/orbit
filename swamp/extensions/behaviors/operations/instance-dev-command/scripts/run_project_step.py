@@ -60,12 +60,12 @@ while chunk := os.read(process.stderr.fileno(), 65536):
         truncated = True
 process.stderr.close()
 code = process.wait()
+redaction_pattern = re.compile(b'|'.join(re.escape(secret) for secret in secrets))
 
 
 def redact(text: bytes) -> bytes:
-    for secret in secrets:
-        text = text.replace(secret, b'[REDACTED]')
-    return text
+    # One pass does not reprocess markers inserted by another match.
+    return redaction_pattern.sub(b'[REDACTED]', text)
 
 
 def holds_fragment(line: bytes) -> bool:
@@ -79,12 +79,23 @@ def holds_fragment(line: bytes) -> bool:
 
 
 # Redact the whole capture first, then cut the tail, then redact the tail again for matches split at its start.
-whole = redact(bytes(captured))
+# Normalize before matching; decoding must not assemble a secret afterwards.
+whole = redact(bytes(captured).decode('utf-8', errors='replace').encode())
 tail = redact(whole[-TAIL_LIMIT:])
 lines = tail.split(b'\n')
 if truncated or len(whole) > TAIL_LIMIT:
     lines = lines[1:]  # the first line may start mid-secret
-kept = [line for line in lines if not holds_fragment(line)]  # dropped, not replaced, so the tail never grows
-output = {'exitCode': code, 'stderr': b'\n'.join(kept).decode('utf-8', errors='ignore')}
+kept, used = [], 0
+for line in reversed(lines):
+    if holds_fragment(line):
+        continue
+    size = len(line) + bool(kept)
+    # A second redaction may expand short values. Bound complete lines without
+    # another byte cut that could split a value or a UTF-8 character.
+    if used + size > TAIL_LIMIT:
+        break
+    kept.append(line)
+    used += size
+output = {'exitCode': code, 'stderr': b'\n'.join(reversed(kept)).decode('utf-8')}
 print(json.dumps(output))
 sys.exit(code)

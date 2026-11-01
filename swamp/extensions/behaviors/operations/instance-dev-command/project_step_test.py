@@ -85,5 +85,31 @@ class ProjectStep(unittest.TestCase):
             result = self.run_step(path, 'printf \'private-quote-sentinel"\' >&2')
             self.assertEqual(json.loads(result.stdout)['stderr'], '[REDACTED]')
 
+    def test_invalid_utf8_cannot_join_known_secret_fragments_after_redaction(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            secret = 'unique-private-fragment-0123456789'
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            command = 'set -a; . ./.env; python3 -c \'import os; value=os.environ["APP_KEY"].encode(); os.write(2,b"\\xff".join(value[n:n+7] for n in range(0,len(value),7)))\'; exit 7'
+            result = self.run_step(path, command)
+            self.assertEqual(result.returncode, 7)
+            self.assertNotIn(secret, json.loads(result.stdout)['stderr'])
+
+    def test_decoding_replacement_is_matched_before_any_output_is_kept(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            (path / '.env').write_text('APP_KEY="abc\ufffddef"\n')
+            result = self.run_step(path, 'python3 -c \'import os; os.write(2,b"abc\\xffdef")\'; exit 7')
+            self.assertEqual(result.returncode, 7)
+            self.assertEqual(json.loads(result.stdout)['stderr'], '[REDACTED]')
+
+    def test_second_redaction_cannot_expand_past_the_final_four_kib_bound(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            (path / '.env').write_text('APP_KEY="R"\n')
+            result = self.run_step(path, 'for ((i=0; i<5000; i++)); do printf "R\\n" >&2; done; exit 7')
+            self.assertEqual(result.returncode, 7)
+            self.assertLessEqual(len(json.loads(result.stdout)['stderr'].encode()), 4096)
+
 if __name__ == '__main__':
     unittest.main()
