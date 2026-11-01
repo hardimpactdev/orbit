@@ -128,7 +128,7 @@ A phase script may wait for an external system to reach a state, such as an UpCl
 
 A kind whose behavior changes merges only with a receipt from `bin/swamp-proof <kind>`. It creates two disposable task VMs on shark. The control VM runs pinned official Swamp and official extensions with a throwaway datastore and vault, and loads the PR branch's `swamp/`. The target VM plays the Node and is reached over `@swamp/ssh`, as 209 reaches Nodes. The command runs the kind with real intent inputs, runs the F9 parity tests, measures phase timings against F8, writes the receipt to the PR and destroys both VMs.
 
-A proof that loads `swamp/` into production serve or logs in to 209 is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior, even when the PR title says "retire" (#2257, #2259). Only deletion, docs and test PRs fix forward. A PR that fixes a live user-facing outage may merge without a receipt if it says so; the extensions lane then proves it live right after the load.
+A proof that loads `swamp/` into production serve or logs in to 209 is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior, even when the PR title says "retire" or "remove" (#2257, #2259). Only deletion, docs and test PRs fix forward. A PR that fixes a live user-facing outage may merge without a receipt if it says so; the extensions lane then proves it live right after the load.
 
 Each kind adds `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). Copy `envelope` from a real Gateway admission and bind only environment values, such as `${proof.target.host_keys}`. List throwaway `secrets` for every vault key the run reads, never a real credential. Map each F9 `phases` entry to its native step and phase budget, and point `parity` at the ported legacy tests. `queue_timeout_seconds` equals the workflow's `queueTimeout`.
 
@@ -136,7 +136,7 @@ Each kind adds `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/READ
 
 Step count is the dominant cost of a run: op 6639 took 957 s for 4.6 s of SSH work. Until the extensions lane reports the cause, one script per Node per phase does the reads, precondition checks, writes and result JSON. Never wrap an SSH call in TypeScript envelope and decode steps; #2261 reached 66 steps that way. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. A typed result step returns `{stdout}` itself, with no `printf` step after it. Resolve assets once, outside `forEach`.
 
-Count the native steps of a typical run against the legacy calls. More than about two steps per legacy call needs a written reason in the PR, and each extra step names the Node change or guard it serves. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. Guide rule 3 says "one action group is one step", following PLAN F9 and "How a kind converts" item 2.
+Count the native steps of a typical run against the legacy calls, where a call is one host command or API request within a phase. More than about two steps per legacy call needs a written reason in the PR, and each extra step names the Node change or guard it serves. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. Guide rule 3 says "one action group is one step", following PLAN F9 and "How a kind converts" item 2.
 
 ## Fan out over computed data
 
@@ -236,7 +236,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | Source, newest first | Lesson |
 | --- | --- |
 | Retro #2248, A ruling | Legacy polled UpCloud until the VM started; the one-shot observe is a regression. A bounded poll for external state inside a phase script is allowed under coreutils `timeout`. |
-| #2258 | Swamp rejects a grant pattern with a quantified group that holds `+` or `*`, such as `(?:-setup-[0-9]+)?`, at grant time. Expand to a flat alternation and run `bin/check-grant-patterns.ts`. |
+| #2258 | Swamp rejects a grant pattern with a quantified group that holds `+` or `*`, such as `(?:-setup-[0-9]+)?`, at grant time. Expand to a flat alternation and run `bin/check-grant-patterns.ts` in `swamp/`. |
 | #2259 | Name each `forEach` model from `self._index`, give `@swamp/ssh` `globalArgs.name` the same expression, and stay within 64 characters. |
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
@@ -245,5 +245,5 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
 | v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
 | Orchestrator, lane 27 diagrams, #2281 | Count native steps against legacy calls; over about two per call needs a reason. #2281 ran about 22 steps for about 6 calls, rewrote a script's source, and stopped after one failed item. |
-| Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, per-phase window asserts and one `exec` per command gave up to 15 steps per legacy call. |
+| Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, per-phase window asserts and one `exec` per command gave up to about 18 steps per legacy call (#2249, #2251). |
 | #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |

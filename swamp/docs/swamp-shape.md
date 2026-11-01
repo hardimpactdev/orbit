@@ -53,7 +53,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - A per-Node worker acts only on its own Node.
    - vpn1 and usexit18 run their steps through the SSH proxy workers on 209.
 8. **No agent actions.** Do not call orbit-agent action commands from a step. Implement the action as steps. The agent is frozen and will be stripped to an observer.
-9. **Swamp defaults.** Use the manual and CLI defaults for retention, GC, queueTimeout, concurrency and tokens. Any deviation needs a measured reason, recorded in PLAN.md.
+9. **Swamp defaults.** Use the manual and CLI defaults for retention, GC, concurrency and tokens; `queueTimeout` follows rule 6. Any deviation needs a measured reason, recorded in PLAN.md.
 
 ## Checks on every PR
 

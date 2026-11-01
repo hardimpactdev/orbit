@@ -5,17 +5,17 @@ description: "One row per merged PR that touches swamp/: what it ported, steps p
 
 # Swamp port retros
 
-Lane 26 adds one row for each merged PR that touches `swamp/`. The lessons go into the [porting reference](/swamp/porting#changelog). "Proof" means an F10 receipt from `bin/swamp-proof <kind>`, run on two disposable shark task VMs with throwaway Swamp state; see [Prove the kind](/swamp/porting#prove-the-kind-f10). Every PR below merged before F10, so every behavior-changing row needs a re-proof. Step counts are estimates from workflow definitions, not run history. None of these PRs had a lane 26 review before merge.
+Lane 26 adds one row for each merged PR that touches `swamp/`. The lessons go into the [porting reference](/swamp/porting#changelog). No PR below has an F10 receipt; the evidence column lists what the PR ran instead. Every PR below merged before F10, so every behavior-changing row needs a re-proof, as do earlier ports such as #2238, #2243, #2244 and #2246. Step counts are estimates from workflow definitions, not run history. None of these PRs had a lane 26 review before merge.
 
 ## Behavior-changing PRs
 
 These PRs change what a kind does. Each one needs an F10 re-proof.
 
-| PR | Ported or changed | Steps per legacy call | Budget | Proof | Findings |
+| PR | Ported or changed | Steps per legacy call | Budget | Pre-F10 evidence | Findings |
 | --- | --- | --- | --- | --- | --- |
-| #2253 | `route.create` and Route removal from native children | About 100 steps for about 5 to 7 calls | None | None | All-pairs `always` edges; result takes `${{ steps }}` plus an echo step; one SSH `true` per Node |
+| #2253 | `route.create` and Route removal from native children | About 100 steps for about 5 to 7 calls | None | Native tests; no live run | All-pairs `always` edges; result takes `${{ steps }}` plus an echo step; one SSH `true` per Node |
 | #2251 | Cluster routers reach task VM web ports through vpn1 | About 17 steps for 1 call | None | 3 fixture cases | One `exec` per UFW command; op 6650 failed after merge in the "Frame too large" loop |
-| #2249 | `fleet.recipe` from 209 over `@swamp/ssh` | 127 step definitions for about 7 to 9 calls | None | None | Asset, exec and decode triplets; six window asserts; one-line JSON YAML; `python3 -c` without `-I` |
+| #2249 | `fleet.recipe` from 209 over `@swamp/ssh` | 127 step definitions for about 7 to 9 calls | None | Native tests; no live run | Asset, exec and decode triplets; six window asserts; one-line JSON YAML; `python3 -c` without `-I` |
 | #2248 | UpCloud TaskVM provision, enrollment and destroy | About 85 to 100 steps for about 12 to 15 calls | None | Scratch fixtures | One-shot observe where legacy polled; nonzero exit loses `error_code`; enrollment triplets |
 | #2281 | `task_vm.sweep_host` on 209 | About 22 steps for about 6 calls | p95 2.57 s (n=7, harness), budget 300 s | None | One failed removal skips the after-observation; four legacy cases untested; TypeScript rewrites a script; no phase `timeout` |
 | #2273 | `instance.create` with no stored environment | Unchanged | None | Native fixture, 12.7 s | PHP sent an empty map as `[]` |

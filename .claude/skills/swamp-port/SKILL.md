@@ -52,4 +52,4 @@ Lane 26 reviews every kind PR against the [PR and review checklist](../../../doc
 
 ## Improve this skill
 
-After every merged PR that touches `swamp/workflows/`, run a short retro: what was slow, what the reviewer or conformance audit flagged, what broke live. Fold each lesson into the reference in a PR the same hour, add one row to its `## Changelog` with the PR number, op id or other source, and one row per PR to `docs/swamp/porting-retros.md`. When a lesson comes from a conformance finding, cite its canonical ID and update that row instead of adding a duplicate.
+After every merged PR that touches `swamp/`, run a short retro: what was slow, what the reviewer or conformance audit flagged, what broke live. Fold each lesson into the reference in a PR the same hour, add one row to its `## Changelog` with the PR number, op id or other source, and one row per PR to `docs/swamp/porting-retros.md`. When a lesson comes from a conformance finding, cite its canonical ID and update that row instead of adding a duplicate.
