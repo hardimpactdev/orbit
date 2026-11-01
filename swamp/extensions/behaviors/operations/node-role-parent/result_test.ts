@@ -78,3 +78,24 @@ Deno.test("missing contribution after cancellation yields a terminal failure wit
         false,
     );
 });
+Deno.test("a failed contribution never proves target readiness from its outputs", () => {
+    const result = parentResult({
+        kind: "node.role_add",
+        steps: { role_result: { status: "failed", outputs: target } },
+    });
+    assertEquals(result.ready, false);
+    assertEquals(result.target_completed, false);
+    assertEquals(result.target, null);
+});
+Deno.test("cancelled rollback is an incomplete cleanup even after target proof", () => {
+    const result = parentResult({
+        kind: "node.role_add",
+        steps: {
+            role_result: { status: "succeeded", outputs: target },
+            target_rollback: { status: "cancelled" },
+        },
+    });
+    assertEquals(result.ready, false);
+    assertEquals(result.target_completed, true);
+    assertEquals(result.error_code, "websocket.rollback_failed");
+});

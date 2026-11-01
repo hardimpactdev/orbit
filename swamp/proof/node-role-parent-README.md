@@ -16,7 +16,7 @@ Parity runs on the proof VM host. It reads the terminal Operation and role assig
 
 These files are proof requests, not proof receipts. `bin/swamp-proof` is not installed in this checkout yet. Native fixture measurements in `node-role-parent-timings.json` use executable seams and exclude real downloads, packages and network time. Their p95 values and the 120/180-second draft budgets remain provisional; the topology measurement must set the final F8 budgets before merge. The shared prerequisites phase currently permits 600 seconds, which must also be reconciled with the parent budget. Queue timeout is 30 seconds.
 
-The source draft is not ready: parent aggregation, unported-role routing and the last native certificate-residue conversion remain open. The old retained-converge workflow is removed; the shared converge dispatcher retains its canonical add-root fallback. No source update authorizes a production load or Node effect.
+The source draft is not ready: unported-role routing and the last native certificate-residue conversion remain open. Parent aggregation passes only named statuses and successful contribution/cleanup receipts. Every parent step declares its 30-second queue timeout. The old retained-converge workflow is removed; the shared converge dispatcher retains its canonical add-root fallback. No source update authorizes a production load or Node effect.
 
 ## Remaining legacy phases
 

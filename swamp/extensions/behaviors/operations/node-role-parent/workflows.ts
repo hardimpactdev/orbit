@@ -3,7 +3,7 @@ import { roleConvergeSteps } from "../node-role-converge-command/root_steps.ts";
 import { rolePublicationSteps } from "../node-role-converge-command/publication_steps.ts";
 type Fields = Record<string, unknown>;
 const ex = (s: string) => "${{ " + s + " }}";
-const placed = { target: "orbit-node-209" };
+const placed = { target: "orbit-node-209", queueTimeout: 30 };
 const on = (
     step: string,
     type = "succeeded",
@@ -197,7 +197,52 @@ export function parentWorkflow(relocate = false) {
                 behaviorType: "@nckrtl/node-role-parent-result",
                 behaviorName: ex('"role-parent-result-"+run.id'),
                 methodName: "assemble",
-                inputs: { kind, steps: ex("steps") },
+                inputs: {
+                    kind,
+                    steps: Object.fromEntries(
+                        [
+                            "role_admission",
+                            "role_result",
+                            "target_proven",
+                            ...(relocate
+                                ? [
+                                    "source_grace",
+                                    "source_publication",
+                                    "source_publication_proven",
+                                    "source_cleanup",
+                                ]
+                                : ["target_rollback"]),
+                        ].map((name) => {
+                            const key = JSON.stringify(name);
+                            const step = "steps[" + key + "]";
+                            const status = key + " in steps ? " + step +
+                                '.status : "skipped"';
+                            const succeeded = key + " in steps && " + step +
+                                '.status == "succeeded"';
+                            return [name, {
+                                status: ex("(" + status + ")"),
+                                ...(name === "role_result"
+                                    ? {
+                                        outputs: ex(
+                                            "(" + succeeded + " ? " + step +
+                                                ".outputs : {})",
+                                        ),
+                                    }
+                                    : ["source_cleanup", "target_rollback"]
+                                            .includes(name)
+                                    ? {
+                                        outputs: {
+                                            result: ex(
+                                                "(" + succeeded + " ? " + step +
+                                                    ".outputs.result : {})",
+                                            ),
+                                        },
+                                    }
+                                    : {}),
+                            }];
+                        }),
+                    ),
+                },
             },
         }, {
             name: "accepted",
@@ -211,6 +256,9 @@ export function parentWorkflow(relocate = false) {
             },
         }],
     });
+    for (const job of jobs) {
+        for (const step of job.steps as Fields[]) step.queueTimeout = 30;
+    }
     return {
         id: relocate
             ? "48ce785a-7429-463e-a776-7b5a59bb2961"

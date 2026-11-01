@@ -1,8 +1,8 @@
 # Role parent source line accounting
 
-Comparison base: `c036958fa167ef8e365332169743cd35732b5e44` (PR merge base). Includes the imported Nodes checkpoints. Counts describe this draft; it does not meet the requested net-negative target yet. Recompute after the parent/résidue deletion is complete.
+Comparison base: `c036958fa167ef8e365332169743cd35732b5e44` (PR merge base). Includes the imported Nodes checkpoints. Counts describe this draft; it does not meet the requested net-negative target yet. Recompute after the parent/residue deletion is complete.
 
-Gateway app +379, Gateway tests +357, Docs/other +18, Swamp +3975.
+Gateway app +379, Gateway tests +357, Docs/other +18, Swamp +4048.
 
 | File | Added | Deleted | Net | Reason |
 | --- | ---: | ---: | ---: | --- |
@@ -82,9 +82,9 @@ Gateway app +379, Gateway tests +357, Docs/other +18, Swamp +3975.
 | `swamp/extensions/behaviors/operations/node-role-converge-command/websocket_workflow.ts` | +229 | −0 | +229 | Consume Nodes-owned typed contribution capture and collapsed shared phase factory. |
 | `swamp/extensions/behaviors/operations/node-role-converge-command/workflows.ts` | +18 | −219 | -201 | Consume Nodes-owned typed contribution capture and collapsed shared phase factory. |
 | `swamp/extensions/behaviors/operations/node-role-parent/manifest.yaml` | +8 | −0 | +8 | Own add/relocate graph composition and terminal partial-success facts. |
-| `swamp/extensions/behaviors/operations/node-role-parent/result.ts` | +90 | −0 | +90 | Own add/relocate graph composition and terminal partial-success facts. |
-| `swamp/extensions/behaviors/operations/node-role-parent/result_test.ts` | +80 | −0 | +80 | Own add/relocate graph composition and terminal partial-success facts. |
-| `swamp/extensions/behaviors/operations/node-role-parent/workflows.ts` | +260 | −0 | +260 | Own add/relocate graph composition and terminal partial-success facts. |
+| `swamp/extensions/behaviors/operations/node-role-parent/result.ts` | +94 | −0 | +94 | Own add/relocate graph composition and terminal partial-success facts. |
+| `swamp/extensions/behaviors/operations/node-role-parent/result_test.ts` | +101 | −0 | +101 | Own add/relocate graph composition and terminal partial-success facts. |
+| `swamp/extensions/behaviors/operations/node-role-parent/workflows.ts` | +308 | −0 | +308 | Own add/relocate graph composition and terminal partial-success facts. |
 | `swamp/extensions/behaviors/operations/node/converge_footprint.ts` | +1 | −1 | +0 | Align owning role capture, registration and projection with native parent inputs and output facts. |
 | `swamp/extensions/behaviors/operations/node/converge_local.ts` | +2 | −2 | +0 | Align owning role capture, registration and projection with native parent inputs and output facts. |
 | `swamp/extensions/behaviors/operations/node/footprint_local_actions.ts` | +2 | −1 | +1 | Align owning role capture, registration and projection with native parent inputs and output facts. |

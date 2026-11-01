@@ -11,7 +11,9 @@ const Args = z.object({
 export function parentResult(raw: unknown) {
     const { kind, steps } = Args.parse(raw);
     const parsed = RoleConvergeContribution.safeParse(
-        steps.role_result?.outputs,
+        steps.role_result?.status === "succeeded"
+            ? steps.role_result.outputs
+            : undefined,
     );
     const target = parsed.success ? parsed.data : null;
     const target_completed = target !== null && target.role_proven &&
@@ -27,7 +29,9 @@ export function parentResult(raw: unknown) {
         z.object({ role_removed: z.literal(true) }).passthrough().safeParse(
             steps.target_rollback.outputs?.result,
         ).success;
-    const rollback_failed = steps.target_rollback?.status === "failed";
+    const rollback_failed = ["failed", "cancelled"].includes(
+        steps.target_rollback?.status ?? "skipped",
+    );
     const ready = !rollback_failed && target_completed &&
         (kind === "node.role_add" || source_completed);
     const failure = Object.entries(steps).find(([, step]) =>
@@ -58,7 +62,7 @@ export function parentResult(raw: unknown) {
 }
 export const behavior = {
     type: "@nckrtl/node-role-parent-result",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         result: {
             schema: z.record(z.string(), z.unknown()),
