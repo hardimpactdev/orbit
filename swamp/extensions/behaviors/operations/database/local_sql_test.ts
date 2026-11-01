@@ -35,7 +35,9 @@ Deno.test("SQL and exact credential bytes stay in stdin, with fixed sudo Docker 
   ]);
   assertEquals(JSON.stringify(process.args).includes("private-"), false);
   assertEquals(process.args.includes("--env"), false);
-  const [credential, sql] = new TextDecoder().decode(process.stdin).split("\n");
+  const [credential, sql] = new TextDecoder().decode(process.stdin).split(
+    "\n",
+  );
   assertEquals(atob(credential), input.password);
   assertEquals(sql, input.sql);
   assertStringIncludes(process.args.join(" "), "timeout -s TERM -k 5 30s");
@@ -125,43 +127,41 @@ Deno.test("copy uses fixed dump/load pipeline and admits only identifiers", asyn
     { error_code: "database.server_admin_invalid" },
   );
 });
-Deno.test("readiness repeats SELECT 1 every two seconds up to its bound", async () => {
-  let now = 0, attempts = 0;
-  const sleeps: number[] = [];
-  const result = await invokeSql(
-    {
-      ...call,
-      input: {
-        operation: "ready",
-        container: input.container,
-        password: input.password,
-        password_variable: "MYSQL_PWD",
-        client: ["mysql"],
-        timeout_seconds: 5,
-      },
+Deno.test("readiness makes one observation and leaves retry to native resume", async () => {
+  let attempts = 0;
+  const ready = {
+    ...call,
+    input: {
+      operation: "ready",
+      container: input.container,
+      password: input.password,
+      password_variable: "MYSQL_PWD",
+      client: ["mysql"],
+      timeout_seconds: 5,
     },
-    undefined,
-    (p) => {
+  };
+  assertEquals(
+    await invokeSql(ready, undefined, (process) => {
       attempts++;
       assertEquals(
-        new TextDecoder().decode(p.stdin).endsWith("SELECT 1;\n"),
+        new TextDecoder().decode(process.stdin).endsWith("SELECT 1;\n"),
         true,
       );
-      return Promise.resolve({ success: attempts === 3, output: "1\n" });
-    },
-    () => now,
-    (ms) => {
-      sleeps.push(ms);
-      now += ms;
-      return Promise.resolve();
-    },
+      return Promise.resolve({ success: false, output: "" });
+    }),
+    { error_code: "database.server_not_ready" },
   );
-  assertEquals(result, {});
-  assertEquals(attempts, 3);
-  assertEquals(sleeps, [2000, 2000]);
+  assertEquals(attempts, 1);
+  assertEquals(
+    await invokeSql(
+      ready,
+      undefined,
+      () => Promise.resolve({ success: true, output: "1\n" }),
+    ),
+    {},
+  );
 });
 Deno.test("readiness deadline, process errors and output overflow expose only fixed codes", async () => {
-  let now = 0;
   const ready = {
     ...call,
     input: {
@@ -178,11 +178,6 @@ Deno.test("readiness deadline, process errors and output overflow expose only fi
       ready,
       undefined,
       () => Promise.resolve({ success: false, output: "" }),
-      () => now,
-      (ms) => {
-        now += ms;
-        return Promise.resolve();
-      },
     ),
     { error_code: "database.server_not_ready" },
   );

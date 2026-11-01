@@ -1,17 +1,13 @@
 """Wait for Docker's health event once; Docker owns probing, not a family polling loop."""
 
 import subprocess
-import time
 
 from server_common import DOCKER, SOCKET, Refused, command, main
 
-READINESS_SECONDS = 120
 REAP_SECONDS = 1
 
 
 def wait(intent, _material):
-    deadline = time.monotonic() + READINESS_SECONDS
-    since = str(int(time.time()) - 1)
     try:
         observed = command(
             [
@@ -19,19 +15,21 @@ def wait(intent, _material):
                 SOCKET,
                 "inspect",
                 "--format",
-                "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",
+                "{{.Id}} {{.State.StartedAt}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",
                 intent["container"],
             ],
-            timeout=READINESS_SECONDS,
         )
     except subprocess.TimeoutExpired:
         raise Refused("database.server_not_ready") from None
     if observed.returncode:
         raise Refused("database.server_not_ready")
-    if observed.stdout.strip() in ("healthy", "none"):
+    try:
+        container_id, started_at, health = observed.stdout.strip().split()
+    except ValueError:
+        raise Refused("database.server_not_ready") from None
+    if health in ("healthy", "none"):
         return {"ready": True}
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
+    if health == "unhealthy":
         raise Refused("database.server_not_ready")
     events = subprocess.Popen(
         [
@@ -39,11 +37,15 @@ def wait(intent, _material):
             SOCKET,
             "events",
             "--since",
-            since,
+            started_at,
             "--filter",
-            "container=" + intent["container"],
+            "container=" + container_id,
             "--filter",
             "event=health_status: healthy",
+            "--filter",
+            "event=health_status: unhealthy",
+            "--filter",
+            "event=die",
             "--format",
             "{{.Action}}",
         ],
@@ -56,7 +58,6 @@ def wait(intent, _material):
             stdin=events.stdout,
             text=True,
             capture_output=True,
-            timeout=remaining,
             check=False,
         )
         if reply.returncode or reply.stdout.strip() != "health_status: healthy":

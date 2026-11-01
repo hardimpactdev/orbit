@@ -4,7 +4,7 @@ import {
   assertStringIncludes,
 } from "jsr:@std/assert@1";
 import { type DatabaseSqlCall as NodeCall } from "./local_sql.ts";
-import { createDatabase } from "./create.ts";
+import { createDatabase } from "./clone_create.ts";
 
 const intent = {
   repair: false,

@@ -1,60 +1,10 @@
 import { z } from "npm:zod@4.4.3";
 import { type DatabaseSqlCall as NodeCall, invokeSql } from "./local_sql.ts";
-import { nativeEffect } from "./native_effect.ts";
 import type { PrivateMaterialUse } from "./private_material.ts";
 import { ValkeyClient } from "./valkey_client.ts";
 
-const Name = z.string().regex(/^[A-Za-z0-9_]{1,64}$/);
-const system = (name: string) =>
-  ["mysql", "sys", "performance_schema", "information_schema", "postgres"]
-    .includes(name.toLowerCase()) || name.toLowerCase().startsWith("template");
-export const CreateInput = z.object({
-  repair: z.boolean(),
-  driver: z.enum(["mysql", "pgsql", "redis"]),
-  username: z.string().regex(/^[A-Za-z0-9_-]{1,63}$/),
-  databases: z.array(Name).max(34),
-  test_prefix: Name.nullable(),
-  locale: z.enum(["C", "C.UTF-8"]).nullable(),
-  host: z.ipv4(),
-  port: z.number().int().min(1).max(65535),
-  container: z.string().regex(
-    /^orbit-process-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$/,
-  ).nullable(),
-  index: z.number().int().nonnegative().nullable(),
-  patterns: z.array(
-    z.string().min(1).max(1024).regex(/^\S+$/).refine((s) => !s.includes("\0")),
-  ).max(100),
-  allow: z.array(z.string().regex(/^@?[a-z][a-z0-9|_-]*$/)).max(100),
-}).strict().refine((i) => {
-  if (i.driver === "redis") {
-    return i.databases.length === 0 && i.container === null &&
-      i.test_prefix === null;
-  }
-  if (
-    !i.container || !i.databases.length ||
-    i.databases.some(system) || new Set(i.databases).size !== i.databases.length
-  ) return false;
-  if (
-    !/^[A-Za-z0-9_]+$/.test(i.username) ||
-    (i.driver === "mysql" && i.username.length > 32)
-  ) return false;
-  if (
-    i.driver === "pgsql" &&
-    (i.databases.some((n) => n.length > 63) || i.test_prefix !== null)
-  ) return false;
-  return i.test_prefix === null ||
-    ![
-      "mysql",
-      "sys",
-      "performance_schema",
-      "information_schema",
-      "postgres",
-      "template",
-    ].some((n) =>
-      n.startsWith(i.test_prefix!.toLowerCase()) ||
-      i.test_prefix!.toLowerCase().startsWith("template")
-    );
-});
+import { CreateInput, CreateResult } from "./create_input.ts";
+export { CreateInput, CreateResult } from "./create_input.ts";
 const Material = z.object({
   password: z.string().min(1).max(16384).refine((s) =>
     !["\0", "\r", "\n"].some((c) => s.includes(c))
@@ -64,28 +14,26 @@ const Material = z.object({
     salt: z.string().regex(/^[A-Za-z0-9+/]{22}==$/),
   }).strict(),
 }).strict();
-const Codes = z.enum([
-  "database.server_admin_invalid",
-  "database.server_admin_failed",
-  "database.server_not_ready",
-  "database.name_conflict",
-  "database.source_missing",
-  "database.server_command_failed",
-  "database.index_invalid",
-]);
-export const CreateResult = z.union([
-  z.object({ backend: z.literal("active") }).strict(),
-  z.object({ error_code: Codes }).strict(),
-]);
+const system = (name: string) =>
+  ["mysql", "sys", "performance_schema", "information_schema", "postgres"]
+    .includes(name.toLowerCase()) ||
+  name.toLowerCase().startsWith("template");
+
 type Input = z.infer<typeof CreateInput>;
 type Private = z.infer<typeof Material>;
 class Refused extends Error {
-  constructor(readonly code: z.infer<typeof Codes>) {
+  constructor(
+    readonly code: Extract<
+      z.infer<typeof CreateResult>,
+      { error_code: string }
+    >["error_code"],
+  ) {
     super(code);
   }
 }
 export const sqlLiteral = (s: string, postgres = false) =>
-  "'" + (postgres ? s : s.replaceAll("\\", "\\\\")).replaceAll("'", "''") + "'";
+  "'" + (postgres ? s : s.replaceAll("\\", "\\\\")).replaceAll("'", "''") +
+  "'";
 const quoted = (s: string, pg: boolean) => pg ? `"${s}"` : `\`${s}\``;
 const exactGrant = (s: string) => s.replaceAll("_", "\\_");
 const pattern = (s: string) => s.replaceAll("_", "\\_") + "%";
@@ -179,9 +127,12 @@ async function sqlCreate(
         sql,
       },
     }, signal);
-    const refusal = z.object({ error_code: Codes }).safeParse(raw);
-    if (refusal.success) throw new Refused(refusal.data.error_code);
-    return z.object({ output: z.string().max(1024 * 1024) }).parse(raw).output;
+    const refusal = CreateResult.safeParse(raw);
+    if (refusal.success && "error_code" in refusal.data) {
+      throw new Refused(refusal.data.error_code);
+    }
+    return z.object({ output: z.string().max(1024 * 1024) }).parse(raw)
+      .output;
   };
   const role = lines(
     await execute(
@@ -206,7 +157,11 @@ async function sqlCreate(
       if (
         !match || Number(match[1]) < 4096 || Number(match[1]) > 65536 ||
         stored !==
-          await verifier(m.payload.password, match[2], Number(match[1]))
+          await verifier(
+            m.payload.password,
+            match[2],
+            Number(match[1]),
+          )
       ) throw new Refused("database.name_conflict");
     } else {
       const passwordPlugin = (await execute(
@@ -306,7 +261,8 @@ async function sqlCreate(
           `SELECT Db FROM mysql.db WHERE User=${
             literal(i.username)
           } AND Host='%' AND (Db=${literal(exactGrant(name))}${
-            i.test_prefix === null || !name.startsWith(i.test_prefix)
+            i.test_prefix === null ||
+              !name.startsWith(i.test_prefix)
               ? ""
               : ` OR Db=${literal(pattern(i.test_prefix))}`
           }) AND Create_priv='Y';\n`,
@@ -373,7 +329,9 @@ async function aclCreate(
     if (prior !== null) {
       const acl = z.array(z.unknown()).max(32).parse(prior);
       const at = acl.indexOf("passwords");
-      if (at < 0 || !z.array(z.string()).parse(acl[at + 1]).includes(hash)) {
+      if (
+        at < 0 || !z.array(z.string()).parse(acl[at + 1]).includes(hash)
+      ) {
         throw new Refused("database.name_conflict");
       }
     }
@@ -415,12 +373,14 @@ export async function createDatabase(
     await use(async (rawMaterial) => {
       const material = Material.parse(rawMaterial);
       try {
-        if (i.driver === "redis") await aclCreate(i, material, connect, signal);
-        else await sqlCreate(i, material, invoke, signal);
+        if (i.driver === "redis") {
+          await aclCreate(i, material, connect, signal);
+        } else await sqlCreate(i, material, invoke, signal);
         result = { backend: "active" };
       } catch (error) {
-        if (error instanceof Refused) result = { error_code: error.code };
-        else throw new Error("database.create_outcome_unknown");
+        if (error instanceof Refused) {
+          result = { error_code: error.code };
+        } else throw new Error("database.create_outcome_unknown");
       }
     });
     if (!result) throw new Error("No completed creation");
@@ -429,29 +389,3 @@ export async function createDatabase(
     throw new Error("database.create_outcome_unknown");
   }
 }
-
-export function databaseCreate(
-  makeHttp?: Parameters<typeof nativeEffect>[4],
-  invoke: (call: NodeCall, signal?: AbortSignal) => Promise<unknown> =
-    invokeSql,
-  connect = ValkeyClient.connect,
-) {
-  return nativeEffect(
-    "database.create",
-    "@nckrtl/database-create",
-    CreateResult,
-    (input, gateway, signal) =>
-      createDatabase(
-        input,
-        (use) => gateway.withPrivateMaterial(use),
-        signal,
-        invoke,
-        connect,
-      ),
-    makeHttp,
-  );
-}
-export const behavior = {
-  ...databaseCreate(),
-  type: "@nckrtl/database-create",
-};
