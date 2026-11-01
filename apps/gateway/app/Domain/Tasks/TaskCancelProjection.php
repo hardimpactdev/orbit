@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
@@ -18,7 +19,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Complete cleanup alone may forget workspace records and settle cancellation. */
-final readonly class TaskCancelProjection implements DirectOperationProjection
+final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationTimeout
 {
     public function input(Operation $operation): array
     {
@@ -62,9 +63,25 @@ final readonly class TaskCancelProjection implements DirectOperationProjection
                 $group->fill(['status' => $operation->kind === 'tasks.maintenance_finish' || $group->status === TaskGroupStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null])->save();
                 $group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
                     ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
+            } elseif (in_array($data['status'], ['failed', 'cancelled', 'interrupted'], true)) {
+                $this->failed($operation, ValidatedData::nullableString($data['error_code'] ?? null));
             }
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    public function timedOut(Operation $operation): void
+    {
+        $this->failed($operation, 'operation.timed_out');
+    }
+
+    /** Incomplete cleanup keeps the group and workspace for another cancel; only its captured VM cleanup fails. */
+    private function failed(Operation $operation, ?string $errorCode): void
+    {
+        if (($operation->input['task_vm_id'] ?? null) !== null) {
+            app(TaskVmDestroyProjection::class)->failed(TaskVm::query()->lockForUpdate()->find(ValidatedData::integer($operation->input['task_vm_id'])),
+                $operation->input, $errorCode);
+        }
     }
 }

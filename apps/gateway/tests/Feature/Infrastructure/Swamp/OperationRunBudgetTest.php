@@ -354,6 +354,7 @@ it('reads the measured budget of each long native kind', function (string $kind,
     ['node.converge', 3900],
     ['node.role_add', 2700], ['task_vm.destroy', 2700], ['task_vm.image_build', 2400], ['task_vm.sweep_host', 600],
     ['tasks.provision', 3900], ['cluster.router_set', 3900], ['cluster.router_unset', 3900],
+    ['tasks.cancel', 3900], ['tasks.maintenance_finish', 3900],
 ]);
 
 it('budgets only registered direct-operation kinds', function (): void {

@@ -6,15 +6,13 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Routes\RouteExecutionProof;
-use App\Domain\Shared\LifecycleStatus;
-use App\Models\Node;
+use App\Domain\Operations\DirectOperationTimeout;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Terminal database projection only; no live input endpoint or host verification. */
-final readonly class NodeRemovalProjection implements DirectOperationProjection
+final readonly class NodeRemovalProjection implements DirectOperationProjection, DirectOperationTimeout
 {
     public function input(Operation $operation): array
     {
@@ -35,13 +33,15 @@ final readonly class NodeRemovalProjection implements DirectOperationProjection
             if ($data['status'] === 'succeeded' && ($result['removed'] ?? false) === true) {
                 app(NodeRemovalRecords::class)->remove($snapshot, $result);
             } elseif (in_array($data['status'], ['failed', 'cancelled', 'interrupted'], true)) {
-                $node = Node::query()->find($operation->target_id);
-                $node?->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'remove:operation', 'error_code' => $data['error_code'] ?? 'node.remove_failed']);
-                $node?->roles()->whereIn('id', array_column(RouteExecutionProof::objects($snapshot['roles']), 'id'))->update([
-                    'status' => LifecycleStatus::Failed, 'failed_step' => 'remove:operation', 'error_code' => $data['error_code'] ?? 'node.remove_failed']);
+                app(NodeRemovalRecords::class)->fail($snapshot, ValidatedData::nullableString($data['error_code'] ?? null));
             }
 
             return $projected;
         });
+    }
+
+    public function timedOut(Operation $operation): void
+    {
+        app(NodeRemovalRecords::class)->fail(ValidatedData::object($operation->input['_node_removal']), 'operation.timed_out');
     }
 }

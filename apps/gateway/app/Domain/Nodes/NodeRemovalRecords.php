@@ -7,6 +7,7 @@ namespace App\Domain\Nodes;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\NativeRouteRemovalCompletion;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -75,6 +76,22 @@ final readonly class NodeRemovalRecords
             $node->delete();
             DB::afterCommit(fn () => $this->broadcaster->broadcast(RecordEventType::NodeDeleted, $node->id, ['id' => $node->id, 'name' => $node->name]));
         });
+    }
+
+    /** A removal that did not complete keeps the Node and its claimed roles as failed records. A later admission
+     * claims them again; nothing rolls back completed effects.
+     *
+     * @param  array<string,mixed>  $snapshot
+     */
+    public function fail(array $snapshot, ?string $errorCode): void
+    {
+        $node = Node::query()->lockForUpdate()->find(ValidatedData::integer($snapshot['node_id']));
+        if ($node === null) {
+            return;
+        }
+        $failure = ['status' => LifecycleStatus::Failed, 'failed_step' => 'remove:operation', 'error_code' => $errorCode ?? 'node.remove_failed'];
+        $node->update($failure);
+        $node->roles()->whereIn('id', array_column(RouteExecutionProof::objects($snapshot['roles']), 'id'))->update($failure);
     }
 
     /** @param array<string,mixed> $snapshot */
