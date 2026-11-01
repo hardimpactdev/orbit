@@ -23,6 +23,8 @@ return [
     'analytics.update' => [
         'workflow' => 'operation-analytics-update-direct',
         'projection' => AnalyticsUpdateProjection::class,
-        'private_material' => ['runtime_environment' => 'analytics.runtime_environment'],
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'update', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-create-operation-[1-9][0-9]*$']],
     ],
 ];

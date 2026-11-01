@@ -7,11 +7,11 @@ namespace App\Actions\Analytics;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Analytics\AnalyticsDisableInput;
 use App\Domain\Analytics\AnalyticsEnableInput;
+use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\Analytics\AnalyticsPlausibleCredentials;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
 use App\Domain\Analytics\AnalyticsTrackingIntent;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
-use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
@@ -65,7 +65,7 @@ final readonly class RecordAnalyticsIntentAction
 
             $input = [
                 'instance_id' => $instance->id, 'instance_node_id' => $instance->node_id, 'enabled' => $enabled,
-                'assignment_id' => $assignment?->id, 'base_url' => $analytics === null ? null : "http://{$analytics->wireguard_ip}:".PlausibleProcess::PORT,
+                'assignment_id' => $assignment?->id, 'base_url' => $analytics === null ? null : 'https://'.AnalyticsHostname::Value,
                 'site' => $enabled ? ['domain' => $owner->domain, 'previous_domain' => is_array($previous) ? ($previous['domain'] ?? null) : null, 'timezone' => $timezone, 'goals' => $goals] : $previous,
                 'previous_binding' => $binding, 'owner' => $owner === null ? null : $this->tracking->identity($owner),
                 'hosts' => $desired, 'tracking_snapshot' => $existing,

@@ -65,6 +65,8 @@ it('captures prospective router ingress and DNS publication before dispatch with
     $router = array_find($intent['router'], fn (array $row): bool => $row['node_id'] === $this->router->id);
     $ingressBefore = array_find($intent['router'], fn (array $row): bool => $row['node_id'] === $this->ingress->id);
     $ingressAfter = array_find($intent['ingress'], fn (array $row): bool => $row['node_id'] === $this->ingress->id);
+    expect($intent['base_url'])->toBe('https://analytics.orbit');
+    expect($operation->input['base_url'])->toBe($intent['base_url']);
     expect($router['before']['content'])->not->toContain('analytics.shop.example.com');
     expect($router['after']['content'])->toContain('analytics.shop.example.com');
     expect($ingressBefore['after']['content'])->toBe($ingressBefore['before']['content']);

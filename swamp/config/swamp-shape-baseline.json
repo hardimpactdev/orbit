@@ -501,14 +501,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/analytics/hosts.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/analytics/initialization.ts",
       "rule": "multi-action",
       "count": 2,
@@ -516,20 +508,6 @@
         "/usr/bin/docker",
         "/usr/bin/sudo"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/analytics/update.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/analytics/update.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/certificates/role-publication.ts",

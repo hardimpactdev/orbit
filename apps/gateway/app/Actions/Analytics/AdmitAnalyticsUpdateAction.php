@@ -14,11 +14,14 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 final readonly class AdmitAnalyticsUpdateAction
 {
@@ -60,13 +63,20 @@ final readonly class AdmitAnalyticsUpdateAction
         $after = $this->docker->containerInput($changed, $target);
         unset($after['environment']);
 
-        return $this->operations->execute('analytics.update', 'node', $node->id, $node->id,
-            ['version' => $version, 'assignment_id' => $assignment->id, 'process_id' => $process->id,
-                'runtime_environment' => ['$secret' => 'analytics.runtime_environment', 'id' => $node->id],
-                'before' => $before, 'after' => [...$after, 'process_id' => $process->id, 'container' => $before['container'], 'desired' => 'running', 'spec' => $this->docker->specHash($changed, $target)],
-                'environment_sha256' => hash('sha256', json_encode($environment, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
-                'health_url' => 'http://'.$target->node->wireguard_ip.':'.PlausibleProcess::PORT.'/api/health',
-                'previous_version' => $this->settings->version($node)],
-            'operator', request()->attributes->getString('orbit.request_id'));
+        return DB::transaction(function () use ($version, $assignment, $node, $process, $before, $after, $changed, $target, $environment): Operation {
+            $operation = $this->operations->execute('analytics.update', 'node', $node->id, $node->id,
+                ['version' => $version, 'assignment_id' => $assignment->id, 'process_id' => $process->id,
+                    'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node),
+                    'before' => $before, 'after' => [...$after, 'process_id' => $process->id, 'container' => $before['container'], 'desired' => 'running', 'spec' => $this->docker->specHash($changed, $target)],
+                    'health_url' => 'http://'.$target->node->wireguard_ip.':'.PlausibleProcess::PORT.'/api/health',
+                    'previous_version' => $this->settings->version($node)],
+                'operator', request()->attributes->getString('orbit.request_id'));
+            if ($operation->wasRecentlyCreated) {
+                $reference = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'process-create-operation-'.$operation->id, json_encode($environment, JSON_THROW_ON_ERROR));
+                $operation->update(['input' => [...$operation->input, 'execution_secrets' => ['environment' => $reference]]]);
+            }
+
+            return $operation;
+        });
     }
 }
