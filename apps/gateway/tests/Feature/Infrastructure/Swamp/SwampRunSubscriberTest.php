@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationProjection;
@@ -10,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Jobs\Operations\ProjectSwampTerminal;
@@ -17,6 +19,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Psr\Log\NullLogger;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeSwampEventSocket;
@@ -68,6 +71,93 @@ function nativeSubscriberAttached(array $request): array
 beforeEach(function (): void {
     config(['swamp.run_token' => 'private-native-token', 'swamp.read_token' => 'private-native-read-token', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
 });
+
+it('recovers an unbound uncertain start once and projects its native terminal result', function (): void {
+    $operation = nativeSubscriberOperation();
+    $run = $operation->state['swamp_run_id'];
+    $operation->update(['status' => OperationStatus::Queued, 'lock_key' => 'test:uncertain', 'state' => [
+        'preserved' => true, 'swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-test-native-events'],
+    ]]);
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static function (array $request) use ($operation, $run): array {
+        $identity = ['workflowName' => 'operation-test-native-events',
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+            'tags' => ['orbit_start_key' => 'operation:'.$operation->id]];
+
+        return [['type' => $request['type'], 'id' => $request['id'], 'payload' => $request['type'] === 'workflow.run.search'
+            ? ['total' => 1, 'data' => ['results' => [['runId' => $run, ...$identity]]]]
+            : ['data' => ['id' => $run, ...$identity, 'status' => 'succeeded',
+                'startedAt' => '2026-10-31T14:00:00Z', 'completedAt' => '2026-10-31T14:00:01Z',
+                'jobs' => [['name' => 'completion', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"ready":true}']]]]]]]]];
+    };
+    app()->instance(WebSocketClient::class, $history);
+    $events = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($events, new NullLogger);
+    $subscriber->pass();
+    Event::listen(RecordBroadcast::class, static function (RecordBroadcast $notice) use ($subscriber, $operation): void {
+        if ($notice->channel === 'orbit' && $notice->id === $operation->id) {
+            $subscriber->follow($operation->id);
+        }
+    });
+
+    expect(fn () => (new StartSwampRun(new FakeRoutePublicationSocket(false)))->start($operation))
+        ->toThrow(ResourceOperationException::class, 'A native run may exist');
+
+    $subscriber->pass();
+
+    expect($operation->fresh()->state)->toMatchArray(['preserved' => true, 'swamp_run_id' => $run]);
+    expect($history->sent[0]['payload'])->toBe(['workflow' => 'operation-test-native-events',
+        'inputs' => ['operation_id' => (string) $operation->id, 'node_id' => (string) $operation->node_id, 'kind' => $operation->kind],
+        'tags' => ['orbit_start_key' => 'operation:'.$operation->id], 'limit' => 2]);
+    $events->push(nativeSubscriberAttached($events->sent[0]), nativeSubscriberFrame($events->sent[0], $operation->fresh()));
+    $subscriber->pass();
+    $subscriber->recover();
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($operation->fresh()->result)->toBe(['ready' => true]);
+    expect($operation->fresh()->lock_key)->toBeNull();
+    expect($operation->fresh()->error_code)->toBeNull();
+    expect(array_column($history->sent, 'type'))->toBe(['workflow.run.search', 'workflow.history.get']);
+    expect(array_column($events->sent, 'type'))->toBe(['run.attach']);
+});
+
+it('leaves uncertain starts unbound after mismatched ambiguous or unavailable native lookup without polling', function (string $fault): void {
+    $operation = nativeSubscriberOperation();
+    $operation->update(['error_code' => 'swamp.start_uncertain', 'state' => ['swamp_start' => [
+        'key' => 'operation:'.$operation->id, 'workflow' => 'operation-test-native-events',
+    ]]]);
+    $candidate = ['runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'workflowName' => 'operation-test-native-events',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'tags' => ['orbit_start_key' => 'operation:'.$operation->id]];
+    match ($fault) {
+        'workflow' => $candidate['workflowName'] = 'another-workflow',
+        'operation' => $candidate['inputs']['operation_id']++,
+        'node' => $candidate['inputs']['node_id']++,
+        'kind' => $candidate['inputs']['kind'] = 'test.another',
+        'key' => $candidate['tags']['orbit_start_key'] = 'another-key',
+        'child' => $candidate['parentRun'] = ['runId' => '25b90c36-1497-45be-ab30-3f1fe650e8f2'],
+        default => null,
+    };
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static fn (array $request): array => $fault === 'unavailable' ? [] : [[
+        'type' => $request['type'], 'id' => $request['id'], 'payload' => ['total' => $fault === 'ambiguous' ? 2 : 1,
+            'data' => ['results' => $fault === 'missing' ? [] : [$candidate]]],
+    ]];
+    app()->instance(WebSocketClient::class, $history);
+    $events = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($events, new NullLogger);
+
+    $subscriber->pass();
+    $subscriber->follow($operation->id);
+    $subscriber->recover();
+    $subscriber->pass();
+
+    expect($operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($operation->fresh()->error_code)->toBe('swamp.start_uncertain');
+    expect(array_column($history->sent, 'type'))->toBe(['workflow.run.search']);
+    expect($events->sent)->toBe([]);
+})->with(['workflow', 'operation', 'node', 'kind', 'key', 'child', 'ambiguous', 'missing', 'unavailable']);
 
 it('delivers a large native terminal frame over verified TLS then projects one large history response', function (string $status): void {
     $operation = nativeSubscriberOperation();

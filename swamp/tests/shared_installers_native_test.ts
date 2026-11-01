@@ -4,7 +4,7 @@ import { fromFileUrl } from "jsr:@std/path@1.1.2";
 
 for (const [name, module, directory] of [
   ["Process definition, deploy and transfer installer parents", "process_instance_install_native_test", "../extensions/behaviors/operations/processes-schedules/"],
-  ["full Instance transfer ordering and recovery", "transfer_native_test", "../extensions/behaviors/operations/instance-lifecycle/"],
+  ["full Instance transfer ordering and recovery", "instance_transfer_native_test", "./"],
 ]) {
   Deno.test("native " + name, async () => {
     const result = await new Deno.Command("/usr/bin/python3", {

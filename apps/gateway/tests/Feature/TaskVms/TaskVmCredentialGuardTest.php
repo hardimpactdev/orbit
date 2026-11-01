@@ -139,7 +139,6 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
     expect(array_values(array_intersect($remote, $access)))->toBe([
         // The agent envelope carries the token only on the runner's protected input.
         'app/Infrastructure/AgentCommands/AgentInvocation.php',
-        'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',
         'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',

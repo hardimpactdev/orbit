@@ -17,7 +17,6 @@ use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -43,15 +42,15 @@ final readonly class DirectInstanceDestroyIntent
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    public function record(array $input, bool $parentOwnsRoutes = false): array
+    public function record(array $input): array
     {
-        return DB::transaction(fn (): array => $this->recordIntent($input, $parentOwnsRoutes));
+        return DB::transaction(fn (): array => $this->recordIntent($input));
     }
 
     /** @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    private function recordIntent(array $input, bool $parentOwnsRoutes): array
+    private function recordIntent(array $input): array
     {
         $members = InstanceLifecycleInput::members($input);
         if (Operation::query()->whereIn('kind', ['instance.destroy'])
@@ -88,7 +87,7 @@ final readonly class DirectInstanceDestroyIntent
         $sites = app(DevelopmentSiteRepository::class);
         $beforeSites = $sites->all();
         $previousRoutes = [];
-        foreach ($parentOwnsRoutes ? [] : $attached as $route) {
+        foreach ($attached as $route) {
             $removalInventory = app(NativeRouteRemovalIntent::class)->capture($route);
             $leaves = [];
             $nodeIds = [];
@@ -117,7 +116,6 @@ final readonly class DirectInstanceDestroyIntent
         if ($node->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
             throw new ResourceOperationException('instance.destroy_unsupported', 'Development removal requires its configured non-root Node account.', 409);
         }
-        $local = [];
         $runtime = ['processes' => [], 'schedules' => []];
         $nativeProcesses = [];
         $teardown = [];
@@ -135,22 +133,6 @@ final readonly class DirectInstanceDestroyIntent
             if ($record->route_ids !== $ownedRoutes) {
                 throw new ResourceOperationException('instance.removal_conflict', 'The recorded Route inventory changed.', 409);
             }
-            $local[] = [
-                'instance_id' => $instance->id, 'source' => [
-                    'root' => $member['source_root'], 'operation' => $removal->id, 'member' => (string) $record->id,
-                    'digest' => $member['source_digest'], 'user' => $member['user'], 'group' => $member['group'],
-                    'checkout' => $member['checkout_path'], 'common_repository' => $member['common_repository_path'],
-                    'layout' => $member['source_layout'], 'source_identity' => $member['source_identity'],
-                ],
-                'branch' => $member['branch'] ?? '', 'receipt' => hash('sha256', $removal->id."\0".$record->id."\0".ValidatedData::string($member['source_digest'])."\0finalized"),
-                'force' => $input['force'] || ! $member['runtime_published'] && $member['starting_commit'] === null,
-                'origin' => $member['origin'], 'worktrees' => $member['worktree_inventory'],
-                'commit' => $member['source_commit'] ?? '', 'grouping_directory' => dirname(ValidatedData::string($member['checkout_path'])),
-                'unresolved' => $member['starting_commit'] === null && ! $member['runtime_published'],
-                'independent_worktree' => $input['force'] && $member['source_layout'] === 'worktree'
-                    && array_all($members, static fn (array $peer): bool => $peer['source_layout'] !== 'checkout'),
-                'own_units' => RemoteDevelopmentInstanceSourceRemoval::ownUnits($instance),
-            ];
             foreach (Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->orderBy('id')->get() as $process) {
                 $control = $this->processes->inputFor($process, 'destroy');
                 $nativeProcesses[] = Arr::only($control, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
@@ -167,25 +149,17 @@ final readonly class DirectInstanceDestroyIntent
         }
         Instance::query()->whereKey($ids)->update(['status' => InstanceState::Removing]);
         // Desired serving state is intent. Associations remain until native withdrawal succeeds.
-        if (! $parentOwnsRoutes) {
-            Route::query()->whereKey($routeIds)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
-        }
+        Route::query()->whereKey($routeIds)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
         $captured = $routePolicy->capture($previousRoutes, [], [], [], $beforeSites, $sites->all(), array_values(array_unique(array_merge(...array_map(static fn (array $row): array => $row['intent']['node_ids'], $previousRoutes)))), static fn (\Closure $render): array => $render());
         $ssh = app(SwampSshExecutionInput::class)->forNode($node);
-        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes,
+        $recorded = [...$input,
             'participant_node_ids' => array_values(array_unique([$node->id, ...$captured['participant_node_ids']])),
             'environment' => 'development',
-            ...($parentOwnsRoutes ? [
-                'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
-                'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
-                'database_material' => ['$secret' => 'database.intent', 'id' => $databases['intent_id']],
-                'private_bindings' => ['database_material' => ['owner_node_id' => $node->id, 'read_node_ids' => array_values(array_unique(array_column($databases['servers'], 'node_id'))), 'write_node_ids' => []]],
-            ] : []),
             'native_destroy' => ['ssh_execution' => $ssh, 'native_runtime' => [...$runtime, 'processes' => $nativeProcesses], 'route_mutations' => $captured['route_mutations'],
                 'execution_secrets' => $captured['execution_secrets']],
             'direct_destroy' => [
-                'node_id' => $node->id, 'node_user' => $node->user, 'members' => $local, 'runtime' => $runtime,
+                'node_id' => $node->id, 'node_user' => $node->user, 'runtime' => $runtime,
                 'teardown' => $teardown, 'routes' => [], 'publication_node_ids' => $captured['participant_node_ids'],
                 'database' => $databases,
             ],
@@ -218,14 +192,7 @@ final readonly class DirectInstanceDestroyIntent
             $removal->update(['force' => $input['force']]);
         }
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
-        $detail = ValidatedData::object($saved['direct_destroy']);
-        if ($input['force'] === true) {
-            $independent = array_all(InstanceLifecycleInput::members($saved), static fn (array $member): bool => $member['source_layout'] !== 'checkout');
-            $detail['members'] = array_map(static fn (array $member): array => [...$member, 'force' => true,
-                'independent_worktree' => $independent && ValidatedData::object($member['source'])['layout'] === 'worktree'],
-                InstanceLifecycleInput::members(['members' => $detail['members']]));
-        }
 
-        return [...$saved, 'force' => $input['force'], 'direct_destroy' => $detail];
+        return [...$saved, 'force' => $input['force']];
     }
 }

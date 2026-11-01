@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceDestroySourceInspection;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -43,9 +42,6 @@ beforeEach(function (): void {
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id,
         'name' => 'isolated', 'status' => InstanceState::Active, 'checkout_path' => '/srv/apps/removal-proof/isolated',
         'source_layout' => 'checkout', 'branch' => 'isolated', 'starting_commit' => str_repeat('a', 40)]);
-    $this->source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
-    $this->source->shouldNotReceive('remove', 'inspect');
-    app()->instance(DevelopmentInstanceSourceRemoval::class, $this->source);
     $runner = Mockery::mock(AgentCommandRunner::class);
     $runner->shouldNotReceive('run');
     app()->instance(AgentCommandRunner::class, $runner);
@@ -116,7 +112,6 @@ it('replays the receipt after row deletion with the original Node access and req
 });
 
 it('does not accept an unrelated key for a deleted target', function (): void {
-    $this->source->shouldNotReceive('inspect');
     $this->instance->delete();
     $this->withHeader('Idempotency-Key', 'unrelated');
     $this->deleteJson($this->path, ['force' => true])->assertNotFound();
@@ -140,7 +135,6 @@ it('records native source refusals after admission without deleting the Instance
 })->with([false, true]);
 
 it('validates strict force input before inspecting source', function (): void {
-    $this->source->shouldNotReceive('inspect');
     $this->deleteJson($this->path, ['force' => 'true'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     expect(Operation::query()->count())->toBe(0);
 });
@@ -180,7 +174,6 @@ it('refuses an unported managed removal before source reads or intent writes', f
         'driver' => 'mysql', 'tag' => 'test', 'port' => 3306, 'root_password' => 'fixture-private-password', 'status' => 'active']);
     DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql',
         'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
-    $this->source->shouldNotReceive('inspect');
     $this->deleteJson($this->path, ['force' => true])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
     expect(Operation::query()->count())->toBe(0);
     expect($this->instance->refresh()->status)->toBe(InstanceState::Active);
@@ -235,8 +228,8 @@ it('admits a new native retry after terminal failure using the same immutable so
     expect(Operation::query()->count())->toBe(2);
     $executable = app(InstanceDestroySourceInspection::class)->executable(Operation::query()->findOrFail($next)->input);
     expect($executable['source_pending'])->toBeFalse()
-        ->and($executable['direct_destroy']['members'][0]['origin'])->toBe($captured['members'][0]['origin'])
-        ->and($executable['direct_destroy']['members'][0]['source']['source_identity'])->toBe('42:73')
+        ->and($executable['members'][0]['origin'])->toBe($captured['members'][0]['origin'])
+        ->and($executable['members'][0]['source_identity'])->toBe('42:73')
         ->and(InstanceRemoval::query()->sole()->native_sources)->toBe($captured);
     expect(InstanceRemoval::query()->count())->toBe(1);
     expect($this->instance->refresh()->status)->toBe(InstanceState::Removing);

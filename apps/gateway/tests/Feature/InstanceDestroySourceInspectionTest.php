@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceDestroySourceInspection;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -19,15 +18,12 @@ use Illuminate\Support\Str;
 beforeEach(function (): void {
     $project = Project::query()->create(['name' => 'Native capture', 'slug' => 'native-capture',
         'repository_url' => 'https://github.com/example/capture.git', 'root' => 'public']);
-    $node = Node::query()->create(['name' => 'capture-dev', 'status' => 'active', 'platform' => 'linux',
+    $node = Node::query()->create(['name' => 'capture-dev', 'status' => 'active', 'platform' => 'linux', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG',
         'architecture' => 'amd64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.29', 'public_ssh_host' => '192.0.2.29']);
     orbit_test_set_app_placement_role($node, false);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id,
         'name' => 'proof', 'source_layout' => 'checkout', 'checkout_path' => '/srv/apps/capture/proof',
         'status' => 'reserved', 'source_prepare_id' => (string) Str::uuid()]);
-    $this->sources = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
-    $this->sources->shouldNotReceive('inspect');
-    app()->instance(DevelopmentInstanceSourceRemoval::class, $this->sources);
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
     $accounts->shouldNotReceive('resolve');
     app()->instance(ManagedUserAccountResolver::class, $accounts);
@@ -56,8 +52,8 @@ it('captures native facts once and retries failed removal with the exact capture
     $record = InstanceRemoval::query()->findOrFail($input['removal_id'])->members()->sole();
 
     expect($captured['source_pending'])->toBeFalse()
-        ->and($captured['direct_destroy']['members'][0]['source']['group'])->toBe('apps')
-        ->and($captured['direct_destroy']['members'][0]['source']['source_identity'])->toBe('42:73')
+        ->and($captured['members'][0]['group'])->toBe('apps')
+        ->and($captured['members'][0]['source_identity'])->toBe('42:73')
         ->and($record->source_identity)->toBe('42:73')
         ->and($record->origin)->toBe($capture['members'][0]['origin'])
         ->and($record->worktree_inventory)->toBe($capture['members'][0]['worktree_inventory'])

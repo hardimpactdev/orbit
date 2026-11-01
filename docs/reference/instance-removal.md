@@ -4,7 +4,7 @@ description: "How Orbit removes an Instance, what --force changes for developmen
 covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,Removal/**}
-  - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/RecordedProductionInstanceSourceRemoval,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
+  - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/RecordedProductionInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -13,7 +13,7 @@ covers:
 
 # Instance removal
 
-`instance:destroy` admits one Operation and one native Swamp run. The Gateway records the selected Instance, owned resources and desired removal state. All effects run from control Node209 through official SSH with its approved identity and the targets' full stored host pins. The Gateway projects the admitted records after the bound native terminal result; workflow steps do not read intent or send phase callbacks to the Gateway.
+`instance:destroy` admits one Operation and one native Swamp run. The Gateway records the selected Instance, owned resources and desired removal state. All effects run from control Node209 through official SSH with its approved identity and the targets' full stored host pins. The Gateway projects the admitted records after the bound native terminal result; workflow steps do not read intent or send phase callbacks to the Gateway. The PHP provisioner, source-removal executor, phase checkpoint methods and callback runner are deleted. Shared source classification and native source inspection remain pure inputs to the native workflows.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]

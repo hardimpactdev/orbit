@@ -11,7 +11,6 @@ use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\FailTaskVmAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectLifecycleRunner;
@@ -52,20 +51,17 @@ use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
-use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -80,28 +76,6 @@ use function Pest\Laravel\mock;
 
 const TVM_LIFE_ORIGIN = 'http://10.44.0.3:8317';
 const TVM_LIFE_FINGERPRINT = RecordingTaskVmProvider::Fingerprint;
-
-/** Clears a Route target in the database as the projector does; the remote steps belong to the projector's own tests. */
-final class TaskVmLifecycleProjector implements InstanceRemovalProjector
-{
-    /** @var list<int> */
-    public array $cleared = [];
-
-    public function clearRouteTarget(InstanceRemovalMember $member): string
-    {
-        $this->cleared[] = (int) $member->route_id;
-        DB::transaction(static function () use ($member): void {
-            RouteTarget::query()->where('route_id', $member->route_id)->where('instance_id', $member->instance_id)->delete();
-            Route::query()->whereKey($member->route_id)->delete();
-        });
-
-        return 'deleted';
-    }
-
-    public function withdrawPhpPool(InstanceRemovalMember $member): void {}
-
-    public function cleanupRuntime(InstanceRemovalMember $member): void {}
-}
 
 /**
  * A cancelled group whose workspace stayed on its ready task VM, with a pending Route and a Process.
@@ -418,8 +392,6 @@ describe('retained task VM workspace removal', function (): void {
         $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
             'kind' => 'started', 'workflowName' => 'operation-task-vm-resume', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
         app()->instance(WebSocketClient::class, $socket);
-        $this->projector = new TaskVmLifecycleProjector;
-        app()->instance(InstanceRemovalProjector::class, $this->projector);
         $keys = Mockery::mock(SshKeyProvider::class);
         $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 '.base64_encode(str_repeat('a', 32)));
         app()->instance(SshKeyProvider::class, $keys);

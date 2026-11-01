@@ -18,6 +18,9 @@ use Tests\Support\FakeRoutePublicationSocket;
 beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture-shared-token']);
     $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = static fn (array $sent): array => $sent['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-create', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $this->socket);
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run');
@@ -25,7 +28,7 @@ beforeEach(function (): void {
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
     $accounts->shouldNotReceive('resolve');
     app()->instance(ManagedUserAccountResolver::class, $accounts);
-    $this->node = Node::query()->create(['name' => 'create-dev', 'user' => 'orbit', 'platform' => 'linux',
+    $this->node = Node::query()->create(['name' => 'create-dev', 'user' => 'orbit', 'platform' => 'linux', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG',
         'architecture' => 'amd64', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9',
         'status' => 'active', 'settings' => ['apps' => ['path' => '/srv/apps']]]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
@@ -51,8 +54,8 @@ it('records one native root with source environment and setup steps before any N
         ->and($operation->input['participant_node_ids'])->toBe([$this->node->id])
         ->and($operation->input['direct_provisioning']['setup']['execution']['user'])->toBe('orbit')
         ->and($operation->input['direct_provisioning'])->not->toHaveKey('agent_sha256')
-        ->and($this->socket->sent)->toHaveCount(1)
-        ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
+        ->and($this->socket->sent)->toHaveCount(2)
+        ->and($this->socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
         ->and(Route::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });
