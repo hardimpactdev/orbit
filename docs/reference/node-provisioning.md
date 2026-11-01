@@ -401,6 +401,10 @@ Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-an
 
 `POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Foreign files remain untouched and mark the Node as foreign; a later successful native publication clears the mark. Node workflows may compose the same Swamp publication action directly in their parent run.
 
+Enrollment captures the CLI plan with `CliConvergePlan::input(actual, candidate)`, without a role placeholder or Node writes. The candidate must name the actual reserved Node. Its admitted user and architecture select the public input and release asset. A candidate with a real workload assignment can be planned while its stored Node is provisioning and its full pins await native verification. The plan also reads the canonical enrollment render scope when the candidate argument is omitted.
+
+Roleless, Mac, Gateway and task VM exclusions remain. Normal fleet membership is unchanged. An unobserved Linux candidate selects the supported Linux architecture as desired intent; the parent verifies the actual platform before installation.
+
 | Item | Path or value |
 | --- | --- |
 | Binary | `/usr/local/bin/orbit-<version>`, `root:root` mode `0755` |
@@ -457,6 +461,8 @@ The table lists the footprint artifacts in contract order. The native DAG instal
 Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The footprint combines every artifact digest with the agent pin for that Node. A change to native code therefore re-applies the artifacts even when their PHP sources have not changed; an unchanged pin and artifact digest leave the matching live artifact unchanged. The native steps also inspect the agent, Caddy and peer DNS locally to repair drift. Manifest locations and other platforms do not change this identity.
 
 Enrollment captures the public footprint through `NodeConvergeInput::captureFootprint(actual, candidate, normalizedPublicSettings)`. It needs no role assignment. The candidate must name the actual reserved Node. The canonical render scope supplies the admitted user, storage settings, DNS override and TLD to both templates and digests, without changing the stored Node. Nested captures and failures restore the outer scope. A Linux candidate selects the supported Linux observer artifact; the native parent must verify that platform and architecture before installation. This pure capture supplies no SSH authority, secret hash, worker configuration or terminal readiness.
+
+When that Linux candidate has real planned peer roles, the footprint includes the desired peer-DNS digest before activation or key generation. The digest depends on domains, DNS server and policy sources. A missing stored public key remains `null` in the captured network input. The parent must bind its verified native prepared-key result before invoking the peer action. Roleless, VPN and Gateway exclusions remain. Outside this scope, peer DNS requires an active managed Node.
 
 The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, the site sources that [extensions contribute](/reference/extensions#plug-in-points), and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
 
