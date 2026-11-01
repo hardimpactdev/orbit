@@ -1,0 +1,103 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R2-R4, single-swamp-node + light-boxes-use-swamp-ssh (vpn Node 1 has no Swamp worker). docs/reference/wireguard-endpoints.md.
+  %% status: draft
+  %% command: node:wireguard-hub:converge
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as vpn Node 1<br/>WireGuard hub
+  CLI->>GW: wireguard-hub:converge 1<br/>orbit node:wireguard-hub:converge
+  %%> Command:
+  %%> - `orbit node:wireguard-hub:converge 1`
+  %%> - syntax: `<node> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node with the `vpn` role, by ID or name
+  %%> What it does:
+  %%> - publishes the current peer list on the WireGuard hub; it changes no peer key or address
+  %%> Also used by:
+  %%> - `node:network:converge`, `node:wireguard-key` and Node removal run the same hub steps in their own run
+  Note over GW: Validate, build the peers<br/>task #5171 · hub lock
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 1
+  %%> - Node 1 holds the active `vpn` role and has stored SSH host keys
+  %%> - no other hub change runs; the Gateway holds one lock for the hub and waits briefly for a busy one
+  %%> Builds:
+  %%> - the complete peer list: public key and allowed address of every active Node
+  %%> Result:
+  %%> - task #5171 recorded with the full intent; no private key in it
+  GW->>SW: Start run, full intent<br/>operation-wireguard-hub
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the peer list and the hub interface name
+  %%> - Node 1's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5171
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Save the current config<br/>@swamp/ssh · copy to .orbit-prev
+  %%> How:
+  %%> - Swamp reaches Node 1 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> - Node 1 is a light box: no Swamp binary and no worker on it
+  %%> What it does:
+  %%> - copies the live hub config to a backup beside it, under the host's WireGuard tool lock
+  %%> Why:
+  %%> - Node 1 carries every Node's tunnel and the fleet DNS; a bad config must be undone at once
+  SW->>N: Write the new peer list<br/>keeps the Interface section
+  %%> What it does:
+  %%> - replaces only the `[Peer]` sections; the `[Interface]` section and the hub private key stay as they are
+  %%> - an identical peer list writes nothing
+  SW->>N: Apply without a restart<br/>wg syncconf
+  %%> What it does:
+  %%> - loads the new peers into the running tunnel with `wg syncconf`
+  %%> Why:
+  %%> - a reload, not a restart: unchanged peers keep their sessions
+  SW->>N: Check the live peers<br/>wg show · DNS answers
+  %%> What it does:
+  %%> - checks that `wg show` lists exactly the expected peers with their allowed addresses
+  %%> - checks that the hub still answers `gateway.orbit` on its WireGuard address
+  alt the check passes
+    N-->>SW: peers match
+    %%> Returns:
+    %%> - the hub runs the new peer list
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the result<br/>hub published · task succeeded
+    %%> Result:
+    %%> - the hub's published peer list is recorded
+    %%> - task #5171 succeeds
+  else writing, applying or checking fails
+    N--xSW: exit ≠ 0 or peers differ
+    %%> When:
+    %%> - the write or `wg syncconf` fails, or `wg show` differs from the peer list
+    SW->>N: Restore the saved config<br/>backup · wg syncconf
+    %%> What it does:
+    %%> - puts the backup back and loads it with `wg syncconf`, then checks the old peers are live
+    %%> Why:
+    %%> - the hub returns to the last config that worked, so no Node loses its tunnel
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed, its error code, and whether the restore passed
+    Note over GW: Mark the hub failed<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - task #5171 fails; the hub keeps its previous peer list
+    %%> On the Node:
+    %%> - the backup file stays; a rerun overwrites it
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5171
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
