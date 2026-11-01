@@ -23,12 +23,13 @@ final readonly class NativeRouteCertificateInput
     /** @return array<string,mixed> */
     public function scopeInput(Node $node, string $scope): array
     {
-        if ($node->platform !== 'linux' || ! LinuxUserName::isValid($node->user)
+        $user = app(RouteRenderContext::class)->user($node);
+        if ($node->platform !== 'linux' || ! LinuxUserName::isValid($user)
             || preg_match('/\A(?:app-instance-[1-9][0-9]*(?:-hostname-change)?|route-[1-9][0-9]*(?:-router(?:-hostname-change)?|-ingress)?)\z/D', $scope) !== 1) {
             throw new ResourceOperationException('certificate.scope_invalid', 'The leaf must name an admitted Linux Node account and Route scope.', 422);
         }
 
-        return ['node_id' => $node->id, 'user' => $node->user, 'scope' => $scope,
+        return ['node_id' => $node->id, 'user' => $user, 'scope' => $scope,
             'agent_sha256' => app(AgentDelivery::class)->pin($node)];
     }
 }
