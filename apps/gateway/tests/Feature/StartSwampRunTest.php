@@ -215,7 +215,7 @@ it('withholds malformed diagnostics without losing a native refusal', function (
 })->with(['flat error' => ['Workflow is not loaded', 'Workflow is not loaded'], 'not text' => [['token' => 'hidden'], '[withheld]'],
     'invalid UTF-8' => ["\xff", '[withheld]'], 'over limit' => [str_repeat('x', 32769), '[withheld]']]);
 
-it('makes a lost or malformed response terminal and never resubmits on replay', function (bool $malformed): void {
+it('keeps a lost or malformed response active and never resubmits on replay', function (bool $malformed): void {
     $operation = startIntent();
     $socket = new FakeRoutePublicationSocket(false);
     if ($malformed) {
@@ -234,8 +234,8 @@ it('makes a lost or malformed response terminal and never resubmits on replay', 
     app(StartSwampRun::class)->start($replayed);
 
     expect($replayed->id)->toBe($operation->id);
-    expect($operation->fresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('swamp.start_uncertain');
-    expect($operation->fresh()->finished_at)->not->toBeNull();
+    expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBe('swamp.start_uncertain');
+    expect($operation->fresh()->finished_at)->toBeNull();
     expect($operation->fresh()->state)->not->toHaveKey('swamp_run_id');
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
     expect($socket->connections)->toBe([15.0]);
@@ -274,7 +274,7 @@ it('preserves an observed root binding when its response is lost', function (): 
 
     expect(fn () => app(StartSwampRun::class)->start($operation))->toThrow(ResourceOperationException::class);
 
-    expect($operation->fresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('swamp.start_uncertain');
+    expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBe('swamp.start_uncertain');
     expect($operation->fresh()->state['swamp_run_id'])->toBe($runId);
 });
 
@@ -470,4 +470,58 @@ it('announces a fast bound run without dispatching terminal projection during ad
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->channel === 'orbit'
         && $event->id === $operation->id && ($event->data['sequence'] ?? null) === 3);
+});
+
+it('accepts a root after measured pre-dispatch setup delays without waiting for worker completion', function (float $delay): void {
+    $operation = startIntent();
+    $socket = new FakeRoutePublicationSocket;
+    $socket->keepConnected = true;
+    $time = 0.0;
+    $received = 0;
+    $socket->reply = static function (array $request) use (&$time, &$received, $delay): array {
+        if (++$received === 1) {
+            $time += $delay;
+
+            return [];
+        }
+
+        return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
+            'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    };
+    config(['swamp.run_token' => 'private.start-token']);
+    $clock = static function () use (&$time): float {
+        return $time;
+    };
+
+    (new StartSwampRun($socket, $clock))->start($operation);
+
+    expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBeNull()->finished_at->toBeNull();
+    expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
+    expect($received)->toBe(2)->and($socket->closed)->toBeTrue();
+})->with([32.7, 55.3]);
+
+it('retains the target hold when the bounded confirmation wait expires', function (): void {
+    $operation = startIntent();
+    $operation->update(['lock_key' => 'native-start-confirmation-fixture']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->keepConnected = true;
+    $time = 0.0;
+    $socket->reply = static function () use (&$time): array {
+        $time = 121.0;
+
+        return [];
+    };
+    config(['swamp.run_token' => 'private.start-token']);
+    $clock = static function () use (&$time): float {
+        return $time;
+    };
+
+    expect(fn () => (new StartSwampRun($socket, $clock))->start($operation))->toThrow(ResourceOperationException::class, 'A native run may exist');
+
+    expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBe('swamp.start_uncertain')->finished_at->toBeNull();
+    expect($operation->fresh()->lock_key)->toBe('native-start-confirmation-fixture');
+    expect($operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
+    expect($socket->closed)->toBeTrue();
 });

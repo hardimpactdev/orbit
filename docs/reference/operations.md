@@ -533,7 +533,7 @@ A repeated request after the reset, another assistance code, a terminal Operatio
 
 ## Direct Swamp starts
 
-Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` submits the committed intent through native `workflow.run` and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. The immutable Operation ID supplies the stable `orbit_start_key` runtime tag. Connection and reply budgets follow the native client's 15-second connection and 30-second request defaults.
+Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` submits the committed intent through native `workflow.run` and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. The immutable Operation ID supplies the stable `orbit_start_key` runtime tag. The connection budget is 15 seconds. Confirmation has a bounded 120-second budget. Serve emits its native `started` event before worker dispatch, so a queued worker does not hold that reply. Measured pre-dispatch setup took 32.7 and 55.3 seconds during the 2026-11-01 canaries; the former 30-second budget expired before either run could be confirmed.
 
 The Gateway keeps admission, record projection and the declared signing primitives.
 PHP executor, child-operation and transport adapters that have no loader are
@@ -551,9 +551,9 @@ The required CI registry check also requires an exact `run` and `read` intent fo
 
 New admission stores `state.swamp_start = {key: 'operation:' + id, workflow: admittedDefinition.workflow}` in the same transaction that creates the Operation, before submission after commit. It preserves unrelated state. A replay or admission fence keeps its recorded row unchanged. This public receipt records the admitted start identity; it does not bind a native run or establish a status. Only native evidence can establish `state.swamp_run_id`.
 
-If the start response is lost, the same call reads native history once for that key and workflow. A matching run with the exact admitted inputs supplies the run ID. Only a confirmed empty result permits one immediate resubmission with the same key and inputs. A failed or cancelled native run, or an unreadable, malformed or ambiguous history response, leaves `swamp.start_uncertain`; it never permits another submission. A native refusal ends that submission call without resubmission.
+If confirmation is lost after submission, the request returns `swamp.start_uncertain` with the Operation ID. The Operation stays running, keeps its target hold and has no invented native binding. A timeout does not prove that no run exists. The start path neither searches nor resubmits. Replaying the same idempotent request returns the same Operation and starts no additional work.
 
-An authorized replay of the original POST with the same Idempotency-Key and input performs history-first recovery of that same queued, unbound intent. It never admits another Operation or submits before checking history. An intent never submits again after it binds a run, ends, or receives a cancellation request. A read never starts or resumes execution. Recovery runs in that request after any admission transaction commits; a failed history read leaves the intent uncertain again.
+Resolution requires native evidence for the exact workflow, `inputs.operation_id`, `inputs.node_id`, `inputs.kind` and recorded start key. A matching run can supply the missing binding for the existing terminal subscriber. Only authoritative proof that no run started permits a not-started failure and another admission. An unreadable or empty partial response is not that proof. A connection failure before submission or an explicit native refusal still fails the Operation.
 
 ### Execution-copy failures
 
