@@ -1412,33 +1412,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
-      "rule": "inline-script",
-      "count": 35,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
-      "rule": "multi-action",
-      "count": 6,
-      "evidence": [
-        "/usr/bin/git",
-        "/usr/bin/python3",
-        "/usr/bin/readlink",
-        "/usr/bin/rm",
-        "/usr/bin/stat",
-        "/usr/bin/test"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/router-lan.ts",
       "rule": "inline-script",
       "count": 40,
@@ -1449,32 +1422,6 @@
       "rule": "inline-script",
       "count": 100,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/target-unset.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/verification.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/verification.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/curl",
-        "/usr/bin/openssl",
-        "/usr/bin/timeout"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/cache_fill_direct.ts",

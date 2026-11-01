@@ -6,9 +6,6 @@ namespace App\Domain\Routes;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Firewall\UfwManagedRule;
-use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Infrastructure\Routes\PublicProcessRouteFirewall;
 use App\Models\Instance;
@@ -20,69 +17,25 @@ use App\Support\ValidatedData;
 /** Pure admission data for exact Node effects and probes. No executor command. */
 final readonly class RouteNodeEffectCommand
 {
-    public function __construct(private RouteHopInput $hops,
-        private IngressSiteRepository $sites, private PublicProcessRouteFirewall $processFirewall,
-        private NodeFirewallRuleCatalog $firewall) {}
+    public function __construct(private IngressSiteRepository $sites, private PublicProcessRouteFirewall $processFirewall) {}
 
-    /** @return array<string, mixed> */
-    public function prepare(Operation $operation): array
+    public function assertLanRemoval(Operation $operation): void
     {
+        if ($operation->kind !== 'route.lan_remove' || $operation->node_id === null) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'A recorded Route LAN withdrawal is required.', 422);
+        }
         $node = Node::query()->findOrFail($operation->node_id);
-        $route = Route::query()->with(['targets.instance', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])->findOrFail(ValidatedData::integer($operation->input['route_id']));
-        if ($operation->kind === 'route.router_lan_retire') {
-            $router = Node::query()->findOrFail(ValidatedData::integer($operation->input['router_node_id']));
-            if ($route->cluster_id === null || ! $route->targets->contains(static fn ($target): bool => $target->instance->node_id === $node->id)
-                || ! $router->roles()->where('cluster_id', $route->cluster_id)->where('role', RoleName::Router)->exists()) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'Retire only a recorded Router allowance on its Route workload Node.', 422);
-            }
-            if ($router->id === $node->id || ! is_string($router->lan_ip) || $router->lan_ip === '' || ! is_string($node->lan_ip) || $node->lan_ip === '') {
-                return ['skip' => true];
-            }
-            $shape = new UfwRuleShape("orbit:route-{$route->id}-lan", 'allow', 'in', $router->lan_ip, $node->lan_ip, '443', 'tcp', null, null, 'v4');
-
-            return ['command' => 'firewall.rules', 'input' => ['desired' => [], 'remove' => [$shape->toAgentInput()], 'enable' => false]];
+        $route = Route::query()->with('targets.instance')->findOrFail(ValidatedData::integer($operation->input['route_id']));
+        if ($route->sites_published || (! $route->targets->contains(static fn ($target): bool => $target->instance->node_id === $node->id)
+            && $route->node_id !== $node->id && $route->generation_basis_node_id !== $node->id)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Withdraw stored Route site intent before cleaning its recorded workload Node.', 422);
         }
-        if ($operation->kind === 'route.workload_firewall') {
-            $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
-            if (! $instance->placedOnAppProd() || $instance->node_id !== $node->id || ! $route->targets->contains('instance_id', $instance->id)) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'Production firewall intent requires its stored Route workload Node.', 422);
-            }
-
-            return $this->roleFirewall($node, RoleName::AppProd);
-        }
-        if ($operation->kind === 'route.lan_converge') {
-            $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
-            if (! $route->targets->contains('instance_id', $instance->id) && ! new RoutePreparedWorkloads()->contains($operation, $route, $instance)) {
-                throw new ResourceOperationException('route.target_conflict', 'The workload must remain a stored Route target.', 409);
-            }
-            $routerId = ValidatedData::integer($operation->input['router_node_id']);
-            $router = $this->router($route, $routerId);
-            $input = $this->hops->firewall($instance, $route, $router, $node->id);
-
-            return $input === null ? ['skip' => true] : ['command' => 'firewall.route-lan', 'input' => $input];
-        }
-        if ($operation->kind === 'route.lan_remove') {
-            if ($route->sites_published || (! $route->targets->contains(static fn ($target): bool => $target->instance->node_id === $node->id)
-                && $route->node_id !== $node->id && $route->generation_basis_node_id !== $node->id)) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'Withdraw stored Route site intent before cleaning its recorded workload Node.', 422);
-            }
-
-            return ['command' => 'firewall.route-lan', 'input' => ['operation' => 'remove', 'route_id' => $route->id]];
-        }
-        $ingress = $this->sites->ingressNode($route);
-        if ($ingress->id !== $node->id) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The public effect belongs to the stored Ingress Node.', 422);
-        }
-        if ($operation->kind === 'route.public_firewall') {
-            return $this->roleFirewall($node, RoleName::Ingress);
-        }
-        throw new ResourceOperationException('operation.execution_forbidden', 'This kind has no retained Route Node executor.', 422);
     }
 
     /**
-     * Network checks run on the control workers; placement validation stays shared with the retained path.
+     * Network checks capture only the admitted protocol and endpoint.
      *
-     * @return array{command: string, input: array<string, mixed>}
+     * @return array{protocol: string, probe: array<string, mixed>}
      */
     public function networkVerification(Operation $operation): array
     {
@@ -109,7 +62,7 @@ final readonly class RouteNodeEffectCommand
                 }
                 $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
 
-                return ['command' => 'route.verify-http', 'input' => ['address' => $upstream->host, 'port' => $upstream->port, 'domain' => $route->domain]];
+                return ['protocol' => 'http', 'probe' => ['address' => $upstream->host, 'port' => $upstream->port, 'domain' => $route->domain]];
             }
             $target = $this->sites->routerNode($route);
         }
@@ -118,7 +71,7 @@ final readonly class RouteNodeEffectCommand
             throw new ResourceOperationException('route.workload_address_missing', 'Network verification requires its stored WireGuard endpoint.', 409);
         }
 
-        return ['command' => 'route.verify-certificate', 'input' => ['address' => $address, 'port' => 443, 'domain' => $route->domain]];
+        return ['protocol' => 'tls', 'probe' => ['address' => $address, 'port' => 443, 'domain' => $route->domain]];
     }
 
     private function router(Route $route, int $nodeId): Node
@@ -131,16 +84,5 @@ final readonly class RouteNodeEffectCommand
         }
 
         return Node::query()->findOrFail($nodeId);
-    }
-
-    /** @return array<string, mixed> */
-    private function roleFirewall(Node $node, RoleName $role): array
-    {
-        $baseline = $this->firewall->forNode($node);
-        $rules = [$baseline[1], ...$this->firewall->forRole($node, $role)];
-
-        return ['command' => 'firewall.rules', 'input' => [
-            'desired' => array_map(static fn (UfwManagedRule $rule): array => ['shape' => $rule->shape->toAgentInput(), 'replace_port' => $rule->replacePort], $rules),
-            'remove' => array_map(static fn (UfwManagedRule $rule): array => $rule->shape->toAgentInput(), [$baseline[0], ...$this->firewall->retiredForRole($node, $role)]), 'enable' => false]];
     }
 }

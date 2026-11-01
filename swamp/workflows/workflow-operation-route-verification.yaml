@@ -1,25 +1,64 @@
 id: aea0a4c4-6f74-473d-a245-7cc39f20c54a
 name: operation-route-verification
-description: Verify an admitted Route network endpoint from the control workers.
-labels: { pool: migration }
+description: Execute immutable admitted Route intent using canonical native children
+  on209.
 vaults: []
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [route.workload_verify, route.public_verify] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - route.workload_verify
+      - route.public_verify
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: verification
-    steps:
-      - name: verify
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/route-verification"
-          behaviorName: '${{ "route-verification-node-" + string(inputs.node_id) }}'
-          methodName: verify
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: verification
+  steps:
+  - name: verify
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: cluster-router-probe
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: "if [ \"$READY\" = true ]; then\n  printf '%s\\n' '{\"ready\":true}'\n\
+          else\n  printf '{\"ready\":false,\"error_code\":\"%s\"}\\n' \"$ERROR_CODE\"\
+          \nfi\n"
+        env:
+          READY: ${{ string(steps.verify.status == "succeeded") }}
+          ERROR_CODE: '${{ inputs.intent.protocol == "tls" ? "route.certificate_invalid"
+            : "route.http_unreachable" }}'
+    dependsOn:
+    - step: verify
+      condition:
+        type: always

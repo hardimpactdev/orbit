@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\RouteTargetState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
@@ -31,31 +32,19 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
 });
 
-it('starts unset directly and confirms the stored empty targets on its own Node', function (): void {
+it('admits the immutable empty target set without host work or a callback', function (): void {
     $this->deleteJson('/api/v1/routes/'.$this->route->id.'/target')->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($this->route->fresh()->targets)->toBeEmpty();
-    expect($operation->state)->toHaveKey('route_target_unset_writer', 'direct')->not->toHaveKey('route_plan');
-    expect($operation->input['node_ids'])->toBe([$this->node->id]);
-    expect($operation->worker)->toBeNull();
-    expect($operation->children()->exists())->toBeFalse();
+    expect($this->route->fresh()->targets)->toBeEmpty()
+        ->and($operation->worker)->toBeNull();
     expect($this->socket->sent)->toHaveCount(1);
-    expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-target-unset');
+    $request = $this->socket->sent[0]['payload'];
+    expect($request['workflowIdOrName'])->toBe('operation-route-target-unset')
+        ->and($request['inputs']['intent'])->toBe(['route_id' => $this->route->id, 'target_ids' => []]);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input', ['route_id' => $this->route->id, 'target_ids' => []]);
     $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded',
-        'started_at' => '2026-10-31T04:30:00.000Z', 'finished_at' => '2026-10-31T04:30:01.000Z', 'result' => ['ready' => true]])->assertOk();
-    expect($operation->fresh()->status->value)->toBe('succeeded');
-});
-
-it('refuses the removed polled writer without detaching the target', function (): void {
-    config(['swamp.direct_writers' => ['route.target_unset' => 'polled']]);
-    $this->deleteJson('/api/v1/routes/'.$this->route->id.'/target')->assertServiceUnavailable()
-        ->assertJsonPath('error.code', 'operation.writer_invalid');
-    expect($this->route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id]);
-    expect(Operation::query()->count())->toBe(0);
-    expect($this->socket->sent)->toBe([]);
+        'started_at' => '2026-10-31T04:30:00.000Z', 'finished_at' => '2026-10-31T04:30:01.000Z', 'result' => ['ready' => true]])
+        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
 });
 
 it('preserves active targets and refuses ownership drift', function (): void {
@@ -67,30 +56,11 @@ it('preserves active targets and refuses ownership drift', function (): void {
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('refuses successful projection when a target reappears', function (): void {
+it('preserves a later target association when the immutable unset run completes', function (): void {
     $operation = app(AdmitRouteOperationAction::class)->clearTarget($this->route);
     $this->route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'route.target_conflict');
-    $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded',
-        'started_at' => '2026-10-31T04:30:00.000Z', 'finished_at' => '2026-10-31T04:30:01.000Z', 'result' => ['ready' => true]])->assertConflict();
-    expect($operation->fresh()->result)->toBeNull();
-});
-
-it('binds the native root before the first successful worker read', function (): void {
-    $readBeforeBinding = false;
-    $this->socket->reply = function (array $request) use (&$readBeforeBinding): array {
-        $operation = Operation::query()->sole();
-        $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
-            ->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
-        $readBeforeBinding = true;
-
-        return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
-            'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
-    };
-
-    $operation = app(AdmitRouteOperationAction::class)->clearTarget($this->route);
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk();
-    expect($readBeforeBinding)->toBeTrue();
-    expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
+    app(RouteOperationProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded',
+        'started_at' => '2026-10-31T04:30:00.000Z', 'finished_at' => '2026-10-31T04:30:01.000Z', 'result' => ['ready' => true]]);
+    expect($operation->fresh()->status->value)->toBe('succeeded')
+        ->and($this->route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id]);
 });
