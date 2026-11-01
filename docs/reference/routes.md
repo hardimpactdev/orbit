@@ -501,11 +501,11 @@ Until cleanup, the new domain uses staging certificates, so the Instance's live 
 | `route-<replacement id>-router` | Router | Cleanup | Route removal |
 | `route-<retiring id>-router` | The retiring Route's Router | Before the change | Cleanup, after that Router drops its site |
 
-Swamp executes `certificate.converge` and `certificate.remove` as separate native workflows on the exact admitted Node worker. Admission records the scope, account, domain, version and root hash. Fixed Swamp system actions keep the leaf key on its Node and return only a public CSR. They do not invoke agent action commands.
+Route and Cluster Router operations compose the native `route-certificate-publish` and `route-certificate-remove` children inside their parent run. There is no standalone certificate CLI, API or Operation kind. Admission records each scope, Node account, domain, version and public root hash.
 
-A placed control step on Node 209 reads the existing CA from its approved Swamp vault entry and signs public CSRs in memory. Separate native steps request, sign, publish and inspect the leaf. The Gateway has no certificate signing primitive or CSR checkpoint. Removal admits only a scope that no stored Caddy site uses, then removes and inspects it locally. Native Swamp locks and retries own execution.
+Node 209 stages the scripts and reaches each admitted Node through pinned official SSH. The Node retains its leaf private key and returns only public CSRs. The existing Gateway signing endpoint checks the numeric Operation and its run, then signs those requests and returns public certificate bundles. The CA private key stays only in the Gateway.
 
-Route workflows reuse these local steps inside their parent run; they create no certificate child Operation. Gateway result projection stores only the bounded status and presence result.
+Removal follows Caddy withdrawal and refuses a scope still referenced by fresh Caddy configuration. It removes only the admitted account’s scope. The parent Operation projects the complete native result; certificate children create no separate Operations.
 
 A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
 

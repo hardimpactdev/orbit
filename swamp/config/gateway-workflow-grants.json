@@ -63,8 +63,6 @@
     {"workflow": "operation-analytics-disable-direct", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-enable-direct", "actions": ["run", "read"]},
     {"workflow": "operation-analytics-update-direct", "actions": ["run", "read"]},
-    {"workflow": "operation-certificate-converge", "actions": ["run", "read"]},
-    {"workflow": "operation-certificate-remove", "actions": ["run", "read"]},
     {"workflow": "operation-cluster-router", "actions": ["run", "read"]},
     {"workflow": "operation-conn-direct", "actions": ["run", "read"]},
     {"workflow": "operation-conn-pairing-revoke", "actions": ["run", "read"]},
