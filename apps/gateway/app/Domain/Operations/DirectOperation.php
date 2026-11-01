@@ -100,9 +100,9 @@ final readonly class DirectOperation
 
         foreach (glob(__DIR__.'/../*/scheduled-results.php') ?: [] as $file) {
             foreach (require $file as $id => $declaration) {
-                if (! Str::isUuid($id) || isset($scheduled[$id]) || count($declaration) !== 4
-                    || ! is_string($declaration['context_workflow'] ?? null)
-                    || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $declaration['context_workflow']) !== 1
+                if (! Str::isUuid($id) || isset($scheduled[$id]) || array_diff(array_keys($declaration), ['workflow', 'context_workflow', 'terminal_result', 'projection']) !== []
+                    || (array_key_exists('context_workflow', $declaration) && (! is_string($declaration['context_workflow'])
+                        || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $declaration['context_workflow']) !== 1))
                     || ! is_string($declaration['workflow'] ?? null)
                     || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $declaration['workflow']) !== 1
                     || ! is_a($declaration['projection'] ?? '', ScheduledResultProjection::class, true)) {
