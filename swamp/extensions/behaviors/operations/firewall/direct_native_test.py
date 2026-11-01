@@ -17,8 +17,9 @@ KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA
 class DirectFirewallNative(NativeTestCase):
     def setUp(self):
         super().setUp()
+        self.copy_behaviors('operations/firewall')
         folder = self.repo / 'extensions/behaviors/operations/firewall'
-        folder.mkdir(parents=True)
+        folder.mkdir(parents=True, exist_ok=True)
         source = (ROOT / 'extensions/behaviors/operations/firewall/mutation-result.ts').read_text()
         self.assertIn('${userInfo().homedir}/.ssh/known_hosts', source)
         (folder / 'mutation-result.ts').write_text(source.replace('${userInfo().homedir}/.ssh/known_hosts', './known_hosts'))

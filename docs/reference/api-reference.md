@@ -35,6 +35,8 @@ The contract is that `bin/docs-openapi` produces the same `docs/openapi.json` on
 
 One input still reads outside the checkout. `php artisan route:list` loads the Gateway `.env`, the installed Gateway dependencies, and the PHP binary on `PATH`. The file matches only when that [pinned environment](#pinned-environment) matches too.
 
+The firewall API includes `POST /api/v1/nodes/{node}/firewall-rules/allowlist`. Its `sources` array replaces the complete allowed set. The generated MCP tool is `firewall-allowlist`; the [firewall reference](/cli/firewall#orbit-firewallallowlist) defines its limits and protected ports. Docs impact matches versioned API paths to routes whose shared group supplies the `api/v1` prefix.
+
 ## Inputs
 
 `bin/docs-openapi` reads each input in this table. Fixed schema text in the script is an input too. The route-list row also depends on the pinned environment.

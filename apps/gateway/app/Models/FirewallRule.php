@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $node_id
  * @property string $name
  * @property FirewallAction $action
+ * @property list<string> $sources
  * @property string $source
  * @property string $protocol
  * @property string $port
@@ -31,6 +32,7 @@ final class FirewallRule extends Model
         'name',
         'action',
         'source',
+        'sources',
         'protocol',
         'port',
         'status',
@@ -49,6 +51,7 @@ final class FirewallRule extends Model
     {
         return [
             'action' => FirewallAction::class,
+            'sources' => 'json',
             'status' => LifecycleStatus::class,
         ];
     }

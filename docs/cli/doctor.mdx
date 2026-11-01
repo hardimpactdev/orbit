@@ -11,13 +11,13 @@ covers:
   - packages/php-sdk/src/Responses/Doctor/**
 ---
 
-Doctor compares current Node and runtime facts with the Gateway's recorded intent. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule, firewall and database operations own their configuration checks; Doctor does not repeat them.
+Doctor compares current Node and runtime facts with the Gateway's recorded intent. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule and database operations own their configuration checks. Doctor reuses the native firewall comparison for named rules, including source allowlists.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`doctor`](#orbit-doctor) | Read current Node, role-service and Process state. |
+| [`doctor`](#orbit-doctor) | Read current Node, role-service, Process and firewall state. |
 
 ## orbit doctor
 
@@ -28,7 +28,7 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=ID` | accessible Nodes | Inspect one positive numeric Node ID. |
-| `--family=FAMILY` | all families | Repeat to select families. Current checks belong to `node`, `role`, and `process`. |
+| `--family=FAMILY` | all families | Repeat to select families. Current checks belong to `node`, `role`, `process`, and `firewall`. |
 | `--json` | false | Return the report as JSON. |
 
 The API admits one `doctor.inspect` Operation with HTTP 202. The CLI follows it and renders `result.report`. Node access applies before admission. Nodes sort by name and ID; the family order is fixed.
@@ -39,7 +39,7 @@ Human output lists Node, Family, Status, Checked, Resource and Finding. JSON ret
 
 Every read runs through official `@swamp/ssh` from the Node209 control worker, using stored host pins and the approved worker identity. The Gateway supplies full public expectations. A pure plan lists native argv; each read is a separate native step. One typed comparison step emits the report for the existing shared terminal projector. There is no Gateway callback, private-material fetch, binding wait, remote script bundle, or repair action.
 
-The commands are `uname -sm`, `df -Pk /`, `systemctl show` with selected state properties, a filtered `docker container ls` showing only name and state, and `test -e` for a managed hibernation marker. Process reads use sudo. Docker environment, command arguments, service file contents and credentials are never requested.
+The commands are `uname -sm`, `df -Pk /`, `systemctl show` with selected state properties, a filtered `docker container ls` showing only name and state, `test -e` for a managed hibernation marker, and `ufw status numbered` for firewall comparison. Process and numbered UFW reads use sudo. Docker environment, command arguments, service file contents and credentials are never requested.
 
 Failed or malformed reads produce one unverifiable inspection finding for their family and Node. Other reads continue. A parked or unmanaged Node dispatches no SSH reads and supplies no positive recovery evidence. Parked task VMs have an informational finding.
 
@@ -51,9 +51,11 @@ Failed or malformed reads produce one unverifiable inspection finding for their 
 | `role` | Recorded lifecycle and current state of each service required by an active Linux role. |
 | `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. |
 
+| `firewall` | Named rule lifecycle, UFW active state, missing source/deny lines, exact rule shapes and safe allowlist order. Uses the same comparison as `firewall:inspect`. |
+
 A stopped, non-keep-alive development Process desired running is healthy only when its managed awake marker is proven absent. An unavailable marker does not count as sleep. This inspection takes no timed samples and does not infer a restart rate.
 
-The existing family selectors `project`, `instance`, `schedule`, `tool`, `firewall`, `database_connection`, `route` and `database_server` remain accepted by the API, but have zero Doctor checks. A healthy family with `checked: 0` supplies no verdict on its resources. Use the owning native operation and its result for configuration validation.
+The existing family selectors `project`, `instance`, `schedule`, `tool`, `database_connection`, `route` and `database_server` remain accepted by the API, but have zero Doctor checks. A healthy family with `checked: 0` supplies no verdict on its resources. Use the owning native operation and its result for configuration validation.
 
 `checked` counts the focused reads performed for a family. Auxiliary awake-marker reads do not add another Process check. Lifecycle findings can exist without a host read. Missing reads remain in the count and produce unverifiable findings.
 
@@ -65,7 +67,7 @@ Doctor does not discover packages. Use the Tool family's native scan and adoptio
 
 ### Verify only
 
-Doctor reports current liveness. Each native family owns the checks that establish its configuration. Repeating those implementations in Doctor creates a second execution engine and competing definitions of success.
+Doctor reports current liveness and shares the native firewall comparison. Each native family owns the checks that establish its configuration. Repeating those implementations in Doctor creates a second execution engine and competing definitions of success.
 
 ### Informational findings stay healthy
 

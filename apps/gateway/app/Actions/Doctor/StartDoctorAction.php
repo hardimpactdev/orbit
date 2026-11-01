@@ -8,6 +8,7 @@ use App\Actions\Doctor\Intent\NodeDoctorIntent;
 use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
@@ -72,6 +73,10 @@ final readonly class StartDoctorAction
             $resources = [
                 ...($has(['node']) ? $this->node->execute($node) : []),
                 ...($has(['process']) ? $this->runtime->execute($node) : []),
+                ...($has(['firewall']) && $node->platform === 'linux' ? [
+                    'firewall_expected' => app(FirewallInspectionInput::class)->expected($node),
+                    'firewall_rules' => $node->firewallRules()->orderBy('id')->get()->map(static fn ($rule): array => ['id' => $rule->id, 'name' => $rule->name, 'status' => $rule->status->value])->all(),
+                ] : []),
             ];
             $managed = $this->eligibility->isManagedForObservation($node);
             $intents[] = ['id' => $node->id, 'name' => $node->name, 'platform' => $node->platform,

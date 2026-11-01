@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/doctor'
-version: 2026.11.01.3
+version: 2026.11.01.4
 visibility: private
 license: MIT
 description: Focused native Doctor reads and typed registry comparison.

@@ -675,7 +675,7 @@ SUMMARIES = {
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
     'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
-    'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
+    'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:allowlist': 'Replace a firewall source allowlist', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
     'tool:manager:list': 'List Tool Managers', 'tool:scan': 'Scan installed packages', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:adopt': 'Adopt a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
     'github:app:install': 'Start a GitHub App registration or installation', 'github:app:show': 'Show the GitHub App', 'github:app:destroy': 'Remove the stored GitHub App',
     'github:app:register': 'Serve the GitHub App manifest page', 'github:app:callback': 'Complete a GitHub App registration',
@@ -1295,6 +1295,7 @@ def prop_schema(p):
     doc = (p['doc'] or '').replace('\\', '')
     nullable = t.startswith('?') or '|null' in t or 'null|' in t
     t = t.lstrip('?').replace('|null', '').replace('null|', '')
+    t = '|'.join(part for part in t.split('|') if part != 'Optional')
     union = [part.strip() for part in t.split('|') if part.strip()]
     if len(union) > 1 and all(part in SCALARS for part in union):
         kinds = []
@@ -1393,7 +1394,7 @@ def route_key(route):
 
 ANALYSIS_PLAN_EXAMPLE = {'id': 'feature-2068', 'revision': 1, 'source': {'brief_id': 'widget-brief', 'revision_sha256': 'a' * 64}, 'asserted_by': 'planning-owner', 'complete': True, 'paths': [{'change': 'add', 'path': 'apps/gateway/new.php'}]}
 ANALYSIS_PLAN_JSON = json.dumps(ANALYSIS_PLAN_EXAMPLE, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
-EXAMPLE_BY_ROUTE = {'tasks:analyze': {'planJson': ANALYSIS_PLAN_JSON, 'planSha256': hashlib.sha256(ANALYSIS_PLAN_JSON.encode()).hexdigest(), 'base': 'b' * 40, 'head': 'c' * 40, 'tree': 'd' * 40, 'idempotencyKey': 'analysis.c1'}, 'tasks:check': {'phase': 'baseline'}, 'process:update': {'ports': ['6380:6379']}}
+EXAMPLE_BY_ROUTE = {'firewall:allowlist': {'sources': ['10.44.0.6', '10.44.0.9'], 'port': '7297'}, 'tasks:analyze': {'planJson': ANALYSIS_PLAN_JSON, 'planSha256': hashlib.sha256(ANALYSIS_PLAN_JSON.encode()).hexdigest(), 'base': 'b' * 40, 'head': 'c' * 40, 'tree': 'd' * 40, 'idempotencyKey': 'analysis.c1'}, 'tasks:check': {'phase': 'baseline'}, 'process:update': {'ports': ['6380:6379']}}
 NAME_BY_TAG = {'Nodes': 'beast', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Instances': 'default'}
 EXAMPLE_BY_NAME = {
     'code': 'ACM', 'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
@@ -1405,7 +1406,7 @@ EXAMPLE_BY_NAME = {
     'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150', 'tag': '8.4',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
     'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
-    'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
+    'sources': ['10.44.0.6', '10.44.0.9'], 'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
     'orchestrator_url': 'wss://swamp.orbit', 'enrollment_token': 'group-1.' + 'a' * 64,
     'title': 'Build Tasks', 'brief': 'Persist groups. Accept when create and list work.',
 }
@@ -1496,6 +1497,8 @@ def example_from_schema(sch, name, tag, depth=0, update=False):
         return {}
     t = sch.get('type')
     t = t[0] if isinstance(t, list) else t
+    if tag == 'Firewall' and name == 'port':
+        return '7297'
     if tag == 'Tasks' and name in ('role', 'prompt', 'thread'):
         return {'role': 'implementer', 'prompt': 'Implement the subtask brief.', 'thread': 'new'}[name]
     if name == 'name' and tag in NAME_BY_TAG:

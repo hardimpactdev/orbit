@@ -1465,6 +1465,10 @@ final readonly class DocsImpact
             $path = substr($path, 4);
         }
 
+        if (str_starts_with($path, 'v1/')) {
+            $path = substr($path, 3);
+        }
+
         return $path;
     }
 

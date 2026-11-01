@@ -21,7 +21,7 @@ class DoctorWorkflowNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('observation')
+        self.copy_behaviors('observation', 'operations/firewall')
         dest = self.repo / '.swamp/pulled-extensions/@swamp/ssh'
         dest.parent.mkdir(parents=True)
         shutil.copytree(ROOT / '.swamp/pulled-extensions/@swamp/ssh', dest)
