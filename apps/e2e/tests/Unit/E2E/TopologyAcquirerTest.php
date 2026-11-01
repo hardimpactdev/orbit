@@ -372,7 +372,7 @@ describe('TopologyAcquirer', function () {
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
     });
 
-    it('rolls back every resource and names the step and Orbit error when enrollment fails', function () {
+    it('rolls back every resource and names the fixture network failure', function () {
         ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(
             fn (string $instance, array $argv): ?array => $argv[0] === 'php' && ($argv[1] ?? null) === '/usr/local/bin/topology-network.php'
                 ? ["Node provisioning failed at step [wireguard-peer-install] with error [vpn.peer_config_failed].\n", "wg-quick failed\n", 1]
@@ -385,6 +385,17 @@ describe('TopologyAcquirer', function () {
             ->and($incus->networks)->toBe([])
             ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure', 'remove'])
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
+    });
+
+    it('propagates normal adoption refusal and never calls configure or services after it', function (): void {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(
+            static fn (string $instance, array $argv): ?array => $argv[0] === '/usr/local/bin/converge-gateway.sh' && ($argv[1] ?? null) === 'adopt'
+                ? ['', 'gateway.release_owner_invalid', 1] : null,
+        );
+
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
+            ->toThrow(RuntimeException::class, 'Step adopt.gateway failed:');
+        expect(array_filter($incus->execs, static fn (array $exec): bool => in_array($exec['argv'][1] ?? null, ['configure', 'services'], true)))->toBe([]);
     });
 
     it('rolls back when readiness never passes and lists the failed probes', function () {
