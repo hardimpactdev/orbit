@@ -1,4 +1,4 @@
-import { Snapshot } from "../../firewall/inspection-result.ts";
+import { inspectionResult } from "../../firewall/inspection-result.ts";
 import { z } from "npm:zod@4.4.3";
 const Id = z.number().int().positive();
 const Phase = z.object({
@@ -174,7 +174,7 @@ export function selectRemoval(
 }
 export const behavior = {
     type: "@nckrtl/route-update-result",
-    version: "2026.11.01.3",
+    version: "2026.11.01.4",
     resources: {
         selection: {
             schema: Selection,
@@ -203,13 +203,16 @@ export const behavior = {
         },
         upstream: {
             description:
-                "Require an exact admitted allowance from the canonical firewall snapshot",
-            arguments: z.object({ stdout: z.string() }),
-            execute: async (args: { stdout: string }, ctx: Context) => {
-                const snapshot = Snapshot.parse(JSON.parse(args.stdout));
+                "Require an exact admitted allowance from one numbered UFW read",
+            arguments: z.object({ stdout: z.string(), expected: z.array(z.unknown()) }),
+            execute: async (
+                args: Parameters<typeof inspectionResult>[0],
+                ctx: Context,
+            ) => {
+                const snapshot = inspectionResult(args);
                 if (
                     snapshot.backend !== "active" ||
-                    !snapshot.comparison.live.some((row) =>
+                    !snapshot.live.some((row) =>
                         row.match === "exact"
                     )
                 ) {

@@ -58,7 +58,7 @@ it('captures light targets through the same pinned SSH control worker', function
 })->with([1, 18]);
 
 it('does not expose publication data for another kind or an unplaced operation', function (): void {
-    $this->operation->kind = 'firewall.inspect';
+    $this->operation->kind = 'firewall.allow';
     expect(fn () => app(NativeCaddyPublicationInput::class)->forOperation($this->operation))->toThrow(ResourceOperationException::class);
     $this->operation->kind = 'route.caddy_converge';
     $this->operation->node_id = null;

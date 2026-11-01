@@ -4,34 +4,24 @@ declare(strict_types=1);
 
 namespace App\Actions\Firewall;
 
-use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\RouteExecutionProof;
+use App\Domain\Firewall\FirewallInspectionInput;
 use App\Models\Node;
-use App\Models\Operation;
-use App\Support\ValidatedData;
 
-/** Present the native comparison; a GET does not observe a host or recompute drift. */
+/** Live UFW facts come only from orbit-agent observations. Until the agent reports UFW, every desired rule is unverifiable. */
 final readonly class ListLiveFirewallRulesAction
 {
+    public function __construct(private FirewallInspectionInput $desired) {}
+
     /** @return array{backend_status:string,observed_at:?string,live:list<array<string,mixed>>,missing:list<array<string,mixed>>} */
     public function execute(Node $node): array
     {
-        $unavailable = ['backend_status' => 'unreachable', 'observed_at' => null, 'live' => [], 'missing' => []];
-        if ($node->platform !== 'linux') {
-            return $unavailable;
-        }
-        $operation = Operation::query()->where('kind', 'firewall.inspect')->where('target_type', 'node_firewall')
-            ->where('target_id', $node->id)->where('node_id', $node->id)->orderByDesc('id')->first();
-        if ($operation === null || $operation->status !== OperationStatus::Succeeded) {
-            return $unavailable;
-        }
-        $result = $operation->result ?? [];
-        if (! isset($result['comparison'])) {
-            return $unavailable;
-        }
-        $comparison = ValidatedData::object($result['comparison']);
+        $rules = $node->platform !== 'linux' ? [] : array_map(static fn (array $rule): array => [
+            'name' => $rule['name'], 'comment' => $rule['shape']['comment'], 'action' => $rule['shape']['action'],
+            'source' => $rule['shape']['source'], 'destination' => $rule['shape']['destination'], 'port' => $rule['shape']['port'],
+            'protocol' => $rule['shape']['protocol'], 'interface' => $rule['shape']['in_interface'], 'family' => $rule['shape']['family'],
+            'match' => 'unverifiable',
+        ], $this->desired->expected($node));
 
-        return ['backend_status' => ValidatedData::string($result['backend']), 'observed_at' => ValidatedData::string($result['observed_at']),
-            'live' => RouteExecutionProof::objects($comparison['live']), 'missing' => RouteExecutionProof::objects($comparison['missing'])];
+        return ['backend_status' => 'unverifiable', 'observed_at' => null, 'live' => $rules, 'missing' => []];
     }
 }

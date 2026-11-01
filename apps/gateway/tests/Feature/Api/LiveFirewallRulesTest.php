@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -13,26 +14,17 @@ beforeEach(function (): void {
     $this->url = '/api/v1/nodes/'.$this->node->id.'/live-firewall-rules';
 });
 
-it('returns the recorded native comparison without recomputing against later Node intent', function (): void {
-    $row = ['name' => 'native-name', 'comment' => 'owned', 'action' => 'allow', 'source' => 'any', 'destination' => 'any',
-        'port' => '443', 'protocol' => 'tcp', 'interface' => null, 'family' => 'v4', 'match' => 'drift'];
-    Operation::query()->create(['kind' => 'firewall.inspect', 'target_type' => 'node_firewall', 'target_id' => $this->node->id,
-        'node_id' => $this->node->id, 'status' => 'succeeded', 'input' => [],
-        'result' => ['backend' => 'active', 'observed_at' => '2026-11-01T05:00:00.000Z', 'live' => [],
-            'comparison' => ['live' => [$row], 'missing' => [[...$row, 'match' => 'missing']]]]]);
-    $this->node->update(['settings' => ['apps' => ['path' => '/new-apps-root']]]);
-    $this->getJson($this->url)->assertOk()->assertJsonPath('data.live', [$row])
-        ->assertJsonPath('data.missing', [[...$row, 'match' => 'missing']])
-        ->assertJsonPath('data.observed_at', '2026-11-01T05:00:00.000Z');
-});
-
-it('returns unavailable for an incomplete snapshot instead of falling back to Gateway comparison', function (): void {
-    Operation::query()->create(['kind' => 'firewall.inspect', 'target_type' => 'node_firewall', 'target_id' => $this->node->id,
-        'node_id' => $this->node->id, 'status' => 'succeeded', 'input' => [],
-        'result' => ['backend' => 'active', 'observed_at' => '2026-11-01T05:00:00.000Z', 'live' => []]]);
-    $this->getJson($this->url)->assertOk()->assertJsonPath('data', [
-        'backend_status' => 'unreachable', 'observed_at' => null, 'live' => [], 'missing' => [],
-    ]);
+it('marks every desired rule unverifiable without reading the Node or stored snapshots', function (): void {
+    FirewallRule::query()->create(['node_id' => $this->node->id, 'name' => 'web', 'action' => 'allow', 'source' => '192.0.2.9',
+        'port' => '443', 'protocol' => 'tcp', 'status' => 'active']);
+    Operation::query()->create(['kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
+        'status' => 'succeeded', 'input' => [], 'result' => ['firewall' => [$this->node->id => ['backend' => 'active', 'live' => [], 'missing' => []]]]]);
+    $response = $this->getJson($this->url)->assertOk()->assertJsonPath('data.backend_status', 'unverifiable')
+        ->assertJsonPath('data.observed_at', null)->assertJsonPath('data.missing', []);
+    $live = collect($response->json('data.live'));
+    expect($live)->not->toBeEmpty()->and($live->pluck('match')->unique()->all())->toBe(['unverifiable'])
+        ->and($live->firstWhere('name', 'web'))->toBe(['name' => 'web', 'comment' => 'orbit:node:'.$this->node->id.':firewall:web', 'action' => 'allow',
+            'source' => '192.0.2.9', 'destination' => 'any', 'port' => '443', 'protocol' => 'tcp', 'interface' => null, 'family' => 'v4', 'match' => 'unverifiable']);
 });
 
 it('offers no route that changes a live rule', function (): void {

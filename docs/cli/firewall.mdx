@@ -13,7 +13,7 @@ Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it ne
 
 The Gateway validates and records named rule intent, then returns an Operation with `202 Accepted`. Swamp receives the complete admitted rule and SSH target, runs its native DAG from Node 209, and returns typed output for terminal projection. The target needs no worker. The CLI follows the Operation until it ends. The Gateway projects the managed row without inspecting execution again. There is no agent action, child Operation or polled writer.
 
-Named rules use the official firewall model and its UFW defaults. Read-only `firewall:inspect` records a native inspection Operation. Node 209 runs one official pinned SSH `ufw status numbered` read over the stored WireGuard address. A typed native result step parses the IPv4 rules and compares them with the desired rules captured at admission. Named rules compare exact tuples, including numeric contributions to a range; role and Router rules retain their comment ownership. It changes no machine state. The live list returns this recorded comparison and `observed_at`; it does not contact the Node or recompute drift against later intent. Raw UFW output remains in native SSH history, outside the Gateway result.
+Named rules use the official firewall model and its UFW defaults. orbit-agent will be the only collector of live UFW facts, with `observed_at`, and the Gateway will read its latest observation. Until the agent reports UFW, the Gateway has no live firewall observation. [Doctor](/cli/doctor) still reports firewall drift from its own read; it compares exact tuples for named rules, including numeric contributions to a range, and keeps comment ownership for role and Router rules.
 
 [Database servers](/reference/database-servers#private-publication) publish only on explicit WireGuard and LAN addresses. Ports published by Docker bypass UFW. These servers trust the private Orbit networks and have no port firewall; named UFW rules do not restrict their Docker publications.
 
@@ -24,7 +24,6 @@ Named rules use the official firewall model and its UFW defaults. Read-only `fir
 | [`firewall:allow`](#orbit-firewallallow) | Create or converge one named allow rule. |
 | [`firewall:allowlist`](#orbit-firewallallowlist) | Replace the sources allowed to reach a port before broad peer trust. |
 | [`firewall:deny`](#orbit-firewalldeny) | Create or converge one named deny rule. |
-| [`firewall:inspect`](#orbit-firewallinspect) | Refresh the native UFW inspection snapshot for one Node. |
 | [`firewall:list`](#orbit-firewalllist) | List the named rules of one Node. |
 | [`firewall:remove`](#orbit-firewallremove) | Remove one named rule. |
 
@@ -38,19 +37,13 @@ The Gateway serves three read-only lists. The CLI has no command for them. The w
 | --- | --- |
 | `GET /api/v1/firewall-rules` | The operator rules of every Node the caller may address. |
 | `GET /api/v1/nodes/{node}/managed-firewall-rules` | The `orbit:` rules that Orbit intends on one Node: WireGuard member trust, public SSH recovery while the Node has no active role, then each active role's rules and the Metrics rules, with the role named. It uses no SSH. |
-| `GET /api/v1/nodes/{node}/live-firewall-rules` | Reads the latest native inspection snapshot and classifies its typed IPv4 shapes against the managed and operator rules. It reports the snapshot timestamp as `observed_at`. A missing or failed latest inspection is unavailable; the GET never starts a run. |
+| `GET /api/v1/nodes/{node}/live-firewall-rules` | Until orbit-agent reports UFW, returns `backend_status` `unverifiable`, no `observed_at`, and every desired managed and operator rule in `live` with `match` `unverifiable`. It never contacts the Node. |
 
-Role convergence passes desired and removed shapes to the canonical Swamp `convergeFirewall` lower. Its fixed program holds the shared host firewall lock through inspection, mutation and confirmation. It replaces a prior single-port shape only when the catalog record declares its port mutable. The Analytics local PostgreSQL and ClickHouse records declare this because their ports come from the selected storage Processes. The exact `orbit:` comment identifies the managed rule: it deletes the old numbered rules, applies the desired rule, and verifies the exact result. A replaceable old rule must keep the catalog record’s action, direction, source, destination, protocol, interfaces, and address families, with one valid single port per family. Fixed-port drift, unreadable rules, duplicate families, port ranges, and operator comments are refused. The comment and the catalog’s declared mutable field form the ownership contract; Orbit does not keep applied-shape history. The native live inspection can show the old port until convergence replaces it.
+Role convergence passes desired and removed shapes to the canonical Swamp `convergeFirewall` lower. Its fixed program holds the shared host firewall lock through inspection, mutation and confirmation. It replaces a prior single-port shape only when the catalog record declares its port mutable. The Analytics local PostgreSQL and ClickHouse records declare this because their ports come from the selected storage Processes. The exact `orbit:` comment identifies the managed rule: it deletes the old numbered rules, applies the desired rule, and verifies the exact result. A replaceable old rule must keep the catalog record’s action, direction, source, destination, protocol, interfaces, and address families, with one valid single port per family. Fixed-port drift, unreadable rules, duplicate families, port ranges, and operator comments are refused. The comment and the catalog’s declared mutable field form the ownership contract; Orbit does not keep applied-shape history. The live list can show the old port until convergence replaces it.
 
 The first role convergence removes `orbit:public-ssh-recovery`. So a Node with an active role does not list public port 22 as intended. The managed list comes from the same catalog that convergence applies.
 
-In the live list, each live rule has a `match` value. `exact` means it equals a managed or operator rule. `drift` means its comment names such a rule but the rule differs. `unmanaged` means neither its comment nor its tuple matches recorded intent. A managed or operator rule that is absent from UFW is listed as missing. An inactive, absent, or unreachable UFW returns no live rows. The web app lists the live rules, shows `drift` and `unmanaged` rules in red, and flags missing rules. When it cannot read live UFW, it shows the operator rules and the managed catalog instead.
-
-## orbit firewall:inspect
-
-`orbit firewall:inspect --node=7 [--idempotency-key=KEY] [--json]` starts the native read and follows its Operation. `POST /api/v1/nodes/{node}/firewall-inspection` returns the same Operation with `202 Accepted`. The workflow runs entirely on 209 and needs no target worker. The Gateway projects its bound terminal result. Missing stored host pins refuse admission; SSH failures or unrepresentable or oversized observations fail without a partial snapshot. The Node agent is not invoked.
-
-The snapshot contains the backend status, typed IPv4 rules and `observed_at`. No raw UFW output is returned. Run this command again when a newer snapshot is needed; a live-list GET reads stored data only.
+In the live list, each live rule has a `match` value. `exact` means it equals a managed or operator rule. `drift` means its comment names such a rule but the rule differs. `unmanaged` means neither its comment nor its tuple matches recorded intent. A managed or operator rule that is absent from UFW is listed as missing. An inactive, absent, or unreachable UFW returns no live rows. `unverifiable` means no observation exists. The web app lists the live rules, shows `drift` and `unmanaged` rules in red, and flags missing rules. When it cannot read live UFW, it shows the operator rules and the managed catalog instead.
 
 ## Router LAN member rules
 
@@ -77,7 +70,7 @@ After fixing the reported firewall or connectivity failure, read current members
 
 The existing Router's normal [`node:add` convergence](/cli/node#orbit-nodeadd) is an alternative only when its provisioning guards permit it. With unchanged configuration it refuses a Node that owns Instances with `node.has_instances`; do not remove workloads or change the TLD merely to bypass that guard. `node:converge` does not include a Router LAN firewall artifact, and repeating `cluster:router:set` for the current Router does not run this firewall reconciliation.
 
-After recovery, verify managed/live agreement with the native firewall read again. Do not reattach the detached member, reactivate the Cluster, or edit the database to make stale rules look eligible. Repeating a completed detach is not the cleanup path: it can fail with `cluster.membership_missing`. Retain diagnostics for residue or snapshot-restore failures until the current desired rules are verified.
+After recovery, verify the rules with `orbit doctor --family=firewall`. Do not reattach the detached member, reactivate the Cluster, or edit the database to make stale rules look eligible. Repeating a completed detach is not the cleanup path: it can fail with `cluster.membership_missing`. Retain diagnostics for residue or snapshot-restore failures until the current desired rules are verified.
 
 Reconciliation changes only these managed families. It preserves loopback, WireGuard trust, other role rules, operator rules, unmanaged rules, and the existing DNS service. It never installs a DNS listener, changes member resolver selection, or cuts over VPN DNS. Those are later [ADR 0219 build steps](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router#build-order).
 
@@ -182,7 +175,7 @@ The API is `POST /api/v1/nodes/{node}/firewall-rules/allowlist` with `name`, `po
 
 The Gateway refuses SSH port 22, the Node's recovery SSH port, the configured WireGuard port, and bounded ports in its managed firewall catalog, including ports reserved by assigned roles even before they have traffic with `firewall.protected_port`. This includes a protected port inside a requested range, regardless of protocol. The broad WireGuard trust rule does not reserve all ports. Invalid or empty sources return `validation.failed` from the API.
 
-Use `firewall:list` to read the complete source set and `firewall:remove` to remove all lines owned by the allowlist. Removal restores the underlying firewall policy. Use `firewall:inspect` followed by `firewall:live:list` to check source lines, the final deny and their order. A block after broad trust reports drift. Doctor reuses the native comparison and reports missing lines, drift, inactive UFW and failed rule lifecycle.
+Use `firewall:list` to read the complete source set and `firewall:remove` to remove all lines owned by the allowlist. Removal restores the underlying firewall policy. Run `orbit doctor --family=firewall --node=<id>` to check source lines, the final deny and their order. A block after broad trust reports drift. Doctor reports missing lines, drift, inactive UFW and failed rule lifecycle.
 
 Use `--idempotency-key=KEY` to retry the same admission. A changed source set needs a new key. Human and JSON output follow the same Operation as other firewall writes. An unowned identical UFW tuple refuses before mutation with `firewall.rule_collision`; UFW cannot keep two separately owned copies of that tuple.
 

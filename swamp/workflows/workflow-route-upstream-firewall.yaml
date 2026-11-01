@@ -1,7 +1,7 @@
 id: d7eec9b6-54b9-47db-b509-6234b552fb35
 name: route-upstream-firewall
-description: Verify a captured public Process allowance through the canonical native
-  firewall inspector.
+description: Verify a captured public Process allowance with one pinned SSH UFW read
+  and the shared firewall comparison.
 vaults: []
 inputs:
   type: object
@@ -29,30 +29,35 @@ inputs:
 jobs:
 - name: environment
   steps:
-  - name: observe
+  - name: read
     target: orbit-node-209
     task:
-      type: workflow
-      workflowIdOrName: operation-firewall-inspect
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "firewall-read-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "firewall-read-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          port: ${{ inputs.intent.connection.nodePort }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          hostKeys: ${{ inputs.intent.host_keys }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.intent.node_id }}
-        kind: firewall.inspect
-        execution_secrets: {}
-        intent:
-          ssh:
-            identity_file: ${{ inputs.intent.connection.nodeIdentityFile }}
-            target:
-              host: ${{ inputs.intent.connection.nodeHost }}
-              user: ${{ inputs.intent.connection.nodeUser }}
-              port: ${{ inputs.intent.connection.nodePort }}
-              host_keys: ${{ inputs.intent.host_keys }}
-          expected: '${{ inputs.intent.expected.map(e, {"name": e.comment, "shape":
-            e}) }}'
+        hosts: name:target
+        argv:
+        - /usr/sbin/ufw
+        - status
+        - numbered
+        sudo: true
   - name: result
     target: orbit-node-209
     dependsOn:
-    - step: observe
+    - step: read
       condition:
         type: succeeded
     task:
@@ -61,4 +66,6 @@ jobs:
       behaviorName: route-upstream-ready
       methodName: upstream
       inputs:
-        stdout: ${{ steps.observe.outputs.result.stdout }}
+        stdout: ${{ steps.read.outputs.stdout }}
+        expected: '${{ inputs.intent.expected.map(e, {"name": e.comment, "shape":
+          e}) }}'

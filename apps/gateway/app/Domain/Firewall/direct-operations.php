@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Firewall\FirewallInspectionProjection;
 use App\Domain\Firewall\FirewallIntentProjection;
 
 $intent = [
@@ -12,7 +11,6 @@ $intent = [
 ];
 
 return [
-    'firewall.inspect' => ['workflow' => 'operation-firewall-inspect', 'projection' => FirewallInspectionProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'inspection', 'step' => 'result']],
     'firewall.allow' => $intent,
     'firewall.allowlist' => $intent,
     'firewall.deny' => $intent,

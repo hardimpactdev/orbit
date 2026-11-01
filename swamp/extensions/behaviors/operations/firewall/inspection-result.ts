@@ -30,9 +30,8 @@ const Row = z.object({
 export const Snapshot = z.object({
     backend: z.enum(["active", "inactive"]),
     observed_at: z.iso.datetime(),
-    live: z.array(Shape.extend({ family: z.literal("v4") })).max(512),
-    comparison: z.object({ live: z.array(Row).max(512), missing: z.array(Row) })
-        .strict(),
+    live: z.array(Row).max(512),
+    missing: z.array(Row),
 }).strict();
 const Args = z.object({ stdout: z.string(), expected: z.array(Expected) })
     .strict();
@@ -206,47 +205,12 @@ export function inspectionResult(input: z.infer<typeof Args>) {
         : [];
     const result = Snapshot.parse({
         backend,
-        live,
         observed_at: new Date().toISOString(),
-        comparison: { live: classified, missing },
+        live: classified,
+        missing,
     });
     if (new TextEncoder().encode(JSON.stringify(result)).length >= Limit) {
         throw new Error("firewall.inspection_too_large");
     }
     return result;
 }
-export const behavior = {
-    type: "@nckrtl/firewall-inspection",
-    version: "2026.11.01.2",
-    resources: {
-        result: {
-            schema: z.object({ stdout: z.string(), exitCode: z.literal(0) }),
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
-    },
-    methods: {
-        inspect: {
-            description:
-                "Parse and compare one native pinned SSH UFW observation against admitted intent",
-            arguments: Args,
-            execute: async (
-                args: z.infer<typeof Args>,
-                ctx: {
-                    writeResource(
-                        spec: string,
-                        name: string,
-                        value: unknown,
-                    ): Promise<unknown>;
-                },
-            ) => ({
-                dataHandles: [
-                    await ctx.writeResource("result", "result", {
-                        stdout: JSON.stringify(inspectionResult(args)),
-                        exitCode: 0,
-                    }),
-                ],
-            }),
-        },
-    },
-};

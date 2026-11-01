@@ -31,12 +31,12 @@ Deno.test("native comparison preserves exact/drift/unmanaged/missing semantics",
             },
         ],
     });
-    assertEquals(result.comparison.live.map((r) => [r.name, r.match]), [
+    assertEquals(result.live.map((r) => [r.name, r.match]), [
         ["office-web", "exact"],
         ["stale", "unmanaged"],
         ["changed", "drift"],
     ]);
-    assertEquals(result.comparison.missing.map((r) => [r.name, r.match]), [[
+    assertEquals(result.missing.map((r) => [r.name, r.match]), [[
         "other",
         "missing",
     ]]);
@@ -45,17 +45,30 @@ Deno.test("numbered UFW parsing normalizes IPv4, ranges and interfaces; IPv6 sta
     const result = inspectionResult({
         stdout:
             "Status: active\n[1] 10.2.3.7/24 00443:00444/tcp on orbit ALLOW FWD 192.0.2.1/32 on enp5s0 # owned\n[2] 443/tcp (v6) ALLOW IN Anywhere (v6) # ipv6",
-        expected: [],
+        expected: [{
+            name: "forward",
+            shape: {
+                ...shape,
+                comment: "owned",
+                direction: "fwd",
+                destination: "10.2.3.0/24",
+                port: "443:444",
+                in_interface: "enp5s0",
+                out_interface: "orbit",
+            },
+        }],
     });
     assertEquals(result.live, [{
-        ...shape,
+        name: "forward",
         comment: "owned",
-        direction: "fwd",
+        action: "allow",
+        source: "192.0.2.1",
         destination: "10.2.3.0/24",
         port: "443:444",
-        in_interface: "enp5s0",
-        out_interface: "orbit",
+        protocol: "tcp",
+        interface: "enp5s0",
         family: "v4",
+        match: "exact",
     }]);
 });
 Deno.test("a wildcard desired family can match IPv4 but an explicit IPv6 rule cannot", () => {
@@ -65,7 +78,7 @@ Deno.test("a wildcard desired family can match IPv4 but an explicit IPv6 rule ca
             expected: [{ name: "office", shape: { ...shape, family } }],
         });
         assertEquals(
-            result.comparison.live[0].match,
+            result.live[0].match,
             family === "v6" ? "unmanaged" : "exact",
         );
     }
@@ -75,10 +88,10 @@ Deno.test("inactive UFW gives an empty recorded comparison", () => {
         stdout: "Status: inactive\n",
         expected: [{ name: "office", shape }],
     });
-    assertEquals([result.backend, result.live, result.comparison], [
+    assertEquals([result.backend, result.live, result.missing], [
         "inactive",
         [],
-        { live: [], missing: [] },
+        [],
     ]);
 });
 Deno.test("malformed or unrepresentable observations fail without partial output", () => {
@@ -123,11 +136,11 @@ Deno.test("a changed interface is drift; duplicate observations do not fabricate
             "Status: active\n[1] 443/tcp on orbit ALLOW IN 192.0.2.1 # orbit:rule-7\n[2] 443/tcp ALLOW IN 192.0.2.1 # orbit:rule-7",
         expected: [{ name: "office", shape }],
     });
-    assertEquals(result.comparison.live.map((r) => r.match), [
+    assertEquals(result.live.map((r) => r.match), [
         "drift",
         "exact",
     ]);
-    assertEquals(result.comparison.missing, []);
+    assertEquals(result.missing, []);
 });
 
 Deno.test("IPv6 text in an IPv4 comment cannot hide the row; IPv6-only intent stays excluded", () => {
@@ -141,7 +154,7 @@ Deno.test("IPv6 text in an IPv4 comment cannot hide the row; IPv6-only intent st
     });
     assertEquals(result.live.length, 1);
     assertEquals(result.live[0].comment, "office (v6) marker");
-    assertEquals(result.comparison.missing, []);
+    assertEquals(result.missing, []);
 });
 
 Deno.test("official named tuples and shared aliases compare exactly without weakening role ownership", () => {
@@ -169,18 +182,18 @@ Deno.test("official named tuples and shared aliases compare exactly without weak
             "Status: active\n[1] 443/tcp ALLOW IN Anywhere\n[2] 444/tcp ALLOW IN Anywhere\n[3] 80/tcp ALLOW IN Anywhere\n",
         expected,
     });
-    assertEquals(complete.comparison.live.map((row) => row.match), [
+    assertEquals(complete.live.map((row) => row.match), [
         "exact",
         "exact",
         "unmanaged",
     ]);
-    assertEquals(complete.comparison.live[0].name, "web");
-    assertEquals(complete.comparison.missing.map((row) => row.name), ["role"]);
+    assertEquals(complete.live[0].name, "web");
+    assertEquals(complete.missing.map((row) => row.name), ["role"]);
     const partial = inspectionResult({
         stdout: "Status: active\n443/tcp ALLOW IN Anywhere\n",
         expected,
     });
-    assertEquals(partial.comparison.missing.map((row) => row.name), [
+    assertEquals(partial.missing.map((row) => row.name), [
         "web",
         "alias",
         "role",
@@ -211,7 +224,7 @@ Deno.test("named tuples cannot hide drift of an explicit role comment owner", ()
             },
         ],
     });
-    assertEquals(report.comparison.live.map((row) => [row.name, row.match]), [[
+    assertEquals(report.live.map((row) => [row.name, row.match]), [[
         "router",
         "drift",
     ]]);
@@ -240,7 +253,7 @@ Deno.test("allowlist source blocks compare exact shapes and precede broad trust"
         inspectionResult({
             stdout: "Status: active\n" + rows.join("\n"),
             expected,
-        }).comparison;
+        });
     assertEquals(
         compare([...lines, trust]).live.slice(0, 3).map((r) => r.match),
         ["exact", "exact", "exact"],

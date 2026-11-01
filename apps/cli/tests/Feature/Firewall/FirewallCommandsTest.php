@@ -10,7 +10,6 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\AllowlistFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
-use Orbit\Sdk\Requests\Firewall\InspectFirewallRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -354,35 +353,6 @@ it('follows a queued firewall Operation to its final JSON receipt and forwards t
         ->expectsOutput(firewall_cli_json('allow', 'active'))->assertExitCode(0);
     $mock->assertSent(fn ($request): bool => $request instanceof AllowFirewallRuleRequest && $request->headers()->get('Idempotency-Key') === 'allow-7');
     $mock->assertSent(fn ($request): bool => $request instanceof ShowOperationRequest);
-});
-
-it('starts and follows one native firewall inspection without contaminating JSON output', function (): void {
-    $operation = [...firewall_cli_operation(), 'kind' => 'firewall.inspect', 'input' => ['node_id' => 7],
-        'result' => ['backend' => 'active', 'live' => [], 'observed_at' => '2026-10-31T10:00:00.000Z']];
-    $mock = MockClient::global([
-        InspectFirewallRequest::class => MockResponse::make([
-            'data' => [...$operation, 'status' => 'queued', 'result' => null], 'meta' => ['request_id' => firewall_cli_request_id()],
-        ], 202),
-        ShowRealtimeRequest::class => MockResponse::make([], 503),
-        ShowOperationRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => firewall_cli_request_id()]]),
-    ]);
-    $expected = json_encode(OperationResponse::fromGatewayData($operation, firewall_cli_request_id())->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $this->artisan('firewall:inspect', ['--node' => '7', '--idempotency-key' => 'inspect-node-7', '--json' => true])
-        ->expectsOutput($expected)->assertExitCode(0);
-
-    $mock->assertSent(fn ($request): bool => $request instanceof InspectFirewallRequest
-        && $request->resolveEndpoint() === '/api/v1/nodes/7/firewall-inspection'
-        && $request->headers()->get('Idempotency-Key') === 'inspect-node-7');
-    $mock->assertSent(fn ($request): bool => $request instanceof ShowOperationRequest);
-});
-
-it('refuses a missing firewall inspection Node before admission', function (): void {
-    $mock = MockClient::global([]);
-
-    $this->artisan('firewall:inspect', ['--json' => true])->expectsOutputToContain('firewall.node_id_invalid')->assertExitCode(1);
-
-    $mock->assertNothingSent();
 });
 
 it('sends a complete repeated source set and follows the allowlist Operation', function (): void {

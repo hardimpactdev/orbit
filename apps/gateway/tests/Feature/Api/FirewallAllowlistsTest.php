@@ -45,7 +45,7 @@ it('admits a normalized source set and replaces it under the same name then remo
     FirewallProjectionFixture::finish(Operation::query()->findOrFail($id));
     expect($rule->fresh()->sources)->toBe(['10.44.0.16/28']);
     expect(FirewallRule::query()->count())->toBe(1);
-    $expected = app(FirewallInspectionInput::class)->capture($this->node)['expected'];
+    $expected = app(FirewallInspectionInput::class)->expected($this->node);
     $block = array_values(array_filter($expected, fn (array $row): bool => $row['name'] === 'rex'));
     expect(array_column(array_column($block, 'shape'), 'action'))->toBe(['allow', 'deny']);
     expect(array_column(array_column($block, 'shape'), 'source'))->toBe(['10.44.0.16/28', 'any']);

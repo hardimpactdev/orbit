@@ -190,7 +190,7 @@ it('rechecks the original live intent after signing before releasing a public bu
 });
 
 it('does not infer signing authority from certificate-looking input on another kind', function (): void {
-    $this->operation->update(['kind' => 'firewall.inspect', 'input' => ['certificates' => [$this->leaf]]]);
+    $this->operation->update(['kind' => 'firewall.allow', 'input' => ['certificates' => [$this->leaf]]]);
     $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
 });
 

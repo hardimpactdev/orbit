@@ -22,9 +22,6 @@ Route::middleware([
     Route::get('nodes/{node}/live-firewall-rules', [FirewallRulesController::class, 'live'])
         ->whereNumber('node')
         ->name('firewall:live:list');
-    Route::post('nodes/{node}/firewall-inspection', [FirewallRulesController::class, 'inspect'])
-        ->whereNumber('node')
-        ->name('firewall:inspect');
     Route::post('nodes/{node}/firewall-rules/allow', [FirewallRulesController::class, 'allow'])
         ->defaults('firewall_action', 'allow')
         ->name('firewall:allow');

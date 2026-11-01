@@ -300,7 +300,7 @@ export function compare(
                             );
                         }
                         for (
-                            const row of snapshot.comparison.live.filter((r) =>
+                            const row of snapshot.live.filter((r) =>
                                 r.match === "drift"
                             )
                         ) {
@@ -313,7 +313,7 @@ export function compare(
                                 ),
                             );
                         }
-                        for (const row of snapshot.comparison.missing) {
+                        for (const row of snapshot.missing) {
                             issues.push(
                                 issue(
                                     family,
@@ -660,7 +660,7 @@ export const Result = z.object({
 });
 export const behavior = {
     type: "@nckrtl/doctor",
-    version: "2026.11.01.3",
+    version: "2026.11.01.4",
     resources: {
         plan: {
             schema: z.object({ reads: z.array(Read), log_script: z.string() }),

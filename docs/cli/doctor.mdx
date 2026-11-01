@@ -51,7 +51,7 @@ Failed or malformed reads produce one unverifiable inspection finding for their 
 | `role` | Recorded lifecycle and current state of each service required by an active Linux role. |
 | `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. |
 
-| `firewall` | Named rule lifecycle, UFW active state, missing source/deny lines, exact rule shapes and safe allowlist order. Uses the same comparison as `firewall:inspect`. |
+| `firewall` | Named rule lifecycle, UFW active state, missing source/deny lines, exact rule shapes and safe allowlist order. |
 
 A stopped, non-keep-alive development Process desired running is healthy only when its managed awake marker is proven absent. An unavailable marker does not count as sleep. This inspection takes no timed samples and does not infer a restart rate.
 

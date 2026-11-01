@@ -92,7 +92,7 @@ So the files named in the brief (`health.rs`, `caddy_observation.rs`, `metrics_*
 - `CacheAgentStateView` writes a file cache under `ORBIT_HOME/cache/agent-view`, key `agent-view.node.{id}`: `received_at`, `agent_at`, `sequence`, `docker`, `units`, `workspaces`, `logs`. TTL is 60 s (`NodeTtlSeconds`).
 - Freshness uses only the Gateway clock: `received_at` within 15 s (`FreshSeconds`). `agent_at` is stored but not used.
 - `DoctorObservations::forNode` hands this view to doctor (`units`, `docker`, `workspaces` when fresh). Only `node.agent_view_stale` uses it today.
-- `ListLiveFirewallRulesAction` (`firewall:live:list`) is not agent-fed. It returns the last succeeded `firewall.inspect` Operation result (a Swamp run), or `unreachable`.
+- `ListLiveFirewallRulesAction` (`firewall:live:list`) is not agent-fed yet. It returns every desired rule with `match` `unverifiable` and never reads over SSH.
 
 Gaps in the store for the new model: the 60 s TTL deletes an observation, so "last known value with `observed_at`" is not kept; there is no per-fact `observed_at`; and only unit status strings fit the schema.
 
@@ -102,7 +102,7 @@ Gaps in the store for the new model: the 60 s TTL deletes an observation, so "la
 
 | # | Doctor check (codes) | Reads today | Agent today | What the agent must add | Root? | Gateway reads from |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Firewall backend and rules (`firewall.backend_inactive`, `rule_missing`, `rule_mismatch`) | `sudo ufw status numbered` | no (only command `firewall.inspect`) | Run `ufw status numbered` on a timer (say 60 s). Send backend state and parsed v4 rows, plus `observed_at`. Reuse `inventory::live`. | `CAP_NET_ADMIN` (see §4) | New observation key `firewall`. Replaces the `firewall.inspect` Operation read in `ListLiveFirewallRulesAction`. |
+| 1 | Firewall backend and rules (`firewall.backend_inactive`, `rule_missing`, `rule_mismatch`) | `sudo ufw status numbered` | no (only command `firewall.inspect`) | Run `ufw status numbered` on a timer (say 60 s). Send backend state and parsed v4 rows, plus `observed_at`. Reuse `inventory::live`. | `CAP_NET_ADMIN` (see §4) | New observation key `firewall`. Replaces the `unverifiable` result in `ListLiveFirewallRulesAction`. |
 | 2 | Firewall stored rules (`firewall:live:list` "stored" view) | agent command `stored` | no | Optionally send `/etc/ufw/user.rules` and `user6.rules` parsed rows. | no (root-owned `0640`, owner read) | Same `firewall` observation. |
 | 3 | Firewall lifecycle (`firewall.lifecycle_not_active`) | registry | n/a | nothing | no | Registry (`node_firewall_rules`) |
 | 4 | Platform (`node.platform_mismatch`) | `uname -sm` | no | Send OS from `std::env::consts::OS` once per snapshot. | no | New `node` observation |
@@ -164,6 +164,6 @@ Command mode is different. It starts through SSH as the managed `orbit` user wit
 
 1. Widen the report schema from "unit name → status" to typed facts, each with `observed_at` set by the agent (Gateway `received_at` stays the freshness clock). Chunking limits (`PUSHER_FRAME_LIMIT`) apply.
 2. The Gateway store needs retention for the last good observation. The 60 s TTL turns a stale fact into "missing", which cannot be told from "never observed". Pick: keep the value and mark stale, or keep TTL and call both "unverifiable". The decision text says the second is acceptable.
-3. `firewall:live:list` and `orbit doctor` become GET-only readers. `firewall.inspect` as a doctor input goes away; `firewall:inspect` (POST) can stay for on-demand refresh only if the agent can be asked for a snapshot (`Route::Snapshot` already exists in the observer loop).
+3. `firewall:live:list` and `orbit doctor` become GET-only readers. The `firewall:inspect` command is removed; an on-demand refresh would ask the agent for a snapshot (`Route::Snapshot` already exists in the observer loop).
 4. The `doctor.inspect-*` agent commands and the SSH reads in `planReads` are removed together with the comparison move (row 25). Do not delete `inspect-*` command code before the observations in rows 16–24 exist or are dropped on purpose.
 5. Facts that need credentials (row 23) do not fit "agent observes host state" and need a separate decision.

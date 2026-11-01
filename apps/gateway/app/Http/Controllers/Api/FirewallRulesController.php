@@ -8,7 +8,6 @@ use App\Actions\Firewall\ListFirewallRulesAction;
 use App\Actions\Firewall\ListLiveFirewallRulesAction;
 use App\Actions\Firewall\ListManagedFirewallRulesAction;
 use App\Actions\Firewall\RemoveFirewallRuleAction;
-use App\Actions\Firewall\StartFirewallInspectionAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Data\Firewall\FirewallRuleData;
 use App\Data\Operations\OperationData;
@@ -67,15 +66,6 @@ final class FirewallRulesController extends Controller
             'data' => $action->execute($node),
             'meta' => $this->meta($request),
         ]);
-    }
-
-    #[StartsOperation('firewall.inspect')]
-    public function inspect(Request $request, Node $node, StartFirewallInspectionAction $action): JsonResponse
-    {
-        $caller = $request->user();
-        $operation = $action->execute($node, $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
-
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation('firewall.allow')]

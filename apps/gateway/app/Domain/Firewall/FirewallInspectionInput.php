@@ -6,19 +6,12 @@ namespace App\Domain\Firewall;
 
 use App\Infrastructure\Firewall\DesiredFirewallRule;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 
-/** Capture public desired rules once; execution and comparison belong to the native run. */
+/** Public desired UFW rules for Doctor and the live list; execution and comparison belong to the native run. */
 final readonly class FirewallInspectionInput
 {
-    /** @return array<string,mixed> */
-    public function capture(Node $node): array
-    {
-        return ['ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'expected' => $this->expected($node)];
-    }
-
-    /** @return list<array<string,mixed>> */
+    /** @return list<array{name:string,shape:array<string,mixed>}> */
     public function expected(Node $node): array
     {
         $expected = array_map(static fn (DesiredFirewallRule $rule): array => [
