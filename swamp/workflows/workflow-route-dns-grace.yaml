@@ -9,7 +9,6 @@ jobs:
   steps:
   - name: wait-private-dns-ttl
     target: orbit-node-209
-    labels: {node: '209'}
     task:
       type: behavior
       behaviorType: command/shell

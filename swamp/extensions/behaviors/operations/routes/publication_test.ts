@@ -53,47 +53,7 @@ class Fixture {
       }
       return { status: 200, body: { data: this.operation } };
     });
-  execute() {
-    const model = publication(
-      () => this.http,
-      (call) =>
-        Promise.resolve().then(() => {
-          this.effects.push(call);
-          if (this.losePublication) {
-            this.losePublication = false;
-            throw new Error("operation.native_outcome_unknown");
-          }
-          return this.result;
-        }),
-      (input) => {
-        this.effects.push(input);
-        return Promise.resolve(this.result);
-      },
-    );
-    return model.methods.publish.execute({
-      ...args,
-      kind: "route.private_dns_publish",
-    }, ctx);
-  }
 }
-
-Deno.test("private DNS publication uses the same native flow without a separate dispatch wait", async () => {
-  const f = new Fixture();
-  f.operation.kind = "route.private_dns_publish";
-  const catalog = "{}";
-  const digest =
-    "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
-  Object.assign(f.operation.input, {
-    private_dns_publication: { node_id: 9, records: "", catalog, digest },
-  });
-  f.result = { outcome: "published", data: { ready: true, digest } };
-  assertEquals(await f.execute(), { status: "succeeded" });
-  assertEquals(f.effects.length, 1);
-  assertEquals(
-    f.calls.some((call) => /primitive|claim|children/.test(call.path)),
-    false,
-  );
-});
 
 Deno.test("same-root Process Caddy step reads current public data without projecting the parent", async () => {
   const f = new Fixture();

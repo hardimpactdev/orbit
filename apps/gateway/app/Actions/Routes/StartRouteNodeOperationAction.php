@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
@@ -18,7 +18,7 @@ use App\Support\ValidatedData;
 /** Captures validated Route input; the native workflow owns execution. */
 final readonly class StartRouteNodeOperationAction
 {
-    public function __construct(private StartOperationAction $operations, private RouteNodeEffectCommand $plans, private AgentDelivery $agents) {}
+    public function __construct(private StartOperationAction $operations, private RouteNodeEffectCommand $plans) {}
 
     /** @param array<string, mixed> $input */
     public function execute(string $kind, Node $node, array $input, ?Operation $parent = null): Operation
@@ -47,7 +47,7 @@ final readonly class StartRouteNodeOperationAction
         };
 
         return $this->operations->execute($kind, 'route_effect', ValidatedData::integer($input['route_id']), $node->id,
-            [...$input, 'verification' => ['protocol' => $protocol, 'probe' => $plan['input'], 'agent_sha256' => $this->agents->pin($node)]],
+            [...$input, 'verification' => ['protocol' => $protocol, 'probe' => $plan['input'], ...app(NativeCaddyPublicationInput::class)->connectionForNode($node)]],
             $parent === null ? 'operator' : $parent->triggered_by, $parent?->request_id);
     }
 }

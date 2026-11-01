@@ -3,7 +3,6 @@ import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 
 import {
   DirectArgs,
-  directOperation,
   DirectOperationCancelled,
   GatewayOperation,
   Globals,
@@ -14,10 +13,6 @@ import { runLocalProgram } from "./local-program.ts";
 import { DnsPublication, publishPrivateDns, runPrivateDns } from "./dns.ts";
 import { convergeFirewall } from "./firewall-local.ts";
 
-const Args = DirectArgs.extend({
-  kind: z.literal("route.private_dns_publish"),
-  node_id: z.number().int().positive(),
-});
 type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
@@ -75,39 +70,9 @@ export function publication(
 ) {
   return {
     type: "@nckrtl/route-publication",
-    version: "2026.10.31.9",
+    version: "2026.11.01.10",
     globalArguments: Globals,
     methods: {
-      publish: {
-        description: "Publish the admitted DNS owner's current private catalog",
-        arguments: Args,
-        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-          const gateway = new GatewayOperation(
-            makeHttp(ctx),
-            args,
-          );
-          return await directOperation(
-            args,
-            gateway,
-            (input) => {
-              const payload = DnsPublication.parse(
-                input.private_dns_publication,
-              );
-              if (payload.node_id !== args.node_id) {
-                throw new Error("DNS publication Node does not match");
-              }
-              return publishPrivateDns(payload, invokeDns);
-            },
-            (result) => {
-              if (result.error_code === undefined && result.ready !== true) {
-                throw new Error("Route publication has no successful result");
-              }
-              return result;
-            },
-            ctx.signal,
-          );
-        },
-      },
       publishFirewall: {
         description:
           "Read and apply the participant's current ingress firewall rules",

@@ -45,7 +45,12 @@ class RouteDnsNative(NativeTestCase):
                 + """import json,os,sys
 from pathlib import Path
 with Path(os.environ['FIXTURE_AUDIT']).open('a') as out:out.write(json.dumps([Path(sys.argv[0]).name,*sys.argv[1:]])+'\\n')
-if Path(sys.argv[0]).name=='dnsmasq' and os.environ.get('FIXTURE_FAIL'):raise SystemExit(1)
+if Path(sys.argv[0]).name=='dnsmasq' and os.environ.get('FIXTURE_FAIL')=='validate':raise SystemExit(1)
+if Path(sys.argv[0]).name=='systemctl' and sys.argv[1:]==['restart','dnsmasq'] and os.environ.get('FIXTURE_FAIL')=='backend':
+    marker=Path(os.environ['FIXTURE_AUDIT']+'.failed')
+    if not marker.exists():
+        marker.write_text('failed once')
+        raise SystemExit(1)
 """
             )
             path.chmod(0o700)
@@ -73,10 +78,11 @@ if Path(sys.argv[0]).name=='dnsmasq' and os.environ.get('FIXTURE_FAIL'):raise Sy
                 return {k: patch(v) for k, v in value.items()}
             return value
 
+        self.patch = patch
         workflow = patch(workflow)
         for step in workflow["jobs"][0]["steps"]:
             self.assertEqual(step.pop("target"), "orbit-node-209")
-            self.assertEqual(step.pop("labels"), {"node": "209"})
+            self.assertNotIn("labels", step)
             args = step["task"].get("inputs", {}).get("argv", [])
             if args[:1] == ["sudo"]:
                 args.pop(0)
@@ -152,4 +158,102 @@ if Path(sys.argv[0]).name=='dnsmasq' and os.environ.get('FIXTURE_FAIL'):raise Sy
         self.assertEqual(
             [json.loads(row) for row in self.audit.read_text().splitlines()],
             [["dnsmasq", "--test"]],
+        )
+
+    def run_standalone(self, success=True):
+        import hashlib
+
+        flow = yaml.safe_load(
+            (ROOT / "workflows/workflow-operation-route-publication.yaml").read_text()
+        )
+        flow = self.patch(flow)
+        for step in flow["jobs"][0]["steps"]:
+            step.pop("target", None)
+            argv = step["task"].get("inputs", {}).get("argv", [])
+            if argv[:1] == ["sudo"]:
+                argv.pop(0)
+        (self.repo / "workflows/workflow-operation-route-publication.yaml").write_text(
+            yaml.safe_dump(flow, sort_keys=False)
+        )
+        after = {
+            **self.after,
+            "digest": hashlib.sha256(self.after["catalog"].encode()).hexdigest(),
+        }
+        value = {
+            "operation_id": 7,
+            "node_id": 1,
+            "kind": "route.private_dns_publish",
+            "execution_secrets": {},
+            "intent": {
+                "node_id": 1,
+                "connection": self.connection,
+                "host_keys": [PIN],
+                "after": after,
+            },
+        }
+        reply = json.loads(
+            self.cli(
+                "workflow",
+                "run",
+                "operation-route-publication",
+                "--input",
+                json.dumps(value),
+                success=success,
+            ).stdout
+        )
+        history = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
+        result = next(s for s in history["jobs"][0]["steps"] if s["name"] == "result")
+        return reply, json.loads(result["outputs"]["stdout"]), after
+
+    def test_standalone_root_replaces_the_admitted_whole_catalog(self):
+        reply, result, after = self.run_standalone()
+        self.assertEqual(reply["status"], "succeeded")
+        self.assertEqual(
+            json.loads(self.catalog.read_text()), json.loads(after["catalog"])
+        )
+        self.assertNotIn("survivor.test", self.records.read_text())
+        self.assertEqual(result["data"]["digest"], after["digest"])
+
+    def test_failed_standalone_validation_never_claims_publication(self):
+        self.native_env["FIXTURE_FAIL"] = "validate"
+        before = json.loads(self.catalog.read_text())
+        reply, result, _ = self.run_standalone(success=False)
+        self.assertEqual(reply["status"], "failed")
+        self.assertEqual(
+            result,
+            {
+                "ready": False,
+                "error_code": "private_dns.publication_failed",
+                "restored": False,
+            },
+        )
+        self.assertEqual(json.loads(self.catalog.read_text()), before)
+        self.assertEqual(
+            [json.loads(row) for row in self.audit.read_text().splitlines()],
+            [["dnsmasq", "--test"], ["dnsmasq", "--test"]],
+        )
+
+    def test_failed_backend_restores_catalog_without_hiding_original_failure(self):
+        self.native_env["FIXTURE_FAIL"] = "backend"
+        before = json.loads(self.catalog.read_text())
+        reply, result, _ = self.run_standalone(success=False)
+        self.assertEqual(reply["status"], "failed")
+        self.assertEqual(
+            result,
+            {
+                "ready": False,
+                "error_code": "private_dns.publication_failed",
+                "restored": True,
+            },
+        )
+        self.assertEqual(json.loads(self.catalog.read_text()), before)
+        self.assertEqual(
+            [json.loads(row) for row in self.audit.read_text().splitlines()],
+            [
+                ["dnsmasq", "--test"],
+                ["systemctl", "restart", "dnsmasq"],
+                ["dnsmasq", "--test"],
+                ["systemctl", "restart", "dnsmasq"],
+                ["systemctl", "enable", "--now", "orbit-private-dns.socket"],
+            ],
         )

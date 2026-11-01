@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Actions\Routes\RouteChildAdmission;
 use App\Actions\Routes\StartRouteNodeOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\NativeRouteLanRemovalProjection;
+use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -23,10 +23,10 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $this->control = Node::query()->create(['public_ssh_host' => '192.0.2.1', 'name' => 'control', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']);
+    $this->control = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-probe-pin', 'public_ssh_host' => '192.0.2.1', 'name' => 'control', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']);
     $this->control->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $cluster = Cluster::query()->create(['name' => 'dev', 'status' => 'active']);
-    $this->router = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'name' => 'router', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'wireguard_ip' => '10.44.0.9', 'lan_ip' => '192.168.6.9', 'cluster_id' => $cluster->id, 'user' => 'orbit']);
+    $this->router = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-probe-pin', 'public_ssh_host' => '192.0.2.9', 'name' => 'router', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'wireguard_ip' => '10.44.0.9', 'lan_ip' => '192.168.6.9', 'cluster_id' => $cluster->id, 'user' => 'orbit']);
     $this->router->roles()->create(['role' => RoleName::Router, 'status' => 'active', 'cluster_id' => $cluster->id]);
     $workload = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-workload-pin', 'public_ssh_host' => '192.0.2.18', 'name' => 'workload', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'wireguard_ip' => '10.44.0.18', 'lan_ip' => '192.168.6.18', 'cluster_id' => $cluster->id, 'user' => 'orbit']);
     $workload->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
@@ -49,60 +49,35 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->control->wireguard_ip]);
 });
 
-it('defaults verification to direct and refuses the removed writer', function (): void {
-    expect(app(DirectOperation::class)->writer('route.workload_verify'))->toBe('direct')
-        ->and(app(DirectOperation::class)->writer('route.public_verify'))->toBe('direct');
-    config(['swamp.direct_writers' => ['route.workload_verify' => 'polled']]);
-    expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router, $this->input))->toThrow(ResourceOperationException::class);
+it('freezes the validated hop and the probing Node pins without a Gateway effect', function (): void {
+    $operation = app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router, $this->input);
+    $inputs = $this->socket->sent[0]['payload']['inputs'];
+    expect($inputs['intent'])->toBe(['node_id' => $this->router->id, 'protocol' => 'tls',
+        'probe' => ['address' => '10.44.0.18', 'port' => 443, 'domain' => 'demo.private.test'],
+        ...app(NativeCaddyPublicationInput::class)->connectionForNode($this->router)])
+        ->and($operation->lock_key)->toBeNull()->and($operation->worker)->toBeNull()->and($this->agents->calls)->toBe([]);
+    $this->router->update(['wireguard_ip' => '10.44.0.77', 'ssh_host_key' => 'changed']);
+    $this->instance->node->update(['wireguard_ip' => '10.44.0.88']);
+    expect($inputs['intent']['connection']['nodeHost'])->toBe('10.44.0.9')
+        ->and($inputs['intent']['probe']['address'])->toBe('10.44.0.18')
+        ->and(app(RouteOperationProjection::class)->input($operation)['intent'])->toBe($inputs['intent']);
+});
+
+it('refuses a probing Node without admitted host pins before dispatch', function (): void {
+    $this->router->update(['ssh_host_key' => null]);
+    expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router->fresh(), $this->input))
+        ->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 });
 
-it('captures the validated hop and pin without a Gateway effect or execution hold', function (): void {
-    config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
-    $operation = app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router, $this->input);
-    expect($operation->input['verification'])->toBe(['protocol' => 'tls', 'probe' => ['address' => '10.44.0.18', 'port' => 443, 'domain' => 'demo.private.test'], 'agent_sha256' => str_repeat('a', 64)])
-        ->and($operation->state['route_verification_writer'])->toBe('direct')->and($operation->lock_key)->toBeNull()
-        ->and($operation->worker)->toBeNull()->and($this->agents->calls)->toBe([]);
-    $this->instance->node->update(['lan_ip' => '192.168.6.88', 'wireguard_ip' => '10.44.0.88']);
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.probe.address', '10.44.0.18');
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
-    expect($this->agents->calls)->toBe([]);
-});
-
-it('refuses the first worker read before the Gateway start response binds the root', function (): void {
-    config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
-    $reply = $this->socket->reply;
-    $readBeforeBinding = false;
-    $this->socket->reply = function (array $request) use ($reply, &$readBeforeBinding): array {
-        $operation = Operation::query()->latest('id')->firstOrFail();
-        $path = '/api/v1/direct-operations/'.$operation->id;
-        $this->getJson($path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
-        $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'running', 'started_at' => '2026-10-30T15:00:00.000Z'])->assertConflict();
-        expect($operation->fresh()->state)->not->toHaveKey('swamp_run_id');
-        $readBeforeBinding = true;
-
-        return $reply($request);
-    };
-    $operation = app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router, $this->input);
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk();
-    expect($readBeforeBinding)->toBeTrue()->and($operation->fresh()->state['swamp_run_id'])->toBe($this->runId)
-        ->and($this->agents->calls)->toBe([]);
-});
-
-it('projects only bounded results and refuses another Node or run', function (): void {
-    config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
+it('rejects executor callbacks and projects only the native reader result', function (): void {
     $operation = app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router, $this->input);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $body = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T15:00:00.000Z', 'finished_at' => '2026-10-30T15:00:01.000Z', 'result' => ['ready' => true, 'stderr' => 'private-diagnostic']];
-    $this->postJson($path.'/result', [...$body, 'run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92677'])->assertConflict();
-    config(['operation_executor.worker_node_ids' => [$this->instance->node_id]]);
-    $this->instance->node->accessibleNodes()->attach($this->control);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->instance->node->wireguard_ip]);
+    $body = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T15:00:00.000Z',
+        'finished_at' => '2026-10-30T15:00:01.000Z', 'result' => ['ready' => true, 'stderr' => 'private-diagnostic']];
+    $this->postJson($path.'/result', $body)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
     $this->getJson($path.'?run_id='.$this->runId)->assertForbidden();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->control->wireguard_ip]);
-    $this->postJson($path.'/result', [...$body, 'result' => ['ready' => false]])->assertUnprocessable();
-    $this->postJson($path.'/result', $body)->assertOk()->assertDontSee('private-diagnostic');
+    app(RouteOperationProjection::class)->apply($operation, $body);
     expect($operation->fresh()->result)->toBe(['ready' => true])->and($this->agents->calls)->toBe([]);
 });
 
@@ -112,8 +87,7 @@ it('refuses a skipped probe instead of reporting an unverified Route ready', fun
         'protocol' => 'skip', 'probe' => null, 'agent_sha256' => str_repeat('a', 64),
     ]]]);
 
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
-        ->assertUnprocessable()->assertJsonPath('error.code', 'route.verification_invalid');
+    expect(fn () => app(RouteOperationProjection::class)->input($operation))->toThrow(ResourceOperationException::class);
     expect($operation->fresh()->result)->toBeNull()->and($this->agents->calls)->toBe([]);
 });
 
@@ -122,23 +96,6 @@ it('refuses foreign placement and worker-selected probe fields before recording 
         expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $node, $input))->toThrow(ResourceOperationException::class);
     }
     expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
-});
-
-it('admits a prospective target only through its owning Route parent snapshot', function (): void {
-    config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
-    $prospective = Instance::query()->create(['node_id' => $this->instance->node_id, 'project_id' => $this->instance->project_id,
-        'name' => 'prospective', 'checkout_path' => '/home/orbit/code/prospective', 'status' => 'active']);
-    $input = ['route_id' => $this->route->id, 'instance_id' => $prospective->id];
-    expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router, $input))->toThrow(ResourceOperationException::class);
-    $parent = Operation::query()->create(['kind' => 'route.target_set', 'target_type' => 'route', 'target_id' => $this->route->id,
-        'node_id' => $this->router->id, 'status' => 'running', 'sequence' => 1, 'input' => [], 'state' => ['route_plan' => ['prepared_targets' => [
-            ['route_id' => $this->route->id, 'instance_id' => $prospective->id, 'node_id' => $prospective->node_id],
-        ]]]]);
-    $operation = app(RouteChildAdmission::class)->admit($parent,
-        ['kind' => 'route.workload_verify', 'node_id' => $this->router->id, 'input' => $input]);
-    expect($operation->input['verification']['probe']['address'])->toBe('10.44.0.18')
-        ->and($operation->node_id)->toBe($this->router->id)->and($operation->state['route_verification_writer'])->toBe('direct')
-        ->and($this->agents->calls)->toBe([]);
 });
 
 it('captures public TLS verification only on the stored Ingress', function (): void {
