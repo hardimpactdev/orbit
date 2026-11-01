@@ -36,7 +36,7 @@ final readonly class ExpireOperationAction
             $state['native_timeout'] = ['budget_seconds' => $seconds, 'deadline' => $deadline->toISOString()];
             if (! is_array($failure) || ! is_string($failure['detail'] ?? null)) {
                 $state['native_failure'] = ['failed_step' => $step,
-                    'detail' => "The Operation exceeded its {$seconds}-second run budget.", 'stderr_recorded' => false];
+                    'detail' => self::budgetDetail($seconds), 'stderr_recorded' => false];
             }
             app(OperationStore::class)->change($current, [
                 'status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out',
@@ -59,6 +59,11 @@ final readonly class ExpireOperationAction
 
         return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out'
             && (! is_array($timeout) || (! isset($timeout['native_terminal_observed_at']) && ! isset($timeout['no_run_verified_at'])));
+    }
+
+    public static function budgetDetail(int $seconds): string
+    {
+        return "The Operation exceeded its {$seconds}-second run budget.";
     }
 
     /** Called only after the shared reader verifies the exact terminal native root identity. */
