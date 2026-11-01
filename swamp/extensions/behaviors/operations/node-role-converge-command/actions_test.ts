@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior, observerFiles } from "./assets.ts";
-import { roleResult } from "./result.ts";
+import { RoleConvergeContribution, roleResult } from "./result.ts";
 import { generatedRoleWorkflows, roleWorkflow } from "./workflows.ts";
 const ctx = {
     extensionFile: (name: string) => new URL(name, import.meta.url).pathname,
@@ -46,6 +46,7 @@ Deno.test("terminal assembly preserves unchanged artifacts and refuses missing r
             node_id: 5,
             assignment_id: 7,
             role: "database",
+            created: false,
             footprint: { artifacts: [{ name: "agent", required: false }] },
             cli: { skip_reason: "release_unavailable", plan_error: null },
         },
@@ -76,6 +77,7 @@ Deno.test("the terminal relay exposes the canonical public JSON stdout receipt",
 Deno.test("Ingress requires Caddy publication and firewall proof", () => {
     const intent = {
         role: "ingress",
+        created: false,
         node_id: 5,
         assignment_id: 7,
         footprint: { artifacts: [] },
@@ -95,6 +97,51 @@ Deno.test("Ingress requires Caddy publication and firewall proof", () => {
     assertEquals(roleResult({ intent, steps }).role_proven, true);
     steps["caddy-0"].status = "failed";
     assertEquals(roleResult({ intent, steps }).role_proven, false);
+});
+
+Deno.test("new assignment receipts preserve identity and phase facts on later failure", () => {
+    for (const created of [true, false]) {
+        const intent = {
+            node_id: 5,
+            assignment_id: 7,
+            role: "websocket",
+            created,
+            footprint: { artifacts: [{ name: "agent", required: true }] },
+            cli: { skip_reason: "release_unavailable", plan_error: null },
+        };
+        const steps = Object.fromEntries(
+            [
+                "account",
+                "observer_install",
+                "packages",
+                "caddy_package-0",
+                "runtime-0",
+                "certificates-0",
+                "publication-0",
+                "firewall-0",
+            ].map((name) => [name, { status: "succeeded" }]),
+        );
+        const result = RoleConvergeContribution.parse(
+            roleResult({ intent, steps }),
+        );
+        assertEquals({
+            node_id: result.node_id,
+            assignment_id: result.assignment_id,
+            role: result.role,
+            created: result.created,
+        }, { node_id: 5, assignment_id: 7, role: "websocket", created });
+        assertEquals(result.role_proven, true);
+        assertEquals(result.footprint.footprint_proven, false);
+        steps["publication-0"].status = "failed";
+        const failed = RoleConvergeContribution.parse(
+            roleResult({ intent, steps }),
+        );
+        assertEquals(failed.created, created);
+        assertEquals(failed.role_proven, false);
+        assertEquals(failed.runtime_proven, true);
+        assertEquals(failed.certificates_proven, true);
+        assertEquals(failed.publication_proven, false);
+    }
 });
 
 Deno.test("shared runtime workflows have unique steps,209 placement and a decisive final proof", async () => {

@@ -8,6 +8,7 @@ const Args = z.object({
         node_id: z.number().int().positive(),
         assignment_id: z.number().int().positive(),
         role: z.enum(["database", "ingress", "websocket"]),
+        created: z.boolean(),
         footprint: z.object({
             artifacts: z.array(
                 z.object({ name: z.string(), required: z.boolean() })
@@ -107,7 +108,7 @@ export function roleResult(raw: unknown) {
             ? ok("publication-0")
             : intent.role !== "ingress" || ok("caddy-0"),
         assignment_id: intent.assignment_id,
-        created: false,
+        created: intent.created,
         role_proven,
         baseline: [{ stage: "prerequisites", ok: role_proven }],
         footprint,
@@ -124,7 +125,7 @@ export const RoleConvergeContribution = z.object({
     role: z.enum(["database", "ingress", "websocket"]),
     certificates_proven: z.boolean(),
     assignment_id: z.number().int().positive(),
-    created: z.literal(false),
+    created: z.boolean(),
     role_proven: z.boolean(),
     runtime_proven: z.boolean(),
     publication_proven: z.boolean(),
@@ -149,7 +150,7 @@ export type RoleConvergeReceipt = z.infer<typeof RoleConvergeContribution>;
 const Result = z.record(z.string(), z.unknown());
 export const behavior = {
     type: "@nckrtl/node-role-converge-result",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

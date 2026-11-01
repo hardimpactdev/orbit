@@ -3,21 +3,25 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
+use App\Actions\Nodes\AssignRoleAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleDirectProjection;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -71,6 +75,78 @@ it('preserves the retained snapshot for other role sets and their callback reads
 it('does not admit an absent Database assignment as existing convergence', function (): void {
     $this->node->roles()->delete();
     expect(NativeNodeRoleConvergeInput::supports($this->node, RoleName::Database))->toBeFalse();
+});
+
+it('captures a real new assignment on a previously roleless Node without a Node worker', function (): void {
+    $node = FleetFixtures::node('new-database');
+    $assignment = app(AssignRoleAction::class)->execute($node, RoleName::Database);
+    $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, true);
+
+    $captured = app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot);
+
+    expect(NativeNodeRoleConvergeInput::supportsContribution($node, RoleName::Database))->toBeTrue()
+        ->and($captured['intent'])->toMatchArray(['node_id' => $node->id, 'assignment_id' => $assignment->id,
+            'role' => 'database', 'created' => true])
+        ->and($captured['participant_node_ids'])->toContain(209, $node->id)
+        ->and($assignment->refresh()->status->value)->toBe('provisioning');
+});
+
+it('captures a supported role on a mixed Node while keeping standalone selection narrow', function (): void {
+    $assignment = $this->node->roles()->sole();
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $snapshot = app(NodeRoleDirectInput::class)->capture($this->node, $assignment, false);
+
+    $captured = app(NativeNodeRoleConvergeInput::class)->capture($this->node, $assignment, $snapshot);
+
+    expect(NativeNodeRoleConvergeInput::supports($this->node, RoleName::Database))->toBeFalse()
+        ->and(NativeNodeRoleConvergeInput::supportsContribution($this->node, RoleName::Database))->toBeTrue()
+        ->and($captured['intent']['created'])->toBeFalse()
+        ->and($this->node->roles()->count())->toBe(2);
+});
+
+it('refuses forged or stale assignment and snapshot identity before returning native intent', function (): void {
+    $assignment = $this->node->roles()->sole();
+    $snapshot = app(NodeRoleDirectInput::class)->capture($this->node, $assignment, false);
+    $capture = app(NativeNodeRoleConvergeInput::class);
+    foreach ([['node_id' => $this->node->id + 1], ['assignment_id' => $assignment->id + 1],
+        ['role' => 'ingress'], ['created' => 'true']] as $change) {
+        expect(fn () => $capture->capture($this->node, $assignment, [...$snapshot, ...$change]))
+            ->toThrow(ResourceOperationException::class);
+    }
+    $forged = new NodeRole($assignment->getAttributes());
+    $forged->setAttribute('id', $assignment->id);
+    expect(fn () => $capture->capture($this->node, $forged, $snapshot))->toThrow(ResourceOperationException::class);
+    $assignment->delete();
+    $assignment->exists = true;
+    expect(fn () => $capture->capture($this->node, $assignment, $snapshot))->toThrow(ResourceOperationException::class);
+});
+
+it('captures the real transferred WebSocket assignment and target private material on a mixed Node', function (): void {
+    $source = FleetFixtures::node('prior-websocket', [RoleName::WebSocket]);
+    $target = FleetFixtures::node('target-websocket', [RoleName::AppDev]);
+    $vpn = FleetFixtures::node('publication-dns', [RoleName::Vpn]);
+    $assignment = $source->roles()->sole();
+    app(CaddySiteCertificates::class)->record($source->id, 'websocket');
+    app(WebSocketDnsTarget::class)->markServing($source->id);
+    $assignment->update(['node_id' => $target->id, 'status' => 'provisioning']);
+    app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
+    $snapshot = app(NodeRoleDirectInput::class)->capture($target, $assignment, false);
+
+    $captured = app(NativeNodeRoleConvergeInput::class)->capture($target, $assignment, $snapshot);
+    $private = app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $target->id);
+    $dns = array_find($captured['intent']['publications'], static fn (array $row): bool => $row['node_id'] === $vpn->id);
+
+    expect($captured['intent'])->toMatchArray(['node_id' => $target->id, 'assignment_id' => $assignment->id,
+        'role' => 'websocket', 'created' => false])
+        ->and($captured['intent']['certificates']['leaves'][0]['node_id'])->toBe($target->id)
+        ->and($private->value)->toHaveKey('websocket_environment')
+        ->and(json_encode($captured, JSON_THROW_ON_ERROR))->not->toContain('REGISTRY_TOKEN=', 'APP_KEY=')
+        ->and($assignment->refresh()->node_id)->toBe($target->id)
+        ->and($dns['before']['dns']['records'])->toContain('host-record=reverb.orbit,'.$source->wireguard_ip)
+        ->and($dns['after']['dns']['records'])->toContain('host-record=reverb.orbit,'.$target->wireguard_ip)
+        ->and($dns['after']['dns']['records'])->not->toContain('host-record=reverb.orbit,'.$source->wireguard_ip)
+        ->and(app(WebSocketDnsTarget::class)->isServing($source->id))->toBeTrue()
+        ->and(app(WebSocketDnsTarget::class)->isServing($target->id))->toBeFalse();
 });
 
 it('keeps the observer configuration free of worker credentials when its Node is selected for rollout', function (): void {

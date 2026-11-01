@@ -91,7 +91,7 @@ print(json.dumps(result))
                 if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
         (self.repo/'workflows/workflow-operation-route-caddy.yaml').write_text(yaml.safe_dump(caddy,sort_keys=False))
         self.input={'operation_id':7,'node_id':5,'kind':'node.role_converge','execution_secrets':{},'intent':{
-          'role':'database','assignment_id':17,'node_id':5,'user':'orbit','agent_sha256':'a'*64,'prerequisites':{'packages':['docker.io'],'releases':['resolute']},
+          'role':'database','assignment_id':17,'node_id':5,'created':False,'user':'orbit','agent_sha256':'a'*64,'prerequisites':{'packages':['docker.io'],'releases':['resolute']},
           'ssh':{'identity_file':str(identity),'target':{'host':'dev.invalid','user':'orbit','port':22,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}},
           'footprint':{'artifacts':[{'name':'agent','required':True}],'payloads':{'agent':{'url':'https://example.invalid/agent','configuration':'gateway_url="https://gateway.orbit"','certificate':'fixture','unit':'# Managed by Orbit: agent\nProtectHome=yes','apps_root':None,'checkouts':[]}},'network':None},
           'cli':{'user':'orbit','release':None,'profile':'','skip_reason':'release_unavailable','plan_error':None}}}
@@ -112,6 +112,15 @@ print(json.dumps(result))
     def test_success_and_empty_dns_branch(self):
         history,result=self.run_role()
         self.assertEqual(history['status'],'succeeded');self.assertTrue(result['role_proven']);self.assertTrue(result['footprint']['footprint_proven'])
+
+    def test_new_assignment_identity_survives_success_and_failure(self):
+        self.input['intent']['created']=True
+        _,result=self.run_role()
+        self.assertEqual((result['node_id'],result['assignment_id'],result['role'],result['created']),(5,17,'database',True))
+        self.failure.write_text('packages')
+        _,result=self.run_role(False)
+        self.assertFalse(result['role_proven'])
+        self.assertIs(result['created'],True)
     def test_package_failure_is_not_role_success(self):
         self.failure.write_text('packages')
         _,result=self.run_role(False)
