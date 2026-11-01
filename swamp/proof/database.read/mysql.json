@@ -1,0 +1,117 @@
+{
+  "kind": "database.read",
+  "workflow": "operation-database-read",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": null,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-read-server-mysql-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=mysql",
+        "--port=33191",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-read-mysql-${proof.run}",
+        "--server=proof-read-server-mysql-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "connection_id": "$.input.connection_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:query",
+        "proof-read-mysql-${proof.run}",
+        "CREATE TABLE proof_rows (id integer PRIMARY KEY, label varchar(64) NOT NULL)",
+        "--write",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:query",
+        "proof-read-mysql-${proof.run}",
+        "INSERT INTO proof_rows (id,label) VALUES (1,'proof-one'),(2,'proof-two'),(3,'proof-three')",
+        "--write",
+        "--json"
+      ]
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:query",
+      "proof-read-mysql-${proof.run}",
+      "SELECT id,label FROM proof_rows ORDER BY id",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "connection_id": "${capture.connection_id}",
+    "driver": "mysql",
+    "connection_node_id": "${topology.app-dev.node_id}",
+    "intent_id": "${match.positive_int}",
+    "mode": "query",
+    "table": null
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "read",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "inspect-query",
+      "job": "read",
+      "step": "sql",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-inspection/parity.py",
+      "read",
+      "mysql",
+      "proof-read-mysql-${proof.run}",
+      "--connection-id=${capture.connection_id}",
+      "--node-id=${topology.app-dev.node_id}",
+      "--server=proof-read-server-mysql-${proof.run}",
+      "--port=33191",
+      "--ip=${topology.app-dev.wireguard_ip}"
+    ],
+    "cases": [
+      "exact-proof-identity-native-public-result",
+      "independent-cli-readback",
+      "unflagged-write-refused",
+      "stacked-sql-refused-with-data-intact",
+      "tables-schema-describe-agree",
+      "missing-table-refused",
+      "bounded-read-declares-truncation"
+    ]
+  }
+}

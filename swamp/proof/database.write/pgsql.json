@@ -1,0 +1,103 @@
+{
+  "kind": "database.write",
+  "workflow": "operation-database-write",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": null,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-write-server-pgsql-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=pgsql",
+        "--port=55492",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-write-pgsql-${proof.run}",
+        "--server=proof-write-server-pgsql-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "connection_id": "$.input.connection_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:query",
+        "proof-write-pgsql-${proof.run}",
+        "CREATE TABLE proof_rows (id integer PRIMARY KEY, label varchar(64) NOT NULL)",
+        "--write",
+        "--json"
+      ]
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:query",
+      "proof-write-pgsql-${proof.run}",
+      "INSERT INTO proof_rows (id,label) VALUES (1,'write-proof')",
+      "--write",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "connection_id": "${capture.connection_id}",
+    "driver": "pgsql",
+    "connection_node_id": "${topology.app-dev.node_id}",
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "write",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "execute-statement",
+      "job": "write",
+      "step": "sql",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-inspection/parity.py",
+      "write",
+      "pgsql",
+      "proof-write-pgsql-${proof.run}",
+      "--connection-id=${capture.connection_id}",
+      "--node-id=${topology.app-dev.node_id}",
+      "--server=proof-write-server-pgsql-${proof.run}",
+      "--port=55492",
+      "--ip=${topology.app-dev.wireguard_ip}"
+    ],
+    "cases": [
+      "exact-proof-identity-native-public-result",
+      "independent-cli-readback",
+      "unflagged-write-refused",
+      "stacked-sql-refused-with-data-intact"
+    ]
+  }
+}

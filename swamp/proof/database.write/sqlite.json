@@ -1,0 +1,95 @@
+{
+  "kind": "database.write",
+  "workflow": "operation-database-write",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": null,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-write-sqlite-${proof.run}",
+        "--driver=sqlite",
+        "--node=${topology.app-dev.node_id}",
+        "--path=/home/orbit/proof-database-inspection-${proof.run}/proof.sqlite",
+        "--json"
+      ],
+      "capture": {
+        "connection_id": "$.id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:query",
+      "proof-write-sqlite-${proof.run}",
+      "INSERT INTO proof_rows (id,label) VALUES (1,'write-proof')",
+      "--write",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "connection_id": "${capture.connection_id}",
+    "driver": "sqlite",
+    "connection_node_id": "${topology.app-dev.node_id}",
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "write",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "execute-statement",
+      "job": "write",
+      "step": "sqlite",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-inspection/parity.py",
+      "write",
+      "sqlite",
+      "proof-write-sqlite-${proof.run}",
+      "--connection-id=${capture.connection_id}",
+      "--node-id=${topology.app-dev.node_id}",
+      "--path=/home/orbit/proof-database-inspection-${proof.run}/proof.sqlite"
+    ],
+    "cases": [
+      "exact-proof-identity-native-public-result",
+      "independent-cli-readback",
+      "unflagged-write-refused",
+      "stacked-sql-refused-with-data-intact",
+      "sqlite-attach-vacuum-escape-refused",
+      "independent-sqlite-file-readback"
+    ]
+  },
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/database-inspection/parity.py",
+        "initialize-write",
+        "sqlite",
+        "proof-write-sqlite-${proof.run}",
+        "--path=/home/orbit/proof-database-inspection-${proof.run}/proof.sqlite"
+      ],
+      "timeout_seconds": 60
+    }
+  ]
+}
