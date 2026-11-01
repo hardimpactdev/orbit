@@ -1,0 +1,88 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task (driver workflow), Recall deps-one-group-per-project + deps-update-test-agent-on-failure, R1-R2.
+  %% status: draft
+  %% command: project:maintenance:routine
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  CLI->>GW: maintenance:routine 4<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - MCP tool `project-maintenance-routine` with project `4` and an Idempotency-Key
+  %%> - syntax: `project:maintenance:routine <project> --idempotency-key=KEY`
+  %%> Input:
+  %%> - the Project ID
+  %%> - an idempotency key; it is required, so a lost reply replays the same task
+  %%> Who can call it:
+  %%> - the MCP tool; there is no `orbit` CLI page for it yet
+  %%> - the hourly `maintenance-projects` Schedule admits the same kind when a Project's weekly routine is due
+  Note over GW: Validate, capture state<br/>task #5151 · no token
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - Project 4 reads its repository through the GitHub App
+  %%> - Project 4 has a default branch and a task check
+  %%> - no other `project.detect`, `project.routine` or `project.observe` task runs for Project 4
+  %%> What it does:
+  %%> - captures the Project, its task groups and the admission time
+  %%> Not included:
+  %%> - no GitHub token: routine selection reads nothing outside the captured state
+  %%> Result:
+  %%> - task #5151 recorded, kind `project.routine`, driver `workflow`, on Node 209
+  %%> - no Node is a target
+  GW->>SW: Start run, full intent<br/>project-routine
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the captured Project, task groups and admission time
+  GW-->>CLI: 202 Accepted<br/>task #5151
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller follows the task with `operation:show`
+  Note over SW: Read the admitted input<br/>project-maintenance-input read
+  %%> What it does:
+  %%> - checks that the input names Project 4 and Node 209
+  Note over SW: Select this week's routine<br/>orbit-gateway schedule_project
+  %%> What it does:
+  %%> - builds the routine key for Project 4 and this week
+  %%> - compares it with the routine records Swamp keeps
+  %%> Blocked when:
+  %%> - Project 4 has another unfinished task group or a task group with a workspace
+  %%> - an earlier attempt with this key has no known result
+  %%> Result:
+  %%> - one routine group request, or none with the blocking reason
+  %%> Why no admission here:
+  %%> - steps never call the Gateway; the request travels in the terminal result
+  alt selection done
+    SW-->>GW: Run succeeded<br/>terminal event · requests
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Admit the routine group<br/>task group #813 · tasks.provision
+    %%> Result with a request:
+    %%> - task group #813 created for the routine, or the existing one with the same brief reused
+    %%> - the Gateway admits `tasks.provision`; the routine's updates run in its task VM, and a Pi turn starts only when tests fail
+    %%> Result without a request:
+    %%> - no task group; the blocking reason is in the result
+    %%> Always:
+    %%> - task #5151 succeeds
+  else input or selection fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> When:
+    %%> - the input is invalid or Swamp's routine records can't be read
+    Note over GW: Mark the task failed<br/>no group · rerun is safe
+    %%> Result:
+    %%> - task #5151 fails; no task group is created
+    %%> Retry:
+    %%> - run the command again with a new key, or wait for the next hourly Schedule fire
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5151
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the admitted group IDs once the task has ended
+  end
