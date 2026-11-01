@@ -131,11 +131,12 @@ class QueriesTest(unittest.TestCase):
 
     def test_homebrew_writes_keep_bottle_and_official_cask_boundaries(self):
         for manager, coordinate in [('brew', 'homebrew/core/hello'), ('brew-cask', 'homebrew/cask/hello')]:
-            self.run_query(manager, [''], family='writes', extra={'kind': 'tool.install', 'before': {'prefix': '/brew'}})
+            self.run_query(manager, [''], platform='macos' if manager == 'brew-cask' else 'linux', family='writes', extra={'kind': 'tool.install', 'before': {'prefix': '/brew'}})
             argv, options = self.calls[-1]
             self.assertEqual(argv[-1], coordinate)
             self.assertEqual('--force-bottle' in argv, manager == 'brew')
             self.assertEqual(options['env']['HOMEBREW_NO_AUTOREMOVE'], '1')
+            self.assertEqual(options['env'].get('HOMEBREW_FORCE_API_AUTO_UPDATE'), '1' if manager == 'brew-cask' else None)
             self.assertNotIn('sudo', argv)
 
     def test_scope_absence_and_invalid_manager_json_are_bounded(self):
