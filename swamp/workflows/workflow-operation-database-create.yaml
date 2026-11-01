@@ -1,6 +1,6 @@
 id: b77987fa-6c2a-4ba7-9b35-c1739ef369b1
 name: operation-database-create
-queueTimeout: 60
+queueTimeout: 30
 description: Create admitted databases and users through native action steps over official SSH from209.
 writes: true
 vaults: [orbit-control-inputs]

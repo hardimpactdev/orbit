@@ -1,6 +1,6 @@
 id: 40402584-b11e-468f-b58e-0d7328a8e62c
 name: operation-database-read
-queueTimeout: 60
+queueTimeout: 30
 description: Read bounded queries and metadata using vault-backed scripts over official SSH from209.
 writes: true
 vaults:

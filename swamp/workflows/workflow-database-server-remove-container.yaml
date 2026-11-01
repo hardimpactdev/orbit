@@ -1,6 +1,6 @@
 id: 99c5b63d-7e2b-4c5c-82db-80e434509a01
 name: database-server-remove-container
-queueTimeout: 60
+queueTimeout: 30
 description: 'One admitted owned Process container: native stop, remove and bounded result.'
 writes: true
 vaults: []

@@ -1,6 +1,6 @@
 id: e494d214-54c7-496f-9294-c70876e95167
 name: database-create-action
-queueTimeout: 60
+queueTimeout: 30
 description: One database creation action; typed output and native failure gate preserve its result.
 writes: true
 vaults: [orbit-control-inputs]
