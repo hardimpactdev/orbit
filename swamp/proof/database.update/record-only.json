@@ -1,0 +1,22 @@
+{
+  "kind": "database.update",
+  "workflow": "operation-database-connection-update",
+  "topology": ["app-dev+database"],
+  "budget_seconds": 600,
+  "queue_timeout_seconds": 600,
+  "prepare": [
+    {"argv": ["orbit", "database:create", "proof-record-${proof.run}", "--driver=sqlite", "--node=${topology.app-dev.node_id}", "--path=/home/orbit/proof-before.sqlite", "--json"], "capture": {"connection_id": "$.id"}}
+  ],
+  "request": {
+    "argv": ["orbit", "database:update", "proof-record-${proof.run}", "--path=/home/orbit/proof-after.sqlite", "--json"],
+    "operation": "$.id"
+  },
+  "envelope": {"intent_id": "${match.positive_int}"},
+  "secrets": [],
+  "expect": {"status": "succeeded", "outputs": {"job": "update", "step": "result", "match": {"exitCode": 0}}},
+  "phases": [{"name": "validate-and-project-record-only", "job": "update", "step": "result", "budget_seconds": 600}],
+  "parity": {
+    "command": ["python3", "-I", "swamp/proof/database.update/parity.py", "record", "proof-record-${proof.run}", "--path=/home/orbit/proof-after.sqlite"],
+    "cases": ["record-path-projected", "explicit-node-clear", "driver-clears-inapplicable-fields"]
+  }
+}
