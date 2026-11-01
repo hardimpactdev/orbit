@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
+
 SPEC = importlib.util.spec_from_file_location("database_update_parity", Path(__file__).with_name("parity.py"))
 parity = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(parity)
@@ -133,6 +135,8 @@ class UpdateParityTest(unittest.TestCase):
 
 class FixtureContractTests(unittest.TestCase):
     def test_current_fixture_contract(self):
+        root = Path(__file__).resolve().parents[2]
+        flow = yaml.safe_load((root / "workflows/workflow-operation-database-connection-update.yaml").read_text())
         for path in Path(__file__).parent.glob("*.json"):
             with self.subTest(path=path):
                 fixture = json.loads(path.read_text())
@@ -140,7 +144,14 @@ class FixtureContractTests(unittest.TestCase):
                 self.assertEqual(fixture["request"]["operation"], "$.id")
                 self.assertNotIn("secrets", fixture)
                 self.assertNotIn("target_setup", fixture)
-                self.assertIsNone(fixture["queue_timeout_seconds"])
+                self.assertEqual(fixture["queue_timeout_seconds"], flow.get("queueTimeout"))
+                self.assertIs(type(fixture["budget_seconds"]), int)
+                self.assertIs(type(fixture["queue_timeout_seconds"]), int)
+                self.assertLess(0, fixture["queue_timeout_seconds"])
+                self.assertLess(fixture["queue_timeout_seconds"], fixture["budget_seconds"])
+                self.assertTrue(all(type(phase["budget_seconds"]) is int and
+                                    0 < phase["budget_seconds"] <= fixture["budget_seconds"]
+                                    for phase in fixture["phases"]))
                 if path.stem == "managed-valkey":
                     self.assertEqual(fixture["prepare"][1]["capture"]["connection_id"], "$.input.connection_id")
                 for call in [fixture["request"], *fixture["prepare"]]:
