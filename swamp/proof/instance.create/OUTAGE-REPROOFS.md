@@ -4,14 +4,18 @@ Run these fixtures after lane 25 validates `bin/swamp-proof up`, before the sour
 
 Use this order from D's `re-proof-owed.md` plan. Select each variant explicitly; alphabetical all-variant execution has a different order.
 
-| Order | Kind | Variant | Owed PRs |
-| --- | --- | --- | --- |
-| 1 | `instance.create` | `branch-in-use` | #2266 |
-| 2 | `instance.create` | `setup-fails-then-skips` | #2266 |
-| 3 | `instance.create` | `empty-environment` | #2273 |
-| 4 | `instance.create` | `setup-macros` | #2304 |
-| 5 | `instance.create` | `setup-redaction` | #2355, #2370 |
-| 6 | `instance.run_steps` | `already-running` | #2335 |
+| Order | Kind | Variant | Owed PRs | needs_caddy |
+| --- | --- | --- | --- | --- |
+| 1 | `instance.create` | `branch-in-use` | #2266 | false |
+| 2 | `instance.create` | `setup-fails-then-skips` | #2266 | false |
+| 3 | `instance.create` | `empty-environment` | #2273 | false |
+| 4 | `instance.create` | `setup-macros` | #2304 | false |
+| 5 | `instance.create` | `setup-redaction` | #2355, #2370 | false |
+| 6 | `instance.run_steps` | `already-running` | #2335 | false |
+
+All six variants declare `needs_caddy: false` and run before variants that need app-dev Caddy. The legacy baseline `6291bb036` supplies this boundary: `ProjectType::isWebServing()` includes only LaravelApp and SymfonyApp; `Instance::requiresRoute()` uses that rule; `NativeDevelopmentInstanceProvisioner::complete()` calls `completeWithoutRoute()` for the other types. Current Project documentation likewise gives `node-package` only an explicit Route. These fixtures already use `node-package` and never create an explicit Route. Each receipt limitation names the unexercised Route phase. Parity refuses an unexpected Route on the Instance.
+
+The empty-environment variant still expects successful creation after accepting the empty stored map. It is not converted into a refusal to avoid Caddy. Its no-Caddy classification follows the legacy no-Route Project type, as do the successful default-Instance preparations for branch-in-use and already-running. This checkpoint contains no `needs_caddy: true` variant and proves no Route publication. A future web Project variant must declare `true` and wait for C’s app-dev converge fix; it must not use a no-Route substitution.
 
 `instance:setup` admits `instance.run_steps`; there is no separate `instance.setup` kind. Its fixture first creates an Instance without setup commands, then adds a setup command and requests the list normally. The Gateway marks the Operation running before the workflow's first read. The workload marker and terminal projection prove the list executed; the fixture does not inject state or claim an independent trace of that first read.
 

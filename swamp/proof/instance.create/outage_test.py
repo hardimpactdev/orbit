@@ -32,8 +32,11 @@ class OutageFixtures(unittest.TestCase):
             self.assertEqual(value['request']['argv'][:2], ['orbit', 'instance:setup' if case == 'already-running' else 'instance:create'])
             self.assertEqual(value['parity']['command'][-1], case)
             self.assertEqual(value['topology'], 'app-dev')
+            self.assertIs(value['needs_caddy'], False)
+            self.assertTrue(any(item.startswith('route_phase: not_exercised') for item in value['limitations']))
             self.assertNotIn('before_request', value)
             project = value['prepare'][0]['argv']
+            self.assertEqual(project[3], 'node-package')
             self.assertEqual(project[4], '${proof.repo.url}')
             self.assertIn('--default-branch=main', project)
         for case in ('setup-fails-then-skips', 'setup-macros', 'setup-redaction'):
@@ -43,7 +46,7 @@ class OutageFixtures(unittest.TestCase):
     def test_github_token_limit_is_only_a_receipt_limitation(self):
         for case in ('branch-in-use', 'setup-fails-then-skips'):
             value = json.loads((ROOT / (case + '.json')).read_text())
-            self.assertEqual(value['limitations'], ['github_token_path: not_exercised (topology repositories are not GitHub)'])
+            self.assertIn('github_token_path: not_exercised (topology repositories are not GitHub)', value['limitations'])
             self.assertFalse(any('github_token_path' in case for case in value['parity']['cases']))
 
     def test_macro_alias_is_sent_to_the_gateway_not_expanded_in_the_fixture(self):
@@ -143,6 +146,11 @@ class OutageParity(unittest.TestCase):
                 self.validate(selected={'stdout': json.dumps(command)})
         with self.assertRaises((KeyError, TypeError)):
             self.validate(selected={'create': {'finish-setup-1-0': self.selected}})
+
+    def test_a_route_cannot_hide_behind_the_no_caddy_classification(self):
+        for change in ({'route': {'id': 7}}, {'routes': [{'id': 7}]}):
+            with self.assertRaisesRegex(RuntimeError, 'unexpected-route-in-no-caddy-fixture'):
+                self.validate(instance=self.instance | change)
 
     def test_tail_bound_uses_utf8_bytes(self):
         with self.assertRaisesRegex(RuntimeError, 'over-4096'):

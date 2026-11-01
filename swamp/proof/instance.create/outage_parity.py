@@ -100,6 +100,8 @@ def validate(case, selected, operation, instance, workload):
         raise RuntimeError("proof-terminal-timestamps-missing")
     if not success and instance.get("status") == "active":
         raise RuntimeError("proof-failed-create-projected-active")
+    if instance.get("route") is not None or instance.get("routes"):
+        raise RuntimeError("proof-unexpected-route-in-no-caddy-fixture")
     result = operation.get("result") or {}
     if case == "branch-in-use":
         if operation.get("error_code") != "instance.branch_in_use":

@@ -65,6 +65,8 @@
     ]
   },
   "limitations": [
-    "The normal Gateway start marks the Operation running before workflow execution; no independent first-read trace is injected."
-  ]
+    "The normal Gateway start marks the Operation running before workflow execution; no independent first-read trace is injected.",
+    "route_phase: not_exercised (legacy node-package Projects have no automatic Route; this fixture creates no explicit Route)"
+  ],
+  "needs_caddy": false
 }
