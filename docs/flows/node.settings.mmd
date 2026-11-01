@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + DECISIONS R1, R2, R4; orbit-agent observes only, Swamp prepares the root.
+  %% Target design: ADR 0244 task, DECISIONS R1 (task_vms is record-only), R2, R4 (apps.path is Node work). docs/reference/node-settings.md.
   %% status: draft
+  %% command: node:settings
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,24 +11,112 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: node:settings 12<br/>{apps: {path: /srv/apps}}
-  Note over GW: Validate patch and root<br/>bridge CIDR, account, Linux
-  Note over GW: Record-only? Store, no run<br/>R1 · 200 with the Node
-  Note over GW: Record task, not settings<br/>task #5131 · R2
-  GW->>SW: Start run, full intent<br/>operation-node-settings
-  GW-->>CLI: 202 Accepted<br/>operation #5131
-  SW->>N: Look up the Node account<br/>@swamp/ssh · getent passwd orbit
-  SW->>N: Prepare the apps root<br/>mkdir, chown, protected roots
-  alt root ready
-    N-->>SW: owner and mode checked
-    SW-->>GW: Run succeeded<br/>terminal event · prepared: true
-    Note over GW: Store the settings patch<br/>NodeUpdated broadcast
-  else path refused or unowned
-    N--xSW: exit ≠ 0
-    SW--xGW: Run failed<br/>node.settings_root_failed
-    Note over GW: Keep the old settings<br/>task → failed
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #OP
-    GW-->>CLI: status + result
+  CLI->>GW: node:settings 12<br/>--setting=apps.path:/srv/apps
+  %%> Command:
+  %%> - `orbit node:settings 12 --setting=apps.path:/srv/apps`
+  %%> - syntax: `<node> --setting=KEY:VALUE [--setting=…] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node, by id or exact name
+  %%> - one or more settings: `apps.path`, or `task_vms` as a JSON object
+  %%> - an empty value unsets it: `--setting=apps.path:` sends a null path, `--setting=task_vms:null` removes the task VM host settings
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, lock the Node<br/>task #5131 · Node 12
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active, managed Linux Node
+  %%> - no other settings change runs for Node 12; the Gateway holds one lock per Node
+  %%> Checks for `apps.path`:
+  %%> - absolute and normalized: not `/`, no trailing or repeated `/`, no `.` or `..` part
+  %%> - not the managed user's home or an ancestor of it, and not inside a hidden folder of that home
+  %%> - not overlapping `/boot`, `/dev`, `/etc`, `/proc`, `/run`, `/sys`, `/usr`, `/opt/orbit`, `/var/lib/orbit`, `/var/www`, or the Gateway checkout and release layout
+  %%> - not equal to, or inside, an existing Instance checkout on Node 12
+  %%> Checks for `task_vms`:
+  %%> - typed fields only, such as `cidr`, `max_vms`, `pool`, `image_alias`
+  %%> - the bridge `cidr` overlaps no other task VM host
+  %%> Decides:
+  %%> - whether the change touches Node 12, or only the record
+  alt only task_vms changes
+    Note over GW: Store the settings<br/>R1: no run · next task VM
+    %%> When:
+    %%> - the request changes only `task_vms`
+    %%> - or it unsets `apps.path` on a Node without an active `app-dev` role, so no folder is needed
+    %%> Why no run:
+    %%> - nothing on Node 12 changes now; the values apply when the next task VM is created on Node 12
+    %%> - task VMs that already run keep their settings
+    %%> Result:
+    %%> - Node 12's task VM host settings are saved
+    %%> - task #5131 succeeds at once; no Swamp run starts (R1)
+    GW-->>CLI: Settings saved<br/>Node 12
+    %%> What you get:
+    %%> - the Node with its new settings, at once; there is nothing to follow
+  else apps.path changes
+    GW->>SW: Start run, full intent<br/>operation-node-settings
+    %%> When:
+    %%> - the request changes `apps.path`, alone or together with `task_vms`
+    %%> - unsetting it on a Node with an active `app-dev` role prepares the default folder, `<managed-user-home>/apps`
+    %%> What it does:
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the new apps folder, and the managed user and group that must own it
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    %%> Not stored yet:
+    %%> - the settings stay unchanged until the run succeeds (R2)
+    GW-->>CLI: 202 Accepted<br/>task #5131
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/file directory
+    %%> What it does:
+    %%> - creates each missing folder of `/srv/apps`, owned by the managed user and group, mode `0755`
+    %%> - leaves an existing folder as it is; it never changes the owner or mode of an existing folder
+    %%> How:
+    %%> - Swamp reaches Node 12 over SSH from 209, with the official `@swamp/cfgmgmt/file` behavior
+    %%> Not included:
+    %%> - existing Instances don't move; their checkouts stay where they are
+    %%> - new development Instances use `/srv/apps/<project>/<instance>`
+    SW->>N: Check owner and mode<br/>stat /srv/apps
+    %%> What it does:
+    %%> - reads the folder back: a real folder, not a symlink
+    %%> - owned by the managed user and group, with read, write and execute for the owner
+    %%> - no write access for group or others
+    %%> Why:
+    %%> - an existing folder with the wrong owner is refused, not repaired
+    alt folder is ready
+      N-->>SW: orbit:orbit · 0755
+      %%> Returns:
+      %%> - the check passed
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Save the settings<br/>apps.path set · task succeeded
+      %%> Result:
+      %%> - Node 12's `apps.path` is `/srv/apps`; any `task_vms` change in the same request is saved with it
+      %%> - task #5131 succeeds
+    else a step fails
+      N--xSW: wrong owner or exit ≠ 0
+      %%> When:
+      %%> - the folder can't be created, is a symlink, has another owner, or is writable by others
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code
+      Note over GW: Keep the old settings<br/>task failed · rerun after a fix
+      %%> Result:
+      %%> - Node 12's settings stay unchanged
+      %%> - task #5131 fails
+      %%> On the Node:
+      %%> - folders created before the failure stay; there is no rollback
+      %%> - that is safe: an empty folder is harmless, and a rerun leaves it as it is
+      %%> Retry:
+      %%> - run the same command again after fixing the cause; it is a new task
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5131
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
   end

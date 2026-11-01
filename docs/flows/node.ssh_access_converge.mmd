@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + DECISIONS 5 (one swamp-role SSH identity) and R3 (vault key names).
+  %% Target design: ADR 0244 task, DECISIONS R2-R4 and 5 (one swamp-role SSH identity); Orbit owns only its marked authorized_keys block (Nov 1 incident).
   %% status: draft
+  %% command: node:ssh-access:converge
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,24 +11,103 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: node:ssh-access:converge<br/>{node: 12}
-  Note over GW: Check the non-root account<br/>refuse root · ssh_account_invalid
-  Note over GW: Reuse task if same digest<br/>target + 209 public key
-  GW->>SW: Start run, full intent<br/>bootstrap key as vault key name
-  GW-->>CLI: 202 Accepted<br/>operation #5133
-  Note over SW: Read bootstrap identity<br/>vault.get · bootstrap key, Node 12
-  SW->>N: Authorize the 209 key<br/>bootstrap key · authorized_keys
-  SW->>N: Log in with the 209 key<br/>swamp-role identity · true
+  CLI->>GW: node:ssh-access:converge<br/>12 · Node id
+  %%> Command:
+  %%> - MCP tool `node-ssh-access-converge` with node `12`; API `POST /nodes/12/ssh-access/converge`
+  %%> - syntax: `<node>`
+  %%> Input:
+  %%> - the Node only; the keys come from Orbit's records, never from the request
+  %%> What it does:
+  %%> - makes Node 12's managed account accept the Swamp Node's SSH identity and the operator keys recorded in Orbit
+  %%> - keeps every other key in `authorized_keys` exactly as it is
+  %%> Who can call it:
+  %%> - the MCP tool and the API; the `orbit` CLI has no command for it yet
+  Note over GW: Validate, build the block<br/>task #5133 · Node 12
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active, managed Linux Node with stored SSH host keys
+  %%> - its managed account is not `root`
+  %%> - no other SSH access change runs for Node 12; the Gateway holds one lock per Node
+  %%> Builds:
+  %%> - the Orbit block: the `swamp` role's public key from Node 209, then each operator key recorded in Orbit, in a stable order
+  %%> - the block's digest
+  %%> Reuse:
+  %%> - a succeeded or running task with the same digest for Node 12 is returned instead of a new one
+  %%> Result:
+  %%> - task #5133 recorded with the full intent; no private key in it
+  GW->>SW: Start run, full intent<br/>operation-node-ssh-access
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the block's lines and digest, and the managed account
+  %%> - Node 12's address and SSH host keys
+  %%> - the vault key name of Node 12's access identity, never the key itself (R3)
+  GW-->>CLI: 202 Accepted<br/>task #5133
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  Note over SW: Read the access identity<br/>vault.get · Node 12 access key
+  %%> What it does:
+  %%> - reads the identity that Node 12 already accepts from the Swamp vault
+  %%> Why:
+  %%> - the new Swamp identity may not be accepted yet, for example after it was replaced
+  SW->>N: Write the Orbit block<br/>authorized_keys · marked block
+  %%> What it does:
+  %%> - replaces only the lines between `# BEGIN Orbit managed keys` and `# END Orbit managed keys`
+  %%> - adds the block at the end of the file when it is missing
+  %%> - writes a temporary file and renames it, keeping owner and mode `0600`; an identical block writes nothing
+  %%> Never:
+  %%> - removes, reorders or changes a line outside the block
+  %%> - a key that also sits outside the block stays there
+  %%> Refuses:
+  %%> - a file with broken markers, such as two BEGIN lines or no END line; then nothing is written
+  %%> How:
+  %%> - a tracked script through `@swamp/ssh` from 209, as the managed account
+  SW->>N: Read the file back<br/>block + lines outside it
+  %%> What it does:
+  %%> - checks that the block holds exactly the intended keys
+  %%> - checks that the lines outside the block equal the lines before the write
+  %%> Why:
+  %%> - proves that no operator key outside the block was lost
+  SW->>N: Log in with Swamp identity<br/>@swamp/ssh exec · true
+  %%> What it does:
+  %%> - opens a new SSH session with the `swamp` role identity only, and runs `true`
+  %%> Why:
+  %%> - access only counts as ready when the Swamp identity really logs in
   alt login works
     N-->>SW: exit 0
-    SW-->>GW: Run succeeded<br/>ssh_access_ready: true
-    Note over GW: Store ssh_access_digest<br/>NodeFootprint for Node 12
-  else key not accepted
-    N--xSW: Permission denied
+    %%> Returns:
+    %%> - every check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the block digest<br/>access ready · task succeeded
+    %%> Result:
+    %%> - Node 12's SSH access digest is the new block's digest
+    %%> - task #5133 succeeds
+  else a step fails
+    N--xSW: lines differ or denied
+    %%> When:
+    %%> - the markers are broken, the read-back differs, or the Swamp identity is refused
     SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Keep the old digest<br/>retry is a new task
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the old digest<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - Node 12's recorded SSH access stays as it was
+    %%> - task #5133 fails
+    %%> On the Node:
+    %%> - a written block stays; there is no rollback
+    %%> - keys outside the block are never touched, so operator access stays
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it rewrites only the block
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #OP
+    CLI->>GW: operation:show #5133
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end

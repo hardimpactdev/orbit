@@ -1,27 +1,104 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + decision agent-observer-swamp-acts; the key stays on the Node, R2.
+  %% Target design: ADR 0244 task, DECISIONS R2-R4, agent-observer-swamp-acts; the new key is made on the Node and never leaves it. docs/reference/node-agent.md#agent-secret.
   %% status: draft
+  %% command: orbit:node-agent-rekey
   autonumber
+  %% lane OP icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
+  participant OP as Operator<br/>artisan on Gateway
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  Note over GW: Operator starts recovery<br/>orbit:node-agent-rekey 12 5130
-  Note over GW: Bind open converge #5130<br/>same Node, user, observer pin
-  Note over GW: Record task, lock Node<br/>task #5134 · no secret in intent
+  OP->>GW: orbit:node-agent-rekey 12<br/>--attempt=1
+  %%> Command:
+  %%> - `php artisan orbit:node-agent-rekey 12 --attempt=1`
+  %%> - syntax: `<node> [--attempt=N]`
+  %%> Input:
+  %%> - the Node id
+  %%> - `--attempt` numbers the request; the same number returns the same task, a higher number asks for a new key again
+  %%> When:
+  %%> - the Gateway refuses the Node agent's reports because its key is missing or doesn't match the recorded verifier
+  %%> - `node:converge` failed because the Node agent's key doesn't match
+  %%> - a planned key rotation
+  %%> Who can call it:
+  %%> - an operator on the Gateway host; there is no `orbit` CLI or MCP command
+  Note over GW: Validate, lock the Node<br/>task #5134 · Node 12
+  %%> Requirements:
+  %%> - Node 12 is an active, managed Linux Node with stored SSH host keys
+  %%> - no converge or rekey runs for Node 12; both use the same lock per Node
+  %%> Result:
+  %%> - task #5134 recorded with the full intent; no key or verifier in it
+  %%> - the old verifier stays valid; nothing has happened on the Node yet
   GW->>SW: Start run, full intent<br/>operation-node-agent-rekey
-  SW->>N: Look up the Node account<br/>@swamp/ssh · getent passwd orbit
-  SW->>N: Write a new observer key<br/>0600 file, never leaves the Node
-  SW->>N: Restart the observer<br/>systemctl restart orbit-agent
-  alt observer back up
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the key path `/etc/orbit/agent/secret`
+  GW-->>OP: 202 Accepted<br/>task #5134
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - follow the task with `orbit operation:show`
+  SW->>N: Make a new agent key<br/>on the Node · keep the old one
+  %%> What it does:
+  %%> - creates 32 random bytes on Node 12 and writes them as 64 hex characters to `/etc/orbit/agent/secret`, `root:root`, mode `0600`
+  %%> - keeps the old key as `secret.previous`, for a restore if a later step fails
+  %%> - prints only the SHA-256 verifier of the new key
+  %%> Never:
+  %%> - the key leaves Node 12, enters the task, a log or the vault
+  %%> How:
+  %%> - a tracked script through `@swamp/ssh` from 209, with sudo
+  SW->>N: Restart the Node agent<br/>@swamp/cfgmgmt/systemd restart
+  %%> What it does:
+  %%> - restarts `orbit-agent.service`
+  %%> Why a restart:
+  %%> - the agent reads its key only when it starts; a reload can't change it
+  %%> Until the Gateway records the verifier:
+  %%> - the Gateway refuses reports signed with the new key; the agent retries every few seconds
+  SW->>N: Check the Node agent<br/>active · key matches verifier
+  %%> What it does:
+  %%> - checks that `orbit-agent` is active again
+  %%> - checks that the key file's SHA-256 equals the returned verifier
+  %%> - when both pass, removes `secret.previous`; if that removal fails, the file is harmless (`root:root`, mode `0600`) and the next rekey replaces it
+  alt the agent runs with the new key
     N-->>SW: verifier, SHA-256 only
-    SW-->>GW: Run succeeded<br/>terminal event · verifier_hash
-    Note over GW: Store the new verifier<br/>agent_secret_hash · old key void
-    N->>GW: Observer reports state<br/>new key · read-only, no actions
-  else write or restart fails
+    %%> Returns:
+    %%> - the new key's verifier
+    SW-->>GW: Run succeeded<br/>terminal event · verifier
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Store the new verifier<br/>old key void · task succeeded
+    %%> Result:
+    %%> - Node 12's recorded verifier is the new one; the old key no longer works
+    %%> - the Node agent's next report is accepted again
+    %%> - task #5134 succeeds
+  else a step fails
     N--xSW: exit ≠ 0
-    SW--xGW: Run failed<br/>operation.native_failed
-    Note over GW: Keep the old verifier<br/>converge #5130 stays open
+    %%> When:
+    %%> - the key can't be written, or the agent doesn't come back up
+    SW->>N: Restore the old key<br/>secret.previous · restart
+    %%> What it does:
+    %%> - puts the old key back and restarts the agent, so it matches the verifier the Gateway still has
+    %%> Why a rollback here:
+    %%> - otherwise the Node agent stays locked out until a rerun
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the old verifier<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - Node 12's verifier stays unchanged
+    %%> - task #5134 fails
+    %%> Retry:
+    %%> - run the command again with `--attempt=2` after fixing the cause; it makes a fresh key
+  end
+  loop every 2 s until terminal
+    OP->>GW: operation:show #5134
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>OP: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
