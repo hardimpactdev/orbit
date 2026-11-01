@@ -10,7 +10,6 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteAssociationGuard;
@@ -40,7 +39,6 @@ final readonly class DestroyRouteAction
         private RouteReconciliationGuard $reconciliation,
         private RouteRemovalProjector $projection,
         private ?RecordEventBroadcaster $broadcaster = null,
-        private ?MetricsFleetReconciler $metrics = null,
         private ?NodeReachabilityProbe $reachability = null,
     ) {}
 
@@ -85,8 +83,6 @@ final readonly class DestroyRouteAction
             $result->id,
             ['id' => $result->id, 'domain' => $result->domain],
         );
-
-        $this->metrics?->reconcile();
 
         return $result;
     }

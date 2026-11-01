@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: '@nckrtl/metrics-credentials-scripts'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Native Grafana credential action assets.
+behaviors:
+- operations/metrics-credentials/assets.ts
+additionalFiles:
+- scripts/credential.py

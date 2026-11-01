@@ -6,7 +6,6 @@ use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -49,9 +48,7 @@ it('publishes private DNS on the vpn node when node:add reprovisions a split gat
             return $observation;
         }
     });
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once();
-    app()->instance(MetricsFleetReconciler::class, $metrics);
+
     $vpn = Node::query()->create([
         'name' => 'vpn',
         'status' => LifecycleStatus::Active,

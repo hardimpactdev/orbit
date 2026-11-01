@@ -55,3 +55,9 @@ it('decodes role enable and disable admissions as Operations', function (string 
     $connector->withMockClient(new MockClient([$class => MockResponse::make(['data' => ['id' => 42, 'kind' => $kind, 'target_type' => 'metrics', 'target_id' => 7, 'status' => 'queued', 'sequence' => 1, 'steps' => []], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 202)]));
     expect($connector->send($request)->dto())->toBeInstanceOf(OperationResponse::class)->kind->toBe($kind);
 })->with([[EnableMetricsRequest::class, 'metrics.enable'], [DisableMetricsRequest::class, 'metrics.disable']]);
+
+it('decodes a native credential reset admission', function (): void {
+    $connector = new GatewayConnector('https://gateway.example.test');
+    $connector->withMockClient(new MockClient([ResetMetricsCredentialsRequest::class => MockResponse::make(['data' => ['id' => 42, 'kind' => 'metrics.credentials_reset', 'target_type' => 'metrics', 'target_id' => 7, 'status' => 'queued', 'sequence' => 1, 'steps' => []], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 202)]));
+    expect($connector->send(new ResetMetricsCredentialsRequest)->dto())->toBeInstanceOf(OperationResponse::class)->kind->toBe('metrics.credentials_reset');
+});

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
@@ -75,20 +74,6 @@ beforeEach(function (): void {
             $this->calls++;
         }
     };
-    $this->metrics = new class implements MetricsFleetReconciler
-    {
-        public int $calls = 0;
-
-        public function reconcile(): void
-        {
-            $this->calls++;
-        }
-
-        public function retire(Node $node): void
-        {
-            $this->calls++;
-        }
-    };
     app()->instance(AdmissionAgentRunner::class, $this->ssh);
     app()->instance(HostKeyScanner::class, $this->scanner);
     app()->instance(SshKeyProvider::class, new EnrollmentKeys);
@@ -96,7 +81,7 @@ beforeEach(function (): void {
     app()->instance(NodeConverger::class, $this->linux);
     app()->instance(NodeAgentRuntime::class, $this->agent);
     app()->instance(NodeRoleFirewallManager::class, $this->firewall);
-    app()->instance(MetricsFleetReconciler::class, $this->metrics);
+
 });
 
 it('enrolls a new mac without bootstrap, allocation, or linux services', function (): void {
@@ -122,7 +107,6 @@ it('enrolls a new mac without bootstrap, allocation, or linux services', functio
         ->and($this->linux->calls)->toBe(0)
         ->and($this->agent->nodeIds)->toBe([])
         ->and($this->firewall->calls)->toBe(0)
-        ->and($this->metrics->calls)->toBe(0)
         ->and($this->knownHosts->puts)->toBe([
             ['192.0.2.40', 22, 'SHA256:pinned'],
             ['10.44.0.40', 22, 'SHA256:pinned'],

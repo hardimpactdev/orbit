@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
@@ -64,13 +63,6 @@ describe('POST /api/v1/nodes', function (): void {
 
                 return $observation;
             }
-        });
-
-        app()->instance(MetricsFleetReconciler::class, new class implements MetricsFleetReconciler
-        {
-            public function reconcile(): void {}
-
-            public function retire(Node $node): void {}
         });
 
         app(NodeAgentRuntime::class)->failure = static function (): never {
@@ -849,12 +841,7 @@ describe('POST /api/v1/nodes', function (): void {
                 return $observation;
             }
         });
-        app()->instance(MetricsFleetReconciler::class, new class implements MetricsFleetReconciler
-        {
-            public function reconcile(): void {}
 
-            public function retire(Node $node): void {}
-        });
         app(NodeAgentRuntime::class)->failure = static function (): never {
             throw new RuntimeException('agent unavailable');
         };

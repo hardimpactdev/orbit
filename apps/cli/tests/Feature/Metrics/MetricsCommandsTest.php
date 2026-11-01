@@ -332,35 +332,33 @@ it('renders a completed native Metrics role in human output', function (): void 
     expect($exit)->toBe(0)->and($output)->toContain('Metrics')->not->toContain('Publication not cleaned');
 });
 
-it('resets credentials through the focused request and renders exact JSON', function (): void {
-    $password = str_repeat('r', times: 24);
+it('reads the promoted credential after a successful native reset in human output', function (): void {
     $mock = MockClient::global([
-        ResetMetricsCredentialsRequest::class => MockResponse::make([
-            'data' => [
-                'url' => 'https://metrics.orbit',
-                'username' => 'admin',
-                'password' => $password,
-            ],
+        ResetMetricsCredentialsRequest::class => metrics_cli_exporter_operation('metrics.credentials_reset', 7),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.credentials_reset', 7),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
+        ShowMetricsCredentialsRequest::class => MockResponse::make([
+            'data' => ['url' => 'https://metrics.orbit', 'username' => 'admin', 'password' => 'fixture-promoted-value'],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
     ]);
+    [$exit, $output] = metrics_cli_display('metrics:credentials', ['--reset' => true]);
+    expect($exit)->toBe(0)->and($output)->toContain('fixture-promoted-value');
+    $mock->assertSent(ResetMetricsCredentialsRequest::class);
+    $mock->assertSent(ShowMetricsCredentialsRequest::class);
+});
 
-    $this
-        ->artisan('metrics:credentials', ['--reset' => true, '--json' => true])
-        ->expectsOutput(json_encode([
-            'url' => 'https://metrics.orbit',
-            'username' => 'admin',
-            'password' => $password,
-            'request_id' => metrics_cli_request_id(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->assertSuccessful();
-
-    expect($mock->getLastRequest())
-        ->toBeInstanceOf(ResetMetricsCredentialsRequest::class)
-        ->and($mock->getLastRequest()?->getMethod())
-        ->toBe(Method::POST)
-        ->and($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/metrics/credentials/reset');
+it('follows native credential reset in JSON without returning a secret', function (): void {
+    MockClient::global([
+        ResetMetricsCredentialsRequest::class => metrics_cli_exporter_operation('metrics.credentials_reset', 7),
+        ShowOperationRequest::class => metrics_cli_exporter_operation('metrics.credentials_reset', 7),
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
+    ]);
+    [$exit, $output] = metrics_cli_display('metrics:credentials', ['--reset' => true, '--json' => true]);
+    expect($exit)->toBe(0);
+    $operation = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+    expect($operation['kind'])->toBe('metrics.credentials_reset');
+    expect($output)->not->toContain('password');
 });
 
 it('enables Metrics on a node given by name', function (): void {

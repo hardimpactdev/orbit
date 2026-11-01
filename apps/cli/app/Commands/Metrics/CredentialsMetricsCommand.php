@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Commands\Metrics;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Metrics\ResetMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsCredentialsResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CredentialsMetricsCommand extends MetricsCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'metrics:credentials {--reset : Reset the password} {--json : Return machine-readable JSON}';
 
@@ -27,12 +31,23 @@ final class CredentialsMetricsCommand extends MetricsCommand
         }
 
         $reset = $this->option('reset') === true;
-        $request = $reset ? new ResetMetricsCredentialsRequest : new ShowMetricsCredentialsRequest;
-        $labels = $reset
-            ? ['Reset Metrics credentials', 'Resetting Metrics credentials', 'Reset Metrics credentials']
-            : ['Show Metrics credentials', 'Loading Metrics credentials', 'Loaded Metrics credentials'];
-
-        $response = $this->sendWithProgress($connector, $request, MetricsCredentialsResponse::class, $labels);
+        if ($reset) {
+            $operation = $this->sendWithProgress($connector, new ResetMetricsCredentialsRequest, OperationResponse::class,
+                ['Reset Metrics credentials', 'Requesting credential reset', 'Credential reset accepted']);
+            $profile = $this->activeGatewayProfile($repository);
+            if (! $operation instanceof OperationResponse || $profile === null) {
+                return self::FAILURE;
+            }
+            $result = $this->followOperation($connector, $profile, $operation, 'Metrics credentials', 'Reset');
+            if ($result !== self::SUCCESS) {
+                return $result;
+            }
+            if ($this->option('json') === true) {
+                return self::SUCCESS;
+            }
+        }
+        $response = $this->sendWithProgress($connector, new ShowMetricsCredentialsRequest, MetricsCredentialsResponse::class,
+            ['Show Metrics credentials', 'Loading Metrics credentials', 'Loaded Metrics credentials']);
         if (! $response instanceof MetricsCredentialsResponse) {
             return self::FAILURE;
         }
