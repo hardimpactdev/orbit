@@ -581,7 +581,7 @@ Cancelling a queued or running Operation with no `swamp_run_id` and zero attempt
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
-`firewall.allow`, `firewall.deny` and `firewall.remove` start `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Their Gateway agent-run descriptors, receipt proofs and legacy execution tests are removed. Rollback is a revert PR, which restores both admission and the previous execution contract.
+`firewall.allow`, `firewall.deny` and `firewall.remove` pass the admitted Node rule and shared tuple plan to `operation-firewall-direct`. Every step runs on Node 209. The official firewall model reaches the target over WireGuard after the admitted pin is verified in the published known_hosts snapshot. Read-only `firewall.inspect` uses one pinned official SSH read and a typed comparison step. The Gateway projects the native terminal result.
 
 All Tool kinds use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and package execution policy, manager child admission and receipt adapters are removed. Swamp materializes the admitted manager and applies package policy locally. The Gateway retains typed manager and Tool result projection.
 

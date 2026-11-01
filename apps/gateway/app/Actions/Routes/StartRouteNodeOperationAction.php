@@ -30,7 +30,7 @@ final readonly class StartRouteNodeOperationAction
         }
         $draft = new Operation(['kind' => $kind, 'node_id' => $node->id, 'input' => $input]);
         if ($kind === 'route.lan_remove') {
-            $this->plans->prepare($draft);
+            $this->plans->assertLanRemoval($draft);
             if (! is_string($node->lan_ip) || filter_var($node->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
                 throw new ResourceOperationException('route.lan_removal_invalid', 'The workload Node needs its stored LAN IPv4 destination.', 422);
             }
@@ -40,14 +40,9 @@ final readonly class StartRouteNodeOperationAction
                 $parent === null ? 'operator' : $parent->triggered_by, $parent?->request_id);
         }
         $plan = $this->plans->networkVerification($draft);
-        $protocol = match ($plan['command']) {
-            'route.verify-certificate' => 'tls',
-            'route.verify-http' => 'http',
-            default => throw new \LogicException('Route verification needs a fixed probe.'),
-        };
 
         return $this->operations->execute($kind, 'route_effect', ValidatedData::integer($input['route_id']), $node->id,
-            [...$input, 'verification' => ['protocol' => $protocol, 'probe' => $plan['input'], ...app(NativeCaddyPublicationInput::class)->connectionForNode($node)]],
+            [...$input, 'verification' => [...$plan, ...app(NativeCaddyPublicationInput::class)->connectionForNode($node)]],
             $parent === null ? 'operator' : $parent->triggered_by, $parent?->request_id);
     }
 }
