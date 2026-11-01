@@ -88,3 +88,46 @@ Deno.test("all certificate HTTP steps use the one Gateway-only signer script", a
     }
     assert(count > 0);
 });
+
+Deno.test("role publication keeps verification and key cleanup as separate recoverable actions", async () => {
+    const child = parse(
+        await Deno.readTextFile(
+            new URL(
+                "../../../../workflows/workflow-node-role-certificate-publish.yaml",
+                import.meta.url,
+            ),
+        ),
+    ) as { jobs: { steps: Record<string, unknown>[] }[] };
+    const steps = child.jobs[0].steps;
+    const names = steps.map((step) => step.name);
+    assert(names.indexOf("verify-pair") >= 0);
+    assert(names.indexOf("verify-pair") < names.indexOf("publish"));
+    assert(names.indexOf("activate") < names.indexOf("cleanup-key"));
+    assert(names.indexOf("cleanup-key") < names.indexOf("cleanup-assets"));
+    for (
+        const [name, predecessor] of [["publish", "verify-pair"], [
+            "cleanup-key",
+            "activate",
+        ], ["cleanup-assets", "cleanup-key"]]
+    ) {
+        const step = steps.find((step) => step.name === name)!;
+        assertEquals(step.dependsOn, [{
+            step: predecessor,
+            condition: { type: "succeeded" },
+        }]);
+    }
+    const manifest = parse(
+        await Deno.readTextFile(new URL("manifest.yaml", import.meta.url)),
+    ) as { additionalFiles: string[] };
+    for (
+        const script of ["scripts/role_verify.py", "scripts/role_cleanup.py"]
+    ) {
+        assert(manifest.additionalFiles.includes(script));
+        await Deno.stat(new URL(script, import.meta.url));
+    }
+    const publish = await Deno.readTextFile(
+        new URL("scripts/role_publish.py", import.meta.url),
+    );
+    assert(!publish.includes("write_signature("));
+    assert(!publish.includes("rmtree("));
+});

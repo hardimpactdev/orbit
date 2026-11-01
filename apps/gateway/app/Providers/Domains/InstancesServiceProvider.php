@@ -44,7 +44,6 @@ use App\Domain\Instances\Queue\InstanceQueueReader;
 use App\Domain\Instances\Registration\RegistrationSourceManager;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
-use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Operations\OperationSecretOutputStore;
@@ -56,7 +55,6 @@ use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
-use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
@@ -92,7 +90,6 @@ final class InstancesServiceProvider extends ServiceProvider
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
         ProductionInstanceSourceRemoval::class => RecordedProductionInstanceSourceRemoval::class,
-        InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
         ProductionWebRootManager::class => RemoteProductionWebRootManager::class,

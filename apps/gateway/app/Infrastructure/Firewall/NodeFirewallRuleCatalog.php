@@ -16,6 +16,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
+use App\Infrastructure\TaskVms\TaskVmHubPolicy;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -88,7 +89,7 @@ final readonly class NodeFirewallRuleCatalog
                 new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),
                 ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbitci0', 'comment', 'orbit-ci-runners'],
             )],
-            RoleName::Vpn => [],
+            RoleName::Vpn => array_filter([app(TaskVmHubPolicy::class)->controlRule()]),
             RoleName::Router => $this->routerLanIngress($node),
             RoleName::Ingress => $this->ingressPublicHttp($node),
             RoleName::AppDev => [],

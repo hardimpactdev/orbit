@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import yaml
-
 from tests import route_lan_command_native_test as fixture
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,18 +13,12 @@ class RouteIngressNative(fixture.RouteLanFixture):
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/routes/update-command")
-        fake = self.repo / "ssh-tools/ufw"
-        source = fake.read_text().replace(
-            "row={'port':int(args[args.index('port')+1]),'protocol':args[args.index('proto')+1],'source':args[args.index('from')+1]}",
-            "port,protocol=args[-1].split('/');row={'port':int(port),'protocol':protocol,'source':'Anywhere'}",
-        )
-        fake.write_text(source)
         workflow = yaml.safe_load(
             (ROOT / "workflows/workflow-route-ingress-apply.yaml").read_text()
         )
         for step in workflow["jobs"][0]["steps"]:
             step.pop("target")
-            step.pop("labels")
+            self.assertNotIn("labels", step)
         (self.repo / "workflows/workflow-route-ingress-apply.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)
         )
@@ -33,7 +26,7 @@ class RouteIngressNative(fixture.RouteLanFixture):
             json.dumps({"backend": "active", "legacy": [], "tuples": [self.tuple]})
         )
 
-    def ingress(self, ensure, success=True):
+    def ingress(self, ensure, success=True, host_keys=None):
         value = {
             "operation_id": 7,
             "node_id": 9,
@@ -46,7 +39,7 @@ class RouteIngressNative(fixture.RouteLanFixture):
                 },
                 "control_node_id": 209,
                 "connection": self.connection,
-                "host_keys": [fixture.PIN],
+                "host_keys": host_keys if host_keys is not None else [fixture.PIN],
             },
         }
         self.cli("workflow", "validate", "route-ingress-apply")
@@ -78,3 +71,23 @@ class RouteIngressNative(fixture.RouteLanFixture):
         self.state.write_text(json.dumps(state))
         self.ingress("present", success=False)
         self.assertEqual(json.loads(self.state.read_text())["tuples"], [self.tuple])
+
+    def test_wrong_pin_cannot_observe_or_change_any_public_port(self):
+        self.ingress("present", success=False, host_keys=[fixture.PIN[:-4] + "AgIC"])
+        self.assertFalse(self.audit.exists())
+        self.assertEqual(json.loads(self.state.read_text())["tuples"], [self.tuple])
+
+    def test_repeated_publication_is_a_noop_and_does_not_migrate_lan_tags(self):
+        state = json.loads(self.state.read_text())
+        state["legacy"] = [
+            "192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-47-lan"
+        ]
+        self.state.write_text(json.dumps(state))
+        self.ingress("present")
+        self.audit.unlink()
+        self.ingress("present")
+        self.assertEqual(
+            [json.loads(c) for c in self.audit.read_text().splitlines()],
+            [["status"], ["status"]],
+        )
+        self.assertEqual(json.loads(self.state.read_text())["legacy"], state["legacy"])

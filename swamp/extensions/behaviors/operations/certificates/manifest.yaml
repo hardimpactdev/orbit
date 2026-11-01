@@ -17,4 +17,6 @@ additionalFiles:
 - scripts/role_paths.py
 - scripts/role_request.py
 - scripts/role_publish.py
+- scripts/role_verify.py
+- scripts/role_cleanup.py
 - scripts/sign.py

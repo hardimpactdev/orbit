@@ -46,7 +46,7 @@ final class PrepareTaskVmHubCommand extends Command
             $clusterId = $settings->devClusterId ?? throw $this->invalid('dev_cluster_id is not set.');
             $hub = $this->roleNode(RoleName::Vpn);
             $this->guardRange($range);
-            $filter->prepare($hub, [
+            $operation = $filter->prepare($hub, [
                 'range' => $range->value(),
                 'dns' => $vpn->dnsServer() ?? $this->address($hub),
                 'gateway' => $this->address($this->roleNode(RoleName::Gateway)),
@@ -61,7 +61,7 @@ final class PrepareTaskVmHubCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Hub [{$hub->name}] filters task VM range [{$range->value()}].");
+        $this->info("Submitted hub [{$hub->name}] filter for [{$range->value()}] as Operation [{$operation->id}].");
 
         return self::SUCCESS;
     }

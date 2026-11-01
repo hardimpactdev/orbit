@@ -49,32 +49,10 @@ print(json.dumps(result))
 const Directory = z.string().regex(
     /^\/etc\/caddy\/orbit-[a-z][a-z0-9-]{0,63}-cert-current$/,
 );
-const Install = z.object({
-    directory: Directory,
-    certificate_file: z.string(),
-    key_file: z.string(),
-    certificate: z.string().max(65536),
-    key: z.string().max(65536),
-    service: z.literal("caddy"),
-}).strict();
 const Remove = z.object({ directory: Directory }).strict();
 const Refusal = z.object({
     error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/),
 }).strict();
-/** Call only inside the owner's private-material callback; never return the pair from a step. */
-export async function installRoleCertificate(
-    raw: unknown,
-    invoke = runLocalProgram,
-    signal?: AbortSignal,
-) {
-    return z.union([z.object({ changed: z.boolean() }).strict(), Refusal])
-        .parse(
-            await invoke(RoleCertificateProgram, {
-                operation: "install",
-                ...Install.parse(raw),
-            }, signal),
-        );
-}
 export async function removeRoleCertificate(
     raw: unknown,
     invoke = runLocalProgram,
