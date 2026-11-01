@@ -15,7 +15,26 @@
       "change": "destroy",
       "app_id": "${capture.subject_app_id}",
       "credential_generation": null,
-      "runtimes": "${match.present}",
+      "runtimes": [
+        {
+          "process_id": "${match.uuid}",
+          "node_id": "${topology.app-prod.node_id}",
+          "ssh": {
+            "control_node_id": 209,
+            "identity_file": "${match.nonempty_string}",
+            "public_key": "${match.nonempty_string}",
+            "target": {
+              "name": "target",
+              "host": "${topology.app-prod.wireguard_ip}",
+              "user": "${match.nonempty_string}",
+              "port": 22,
+              "host_keys": "${match.present}"
+            }
+          },
+          "port": 8790,
+          "credential_field": "${match.nonempty_string}"
+        }
+      ],
       "missing_node_ids": []
     },
     "execution_secrets": "${match.present}"
