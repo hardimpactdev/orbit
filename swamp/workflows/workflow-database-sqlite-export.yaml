@@ -1,5 +1,6 @@
 id: e74086c9-6871-4c8d-9405-2bbdc3fdc521
 name: database-sqlite-export
+queueTimeout: 30
 description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
 writes: true
 vaults: []

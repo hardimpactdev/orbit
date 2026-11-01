@@ -1,5 +1,6 @@
 id: a4b7d7cf-a0cb-4436-97c3-ef7f201f4759
 name: database-sqlite-seed
+queueTimeout: 30
 description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
 writes: true
 vaults: []

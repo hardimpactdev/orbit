@@ -1,5 +1,6 @@
 id: d452ab9b-bb4d-4414-9324-6149f98086bc
 name: database-destroy-actions
+queueTimeout: 30
 description: Inventory and fence the removal set, drop each resource, restore on refusal and shape one public result.
 writes: true
 vaults: [orbit-control-inputs]
