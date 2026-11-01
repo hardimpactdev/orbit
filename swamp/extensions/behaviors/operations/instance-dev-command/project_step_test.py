@@ -114,6 +114,32 @@ class ProjectStep(unittest.TestCase):
             self.assertNotIn(secret, output['stderr'])
             self.assertLessEqual(len(output['stderr'].encode()), 4096)
 
+    def test_multiline_quoted_dotenv_value_is_redacted_line_by_line(self):
+        body_a, body_b = 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7', 'qL8kX2vN5rT7wY9xB3mC6pQ1sD4fG8hJ0kL2zX5cV7bN9mQ3wE'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n{body_a}\n{body_b}\n-----END PRIVATE KEY-----"\nAPP_NAME=proof\n')
+            output = json.loads(self.run_step(path, f'printf "%s\\n%s\\nsafe diagnostic\\n" "{body_a}" "{body_b}" >&2; exit 7').stdout)
+            self.assertNotIn(body_a[:16], output['stderr'])
+            self.assertNotIn(body_b[:16], output['stderr'])
+            self.assertIn('safe diagnostic', output['stderr'])
+
+    def test_unicode_line_separator_inside_a_value_does_not_split_it(self):
+        secret = 'ab\u2028Zq8Lk2Vn5Rt7Wy9Xb3Mc'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'API_SECRET="{secret}"\n', encoding='utf-8')
+            command = 'python3 -c \'import sys; sys.stderr.write("ab\\u2028Zq8Lk2Vn5Rt7Wy9Xb3Mc\\n")\'; exit 7'
+            output = json.loads(self.run_step(path, command).stdout)
+            self.assertNotIn('Zq8Lk2Vn5Rt7Wy9Xb3Mc', output['stderr'])
+
+    def test_inline_comment_on_an_unquoted_short_value_is_not_part_of_the_secret(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text('DB_PASSWORD=hunter2 # local dev\n')
+            output = json.loads(self.run_step(path, 'printf "login failed for password=hunter2\\n" >&2; exit 7').stdout)
+            self.assertNotIn('hunter2', output['stderr'])
+
     def test_redacts_escaped_terminal_quotes_and_truncates_unicode_by_bytes(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
             path = Path(folder)

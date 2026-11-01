@@ -8,6 +8,57 @@ import subprocess
 import sys
 from pathlib import Path
 
+ESCAPES = {'n': '\n', 'r': '\r', '\\': '\\', '"': '"', '$': '$'}
+
+
+def unescape(value: str) -> str:
+    # The canonical writer escapes these five characters in double-quoted values.
+    return re.sub(r'\\([nr\\"$])', lambda match: ESCAPES[match[1]], value)
+
+
+def closing_quote(text: str, quote: str) -> int:
+    escaped = False
+    for index, character in enumerate(text):
+        if escaped:
+            escaped = False
+        elif character == '\\' and quote == '"':
+            escaped = True
+        elif character == quote:
+            return index
+    return -1
+
+
+def dotenv_secrets(text: str) -> set[str]:
+    """Every value phpdotenv could read from .env, read conservatively so no real value is missed."""
+    found: set[str] = set()
+    lines = re.split(r'\r\n|\n|\r', text)  # phpdotenv splits only on these, not on U+2028 and friends
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        if '=' not in line:
+            found.add(stripped)  # backstop: an unparsed line may still be part of a value
+            continue
+        value = line.split('=', 1)[1].strip()
+        found.add(value)
+        if value[:1] in ('"', "'"):
+            quote, body = value[0], value[1:]
+            while closing_quote(body, quote) < 0 and index < len(lines):
+                body += '\n' + lines[index]  # multi-line quoted value, such as a PEM key
+                index += 1
+            end = closing_quote(body, quote)
+            inner = body[:end] if end >= 0 else body
+            for item in (inner, unescape(inner) if quote == '"' else inner):
+                found.update([item, *item.splitlines(), *re.split(r'\r\n|\n|\r', item)])
+        else:
+            found.add(re.split(r'\s+#', value, maxsplit=1)[0].strip())  # inline comment on an unquoted value
+    found.discard('')
+    return found
+
+
 value = json.load(sys.stdin)
 command = value['command']
 if hashlib.sha256(command.encode()).hexdigest() != value['sha256']:
@@ -31,16 +82,7 @@ else:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_size > 1048576:
             raise SystemExit(1)
-        for line in stream.read().splitlines():
-            if '=' not in line or line.lstrip().startswith('#'):
-                continue
-            item = line.split('=', 1)[1].strip()
-            redactions.add(item)
-            if len(item) >= 2 and item[0] in '\'"' and item[-1] == item[0]:
-                item = item[1:-1]
-            # The canonical writer escapes these five characters in quoted values.
-            item = re.sub(r'\\([nr\\"$])', lambda match: {'n': '\n', 'r': '\r', '\\': '\\', '"': '"', '$': '$'}[match[1]], item)
-            redactions.update([item, *item.splitlines()])
+        redactions.update(dotenv_secrets(stream.read()))
 redactions.discard('')
 secrets = sorted((item.encode() for item in redactions), key=len, reverse=True)
 # Fragment checks cover secret values only, not the command text, which is redacted whole.
