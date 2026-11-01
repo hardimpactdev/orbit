@@ -8,41 +8,26 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Fresh caller views and minimal terminal projection; no execution receipts. */
-final readonly class NativeRouteRemovalProjection implements DirectOperationProjection, DirectOperationPublicView
+final readonly class NativeRouteRemovalProjection implements DirectOperationProjection, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
 
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
+
     public function input(Operation $operation): array
     {
-        return [...array_filter($this->publicInput($operation, ValidatedData::integer($operation->node_id)), static fn (mixed $value): bool => $value !== null),
-            'intent' => ['environment_writes' => $operation->input['route_environment']],
-            'execution_secrets' => $operation->input['execution_secrets']];
-    }
-
-    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
-    {
-        if (! in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids']), true)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'This Node is not an admitted Route participant.', 403);
-        }
-    }
-
-    public function publicInput(Operation $operation, int $callerNodeId): array
-    {
-        $this->assertPublicParticipant($operation, $callerNodeId);
-
-        return [...app(NativeRoutePublicationInput::class)->forNode(Node::query()->findOrFail($callerNodeId)),
-            ...app(NativeRouteRemovalPublicInput::class)->forNode($operation, $callerNodeId),
-            'participant_node_id' => $callerNodeId];
+        return ['intent' => $operation->input['route_lifecycle'], 'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -60,7 +45,7 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
         $wasTerminal = $operation->status->terminal();
         $result = ValidatedData::object($data['result'] ?? []);
         $operation = $this->direct->project($operation, $data, $result);
-        if ($wasTerminal) {
+        if ($wasTerminal || ! $operation->status->terminal()) {
             return $operation;
         }
         if ($operation->status === OperationStatus::Succeeded) {
@@ -71,14 +56,15 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
                 $operation->kind === 'route.destroy',
                 array_map(static fn (array $member): array => ['node_id' => ValidatedData::integer($member['node_id']), 'steps' => ValidatedData::stringList($member['steps'])], RouteExecutionProof::objects($result['retained_on_nodes'] ?? [])),
             );
+            if ($operation->kind === 'route.withdraw') {
+                Route::query()->whereKey($operation->target_id)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
+            }
+            app(NativeRouteLanInput::class)->recordMigrations(ValidatedData::integerList($result['migrated_node_ids'] ?? []), ValidatedData::integerList($result['migrated_node_ids'] ?? []));
             if ($operation->kind === 'route.destroy') {
                 foreach ($rows as $row) {
                     DB::afterCommit(static fn () => app(RecordEventBroadcaster::class)->broadcast(RecordEventType::RouteDeleted, $row['route_id'], ['id' => $row['route_id'], 'domain' => $row['domain']]));
                 }
             }
-        } elseif ($operation->status === OperationStatus::Failed) {
-            Route::query()->whereKey($operation->target_id)->update(['status' => RouteStatus::Failed,
-                'failed_step' => 'withdrawal', 'error_code' => $operation->error_code]);
         }
 
         return $operation;

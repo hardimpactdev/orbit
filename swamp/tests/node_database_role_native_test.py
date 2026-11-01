@@ -14,7 +14,7 @@ class DatabaseRoleNative(NativeTestCase):
     native_timeout=120
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('operations/node-role-converge-command','operations/node-role-command','operations/node-bootstrap','operations/fleet','operations/node','operations/_lib')
+        self.copy_behaviors('operations/fleet-recipe','operations/node-role-converge-command','operations/node-role-command','operations/node-bootstrap','operations/fleet','operations/node','operations/_lib')
         shutil.copy(ROOT/'workflows/workflow-operation-node-role-add-direct.yaml',self.repo/'workflows')
         routes=self.repo/'extensions/behaviors/operations/routes'
         routes.mkdir()

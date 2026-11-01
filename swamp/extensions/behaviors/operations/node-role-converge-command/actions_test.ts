@@ -1,9 +1,10 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { behavior, observerFiles } from "./assets.ts";
+import { behavior, observerFiles } from "../fleet-recipe/observer_assets.ts";
 import { RoleConvergeContribution, roleResult } from "./result.ts";
 import { generatedRoleWorkflows, roleWorkflow } from "./workflows.ts";
 const ctx = {
-    extensionFile: (name: string) => new URL(name, import.meta.url).pathname,
+    extensionFile: (name: string) =>
+        new URL("../fleet-recipe/" + name, import.meta.url).pathname,
     writeResource: () => Promise.resolve(),
 };
 Deno.test("checked-in role workflows match their factory", async () => {

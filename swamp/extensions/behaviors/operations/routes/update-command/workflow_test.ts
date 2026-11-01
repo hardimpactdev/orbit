@@ -1,8 +1,10 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import {
+    createWorkflow,
     ingressWorkflow,
     mutationWorkflow,
+    removalWorkflow,
     targetWorkflow,
     updateWorkflow,
 } from "./workflow.ts";
@@ -12,6 +14,9 @@ Deno.test("checked-in Route update workflows match their native composition fact
         const workflow of [
             updateWorkflow(),
             targetWorkflow(),
+            createWorkflow(),
+            removalWorkflow(),
+            mutationWorkflow("withdraw"),
             mutationWorkflow("forward"),
             mutationWorkflow("restore"),
             ingressWorkflow(),
@@ -36,6 +41,9 @@ Deno.test("Route update reuses its existing children with one209selector and pha
         const workflow of [
             updateWorkflow(),
             targetWorkflow(),
+            createWorkflow(),
+            removalWorkflow(),
+            mutationWorkflow("withdraw"),
             mutationWorkflow("forward"),
             mutationWorkflow("restore"),
             ingressWorkflow(),
@@ -64,7 +72,7 @@ Deno.test("Route update reuses its existing children with one209selector and pha
                 job: { steps: { name: string; task: { type: string } }[] },
             ) => job.steps).filter((step: { name: string }) =>
                 step.name !== "result" && step.name !== "forward" &&
-                step.name !== "restore"
+                step.name !== "restore" && step.name !== "withdraw"
             );
             assert(
                 effects.every((step: { task: { type: string } }) =>

@@ -18,33 +18,18 @@ final readonly class NativeRouteAdmission
      */
     public function capture(string $kind, Route $route, array $input, int $rootNodeId): array
     {
-        if (in_array($kind, ['route.update', 'route.target_set'], true)) {
-            $capture = ($kind === 'route.update' ? app(NativeRouteUpdateInput::class) : app(NativeRouteTargetInput::class))->capture($route, $input);
-
-            return [...$input, ($kind === 'route.update' ? 'route_update' : 'route_target') => $capture['intent'], 'certificates' => $capture['certificates'],
-                'participant_node_ids' => array_values(array_unique([$rootNodeId, ...ValidatedData::integerList($capture['participant_node_ids'])])),
-                'execution_secrets' => $capture['execution_secrets']];
-        }
-        $intent = match ($kind) {
-            'route.create', 'route.converge' => ['route_convergence' => app(NativeRouteConvergenceIntent::class)->forRoute($route, $input)],
-            'route.destroy', 'route.withdraw' => ['route_removal' => app(NativeRouteRemovalIntent::class)->forRoute($route, $input)],
-            default => [],
+        $capture = match ($kind) {
+            'route.update' => app(NativeRouteUpdateInput::class)->capture($route, $input),
+            'route.target_set' => app(NativeRouteTargetInput::class)->capture($route, $input),
+            'route.create' => app(NativeRouteLifecycleInput::class)->capture($route, $input),
+            default => throw new ResourceOperationException('operation.kind_unavailable', 'This Route kind has no standalone capture.', 409),
         };
-        $resource = ValidatedData::object(reset($intent) ?: []);
-        $nodes = ValidatedData::integerList($resource['node_ids'] ?? array_values(array_unique([
-            ...array_map(static fn (array $node): int => ValidatedData::integer($node['node_id']), RouteExecutionProof::objects($resource['nodes'] ?? [])),
-            ...ValidatedData::integerList($resource['dns_node_ids'] ?? []),
-        ])));
-        $leaves = RouteExecutionProof::objects($resource['certificates'] ?? []);
-        foreach (['previous', 'desired', 'cleanup'] as $side) {
-            $member = ValidatedData::object($resource[$side] ?? []);
-            $leaves = [...$leaves, ...RouteExecutionProof::objects($member['certificates'] ?? [])];
-        }
-        $nodes = array_values(array_unique([$rootNodeId, ...$nodes, ...($leaves !== [] ? [209] : [])]));
-        sort($nodes);
 
-        return [...$input, ...$intent, 'certificates' => array_values(array_unique($leaves, SORT_REGULAR)),
-            ...self::environmentBindings($nodes, $rootNodeId, $route->id)];
+        return [...$input, match ($kind) {
+            'route.update' => 'route_update', 'route.target_set' => 'route_target', default => 'route_lifecycle'
+        } => $capture['intent'], 'certificates' => $capture['certificates'],
+            'participant_node_ids' => array_values(array_unique([$rootNodeId, ...ValidatedData::integerList($capture['participant_node_ids'])])),
+            'execution_secrets' => $capture['execution_secrets']];
     }
 
     /** Existing finite environment fields reused by truthful composing parents.

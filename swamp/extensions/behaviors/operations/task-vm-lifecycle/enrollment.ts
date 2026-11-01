@@ -90,7 +90,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-enrollment-input",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         plan: {
             schema: z.object({ provider: z.enum(["incus", "upcloud"]) }),

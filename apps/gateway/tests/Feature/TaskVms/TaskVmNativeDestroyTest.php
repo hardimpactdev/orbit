@@ -9,13 +9,16 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\TaskVm;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -81,10 +84,10 @@ it('refuses provider absence alone as a complete destroy result', function (): v
     expect($this->vm->fresh()->destroyed_at)->toBeNull()->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
 });
 
-it('refuses identity drift and unpublished UpCloud before effects', function (string $change): void {
+it('refuses identity drift and a missing UpCloud control Node before effects', function (string $change): void {
     if ($change === 'upcloud') {
         $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null]);
-        expect(fn () => app(TaskVmDestroyIntent::class)->capture($this->vm->fresh()))->toThrow(ResourceOperationException::class, 'UpCloud destruction');
+        expect(fn () => app(TaskVmDestroyIntent::class)->capture($this->vm->fresh()))->toThrow(ModelNotFoundException::class);
     } else {
         $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
         $this->vm->update(['wireguard_ip' => '10.44.0.143']);
@@ -103,3 +106,17 @@ it('refuses protected guest resources before any provider deletion', function (s
     expect(fn () => app(TaskVmDestroyIntent::class)->capture($this->vm->fresh()))->toThrow(ResourceOperationException::class);
     expect($this->vm->fresh()->state)->toBe(TaskVmState::Failed)->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
 })->with(['schedule', 'database']);
+
+it('captures UpCloud destroy through its Gateway and shared API execution copy', function (): void {
+    $gateway = Node::query()->create(['name' => 'destroy-gateway', 'public_ssh_host' => '192.0.2.14', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null, 'provider_id' => null]);
+    app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'PRIVATE-UPCLOUD-DESTROY'));
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $input = app(TaskVmDestroyIntent::class)->capture($this->vm->fresh());
+    expect($input['node_id'])->toBe($gateway->id)->and($input['provider_input']['provider_id'])->toBeNull()
+        ->and($input['execution_secrets']['upcloud'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'task-vm-upcloud-token'])
+        ->and(json_encode($input))->not->toContain('PRIVATE-UPCLOUD-DESTROY');
+});

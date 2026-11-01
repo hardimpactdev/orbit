@@ -12,7 +12,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\TaskVms\TaskVmHubFilter;
-use App\Models\Cluster;
+use App\Infrastructure\TaskVms\TaskVmHubPolicy;
 use App\Models\Node;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -37,7 +37,7 @@ final class PrepareTaskVmHubCommand extends Command
     #[\Override]
     protected $description = 'Install the static task VM filter for the reserved WireGuard range on the vpn Node.';
 
-    public function handle(VpnSettings $vpn, TaskVmHubFilter $filter): int
+    public function handle(VpnSettings $vpn, TaskVmHubFilter $filter, TaskVmHubPolicy $policy): int
     {
         try {
             $settings = resolve(TaskVmSettings::class);
@@ -46,6 +46,10 @@ final class PrepareTaskVmHubCommand extends Command
             $clusterId = $settings->devClusterId ?? throw $this->invalid('dev_cluster_id is not set.');
             $hub = $this->roleNode(RoleName::Vpn);
             $this->guardRange($range);
+            $routers = $policy->routerAddresses($clusterId);
+            if ($routers === []) {
+                throw $this->unavailable("Cluster [{$clusterId}] has no active Router-role Node.");
+            }
             $operation = $filter->prepare($hub, [
                 'range' => $range->value(),
                 'dns' => $vpn->dnsServer() ?? $this->address($hub),
@@ -53,7 +57,7 @@ final class PrepareTaskVmHubCommand extends Command
                 'pi_port' => Config::integer('orbit.pi.port'),
                 'reverb' => $this->address($this->roleNode(RoleName::WebSocket)).':'.self::ReverbPort,
                 'model' => $model,
-                'routers' => [$this->address($this->router($clusterId))],
+                'routers' => $routers,
             ]);
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
@@ -105,17 +109,6 @@ final class PrepareTaskVmHubCommand extends Command
         }
 
         return $nodes->firstOrFail();
-    }
-
-    private function router(int $clusterId): Node
-    {
-        $router = Cluster::query()->find($clusterId)?->routerAssignment?->node;
-
-        if (! $router instanceof Node || $router->status !== LifecycleStatus::Active) {
-            throw $this->unavailable("Cluster [{$clusterId}] has no active router Node.");
-        }
-
-        return $router;
     }
 
     private function address(Node $node): string

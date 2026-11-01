@@ -21,7 +21,7 @@ class WebSocketNative(NativeTestCase):
         remote = tempfile.TemporaryDirectory(prefix='orbit-websocket-host-')
         self.addCleanup(remote.cleanup)
         self.host = Path(remote.name)
-        self.copy_behaviors('operations/node-role-converge-command', 'operations/node-role-command', 'operations/node', 'operations/integrations', 'operations/fleet', 'operations/_lib')
+        self.copy_behaviors('operations/fleet-recipe','operations/node-role-converge-command', 'operations/node-role-command', 'operations/node', 'operations/integrations', 'operations/fleet', 'operations/_lib')
         routes = self.repo/'extensions/behaviors/operations/routes'
         routes.mkdir()
         shutil.copy(ROOT/'extensions/behaviors/operations/routes/caddy-input.ts', routes)

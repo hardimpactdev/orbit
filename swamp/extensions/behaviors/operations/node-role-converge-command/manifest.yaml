@@ -5,15 +5,9 @@ visibility: private
 license: MIT
 description: Native Node role actions and terminal results.
 behaviors:
-  - operations/node-role-converge-command/assets.ts
   - operations/node-role-converge-command/result.ts
   - operations/node-role-converge-command/runtime_assets.ts
 additionalFiles:
-  - scripts/file.py
-  - scripts/observer_identity.py
-  - scripts/observer_checkout.py
-  - scripts/file_snapshot.py
-  - scripts/file_restore.py
   - runtime_scripts/websocket_directory.py
   - runtime_scripts/websocket_link.py
   - runtime_scripts/websocket_observe.py

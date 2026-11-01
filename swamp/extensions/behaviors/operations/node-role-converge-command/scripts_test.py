@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 
 def load(name, directory="scripts"):
-    spec=importlib.util.spec_from_file_location(name,Path(__file__).parent/directory/(name+'.py'))
+    base=Path(__file__).parent if directory=="runtime_scripts" else Path(__file__).parent.parent/'fleet-recipe'
+    spec=importlib.util.spec_from_file_location(name,base/directory/(name+'.py'))
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
 

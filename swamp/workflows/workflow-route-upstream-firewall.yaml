@@ -1,0 +1,64 @@
+id: d7eec9b6-54b9-47db-b509-6234b552fb35
+name: route-upstream-firewall
+description: Verify a captured public Process allowance through the canonical native
+  firewall inspector.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: environment
+  steps:
+  - name: observe
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-firewall-inspect
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.node_id }}
+        kind: firewall.inspect
+        execution_secrets: {}
+        intent:
+          ssh:
+            identity_file: ${{ inputs.intent.connection.nodeIdentityFile }}
+            target:
+              host: ${{ inputs.intent.connection.nodeHost }}
+              user: ${{ inputs.intent.connection.nodeUser }}
+              port: ${{ inputs.intent.connection.nodePort }}
+              host_keys: ${{ inputs.intent.host_keys }}
+          expected: '${{ inputs.intent.expected.map(e, {"name": e.comment, "shape":
+            e}) }}'
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-upstream-ready
+      methodName: upstream
+      inputs:
+        stdout: ${{ steps.observe.outputs.result.stdout }}

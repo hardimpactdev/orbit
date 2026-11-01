@@ -10,70 +10,9 @@ import re
 import tempfile
 import unittest
 
-PROGRAM=Path(__file__).with_name('recipe_program.ts').read_text().split('String.raw`',1)[1].rsplit('`;',1)[0]
-ns={}
-exec(compile(PROGRAM,'recipe_program.ts','exec'),ns)
-
-class RecipeCommandTermination(unittest.TestCase):
-    def wait_file(self, path, process):
-        deadline=time.monotonic()+5
-        while time.monotonic()<deadline:
-            if path.exists():
-                value=path.read_text()
-                if value:return value
-            if process.poll() is not None:self.fail('Recipe parent exited before '+path.name+': '+process.stderr.read())
-            time.sleep(.01)
-        self.fail('Timed out waiting for '+path.name)
-
-    def running(self, pid):
-        # A killed orphan may await init reaping; it cannot execute another effect.
-        try:return Path('/proc/'+str(pid)+'/stat').read_text().split(')',1)[1].split()[0] != 'Z'
-        except FileNotFoundError:return False
-
-    def exercise(self, during_spawn=False, exited_leader=False):
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary);pids=root/'pids';cleanup=root/'cleanup';outcome=root/'outcome';finished=root/'finished'
-            grandchild="import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(60)"
-            command=("import json,os,subprocess,sys,time;from pathlib import Path;"
-                     "child=subprocess.Popen([sys.executable,'-c',"+repr(grandchild)+"]);"
-                     "Path("+repr(str(pids))+").write_text(json.dumps([os.getpid(),child.pid]));"
-                     +( "sys.exit(0)" if exited_leader else "time.sleep(60)"))
-            entry="\nreal_wait=subprocess.Popen.wait\ndef delayed_wait(child,*args,**kwargs):\n    Path("+repr(str(cleanup))+").write_text('waiting')\n    time.sleep(.2)\n    return real_wait(child,*args,**kwargs)\nsubprocess.Popen.wait=delayed_wait\n"
-            if during_spawn:
-                entry+="real_spawn=subprocess.Popen\ndef interrupted_spawn(*args,**kwargs):\n    child=real_spawn(*args,**kwargs)\n    while not Path("+repr(str(pids))+").exists():time.sleep(.01)\n    os.kill(os.getpid(),signal.SIGTERM)\n    return child\nsubprocess.Popen=interrupted_spawn\n"
-            entry+=("try:\n    RecipeHost().run(['env',"+repr(sys.executable)+",'-c',"+repr(command)+"],timeout="+('0.3' if exited_leader else '30')+")\n"
-                    "except RecipeUncertain:\n    Path("+repr(str(outcome))+").write_text('uncertain')\n"
-                    "finally:\n    Path("+repr(str(finished))+").write_text('cleaned')\n")
-            parent=subprocess.Popen([sys.executable,'-c',PROGRAM+entry],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
-            known=[]
-            try:
-                known=json.loads(self.wait_file(pids,parent))
-                if not during_spawn and not exited_leader:
-                    parent.send_signal(signal.SIGTERM)
-                    self.wait_file(cleanup,parent)
-                    parent.send_signal(signal.SIGTERM)
-                parent.wait(timeout=5)
-                self.assertEqual(parent.returncode,0,parent.stderr.read())
-                self.assertEqual(outcome.read_text(),'uncertain')
-                self.assertEqual(finished.read_text(),'cleaned')
-                self.assertFalse(any(self.running(pid) for pid in known),'Command or descendant survived the recipe parent')
-            finally:
-                # The RED run must clean up its own harmless orphan fixture too.
-                if not known and pids.exists():known=json.loads(pids.read_text())
-                if known:
-                    try:os.killpg(known[0],signal.SIGKILL)
-                    except ProcessLookupError:pass
-                if parent.poll() is None:parent.kill()
-                parent.wait(timeout=5);parent.stderr.close()
-
-    def test_term_reaps_command_and_descendant_before_parent_settles_despite_repeated_term(self):
-        self.exercise()
-
-    def test_term_between_spawn_and_setup_cannot_orphan_the_command_group(self):
-        self.exercise(during_spawn=True)
-
-    def test_deadline_kills_descendant_even_after_the_command_leader_exited(self):
-        self.exercise(exited_leader=True)
+PROGRAM=(Path(__file__).parent.parent/'fleet-recipe/scripts/recipe.py').read_text()
+ns={'__name__':'recipe_policy_test'}
+exec(compile(PROGRAM,'recipe.py','exec'),ns)
 
 class RecipeIncusPolicy(unittest.TestCase):
     def setUp(self):
@@ -425,24 +364,24 @@ class RecipeApplyPrograms(unittest.TestCase):
         self.data={'user':'test','snapshot':'20261031T000000Z','architecture':'amd64','git_packages':[],'artifact_mirror':'','tools':{'curl':{'source':'ubuntu','version':'8.1','package':'curl','artifacts':{}}}}
 
     def test_package_apply_pins_snapshot_and_restarts_only_changed_package_units(self):
-        result=ns['apply_recipe'](self.host,self.data,self.account)
-        self.assertEqual(result,{'changed_packages':['curl'],'changed_tools':['curl'],'restarted_services':['curl-daemon.service'],'newer_than_recipe':{},'healthy':True})
+        result=ns['apply_packages'](self.host,self.data,self.account)
+        self.assertEqual(result,{'changed_packages':['curl'],'changed_tools':['curl'],'restarted_services':['curl-daemon.service'],'newer_than_recipe':{},'healthy':True,'restart_units':['curl-daemon.service'],'health_units':['curl-daemon.service']})
         self.assertEqual(self.installed['curl'],'8.1')
-        self.assertIn(['systemctl','restart','curl-daemon.service'],self.calls)
-        checked=[call[-1] for call in self.calls if call[:2]==['systemctl','is-active']]
-        self.assertIn('consumer.service',checked)
+        self.assertFalse(any(call[:2]==['systemctl','restart'] for call in self.calls))
+        plan=ns['service_plan'](self.host,result)
+        self.assertEqual(plan,{'restart_units':['curl-daemon.service'],'health_units':['consumer.service','curl-daemon.service']})
         self.assertFalse((self.root/'usr/sbin/policy-rc.d').exists())
         install=next(call for call in self.calls if call[:2]==['apt-get','install'])
         self.assertIn('--no-remove',install);self.assertNotIn('--allow-downgrades',install)
         self.assertEqual(install[-1],'curl=8.1')
 
     def test_current_package_runs_no_restart_and_preserves_already_healthy_units(self):
-        self.installed['curl']='8.1';result=ns['apply_recipe'](self.host,self.data,self.account)
+        self.installed['curl']='8.1';result=ns['apply_packages'](self.host,self.data,self.account)
         self.assertEqual(result['changed_packages'],[]);self.assertEqual(result['restarted_services'],[])
         self.assertFalse(any(call[:2]==['systemctl','restart'] for call in self.calls))
 
     def test_newer_trusted_ubuntu_is_preserved_instead_of_downgraded(self):
-        self.installed['curl']='9.0';result=ns['apply_recipe'](self.host,self.data,self.account)
+        self.installed['curl']='9.0';result=ns['apply_packages'](self.host,self.data,self.account)
         self.assertEqual(self.installed['curl'],'9.0')
         self.assertEqual(result['newer_than_recipe'],{'curl':{'installed':'9.0','version':'8.1'}})
         self.assertFalse(any(call[:2]==['apt-get','install'] for call in self.calls))
@@ -461,14 +400,17 @@ class RecipeApplyPrograms(unittest.TestCase):
 
     def test_existing_restart_policy_is_preserved_and_refuses_before_source_mutation(self):
         path=self.root/'usr/sbin/policy-rc.d';path.write_text('operator policy')
-        with self.assertRaises(ns['RecipeRefusal']):ns['apply_recipe'](self.host,self.data,self.account)
+        with self.assertRaises(ns['RecipeRefusal']):ns['apply_packages'](self.host,self.data,self.account)
         self.assertEqual(path.read_text(),'operator policy');self.assertFalse(any(call[0]=='apt-get' for call in self.calls))
 
     def test_dependency_health_failure_never_reports_success_and_policy_is_removed(self):
         self.failed_unit='consumer.service'
         # A completed inactive oneshot is allowed; active-state evidence must
         # remain active here, so this represents a broken long-lived dependent.
-        with self.assertRaises(ns['RecipeRefusal']) as error:ns['apply_recipe'](self.host,self.data,self.account)
+        result=ns['apply_packages'](self.host,self.data,self.account)
+        plan=ns['service_plan'](self.host,result)
+        with self.assertRaises(ns['RecipeRefusal']) as error:
+            for unit in plan['health_units']:ns['service_health'](self.host,unit)
         self.assertEqual(error.exception.stage,'health:consumer.service')
         self.assertFalse((self.root/'usr/sbin/policy-rc.d').exists())
 

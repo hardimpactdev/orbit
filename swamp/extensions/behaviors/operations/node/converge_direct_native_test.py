@@ -19,13 +19,12 @@ class DirectConvergeNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.native_env['SWAMP_NO_INBOX_NOTICE'] = '1'
-        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/node', 'node-worker', 'operations/routes', 'operations/certificates')
+        self.copy_behaviors('automatic-deploy', 'node-worker', 'operations')
         target = self.repo / 'extensions/behaviors'
-        (target / 'operations/fleet').mkdir()
         for name in ['contract.ts']:
             shutil.copy(ROOT / 'extensions/behaviors/operations/fleet' / name, target / 'operations/fleet' / name)
-        module = target / 'operations/node/converge_direct.ts'
-        module.write_text('import {fixtureHttp, fixtureAction} from "./converge_direct_native_fixture.ts";\n' + module.read_text().replace('export const behavior = nodeConverge();', 'export const behavior = nodeConverge(fixtureAction, () => fixtureHttp);'))
+        module = target / 'operations/fleet-recipe/node_converge.ts'
+        module.write_text('import {fixtureHttp, fixtureAction} from "../node/converge_direct_native_fixture.ts";\n' + module.read_text().replace('export const behavior = nodeConverge();', 'export const behavior = nodeConverge(fixtureAction, () => fixtureHttp);'))
         source = ROOT / 'workflows/workflow-operation-node-converge-direct.yaml'
         # Placement is inspected in source and proved separately on the real worker venue.
         text = source.read_text()

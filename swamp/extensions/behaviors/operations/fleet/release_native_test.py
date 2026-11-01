@@ -16,8 +16,8 @@ class FleetReleaseNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/fleet', 'node-worker')
-        module = self.repo / 'extensions/behaviors/operations/fleet/release.ts'
+        self.copy_behaviors('automatic-deploy', 'operations', 'node-worker')
+        module = self.repo / 'extensions/behaviors/operations/fleet-recipe/fleet_release.ts'
         module.write_text('import { http, cli, observer } from "./release_native_fixture.ts";\n' +
                           module.read_text().replace('fleetRelease();', 'fleetRelease(cli, observer, () => http, () => new Date("2026-10-31T02:30:00Z"));'))
         shutil.copy(ROOT / 'extensions/behaviors/operations/fleet/release_native_fixture.ts', module.parent)
@@ -79,7 +79,7 @@ class FleetReleaseNative(NativeTestCase):
         for node in self.state['operation']['input']['nodes']:
             node['daytime'] = False
         # 02:30Z is 03:30 Amsterdam; use a summer boundary by pinning the fixture's clock.
-        module = self.repo / 'extensions/behaviors/operations/fleet/release.ts'
+        module = self.repo / 'extensions/behaviors/operations/fleet-recipe/fleet_release.ts'
         module.write_text(module.read_text().replace('2026-10-31T02:30:00Z', '2026-10-31T12:30:00Z'))
         state, _ = self.run_parent()
         self.assertEqual(state['effects'], [])

@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Builder;
 
-/** One public policy for the hub's task VM filter and managed SSH rule. */
+/** One public policy for the hub's task VM filter and managed ingress rules. */
 final readonly class TaskVmHubPolicy
 {
     public const string Comment = 'orbit:task-vm-control-ssh';
@@ -41,7 +44,58 @@ final readonly class TaskVmHubPolicy
             ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', '22', 'comment', self::Comment]);
     }
 
-    /** The admitted endpoints use the retained filter's policy; only the control SSH rule is new.
+    /** Recorded candidates need web access before the Router selection changes.
+     * @return list<string>
+     */
+    public function routerAddresses(int $clusterId): array
+    {
+        $nodes = Node::query()->where('status', LifecycleStatus::Active)
+            ->whereHas('roles', static fn (Builder $roles): Builder => $roles
+                ->where('role', RoleName::Router)->where('cluster_id', $clusterId))
+            ->orderBy('id')->get();
+        $addresses = [];
+        foreach ($nodes as $node) {
+            if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+                throw new TaskVmException('task_vm.fleet_unavailable', 'Every Cluster Router requires a recorded IPv4 WireGuard address.');
+            }
+            $addresses[] = $node->wireguard_ip;
+        }
+
+        return array_values(array_unique($addresses));
+    }
+
+    /** @param list<string> $routers
+     * @return list<UfwManagedRule>
+     */
+    public function routerRules(array $routers, string $range): array
+    {
+        $destination = TaskVmConfig::wireguardRange($range)->value();
+        $rules = [];
+        foreach ($routers as $source) {
+            foreach (['80', '443'] as $port) {
+                $comment = 'orbit:task-vm-router-web-'.str_replace('.', '-', $source).'-'.$port;
+                $rules[] = new UfwManagedRule(new UfwRuleShape($comment, 'allow', 'fwd', $source, $destination, $port, 'tcp', 'orbit', 'orbit', 'v4'),
+                    ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', $port, 'comment', $comment]);
+            }
+        }
+
+        return $rules;
+    }
+
+    /** @return list<UfwManagedRule> */
+    public function managedRules(): array
+    {
+        $clusterId = TaskVmSettings::devClusterId();
+        if ($clusterId === null) {
+            return [];
+        }
+
+        $range = TaskVmConfig::wireguardRange(config('task_vms.wireguard_range'))->value();
+
+        return [...array_filter([$this->controlRule()]), ...$this->routerRules($this->routerAddresses($clusterId), $range)];
+    }
+
+    /** Render the admitted endpoints using the same rules as the managed catalog.
      * @param  array{range:string,dns:string,gateway:string,pi_port:int,reverb:string,model:string,routers:list<string>}  $input
      */
     public function render(array $input, UfwManagedRule $control): string
@@ -68,7 +122,8 @@ final readonly class TaskVmHubPolicy
         $dns = $input['dns'];
         $gateway = $input['gateway'];
         $pi = $input['pi_port'];
-        $routers = implode(',', $input['routers']);
+        $routerRules = implode("\n        ", array_map(static fn (UfwManagedRule $rule): string => 'ip saddr '.$rule->shape->source.' ip daddr '.$range.' tcp dport '.$rule->shape->port.' accept comment "'.$rule->shape->comment.'"',
+            $this->routerRules($input['routers'], $range)));
         $source = $control->shape->source;
         $comment = self::Comment;
         $marker = self::Marker;
@@ -89,7 +144,7 @@ final readonly class TaskVmHubPolicy
                 ip saddr {$range} ip daddr {$model} tcp dport {$modelPort} accept
                 ip saddr {$gateway} ip daddr {$range} tcp dport { 22, {$pi} } accept
                 ip saddr {$source} ip daddr {$range} tcp dport 22 accept comment "{$comment}"
-                ip saddr { {$routers} } ip daddr {$range} tcp dport { 80, 443, 5173 } accept
+                {$routerRules}
                 ip saddr {$range} drop
                 ip daddr {$range} drop
             }

@@ -408,12 +408,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/certificates/role-publication.ts",
-      "rule": "inline-script",
-      "count": 30,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/certificates/system.ts",
       "rule": "inline-script",
       "count": 125,
@@ -511,20 +505,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/fleet/cli_install_program.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/cli_install_program.ts",
-      "rule": "inline-script",
-      "count": 112,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/maintenance.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -539,37 +519,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_direct.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_local.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_program.ts",
-      "rule": "custom-control",
-      "count": 11,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe_program.ts",
-      "rule": "inline-script",
-      "count": 1523,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
@@ -1116,12 +1065,6 @@
     },
     {
       "file": "extensions/behaviors/operations/node/footprint_system.ts",
-      "rule": "inline-script",
-      "count": 206,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/footprint_system.ts",
       "rule": "multi-action",
       "count": 2,
       "evidence": [
@@ -1200,30 +1143,6 @@
     },
     {
       "file": "extensions/behaviors/operations/node/observer_install_system.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/php_runtime_system.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control",
-        "lock"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/php_runtime_system.ts",
-      "rule": "inline-script",
-      "count": 284,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/php_runtime_system.ts",
       "rule": "multi-action",
       "count": 2,
       "evidence": [
@@ -1577,20 +1496,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/routes/dns-publication.ts",
       "rule": "custom-control",
       "count": 5,
@@ -1654,14 +1559,6 @@
       "file": "extensions/behaviors/operations/routes/publication.ts",
       "rule": "gateway-http",
       "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/removal.ts",
-      "rule": "gateway-http",
-      "count": 4,
       "evidence": [
         "<unknown> <unknown>"
       ]

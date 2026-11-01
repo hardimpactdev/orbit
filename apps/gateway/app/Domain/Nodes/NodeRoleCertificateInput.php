@@ -8,6 +8,7 @@ use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -15,7 +16,7 @@ use App\Support\ValidatedData;
  *
  * @phpstan-type RoleLeaf array{node_id:int,scope:string,domain:string,version:string,root_hash:string}
  * @phpstan-type Withdrawal array{node_id:int,scope:string}
- * @phpstan-type CertificatePlan array{leaves:list<RoleLeaf>,withdrawals:list<Withdrawal>}
+ * @phpstan-type CertificatePlan array{leaves:list<RoleLeaf>,withdrawals:list<Withdrawal>,connections?:list<array{node_id:int,ssh:array<string,mixed>}>}
  */
 final readonly class NodeRoleCertificateInput
 {
@@ -66,6 +67,23 @@ final readonly class NodeRoleCertificateInput
         }
 
         return ['leaves' => $leaves, 'withdrawals' => $withdrawals];
+    }
+
+    /** Capture the pinned transport only for executable role publications, not prospective rendering.
+     * @return CertificatePlan
+     */
+    public function captureForExecution(Node $node, RoleName $role, ?Node $source = null): array
+    {
+        $plan = $this->capture($node, $role, $source);
+        if ($plan['leaves'] !== []) {
+            $plan['connections'] = [];
+            foreach (array_unique(array_column($plan['leaves'], 'node_id')) as $nodeId) {
+                $target = $nodeId === $node->id ? $node : Node::query()->findOrFail($nodeId);
+                $plan['connections'][] = ['node_id' => $nodeId, 'ssh' => app(SwampSshExecutionInput::class)->forNode($target)];
+            }
+        }
+
+        return $plan;
     }
 
     /** Effect Nodes only; the canonical signer has its own fixed native placement.
