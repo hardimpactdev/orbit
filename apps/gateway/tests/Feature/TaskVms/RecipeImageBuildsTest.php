@@ -335,3 +335,24 @@ it('starts a fresh image attempt after a successful sweep proves claimed cleanup
     expect($retried->cleanup_started_at)->toBeNull();
     $this->assertDatabaseCount('operations', 3);
 })->with(['resume', 'resume latest', 'recipe retry']);
+
+it('records an exact successful terminal replacement on the same failed image attempt', function (): void {
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $fingerprint = str_repeat('a', 64);
+    $build->update(['image_fingerprint' => $fingerprint, 'promoted_at' => now(), 'current_step' => 'recipe',
+        'current_program' => 'base:rust', 'steps' => [['step' => 'recipe', 'program' => 'base:rust', 'error' => null]]]);
+    app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out']);
+    expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Failed);
+
+    // The shared reader owns validation and replacement of the Operation's terminal result.
+    app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'error_code' => null,
+        'finished_at' => now(), 'result' => ['ready' => true, 'fingerprint' => $fingerprint]]);
+
+    expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Succeeded);
+    expect($build->fresh()->image_fingerprint)->toBe($fingerprint);
+    expect($build->fresh()->steps[0]['error'])->toBeNull();
+    expect($build->fresh()->attempt)->toBe(1);
+    expect(app(RecipeImageBuilds::class)->reconcile(retry: true)[0]->attempt)->toBe(1);
+    $this->assertDatabaseCount('operations', 1);
+});
