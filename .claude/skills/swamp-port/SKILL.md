@@ -10,9 +10,9 @@ Port one family or parent kind per PR. The Gateway admits and projects; Swamp do
 ## Before you write anything
 
 1. Call Recall `resolve` for the kind and its family. Read the [Swamp manual](https://swamp-club.com/manual) pages for workflows, behavior definitions, vaults and remote execution.
-2. Find the legacy path: the Gateway action or job, its `direct-operations.php` declaration, any orbit-agent action it calls, and its tests. List every effect it has and on which Node.
-3. Group the effects into action groups. An action group is the set of commands that share one Node, one resume point and one guard, such as all git commands of a checkout.
-4. For each group, find the native feature or official extension that does it: core `command/shell`, `@swamp/ssh`, `@swamp/cfgmgmt`, `@swamp/git`. Use the [legacy-to-native table](../../../docs/swamp/porting.md#legacy-pattern-to-native-feature). Write down what you checked; the PR body must say it.
+2. **The legacy sequence is the spec (F9).** Read the pre-Swamp Gateway action, its agent actions and its feature tests at the migration baseline: `git show 6291bb036:<path>`. List its phases in order, with each phase's Node and edge cases.
+3. Each legacy phase becomes one script-file step, such as create's prepare, source, environment, setup, route and finish. Carry over every legacy edge case: token format, branch in use, empty environment, monorepo paths. Any change to the sequence needs a written reason in the PR.
+4. For each phase, find the native feature or official extension that does it: core `command/shell`, `@swamp/ssh`, `@swamp/cfgmgmt`, `@swamp/git`. Use the [legacy-to-native table](../../../docs/swamp/porting.md#legacy-pattern-to-native-feature). Write down what you checked; the PR body must say it.
 5. If Swamp has a real gap, stop and send it to the orchestrator with evidence. Do not build around it.
 
 ## Build it
@@ -38,6 +38,7 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 
 - `swamp workflow validate` on the pinned runtime for every changed workflow.
 - The family's native test under `swamp/` and `deno test` for changed behaviors; shellcheck or ruff for every script.
+- Parity tests: port the legacy feature tests so each legacy case gives the same public result natively.
 - Gateway Pest tests for admission, identity, inputs envelope and projection, run with a file path or `--filter`.
 - The shape gate and placement lint.
 - Report Orbit app and test net lines and Swamp lines separately.
@@ -45,7 +46,7 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 
 ## Review a kind PR
 
-Lane 26 reviews every kind PR against the [PR and review checklist](../../../docs/swamp/porting.md#pr-and-review-checklist) and the [anti-patterns](../../../docs/swamp/porting.md#anti-patterns). A kind PR fails review without a measured p95 and a run budget, with a `forEach` over step outputs, or with a step whose resume point, Node change or guard it does not name. Report PASS, or each deviation as `file:line`, the rule broken, and the native replacement. Keep source conformance separate from CI, served-source uptake and live evidence.
+Lane 26 reviews every kind PR against the [PR and review checklist](../../../docs/swamp/porting.md#pr-and-review-checklist) and the [anti-patterns](../../../docs/swamp/porting.md#anti-patterns). A kind PR fails review without a measured p95 and a run budget, with a redesigned legacy sequence and no written reason, with a `forEach` over step outputs, or with a step whose resume point, Node change or guard it does not name. Report PASS, or each deviation as `file:line`, the rule broken, and the native replacement. Keep source conformance separate from CI, served-source uptake and live evidence.
 
 ## Improve this skill
 

@@ -11,9 +11,9 @@ Start every kind PR from this page. Review every kind PR against it and the [bin
 
 Work through these steps in order before you fill the template.
 
-1. **Find the legacy path.** List its Gateway action, `direct-operations.php` entry, agent actions and tests. Note each effect and the Node it changes.
-2. **Use as few steps as you can.** A placed step costs far more than its work. Follow [Keep steps few](#keep-steps-few).
-3. **Map each group to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature). Prefer an official model (`@swamp/ssh`, `@swamp/cfgmgmt`) over a script. Record what you checked for the PR body.
+1. **Start from the legacy sequence (F9).** The pre-Swamp Gateway action is the spec. Read it at the migration baseline with `git show 6291bb036:<path>`. Note each phase and the Node it changes.
+2. **One legacy phase, one step.** Each legacy phase becomes one script-file step. It keeps the phase's legacy edge cases.
+3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature). Prefer an official model (`@swamp/ssh`, `@swamp/cfgmgmt`) over a script. Record what you checked for the PR body.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Every secret becomes a `{vault, key}` descriptor under `execution_secrets`.
 5. **Refuse before the first write.** The action script checks preconditions first and exits with a public `error_code`, as the #2266 branch check refuses `instance.branch_in_use`.
 6. **Write the result and budget.** The action script prints one public JSON object. Set the [time budget](#set-the-time-budget).
@@ -139,7 +139,6 @@ Step count is the dominant cost of a run. Op 6639 took 957 s, while its 15 offic
 | --- | --- |
 | One script per Node per phase | Reads, precondition checks, writes and the result JSON go in one action-group script. |
 | No extra decision steps | Make decisions and `assert`-style checks in the action script. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. |
-| Compute lists at admission | Put a fan-out list in the intent instead of computing it in a step. |
 | Justify each step | The PR names the resume point, Node change or guard that each extra step serves. |
 
 ## Fan out over computed data
@@ -157,6 +156,7 @@ Put each test where its project's CI runs it.
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts` | Typed decision and result behaviors, with Deno. |
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
 | `swamp/tests` script tests | Each shipped script file directly, plus shellcheck or ruff. |
+| Parity tests ported from the legacy feature tests | Every legacy case, including edge cases, gives the same public result natively. |
 | A generator drift test, when a generator writes the workflow | The committed YAML equals the generator output. |
 
 ## Check all seven boundary decisions
@@ -212,6 +212,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault it reads; `vaults: []` when none is a convention |
 | A secret in `run:`, argv, inputs or `set -x`; a GitHub App or CA key in a vault | History and `ps` expose it; root-of-trust keys stay in the Gateway | `env` from `vault.get`, then stdin or a 0600 file; the mint and sign primitives |
 | A failure reporter, Gateway re-read timer, binding loop or retry | Duplicates Swamp and stalls Operations | Native status and one history read per terminal delivery |
+| Redesigning the legacy sequence without a written reason | The legacy Gateway ran each kind reliably; a redesign loses edge cases | Keep the legacy phases, or give the reason in the PR |
 | A non-default Swamp setting without a PLAN row | Hides a deviation from audit | Record reason and removal condition in PLAN |
 
 ## PR and review checklist
@@ -219,7 +220,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 Continue ports in the approved shape while live admission proof is pending. Use this checklist for every kind PR and its review.
 
 - [ ] Follow the [translation steps](#translate-a-legacy-command) and avoid every [anti-pattern](#anti-patterns).
-- [ ] Name the core feature and official extension checked.
+- [ ] Keep the legacy phase order, or state the reason for each change. Name the core feature and official extension checked.
 - [ ] Use defaults. Record each deviation's measured reason and removal condition in PLAN.
 - [ ] Delete the old executor, embedded scripts, callbacks, and CLI, SDK and docs paths only it used, in the same PR. Leave `apps/agent` alone.
 - [ ] Report Orbit app/test net lines and Swamp lines separately.
@@ -238,12 +239,11 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 
 | Source, newest first | Lesson |
 | --- | --- |
-| #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work. Keep steps few; one script per Node does reads, checks and writes. |
-| #2273 instance create | PHP encodes an empty map as `[]`. Encode empty input maps as objects. |
+| #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
+| PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, legacy edge cases carried over, legacy feature tests as parity tests. |
 | Lane 5 | e459 expands `forEach` before earlier outputs exist. Fan out over `inputs`, or over a child workflow's inputs. |
 | PLAN F8 | Every kind declares a measured p95, a run budget passed as the Swamp run timeout, and a per-kind `queueTimeout`; one step per action group, not per command. |
 | v1 manual and reference check | Swamp has no step retry key. `command/shell` takes `workingDir` and `timeout`. Copy placement from `firewall.inspect`; `node.bootstrap_probe` sets both selectors. |
-| #2266 instance create | Refuse a precondition such as `instance.branch_in_use` before the first write. After #2273, the check goes inside the action script. |
-| #2266 instance create | Accept documented third-party token formats; GitHub stateless tokens contain dots. |
+| #2266 instance create | Refuse a precondition such as `instance.branch_in_use` before the first write, inside the action script since #2273. Accept documented token formats; GitHub stateless tokens contain dots. |
 | #2266 instance create | Op 6636 had no readable error: later steps read skipped outputs, and the failed step left no stderr. Guard on prior failure, read no skipped outputs, and use the F1 output. |
 | Conformance ledger, 384 findings to 2026-11-01 | Placement, shared model names, embedded scripts, many-action behaviors, Gateway callbacks and vault lists are the most frequent defects. |
