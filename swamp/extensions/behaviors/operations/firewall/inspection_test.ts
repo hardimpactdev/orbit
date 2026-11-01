@@ -143,3 +143,76 @@ Deno.test("IPv6 text in an IPv4 comment cannot hide the row; IPv6-only intent st
     assertEquals(result.live[0].comment, "office (v6) marker");
     assertEquals(result.comparison.missing, []);
 });
+
+Deno.test("official named tuples and shared aliases compare exactly without weakening role ownership", () => {
+    const named = {
+        ...shape,
+        comment: "orbit:node:9:firewall:web",
+        source: "any",
+        port: "443:444",
+        family: null,
+    };
+    const expected = [{ name: "web", shape: named }, {
+        name: "alias",
+        shape: { ...named, comment: "orbit:node:9:firewall:alias" },
+    }, {
+        name: "role",
+        shape: {
+            ...shape,
+            comment: "orbit:router:9",
+            source: "any",
+            port: "443",
+        },
+    }];
+    const complete = inspectionResult({
+        stdout:
+            "Status: active\n[1] 443/tcp ALLOW IN Anywhere\n[2] 444/tcp ALLOW IN Anywhere\n[3] 80/tcp ALLOW IN Anywhere\n",
+        expected,
+    });
+    assertEquals(complete.comparison.live.map((row) => row.match), [
+        "exact",
+        "exact",
+        "unmanaged",
+    ]);
+    assertEquals(complete.comparison.live[0].name, "web");
+    assertEquals(complete.comparison.missing.map((row) => row.name), ["role"]);
+    const partial = inspectionResult({
+        stdout: "Status: active\n443/tcp ALLOW IN Anywhere\n",
+        expected,
+    });
+    assertEquals(partial.comparison.missing.map((row) => row.name), [
+        "web",
+        "alias",
+        "role",
+    ]);
+});
+
+Deno.test("named tuples cannot hide drift of an explicit role comment owner", () => {
+    const report = inspectionResult({
+        stdout: "Status: active\n80/tcp ALLOW IN Anywhere # orbit:router:9\n",
+        expected: [
+            {
+                name: "web",
+                shape: {
+                    ...shape,
+                    comment: "orbit:node:9:firewall:web",
+                    source: "any",
+                    port: "80",
+                },
+            },
+            {
+                name: "router",
+                shape: {
+                    ...shape,
+                    comment: "orbit:router:9",
+                    source: "any",
+                    port: "443",
+                },
+            },
+        ],
+    });
+    assertEquals(report.comparison.live.map((row) => [row.name, row.match]), [[
+        "router",
+        "drift",
+    ]]);
+});

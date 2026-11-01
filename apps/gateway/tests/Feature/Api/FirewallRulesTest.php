@@ -17,7 +17,7 @@ beforeEach(function (): void {
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-firewall-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     $this->node = Node::query()->forceCreate([
-        'id' => 209, 'architecture' => 'x86_64',
+        'id' => 209, 'architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key',
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',

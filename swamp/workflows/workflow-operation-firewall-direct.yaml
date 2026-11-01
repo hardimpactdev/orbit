@@ -1,30 +1,128 @@
 id: 4093f46d-9dd2-4e67-a151-dd5bb9addb0c
 name: operation-firewall-direct
-description: Execute one admitted Firewall intent on its Node without polling.
+description: Converge admitted named firewall tuples from Node 209 through official models.
 vaults: []
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: {
-      type: string,
-      enum: [firewall.allow, firewall.deny, firewall.remove],
-    }
-  required: [operation_id, node_id, kind]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [firewall.allow, firewall.deny, firewall.remove]}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-  - name: firewall
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: apply
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/firewall-direct"
-          behaviorName: '${{ "firewall-node-" + string(inputs.node_id) }}'
-          methodName: apply
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: firewall
+  steps:
+  - name: pins
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/firewall-mutation-result'
+      behaviorName: '${{ "firewall-pins-" + run.id }}'
+      methodName: preflight
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: read-before
+    target: orbit-node-209
+    dependsOn: [{step: pins, condition: {type: succeeded}}]
+    task: &read
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "firewall-read-" + run.id }}'
+      methodName: exec
+      globalArgs: &ssh
+        name: '${{ "firewall-read-" + run.id }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.ssh.target.user }}'
+          port: '${{ inputs.intent.ssh.target.port }}'
+          identityFile: '${{ inputs.intent.ssh.identity_file }}'
+          hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'
+        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
+      inputs: {hosts: 'name:target', argv: [/usr/sbin/ufw, status, numbered], sudo: true}
+  - name: backend
+    target: orbit-node-209
+    dependsOn: [{step: read-before, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/firewall-mutation-result'
+      behaviorName: '${{ "firewall-backend-" + run.id }}'
+      methodName: observe
+      inputs: {intent: '${{ inputs.intent }}', stdout: '${{ steps["read-before"].outputs.stdout }}'}
+  - name: legacy-remove
+    target: orbit-node-209
+    writes: true
+    dependsOn: [{step: backend, condition: {type: succeeded}}]
+    guard: '${{ !steps.backend.outputs.legacy }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "firewall-legacy-" + run.id }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: '${{ inputs.intent.legacy_remove }}', sudo: true}
+  - name: apply-any
+    target: orbit-node-209
+    writes: true
+    forEach: &tuples {item: tuple, in: '${{ inputs.intent.tuples }}'}
+    dependsOn: &prepared [{step: backend, condition: {type: succeeded}}, {step: legacy-remove, condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: '${{ inputs.intent.rule.source != "any" }}'
+    task: &any
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ "firewall-apply-any-" + run.id + "-" + string(self._index) }}'
+      methodName: apply
+      globalArgs: &tuple
+        nodeHost: '${{ inputs.intent.ssh.target.host }}'
+        nodeUser: '${{ inputs.intent.ssh.target.user }}'
+        nodePort: '${{ inputs.intent.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        port: '${{ self.tuple.port }}'
+        protocol: '${{ inputs.intent.rule.protocol }}'
+        action: '${{ inputs.intent.rule.action }}'
+        direction: in
+        ensure: '${{ self.tuple.ensure }}'
+      inputs: {}
+  - name: apply-source
+    target: orbit-node-209
+    writes: true
+    forEach: *tuples
+    dependsOn: *prepared
+    guard: '${{ inputs.intent.rule.source == "any" }}'
+    task: &source
+      <<: *any
+      behaviorName: '${{ "firewall-apply-source-" + run.id + "-" + string(self._index) }}'
+      globalArgs: {<<: *tuple, source: '${{ inputs.intent.rule.source }}'}
+  - name: verify-any
+    target: orbit-node-209
+    forEach: *tuples
+    dependsOn: &applied [{step: apply-any, condition: *done}, {step: apply-source, condition: *done}]
+    guard: '${{ inputs.intent.rule.source != "any" }}'
+    task:
+      <<: *any
+      behaviorName: '${{ "firewall-verify-any-" + run.id + "-" + string(self._index) }}'
+      methodName: check
+  - name: verify-source
+    target: orbit-node-209
+    forEach: *tuples
+    dependsOn: *applied
+    guard: '${{ inputs.intent.rule.source == "any" }}'
+    task:
+      <<: *source
+      behaviorName: '${{ "firewall-verify-source-" + run.id + "-" + string(self._index) }}'
+      methodName: check
+  - name: read-after
+    target: orbit-node-209
+    dependsOn: [{step: verify-any, condition: *done}, {step: verify-source, condition: *done}]
+    task: *read
+  - name: result
+    target: orbit-node-209
+    dependsOn: [{step: read-after, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/firewall-mutation-result'
+      behaviorName: '${{ "firewall-result-" + run.id }}'
+      methodName: result
+      inputs: {intent: '${{ inputs.intent }}', outcomes: '${{ steps }}', stdout: '${{ steps["read-after"].outputs.stdout }}'}

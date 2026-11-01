@@ -7,9 +7,11 @@ namespace App\Actions\Firewall;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Firewall\FirewallAction;
+use App\Domain\Firewall\FirewallMutationInput;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\FirewallPort;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\FirewallRule;
@@ -62,7 +64,8 @@ final readonly class StoreFirewallRuleAction
                 'rule_id' => $rule->id, 'created' => $created, 'name' => $rule->name, 'action' => $rule->action->value,
                 'source' => $rule->source, 'protocol' => $rule->protocol, 'port' => $rule->port,
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
-            ], 'operator', $requestId);
+                'firewall' => app(FirewallMutationInput::class)->capture($rule),
+            ], 'operator', $requestId, lockKey: OperationStore::lockKey('node_firewall', $node->id));
         });
     }
 
