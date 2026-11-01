@@ -128,11 +128,9 @@ jobs:
     target: orbit-node-209
     task:
       type: behavior
-      behaviorType: command/shell
+      behaviorType: '@nckrtl/analytics-site'
       behaviorName: ${{ "analytics-disable-result-" + run.id }}
-      methodName: execute
+      methodName: result
       inputs:
-        run: printf '%s\n' "$ORBIT_ANALYTICS_RESULT"
-        env:
-          ORBIT_ANALYTICS_RESULT: ${{ inputs.intent.result_json }}
+        result_json: ${{ inputs.intent.result_json }}
 vaults: []

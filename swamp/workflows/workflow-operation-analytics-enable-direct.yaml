@@ -18,34 +18,16 @@ inputs:
     intent:
       type: object
       properties:
-        certificates:
+        certificates: &id001
           type: array
           items:
             type: object
-        router:
-          type: array
-          items:
-            type: object
-        probes:
-          type: array
-          items:
-            type: object
-        ingress:
-          type: array
-          items:
-            type: object
-        dns:
-          type: array
-          items:
-            type: object
-        retire:
-          type: array
-          items:
-            type: object
-        cleanup:
-          type: array
-          items:
-            type: object
+        router: *id001
+        probes: *id001
+        ingress: *id001
+        dns: *id001
+        retire: *id001
+        cleanup: *id001
         base_url:
           type: string
         site:
@@ -104,256 +86,29 @@ jobs:
       inputs:
         base_url: ${{ inputs.intent.base_url }}
         site: ${{ inputs.intent.site }}
-  - name: workspace
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-workspace-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'umask 077
-
-          mktemp -d'
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
-  - name: login_form
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-login_form-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.login_form }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-    dependsOn:
-    - step: workspace
-      condition:
-        type: succeeded
-  - name: login
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-login-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.login }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
-            }}
-    dependsOn:
-    - step: login_form
-      condition:
-        type: succeeded
-  - name: site_form
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-site_form-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.site_form }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-    dependsOn:
-    - step: login
-      condition:
-        type: succeeded
-  - name: inspect
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-inspect-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.inspect }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-    dependsOn:
-    - step: site_form
-      condition:
-        type: succeeded
-  - name: decide
-    target: orbit-node-209
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-site'
-      behaviorName: ${{ "analytics-decision-" + run.id }}
-      methodName: decide
-      inputs:
-        stdout: ${{ steps.inspect.outputs.stdout }}
 - name: site
   dependsOn:
   - job: prepare
     condition:
       type: succeeded
   steps:
-  - name: create
+  - name: site
     target: orbit-node-209
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "analytics-create-" + run.id }}
+      behaviorName: ${{ "analytics-site-" + run.id }}
       methodName: execute
       inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.create }}"'
+        run: /usr/bin/python3 -B "$ORBIT_ANALYTICS_SCRIPT"
         env:
+          ORBIT_ANALYTICS_SCRIPT: ${{ steps.assets.outputs.site_script }}
           ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-    guard: ${{ steps.decide.outputs.action != "create" }}
-  - name: update
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-update-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.update }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_ANALYTICS_CURRENT_DOMAIN: ${{ steps.decide.outputs.current_domain }}
-    guard: ${{ steps.decide.outputs.action != "update" }}
-- name: goals
-  dependsOn:
-  - job: site
-    condition:
-      type: succeeded
-  steps:
-  - name: goals
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-goals-" + run.id + "-" + string(self._index) }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.goals }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
           ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
             }}
-          ORBIT_ANALYTICS_GOALS: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.assets.outputs.goal_batches }}
-- name: verify
-  dependsOn:
-  - job: goals
-    condition:
-      type: succeeded
-  steps:
-  - name: verify
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-verify-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.verify }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-  - name: stats
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-stats-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.stats }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
-            }}
-    dependsOn:
-    - step: verify
-      condition:
-        type: succeeded
-- name: session-cleanup
-  dependsOn:
-  - job: verify
-    condition:
-      type: always
-  steps:
-  - name: logout
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-logout-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.logout }}"'
-        env:
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-    guard: ${{ !("workspace" in steps) || steps.workspace.status != "succeeded" }}
-  - name: remove-session
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-remove-session-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          rm -rf -- "$ORBIT_ANALYTICS_SESSION"'
-        env:
-          ORBIT_ANALYTICS_SESSION: ${{ steps.workspace.outputs.stdout.trim() }}
-    guard: ${{ !("workspace" in steps) || steps.workspace.status != "succeeded" }}
-    dependsOn:
-    - step: logout
-      condition:
-        type: always
 - name: certificates
   dependsOn:
-  - job: session-cleanup
-    condition:
-      type: succeeded
-  - job: verify
+  - job: site
     condition:
       type: succeeded
   steps:
@@ -368,7 +123,8 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           node_id: ${{ self.item.leaf.node_id }}
-          leaves: ${{ inputs.intent.certificates.filter(cert,cert.leaf.node_id == self.item.leaf.node_id).map(cert,cert.leaf) }}
+          leaves: ${{ inputs.intent.certificates.filter(cert,cert.leaf.node_id == self.item.leaf.node_id).map(cert,cert.leaf)
+            }}
           control_node_id: 209
           connection: ${{ self.item.connection }}
           host_keys: ${{ self.item.host_keys }}
@@ -377,7 +133,8 @@ jobs:
         restoring: false
     forEach:
       item: item
-      in: ${{ inputs.intent.certificates.filter(item,inputs.intent.certificates.filter(first,first.leaf.node_id == item.leaf.node_id)[0].leaf.scope == item.leaf.scope) }}
+      in: ${{ inputs.intent.certificates.filter(item,inputs.intent.certificates.filter(first,first.leaf.node_id == item.leaf.node_id)[0].leaf.scope
+        == item.leaf.scope) }}
 - name: router
   dependsOn:
   - job: certificates
@@ -523,10 +280,8 @@ jobs:
     target: orbit-node-209
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "analytics-result-" + run.id }}
-      methodName: execute
+      behaviorType: '@nckrtl/analytics-site'
+      behaviorName: ${{ "analytics-enable-result-" + run.id }}
+      methodName: result
       inputs:
-        run: printf '%s\n' "$ORBIT_ANALYTICS_RESULT"
-        env:
-          ORBIT_ANALYTICS_RESULT: ${{ inputs.intent.result_json }}
+        result_json: ${{ inputs.intent.result_json }}

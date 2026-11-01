@@ -1,44 +1,27 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
-import { assets, behavior } from "./mod.ts";
+import { assets, behavior, result } from "./mod.ts";
 import { Site } from "../analytics/plausible.ts";
-Deno.test("asset package exposes every one-action script and batches at CE's eight-goal limit", () => {
-    const goals = Array.from(
-        { length: 17 },
-        (_, i) => ({
-            goal_type: "Goal.CustomEvent" as const,
-            goal: { event_name: `Signup${i}` },
-        }),
-    );
+Deno.test("one provider action group receives complete public intent and its shipped script", () => {
     const input = {
-        base_url: "http://10.44.0.14:8000",
+        base_url: "https://analytics.orbit",
         site: {
             domain: "shop.test",
             previous_domain: null,
             timezone: "UTC",
-            goals,
+            goals: [{
+                goal_type: "Goal.CustomEvent" as const,
+                goal: { event_name: "Signup" },
+            }],
         },
     };
-    const result = assets(input, { extensionFile: (path) => `/cache/${path}` });
-    assertEquals(result.goal_batches.map((value) => JSON.parse(value).length), [
-        8,
-        8,
-        1,
-    ]);
-    assertEquals(JSON.parse(result.input_json), input);
-    for (
-        const action of [
-            "login_form",
-            "login",
-            "site_form",
-            "inspect",
-            "create",
-            "update",
-            "verify",
-            "stats",
-            "goals",
-            "logout",
-        ] as const
-    ) assertEquals(result[action], `/cache/scripts/${action}.py`);
+    const value = assets(input, { extensionFile: (path) => "/cache/" + path });
+    assertEquals(JSON.parse(value.input_json), input);
+    assertEquals(value.site_script, "/cache/scripts/site.py");
+    assertThrows(() =>
+        assets({ ...input, password: "private" } as typeof input, {
+            extensionFile: (path) => path,
+        })
+    );
 });
 Deno.test("provider intent rejects private or unsupported goal fields", () => {
     assertThrows(() =>
@@ -55,12 +38,33 @@ Deno.test("provider intent rejects private or unsupported goal fields", () => {
         })
     );
 });
-Deno.test("decision schema refuses unsupported mutation and invalid domain", () => {
-    const parse = behavior.resources.decision.schema;
+Deno.test("native terminal results preserve enable and detach semantics and reject private output", () => {
+    for (
+        const value of [
+            {
+                ready: true,
+                enabled: true,
+                readable: true,
+                domain: "shop.test",
+                timezone: "UTC",
+            },
+            {
+                ready: true,
+                enabled: false,
+                detached: true,
+                domain: null,
+                timezone: null,
+            },
+        ]
+    ) {
+        const output = result(JSON.stringify(value));
+        assertEquals(JSON.parse(output.stdout), value);
+        assertEquals(behavior.resources.result.schema.parse(output), output);
+        assertThrows(() =>
+            result(JSON.stringify({ ...value, password: "private" }))
+        );
+    }
     assertThrows(() =>
-        parse.parse({ action: "delete", current_domain: "shop.test" })
-    );
-    assertThrows(() =>
-        parse.parse({ action: "update", current_domain: "https://other.test" })
+        result('{"ready":true,"enabled":true,"domain":null,"timezone":null}')
     );
 });
