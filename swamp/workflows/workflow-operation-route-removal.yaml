@@ -1,6 +1,7 @@
 id: 855a0c69-2eab-4eea-8488-0b63b2312cb1
 name: operation-route-removal
-description: Immutable Route workload mutation and restoration through official209 publication children.
+description: Immutable Route workload mutation and restoration through official209
+  publication children.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -114,7 +115,8 @@ jobs:
     - step: prepare
       condition:
         type: always
-    guard: ${{ !steps.selection.outputs.intent.effectful || steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+    guard: ${{ !steps.selection.outputs.intent.effectful || steps.exists(k,k.startsWith("prepare-")
+      && steps[k].status == "failed") }}
     task:
       type: workflow
       workflowIdOrName: route-mutation-withdraw
@@ -137,7 +139,8 @@ jobs:
     - step: forward
       condition:
         type: always
-    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready }}
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      }}
     task:
       type: workflow
       workflowIdOrName: instance-route-workload
@@ -167,7 +170,10 @@ jobs:
     - step: retire
       condition:
         type: always
-    guard: ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))) }}
+    guard: ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in steps)
+      || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed")))
+      }}
     task:
       type: workflow
       workflowIdOrName: instance-route-workload
@@ -197,7 +203,10 @@ jobs:
     - step: restore-workload
       condition:
         type: always
-    guard: ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))) }}
+    guard: ${{ !(steps.selection.outputs.intent.effectful && (!("forward" in steps)
+      || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed")))
+      }}
     task:
       type: workflow
       workflowIdOrName: route-mutation-restore

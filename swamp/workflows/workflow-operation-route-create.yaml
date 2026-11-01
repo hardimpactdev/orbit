@@ -1,6 +1,7 @@
 id: 8882537c-e250-4b80-8690-ce8c0fa419b8
 name: operation-route-create
-description: Immutable Route workload mutation and restoration through official209 publication children.
+description: Immutable Route workload mutation and restoration through official209
+  publication children.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -72,8 +73,10 @@ jobs:
         type: always
     forEach:
       item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.upstream_firewalls : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.upstream_firewalls
+        : [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
+      }}
     task:
       type: workflow
       workflowIdOrName: route-upstream-firewall
@@ -94,8 +97,10 @@ jobs:
         type: always
     forEach:
       item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope) : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id
+        == item.node_id)[0].scope == item.scope) : [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
+      }}
     task:
       type: workflow
       workflowIdOrName: route-certificate-publish
@@ -104,10 +109,13 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          leaves: ${{ inputs.intent.preparation.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}
+          leaves: ${{ inputs.intent.preparation.certificates.filter(leaf,leaf.node_id
+            == self.part.node_id) }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].host_keys }}
           node_id: ${{ self.part.node_id }}
         execution_secrets: {}
         parent_run_id: ${{ run.id }}
@@ -127,7 +135,8 @@ jobs:
     forEach:
       item: part
       in: '${{ inputs.intent.effectful ? inputs.intent.preparation.lan : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
+      }}
     task:
       type: workflow
       workflowIdOrName: route-lan-apply
@@ -138,8 +147,10 @@ jobs:
         intent:
           rule: ${{ self.part }}
           control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].connection }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
+            == self.part.node_id)[0].host_keys }}
         execution_secrets: {}
   - name: prepare-caddy
     target: orbit-node-209
@@ -158,8 +169,10 @@ jobs:
         type: always
     forEach:
       item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.publications : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.publications :
+        [] }}'
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
+      }}
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -190,7 +203,8 @@ jobs:
     forEach:
       item: part
       in: '${{ inputs.intent.effectful ? inputs.intent.preparation.probes : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
+      }}
     task:
       type: workflow
       workflowIdOrName: cluster-router-probe
@@ -221,7 +235,8 @@ jobs:
     - step: prepare-probe
       condition:
         type: always
-    guard: ${{ !inputs.intent.effectful || steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed") }}
+    guard: ${{ !inputs.intent.effectful || steps.exists(k,k.startsWith("prepare-")
+      && steps[k].status == "failed") }}
     task:
       type: workflow
       workflowIdOrName: route-mutation-forward
@@ -259,7 +274,8 @@ jobs:
     - step: forward
       condition:
         type: always
-    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready }}
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      }}
     task:
       type: workflow
       workflowIdOrName: cluster-router-probe
@@ -299,7 +315,8 @@ jobs:
     - step: verify
       condition:
         type: always
-    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready }}
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      }}
     task:
       type: workflow
       workflowIdOrName: instance-route-workload
@@ -347,7 +364,9 @@ jobs:
     - step: retire
       condition:
         type: always
-    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-") || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
+    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status
+      != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-")
+      || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
     task:
       type: workflow
       workflowIdOrName: instance-route-workload
@@ -395,7 +414,9 @@ jobs:
     - step: restore-workload
       condition:
         type: always
-    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-") || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
+    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status
+      != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-")
+      || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
     task:
       type: workflow
       workflowIdOrName: route-mutation-restore
@@ -450,7 +471,14 @@ jobs:
       inputs:
         effectful: ${{ inputs.intent.effectful }}
         failure_code: route.create_failed
-        preparation_counts: '${{ inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope)), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes), "prepare-upstream": "upstream_firewalls" in inputs.intent.preparation ? size(inputs.intent.preparation.upstream_firewalls) : 0, "verify": "verifications" in inputs.intent ? size(inputs.intent.verifications) : 0} : {} }}'
+        preparation_counts: '${{ inputs.intent.effectful ? {"prepare-certificates":
+          size(inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id
+          == item.node_id)[0].scope == item.scope)), "prepare-lan": size(inputs.intent.preparation.lan),
+          "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe":
+          size(inputs.intent.preparation.probes), "prepare-upstream": "upstream_firewalls"
+          in inputs.intent.preparation ? size(inputs.intent.preparation.upstream_firewalls)
+          : 0, "verify": "verifications" in inputs.intent ? size(inputs.intent.verifications)
+          : 0} : {} }}'
         route_id: ${{ inputs.intent.route_id }}
         result_route_id: ${{ inputs.intent.result_route_id }}
         workload_count: ${{ size(inputs.intent.workloads) }}
