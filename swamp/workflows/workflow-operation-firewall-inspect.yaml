@@ -2,6 +2,7 @@ id: 64e7b66e-e7e4-42c6-ad24-3aa96f2cb56d
 name: operation-firewall-inspect
 description: One pinned SSH UFW read from209 with native typed comparison.
 vaults: []
+queueTimeout: 10
 target: orbit-node-209
 inputs:
   type: object

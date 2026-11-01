@@ -205,7 +205,7 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
         operation_id = admit(topology, fixture, context, now)
         receipt['operation_id'] = operation_id
         save()
-        deadline = clock() + fixture['budget_seconds'] + (fixture['queue_timeout_seconds'] or 600) + 120
+        deadline = clock() + fixture['budget_seconds'] + fixture['queue_timeout_seconds'] + 120
         while True:
             operation = topology.cli(['orbit', 'operation:show', str(operation_id), '--json'])
             if operation.get('id') != operation_id or operation.get('kind') != kind:
@@ -249,7 +249,7 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
 def admit(topology, fixture, context, now):
     request = fixture['request']
     if 'argv' in request:
-        operation = topology.request(cli_argv(request['argv'], context, now), timeout=min(3600, fixture['budget_seconds'] + (fixture['queue_timeout_seconds'] or 600) + 120))
+        operation = topology.request(cli_argv(request['argv'], context, now), timeout=min(3600, fixture['budget_seconds'] + fixture['queue_timeout_seconds'] + 120))
         return positive(json_path(operation, request['operation']), 'Operation id')
     select = bind(request['select'], context, now)
     # --kind is supported by the real CLI. Target flags are not; filter returned records exactly.
@@ -259,7 +259,7 @@ def admit(topology, fixture, context, now):
     command_error = None
     try:
         topology.node('gateway', ['env', '-C', '/home/orbit/runtime/current/apps/gateway', 'php', 'artisan', *bind(request['artisan'], context, now), '--no-interaction'],
-                      timeout=min(3600, fixture['budget_seconds'] + (fixture['queue_timeout_seconds'] or 600) + 120), raw_output=True, allow_failure=True)
+                      timeout=min(3600, fixture['budget_seconds'] + fixture['queue_timeout_seconds'] + 120), raw_output=True, allow_failure=True)
     except (ProofError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         # Admission may already have happened. Select it once even if command observation failed.
         command_error = str(error)

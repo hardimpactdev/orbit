@@ -25,8 +25,9 @@ class FakeGateway:
         self.fail_second = False
         self.cancel_failure = None
         self.host = 13
+        self.resources = {'cpus': 4, 'memory': '8GiB', 'disk': '40GiB', 'topology': True}
         self.confirm_destroyed = True
-        self.exclusions = [{'id': 9}]
+        self.exclusions = [{'project_id': 62, 'project_slug': 'swamp-proof', 'node_id': 9, 'node_name': 'beast', 'development_instance_count': 0}]
 
     def request(self, method, path, body=None, key=None):
         self.calls.append((method, path, copy.deepcopy(body), key))
@@ -37,6 +38,8 @@ class FakeGateway:
         if path == 'projects/62/excluded-nodes':
             return self.exclusions
         if method == 'POST' and path == 'task-groups':
+            if any('topology' in task for task in body['tasks']):
+                raise proof.ProofError('tasks.orchestration_unsupported')
             group = len(self.groups) + 100
             self.groups[group] = {'id': group, 'status': 'todo', 'taskable_id': None, 'vm_power': None}
             return copy.deepcopy(self.groups[group])
@@ -53,7 +56,7 @@ class FakeGateway:
             operation = {'id': group + 500, 'kind': 'tasks.provision', 'target_type': 'task_group', 'target_id': group,
                          'status': 'succeeded', 'result': {'task_vm_id': group, 'node_id': group + 1000, 'instance_id': group + 2000},
                          'input': {'host_node_id': self.host, 'provider': 'incus', 'vm': {'project': 'orbit-tasks'},
-                                   'create': {'network': 'orbittask0'}, 'image_fingerprint': 'a' * 64}}
+                                   'create': {'network': 'orbittask0', **self.resources}, 'image_fingerprint': 'a' * 64}}
             return operation
         if path.endswith('/cancel'):
             group = int(path.split('/')[1])
@@ -68,7 +71,7 @@ class FakeGateway:
 
 class ReceiptTest(unittest.TestCase):
     def setUp(self):
-        self.fixture = {'budget_seconds': 10, 'queue_timeout_seconds': None,
+        self.fixture = {'budget_seconds': 10, 'queue_timeout_seconds': 1,
                         'expect': {'status': 'succeeded', 'outputs': {'job': 'effect', 'step': 'read', 'match': {'ready': True}}},
                         'phases': [{'name': 'read', 'job': 'effect', 'step': 'read', 'budget_seconds': 5}],
                         'parity': {'cases': ['legacy-read-only', 'legacy-exact-result']}}
@@ -77,14 +80,14 @@ class ReceiptTest(unittest.TestCase):
                             'name': 'read', 'status': 'succeeded', 'startedAt': '2026-11-01T00:00:01Z',
                             'completedAt': '2026-11-01T00:00:03Z', 'outputs': {'ready': True, 'other': 'public'}}]}]}
 
-    def test_native_timestamps_and_explicit_queue_default_are_recorded(self):
+    def test_native_timestamps_and_explicit_queue_policy_are_recorded(self):
         result = proof.evaluate(self.history, self.fixture, 0)
         self.assertEqual(result['total_seconds'], 4)
         self.assertEqual(result['phases'][0]['seconds'], 2)
         self.assertTrue(result['expect_pass'])
         self.assertTrue(result['budget_pass'])
         self.assertTrue(result['parity']['passed'])
-        self.assertEqual(result['queue_timeout_note'], 'inherits serve default 600')
+        self.assertEqual(result['queue_timeout_note'], 'explicit workflow policy')
 
     def test_phase_overrun_and_parity_failure_cannot_hide_behind_native_success(self):
         self.history['jobs'][0]['steps'][0]['completedAt'] = '2026-11-01T00:00:08Z'
@@ -130,6 +133,18 @@ class ExpectedInputTest(unittest.TestCase):
 
 
 class RequestContractTest(unittest.TestCase):
+    def test_fixture_without_explicit_positive_dispatch_budget_is_refused(self):
+        original = json.loads((proof.ROOT / 'swamp/proof/firewall.inspect.json').read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder = root / 'swamp/proof'
+            folder.mkdir(parents=True)
+            for value in (None, 0, True):
+                fixture = dict(original, queue_timeout_seconds=value)
+                (folder / 'firewall.inspect.json').write_text(json.dumps(fixture))
+                with self.subTest(value=value), self.assertRaisesRegex(proof.ProofError, 'queue_timeout_seconds'):
+                    proof.fixture_for('firewall.inspect', root)
+
     def test_prepare_captures_real_flat_cli_result_and_preserves_argument_types(self):
         fixture = {'prepare': [{'argv': ['orbit', 'project:create', 'proof-${proof.run}', '--json'], 'capture': {'project': '$.id'}},
                                {'argv': ['orbit', 'project:show', '${capture.project}', '--json'], 'capture': {'branch': '$.default_branch'}}]}
@@ -190,6 +205,22 @@ class LifecycleTest(unittest.TestCase):
              patch.object(sessions, 'bootstrap', side_effect=bootstrap or (lambda *_: None)):
             return sessions.up(gateway, path=self.path)
 
+    def test_outer_group_never_declares_the_nested_topology(self):
+        gateway = FakeGateway()
+        state = self.up(gateway)
+        body = next(body for method, path, body, _key in gateway.calls if method == 'POST' and path == 'task-groups')
+        self.assertEqual(body['project_id'], 62)
+        self.assertEqual(body['orchestration'], 'external')
+        self.assertEqual(state['nodes'], ['app-dev'])
+        self.assertNotIn('topology', body['tasks'][0])
+
+    def test_multi_node_shape_refuses_before_allocating_or_recording_a_session(self):
+        gateway = FakeGateway()
+        with self.assertRaisesRegex(proof.ProofError, 'large-VM size'):
+            sessions.up(gateway, name='["app-dev","app-prod"]', path=self.path)
+        self.assertEqual(gateway.calls, [])
+        self.assertFalse(self.path.exists())
+
     def test_capacity_refusal_still_cancels_created_group_once(self):
         gateway = FakeGateway()
         original = gateway.request
@@ -230,6 +261,15 @@ class LifecycleTest(unittest.TestCase):
         gateway.host = 9
         action = Mock()
         with self.assertRaisesRegex(proof.ProofError, 'placement'):
+            self.up(gateway, action)
+        action.assert_not_called()
+        self.assertTrue(sessions.load_state(self.path)['vm']['destroyed'])
+
+    def test_unconfigured_medium_vm_refuses_before_nested_acquisition(self):
+        gateway = FakeGateway()
+        gateway.resources = {'cpus': 2, 'memory': '4GiB', 'disk': '20GiB', 'topology': False}
+        action = Mock()
+        with self.assertRaisesRegex(proof.ProofError, 'configured medium VM'):
             self.up(gateway, action)
         action.assert_not_called()
         self.assertTrue(sessions.load_state(self.path)['vm']['destroyed'])
@@ -319,7 +359,7 @@ class NativeIdentityTest(unittest.TestCase):
 class RequestSequenceTest(unittest.TestCase):
     def setUp(self):
         self.fixture = {'kind': 'firewall.inspect', 'workflow': 'operation-firewall-inspect', 'topology': 'app-dev',
-                        'budget_seconds': 10, 'queue_timeout_seconds': None,
+                        'budget_seconds': 10, 'queue_timeout_seconds': 1,
                         'prepare': [{'argv': ['orbit', 'project:create', '--json'], 'capture': {'project_id': '$.id'}}],
                         'before_request': [{'argv': ['python3', '-I', 'observer.py', '${capture.project_id}'], 'timeout_seconds': 23}],
                         'request': {'argv': ['orbit', 'firewall:inspect', '--node=${topology.app-dev.node_id}', '--json'], 'operation': '$.id'},

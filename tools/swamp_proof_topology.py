@@ -127,6 +127,8 @@ def bootstrap(guest, control, state, bundle):
 def up(gateway, project=None, name='app-dev', path=None, lane=None):
     path = path or state_path()
     topology = topology_for(name)
+    if len(topology['nodes']) > 1:
+        raise ProofError('Multi-Node proof allocation needs an agreed large-VM size before up.')
     if path.is_file():
         old = load_state(path)
         if old.get('vm', {}).get('group_id') and not old['vm'].get('destroyed'):
@@ -136,7 +138,7 @@ def up(gateway, project=None, name='app-dev', path=None, lane=None):
     project = proof_project(gateway, project)
     config = gateway.request('GET', f'projects/{project}')
     exclusions = gateway.request('GET', f'projects/{project}/excluded-nodes')
-    excluded = {row['id'] for row in exclusions}
+    excluded = {row['node_id'] for row in exclusions}
     if project != 62 or config['slug'] != 'swamp-proof' or 9 not in excluded or 13 in excluded or config.get('task_workspace_routed') or config.get('review_and_merge'):
         raise ProofError('Project62/swamp-proof must exclude Beast, allow Shark, and disable routing and merge.')
     lane = lane or ROOT.name
@@ -148,7 +150,7 @@ def up(gateway, project=None, name='app-dev', path=None, lane=None):
     save = lambda: save_state(state, path)
     save()
     try:
-        control = provision(gateway, project, title, 'topology', state['nonce'], state['vm'], save, nodes=state['nodes'])
+        control = provision(gateway, project, title, 'topology', state['nonce'], state['vm'], save)
         if topology['seed'] is not None and topology['seed'] != state['vm']['seed']:
             raise ProofError('Normal allocation base-image fingerprint differs from the preset seed.')
         host = gateway.request('GET', 'nodes/13')

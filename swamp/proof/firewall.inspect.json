@@ -2,8 +2,8 @@
   "kind": "firewall.inspect",
   "workflow": "operation-firewall-inspect",
   "topology": "app-dev",
-  "budget_seconds": 1,
-  "queue_timeout_seconds": null,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 10,
   "envelope": {
     "node_id": "${topology.app-dev.node_id}",
     "intent": {
@@ -31,13 +31,13 @@
       "name": "read",
       "job": "inspection",
       "step": "read",
-      "budget_seconds": 1
+      "budget_seconds": 1800
     },
     {
       "name": "compare",
       "job": "inspection",
       "step": "result",
-      "budget_seconds": 1
+      "budget_seconds": 1800
     }
   ],
   "parity": {

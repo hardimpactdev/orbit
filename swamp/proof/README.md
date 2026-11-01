@@ -1,6 +1,6 @@
 # Swamp proof fixtures (F13)
 
-`bin/swamp-proof up --topology app-dev` creates a disposable Task group in Project 62 (`swamp-proof`), provisions it through the Gateway, stages the exact committed worktree, and composes the existing Incus topology. Every nested Node is a VM copy of the seed's stopped `node-template`. The topology Gateway runs the PR's Gateway and pinned official Swamp with its own database, vaults and loopback worker named `orbit-node-209`. Proofs never use production serve.
+`bin/swamp-proof up --topology app-dev` creates a disposable Task group in Project 62 (`swamp-proof`) with no Task topology declaration, provisions it through the Gateway, stages the exact committed worktree, and composes the existing Incus topology. Every nested Node is a VM copy of the seed's stopped `node-template`. The topology Gateway runs the PR's Gateway and pinned official Swamp with its own database, vaults and loopback worker named `orbit-node-209`. Proofs never use production serve.
 
 Use `bin/swamp-proof run <kind>` for each kind, `bin/swamp-proof receipt` to print the latest receipt path, and `bin/swamp-proof down` to cancel the Task group through the normal API. Failed `up` also cancels its group. A failed run leaves the held topology for inspection; always finish with `down`. Cleanup failures retain the exact group identity for retry.
 
@@ -8,13 +8,15 @@ The outer production Project uses `hardimpactdev/swamp-proof-fixture` only to pr
 
 ## Topology and lifetime
 
-A fixture's `topology` is a preset name or an array in the existing Task topology grammar, such as `["app-dev", "app-prod+ingress"]`. `up --topology` accepts either. Presets live in `topologies/<name>/topology.json` with `name`, `version`, `nodes`, and `seed`. `seed` is null before allocation or the full expected Task VM base-image fingerprint. The receipt records the actual seed, resolved Node array and preset version. There are no container images or separate role installers.
+A fixture's `topology` is a preset name or an array in the existing Task topology grammar, such as `["app-dev", "app-prod+ingress"]`. `up --topology` accepts either. Presets live in `topologies/<name>/topology.json` with `name`, `version`, `nodes`, and `seed`. `seed` is null before allocation or the full expected Task VM base-image fingerprint. The receipt records the actual seed, resolved Node array and preset version. Gateway and operator are implicit in every topology. The Gateway VM supplies the `gateway` and `swamp` roles, with VPN on the Gateway. These roles are not workload entries or proof of native enrollment. There are no container images or separate role installers.
+
+The production Gateway config lists Project 62 in `ORBIT_TASK_VMS_MEDIUM_PROJECTS`. Its groups receive the normal medium allocation (4 vCPU, 8 GiB, 40 GiB and a topology seed clone), which holds one test Node plus Gateway and operator. Task groups reject topology declarations; the harness resolves the Node list inside the VM. The runner verifies the admitted medium resources before nested acquisition. Multi-Node `up` refuses until its large-VM allocation is agreed.
 
 Persistent groups are titled `topology <topology>@<version> <lane>`. F11 cancels them after 60 minutes without a run, or eight hours after `Task.created_at`. Run start touches the root-owned `/var/lib/orbit/swamp-proof/last-run` on the outer Task VM. Missing mtime means `created_at`. One-shot groups use `proof <kinds> <topology>@<version>` and a 45-minute ceiling from `created_at`. No Gateway heartbeat or deadline field is stored.
 
 ## Request format
 
-Each `swamp/proof/<kind>.json` declares `kind`, `workflow`, `topology`, `budget_seconds`, `queue_timeout_seconds`, `prepare`, `before_request`, `request`, `envelope`, `expect`, `phases`, and `parity`. The two hooks are optional. Queue timeout must equal the source workflow's `queueTimeout`; null records that the workflow inherits serve's 600-second default.
+Each `swamp/proof/<kind>.json` declares `kind`, `workflow`, `topology`, `budget_seconds`, `queue_timeout_seconds`, `prepare`, `before_request`, `request`, `envelope`, `expect`, `phases`, and `parity`. The two hooks are optional. Queue timeout must be a positive integer equal to the source workflow's explicit `queueTimeout`. Missing, null and default dispatch budgets are refused. The first distributed pilot uses F8's 1800-second unproven budget and an explicit 10-second dispatch budget; its first successful native worker run supplies the measured replacement (longest success times 1.5). Local inline native timings do not include worker dispatch or cold startup.
 
 ```json
 {

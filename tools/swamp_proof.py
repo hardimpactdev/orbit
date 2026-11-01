@@ -84,8 +84,7 @@ def fixture_for(kind, root=ROOT, variant=None):
     if set(fixture) - required - {'prepare', 'before_request', 'topology'} or required - set(fixture) or fixture['kind'] != kind:
         raise ProofError('Fixture does not match the F13 request format; legacy secrets/target_setup are retired.')
     positive(fixture['budget_seconds'], 'budget_seconds')
-    if fixture['queue_timeout_seconds'] is not None:
-        positive(fixture['queue_timeout_seconds'], 'queue_timeout_seconds')
+    positive(fixture['queue_timeout_seconds'], 'queue_timeout_seconds')
     if not isinstance(fixture['envelope'], dict):
         raise ProofError('envelope must be a partial expected Operation.input object.')
     from swamp_proof_requests import validate_commands
@@ -245,7 +244,7 @@ def evaluate(history, fixture, parity_exit):
     budget = total <= fixture['budget_seconds'] and all(row['pass'] for row in phases)
     return {'native_run_id': history['id'], 'status': history['status'], 'total_seconds': total, 'phases': phases,
             'budget_pass': budget, 'expect_pass': matches, 'queue_timeout_seconds': fixture['queue_timeout_seconds'],
-            'queue_timeout_note': 'inherits serve default 600' if fixture['queue_timeout_seconds'] is None else 'explicit workflow policy',
+            'queue_timeout_note': 'explicit workflow policy',
             'parity': {'passed': parity_exit == 0, 'failed': [] if parity_exit == 0 else fixture['parity']['cases'],
                        'cases': fixture['parity']['cases']}}
 
@@ -293,13 +292,13 @@ def wait_operation(gateway, operation, kind, target, timeout=LIFECYCLE_SECONDS):
         operation = gateway.request('GET', f'operations/{operation["id"]}')
 
 
-def provision(gateway, project, kind, role, nonce, record, save, nodes=None):
+def provision(gateway, project, kind, role, nonce, record, save):
     group = gateway.request('POST', 'task-groups', {
         'project_id': project, 'title': kind,
         'brief': 'Disposable F10 proof infrastructure. No product work, publication or merge.',
         'orchestration': 'external', 'status': 'todo',
         'tasks': [{'title': 'Run isolated native proof', 'brief': 'Exercise the fixture and retain the proof receipt.',
-                   'deliverables': [{'id': 'proof', 'type': 'review', 'description': 'Native parity and timing receipt.'}], 'topology': nodes or []}],
+                   'deliverables': [{'id': 'proof', 'type': 'review', 'description': 'Native parity and timing receipt.'}]}],
     })
     record.update(group_id=positive(group['id'], 'group_id'))
     save()
@@ -313,13 +312,18 @@ def provision(gateway, project, kind, role, nonce, record, save, nodes=None):
     if admitted.get('host_node_id') != 13 or admitted.get('provider') != 'incus' or admitted.get('vm', {}).get('project') != 'orbit-tasks' or admitted.get('create', {}).get('network') != 'orbittask0':
         save()
         raise ProofError('Normal placement did not return the required Shark/orbit-tasks/orbittask0 VM; proof refused.')
+    resources = admitted['create']
+    if resources.get('topology') is not True or resources.get('cpus') != 4 or resources.get('memory') != '8GiB' or resources.get('disk') != '40GiB':
+        save()
+        raise ProofError('Proof Project did not receive its configured medium VM and topology seed; acquisition refused.')
     node = gateway.request('GET', f'nodes/{record["node_id"]}')
     if node['status'] != 'active' or node['name'] != f'tvm-{record["task_vm_id"]}' or node['user'] == 'root':
         raise ProofError('Normal provisioning did not return an active owned non-root guest Node.')
     seed = admitted.get('image_fingerprint')
     if not isinstance(seed, str) or not re.fullmatch(r'[a-f0-9]{64}', seed):
         raise ProofError('Normal provision did not record its exact Task VM base-image fingerprint.')
-    record.update(host_node_id=13, name=node['name'], instance_id=result['instance_id'], seed=seed)
+    record.update(host_node_id=13, name=node['name'], instance_id=result['instance_id'], seed=seed,
+                  resources={key: resources[key] for key in ('cpus', 'memory', 'disk', 'topology')})
     save()
     return {'record': record, 'node': node, 'result': result, 'input': admitted}
 
