@@ -57,10 +57,15 @@ export async function assets(
 }
 export const behavior = {
     type: "@nckrtl/node-worker-assets",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
         known_hosts_script: {
+            schema: KnownHostsAssets,
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
+        credential_check_script: {
             schema: KnownHostsAssets,
             lifetime: "infinite",
             garbageCollection: 10,
@@ -85,6 +90,31 @@ export const behavior = {
                     ),
                 });
                 await ctx.writeResource("known_hosts_script", "script", result);
+                return result;
+            },
+        },
+        credential_check: {
+            description: "Locate the public read-only credential expiry check",
+            arguments: KnownHostsArgs,
+            execute: async (raw: unknown, ctx: {
+                extensionFile: (path: string) => Promise<string> | string;
+                writeResource: (
+                    spec: string,
+                    name: string,
+                    value: unknown,
+                ) => Promise<unknown>;
+            }) => {
+                KnownHostsArgs.parse(raw);
+                const result = KnownHostsAssets.parse({
+                    script_path: await ctx.extensionFile(
+                        "scripts/credential_check.py",
+                    ),
+                });
+                await ctx.writeResource(
+                    "credential_check_script",
+                    "script",
+                    result,
+                );
                 return result;
             },
         },

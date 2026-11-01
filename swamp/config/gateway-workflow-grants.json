@@ -58,6 +58,7 @@
     {"workflow": "observation-context", "actions": ["run", "read"]},
     {"workflow": "observation-collection", "actions": ["run", "read"]},
     {"workflow": "observation-horizon", "actions": ["run", "read"]},
+    {"workflow": "swamp-credential-monitor", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-hub-converge", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-exporter", "actions": ["run", "read"]},
     {"workflow": "operation-conn-pairing-create", "actions": ["run", "read"]},

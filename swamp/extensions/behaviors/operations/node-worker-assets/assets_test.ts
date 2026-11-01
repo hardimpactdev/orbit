@@ -128,6 +128,13 @@ Deno.test("manifest scripts reach a remote cache without source checkout access"
             user: "orbit",
         }, context);
         assertStringIncludes(installed.preflight, 'WORKER_USER = "orbit"');
+        const credential = await behavior.methods.credential_check.execute({
+            node_id: 209,
+        }, context);
+        assertEquals(
+            await Deno.readTextFile(credential.script_path),
+            await read("scripts/credential_check.py"),
+        );
         assertStringIncludes(installed.checker, "MINIMUM_MEMORY_BYTES");
         assertEquals(manifest.version, behavior.version);
     } finally {

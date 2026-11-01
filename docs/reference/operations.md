@@ -27,6 +27,30 @@ Every `instance.create` or `instance.deploy` Operation that enters `failed` or `
 
 The alert uses the existing [signed release webhook](/reference/gateway-recovery#webhook), with event `instance.operation_failed`. It includes the Operation, Instance and Node IDs, kind, native root run ID, failed step and error code. It does not include inputs, private material, output or stderr. The Activity command `instance:failure-alert` records the notification and webhook outcome. An unavailable webhook does not change the failed Operation. Both release webhook settings must be configured for delivery; otherwise Activity records `not_configured`.
 
+## Swamp credential expiry alerts
+
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the `orbit-node-209` worker. It is alert only: it reads expiry metadata and changes no credential or grant. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
+
+- `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
+- `swamp auth token list --collective nckrtl`, for club tokens; a token with no `expiresAt` is reported as `no_expiry`;
+- `openssl x509 -enddate` for the `swamp.orbit` certificate.
+
+Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`. Revoked and disabled tokens are skipped. The check stops alerting on a credential one week after it expired. The step publishes only the alerts, at most 200, soonest expiry first.
+
+| Result | Alert reason |
+| --- | --- |
+| A credential is `within_72h`, `within_6h` or `expired` | The class |
+| The `orbit-node-209-access` or `orbit-node-209` token is not listed | `missing` |
+| A native list fails, times out or changes shape | The run fails |
+
+The Gateway reads the terminal `check` output through the shared scheduled-result reader. It sends event `swamp.credential_expiring` through the [signed release webhook](/reference/gateway-recovery#webhook) with each credential's kind, name, reason, expiry and hours left. Each credential, expiry and reason alerts once after a delivered webhook. While a condition holds, every run reports it again, so an undelivered alert is retried by the next run. A condition that clears and returns alerts again.
+
+If a monitor run does not succeed, the Gateway sends `swamp.credential_monitor_failed` once per failure streak. An undelivered failure alert is sent again by the next failed run. When a run succeeds after a delivered failure alert, the Gateway sends `swamp.credential_monitor_recovered`, again on each run until it is delivered. A webhook that is not configured counts as undelivered. The monitor runs on the worker it watches: when the `orbit-node-209` pair has expired, no worker claims the step, and only the failure alert reports it after `queueTimeout`.
+
+The Gateway keeps the last projected run, the failure streak and the delivered alerts in the Gateway setting `swamp.credential-monitor`. It skips any run that started at or before the last one, so a replay after a reader reset or `optimize:clear` sends nothing. The Activity command `swamp:credential-alert` records each notification and its webhook outcome.
+
+Renewal stays a hand procedure. When an alert names a worker token, follow the [worker enrollment steps](/reference/node-provisioning#per-node-swamp-worker) to issue it again. Then follow the [break-glass recovery steps](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209) to restore the worker.
+
 ## Native run budgets
 
 Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 30 seconds for setup or destroy. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.

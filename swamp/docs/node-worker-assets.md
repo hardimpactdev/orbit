@@ -1,8 +1,10 @@
 # Public Node209 worker assets
 
-`@nckrtl/node-worker-assets` version `2026.11.01.1`, method `read`, supplies public worker files for Node209 only. Its inputs are exactly `{node_id: 209, user}`. Every other Node fails validation before asset reads. Node209 runs Serve and all workers; Node bootstrap installs no Swamp binary or worker and mints no worker token.
+`@nckrtl/node-worker-assets` version `2026.11.01.2`, method `read`, supplies public worker files for Node209 only. Its inputs are exactly `{node_id: 209, user}`. Every other Node fails validation before asset reads. Node209 runs Serve and all workers; Node bootstrap installs no Swamp binary or worker and mints no worker token.
 
 Method `known_hosts` takes exactly `{node_id:209}` and locates the shipped local writer for [worker known-hosts publication](worker-known-hosts.md). Its `known_hosts_script` resource contains only `script_path`; metadata lookup performs no host effect.
+
+Method `credential_check` takes exactly `{node_id:209}` and locates the read-only [credential expiry check](../../docs/reference/operations.md#swamp-credential-expiry-alerts). Its `credential_check_script` resource contains only `script_path`.
 
 The native `assets` resource contains `unit`, `checker`, `preflight`, `checker_path`, `unit_path`, `ca_path`, `runtime_version`, `artifact_url`, `artifact_sha256` and `artifact_bytes`. No input or output contains a credential. The manifest ships scripts through `additionalFiles`, using paths relative to the manifest directory, such as `scripts/write_known_hosts.py`. Remote dispatch ships only declared files that exist at those relative paths; local execution from the source checkout does not prove delivery. The metadata method reads them with `ctx.extensionFile`. TypeScript performs no host effect.
 
