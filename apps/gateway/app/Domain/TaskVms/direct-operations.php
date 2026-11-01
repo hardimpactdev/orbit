@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
+use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmIncusProjection;
 use App\Domain\TaskVms\TaskVmLifecycleIntentProjection;
@@ -12,7 +13,12 @@ use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
-return ['task_vm.resume' => [
+return ['task_vm.hub_converge' => [
+    'workflow' => 'operation-task-vm-hub-converge',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'hub', 'step' => 'result'],
+    'projection' => TaskVmHubProjection::class,
+], 'task_vm.resume' => [
     'workflow' => 'operation-task-vm-resume',
     'projection' => TaskVmResumeProjection::class,
     'private_material' => ['pi_token' => 'task_vm.pi_token', 'upcloud_token' => 'upcloud.api'],

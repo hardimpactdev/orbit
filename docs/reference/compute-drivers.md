@@ -1199,13 +1199,14 @@ To remove a host, lower its capacity to stop new placements, wait until all its 
 
 This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb and the private Swamp Route share TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
 
-Run `task-vms:prepare-hub` once, and again when one of the values below changes. The Gateway sends typed endpoints and the reserved range to `firewall.task-vm-hub` on the `vpn` Node. The agent renders and validates the nft table `inet orbit_task_vms`, atomically publishes `/etc/orbit/task-vms/hub.nft` and the oneshot unit `orbit-task-vms-hub.service`, and verifies activation. It refuses foreign files or an unowned table before changes. A failed activation restores the previous files, service state, and live table; a failed restoration reports `task_vm.setup_failed` with the `recovery` stage.
+Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints its ID; submission does not mean the filter is ready. Its native workflow runs on209 and reaches the VPN Node through official SSH with the recorded host pins. It validates the complete nft ruleset, publishes the managed filter and systemd unit, applies the canonical control SSH rule, activates the unit, then verifies the exact live nft rule. A failed step leaves the Operation failed for native resume. No Swamp binary or worker is installed on the VPN Node.
 
-The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. Repeated preparation converges the same filter under the shared firewall lock.
+The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The nft transaction replaces only `inet orbit_task_vms`; unrelated firewall tables remain unchanged.
 
 The command takes every value from Gateway records and settings:
 
 - the reserved range from `task_vms.wireguard_range`;
+- the active209 control Node's recorded WireGuard address, for SSH on TCP22 only;
 - the VPN DNS address: the `vpn.dns_server` setting, or else the WireGuard address of the `vpn` Node;
 - the Node with the `gateway` role, and the Pi port `orbit.pi.port` (`ORBIT_PI_PORT`, default `3774`);
 - Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role; the Swamp Route uses that same Node and port;
@@ -1217,7 +1218,9 @@ The table filters only the reserved range. Its first rule passes every packet th
 | Direction | Allowed |
 | --- | --- |
 | From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
-| To task VMs | The Gateway on TCP 22 and the Pi port, and the dev Cluster router on TCP 80, 443, and 5173 |
+| To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster router on TCP 80, 443, and 5173 |
+
+The209 SSH rule comes from the same canonical definition shown by `firewall-managed-list` on the VPN Node. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall-live-list` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 
