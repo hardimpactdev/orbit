@@ -12,5 +12,6 @@ return [
     'read_token' => env('ORBIT_SWAMP_READ_TOKEN', ''),
     'run_token' => env('ORBIT_SWAMP_RUN_TOKEN', ''),
     'direct_writers' => $directWriters,
+    'proof_club_api_key' => env('ORBIT_SWAMP_PROOF_CLUB_API_KEY', ''),
     'ca_path' => env('ORBIT_SWAMP_CA_PATH', rtrim((string) env('ORBIT_HOME', getenv('HOME').'/.orbit'), '/').'/ca/root.pem'),
 ];

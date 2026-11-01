@@ -145,3 +145,26 @@ it('refuses foreign or missing native output data without retaining private diag
     }
     expect($this->socket->closed)->toBeTrue();
 })->with(['refused', 'vault', 'key', 'type', 'value']);
+
+it('deletes an execution copy with native force and forgets its synchronized digest', function (): void {
+    $this->copies->synchronize('orbit-control-inputs', 'task-vm-proof-club-key-7', 'synthetic-value');
+    $this->socket->reply = static fn (array $request): array => [['type' => 'vault.delete', 'id' => $request['id'],
+        'payload' => ['data' => ['vaultName' => 'orbit-control-inputs', 'secretKey' => 'task-vm-proof-club-key-7', 'vaultType' => 'local_encryption', 'noOp' => true]]]];
+
+    $this->copies->remove('orbit-control-inputs', 'task-vm-proof-club-key-7');
+
+    expect($this->socket->sent[1])->toMatchArray(['type' => 'vault.delete',
+        'payload' => ['vaultName' => 'orbit-control-inputs', 'key' => 'task-vm-proof-club-key-7', 'force' => true]])
+        ->and(Cache::get('swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0orbit-control-inputs\0task-vm-proof-club-key-7")))->toBeNull()
+        ->and($this->socket->closed)->toBeTrue();
+});
+
+it('refuses an unconfirmed deletion', function (string $failure): void {
+    $this->socket->reply = static fn (array $request): array => $failure === 'error'
+        ? [['type' => 'error', 'id' => $request['id'], 'code' => 'vault_delete_failed', 'message' => 'private']]
+        : [['type' => 'vault.delete', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => 'orbit-control-inputs',
+            'secretKey' => 'foreign', 'vaultType' => 'local_encryption']]]];
+
+    expect(fn () => $this->copies->remove('orbit-control-inputs', 'task-vm-proof-club-key-7'))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('swamp.vault_sync_unavailable'));
+})->with(['error', 'key']);

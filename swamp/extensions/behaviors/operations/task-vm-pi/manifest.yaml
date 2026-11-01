@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/task-vm-pi-scripts"
-version: 2026.10.31.1
+version: 2026.11.01.1
 visibility: private
 license: MIT
 description: Public Pi input metadata and native script assets.
@@ -14,4 +14,5 @@ additionalFiles:
   - scripts/pi_stage.py
   - scripts/pi_model.py
   - scripts/pi_token.py
+  - scripts/club_key.py
   - scripts/image_trust.py

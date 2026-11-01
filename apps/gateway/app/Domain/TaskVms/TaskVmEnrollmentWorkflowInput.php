@@ -23,7 +23,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
 {
     public function __construct(private TaskVmEnrollmentIntent $enrollment, private TaskVmModelKeyInputs $models,
         private SwampCommandStep $shared, private SwampSshExecutionInput $ssh, private TaskVmSettings $settings, private PiConnection $pi,
-        private SystemdProcessRenderer $systemd) {}
+        private SystemdProcessRenderer $systemd, private TaskVmProofClubKey $club) {}
 
     /** @param array<string,mixed> $public
      * @return array<string,mixed>
@@ -35,6 +35,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
             ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
         $network = app(NodeNetworkInput::class)->capture($guest);
         $hub = Node::query()->findOrFail(ValidatedData::integer($network['hub_id']));
+        $club = $this->club->capture($vm);
         $model = $this->models->capture($vm, $gateway->id, $this->shared->executionCopy(...));
         $identity = $this->ssh->identity();
         $installation = $this->enrollment->installation($vm);
@@ -59,7 +60,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
             'models_json' => json_encode(ValidatedData::object($public['runtime'])['models'], JSON_THROW_ON_ERROR),
             'certificate_json' => json_encode(['certificate' => ValidatedData::object($public['agent'])['certificate']], JSON_THROW_ON_ERROR),
             'runtime_json' => json_encode(['pi_sha256' => $this->settings->piArtifactSha256, 'pi_port' => $this->pi->port(), 'pi_url' => $this->pi->baseUrl($guest)], JSON_THROW_ON_ERROR),
-            'execution_secrets' => [...$model['execution_secrets'],
+            'execution_secrets' => [...$model['execution_secrets'], ...$club,
                 'pi_token' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token ?? throw new \LogicException('The VM has no Pi token.'))],
         ];
     }

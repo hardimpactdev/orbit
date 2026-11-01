@@ -6,6 +6,7 @@ use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
+use App\Domain\TaskVms\TaskVmProofClubKey;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
@@ -35,7 +36,8 @@ return ['task_vm.hub_converge' => [
     'terminal_result' => ['job' => 'provision', 'step' => 'result'],
     'private_material' => [],
     'secret_outputs' => [],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$'],
+        ['vault' => TaskVmProofClubKey::Vault, 'key_pattern' => TaskVmProofClubKey::KeyPattern]],
 ], 'task_vm.fill_package_cache' => [
     'workflow' => 'operation-task-vm-cache-fill',
     'projection' => TaskVmPackageCacheProjection::class,

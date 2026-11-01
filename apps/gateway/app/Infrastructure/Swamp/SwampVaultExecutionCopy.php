@@ -21,6 +21,27 @@ final readonly class SwampVaultExecutionCopy
     /** @return array{vault:string,key:string} */
     public function synchronize(string $vault, string $key, #[SensitiveParameter] string $value): array
     {
+        $endpoint = $this->endpoint($vault, $key);
+        $stamp = $this->stamp($vault, $key);
+        $digest = hash('sha256', $value);
+        if (Cache::get($stamp) !== $digest) {
+            $this->exchange($endpoint, 'vault.put', $vault, $key, ['vaultName' => $vault, 'key' => $key, 'value' => $value, 'force' => true]);
+            Cache::forever($stamp, $digest);
+        }
+
+        return ['vault' => $vault, 'key' => $key];
+    }
+
+    /** Delete an execution copy whose owner is gone. A missing key is already removed (native force). */
+    public function remove(string $vault, string $key): void
+    {
+        $endpoint = $this->endpoint($vault, $key);
+        $this->exchange($endpoint, 'vault.delete', $vault, $key, ['vaultName' => $vault, 'key' => $key, 'force' => true]);
+        Cache::forget($this->stamp($vault, $key));
+    }
+
+    private function endpoint(string $vault, string $key): WebSocketEndpoint
+    {
         $address = config('swamp.address');
         $ca = config('swamp.ca_path');
         $token = config('swamp.run_token');
@@ -30,20 +51,25 @@ final readonly class SwampVaultExecutionCopy
             || ! is_string($ca) || $ca === '' || ! is_string($token) || $token === '') {
             throw $this->unavailable();
         }
-        $reference = ['vault' => $vault, 'key' => $key];
-        $stamp = 'swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0".$vault."\0".$key);
-        $digest = hash('sha256', $value);
-        if (Cache::get($stamp) === $digest) {
-            return $reference;
-        }
+
+        return new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
+    }
+
+    private function stamp(string $vault, string $key): string
+    {
+        return 'swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0".$vault."\0".$key);
+    }
+
+    /** @param  array<string,mixed>  $payload */
+    private function exchange(WebSocketEndpoint $endpoint, string $type, string $vault, string $key, #[SensitiveParameter] array $payload): void
+    {
         $id = bin2hex(random_bytes(16));
         $phase = 'connect';
         $remoteCode = null;
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->connect($endpoint, 15);
             $phase = 'send';
-            $this->socket->send(['type' => 'vault.put', 'id' => $id,
-                'payload' => ['vaultName' => $vault, 'key' => $key, 'value' => $value, 'force' => true]]);
+            $this->socket->send(['type' => $type, 'id' => $id, 'payload' => $payload]);
             $phase = 'receive';
             $deadline = microtime(true) + 30;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
@@ -55,21 +81,18 @@ final readonly class SwampVaultExecutionCopy
                     if (($message['type'] ?? null) === 'error') {
                         $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
                         $code = $error['code'] ?? null;
-                        $remoteCode = in_array($code, ['forbidden', 'unauthorized', 'not_found', 'vault_put_failed', 'cancelled', 'bad_request', 'internal_error'], true)
+                        $remoteCode = in_array($code, ['forbidden', 'unauthorized', 'not_found', 'vault_put_failed', 'vault_delete_failed', 'cancelled', 'bad_request', 'internal_error'], true)
                             ? $code : 'unrecognized';
                         throw $this->unavailable();
                     }
-                    $payload = $message['payload'] ?? null;
-                    $data = is_array($payload) ? ($payload['data'] ?? null) : null;
-                    if (($message['type'] ?? null) !== 'vault.put' || ! is_array($data)
+                    $data = is_array($message['payload'] ?? null) ? ($message['payload']['data'] ?? null) : null;
+                    if (($message['type'] ?? null) !== $type || ! is_array($data)
                         || ($data['vaultName'] ?? null) !== $vault || ($data['secretKey'] ?? null) !== $key
                         || ($data['vaultType'] ?? null) !== 'local_encryption') {
                         throw $this->unavailable();
                     }
-                    $phase = 'cache';
-                    Cache::forever($stamp, $digest);
 
-                    return $reference;
+                    return;
                 }
             }
             throw $this->unavailable();

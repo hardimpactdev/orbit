@@ -20,7 +20,7 @@ class TaskVmRuntimeNative(NativeTestCase):
         fake.write_text("#!" + sys.executable + "\n" + '''import hashlib,json,os,shlex,sys
 from pathlib import Path
 argv=shlex.split(sys.argv[-1]);body=sys.stdin.read()
-private=any(name in ' '.join(argv) for name in ('pi_model.py','pi_token.py'))
+private=any(name in ' '.join(argv) for name in ('pi_model.py','pi_token.py','club_key.py'))
 if private and hashlib.sha256(body.encode()).hexdigest()!=os.environ['FIXTURE_SECRET_SHA']:raise SystemExit(17)
 with Path(EVENTS).open('a') as out:out.write(json.dumps({'argv':argv,'private_stdin':private,'ssh_argv':sys.argv[1:]})+'\\n')
 if any('pi_inspect.py' in arg for arg in argv):print(json.dumps({'task_vm_id':42,'sha256':'a'*64,'current':os.environ['FIXTURE_CURRENT']=='true'}))
@@ -43,7 +43,7 @@ else:print('{"ready":true}')
         (self.repo / "workflows/workflow-task-vm-runtime.yaml").write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
         secret = "runtime_native_private_fixture_" + "c" * 32
-        for key in ("task-vm-model-key-42", "task-vm-pi-token-42"):
+        for key in ("task-vm-model-key-42", "task-vm-pi-token-42", "task-vm-proof-club-key-42"):
             self.cli("vault", "put", "orbit-control-inputs", key, input=secret)
         self.secrets = (secret,)
         self.native_env.update(FIXTURE_SECRET_SHA=hashlib.sha256(secret.encode()).hexdigest(), FIXTURE_CURRENT="false", FIXTURE_FAIL="false")
@@ -93,3 +93,26 @@ else:print('{"ready":true}')
         self.assertEqual(steps["result"]["status"], "skipped")
         self.assertEqual(steps["cleanup-local"]["status"], "succeeded")
         self.assertEqual(steps["cleanup-guest"]["status"], "succeeded")
+
+    def test_proof_vm_writes_the_club_key_from_its_vault_reference_before_the_unit(self):
+        self.inputs["execution_secrets"]["proof_club_key"] = {"vault":"orbit-control-inputs","key":"task-vm-proof-club-key-42"}
+        run, history, calls = self.run_runtime()
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(sum(call.get("private_stdin", False) for call in calls), 3)
+        commands = [call["argv"] for call in calls if "argv" in call]
+        club = [index for index, argv in enumerate(commands) if any(arg.endswith("/scripts/club_key.py") for arg in argv)]
+        unit = [index for index, argv in enumerate(commands) if "/etc/systemd/system/orbit-process-33.service" in argv]
+        self.assertEqual(len(club), 1)
+        self.assertNotIn("sudo", commands[club[0]])
+        self.assertLess(club[0], unit[0])
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        self.assertEqual(steps["proof-club-key"]["status"], "succeeded")
+        self.assertNotIn(self.secrets[0], json.dumps(history))
+
+    def test_other_vms_skip_the_club_key_step_without_resolving_a_vault_key(self):
+        self.cli("vault", "delete", "orbit-control-inputs", "task-vm-proof-club-key-42", "--force")
+        run, history, calls = self.run_runtime()
+        self.assertEqual(run["status"], "succeeded")
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        self.assertEqual(steps["proof-club-key"]["status"], "skipped")
+        self.assertFalse(any("club_key.py" in " ".join(call.get("argv", [])) for call in calls))

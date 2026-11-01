@@ -462,3 +462,23 @@ it('cleans a completed group residual workspace and keeps it completed', functio
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed)
         ->and(Instance::query()->find($workspace->id))->toBeNull()->and(Route::query()->count())->toBe(0);
 })->with(['workspace' => true, 'vm-only' => false]);
+
+it('deletes only a proof VM club key execution copy at destroy admission', function (bool $proof): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => $message['type'] === 'vault.delete'
+        ? [['type' => 'vault.delete', 'id' => $message['id'], 'payload' => ['data' => [
+            'vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption', 'noOp' => true]]]]
+        : [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => $message['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    $project = Project::query()->create(['name' => 'Club', 'slug' => $proof ? 'swamp-proof' : 'native-club', 'repository_url' => 'https://github.com/example/club.git', 'default_branch' => 'main']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'proof instance.create', 'brief' => 'Proof', 'status' => 'failed',
+        'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
+    $this->vm->update(['group_id' => $group->id]);
+
+    $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
+
+    expect($operation->input['execution_secrets'])->toBe([])
+        ->and(array_values(array_map(static fn (array $message): array => [$message['type'], $message['payload']],
+            array_filter($socket->sent, static fn (array $message): bool => str_starts_with($message['type'], 'vault.')))))
+        ->toBe($proof ? [['vault.delete', ['vaultName' => 'orbit-control-inputs', 'key' => 'task-vm-proof-club-key-'.$this->vm->id, 'force' => true]]] : []);
+})->with(['proof group' => true, 'other group' => false]);

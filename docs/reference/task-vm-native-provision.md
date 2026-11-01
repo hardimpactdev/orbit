@@ -23,6 +23,19 @@ The terminal projector records the public host pin through the same `RecordNodeS
 
 `AllocateTaskVmAction::capture(Task $group)` records placement inside the owning Task admission transaction without starting a second VM Operation. The caller captures the same provision intent once. Ordinary allocation starts the VM root in its own admission transaction. Neither path grants a Node access edge or creates a guest worker.
 
+## Proof VM club key
+
+VMs of task groups in the `swamp-proof` Project get the swamp-club collective key `orbit-proof-topologies`, so the Swamp CLI and serve inside a proof topology can start. `bin/swamp-proof` creates every proof task group in that Project, and the Project exists only for proofs. The Gateway reads the stored Project slug; it does not use group titles or idempotency keys. No other VM receives the key.
+
+- **Source:** the Gateway holds the value as `ORBIT_SWAMP_PROOF_CLUB_API_KEY`, read through `swamp.proof_club_api_key`. Its scopes are `extensions:read` and `serve:*`.
+- **Admission:** enrollment capture pushes the execution copy `orbit-control-inputs/task-vm-proof-club-key-<VM ID>` through `SwampCommandStep::executionCopy`. Workflow inputs carry only its descriptor, `execution_secrets.proof_club_key`.
+- **Missing key:** without a Gateway value, a proof group refuses admission with `task_vm.proof_club_key_missing` (503). The refusal comes before any vault push.
+- **Write:** the runtime child's `proof-club-key` step resolves the descriptor and sends the value on official SSH stdin to `club_key.py`.
+- **File:** the script runs as the guest user `orbit`. It writes `/home/orbit/.config/swamp/club-api-key` with mode 0600 in a 0700 directory.
+- **Other VMs:** a `guard` skips the step, and no key is resolved.
+- **Use:** the guest passes the file to `swamp serve --club-api-key-file <path>` and sets `SWAMP_API_KEY_FILE=<path>` for CLI calls. A nested topology Gateway VM receives the same file contract from its harness.
+- **Lifetime:** destroy admission deletes the vault copy with a forced native `vault.delete`, for standalone `task_vm.destroy` and for the Tasks ending parents. The guest file dies with the VM disk.
+
 ## Incus destruction
 
 The native destruction root first observes provider presence and stops a running VM. It requires revocation of this VM's model key before provider deletion. It observes, removes and verifies absence of the custom seed volume for this VM, including when the VM is already absent. After confirmed provider and seed absence, it runs canonical Node removal under the same root identity. Cleanup for a deleted machine performs no guest probe or SSH action; external participants remain required. Only full native success removes Node and Process records, marks the VM Destroyed and clears its credentials. Failure retains cleanup intent and credentials.

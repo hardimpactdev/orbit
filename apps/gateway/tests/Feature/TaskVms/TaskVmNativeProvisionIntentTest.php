@@ -363,3 +363,32 @@ it('captures placement for an owning Task root without starting another Operatio
         ->and(Operation::query()->count())->toBe(0)
         ->and(Node::query()->count())->toBe(4);
 });
+
+it('pushes the club key execution copy only for a proof group and passes names only', function (bool $proof): void {
+    config(['swamp.proof_club_api_key' => 'fixture-proof-club-value']);
+    $this->vm->group->project->update(['slug' => $proof ? 'swamp-proof' : 'native-provision']);
+    $socket = app(WebSocketClient::class);
+
+    $operation = savedNativeProvisionIntent();
+    $envelope = app(TaskVmProvisionIntent::class)->input($operation);
+
+    $key = 'task-vm-proof-club-key-'.$this->vm->id;
+    $pushed = array_values(array_filter($socket->sent, static fn (array $message): bool => $message['payload']['key'] === $key));
+    expect(json_encode([$operation->input, $envelope], JSON_THROW_ON_ERROR))->not->toContain('fixture-proof-club-value');
+    if ($proof) {
+        expect($envelope['execution_secrets']['proof_club_key'])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+            ->and($pushed)->toHaveCount(1)
+            ->and($pushed[0]['payload'])->toMatchArray(['vaultName' => 'orbit-control-inputs', 'value' => 'fixture-proof-club-value', 'force' => true]);
+    } else {
+        expect($envelope['execution_secrets'])->not->toHaveKey('proof_club_key')->and($pushed)->toBe([]);
+    }
+})->with(['proof group' => true, 'other group' => false]);
+
+it('refuses a proof group before any vault push when the Gateway has no club key', function (string $value): void {
+    config(['swamp.proof_club_api_key' => $value]);
+    $this->vm->group->project->update(['slug' => 'swamp-proof']);
+
+    expect(fn () => app(TaskVmProvisionIntent::class)->capture($this->vm))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('task_vm.proof_club_key_missing'));
+    expect(app(WebSocketClient::class)->sent)->toBe([]);
+})->with(['empty' => '', 'blank' => '  ']);

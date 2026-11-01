@@ -25,7 +25,8 @@ use Illuminate\Database\Eloquent\Collection;
 /** Immutable same-VM cleanup intent; no provider or guest effect at admission. */
 final readonly class TaskVmDestroyIntent
 {
-    public function __construct(private TaskVmProviderWorkflowInput $provider, private TaskVmModelKeyInputs $models, private SwampCommandStep $shared) {}
+    public function __construct(private TaskVmProviderWorkflowInput $provider, private TaskVmModelKeyInputs $models, private SwampCommandStep $shared,
+        private TaskVmProofClubKey $club) {}
 
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array
@@ -118,6 +119,7 @@ final readonly class TaskVmDestroyIntent
             $model = $this->models->capture($vm, $gateway->id, $this->shared->executionCopy(...));
         }
         $provider = $this->provider->capture($vm);
+        $this->club->remove($vm);
 
         return ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'guest_node_id' => $vm->node_id,
             'workspace_routes' => $workspaceRoutes, 'group_id' => $vm->group_id, 'name' => $vm->name, 'wireguard_ip' => $vm->wireguard_ip,

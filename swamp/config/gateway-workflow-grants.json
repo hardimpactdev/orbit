@@ -12,6 +12,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-clone-environment-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-proof-club-key-[1-9][0-9]*$", "actions": ["write", "read"]},
 
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-credentials-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-clone-intent-[1-9][0-9]*$", "actions": ["write", "read"]},

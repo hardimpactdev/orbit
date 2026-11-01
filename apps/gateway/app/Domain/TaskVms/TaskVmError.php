@@ -45,6 +45,7 @@ enum TaskVmError: string
     // The group's runtime on the VM.
     case RuntimeFailed = 'task_vm.runtime_failed';
     case ModelKeyFailed = 'task_vm.model_key_failed';
+    case ProofClubKeyMissing = 'task_vm.proof_club_key_missing';
     case TopologyFailed = 'task_vm.topology_failed';
     case GitCredentialRefused = 'task_vm.git_credential_refused';
 

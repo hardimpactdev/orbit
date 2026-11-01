@@ -27,7 +27,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+            pattern: ^(task-vm-(model-key|pi-token|proof-club-key)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
         required:
         - vault
         - key
@@ -330,6 +330,26 @@ jobs:
     - step: model-configuration
       condition:
         type: succeeded
+  - name: proof-club-key
+    target: orbit-node-209
+    guard: ${{ !("proof_club_key" in inputs.execution_secrets) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-runtime-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-vm-runtime-"+run.id+"/scripts/club_key.py" }}
+        stdin: ${{ vault.get(inputs.execution_secrets.proof_club_key.vault,inputs.execution_secrets.proof_club_key.key) }}
+    dependsOn:
+    - step: bearer-file
+      condition:
+        type: succeeded
   - name: unit
     target: orbit-node-209
     task:
@@ -357,6 +377,12 @@ jobs:
     - step: bearer-file
       condition:
         type: succeeded
+    - step: proof-club-key
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
   - name: reload
     target: orbit-node-209
     task:

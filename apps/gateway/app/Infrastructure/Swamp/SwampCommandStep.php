@@ -33,6 +33,12 @@ final readonly class SwampCommandStep
         return $this->copies->synchronize($vault, $key, $value);
     }
 
+    /** Delete an execution copy once nothing can resolve it again. */
+    public function removeExecutionCopy(string $vault, string $key): void
+    {
+        $this->copies->remove($vault, $key);
+    }
+
     /** One native lookup for a lost start confirmation. Missing evidence never permits resubmission. */
     public function recoverUnbound(Operation $operation): void
     {
