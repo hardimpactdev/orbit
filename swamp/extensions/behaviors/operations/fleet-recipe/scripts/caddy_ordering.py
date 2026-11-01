@@ -1,14 +1,11 @@
-import fcntl
 import json
 import os
 import stat
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 ROOT = Path("/")
-LOCK = Path("/run/lock/orbit/caddy.lock")
 UID, GID = 0, 0
 CONTENT = b"# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n"
 
@@ -124,37 +121,7 @@ def converge_ordering():
 
 def main():
     try:
-        LOCK.parent.mkdir(mode=0o700, exist_ok=True)
-        meta = LOCK.parent.lstat()
-        if (
-            not stat.S_ISDIR(meta.st_mode)
-            or meta.st_uid != UID
-            or meta.st_gid != GID
-            or stat.S_IMODE(meta.st_mode) != 0o700
-        ):
-            raise Refused()
-        descriptor = os.open(
-            LOCK, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW, 0o600
-        )
-        with os.fdopen(descriptor, "a") as lock:
-            meta = os.fstat(lock.fileno())
-            if (
-                not stat.S_ISREG(meta.st_mode)
-                or meta.st_uid != UID
-                or meta.st_gid != GID
-            ):
-                raise Refused()
-            os.fchmod(lock.fileno(), 0o600)
-            until = time.monotonic() + 30
-            while True:
-                try:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() >= until:
-                        raise Refused()
-                    time.sleep(0.05)
-            result = converge_ordering()
+        result = converge_ordering()
     except Refused as error:
         result = {"completed": False, "error_code": error.code}
     except (OSError, subprocess.SubprocessError):

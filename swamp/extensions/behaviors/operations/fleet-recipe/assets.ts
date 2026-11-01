@@ -215,7 +215,7 @@ export function publicResult(raw: z.infer<typeof ResultArgs>) {
 }
 export const behavior = {
     type: "@nckrtl/fleet-recipe-command",
-    version: "2026.11.01.3",
+    version: "2026.11.01.4",
     resources: {
         assets: {
             schema: z.object({ script_body: z.string() }),

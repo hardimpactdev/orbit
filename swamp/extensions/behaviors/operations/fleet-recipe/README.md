@@ -23,3 +23,8 @@ account and Composer scope before creating directories. It does not run APT.
 The shared Caddy VPN ordering action is shipped as `caddy_ordering.py`.
 Retained Gateway roles and native application roles consume the same filesystem
 checks, systemd drop-in and recovery policy.
+
+The ordering action performs one ownership check, publication and service
+transaction. Its old host lock and timed wait loop are removed; Swamp owns
+execution ordering. The existing drop-in, directory and service recovery checks
+still apply.
