@@ -9,6 +9,7 @@ import json
 import os
 import pwd
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,20 @@ class PhaseRefused(Exception):
 def require(value, code="instance.step_not_admitted"):
     if not value:
         raise PhaseRefused(code)
+
+
+def development_scope_environment(account, environment, candidates):
+    for store in candidates:
+        binary = store / "bin/vp"
+        if not binary.is_file():
+            continue
+        directory, executable = store.lstat(), binary.lstat()
+        require(stat.S_ISDIR(directory.st_mode)
+                and all(info.st_uid == account.pw_uid and info.st_gid == account.pw_gid
+                        for info in (directory, executable))
+                and os.access(binary, os.X_OK), "tool.vp_scope_conflict")
+        environment.update(VP_HOME=str(store), PATH=str(store / "bin") + ":" + environment["PATH"])
+        break
 
 
 def public_tail(stream, values):
@@ -70,6 +85,8 @@ def execute(request, commands):
         environment.update(HOME=account.pw_dir, USER=user, LOGNAME=user, PATH="/usr/local/bin:/usr/bin:/bin")
         if deployment["variant"] == "development":
             environment.update(ORBIT_SEED_PATH=str(root), ORBIT_SEED_COMMIT=request["source"]["commit"])
+            development_scope_environment(account, environment, [Path("/opt/orbit/vite-plus"),
+                Path(account.pw_dir) / ".vite-plus", Path(account.pw_dir) / ".local/share/vite-plus"])
         runtime = request.get("runtime")
         prefix = []
         warnings = []

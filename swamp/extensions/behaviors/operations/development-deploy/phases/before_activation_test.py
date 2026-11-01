@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import pwd
+import runpy
 import signal
 import subprocess
 import sys
@@ -50,6 +51,21 @@ class CommandParity(unittest.TestCase):
         self.assertTrue(result["ready"])
         self.assertEqual((self.root / "phases").read_text(), "beforeafter")
         self.assertEqual((self.root / "account").read_text().strip(), pwd.getpwuid(os.getuid()).pw_name)
+
+    def test_existing_vp_bin_775_is_executable_by_an_unpinned_development_command(self):
+        store = self.root / "store"
+        (store / "bin").mkdir(parents=True)
+        (store / "bin/vp").write_text("#!/bin/sh\nprintf 'proof-vp-version\\n'\n")
+        (store / "bin/vp").chmod(0o755)
+        (store / "bin").chmod(0o775)
+        environment = {"PATH": "/usr/bin:/bin"}
+        definitions = runpy.run_path(str(HERE / "before_activation.py"))
+        definitions["development_scope_environment"](pwd.getpwuid(os.getuid()), environment, [store])
+        process = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-eu", "-c", "vp --version"],
+                                 env=environment, capture_output=True, text=True, check=True)
+        self.assertEqual(process.stdout, "proof-vp-version\n")
+        self.assertEqual(environment["VP_HOME"], str(store))
+        self.assertEqual((store / "bin").stat().st_mode & 0o777, 0o775)
 
     def test_required_failure_stops_later_commands(self):
         result, _ = self.run_phase(["exit 7", "touch forbidden"])

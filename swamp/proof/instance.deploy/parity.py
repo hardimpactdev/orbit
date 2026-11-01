@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import subprocess
+from pathlib import Path
 
 TARGET_READ = r'''
 import glob,json,pathlib,pwd,subprocess,sys
@@ -13,7 +14,7 @@ def text(name):
  p=path/name
  return p.read_text().strip() if p.is_file() else None
 result={'head':subprocess.check_output(['sudo','-n','-u',user,'--','git','-C',checkout,'rev-parse','HEAD'],text=True).strip(),
- 'account':text('.proof-deploy-user'),'phases':text('.proof-deploy-phases'),
+ 'account':text('.proof-deploy-user'),'phases':text('.proof-deploy-phases'),'vp_version':text('.proof-vp-version'),
  'marker_owner':pwd.getpwuid((path/'.proof-deploy-user').stat().st_uid).pw_name}
 if home:
  result['current']=str((pathlib.Path(home)/'current').resolve(strict=True))
@@ -30,6 +31,7 @@ def main():
     parser.add_argument('--node', required=True)
     parser.add_argument('--instance', type=int, required=True)
     parser.add_argument('--release')
+    parser.add_argument('--vp-bin-775', action='store_true')
     args = parser.parse_args()
     prefix = shlex.split(os.environ['PROOF_EXEC'])
 
@@ -57,6 +59,12 @@ def main():
                                    instance['checkout_path'], user, home])
     if args.variant == 'development':
         checks['checkout-equals-recorded-seed'] = observed['head'] == instance['seed_commit']
+        if args.vp_bin_775:
+            helper = Path(__file__).with_name('vp_bin_775.py').read_text()
+            store = execute(args.node, ['sudo', '-n', '-u', user, '--', 'python3', '-I',
+                                        '-c', helper, '--target-user', user, '--check'])
+            checks['existing-vp-bin-remains-775'] = store['bin_mode'] == 0o775
+            checks['vp-command-succeeded'] = bool(observed['vp_version'])
     else:
         releases = cli('instance:release:list', args.instance)
         selected = releases['selected_release']
