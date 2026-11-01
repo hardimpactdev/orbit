@@ -797,6 +797,8 @@ Role convergence uses the same native chain as role addition. Removal first reco
 
 Relocation converges and publishes the target before it withdraws the source. The parent records target readiness immediately. A later source-cleanup failure leaves that target active and reports the cleanup failure. WebSocket source teardown observes the private DNS withdrawal grace period. Source and target work stay in the same native parent run.
 
+The native removal builder accepts the actual replacement assignment when preparing Metrics source cleanup. A move retains fleet exporter services, their exporter footprints and shared service deny rules. Cleanup still removes the old Metrics containers and source-owned firewall access. Removing Metrics without a replacement withdraws the exporters. This removal-only contract does not establish target convergence, a pre-transfer source snapshot, or restore and finalize support for the owning relocation parent.
+
 ### Reuse role lowers in a native parent
 
 The owning parent admits role snapshots and private bindings. Inside its private material source, `NodeRoleRuntimeSource::resolveRoleMaterial($snapshot, $nodeId)` validates the assignment, Node, pin and runtime reference before rendering existing credential types. It returns an `OperationSecretValue`; aggregate its in-memory value and redaction strings without serializing protected bytes. The standalone source retains its own Operation ownership and field binding checks.

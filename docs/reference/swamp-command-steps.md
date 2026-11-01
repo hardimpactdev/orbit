@@ -31,7 +31,7 @@ Upstream fixes go through the orchestrator to Nick. Only official Swamp versions
 
 ## Terminal outputs
 
-A result step prints one public JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. A failed action can print `{"error_code":"family.code"}` and exit nonzero. Native dependencies skip subsequent actions.
+A result step prints one public JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. An action that refuses prints `{"error_code":"family.code"}`, runs with `ignoreExitCode: true`, and a following `assert` on its `exitCode` fails the run. Native dependencies skip subsequent actions.
 
 The shared subscriber calls `projectTerminal(Operation $operation, array $terminalRun, array{job:string,step:string} $selector): Operation` with the native event's `run` object and the fixed family declaration. The helper makes one `workflow.history.get` request for that exact run, authenticated with the existing `swamp.read_token`. It does not require the separate `swamp.run_token` used to start work. It selects the named job and step and decodes stdout. After the history request finishes, it locks and reloads the Operation, checks its run binding and terminal state again, then calls the existing family `projection.apply`. No history request runs under that row lock. It does not repeat host or domain checks, poll status, resume a run or invoke an effect.
 

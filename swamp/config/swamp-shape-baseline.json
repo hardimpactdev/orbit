@@ -369,14 +369,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/valkey_client.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
       "rule": "gateway-http",
       "count": 2,

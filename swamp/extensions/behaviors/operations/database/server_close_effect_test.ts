@@ -70,7 +70,7 @@ async function closeServer(
     });
     return result;
 }
-import { ValkeyClient } from "./valkey_client.ts";
+import { ValkeyClient } from "../../../../tests/_support/valkey_client.ts";
 
 Deno.test({
     name:
