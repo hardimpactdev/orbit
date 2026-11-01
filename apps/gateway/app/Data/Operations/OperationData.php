@@ -39,10 +39,14 @@ final class OperationData extends Data
         public ?int $pollAfterSeconds,
         /** @var array{error_code:string}|null */
         public ?array $assistance = null,
+        /** @var array{code:?string,detail:string}|null */
+        public ?array $error = null,
     ) {}
 
     public static function fromModel(Operation $operation, ?string $callerNodeName = null): self
     {
+        $failure = $operation->state['native_failure'] ?? null;
+
         return new self(
             id: $operation->id,
             kind: $operation->kind,
@@ -65,6 +69,8 @@ final class OperationData extends Data
             finishedAt: $operation->finished_at?->format(DateTimeInterface::ATOM),
             pollAfterSeconds: null,
             assistance: null,
+            error: is_array($failure) && is_string($failure['detail'] ?? null)
+                ? ['code' => $operation->error_code, 'detail' => $failure['detail']] : null,
         );
     }
 }

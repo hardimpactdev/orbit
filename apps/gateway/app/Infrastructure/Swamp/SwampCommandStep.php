@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationStatus;
@@ -92,7 +93,7 @@ final readonly class SwampCommandStep
             return $operation;
         }
         $operation->refresh();
-        if ($operation->status->terminal()) {
+        if ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation)) {
             return $operation;
         }
         $run = $this->history($runId);
@@ -105,6 +106,9 @@ final readonly class SwampCommandStep
             || ($inputs['kind'] ?? null) !== $operation->kind) {
             throw $this->unavailable();
         }
+        if (ExpireOperationAction::awaitsSettlement($operation)) {
+            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
+        }
         $result = $this->terminalOutput($run, $selector);
         $status = $run['status'];
         if (in_array($status, ['failed', 'interrupted'], true) && $result === []) {
@@ -114,6 +118,9 @@ final readonly class SwampCommandStep
         return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $direct->assertRun($current, $runId);
+            if (ExpireOperationAction::awaitsSettlement($current)) {
+                return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+            }
             if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
                 return $current;
             }

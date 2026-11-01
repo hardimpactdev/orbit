@@ -193,7 +193,7 @@ it('projects a failed native observation through the family without changing the
 });
 
 it('projects a discovered native scheduled result end to end through the existing observer', function (): void {
-    config(['swamp.run_token' => 'fixture.events']);
+    config(['swamp.run_token' => 'fixture.events', 'queue.connections.gateway.driver' => 'sync']);
     Cache::flush();
     $events = new FakeSwampEventSocket;
     $subscriber = new SwampRunSubscriber(new FakeSwampEventSocket, new NullLogger, scheduled: new SwampScheduledResults($events, new NullLogger));
@@ -233,7 +233,7 @@ it('keeps a newer scheduled pending observation when startup replays the origina
         'startedAt' => '2026-10-31T23:59:00Z', 'completedAt' => '2026-10-31T23:59:01Z',
         'jobs' => [['name' => 'check', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode(['check_id' => 17, 'pending' => true])]]]]],
     ]]]];
-    config(['swamp.run_token' => 'fixture.events']);
+    config(['swamp.run_token' => 'fixture.events', 'queue.connections.gateway.driver' => 'sync']);
     $events = new FakeSwampEventSocket;
     $subscriber = new SwampRunSubscriber($events, new NullLogger);
     $subscriber->pass();

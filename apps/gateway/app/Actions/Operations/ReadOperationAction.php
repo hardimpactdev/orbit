@@ -17,6 +17,7 @@ final readonly class ReadOperationAction
 
     public function execute(Operation $operation): Operation
     {
+        $operation = app(ExpireOperationAction::class)->execute($operation);
         $runId = $operation->state['swamp_run_id'] ?? null;
         $definition = $this->direct->definition($operation->kind);
         if ($operation->status->terminal() || ! is_string($runId) || ! Str::isUuid($runId)

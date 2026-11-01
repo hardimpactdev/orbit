@@ -27,6 +27,14 @@ Every `instance.create` or `instance.deploy` Operation that enters `failed` or `
 
 The alert uses the existing [signed release webhook](/reference/gateway-recovery#webhook), with event `instance.operation_failed`. It includes the Operation, Instance and Node IDs, kind, native root run ID, failed step and error code. It does not include inputs, private material, output or stderr. The Activity command `instance:failure-alert` records the notification and webhook outcome. An unavailable webhook does not change the failed Operation. Both release webhook settings must be configured for delivery; otherwise Activity records `not_configured`.
 
+## Native run budgets
+
+The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The Gateway does not re-read the Project. Pre-plan creates and other kinds use 300 seconds until measured budgets replace that default; clients cannot choose the captured budget. A never-started admission uses `created_at` instead, so attempts `0` and a missing native run binding do not leave it queued forever. Startup recovery includes these rows, even when cancellation was already requested.
+
+The existing shared observer projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads apply the same deadline if the observer is unavailable. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. It retains the generic target hold until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation. If a start times out before it binds a run, an operator must investigate before releasing the hold.
+
+This is the Gateway's budget result, not proof that the native run or its descendants stopped. Cancellation still requires the native operator path; shared run credentials gain no admin authority. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception. Operation reads also apply an expired budget before any history read.
+
 ## Native public participants
 
 A direct Operation may admit immutable `input.participant_node_ids`. A foreign participant may use the existing direct-operation GET with the bound root run ID while the parent is unfinished. A projection implementing `DirectOperationPublicView` asserts its participant ownership and returns fresh public input for that authenticated Node. The response preserves the parent Node identity, omits the parent result and uses `Cache-Control: no-store`. Participation grants neither a result POST nor private-material access; those have their own shared authorization.
@@ -46,6 +54,7 @@ Every operation has the same fields, whatever its kind.
 | `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, `cancelled`, or `interrupted`. The last four are terminal and never change again |
 | `sequence` | A number that grows with every change of the operation or one of its steps |
 | `current_step` | The name of the running or waiting step, or null |
+| `error` | Optional `{code, detail}` with the retained safe native diagnostic or the budget explanation |
 | `failed_step`, `error_code` | For a failed operation, the step that ended it and its error code. `failed_step` is null when the operation failed outside a step |
 | `result` | What the operation produced, or null until it ends. A terminal failure can have a typed result; non-null does not mean success |
 | `cancel_requested` | Whether someone asked the operation to stop |

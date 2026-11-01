@@ -52,7 +52,7 @@ function nativeSubscriberOperation(string $run = 'a075eb23-7ac4-4487-80d1-57a038
 
     return Operation::query()->create(['kind' => 'test.native_events', 'target_type' => 'node', 'target_id' => $node->id,
         'node_id' => $node->id, 'status' => OperationStatus::Running, 'sequence' => 1, 'input' => ['private' => 'never-queue-this'],
-        'state' => ['swamp_run_id' => $run], 'started_at' => '2026-10-31T14:00:00Z']);
+        'state' => ['swamp_run_id' => $run], 'started_at' => now()]);
 }
 
 function nativeSubscriberFrame(array $request, Operation $operation, string $status = 'succeeded'): array
@@ -69,6 +69,7 @@ function nativeSubscriberAttached(array $request): array
 }
 
 beforeEach(function (): void {
+    config(['queue.connections.gateway.driver' => 'sync']);
     config(['swamp.run_token' => 'private-native-token', 'swamp.read_token' => 'private-native-read-token', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
 });
 
@@ -234,7 +235,7 @@ it('delivers a large native terminal frame over verified TLS then projects one l
     }
 })->with(['succeeded', 'failed', 'cancelled', 'interrupted']);
 
-it('delivers each terminal frame synchronously for multiple bound streams', function (string $status): void {
+it('queues each terminal frame for multiple bound streams', function (string $status): void {
     Bus::fake([ProjectSwampTerminal::class]);
     $first = nativeSubscriberOperation();
     $second = nativeSubscriberOperation('25b90c36-1497-45be-ab30-3f1fe650e8f2');
@@ -250,8 +251,8 @@ it('delivers each terminal frame synchronously for multiple bound streams', func
 
     $subscriber->pass();
 
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, 2);
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $first->id
+    Bus::assertDispatched(ProjectSwampTerminal::class, 2);
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $first->id
         && $job->runId === $first->state['swamp_run_id'] && $job->status === $status
     );
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
@@ -322,7 +323,7 @@ it('recovers only an explicit late attach miss through the same synchronous read
 
     $subscriber->pass();
 
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === null);
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === null);
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach']);
 })->with([false, true]);
 
@@ -412,14 +413,14 @@ it('ignores an interrupted reply that does not name the bound root', function (m
     expect($operation->fresh()->status)->toBe(OperationStatus::Running);
     $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
     $subscriber->pass();
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, 1);
+    Bus::assertDispatched(ProjectSwampTerminal::class, 1);
 })->with([
     'missing run' => [[]],
     'another run' => [['runId' => '25b90c36-1497-45be-ab30-3f1fe650e8f2']],
     'malformed payload' => ['not-an-object'],
 ]);
 
-it('suppresses duplicate terminal frames and delayed binding notices after synchronous delivery', function (): void {
+it('suppresses duplicate terminal frames and delayed binding notices after queued delivery', function (): void {
     $operation = nativeSubscriberOperation();
     $history = new FakeRoutePublicationSocket;
     $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
@@ -462,7 +463,7 @@ it('reattaches remembered bindings after a disconnected stream without submittin
 
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
     expect($request['payload'])->toBe(['runId' => $operation->state['swamp_run_id'], 'afterSeq' => 0]);
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, 1);
+    Bus::assertDispatched(ProjectSwampTerminal::class, 1);
 });
 
 it('does not attach an undeclared unbound or terminal Operation', function (string $change): void {
@@ -470,7 +471,7 @@ it('does not attach an undeclared unbound or terminal Operation', function (stri
     $operation = nativeSubscriberOperation();
     $operation->update(match ($change) {
         'unbound' => ['state' => []],
-        'undeclared' => ['kind' => 'route.private_dns_publish'],
+        'undeclared' => ['kind' => 'test.undeclared'],
         'terminal' => ['status' => OperationStatus::Succeeded],
     });
     $socket = new FakeSwampEventSocket;
@@ -537,8 +538,8 @@ it('ignores the old subscription after a binding notice replaces its run', funct
 
     $subscriber->pass();
 
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, 1);
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->runId === $operation->state['swamp_run_id']);
+    Bus::assertDispatched(ProjectSwampTerminal::class, 1);
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->runId === $operation->state['swamp_run_id']);
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
 });
 
@@ -565,7 +566,7 @@ it('retains a failed terminal delivery without reconnecting or blocking another 
     $subscriber->pass();
     [$request, $otherRequest] = $socket->sent;
     $attempts = [];
-    Bus::shouldReceive('dispatchSync')->andReturnUsing(function ($job) use (&$attempts, $operation): void {
+    Bus::shouldReceive('dispatch')->andReturnUsing(function ($job) use (&$attempts, $operation): void {
         $attempts[] = $job->operationId;
         if ($job->operationId === $operation->id) {
             throw new RuntimeException('synthetic-projection-failed');
@@ -598,7 +599,7 @@ it('retains a failed terminal delivery without reconnecting or blocking another 
     Bus::assertNothingDispatched();
     $socket->push(nativeSubscriberFrame($request, $operation));
     $subscriber->pass();
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
     $subscriber->close();
     $subscriber->pass();
     expect($socket->sent)->toHaveCount(2);
@@ -633,7 +634,7 @@ it('requires a new native notice after a failed delivery and transport reconnect
     $subscriber = new SwampRunSubscriber($socket, new NullLogger, static fn (): float => $clock->now);
     $subscriber->pass();
     $request = $socket->sent[0];
-    Bus::shouldReceive('dispatchSync')->once()->andThrow(new RuntimeException('unavailable'));
+    Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('unavailable'));
     $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
     $subscriber->pass();
     $subscriber->close();
@@ -648,7 +649,7 @@ it('requires a new native notice after a failed delivery and transport reconnect
     $newRequest = $socket->sent[2];
     $socket->push(nativeSubscriberAttached($newRequest), nativeSubscriberFrame($newRequest, $operation));
     $subscriber->pass();
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
 });
 
 it('does not reset reconnect backoff for a handshake followed by immediate disconnect', function (): void {
@@ -686,5 +687,34 @@ it('retains run authority for active bound attachments when the separate read cr
         $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
     };
     (new SwampRunSubscriber($socket, new NullLogger))->pass();
-    Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id);
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id);
+});
+
+it('allows explicit recovery after a queued terminal history read fails', function (): void {
+    Bus::fake([ProjectSwampTerminal::class]);
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
+    $subscriber->pass();
+    $job = Bus::dispatched(ProjectSwampTerminal::class)->first();
+    $history = new FakeRoutePublicationSocket;
+    $history->onConnect = static function (): void {
+        throw new RuntimeException('History unavailable.');
+    };
+    app()->instance(WebSocketClient::class, $history);
+    expect(fn () => $job->handle(app(SwampCommandStep::class)))->toThrow(ResourceOperationException::class);
+
+    $subscriber->close();
+    $subscriber->recover();
+    $subscriber->pass();
+    $retry = array_last($socket->sent);
+    $socket->push(nativeSubscriberAttached($retry), nativeSubscriberFrame($retry, $operation));
+    $subscriber->pass();
+
+    expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
+    Bus::assertDispatched(ProjectSwampTerminal::class, 2);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
 });
