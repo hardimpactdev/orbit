@@ -60,8 +60,8 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
                 throw new ResourceOperationException('operation.execution_forbidden', 'The environment workload moved from its admitted Node.', 403);
             }
             $urlsOnly = $urlsOnly || $route->hasWebRoot();
-            if (! $urlsOnly && $instance->source_is_laravel) {
-                $context = $this->contexts->resolveForBoundRoute($instance, $rollingBack ? $instance->authoritativeRoute() : $route, $rollingBack ? InstanceEnvironmentRouteDomain::Authoritative : InstanceEnvironmentRouteDomain::Candidate);
+            if (! $urlsOnly && app(RouteRenderContext::class)->laravel($instance)) {
+                $context = $this->contexts->resolveForBoundRoute($instance, $rollingBack ? $instance->authoritativeRoute() : $route, $rollingBack ? InstanceEnvironmentRouteDomain::Authoritative : InstanceEnvironmentRouteDomain::Candidate, app(RouteRenderContext::class)->instanceFacts($instance));
                 $values = $this->store->values($instance);
                 if ($values === []) {
                     throw new ResourceOperationException('env.configuration_missing', 'The Instance has no stored environment configuration.', 409);
@@ -72,7 +72,7 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
                     'mode' => 'write', 'file' => '.env', 'managed_keys' => [],
                 ]];
             }
-            if ($instance->selected_php_version === null) {
+            if (app(RouteRenderContext::class)->phpVersion($instance) === null) {
                 continue;
             }
             $routes = RouteWebRoot::applicationUrlCandidates($instance)->reject(static fn (Route $stored): bool => isset($candidates[$stored->id]));
