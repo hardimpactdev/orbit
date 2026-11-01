@@ -6,7 +6,6 @@ use App\Data\Metrics\MetricsCredentialsData;
 use App\Data\Metrics\MetricsStatusData;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsCredentialManager;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -248,7 +247,7 @@ it('marks credentials responses as non-cacheable', function (string $method, str
     $this->markAsGateway($gateway);
     $manager = Mockery::mock(MetricsCredentialManager::class);
     $manager
-        ->shouldReceive($method === 'GET' ? 'credentials' : 'reset')
+        ->shouldReceive('credentials')
         ->once()
         ->andReturn(new MetricsCredentialsData('https://metrics', 'user', 'sentinel'));
     app()->instance(MetricsCredentialManager::class, $manager);
@@ -264,7 +263,6 @@ it('marks credentials responses as non-cacheable', function (string $method, str
         ->assertJsonPath('data.password', 'sentinel');
 })->with([
     'show' => ['GET', '/api/v1/metrics/credentials'],
-    'reset' => ['POST', '/api/v1/metrics/credentials/reset'],
 ]);
 
 it('refuses to disable the exporter on the Metrics node with a stable error code', function (): void {
@@ -307,9 +305,6 @@ it('refuses exporter enablement for an unmanaged node before side effects', func
         'wireguard_ip' => '10.44.0.2',
         'ssh_host_fingerprint' => null,
     ]);
-    $fleet = Mockery::mock(MetricsFleetReconciler::class);
-    $fleet->shouldNotReceive('reconcile');
-    app()->instance(MetricsFleetReconciler::class, $fleet);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])

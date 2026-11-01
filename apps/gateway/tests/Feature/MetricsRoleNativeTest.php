@@ -33,7 +33,7 @@ beforeEach(function (): void {
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = static fn (array $r): array => $r['type'] === 'vault.put'
         ? [['type' => 'vault.put', 'id' => $r['id'], 'payload' => ['data' => ['vaultName' => $r['payload']['vaultName'], 'secretKey' => $r['payload']['key'], 'vaultType' => 'local_encryption']]]]
-        : [['type' => 'event', 'id' => $r['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-metrics-role', 'runId' => '2d2deaf0-e03d-49fb-a6e1-57a038a92676']]];
+        : [['type' => 'event', 'id' => $r['id'], 'event' => ['kind' => 'started', 'workflowName' => $r['payload']['workflowIdOrName'], 'runId' => '2d2deaf0-e03d-49fb-a6e1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $this->socket);
     config(['swamp.run_token' => 'fixture-run', 'swamp.read_token' => 'fixture-read']);
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-fixture-root');
@@ -88,13 +88,13 @@ it('refuses singleton drift unsupported platform and missing SSH before submissi
     expect(Operation::query()->count())->toBe(0);
 })->with(['existing', 'macos', 'ssh', 'inactive']);
 
-it('replays one admitted role operation and refuses overlapping exporter work', function (): void {
+it('replays role admission without a Gateway execution hold', function (): void {
     $this->withHeader('Idempotency-Key', 'metrics-role-fixture')->postJson('/api/v1/metrics', ['node_id' => $this->target->id])->assertAccepted();
     $this->withHeader('Idempotency-Key', 'metrics-role-fixture')->postJson('/api/v1/metrics', ['node_id' => $this->target->id])->assertAccepted();
     expect(Operation::query()->count())->toBe(1);
     expect($this->socket->sent)->toHaveCount(2);
-    $this->withoutHeader('Idempotency-Key')->putJson('/api/v1/metrics/exporters/'.$this->gateway->id)->assertConflict()->assertJsonPath('error.code', 'metrics.operation_active');
-    expect($this->socket->sent)->toHaveCount(2);
+    $this->withoutHeader('Idempotency-Key')->putJson('/api/v1/metrics/exporters/'.$this->gateway->id)->assertAccepted();
+    expect(Operation::query()->count())->toBe(2);
     expect(app(DirectOperation::class)->definition('metrics.enable')['workflow'])->toBe('operation-metrics-role');
 });
 

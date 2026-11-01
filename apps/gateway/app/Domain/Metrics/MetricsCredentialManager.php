@@ -11,11 +11,9 @@ interface MetricsCredentialManager
 {
     public function passwordForConvergence(Node $node): string;
 
-    public function verifyActive(Node $node): void;
-
     public function purge(Node $node): void;
 
-    /** The active credential, verified against Grafana, for an operator to sign in with. */
+    /** The stored active credential. Native reset verifies before promotion. */
     public function credentials(): MetricsCredentialsData;
 
     /**
@@ -24,6 +22,4 @@ interface MetricsCredentialManager
      * separate verification round trip first.
      */
     public function storedCredentials(): MetricsCredentialsData;
-
-    public function reset(): MetricsCredentialsData;
 }

@@ -14,6 +14,7 @@ use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\Node;
 
 /** Records clone intent in the caller's admission transaction. No live database probes. */
 final readonly class PrepareDatabaseCloneAction
@@ -72,18 +73,29 @@ final readonly class PrepareDatabaseCloneAction
             throw new ResourceOperationException('instance.database_clone_unsupported', 'Default database copy supports managed MySQL and SQLite.', 422);
         }
 
+        $input['source_ssh'] = $this->ssh(Node::query()->findOrFail($input['source_node_id']));
+        $input['target_ssh'] = $this->ssh(Node::query()->findOrFail($nodeId));
+
         return $this->records->prepare('database.clone', 'instance', $target->id, $nodeId,
             ['owner_instance_id' => $target->id, 'source_instance_id' => $source->id, 'source_node_id' => $input['source_node_id'],
                 'server_id' => $sourceConnection->database_server_id,
                 'connection_id' => $connection->id, 'source_connection_id' => $sourceConnection->id,
                 'driver' => $sourceConnection->driver->value, 'variant' => $input['variant'],
                 'participant_node_ids' => array_values(array_unique([$nodeId, $input['source_node_id']])),
-                'private_bindings' => $sourceConnection->driver === DatabaseDriver::Mysql
-                    ? ['password' => ['owner_node_id' => $nodeId, 'read_node_ids' => [$nodeId], 'write_node_ids' => []],
-                        'payload' => ['owner_node_id' => $nodeId, 'read_node_ids' => [$nodeId], 'write_node_ids' => []]]
-                    : []],
-            ['database-apply' => ['name' => 'database.clone', 'input' => $input,
-                'protected' => $sourceConnection->driver === DatabaseDriver::Mysql ? ['password', 'payload'] : []]],
+            ],
+            ['database-apply' => ['name' => 'database.clone', 'input' => $input]],
             ['created_connection' => $connection->id, 'attach_instance' => $target->id, 'clone' => true]);
+    }
+
+    /** @return array{host:string,user:string,host_keys:list<string>} */
+    private function ssh(Node $node): array
+    {
+        if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
+            throw new ResourceOperationException('database.clone_intent_invalid', 'The admitted clone Node has no address.', 422);
+        }
+
+        return ['host' => $node->wireguard_ip, 'user' => $node->user,
+            'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
     }
 }

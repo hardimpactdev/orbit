@@ -1,27 +1,107 @@
 id: 51c70b61-c42d-4f16-89ae-12653d54627e
 name: operation-observation-maintain
-description: Select Gateway housekeeping state and snapshot Horizon natively.
+description: Read host metrics through official SSH on209 and report housekeeping eligibility without mutation.
 vaults: []
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [observation.maintain] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - observation.maintain
+    intent:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  additionalProperties: false
 jobs:
-  - name: maintenance
-    steps:
-      - name: apply
-        writes: true
-        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-        labels: { node: "${{ string(inputs.node_id) }}" }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/observation-maintenance"
-          behaviorName: '${{ "observation-maintenance-" + string(inputs.node_id) }}'
-          methodName: apply
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: reads
+  target: orbit-node-209
+  steps:
+  - name: host_metrics
+    writes: false
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "observation-host-" + run.id + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "observation-host-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.host.user }}
+          port: ${{ self.host.port }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: target
+          address: ${{ self.host.host }}
+          transport:
+            hostKeys: ${{ self.host.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - cat
+        - /proc/uptime
+        - /proc/loadavg
+    forEach:
+      item: host
+      in: '${{ inputs.intent.routine == "maintenance" ? [inputs.intent.ssh] : [] }}'
+  - name: horizon_metrics
+    writes: false
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "observation-horizon-" + run.id + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "observation-horizon-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.host.user }}
+          port: ${{ self.host.port }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: target
+          address: ${{ self.host.host }}
+          transport:
+            hostKeys: ${{ self.host.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - systemctl
+        - show
+        - --property=MemoryCurrent,CPUUsageNSec,TasksCurrent
+        - --
+        - ${{ inputs.intent.horizon_unit }}
+    forEach:
+      item: host
+      in: '${{ inputs.intent.routine == "maintenance" && inputs.intent.horizon_unit != null ? [inputs.intent.ssh]
+        : [] }}'
+- name: report
+  target: orbit-node-209
+  dependsOn:
+  - job: reads
+    condition:
+      type: always
+  steps:
+  - name: result
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/observation-maintenance'
+      behaviorName: ${{ "observation-result-" + run.id }}
+      methodName: result
+      inputs:
+        intent: ${{ inputs.intent }}
+        results: ${{ steps }}

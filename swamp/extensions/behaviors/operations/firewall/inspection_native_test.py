@@ -1,9 +1,10 @@
 """The real native inspection root records a complete public snapshot or a bounded refusal."""
 import json
-from pathlib import Path
 import shutil
 import sys
 import unittest
+from pathlib import Path
+
 import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -19,7 +20,7 @@ class FirewallInspectionNative(NativeTestCase):
         for folder, names in {
             'operations/firewall': ['inspection.ts', 'inspection_native_fixture.ts'],
             'operations/routes': ['firewall-program.ts'],
-            'operations/tools': ['system_program.ts', 'homebrew_program.ts'],
+            'operations/tools': ['system_program.ts'],
             'observation': ['doctor_native_runtime.ts', 'doctor_contract.ts'],
         }.items():
             destination = modules / folder

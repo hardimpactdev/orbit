@@ -18,17 +18,16 @@ final readonly class NativeRouteAdmission
      */
     public function capture(string $kind, Route $route, array $input, int $rootNodeId): array
     {
-        if ($kind === 'route.update') {
-            $capture = app(NativeRouteUpdateInput::class)->capture($route, $input);
+        if (in_array($kind, ['route.update', 'route.target_set'], true)) {
+            $capture = ($kind === 'route.update' ? app(NativeRouteUpdateInput::class) : app(NativeRouteTargetInput::class))->capture($route, $input);
 
-            return [...$input, 'route_update' => $capture['intent'], 'certificates' => $capture['certificates'],
+            return [...$input, ($kind === 'route.update' ? 'route_update' : 'route_target') => $capture['intent'], 'certificates' => $capture['certificates'],
                 'participant_node_ids' => array_values(array_unique([$rootNodeId, ...ValidatedData::integerList($capture['participant_node_ids'])])),
                 'execution_secrets' => $capture['execution_secrets']];
         }
         $intent = match ($kind) {
             'route.create', 'route.converge' => ['route_convergence' => app(NativeRouteConvergenceIntent::class)->forRoute($route, $input)],
             'route.destroy', 'route.withdraw' => ['route_removal' => app(NativeRouteRemovalIntent::class)->forRoute($route, $input)],
-            'route.target_set' => ['route_target' => app(NativeRouteTargetIntent::class)->forRoute($route, $input)],
             default => [],
         };
         $resource = ValidatedData::object(reset($intent) ?: []);

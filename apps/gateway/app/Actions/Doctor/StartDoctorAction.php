@@ -50,6 +50,17 @@ final readonly class StartDoctorAction
      */
     public function admit(array $nodes, array $families, bool $collect, ?string $requestId = null): Operation
     {
+        [$rootId, $input] = $this->capture($nodes, $families, $collect);
+
+        return DB::transaction(fn (): Operation => $this->start->execute('doctor.inspect', 'node', $rootId, $rootId, $input, 'doctor', $requestId));
+    }
+
+    /** @param list<Node> $nodes
+     * @param  list<DoctorFamily>  $families
+     * @return array{int,array<string,mixed>}
+     */
+    public function capture(array $nodes, array $families, bool $collect): array
+    {
         $rootId = ! $collect && $nodes !== [] ? $nodes[0]->id : $this->access->activeGatewayId();
         if ($rootId === null) {
             throw new ResourceOperationException('doctor.gateway_missing', 'Doctor needs the registered Gateway Node.', 503);
@@ -79,6 +90,6 @@ final readonly class StartDoctorAction
                 'cursor' => $state?->log_path === null ? null : ['path' => $state->log_path, 'inode' => $state->log_inode, 'offset' => $state->log_offset]];
         }
 
-        return DB::transaction(fn (): Operation => $this->start->execute('doctor.inspect', 'node', $rootId, $rootId, $input, 'doctor', $requestId));
+        return [$rootId, $input];
     }
 }

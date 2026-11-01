@@ -77,7 +77,9 @@ return ['database.update' => [
 ], 'database.clone' => [
     'workflow' => 'operation-database-clone',
     'projection' => DatabaseCloneProjection::class,
-    'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-clone-intent-[1-9][0-9]*$']],
 ], 'database.destroy' => [
     'workflow' => 'operation-database-destroy',
     'projection' => DatabaseDestroyProjection::class,

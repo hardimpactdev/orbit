@@ -1,22 +1,37 @@
 id: fb550568-ab07-4eb4-b5f4-db92e5780dc0
 name: observation-collection
-description: Run the bounded Orbit observation collection pass.
-autoResume: true
-concurrency: 1
+description: One bounded read-only fleet observation per native scheduled tick.
 trigger:
-  schedule: "15 */10 * * * *"
-reports:
-  skip: ["@swamp/workflow-summary"]
+  schedule: '15 */10 * * * *'
 jobs:
-  - name: observation
-    steps:
-      - name: collect
-        target: orbit-node-209
-        labels: { node: "209" }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/observation"
-          behaviorName: observation-collection
-          methodName: collect
-          inputs:
-            runId: "${{ run.id }}"
+- name: observe
+  target: orbit-node-209
+  steps:
+  - name: context
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/observation-schedule'
+      behaviorName: ${{ "observation-select-" + run.id }}
+      methodName: select
+      inputs:
+        candidates: ${{ data.query('modelType == "@nckrtl/observation-schedule" && specName == "context" && attributes.channel == "fleet"').map(c, c.attributes) }}
+  - name: reading
+    dependsOn:
+    - {step: context, condition: {type: succeeded}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-doctor-inspect
+      inputs:
+        node_id: ${{ steps.context.outputs.node_id }}
+        intent: ${{ steps.context.outputs.intent }}
+  - name: result
+    dependsOn:
+    - {step: reading, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/observation-schedule'
+      behaviorName: ${{ "observation-result-" + run.id }}
+      methodName: result
+      inputs:
+        context: ${{ steps.context.outputs }}
+        reading: ${{ steps.reading.outputs.result }}

@@ -2,24 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
-use App\Domain\Metrics\MetricsFleetReconcileException;
-use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\AgentMetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterCommands;
-use App\Infrastructure\Metrics\MetricsExporterRuntime;
-use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Models\Node;
-use App\Models\NodeRole;
 
 it('returns stable targets from explicit defaults and prospective roles', function (): void {
     $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.3');
@@ -59,7 +52,6 @@ it('returns stable targets from explicit defaults and prospective roles', functi
             commands: app(MetricsExporterCommands::class),
         ),
         projection: new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
-        degradations: app(ExporterDegradationRepository::class),
     );
 
     expect($lifecycle->targets($metrics))->toBe([
@@ -94,7 +86,6 @@ it('does not project a selected node without managed identity', function (): voi
             new ExporterSelector,
             app(ExporterPreferenceRepository::class),
         ),
-        degradations: app(ExporterDegradationRepository::class),
     );
 
     expect($lifecycle->targets($metrics))->toBe([
@@ -122,7 +113,6 @@ it('fails closed with a bounded error for an eligible exporter with an invalid a
             new ExporterSelector,
             app(ExporterPreferenceRepository::class),
         ),
-        degradations: app(ExporterDegradationRepository::class),
     );
 
     try {
@@ -138,319 +128,6 @@ it('fails closed with a bounded error for an eligible exporter with an invalid a
     }
 });
 
-it('never inspects or mutates an ineligible exporter while eligible nodes converge', function (): void {
-    $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.1');
-    $assignment = $metrics->roles()->create([
-        'role' => RoleName::Metrics,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $eligible = metricsExporterLifecycleNode('eligible', '10.44.0.2');
-    $eligible->roles()->create([
-        'role' => RoleName::AppDev,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $ineligible = metricsExporterLifecycleNode('ineligible', '10.44.0.3');
-    $ineligible->update(['ssh_host_fingerprint' => null]);
-    app(ExporterPreferenceRepository::class)->put($ineligible->id, ExporterPreference::Enabled);
-    $runtime = new MetricsExporterFleetRuntimeFake('never');
-
-    new NativeMetricsExporterLifecycle(
-        executor: $runtime,
-        projection: app(NativeMetricsExporterProjection::class),
-        degradations: app(ExporterDegradationRepository::class),
-    )->converge($metrics, $assignment);
-
-    expect($runtime->events)->toBe([
-        'snapshot:metrics',
-        'snapshot:eligible',
-        'converge:metrics',
-        'converge:eligible',
-    ]);
-});
-
-it('restores every earlier exporter mutation when a later fleet node fails', function (): void {
-    $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.3');
-    $assignment = $metrics
-        ->roles()
-        ->create([
-            'role' => RoleName::Metrics,
-            'status' => LifecycleStatus::Active,
-        ]);
-    $early = metricsExporterLifecycleNode('early', '10.44.0.4');
-    $early
-        ->roles()
-        ->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-    $later = metricsExporterLifecycleNode('later', '10.44.0.5');
-    $later
-        ->roles()
-        ->create([
-            'role' => RoleName::AppProd,
-            'status' => LifecycleStatus::Active,
-        ]);
-    $runtime = new MetricsExporterFleetRuntimeFake('later');
-    $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: $runtime,
-        projection: new NativeMetricsExporterProjection(
-            new ExporterSelector,
-            app(ExporterPreferenceRepository::class),
-        ),
-        degradations: app(ExporterDegradationRepository::class),
-    );
-
-    expect(fn () => $lifecycle->converge($metrics, $assignment))
-        ->toThrow(function (MetricsFleetReconcileException $exception) use ($later): void {
-            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
-            expect($exception->nodeId)->toBe($later->id);
-            expect($exception->errorCode)->toBe('metrics.exporter_failed');
-        });
-    expect($runtime->events)->toBe([
-        'snapshot:metrics',
-        'snapshot:early',
-        'snapshot:later',
-        'converge:metrics',
-        'converge:early',
-        'converge:later',
-        'restore:later',
-        'restore:early',
-        'restore:metrics',
-    ]);
-});
-
-it('reports exporter rollback failures with the node whose state could not be restored', function (): void {
-    $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.3');
-    $assignment = $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
-    $candidate = metricsExporterLifecycleNode('candidate', '10.44.0.4');
-    $candidate->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $runtime = new class($candidate->name) implements MetricsExporterRuntime
-    {
-        public function __construct(private readonly string $candidate) {}
-
-        public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
-        {
-            return new MetricsExporterState(null, false, null);
-        }
-
-        public function converge(Node $node, Node $metricsNode): void
-        {
-            if ($node->name === $this->candidate) {
-                throw new ResourceOperationException('metrics.exporter_convergence_failed', 'converge failed', 502);
-            }
-        }
-
-        public function remove(Node $node, Node $metricsNode): void {}
-
-        public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
-        {
-            if ($node->name === $this->candidate) {
-                throw new ResourceOperationException('metrics.exporter_restore_failed', 'restore failed', 502);
-            }
-        }
-
-        public function actual(Node $node, Node $metricsNode): string
-        {
-            return 'inactive';
-        }
-    };
-
-    $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: $runtime,
-        projection: new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        degradations: app(ExporterDegradationRepository::class),
-    );
-
-    expect(fn () => $lifecycle->converge($metrics, $assignment))
-        ->toThrow(function (MetricsFleetReconcileException $exception) use ($candidate): void {
-            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
-            expect($exception->nodeId)->toBe($candidate->id);
-            expect($exception->errorCode)->toBe('metrics.exporter_fleet_rollback_failed');
-        });
-});
-
-it('skips a fleet node it cannot inspect and records why', function (): void {
-    [$metrics, $assignment, $reachable, $dead] = metricsExporterDegradationFleet();
-    $degradations = app(ExporterDegradationRepository::class);
-    $runtime = new MetricsExporterDegradingRuntimeFake([
-        'dead' => new ResourceOperationException(
-            'metrics.exporter_configuration_inspection_failed',
-            'The Metrics exporter configuration could not be inspected.',
-            502,
-        ),
-    ]);
-
-    new NativeMetricsExporterLifecycle(
-        executor: $runtime,
-        projection: new NativeMetricsExporterProjection(
-            new ExporterSelector,
-            app(ExporterPreferenceRepository::class),
-        ),
-        degradations: $degradations,
-    )->converge($metrics, $assignment);
-
-    expect($runtime->events)
-        ->toBe([
-            'snapshot:metrics',
-            'snapshot:reachable',
-            'snapshot-failed:dead',
-            'converge:metrics',
-            'converge:reachable',
-        ])
-        ->and($degradations->get($dead->id))
-        ->toBe(ExporterDegradationReason::Unreachable)
-        ->and($degradations->get($reachable->id))
-        ->toBeNull();
-});
-
-it('degrades a fleet node whose firewall is inactive', function (): void {
-    [$metrics, $assignment, , $dead] = metricsExporterDegradationFleet();
-    $degradations = app(ExporterDegradationRepository::class);
-
-    new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterDegradingRuntimeFake([
-            'dead' => new ResourceOperationException(
-                'metrics.exporter_firewall_inactive',
-                'UFW must be active for Metrics exporter convergence.',
-                409,
-            ),
-        ]),
-        projection: new NativeMetricsExporterProjection(
-            new ExporterSelector,
-            app(ExporterPreferenceRepository::class),
-        ),
-        degradations: $degradations,
-    )->converge($metrics, $assignment);
-
-    expect($degradations->get($dead->id))->toBe(ExporterDegradationReason::FirewallInactive);
-});
-
-it('fails closed when the Metrics node itself cannot be inspected', function (): void {
-    [$metrics, $assignment] = metricsExporterDegradationFleet();
-    $degradations = app(ExporterDegradationRepository::class);
-    $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterDegradingRuntimeFake([
-            'metrics' => new ResourceOperationException(
-                'metrics.exporter_configuration_inspection_failed',
-                'The Metrics exporter configuration could not be inspected.',
-                502,
-            ),
-        ]),
-        projection: new NativeMetricsExporterProjection(
-            new ExporterSelector,
-            app(ExporterPreferenceRepository::class),
-        ),
-        degradations: $degradations,
-    );
-
-    expect(fn () => $lifecycle->converge($metrics, $assignment))
-        ->toThrow(function (MetricsFleetReconcileException $exception) use ($metrics): void {
-            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
-            expect($exception->nodeId)->toBe($metrics->id);
-            expect($exception->errorCode)->toBe('metrics.exporter_configuration_inspection_failed');
-        });
-    expect($degradations->get($metrics->id))->toBeNull();
-});
-
-it('keeps failing closed when a fleet node cannot prove exporter ownership', function (): void {
-    [$metrics, $assignment, , $dead] = metricsExporterDegradationFleet();
-    $degradations = app(ExporterDegradationRepository::class);
-    $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterDegradingRuntimeFake([
-            'dead' => new ResourceOperationException(
-                'metrics.exporter_configuration_ownership_drift',
-                'Metrics exporter configuration ownership cannot be proved.',
-                409,
-            ),
-        ]),
-        projection: new NativeMetricsExporterProjection(
-            new ExporterSelector,
-            app(ExporterPreferenceRepository::class),
-        ),
-        degradations: $degradations,
-    );
-
-    expect(fn () => $lifecycle->converge($metrics, $assignment))
-        ->toThrow(function (MetricsFleetReconcileException $exception) use ($dead): void {
-            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
-            expect($exception->nodeId)->toBe($dead->id);
-            expect($exception->errorCode)->toBe('metrics.exporter_configuration_ownership_drift');
-        });
-    expect($degradations->get($dead->id))->toBeNull();
-});
-
-it('retries an explicitly enabled skipped exporter on the next reconcile', function (): void {
-    [$metrics, $assignment, , $dead] = metricsExporterDegradationFleet();
-    $degradations = app(ExporterDegradationRepository::class);
-    $degradations->put($dead->id, ExporterDegradationReason::Unreachable);
-    $dead->roles()->delete();
-    app(ExporterPreferenceRepository::class)->put($dead->id, ExporterPreference::Enabled);
-    $runtime = new MetricsExporterDegradingRuntimeFake;
-
-    new NativeMetricsExporterLifecycle(
-        executor: $runtime,
-        projection: new NativeMetricsExporterProjection(
-            new ExporterSelector,
-            app(ExporterPreferenceRepository::class),
-        ),
-        degradations: $degradations,
-    )->converge($metrics, $assignment);
-
-    expect($degradations->get($dead->id))->toBeNull()
-        ->and($runtime->events)->toContain('snapshot:dead', 'converge:dead');
-});
-
-it('forgets a retired node degradation even when its exporter cannot be removed', function (): void {
-    [$metrics, , , $dead] = metricsExporterDegradationFleet();
-    $degradations = app(ExporterDegradationRepository::class);
-    $degradations->put($dead->id, ExporterDegradationReason::Unreachable);
-    $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterDegradingRuntimeFake(removeFailures: ['dead']),
-        projection: new NativeMetricsExporterProjection(
-            new ExporterSelector,
-            app(ExporterPreferenceRepository::class),
-        ),
-        degradations: $degradations,
-    );
-
-    expect(fn () => $lifecycle->removeNode($dead, $metrics))
-        ->toThrow(ResourceOperationException::class, 'The dead exporter failed.');
-    expect($degradations->get($dead->id))->toBeNull();
-});
-
-/**
- * A three node fleet: the Metrics node, one healthy peer, and one peer the
- * degradation fakes can fail.
- *
- * @return array{0: Node, 1: NodeRole, 2: Node, 3: Node}
- */
-function metricsExporterDegradationFleet(): array
-{
-    $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.1');
-    $assignment = $metrics
-        ->roles()
-        ->create([
-            'role' => RoleName::Metrics,
-            'status' => LifecycleStatus::Active,
-        ]);
-    $reachable = metricsExporterLifecycleNode('reachable', '10.44.0.2');
-    $reachable
-        ->roles()
-        ->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-    $dead = metricsExporterLifecycleNode('dead', '10.44.0.3');
-    $dead
-        ->roles()
-        ->create([
-            'role' => RoleName::AppProd,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-    return [$metrics, $assignment, $reachable, $dead];
-}
-
 function metricsExporterLifecycleNode(string $name, string $address): Node
 {
     return Node::query()->create([
@@ -462,103 +139,4 @@ function metricsExporterLifecycleNode(string $name, string $address): Node
         'wireguard_ip' => $address,
         'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
-}
-
-final class MetricsExporterFleetRuntimeFake implements MetricsExporterRuntime
-{
-    /** @var list<string> */
-    public array $events = [];
-
-    public function __construct(
-        private readonly string $failingNode,
-    ) {}
-
-    public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
-    {
-        $this->events[] = "snapshot:{$node->name}";
-
-        return new MetricsExporterState(null, false, null);
-    }
-
-    public function converge(Node $node, Node $metricsNode): void
-    {
-        $this->events[] = "converge:{$node->name}";
-
-        if ($node->name === $this->failingNode) {
-            throw new ResourceOperationException('metrics.exporter_failed', 'The later exporter failed.', 502);
-        }
-    }
-
-    public function remove(Node $node, Node $metricsNode): void
-    {
-        $this->events[] = "remove:{$node->name}";
-    }
-
-    public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
-    {
-        $this->events[] = "restore:{$node->name}";
-    }
-
-    public function actual(Node $node, Node $metricsNode): string
-    {
-        return 'inactive';
-    }
-}
-
-final class MetricsExporterDegradingRuntimeFake implements MetricsExporterRuntime
-{
-    /** @var list<string> */
-    public array $events = [];
-
-    /**
-     * @param  array<string, ResourceOperationException>  $snapshotFailures  keyed by node name
-     * @param  list<string>  $removeFailures  node names whose removal fails
-     */
-    public function __construct(
-        private readonly array $snapshotFailures = [],
-        private readonly array $removeFailures = [],
-    ) {}
-
-    public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
-    {
-        $failure = $this->snapshotFailures[$node->name] ?? null;
-
-        if ($failure instanceof ResourceOperationException) {
-            $this->events[] = "snapshot-failed:{$node->name}";
-
-            throw $failure;
-        }
-
-        $this->events[] = "snapshot:{$node->name}";
-
-        return new MetricsExporterState(null, false, null);
-    }
-
-    public function converge(Node $node, Node $metricsNode): void
-    {
-        $this->events[] = "converge:{$node->name}";
-    }
-
-    public function remove(Node $node, Node $metricsNode): void
-    {
-        $this->events[] = "remove:{$node->name}";
-
-        if (in_array($node->name, $this->removeFailures, strict: true)) {
-            throw new ResourceOperationException(
-                'metrics.exporter_remove_failed',
-                "The {$node->name} exporter failed.",
-                502,
-            );
-        }
-    }
-
-    public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
-    {
-        $this->events[] = "restore:{$node->name}";
-    }
-
-    public function actual(Node $node, Node $metricsNode): string
-    {
-        return 'inactive';
-    }
 }

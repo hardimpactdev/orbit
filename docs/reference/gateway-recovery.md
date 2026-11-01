@@ -32,7 +32,7 @@ Gateway release unit convergence also installs a journald drop-in and a logrotat
 
 `config/retention.php` sets these limits. `ORBIT_JOURNAL_MAX_MB` defaults to 256 MiB, `ORBIT_JOURNAL_KEEP_FREE_MB` to 1024 MiB, `ORBIT_JOURNAL_DAYS` to seven days, and `ORBIT_JOURNAL_RUNTIME_MAX_MB` to 64 MiB. Journald reads the drop-in at its next start; convergence does not restart it or vacuum existing journals. `ORBIT_LOG_ROTATE_MB` and `ORBIT_LOG_ROTATE_KEEP` set the plain log's threshold and archive count. These are rotation limits, not a hard disk quota: an active journal and log output between hourly checks can exceed them.
 
-Swamp requests failed-job pruning daily through the Services-only observation API. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours. The existing daily batch prune uses `ORBIT_JOB_BATCH_HOURS`, which defaults to 24 hours. Neither prune vacuums SQLite or changes application data.
+Explicit observation retention reports eligible failed jobs and batches without deleting records. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours; `ORBIT_JOB_BATCH_HOURS` defaults to 24 hours. The former daily observation pruning path is removed. Storage reclamation requires a separate explicit maintenance action.
 
 Local recovery archives need an operator retirement step. Copy a complete state set off the Gateway, verify it there, and remove superseded local copies after the maintenance operation succeeds. Do not accumulate whole-state archives inside `ORBIT_HOME`: the next archive would include them again. Normal release retention owns only `backups/pre-*.sqlite`; it does not own manually named backups, `shared/env-backups`, experiment checkouts, or protected staged recovery copies. The staged copy remains protected until an operator explicitly retires it, as [finalization](#finalization) describes.
 
@@ -533,7 +533,7 @@ The drain needs the Gateway's PHP 8.5 runtime to have the `pcntl` extension, so 
 
 Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so scheduled work pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler dispatches most work, so a running tick finishes in Laravel Horizon.
 
-Fleet problem collection runs as short jobs in Horizon and does not hold the scheduler drain. Each collection job has a 12-second probe deadline and a 13-second worker timeout, so collection cannot hold Horizon termination for a full fleet scan. Only the narrow Horizon Process observation and problem filing [stay in the scheduler](/reference/gateway-queue#scheduled-work).
+Explicit fleet and Horizon health collection run in the native Doctor workflow on Node 209, independently of Horizon workers and the scheduler drain. Problem filing retains its separate [scheduler entry](/reference/gateway-queue#scheduled-work).
 
 The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600, maximum 3600). After that limit, the handoff stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
 

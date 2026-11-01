@@ -74,6 +74,20 @@ final readonly class StartSwampRun
         }
     }
 
+    /** One unconfirmed public metadata notification; this workflow has no host steps.
+     * @param  array<string,mixed>  $context
+     */
+    public function publishObservation(array $context): void
+    {
+        try {
+            $this->socket->connect($this->endpoint(), 2);
+            $this->socket->send(['type' => 'workflow.run', 'id' => bin2hex(random_bytes(16)),
+                'payload' => ['workflowIdOrName' => 'observation-context', 'inputs' => $context]]);
+        } finally {
+            $this->socket->close();
+        }
+    }
+
     /** The lifecycle transition also prevents a second caller from submitting this intent. */
     private function begin(Operation $operation): bool
     {

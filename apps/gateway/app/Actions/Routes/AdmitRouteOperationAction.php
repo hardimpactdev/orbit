@@ -123,21 +123,14 @@ final readonly class AdmitRouteOperationAction
             if ($this->targets->isCompletedNoop($route, $proposal)) {
                 return $this->start('route.target_set', $route, [...$input, 'mode' => 'state_only'], $caller, $requestId);
             }
-            $recovery = null;
             if ($this->targets->committed($route)) {
-                $this->targets->assertCommitted($route, $proposal);
-                $recovery = $this->targets->recovery($route);
-            } else {
-                $this->targetGuard->assertProposal($route, $proposal);
+                throw new ResourceOperationException('route.target_set_recovery_required', 'The committed target transition must finish through its owning Operation.', 409);
             }
+            $this->targetGuard->assertProposal($route, $proposal);
             WebSocketRouteSelection::assertMutable($route);
             $this->targets->reserve($route, $proposal);
 
-            return $this->start('route.target_set', $route, [...$input, 'mode' => $recovery === null ? 'targets' : 'targets_recover',
-                ...($recovery === null ? [] : ['recovery_operation_id' => $recovery->id,
-                    'previous_target_instance_ids' => $recovery->input['previous_target_instance_ids'],
-                    'instance_placements' => RouteExecutionProof::objects($recovery->input['instance_placements'] ?? []),
-                    'detached_instances' => RouteExecutionProof::objects($recovery->input['detached_instances'] ?? [])])], $caller, $requestId);
+            return $this->start('route.target_set', $route, [...$input, 'mode' => 'targets'], $caller, $requestId);
         });
     }
 

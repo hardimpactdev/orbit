@@ -118,8 +118,13 @@ final readonly class SwampCommandStep
         } catch (Throwable) {
             throw $this->unavailable();
         }
+        if (isset($declaration['projection'])) {
+            app($declaration['projection'])->applyScheduled($workflowId, $run, $run['status'] === 'succeeded' ? $this->terminalOutput($run, $declaration['terminal_result']) : []);
+
+            return true;
+        }
         $result = $this->terminalOutput($run, $declaration['terminal_result']);
-        $rows = $result[$declaration['rows']] ?? null;
+        $rows = $result[$declaration['rows'] ?? ''] ?? null;
         if (count($result) !== 1 || ! is_array($rows) || ! array_is_list($rows) || count($rows) > OperationResultFields::MaximumItems) {
             throw $this->unavailable();
         }

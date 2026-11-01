@@ -28,9 +28,9 @@ Install, update, remove, and adopt return HTTP 202 with an [Operation](/referenc
 
 Adoption and removal run on control Node 209 through official `@swamp/ssh`, using the admitted managed account and full stored host keys. Each query, removal plan, package mutation and absence check is a separate native step. Adoption reads one selected package. Removal preserves protected packages, Composer roots and safe official-cask uninstall policy. An admitted intent-only removal deletes the Tool record without SSH. Package output and credentials stay out of public results. The Gateway projects bounded version, outcome and error fields after native completion.
 
-Install, update and manager convergence retain their existing Swamp workflows. Tool writes do not invoke agent actions. Scan keeps its read-only agent boundary.
+Install, update and manager convergence use the same native query layer and Node/manager admission hold. Linux first use composes the admitted manager installer before package queries; macOS verifies the existing scope. Candidate selection and constraints remain separate from the package mutation. Tool writes do not invoke agent actions. Scan keeps its read-only agent boundary.
 
-Node and Instance workflows compose manager prerequisites as native steps in their own root DAG. They do not create `tool.manager_converge` child Operations. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
+Node and Instance callers still use the shared manager-only prerequisite lower. It remains until those parents replace their materialization calls. It cannot install, update, adopt or remove a Tool and creates no `tool.manager_converge` child Operation. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
 
@@ -56,17 +56,17 @@ On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` scan and Lin
 
 A task VM's base image runs the Linux `vp` and `composer` materialization programs at build time. Its enrollment trusts the image and does not run those programs. Explicit Tool installs and updates do not use this enrollment skip and still run their manager commands. It still reads the manager version as usual. Every other Node runs the programs at enrollment. See [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds).
 
-Linux Homebrew scope checks and first-use setup use `tool.inspect-homebrew-scope` and `tool.materialize-homebrew`. Swamp checks the parent, repository, official origin, clean worktree, and executable link before changes. Setup uses fixed package prerequisites and the pinned Homebrew revision and version tag. It preserves a conflicting prefix and leaves an owned failed setup available for retry.
+Linux Homebrew first use runs a separate native installer after its OS prerequisites. It stages the pinned official revision and verifies its version before publishing the account-owned prefix. Failure removes the staging directory. Existing conflicting prefixes are refused. Scan keeps its read-only scope inspection.
 
 On macOS, `tool.inspect-homebrew-scope` reads the enrolled account from the native account database and returns its home and one verified prefix. It checks `/opt/homebrew`, `/usr/local`, `$HOME/homebrew`, and `$HOME/.homebrew`. A conflicting candidate or more than one valid candidate refuses the whole inspection. The command runs as the enrolled account and changes no files or Homebrew revision. Formula and cask operations use this same scope result.
 
 `tool.homebrew-version` and `tool.homebrew-formula-inventory` return typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
 
-`tool.homebrew-formula-adoption` reads the installed version and metadata together. It returns the observed version and any adoption block. It changes no package or Tool intent. Swamp checks that result. The Gateway records only the selected package after authenticated completion.
+Native adoption reads the installed version and metadata together. Its typed check returns the observed version and any adoption block. The Gateway records only the selected package after native completion.
 
-The `tool.homebrew-cask-*` commands own cask metadata, installed versions, discovery, adoption checks, and package changes on macOS. The agent resolves the Node's variation and checks artifact destinations against the enrolled account's native home and verified Homebrew prefix. Cask mutations share the formula mutation lock. Removal checks uninstall safety without applying install-time version, checksum, or disabled gates. A delisted official cask can be removed by its plain token only after its installed metadata passes those checks.
+Read-only scan uses the existing cask inspector. Native cask writes use official SSH queries and separate typed policy checks and mutations. They resolve the Node's variation and check artifact destinations against the enrolled account's home and verified Homebrew prefix. Homebrew retains its package locks. Removal checks uninstall safety without applying install-time version, checksum, or disabled gates. A delisted official cask can be removed by its plain token only after its installed metadata passes those checks.
 
-Composer package operations use typed `tool.composer-*` commands. The agent runs the fixed shared-scope arguments, validates Composer output, and resolves an explicit dry-run no-op from one installed inventory. The Gateway keeps version constraints and adoption policy.
+Native Composer package operations use fixed shared-scope arguments through official SSH. The candidate query parses the normal dry-run and resolves an explicit no-op from installed inventory. A typed check applies the admitted version constraint and root ownership before mutation.
 
 The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
@@ -80,7 +80,7 @@ On macOS, `vp` is the enrolled account's existing Vite+ global store. The scope 
 
 The read-only `tool.inspect-vp-scope` agent command resolves the enrolled account's Vite+ binary with native account and filesystem APIs. It returns the selected path or a typed absent, conflicting, or unreadable result. Scope discovery runs no shell, installs nothing, and changes no launchers.
 
-Vite+ global package operations use the `tool.vp-version`, `tool.vp-candidate`, `tool.vp-inventory`, `tool.vp-removal-plan`, `tool.vp-install`, `tool.vp-update`, and `tool.vp-remove` agent commands. Each command resolves the account's scope and runs fixed Vite+ arguments from that account's home directory in one call. Rust validates manager output, limits each output stream to 1 MiB, and stops child processes at the command deadline. The Gateway keeps package constraints, adoption policy, and registered Tool records. Mutations run as the enrolled account and never return raw manager output.
+Vite+ package writes use shipped query and mutation scripts through official SSH. They resolve the account scope and run fixed Vite+ arguments from its home directory. Typed native checks apply package constraints and ownership. The Gateway stores Tool records. Mutations run as the enrolled account and never return raw manager output.
 
 A missing scope is scan state `absent`. A scope with the wrong owner, a non-official Homebrew origin, or a dirty Linux Homebrew tree is scan state `conflicting`. On macOS, two Vite+ stores with `bin/vp`, or one store with the wrong owner or shape, is `conflicting`. On Linux, the chosen Vite+ store is `conflicting` when it is a symlink, not a directory, owned by someone else, or its present `bin/vp` is not executable or is owned by someone else. A second Linux store is not a conflict. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
 
@@ -105,26 +105,26 @@ Update and removal use the same `tool.manager_unavailable` code when the macOS s
 
 Native APT removal first reads `apt-get --simulate remove -- <package>`. It refuses a plan containing another package. The mutation uses `dpkg --remove -- <package>` so dependency changes after the plan cannot select additional removals. A separate query must prove absence before success. The command uses dpkg’s own dependency checks and lock, with no custom lock wait, purge or autoremove. A failed removal keeps the Tool and its recorded version for an explicit retry. Native resume can restart at the before-query phase to reconcile an uncertain reply.
 
-The retained install and update steps use fixed package-manager commands. The Gateway keeps package constraints, protected-package policy and Tool records.
+Native install and update use fixed package-manager commands and their default locks. The Gateway keeps protected-package policy and Tool records; native checks apply the admitted version constraint.
 
-The retained apt install commands in the table pass `-o DPkg::Lock::Timeout=300`. On Ubuntu 26.04, apt 3.2.0 applies that timeout only while it takes the dpkg frontend lock and the dpkg admin lock. Those locks are `/var/lib/dpkg/lock-frontend` and `/var/lib/dpkg/lock`. `apt-get install` takes them, so it waits up to 300 seconds. The `apt` manager's update is `apt-get install`, so it waits too. A daily upgrade, such as `apt-daily-upgrade`, can hold one of those locks. Retained installs wait for that upgrade to release the lock instead of failing at once.
+Tool install and update pass `--no-remove` to `apt-get install` and use apt's default lock behavior. They do not set a custom lock timeout. A busy dpkg lock fails the native action; native resume owns the next attempt.
 
-Caddy and PHP package installation pass this same option. Caddy uses the shared [package step](/reference/node-provisioning#package-sources) for role prerequisites and publication. Prerequisite `apt-get update` passes it and does not use it. Update takes the lists lock, `/var/lib/apt/lists/lock`, and fails at once when that lock is busy.
+The retained shared manager prerequisite, Caddy and PHP package installation still pass `-o DPkg::Lock::Timeout=300`. Caddy uses the shared [package step](/reference/node-provisioning#package-sources) for role prerequisites and publication. Prerequisite `apt-get update` passes it and does not use it. Update takes the lists lock, `/var/lib/apt/lists/lock`, and fails at once when that lock is busy.
 
 | Caller | Command | Lock wait |
 | --- | --- | --- |
 | `brew` prerequisites | `apt-get update` | None. The lists lock fails at once. |
-| `brew` prerequisites | `apt-get install` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | Up to 300 seconds on the dpkg locks. |
+| `brew` prerequisites | `apt-get install` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | Apt default. |
 | `composer` prerequisites | `apt-get update` | None. The lists lock fails at once. |
-| `composer` prerequisites | `apt-get install` of `composer`, `git`, and `unzip` | Up to 300 seconds on the dpkg locks. |
-| `apt` install and update | `apt-get install` | Up to 300 seconds on the dpkg locks. |
+| Native `composer` prerequisites | Snapshot-pinned package transaction | Apt default. |
+| `apt` install and update | `apt-get install --no-remove` | Apt default. |
 | `apt` remove | `dpkg --remove` | Native dpkg lock refusal. |
 
 Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not pass the option and do not wait.
 
-When a dpkg frontend or admin lock is still held after 300 seconds, the retained install exits with an error and changes no package. That covers a `brew` or `composer` prerequisite install, and the `apt` manager's install and update. A prerequisite `apt-get update` does not reach this timeout. A busy lists lock makes that update fail at once.
+The shared prerequisite lower retained for active Node and Instance callers still uses its existing 300-second dpkg timeout. Native Tool writes use the defaults above. A busy lists lock makes a package-index update fail at once.
 
-Either failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Retry the install.
+A first-use setup failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Retry the install.
 
 A `composer` prerequisite failure during `app-dev` or `app-prod` convergence leaves the manager `failed` at the same step and error code. The role or `node:add` reports `node.tool_manager_materialization_failed` in `details.error_code`. [Role operations on one Node](/reference/node-provisioning#role-operations-on-one-node) describes how a failed role reports its step.
 
@@ -346,7 +346,7 @@ A candidate outside the range records the Tool as `failed` with `tool.version_co
 
 ## Homebrew formulae
 
-The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. The name may end in `+`, as in `libsigc++` or `gtk+`. `tool.homebrew-formula-candidate` reads the formula's metadata on the Node. Swamp requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. `tool.homebrew-formula-install` and `tool.homebrew-formula-update` check that metadata again under the shared Homebrew mutation lock and force bottle use. `tool.homebrew-formula-remove` removes only the named formula. These commands refuse protected packages and accept no executable, environment, tap, or manager options. Orbit never builds a formula from source. Inventory uses `info --json=v2 --formula --installed` and `list --formula -1`.
+The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. The name may end in `+`, as in `libsigc++` or `gtk+`. A native query reads the formula's metadata on the Node. Swamp requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. Separate native install and update actions force bottle use. Removal targets only the named formula. These actions refuse protected packages and accept no executable, environment, tap, or manager options. Orbit never builds a formula from source. Inventory uses `info --json=v2 --formula --installed` and `list --formula -1`.
 
 Orbit never runs a Homebrew developer command. That includes `brew ruby` and `brew irb`. A developer command writes `homebrew.devcmdrun` into the user's Homebrew git config and changes how a later `brew update` behaves. Orbit does not set `HOMEBREW_DEVELOPER` or `HOMEBREW_DEV_CMD_RUN`.
 
@@ -457,7 +457,7 @@ No other `details` keys are returned.
 
 ## Locks
 
-Tool admission holds the existing Operation `lock_key` for the exact Node and manager until normal terminal projection releases it. A competing Tool install, update, remove, adopt or manager convergence on that pair returns `operation.target_busy` (HTTP 409) without starting a run. Idempotent replay returns the original Operation. A different Node or manager can admit work independently. This approved admission boundary covers native removal and retained mutations. Package managers retain their own locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). Scan creates no Operation hold.
+Tool admission holds the existing Operation `lock_key` for the exact Node and manager until normal terminal projection releases it. A competing Tool install, update, remove, adopt or manager convergence on that pair returns `operation.target_busy` (HTTP 409) without starting a run. Idempotent replay returns the original Operation. A different Node or manager can admit work independently. This approved admission boundary covers all Tool writes. Package managers retain their own locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). Scan creates no Operation hold.
 
 ## Check removal with Doctor
 
@@ -465,13 +465,13 @@ Use the Tool removal result and native Tool scan to inspect installation state. 
 
 ## Direct Swamp execution
 
-Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Adopt and remove run on Node209 through official SSH with the admitted target pins and existing209 identity.
+Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, adopt, remove and manager convergence run on Node209 through official SSH with the admitted target pins and existing209 identity.
 
-Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; one shipped query script reads facts for the selected manager. A typed check applies package ownership, eligibility and version constraints. The four-step graph reads that asset, queries through official SSH, records the bounded result, then fails on a refusal.
+Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; one shipped query script reads facts for the selected manager. A typed check applies package ownership, eligibility and version constraints. Adoption reads an asset, queries through official SSH, records the bounded result, then fails on a refusal. Install and update add separate candidate, reconciliation, mutation and verification steps.
 
-Install, update and manager convergence retain their declared Node worker paths pending their kind conversions. There is no migration-pool fallback or polled writer.
+The old standalone Tools runner and its workflows are deleted. Active Node and Instance materialization callers retain only their shared manager prerequisite lower. For an uncertain package reply, resume the same native root at `reconcile_query`; it retains the original before-state and candidate, rereads the installed version and skips a completed allowed change.
 
-Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Native adoption rows reject intent and result HTTP callbacks. Cancelling an admitted adoption sends one cancellation request to its bound Swamp root; the native terminal subscriber records the outcome. An unconfirmed cancellation remains a request. Read-only scan stays in Orbit.
+Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Native Tool rows reject intent and result HTTP callbacks. Cancelling an admitted Tool Operation sends one cancellation request to its bound Swamp root; the native terminal subscriber records the outcome. An unconfirmed cancellation remains a request. Read-only scan stays in Orbit.
 
 
 ## Why it works this way

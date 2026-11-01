@@ -26,7 +26,7 @@ beforeEach(function (): void {
     $socket = $this->socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $sent): array => $sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-create', 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
-    $this->finish = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T03:00:00.000Z', 'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['backend' => 'active']];
+    $this->finish = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => now()->subSecond()->toIso8601ZuluString('millisecond'), 'finished_at' => now()->toIso8601ZuluString('millisecond'), 'result' => ['backend' => 'active']];
 });
 
 it('starts one direct managed create with safe typed intent and no Gateway probes', function (string $driver): void {

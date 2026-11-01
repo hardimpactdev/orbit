@@ -2,6 +2,8 @@
   "version": 2,
   "principal": "user:orbit-gateway",
   "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^metrics-credentials-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^database-clone-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-upcloud-token$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-role-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
@@ -31,7 +33,12 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]}
   ],
   "workflows": [
+    {"workflow": "operation-metrics-credentials-reset", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-role", "actions": ["run", "read"]},
+    {"workflow": "task-check-ci", "actions": ["run", "read"]},
+    {"workflow": "observation-context", "actions": ["run", "read"]},
+    {"workflow": "observation-collection", "actions": ["run", "read"]},
+    {"workflow": "observation-horizon", "actions": ["run", "read"]},
     {"workflow": "operation-task-vm-hub-converge", "actions": ["run", "read"]},
     {"workflow": "operation-metrics-exporter", "actions": ["run", "read"]},
     {"workflow": "operation-conn-pairing-create", "actions": ["run", "read"]},
@@ -137,8 +144,7 @@
     {"workflow": "operation-task-vms", "actions": ["run", "read"]},
     {"workflow": "operation-tool-adopt-209", "actions": ["run", "read"]},
     {"workflow": "operation-tool-remove-209", "actions": ["run", "read"]},
-    {"workflow": "operation-tool-direct", "actions": ["run", "read"]},
-    {"workflow": "operation-tool-install-direct", "actions": ["run", "read"]},
+    {"workflow": "operation-tool-write-209", "actions": ["run", "read"]},
     {"workflow": "operation-vault-direct", "actions": ["run", "read"]},
     {"workflow": "operation-vault-sync", "actions": ["run", "read"]},
     {"workflow": "operation-websocket-registry", "actions": ["run", "read"]}

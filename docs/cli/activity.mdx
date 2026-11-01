@@ -97,12 +97,12 @@ These routes record no Activity, for any method: the Node agent endpoints, the G
 
 ## Interrupted requests
 
-A request can end before it records its outcome. PHP-FPM ends a Gateway request that passes its 600-second limit, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. The Gateway then ends the record as `failed` with the error code `activity.interrupted`. Its duration and exit code stay null.
+A request can end before it records its outcome. PHP-FPM ends a Gateway request that passes its 600-second limit, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. A fatal request that reaches the shutdown handler ends as `failed` with `activity.interrupted`. A killed worker can leave the record `running`; its duration and exit code stay null.
 
 - After a fatal error in PHP, such as exhausted memory or an exceeded execution time, the Gateway ends the record when the request shuts down.
-- A killed worker runs no code. Swamp admits native [observation maintenance](/reference/gateway-queue#scheduled-work) every five minutes. It selects records still `running` more than 900 seconds after they started, at most 500 per run in ID order. The Gateway result projection records those outcomes and leaves rows that have already finished unchanged. PHP-FPM checks its 600-second limit every 200 seconds, so a request ends by about 800 seconds. The sweep therefore never ends a command that still works.
-- Swamp owns scheduling and concurrency. The Gateway keeps no sweep lock or cached run receipt.
-- The sweep requires the native Swamp schedule and Gateway worker. Without them, a killed request stays `running`.
+- A killed worker runs no shutdown code. Explicit [observation maintenance](/reference/gateway-queue#scheduled-work) reports how many admitted records meet the interrupted cutoff, up to 500. It does not settle those Activities. Without an explicit state-recovery action, the records remain `running`.
+- Observation runs on Node 209 through native SSH. The former five-minute sweep and its Gateway mutation path are removed.
+
 
 Caddy gives up on a Gateway request after 600 seconds and sends the client a 504. PHP-FPM can let the request finish later, and the record then shows `succeeded`. The Activity, not the client's error, shows the outcome.
 

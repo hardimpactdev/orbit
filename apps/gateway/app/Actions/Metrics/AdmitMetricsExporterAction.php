@@ -60,11 +60,6 @@ final readonly class AdmitMetricsExporterAction
             if (($existing = app(OperationIdempotency::class)->replay($enabled ? 'metrics.exporter_enable' : 'metrics.exporter_disable')) !== null) {
                 return $existing;
             }
-            if (Operation::query()->where('target_type', 'metrics')->whereIn('kind', ['metrics.enable', 'metrics.disable'])->whereIn('status', ['queued', 'running'])->exists()
-                || Operation::query()->where('target_type', 'metrics')->where('target_id', $metrics instanceof Node ? $metrics->id : $node->id)
-                    ->whereIn('kind', ['metrics.exporter_enable', 'metrics.exporter_disable', 'metrics.enable', 'metrics.disable'])->whereIn('status', ['queued', 'running'])->exists()) {
-                throw new ResourceOperationException('metrics.operation_active', 'An exporter change is already active for this Metrics owner.', 409);
-            }
             $this->preferences->put($node->id, $enabled ? ExporterPreference::Enabled : ExporterPreference::Disabled);
             $runtime = null;
             if ($metrics instanceof Node) {

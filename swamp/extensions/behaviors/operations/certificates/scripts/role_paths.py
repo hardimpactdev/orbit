@@ -20,7 +20,12 @@ def role_paths(data):
         data["domain"],
     ):
         raise ValueError("certificate.role_input_invalid")
-    directory = (
-        "/etc/caddy/orbit-" + ("" if role == "gateway" else role + "-") + "cert-current"
-    )
-    return role, ROOT / Path(directory).name, directory
+    directory = role_directory(data["scope"])
+    return role, directory, str(directory)
+
+
+def role_directory(scope):
+    role = scope.removeprefix("role-")
+    if scope != "role-" + role or role not in ("gateway", "metrics", "websocket", "analytics"):
+        raise ValueError("certificate.role_input_invalid")
+    return ROOT / ("orbit-" + ("" if role == "gateway" else role + "-") + "cert-current")

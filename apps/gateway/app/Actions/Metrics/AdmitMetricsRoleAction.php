@@ -50,9 +50,6 @@ final readonly class AdmitMetricsRoleAction
             if (! $enabled && ! $force) {
                 throw new ResourceOperationException('metrics.force_required', 'Metrics removal requires force.', 422);
             }
-            if (Operation::query()->where('target_type', 'metrics')->whereIn('status', ['queued', 'running'])->exists()) {
-                throw new ResourceOperationException('metrics.operation_active', 'A Metrics change is already active.', 409);
-            }
             $before = [];
             foreach (PrivateDnsPublicationNodes::query()->get() as $dnsNode) {
                 $before[$dnsNode->id] = app(NativeRoutePublicationInput::class)->dns($dnsNode);

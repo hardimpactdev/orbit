@@ -7,6 +7,7 @@ description: Typed public manager observations and bounded Tool operation result
 behaviors:
 - operations/tools/adopt.ts
 - operations/tools/remove.ts
+- operations/tools/write.ts
 additionalFiles:
 - queries/support.py
 - queries/apt.py
@@ -21,3 +22,11 @@ additionalFiles:
 - mutations/brew_cask.py
 - mutations/composer.py
 - mutations/vp.py
+- candidates/apt.py
+- candidates/composer.py
+- candidates/vp.py
+- candidates/brew.py
+- writes/apt.py
+- writes/composer.py
+- writes/vp.py
+- writes/brew.py

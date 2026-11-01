@@ -308,45 +308,10 @@
       ]
     },
     {
-      "file": "extensions/behaviors/observation/contract.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
       "rule": "inline-script",
       "count": 81,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/maintenance.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/observation/maintenance.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/maintenance.ts",
-      "rule": "secret-argv",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/mod.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>",
-        "POST <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operation-runner/mod.ts",
@@ -490,20 +455,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/clone.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/clone.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/database/native_effect.ts",
@@ -1263,20 +1214,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/integrations/metrics_credentials_reset.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/metrics_credentials_reset.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/integrations/metrics_exporter_actions.ts",
       "rule": "multi-action",
       "count": 2,
@@ -1714,43 +1651,6 @@
       "file": "extensions/behaviors/operations/node/rekey_local.ts",
       "rule": "agent-dynamic",
       "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_root.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_routes.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_system.ts",
-      "rule": "custom-control",
-      "count": 4,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_system.ts",
-      "rule": "inline-script",
-      "count": 91,
       "evidence": []
     },
     {
@@ -2220,16 +2120,10 @@
     {
       "file": "extensions/behaviors/operations/routes/target-set.ts",
       "rule": "gateway-http",
-      "count": 6,
+      "count": 1,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/target-set.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/routes/target-unset.ts",
@@ -2782,23 +2676,9 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/tools/direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tools/homebrew_program.ts",
-      "rule": "inline-script",
-      "count": 161,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/tools/local.ts",
       "rule": "inline-script",
-      "count": 42,
+      "count": 41,
       "evidence": []
     },
     {
@@ -2821,13 +2701,13 @@
     {
       "file": "extensions/behaviors/operations/tools/materialize_program.ts",
       "rule": "inline-script",
-      "count": 182,
+      "count": 152,
       "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/tools/system_program.ts",
       "rule": "inline-script",
-      "count": 212,
+      "count": 133,
       "evidence": []
     },
     {

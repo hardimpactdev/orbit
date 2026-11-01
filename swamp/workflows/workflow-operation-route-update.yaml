@@ -1,6 +1,6 @@
 id: b1a5e413-5c52-4d05-966b-f78d57c2da06
 name: operation-route-update
-description: Immutable Route update and restoration through official209 publication children.
+description: Immutable Route workload mutation and restoration through official209 publication children.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -163,6 +163,7 @@ jobs:
       methodName: read
       inputs:
         effectful: ${{ inputs.intent.effectful }}
+        failure_code: route.update_failed
         route_id: ${{ inputs.intent.route_id }}
         result_route_id: ${{ inputs.intent.result_route_id }}
         workload_count: ${{ size(inputs.intent.workloads) }}

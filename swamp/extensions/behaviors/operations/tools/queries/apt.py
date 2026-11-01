@@ -3,6 +3,8 @@ from support import INPUT, finish, query
 
 def observe():
     manager = query(["/usr/bin/apt-get", "--version"]).stdout.splitlines()[0]
+    if INPUT.get("manager_only"):
+        return {"manager_version": manager, "versions": [], "complete": True}
     result = query(["/usr/bin/dpkg-query", "--show", "--showformat=${Package}\t${Status}\t${Version}\n",
                     "--", INPUT["package"]], check=False)
     absent = f"dpkg-query: no packages found matching {INPUT['package']}"

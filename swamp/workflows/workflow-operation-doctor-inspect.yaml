@@ -17,9 +17,7 @@ inputs:
     intent:
       type: object
   required:
-  - operation_id
   - node_id
-  - kind
   - intent
   additionalProperties: false
 jobs:

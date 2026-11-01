@@ -11,11 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RouteUpdateNative(fixture.RouteMutationFixture):
+    root_workflow = "operation-route-update"
+    root_kind = "route.update"
+    failure_code = "route.update_failed"
+
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/routes/update-command")
         for name in (
-            "operation-route-update",
+            self.root_workflow,
             "route-mutation-forward",
             "route-mutation-restore",
         ):
@@ -30,7 +34,7 @@ class RouteUpdateNative(fixture.RouteMutationFixture):
             (self.repo / "workflows" / ("workflow-" + name + ".yaml")).write_text(
                 yaml.safe_dump(workflow, sort_keys=False)
             )
-        self.input["kind"] = "route.update"
+        self.input["kind"] = self.root_kind
         self.input["intent"].update(
             effectful=True, route_id=31, result_route_id=32, workloads=[]
         )
@@ -101,11 +105,12 @@ class RouteUpdateNative(fixture.RouteMutationFixture):
         self.assertFalse(result["ready"])
 
     def run_update(self, success=True):
+        self.cli("workflow", "validate", self.root_workflow)
         reply = json.loads(
             self.cli(
                 "workflow",
                 "run",
-                "operation-route-update",
+                self.root_workflow,
                 "--input",
                 json.dumps(self.input),
                 success=success,
@@ -147,7 +152,7 @@ class RouteUpdateNative(fixture.RouteMutationFixture):
         self.assertFalse(result["ready"])
         self.assertTrue(result["restored"])
         self.assertEqual(result["selected"], "before")
-        self.assertEqual(result["error_code"], "route.update_failed")
+        self.assertEqual(result["error_code"], self.failure_code)
 
     def test_failed_restoration_never_claims_the_candidate_or_old_publication(self):
         self.native_env["FIXTURE_FAIL"] = "route-dns-publish"
@@ -158,3 +163,42 @@ class RouteUpdateNative(fixture.RouteMutationFixture):
         self.assertFalse(result["ready"])
         self.assertFalse(result["restored"])
         self.assertEqual(result["selected"], "unknown")
+
+
+class RouteTargetNative(RouteUpdateNative):
+    root_workflow = "operation-route-target-set"
+    root_kind = "route.target_set"
+    failure_code = "route.target_set_failed"
+
+    def setUp(self):
+        super().setUp()
+        self.input["intent"]["result_route_id"] = self.input["intent"]["route_id"]
+        self.input["intent"]["preparation"] = {
+            "certificates": self.plan["prepare_certificates"],
+            "lan": [{"node_id": 9}],
+            "publications": [
+                {**row, "before": row["before"]["caddy"], "after": row["prepared"]["caddy"], "direction": "forward"}
+                for row in self.plan["publications"]
+            ],
+            "probes": [{"node_id": 9, "probe": {"address": "10.0.0.10", "port": 443, "domain": "app.test"}}],
+        }
+        self.plan["prepare_certificates"] = []
+        probe = yaml.safe_load((self.repo / "workflows/workflow-route-dns-publish.yaml").read_text())
+        probe.update(id="cdf8ebbe-89c2-4935-a41f-4ebcfb80321b", name="cluster-router-probe")
+        probe["jobs"][0]["steps"][0]["task"]["inputs"]["env"]["FIXTURE_ACTION"] = "cluster-router-probe"
+        (self.repo / "workflows/workflow-cluster-router-probe.yaml").write_text(yaml.safe_dump(probe, sort_keys=False))
+
+    def test_workload_tls_is_proved_before_the_router_can_select_new_targets(self):
+        history, result = self.run_update()
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        self.assertTrue(result["ready"])
+        self.assertLessEqual(steps["prepare-caddy-1"]["completedAt"], steps["prepare-probe-0"]["startedAt"])
+        self.assertLessEqual(steps["prepare-probe-0"]["completedAt"], steps["forward"]["startedAt"])
+
+    def test_a_failed_tls_probe_blocks_forward_and_restores_the_admitted_before(self):
+        self.native_env["FIXTURE_FAIL"] = "cluster-router-probe"
+        history, result = self.run_update(success=False)
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        self.assertEqual(steps["forward"]["status"], "skipped")
+        self.assertTrue(result["restored"])
+        self.assertFalse(result["ready"])

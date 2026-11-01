@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use LogicException;
@@ -26,7 +27,8 @@ final readonly class ConvergeToolManagerAction
         return $this->operations->execute('tool.manager_converge', 'node_tools', $node->id, $node->id, [
             'node_id' => $node->id, 'user' => $node->user, 'manager' => $manager->value, 'platform' => $node->platform,
             'architecture' => $node->architecture,
-            ...$this->intent->input($node, $manager, $imageProvidesManager),
+            'setup' => $this->intent->nativeInput($node, $manager, $imageProvidesManager),
+            'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
         ], 'system', null, lockKey: $manager->operationLockKey($node->id));
     }
 }

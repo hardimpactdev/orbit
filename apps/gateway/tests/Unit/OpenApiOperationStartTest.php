@@ -55,7 +55,7 @@ it('resolves Metrics write contracts without the retired mutation DTO', function
         definitions = ast.Module(body=[node for node in parsed.body if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef)) or isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'CTRL_DATA_OVERRIDES' for target in node.targets)], type_ignores=[])
         namespace = {'ROOT': path.parent.parent, 'components': {'Operation': {}}, 'gdata': {}, 'RESPONSE_OVERRIDES': {}, 'SDK_RESPONSE_FALLBACK': {}}
         exec(compile(definitions, str(path), 'exec'), namespace)
-        for method in ('store', 'destroy', 'enableExporter', 'disableExporter'):
+        for method in ('store', 'destroy', 'enableExporter', 'disableExporter', 'reset'):
             schema, is_list = namespace['data_schema_for']({'action': 'MetricsController@' + method})
             assert schema == {'$ref': '#/components/schemas/Operation'} and not is_list
         PY;
