@@ -185,30 +185,12 @@ jobs:
       behaviorName: ${{ "vm-terminal-" + run.id }}
       methodName: execute
       inputs:
-        run: '/usr/bin/python3 -B - <<''PYTHON''
-
-          import json
-
-          import os
-
-
-          value={key:int(os.environ[''ORBIT_''+key.upper()]) for key in [''task_vm_id'',
-          ''guest_node_id'']}
-
-          value[''ssh_host_key'']={key:os.environ[''ORBIT_''+key.upper()] for key
-          in [''ssh_host_key_type'', ''ssh_host_key'', ''ssh_host_fingerprint'']}
-
-          value.update(ssh_ready=True)
-
-          if os.environ[''ORBIT_MODE'']==''resume'':value.update(resumed=True,ready=True)
-
-          else:value.update(converged=True)
-
-          print(json.dumps(value))
-
-          PYTHON
-
-          '
+        run: "/usr/bin/python3 -B - <<'PYTHON'\nimport json\nimport os\n\nvalue={key:int(os.environ['ORBIT_'+key.upper()])\
+          \ for key in ['task_vm_id', 'guest_node_id']}\nvalue['ssh_host_key']={key:os.environ['ORBIT_'+key.upper()]\
+          \ for key in ['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint']}\n\
+          value.update(ssh_ready=True)\nif os.environ['ORBIT_MODE'] == 'resume':\n\
+          \    value.update(resumed=True,ready=True)\nelse:\n    value.update(converged=True)\n\
+          print(json.dumps(value))\nPYTHON\n"
         env:
           ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
           ORBIT_GUEST_NODE_ID: ${{ string(inputs.intent.guest_node_id) }}
