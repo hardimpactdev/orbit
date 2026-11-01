@@ -193,6 +193,37 @@ for (const [name, read] of [
     ]))).length > 0);
   });
 }
+Deno.test("poll proofs follow only sibling shipped modules and reject tolerant helpers", async () => {
+  const helpers = externalPoll.slice(0, externalPoll.indexOf("def wait_started"));
+  const waiting = externalPoll.slice(externalPoll.indexOf("def wait_started"));
+  const findings = (source: string, helper: string, path = "scripts/provider_http.py") => phaseControls(new Map([
+    ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],
+    [pollFile, source],
+    [path, helper],
+  ]));
+  for (const imported of ["from provider_http import api", "from .provider_http import api", "import provider_http"]) {
+    const call = imported === "import provider_http" ? waiting.replace("api(", "provider_http.api(") : waiting;
+    assertEquals(await findings(`import time\n${imported}\n${call}`, helpers), []);
+  }
+  const source = "import time\nfrom provider_http import api\n" + waiting;
+  assert((await findings(source, helpers, "other/provider_http.py")).length > 0);
+  assert((await findings(source, helpers.replace("api.provider.example", "gw.orbit"))).length > 0);
+  const tolerant = helpers.replace("    with urllib.request.urlopen", "    try:\n        with urllib.request.urlopen")
+    .replace("        raw = response.read()", "            raw = response.read()")
+    .replace("        return json.loads(raw)", "            return json.loads(raw)\n    except Exception:\n        return {'state': 'maintenance'}");
+  assert((await findings(source, tolerant)).length > 0);
+});
+Deno.test("the shipped UpCloud strict sibling read passes; its tolerant API cannot poll", async () => {
+  const helper = Deno.readTextFileSync(new URL("../extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py", import.meta.url));
+  const waiting = externalPoll.slice(externalPoll.indexOf("def wait_started"));
+  const findings = (method: string) => phaseControls(new Map([
+    ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],
+    ["scripts/upcloud.py", helper],
+    [pollFile, `import time\nfrom upcloud import ${method}\n` + waiting.replace("api('GET', 'server/example')['state']", method === "poll_read" ? "poll_read('server/example')['server']['state']" : "api('GET', 'server/example')['server']['state']")],
+  ]));
+  assertEquals(await findings("poll_read"), []);
+  assert((await findings("api")).length > 0);
+});
 Deno.test("an enclosing context manager cannot suppress a failed poll", async () => {
   const start = externalPoll.indexOf("def wait_started():");
   const header = externalPoll.slice(0, start) + "from contextlib import suppress\n\n";
