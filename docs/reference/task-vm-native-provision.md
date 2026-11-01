@@ -49,4 +49,4 @@ Each parent captures its exact plain workspace through `TaskVmDestroyIntent::cap
 
 Before dispatch, the parent calls `TaskVmDestroyIntent::ownedForWorkspace($vm, $instance, $captured, $operationId)`. This read-only check compares the current VM, provider, guest and exact workspace with the admission capture. It retains preservation and foreign-resource refusals and excludes only the matching nonterminal ending parent from busy checks. It neither recaptures intent nor writes execution copies.
 
-The retired standalone lifecycle and Incus effect admission classes are deleted. Provider work belongs only to the current native roots and reusable children. Tasks ending admission remains with its owning parent; no synchronous VM deletion path is restored.
+The Gateway admits Task VM lifecycle changes only through their owning native roots. Provider work runs in those roots or their reusable children. Tasks ending admission belongs to its parent; the Gateway performs no synchronous VM deletion.
