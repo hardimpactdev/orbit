@@ -66,7 +66,7 @@ elif args[:2]==['--force','delete']:
 elif args[:1]==['allow'] or args[:2]==['delete','allow']:
     if state.get('fail_apply'):raise SystemExit(1)
     if state.get('ignore_apply'):raise SystemExit(0)
-    row={'port':int(args[args.index('port')+1]),'protocol':args[args.index('proto')+1],'source':args[args.index('from')+1]}
+    row={'port':int(args[args.index('port')+1]),'protocol':args[args.index('proto')+1],'source':args[args.index('from')+1].replace('any','Anywhere')}
     if args[0]=='delete':state['tuples']=[r for r in state['tuples'] if r!=row]
     elif row not in state['tuples']:state['tuples'].append(row)
     path.write_text(json.dumps(state))

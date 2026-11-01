@@ -192,25 +192,11 @@ export function mutationWorkflow(mode: "forward" | "restore"): Fields {
 }
 
 export function ingressWorkflow(): Fields {
-    const globals = {
-        name: expr('"route-ingress-" + run.id'),
-        transport: {
-            kind: "ssh",
-            user: expr("inputs.intent.connection.nodeUser"),
-            identityFile: expr("inputs.intent.connection.nodeIdentityFile"),
-            port: expr("inputs.intent.connection.nodePort"),
-        },
-        hosts: [{
-            name: "target",
-            address: expr("inputs.intent.connection.nodeHost"),
-            transport: { hostKeys: expr("inputs.intent.host_keys") },
-        }],
-    };
     return {
         id: "4977fbb9-658c-4d9c-a984-d003f4dbe225",
         name: "route-ingress-apply",
         description:
-            "Apply the public ingress port policy through the official firewall model.",
+            "Converge public ingress through the canonical pinned tuple child.",
         vaults: [],
         inputs: {
             ...envelope,
@@ -225,73 +211,48 @@ export function ingressWorkflow(): Fields {
         },
         jobs: [{
             name: "firewall",
-            steps: [
-                {
-                    name: "pins",
-                    ...placed,
-                    task: {
-                        type: "behavior",
-                        behaviorType: "@swamp/ssh",
-                        behaviorName: globals.name,
-                        methodName: "exec",
-                        globalArgs: globals,
-                        inputs: {
-                            hosts: "name:target",
-                            argv: ["/usr/bin/true"],
+            steps: [{
+                name: "converge",
+                ...placed,
+                task: {
+                    type: "workflow",
+                    workflowIdOrName: "route-lan-apply",
+                    inputs: {
+                        operation_id: expr("inputs.operation_id"),
+                        node_id: expr("inputs.node_id"),
+                        kind: expr("inputs.kind"),
+                        execution_secrets: {},
+                        intent: {
+                            control_node_id: 209,
+                            connection: expr("inputs.intent.connection"),
+                            host_keys: expr("inputs.intent.host_keys"),
+                            rule: {
+                                node_id: expr("inputs.intent.rule.node_id"),
+                                migrate: false,
+                                rules: expr(
+                                    'inputs.intent.rule.rules.map(r, {"model_name": "public-" + string(r.port), "port": r.port, "protocol": "tcp", "source": "any", "ensure": r.ensure})',
+                                ),
+                            },
                         },
                     },
                 },
-                {
-                    name: "apply",
-                    ...placed,
-                    dependsOn: [{
-                        step: "pins",
-                        condition: { type: "succeeded" },
-                    }],
-                    forEach: {
-                        item: "rule",
-                        in: expr("inputs.intent.rule.rules"),
-                    },
-                    task: {
-                        type: "behavior",
-                        behaviorType: "@swamp/cfgmgmt/firewall",
-                        behaviorName: expr(
-                            '"route-ingress-port-" + string(self.rule.port)',
-                        ),
-                        methodName: "apply",
-                        globalArgs: {
-                            nodeHost: expr("inputs.intent.connection.nodeHost"),
-                            nodeUser: expr("inputs.intent.connection.nodeUser"),
-                            nodeIdentityFile: expr(
-                                "inputs.intent.connection.nodeIdentityFile",
-                            ),
-                            nodePort: expr("inputs.intent.connection.nodePort"),
-                            become: true,
-                            port: expr("self.rule.port"),
-                            protocol: "tcp",
-                            action: "allow",
-                            direction: "in",
-                            ensure: expr("self.rule.ensure"),
-                        },
-                        inputs: {},
+            }, {
+                name: "result",
+                ...placed,
+                dependsOn: [{
+                    step: "converge",
+                    condition: { type: "succeeded" },
+                }],
+                task: {
+                    type: "behavior",
+                    behaviorType: "@nckrtl/route-update-result",
+                    behaviorName: "route-ingress-result",
+                    methodName: "firewall",
+                    inputs: {
+                        ready: expr("steps.converge.outputs.result.ready"),
                     },
                 },
-                {
-                    name: "result",
-                    ...placed,
-                    dependsOn: after("pins", "apply"),
-                    task: {
-                        type: "behavior",
-                        behaviorType: "@nckrtl/route-update-result",
-                        behaviorName: "route-ingress-result",
-                        methodName: "firewall",
-                        inputs: {
-                            rules: expr("inputs.intent.rule.rules"),
-                            steps: expr("steps"),
-                        },
-                    },
-                },
-            ],
+            }],
         }],
     };
 }

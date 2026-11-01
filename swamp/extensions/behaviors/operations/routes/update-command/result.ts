@@ -80,7 +80,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-update-result",
-    version: "2026.10.31.1",
+    version: "2026.11.01.1",
     resources: {
         result: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
         phase: { schema: Phase, lifetime: "infinite", garbageCollection: 10 },
@@ -88,54 +88,11 @@ export const behavior = {
     methods: {
         firewall: {
             description:
-                "Prove every official public ingress rule state before completing publication",
-            arguments: z.object({
-                rules: z.array(
-                    z.object({
-                        port: z.number().int(),
-                        ensure: z.enum(["present", "absent"]),
-                    }),
-                ),
-                steps: z.record(
-                    z.string(),
-                    z.object({
-                        status: z.string(),
-                        outputs: z.object({
-                            current: z.object({ ruleExists: z.boolean() })
-                                .optional(),
-                        }).optional(),
-                    }).passthrough(),
-                ),
-            }),
-            execute: async (
-                args: {
-                    rules: { port: number; ensure: string }[];
-                    steps: Record<
-                        string,
-                        {
-                            status: string;
-                            outputs?: { current: { ruleExists: boolean } };
-                        }
-                    >;
-                },
-                ctx: Context,
-            ) => {
-                if (args.steps.pins?.status !== "succeeded") {
-                    throw new Error("route.ingress_unproven");
-                }
-                args.rules.forEach((rule, i) => {
-                    const step = args.steps[`apply-${i}`];
-                    if (
-                        step?.status !== "succeeded" ||
-                        step.outputs?.current?.ruleExists !==
-                            (rule.ensure === "present")
-                    ) throw new Error("route.ingress_unproven");
-                });
-                const result = { ready: true };
-                await ctx.writeResource("phase", "phase", {
-                    ...result,
-                    migrated_node_ids: [],
-                });
+                "Return the canonical pinned tuple child's proven result",
+            arguments: z.object({ ready: z.literal(true) }),
+            execute: async (args: { ready: true }, ctx: Context) => {
+                const result = { ...args, migrated_node_ids: [] };
+                await ctx.writeResource("phase", "phase", result);
                 return result;
             },
         },
