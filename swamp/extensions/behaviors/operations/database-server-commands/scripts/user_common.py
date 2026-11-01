@@ -1,7 +1,9 @@
 """Fixed SQL user client and admitted input checks; no workflow control."""
 
+import base64
 import re
 
+from create_common import system
 from server_common import Refused, client
 
 CLIENTS = {
@@ -21,26 +23,49 @@ CLIENTS = {
 
 
 def validate(intent, material):
-    if (
-        set(intent)
-        - {"driver", "container", "username", "replication", "known_user", "ssh"}
-        or intent.get("driver") not in CLIENTS
-        or not isinstance(intent.get("container"), str)
-        or not re.fullmatch(
+    try:
+        assert set(intent) <= {
+            "driver",
+            "container",
+            "database",
+            "owner_username",
+            "username",
+            "read_only",
+            "replication",
+            "known_user",
+            "ssh",
+        }
+        assert intent["driver"] in CLIENTS
+        assert re.fullmatch(
             r"orbit-process-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*", intent["container"]
         )
-        or not isinstance(intent.get("username"), str)
-        or not re.fullmatch(r"[A-Za-z0-9_]{1,32}", intent["username"])
-        or type(intent.get("replication")) is not bool
-        or type(intent.get("known_user")) is not bool
-        or not isinstance(material.get("password"), str)
-        or len(material["password"]) > 16384
-        or not isinstance(material.get("sql"), str)
-        or not material["sql"].strip()
-        or len(material["sql"].encode()) > 1024 * 1024
-        or "\0" in material["password"] + material["sql"]
-    ):
-        raise Refused("database.server_admin_invalid")
+        assert re.fullmatch(r"[A-Za-z0-9_]{1,32}", intent["username"])
+        limit = 63 if intent["driver"] == "pgsql" else 64
+        assert re.fullmatch(r"[A-Za-z0-9_]{1," + str(limit) + r"}", intent["database"])
+        assert not system(intent["database"])
+        assert re.fullmatch(r"[A-Za-z0-9_]{1,63}", intent["owner_username"])
+        assert intent["username"] != intent["owner_username"]
+        assert all(
+            type(intent[k]) is bool for k in ("read_only", "replication", "known_user")
+        )
+        assert (
+            not intent["replication"]
+            or intent["driver"] == "pgsql"
+            and intent["read_only"]
+        )
+        assert set(material) == {"password", "payload"}
+        assert (
+            isinstance(material["password"], str) and len(material["password"]) <= 16384
+        )
+        assert not any(c in material["password"] for c in "\0\r\n")
+        assert set(material["payload"]) == {"password", "salt"}
+        password = material["payload"]["password"]
+        assert isinstance(password, str) and 1 <= len(password) <= 1024
+        assert not any(c in password for c in "\0\r\n")
+        assert intent["driver"] != "pgsql" or all(32 <= ord(c) <= 126 for c in password)
+        assert len(base64.b64decode(material["payload"]["salt"], validate=True)) == 16
+    except (AssertionError, KeyError, TypeError, ValueError):
+        raise Refused("database.server_admin_invalid") from None
 
 
 def execute(intent, material, sql):

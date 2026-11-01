@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
-use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -34,7 +33,7 @@ beforeEach(function (): void {
     $this->sql = "CREATE USER reader PASSWORD 'private-login-sentinel';";
     $this->operation = app(RecordDatabaseOperationAction::class)->execute('database_user.create', 'database_server', $this->server->id, $this->node->id,
         ['connection_id' => $this->connection->id, 'driver' => 'pgsql', 'username' => 'reader', 'replication' => true, 'known_user' => false],
-        ['database-apply' => DatabaseCommands::sql($this->server, $this->sql)],
+        ['database-apply' => ['name' => 'database_user.create', 'input' => ['driver' => 'pgsql', 'container' => 'orbit-process-'.$process->id.'-proof', 'database' => 'proof', 'owner_username' => 'owner', 'username' => 'reader', 'read_only' => true, 'replication' => true, 'known_user' => false, 'password' => 'private-root-sentinel', 'payload' => ['password' => 'private-login-sentinel', 'salt' => base64_encode(str_repeat('a', 16))]], 'protected' => ['password', 'payload']]],
         ['upsert_user' => ['database_connection_id' => $this->connection->id, 'username' => 'reader', 'password' => 'private-login-sentinel', 'privileges' => 'SELECT', 'replication' => true, 'created_by' => 'operator']]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->finished = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z', 'result' => ['backend' => 'active']];
@@ -45,7 +44,7 @@ it('directly starts SQL user intent without old execution declarations or secret
     expect($this->operation->attempts)->toBe(0);
     expect($this->operation->worker)->toBeNull();
     $public = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input.intent');
-    expect($public)->toHaveKeys(['driver', 'container', 'username', 'replication', 'known_user'])->not->toHaveKeys(['password', 'sql', 'agent_sha256']);
+    expect($public)->toHaveKeys(['driver', 'container', 'database', 'owner_username', 'username', 'read_only', 'replication', 'known_user'])->not->toHaveKeys(['password', 'sql', 'agent_sha256']);
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('private-root-sentinel', $this->sql, 'private-login-sentinel');
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
 });
@@ -53,7 +52,7 @@ it('directly starts SQL user intent without old execution declarations or secret
 it('copies only the existing recorded material and refuses private step reads', function (): void {
     $copy = collect($this->socket->sent)->firstWhere('type', 'vault.put');
     expect($copy['payload']['key'])->toBe('database-user-create-intent-'.$this->operation->input['intent_id']);
-    expect(json_decode($copy['payload']['value'], true))->toBe(['password' => 'private-root-sentinel', 'sql' => $this->sql]);
+    expect(json_decode($copy['payload']['value'], true))->toBe(['password' => 'private-root-sentinel', 'payload' => ['password' => 'private-login-sentinel', 'salt' => base64_encode(str_repeat('a', 16))]]);
     $start = collect($this->socket->sent)->firstWhere('type', 'workflow.run');
     expect($start['payload']['inputs']['intent']['ssh'])->toMatchArray(['host' => '10.44.0.9', 'user' => 'orbit']);
     expect($start['payload']['inputs']['execution_secrets']['user_create']['key'])->toBe($copy['payload']['key']);
@@ -92,6 +91,8 @@ it('admits PostgreSQL replication without any Gateway SQL and leaves WAL checks 
     $response = $this->postJson('/api/v1/database-connections/proof/users', ['username' => 'second_reader', 'password' => 'another-private-login', 'replication' => true])
         ->assertAccepted()->assertJsonPath('data.kind', 'database_user.create');
     expect($response->getContent())->not->toContain('another-private-login', 'private-root-sentinel');
+    $admitted = DatabaseExecutionIntent::query()->latest('id')->firstOrFail();
+    expect($admitted->payload['commands']['database-apply']['input'])->toMatchArray(['database' => 'proof', 'owner_username' => 'owner', 'read_only' => true, 'replication' => true])->not->toHaveKey('sql');
     $this->assertDatabaseCount('database_users', 0);
 });
 
@@ -102,4 +103,12 @@ it('refuses unbound private access and an undeclared private output', function (
     expect($response->getContent())->not->toContain('private-root-sentinel', $this->sql);
     $this->operation->update(['state' => ['database_user_writer' => 'direct']]);
     $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+});
+
+it('rejects a PostgreSQL password outside the supported alphabet before recording intent', function (): void {
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    $before = DatabaseExecutionIntent::query()->count();
+    $this->postJson('/api/v1/database-connections/proof/users', ['username' => 'invalid_reader', 'password' => "non-ascii-\u{00e9}"])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(DatabaseExecutionIntent::query()->count())->toBe($before);
 });

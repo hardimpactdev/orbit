@@ -19,6 +19,7 @@ additionalFiles:
   - scripts/user_common.py
   - scripts/user_wal.py
   - scripts/user_apply.py
+  - scripts/user_grant.py
   - scripts/create_common.py
   - scripts/create_sql.py
   - scripts/create_valkey.py
