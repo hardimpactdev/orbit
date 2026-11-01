@@ -14,12 +14,32 @@ spec.loader.exec_module(module)
 
 
 class TopologySwampTest(unittest.TestCase):
+    def test_installs_exact_committed_upstream_pins_and_checks_installed_digests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'source'
+            repo = Path(directory) / 'repo'
+            for path in (source, repo):
+                (path / 'extensions/models').mkdir(parents=True)
+            pins = {'@swamp/ssh': {'version': '2026.10.23.1', 'checksum': 'a' * 64, 'filesChecksum': 'b' * 64}}
+            (source / 'extensions/models/upstream_extensions.json').write_text(json.dumps(pins))
+            (repo / 'extensions/models/upstream_extensions.json').write_text(json.dumps(pins))
+            (source / 'config').mkdir()
+            (source / 'config/official-extensions.json').write_text('{"@swamp/ssh":"wrong-version"}')
+            with patch.object(module, 'SOURCE', source), patch.object(module, 'REPO', repo), patch.object(module, 'native') as native:
+                module.install_extensions()
+                native.assert_called_once_with('extension', 'pull', '@swamp/ssh@2026.10.23.1')
+                pins['@swamp/ssh']['checksum'] = 'c' * 64
+                (repo / 'extensions/models/upstream_extensions.json').write_text(json.dumps(pins))
+                with self.assertRaisesRegex(RuntimeError, 'e2e.swamp_extension_pins_mismatch'):
+                    module.install_extensions()
+
     def test_preparation_installs_assets_and_settings_without_starting_services(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / 'source'
             (source / 'config').mkdir(parents=True)
-            (source / 'config/official-extensions.json').write_text('{}')
+            (source / 'extensions/models').mkdir(parents=True)
+            (source / 'extensions/models/upstream_extensions.json').write_text('{}')
             with patch.object(module, 'ROOT', root), patch.object(module, 'SOURCE', source), \
                     patch.object(module, 'REPO', root / 'repository'), \
                     patch.object(module, 'private_file'), patch.object(module, 'install_binary'), \

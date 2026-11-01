@@ -49,17 +49,46 @@ case ${1-} in
     cd "$gateway"
     "${orbit_env[@]}" php "$checkout/tools/swamp-proof-seed.php" "$gateway"
     ;;
+  fixture-gateway-leaf)
+    [[ $# -eq 1 ]] || exit 64
+    "${orbit_env[@]}" php /usr/local/bin/topology-gateway-certificate.php
+    ;;
   fixture-ca)
     [[ $# -eq 1 ]] || exit 64
     "${orbit_env[@]}" php /usr/local/bin/topology-ca.php
     ;;
-  release)
+  runtime)
     [[ $# -eq 2 && "$2" =~ ^[0-9a-f]{40}$ ]] || exit 64
-    cd "$gateway"
-    release_env=("${orbit_env[@]}" ORBIT_GATEWAY_CHECKOUT="$runtime_gateway")
-    "${release_env[@]}" php artisan gateway:release:prepare "$2" --no-interaction
-    # Deploy owns migration, switching and verification; there is no separate public switch command.
-    "${release_env[@]}" php artisan gateway:release:deploy "$2" --no-interaction
+    [[ ! -e /home/orbit/runtime/current && ! -L /home/orbit/runtime/current ]] || { echo 'e2e.gateway_runtime_exists' >&2; exit 65; }
+    chown orbit:orbit /var/lib/orbit-e2e/gateway-source.bundle
+    chmod 0600 /var/lib/orbit-e2e/gateway-source.bundle
+    trap 'rm -f -- /var/lib/orbit-e2e/gateway-source.bundle' EXIT
+    install -d -o orbit -g orbit -m 0700 /home/orbit/runtime
+    "${orbit_env[@]}" git clone --no-checkout /var/lib/orbit-e2e/gateway-source.bundle /home/orbit/runtime/current
+    "${orbit_env[@]}" git -C /home/orbit/runtime/current checkout --detach "$2"
+    "${orbit_env[@]}" git -C /home/orbit/runtime/current remote set-url origin https://github.com/hardimpactdev/orbit.git
+    # Dependency copies keep Composer's relative autoload roots inside the independent checkout.
+    for project in apps/gateway apps/cli packages/php-sdk; do
+      [[ -f "$checkout/$project/vendor/autoload.php" ]] || exit 66
+      "${orbit_env[@]}" cp -a "$checkout/$project/vendor" "/home/orbit/runtime/current/$project/vendor"
+    done
+    "${orbit_env[@]}" cp "$gateway/.env" "$runtime_gateway/.env"
+    "${orbit_env[@]}" sed -i '/^ORBIT_GATEWAY_CHECKOUT=/d' "$runtime_gateway/.env"
+    "${orbit_env[@]}" bash -c 'printf "ORBIT_GATEWAY_CHECKOUT=%s\n" "$1" >>"$1/.env"' orbit-e2e "$runtime_gateway"
+    ;;
+  adopt)
+    [[ $# -eq 2 && "$2" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    cd "$runtime_gateway"
+    "${orbit_env[@]}" env ORBIT_GATEWAY_CHECKOUT="$runtime_gateway" php artisan gateway:release:adopt --commit="$2" --no-interaction
+    ;;
+  configure)
+    [[ $# -eq 1 ]] || exit 64
+    cd "$runtime_gateway"
+    "${orbit_env[@]}" env ORBIT_GATEWAY_CHECKOUT="$runtime_gateway" php artisan gateway:release:configure --no-interaction
+    ;;
+  services)
+    [[ $# -eq 1 ]] || exit 64
+    systemctl is-active --quiet caddy php8.5-fpm dnsmasq
     ;;
   *) exit 64 ;;
 esac

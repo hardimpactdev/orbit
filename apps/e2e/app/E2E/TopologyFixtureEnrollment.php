@@ -18,7 +18,7 @@ final readonly class TopologyFixtureEnrollment
      * @param  array<string, string>  $addresses
      * @param  array<string, string>  $architectures
      * @param  array{url:string,commit:string,branch:string}  $repository  Public result of the fixture repository helper.
-     * @return array<string, mixed>
+     * @return array{cluster:array{name:string},nodes:list<array<string,mixed>>,project:array<string,string>}
      */
     public function capture(TopologyTarget $target, array $addresses, array $architectures, array $repository): array
     {

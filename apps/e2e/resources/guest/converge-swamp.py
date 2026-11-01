@@ -148,6 +148,25 @@ def token(name, principal):
                  native('access', 'token', 'reveal', name, '--yes')['token'])
 
 
+def install_extensions():
+    pins = json.loads((SOURCE / 'extensions/models/upstream_extensions.json').read_text())
+    if not isinstance(pins, dict) or any(
+        not re.fullmatch(r'@swamp/[a-z][a-z0-9-]*', name)
+        or not isinstance(entry, dict)
+        or not re.fullmatch(r'[0-9]+(?:\.[0-9]+){3}', entry.get('version', ''))
+        or any(not re.fullmatch(r'[0-9a-f]{64}', entry.get(key, '')) for key in ('checksum', 'filesChecksum'))
+        for name, entry in pins.items()
+    ):
+        raise RuntimeError('e2e.swamp_extension_pins_invalid')
+    for name, entry in pins.items():
+        native('extension', 'pull', name + '@' + entry['version'])
+    if pins:
+        installed = json.loads((REPO / 'extensions/models/upstream_extensions.json').read_text())
+        if any(any(installed.get(name, {}).get(key) != entry[key] for key in ('version', 'checksum', 'filesChecksum'))
+               for name, entry in pins.items()):
+            raise RuntimeError('e2e.swamp_extension_pins_mismatch')
+
+
 def configure_gateway():
     identity = Path('/home/orbit/.orbit/ssh/id_ed25519')
     identity.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -208,8 +227,7 @@ def prepare():
     run(['chown', 'orbit:orbit', str(REPO)])
     native('init', str(REPO), '--tool', 'none')
     native('extension', 'trust', 'add', 'nckrtl')
-    for name, version in json.loads((SOURCE / 'config/official-extensions.json').read_text()).items():
-        native('extension', 'pull', name + '@' + version)
+    install_extensions()
     load_source()
     token('operator', 'user:topology-operator')
     token('gateway', 'user:orbit-gateway')

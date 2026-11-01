@@ -11,12 +11,7 @@ use App\E2E\Value\TopologyTarget;
 use Closure;
 use RuntimeException;
 
-/**
- * Wires the started guests of one topology into a fleet: bootstraps a fresh test Gateway, then enrolls each
- * declared workload Node and the operator through it. Everything goes through Orbit commands and the
- * harness guest scripts; nothing edits the Gateway database. Enrollment is serial, because every step
- * writes the Gateway's SQLite store.
- */
+/** Composes the disposable fixture fleet, then uses normal Gateway admission and native execution. */
 final readonly class TopologyComposer
 {
     private const int STEP_SECONDS = 900;
@@ -26,10 +21,13 @@ final readonly class TopologyComposer
         private TopologyGuestPreparer $guests,
         private TopologyNodeRecipe $recipes,
         private TopologySwamp $swamp,
+        private TopologyFixtureEnrollment $fixtures,
+        private TopologyFixtureNetwork $network,
+        private TopologyGatewayRuntime $runtime,
     ) {}
 
     /** @param (Closure(string, float): void)|null $progress hears each step and its seconds */
-    public function compose(TopologyTarget $target, ?Closure $progress = null): ConvergenceReport
+    public function compose(TopologyTarget $target, string $worktree, string $commit, ?Closure $progress = null): ConvergenceReport
     {
         $instances = $target->instances();
         $addresses = $this->host->globalIpv4All($instances);
@@ -40,63 +38,69 @@ final readonly class TopologyComposer
         StageTimer::run($progress, 'prepare.swamp', fn () => $this->swamp->prepare($target));
         $steps['prepare.swamp'] = true;
 
-        StageTimer::run($progress, 'bootstrap.gateway', function () use ($target, $gateway, $addresses): void {
+        StageTimer::run($progress, 'prepare.gateway', function () use ($target, $gateway): void {
             $this->guests->placeGatewayEnvironment($target);
             $this->guests->exposeOrbitCli($target);
-            $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['prerequisites']);
+            $this->run('prepare.gateway', $gateway, 'converge-gateway.sh', ['prerequisites']);
             $rendered = $this->recipes->for($target->recipe->node('gateway'), $this->architectures(['gateway' => $gateway])['gateway']);
             // Deliver the frozen observer; native product workflows perform the effects.
             $agent = $this->host->exec($gateway, new GuestCommand(['install', '-D', '-m', '0755', '-o', 'root', '-g', 'root', '--', $rendered['agent']['path'], '/usr/local/bin/orbit-agent'], 60));
             if (! $agent->successful()) {
                 throw new RuntimeException('The pinned agent could not be installed on the Gateway: '.trim($agent->stderr));
             }
-            $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
+            $this->run('migrate.gateway', $gateway, 'converge-gateway.sh', ['migrate']);
+            $this->run('fixture.ca', $gateway, 'converge-gateway.sh', ['fixture-ca']);
         });
-        $steps['bootstrap.gateway'] = true;
+        $steps['prepare.gateway'] = true;
 
+        $architectures = $this->architectures($instances);
+        $repository = StageTimer::run($progress, 'fixture.repository', function () use ($target, $gateway): array {
+            $result = $this->host->exec($gateway, new GuestCommand(
+                ['sudo', '-n', 'python3', '-I', '/home/orbit/orbit/tools/swamp_proof_repository.py', 'seed', $target->issue, 'repositories.orbit'], 180,
+            ));
+            $value = json_decode($result->stdout, true);
+            if (! $result->successful() || ! is_array($value) || array_keys($value) !== ['url', 'commit', 'branch']
+                || ! is_string($value['url']) || ! is_string($value['commit']) || ! is_string($value['branch'])) {
+                throw new RuntimeException('e2e.fixture_seed_repository_failed.');
+            }
+
+            return $value;
+        });
+        $input = StageTimer::run($progress, 'fixture.identities', fn () => $this->fixtures->capture($target, $addresses, $architectures, $repository));
+        StageTimer::run($progress, 'seed.gateway', fn (): array => $this->fixtures->seed($target, $input));
+        $this->run('fixture.gateway-leaf', $gateway, 'converge-gateway.sh', ['fixture-gateway-leaf']);
+        $steps['fixture.enrollment'] = true;
+        StageTimer::run($progress, 'runtime.gateway', fn () => $this->runtime->prepare($target, $worktree, $commit));
+        $steps['runtime.gateway'] = true;
+
+        StageTimer::run($progress, 'fixture.network', fn () => $this->network->converge($target, $input['nodes']));
+        StageTimer::run($progress, 'fixture.trust', function () use ($target, $gateway): void {
+            $result = $this->host->exec($gateway, new GuestCommand(['cat', '/home/orbit/.orbit/ca/root.pem'], 10));
+            if (! $result->successful() || openssl_x509_read($result->stdout) === false) {
+                throw new RuntimeException('e2e.fixture_ca_invalid.');
+            }
+            $commands = [];
+            $key = $this->gatewayPublicKey($gateway);
+            foreach ($target->instances() as $name => $instance) {
+                $commands['trust.'.$name] = ['instance' => $instance, 'command' => new GuestCommand(['/usr/local/bin/prepare-node.sh', 'fixture-trust'], 60, $result->stdout)];
+                $commands['authorize.'.$name] = ['instance' => $instance, 'command' => new GuestCommand(['/usr/local/bin/prepare-node.sh', 'gateway-authorize', $key], 60)];
+            }
+            $this->assertBatch('fixture.trust', $commands);
+        });
+        StageTimer::run($progress, 'fixture.repositories', function () use ($gateway, $addresses): void {
+            $result = $this->host->exec($gateway, new GuestCommand(['/usr/local/bin/topology-repositories.py', $addresses['gateway']], 180));
+            if (! $result->successful() || json_decode($result->stdout, true) !== ['fixture_repositories' => 'separate-caddy', 'site' => 'repositories.orbit']) {
+                throw new RuntimeException('e2e.fixture_repository_service_failed.');
+            }
+        });
         StageTimer::run($progress, 'start.swamp', fn () => $this->swamp->start($target));
         $steps['start.swamp'] = true;
+        StageTimer::run($progress, 'adopt.gateway', fn () => $this->run('adopt.gateway', $gateway, 'converge-gateway.sh', ['adopt', $commit]));
+        StageTimer::run($progress, 'configure.gateway', fn () => $this->run('configure.gateway', $gateway, 'converge-gateway.sh', ['configure']));
+        StageTimer::run($progress, 'services.gateway', fn () => $this->run('services.gateway', $gateway, 'converge-gateway.sh', ['services']));
+        $steps['adopt.gateway'] = true;
 
-        $enrolled = [...$target->recipe->workloadNodes(), $target->recipe->node('operator')];
-        $key = $this->gatewayPublicKey($gateway);
-        $authorize = [];
-        foreach ($enrolled as $node) {
-            $authorize[$node->key] = [
-                'instance' => $instances[$node->key],
-                'command' => new GuestCommand(['/usr/local/bin/prepare-node.sh', 'gateway-authorize', $key], 60),
-            ];
-        }
-        $this->assertBatch('authorize.gateway-ssh', $authorize);
-        $enrolledInstances = [];
-        foreach ($enrolled as $node) {
-            $enrolledInstances[$node->key] = $instances[$node->key];
-        }
-        $architectures = $this->architectures($enrolledInstances);
-
-        foreach ($target->recipe->workloadNodes() as $node) {
-            $name = 'enroll.'.$node->key;
-            StageTimer::run($progress, $name, fn () => $this->run($name, $gateway, 'converge-node.sh', [
-                'provision',
-                $node->key,
-                $addresses[$node->key],
-                $architectures[$node->key],
-                $node->wireGuardAddress(),
-                $node->roles[0],
-                (string) $node->tld,
-            ]));
-            $steps[$name] = true;
-        }
-
-        $operator = $target->recipe->node('operator');
-        StageTimer::run($progress, 'enroll.operator', function () use ($gateway, $gatewayAddress, $instances, $addresses, $architectures, $operator): void {
-            $this->run('enroll.operator', $gateway, 'converge-node.sh', [
-                'provision',
-                $operator->key,
-                $addresses['operator'],
-                $architectures['operator'],
-                $operator->wireGuardAddress(),
-            ]);
-            $this->run('enroll.operator', $gateway, 'converge-operator.sh', ['grant', 'operator', 'gateway', $gatewayAddress]);
+        StageTimer::run($progress, 'enroll.operator', function () use ($gatewayAddress, $instances): void {
             $this->run('enroll.operator', $instances['operator'], 'converge-operator.sh', ['configure-cli', $gatewayAddress]);
         });
         $steps['enroll.operator'] = true;

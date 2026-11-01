@@ -3,6 +3,21 @@ set -euo pipefail
 umask 077
 mode=${1-}
 case "$mode" in
+  fixture-trust)
+    [[ $# -eq 1 ]] || exit 64
+    candidate=$(mktemp)
+    trap 'rm -f "$candidate"' EXIT
+    cat >"$candidate"
+    openssl x509 -in "$candidate" -noout >/dev/null 2>&1 || { echo 'e2e.fixture_ca_invalid' >&2; exit 66; }
+    install -d -m 0755 /usr/local/share/ca-certificates
+    install -m 0644 "$candidate" /usr/local/share/ca-certificates/orbit-topology.crt
+    update-ca-certificates >/dev/null
+    install -d -m 0700 -o orbit -g orbit /home/orbit/.orbit
+    install -m 0644 -o orbit -g orbit "$candidate" /home/orbit/.orbit/e2e-gateway-root-ca.pem
+    resolvectl dns orbit 10.44.0.1
+    resolvectl domain orbit '~orbit'
+    resolvectl default-route orbit no
+    ;;
   fixture-facts)
     [[ $# -eq 1 ]] || exit 64
     # Disposable topology identity only. Private bytes never leave this guest.

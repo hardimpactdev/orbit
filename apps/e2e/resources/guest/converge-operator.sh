@@ -36,14 +36,7 @@ case ${1-} in
     [[ "$(id -u)" -eq 0 ]] && exec "${as_orbit[@]}" bash "$0" "$@"
     [[ $# -eq 2 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]] || exit 64
     ca=/home/orbit/.orbit/e2e-gateway-root-ca.pem
-    install -d -m 0700 "$(dirname "$ca")"
-    deadline=$((SECONDS + 120))
-    until curl --fail --silent --show-error --insecure --max-time 10 "https://$2/api/v1/ca/root" -o "$ca.new"; do
-      (( SECONDS < deadline )) || { echo "converge-operator: the Gateway at $2 did not answer" >&2; exit 1; }
-      sleep 2
-    done
-    php -r '$v=json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR); file_put_contents($argv[2], $v["data"]["root_ca"]);' "$ca.new" "$ca"
-    rm -f "$ca.new"
+    [[ -s "$ca" ]] || { echo 'e2e.fixture_ca_missing' >&2; exit 66; }
     "$orbit" gateway:add "https://$2" --name=e2e --ca="$ca" --use --json
     ;;
   role-add)

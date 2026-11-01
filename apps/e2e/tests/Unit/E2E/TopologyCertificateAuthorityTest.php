@@ -65,3 +65,34 @@ it('refuses partial invalid or linked CA state without replacing or exporting it
         ->and(file_get_contents($fixture['ca'].'/root.key'))->toBe($private)
         ->and(file_exists($fixture['ca'].'/root.pem'))->toBe($state !== 'partial');
 })->with(['partial', 'invalid', 'linked']);
+
+it('signs the repository leaf with the disposable root under the canonical Gateway leaf policy', function (): void {
+    $fixture = topologyCaFixture();
+    (new Process([PHP_BINARY, $fixture['script']]))->mustRun();
+    $directory = $fixture['root'].'/repositories';
+    $script = $fixture['root'].'/leaf.php';
+    file_put_contents($script, str_replace(
+        ['/home/orbit/orbit/apps/gateway/vendor/autoload.php', '/home/orbit/.orbit/ca', '/etc/swamp-proof'],
+        [dirname(__DIR__, 4).'/gateway/vendor/autoload.php', $fixture['ca'], $directory],
+        guestScriptSource('topology-repository-certificate.php'),
+    ));
+    $process = new Process([PHP_BINARY, $script, '10.232.14.10']);
+
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        ->and($process->getOutput())->toBe("{\"certificate\":true}\n")
+        ->and($process->getErrorOutput())->toBe('');
+    $private = file_get_contents($directory.'/repositories.key');
+    $certificate = file_get_contents($directory.'/repositories.pem');
+    $parsed = openssl_x509_parse($certificate);
+    expect(openssl_pkey_get_details(openssl_pkey_get_private($private))['bits'])->toBe(2048)
+        ->and($parsed['extensions']['subjectAltName'])->toBe('DNS:repositories.orbit, IP Address:10.232.14.10')
+        ->and($parsed['validTo_time_t'] - $parsed['validFrom_time_t'])->toBe(397 * 86400);
+
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        ->and(file_get_contents($directory.'/repositories.key'))->toBe($private)
+        ->and(file_get_contents($directory.'/repositories.pem'))->toBe($certificate);
+});

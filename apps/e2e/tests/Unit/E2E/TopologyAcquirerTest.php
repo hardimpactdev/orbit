@@ -11,6 +11,9 @@ use App\E2E\RouterLanFirewallFixture;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
+use App\E2E\TopologyFixtureEnrollment;
+use App\E2E\TopologyFixtureNetwork;
+use App\E2E\TopologyGatewayRuntime;
 use App\E2E\TopologyGuestPreparer;
 use App\E2E\TopologyNodeRecipe;
 use App\E2E\TopologyReleaser;
@@ -48,7 +51,7 @@ $roles = array_values(array_filter(array_slice($argv, 2), static fn (string $arg
 echo json_encode(['schema_version' => 1, 'node' => ['platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'home' => '/home/orbit', 'roles' => $roles], 'bootstrap' => ['user' => 'orbit'], 'recipe' => ['tools' => []], 'agent' => ['path' => dirname(__DIR__, 2).'/apps/agent/orbit-agent', 'sha256' => str_repeat('a', 64)]]);
 PHP);
     file_put_contents($root.'/apps/gateway/.env', "APP_KEY=base64:fixture\n");
-    file_put_contents($root.'/.gitignore', "/.e2e/\n/apps/gateway/.env\nvendor/\n");
+    file_put_contents($root.'/.gitignore', "/.e2e/\n/.e2e-club-token\n/apps/gateway/.env\nvendor/\n");
     foreach (WorktreeSynchronizer::GUEST_SCRIPTS as $script) {
         copy(dirname(__DIR__, 3).'/resources/guest/'.$script, $root.'/apps/e2e/resources/guest/'.$script);
         chmod($root.'/apps/e2e/resources/guest/'.$script, 0755);
@@ -82,6 +85,46 @@ function acquirerResponder(FakeIncus $incus, array &$steps, ?Closure $override =
         }
         if ($argv[0] === 'sh' && str_contains($argv[2] ?? '', 'boot_id')) {
             return ["boot-ready\n", '', 0];
+        }
+        if (($argv[1] ?? null) === '/usr/local/bin/topology-network.php') {
+            return ['{"configured":true}', '', 0];
+        }
+        if (($argv[0] ?? null) === 'python3' && ($argv[1] ?? null) === '-I') {
+            $program = $argv[3] ?? '';
+            $field = str_contains($program, 'def persist(') ? 'persisted' : (str_contains($program, 'syncconf') ? 'applied' : 'configured');
+
+            return [json_encode([$field => true]), '', 0];
+        }
+        if (in_array('/home/orbit/orbit/tools/swamp_proof_repository.py', $argv, true)) {
+            return [json_encode(['url' => 'https://repositories.orbit/seed.git', 'commit' => str_repeat('a', 40), 'branch' => 'main']), '', 0];
+        }
+        if ($script === 'prepare-node.sh' && ($argv[1] ?? null) === 'fixture-facts') {
+            $address = $incus->instances[$instance]['devices']['eth0']['ipv4.address'];
+
+            return [json_encode(['wireguard_public_key' => base64_encode(str_repeat(chr((int) substr($address, strrpos($address, '.') + 1)), 32)),
+                'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('s', 32))]), '', 0];
+        }
+        if ($script === 'converge-gateway.sh' && ($argv[1] ?? null) === 'seed') {
+            $input = json_decode($stdin, true);
+            $nodes = [];
+            foreach ($input['nodes'] as $index => $node) {
+                $nodes[$node['key']] = $index + 1;
+            }
+
+            return [json_encode(['seeded' => true, 'cluster_id' => 1, 'project_id' => 1, 'nodes' => $nodes]), '', 0];
+        }
+        if ($script === 'topology-repositories.py') {
+            return ['{"fixture_repositories":"separate-caddy","site":"repositories.orbit"}', '', 0];
+        }
+        if ($argv === ['cat', '/home/orbit/.orbit/ca/root.pem']) {
+            static $certificate = null;
+            if ($certificate === null) {
+                $key = openssl_pkey_new(['private_key_bits' => 2048]);
+                $csr = openssl_csr_new(['commonName' => 'Fixture'], $key);
+                openssl_x509_export(openssl_csr_sign($csr, null, $key, 1), $certificate);
+            }
+
+            return [$certificate, '', 0];
         }
         if ($argv[0] === 'cat' || $argv[0] === 'sha256sum') {
             return ['', 'missing', 1];
@@ -126,7 +169,7 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $te
         'acquirer' => new TopologyAcquirer(
             host: $host,
             networks: $networks,
-            composer: new TopologyComposer($host, $guests, new TopologyNodeRecipe($worktree), $swamp),
+            composer: new TopologyComposer($host, $guests, new TopologyNodeRecipe($worktree), $swamp, new TopologyFixtureEnrollment($host), new TopologyFixtureNetwork($host), new TopologyGatewayRuntime($host)),
             synchronizer: new WorktreeSynchronizer($host, $worktree, $operation),
             verifier: new TopologyVerifier($host, 1, 0),
             guests: $guests,
@@ -231,16 +274,28 @@ describe('TopologyAcquirer', function () {
                 'prepare-node.sh configure-runtime @operator',
                 'converge-swamp.py prepare @gateway',
                 'converge-gateway.sh prerequisites @gateway',
-                'converge-gateway.sh bootstrap @gateway',
-                'converge-swamp.py start @gateway',
+                'converge-gateway.sh migrate @gateway',
+                'converge-gateway.sh fixture-ca @gateway',
+                'prepare-node.sh fixture-facts @gateway',
+                'prepare-node.sh fixture-facts @app-dev',
+                'prepare-node.sh fixture-facts @operator',
+                'converge-gateway.sh seed @gateway',
+                'converge-gateway.sh fixture-gateway-leaf @gateway',
+                'converge-gateway.sh runtime @gateway',
+                'prepare-node.sh fixture-trust @gateway',
+                'prepare-node.sh gateway-authorize @gateway',
+                'prepare-node.sh fixture-trust @app-dev',
                 'prepare-node.sh gateway-authorize @app-dev',
+                'prepare-node.sh fixture-trust @operator',
                 'prepare-node.sh gateway-authorize @operator',
-                'converge-node.sh provision @gateway',
-                'converge-node.sh provision @gateway',
-                'converge-operator.sh grant @gateway',
+                'topology-repositories.py 10.232.1.10 @gateway',
+                'converge-swamp.py start @gateway',
+                'converge-gateway.sh adopt @gateway',
+                'converge-gateway.sh configure @gateway',
+                'converge-gateway.sh services @gateway',
                 'converge-operator.sh configure-cli @operator',
             ])
-            ->and($timings)->toBe(['reserve', 'start', 'scripts', 'prepare.swamp', 'bootstrap.gateway', 'start.swamp', 'enroll.app-dev', 'enroll.operator', 'compose', 'readiness'])
+            ->and($timings)->toBe(['reserve', 'start', 'scripts', 'prepare.swamp', 'prepare.gateway', 'fixture.repository', 'fixture.identities', 'seed.gateway', 'runtime.gateway', 'fixture.network', 'fixture.trust', 'fixture.repositories', 'start.swamp', 'adopt.gateway', 'configure.gateway', 'services.gateway', 'enroll.operator', 'compose', 'readiness'])
             ->and($topology->toArray()['nodes'])->toBe(['gateway', 'app-dev', 'operator'])
             ->and(array_keys($topology->construction->nodes))->toBe(['gateway', 'app-dev', 'operator'])
             ->and(IssueState::forWorktree('TST-9', $worktree)->requireTopology()->toArray())->toBe($topology->toArray())
@@ -263,19 +318,21 @@ describe('TopologyAcquirer', function () {
             ->and(array_filter($incus->calls, static fn (array $call): bool => in_array('local:'.IncusHost::TEMPLATE, $call, true) && $call[0] !== 'copy'))->toBe([]);
     });
 
-    it('enrolls every declared Node with its catalog role, TLD, and WireGuard address', function () {
+    it('seeds fixture intent for every declared Node with its catalog role, TLD, and public identity', function () {
         $steps = [];
         ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(steps: $steps);
 
         $acquirer->acquire($request, TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2'));
-        $enrollments = array_values(array_filter($incus->execs, static fn (array $exec): bool => str_contains($exec['argv'][0], 'converge-node.sh')));
+        $seeding = array_find($incus->execs, static fn (array $exec): bool => ($exec['argv'][1] ?? null) === 'seed');
+        $input = json_decode($seeding['stdin'], true);
 
-        expect(array_map(static fn (array $exec): array => [$exec['argv'][2], ...array_slice($exec['argv'], 5)], $enrollments))
+        expect(array_map(static fn (array $node): array => [$node['key'], $node['wireguard_ip'], $node['roles'], $node['tld'] ?? null], $input['nodes']))
             ->toBe([
-                ['app-dev', '10.44.0.2', 'app-dev', 'beast'],
-                ['app-prod', '10.44.0.3', 'app-prod', 'app-prod'],
-                ['app-prod-2', '10.44.0.4', 'app-prod', 'app-prod-2'],
-                ['operator', '10.44.0.5'],
+                ['gateway', '10.44.0.1', ['gateway', 'vpn'], null],
+                ['app-dev', '10.44.0.2', ['app-dev'], 'beast'],
+                ['app-prod', '10.44.0.3', ['app-prod'], 'app-prod'],
+                ['app-prod-2', '10.44.0.4', ['app-prod'], 'app-prod-2'],
+                ['operator', '10.44.0.5', [], null],
             ])
             ->and($incus->guests())->toHaveCount(5);
     });
@@ -289,8 +346,7 @@ describe('TopologyAcquirer', function () {
             $timings[] = $step;
         });
 
-        expect(array_slice($steps, -4))->toBe([
-            'converge-operator.sh grant @gateway',
+        expect(array_slice($steps, -3))->toBe([
             'converge-operator.sh configure-cli @operator',
             'converge-operator.sh role-add @operator',
             'converge-operator.sh role-add @operator',
@@ -318,13 +374,13 @@ describe('TopologyAcquirer', function () {
 
     it('rolls back every resource and names the step and Orbit error when enrollment fails', function () {
         ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(
-            fn (string $instance, array $argv): ?array => $argv[0] === '/usr/local/bin/converge-node.sh' && $argv[2] === 'app-dev'
+            fn (string $instance, array $argv): ?array => $argv[0] === 'php' && ($argv[1] ?? null) === '/usr/local/bin/topology-network.php'
                 ? ["Node provisioning failed at step [wireguard-peer-install] with error [vpn.peer_config_failed].\n", "wg-quick failed\n", 1]
                 : null,
         );
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'Step enroll.app-dev failed: guest script converge-node.sh exited 1 on orbit-e2e-tst-9-aaaaaaaa-gateway at Orbit step wireguard-peer-install (vpn.peer_config_failed).')
+            ->toThrow(RuntimeException::class, 'e2e.fixture_network_hub_failed.')
             ->and($incus->guests())->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure', 'remove'])

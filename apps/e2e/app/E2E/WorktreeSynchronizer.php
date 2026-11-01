@@ -29,6 +29,10 @@ final readonly class WorktreeSynchronizer
         'converge-operator.sh',
         'prepare-node.sh',
         'topology-ca.php',
+        'topology-gateway-certificate.php',
+        'topology-network.php',
+        'topology-repositories.py',
+        'topology-repository-certificate.php',
         'verify-topology.sh',
     ];
 

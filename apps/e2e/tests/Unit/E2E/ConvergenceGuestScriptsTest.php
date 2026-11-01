@@ -187,7 +187,7 @@ describe('Gateway convergence', function () {
             ]);
     });
 
-    it('prepares and deploys the captured full commit into a separate runtime without replacing the mount', function () {
+    it('adopts the captured full commit through the normal runner without replacing the mount', function () {
         $fixture = guestScriptFixture('converge-gateway.sh', [
             'sudo' => GUEST_SUDO_STUB,
             'php' => <<<'BASH'
@@ -195,31 +195,32 @@ describe('Gateway convergence', function () {
                 [[ "$*" != *gateway:release:prepare* || -z "${PREPARE_FAIL:-}" ]]
                 BASH,
         ]);
+        mkdir("{$fixture['home']}/runtime/current/apps/gateway", 0700, true);
         $sha = str_repeat('b', 40);
 
-        expect(runGuestScript($fixture, ['release', $sha])->getExitCode())->toBe(0)
+        expect(runGuestScript($fixture, ['adopt', $sha])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
-                "{$fixture['home']}/orbit/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:prepare {$sha} --no-interaction",
-                "{$fixture['home']}/orbit/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:deploy {$sha} --no-interaction",
+                "{$fixture['home']}/runtime/current/apps/gateway {$fixture['home']}/runtime/current/apps/gateway artisan gateway:release:adopt --commit={$sha} --no-interaction",
             ])
             ->and(is_link($fixture['home'].'/orbit'))->toBeFalse();
     });
 
-    it('does not deploy when release preparation refuses', function () {
+    it('propagates normal adoption refusal without configuring services', function () {
         $fixture = guestScriptFixture('converge-gateway.sh', [
             'sudo' => GUEST_SUDO_STUB,
             'php' => "printf '%s\\n' \"\$*\" >> '__ROOT__/commands'\nexit 1",
         ]);
+        mkdir("{$fixture['home']}/runtime/current/apps/gateway", 0700, true);
         $sha = str_repeat('c', 40);
 
-        expect(runGuestScript($fixture, ['release', $sha])->getExitCode())->toBe(1)
-            ->and(commandLog($fixture))->toBe(["artisan gateway:release:prepare {$sha} --no-interaction"]);
+        expect(runGuestScript($fixture, ['adopt', $sha])->getExitCode())->toBe(1)
+            ->and(commandLog($fixture))->toBe(["artisan gateway:release:adopt --commit={$sha} --no-interaction"]);
     });
 
     it('refuses an uncaptured release revision before invoking the runner', function (string $revision) {
         $fixture = guestScriptFixture('converge-gateway.sh', ['sudo' => GUEST_SUDO_STUB, 'php' => 'exit 99']);
 
-        expect(runGuestScript($fixture, ['release', $revision])->getExitCode())->toBe(64);
+        expect(runGuestScript($fixture, ['adopt', $revision])->getExitCode())->toBe(64);
     })->with(['main', 'abcd1234', str_repeat('A', 40), str_repeat('a', 39)]);
 
     it('keeps every guest script valid Bash', function () {
@@ -316,7 +317,7 @@ describe('Node convergence', function () {
         }
         expect(guestScriptSource('converge-node.sh'))->not->toContain('apt-get', 'php8.5-fpm', 'PDO');
         // The recipe base image carries the recipe's exact PHP build, so Gateway convergence installs no PHP package.
-        expect(guestScriptSource('converge-gateway.sh'))->not->toMatch('/\bphp\d/');
+        expect(guestScriptSource('converge-gateway.sh'))->not->toMatch('/(?:apt-get|apt)\s+install[^\n]*\bphp\d/');
     });
 });
 
@@ -510,6 +511,7 @@ describe('topology verifier', function () {
 
     it('passes source on a mounted worktree only when its mount token hashes to the recorded hash', function (string $change, int $exit) {
         $fixture = verifierFixture();
+        mkdir("{$fixture['home']}/runtime/current/apps/gateway", 0700, true);
         $sha = str_repeat('c', 40);
         $token = bin2hex(random_bytes(32))."\n";
         $hash = hash('sha256', $token);

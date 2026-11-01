@@ -226,7 +226,7 @@ final readonly class TopologyAcquirer
                 $this->guests->assertSourceMounted($target);
             });
             $source = StageTimer::run($progress, 'scripts', fn (): SourceState => $this->synchronizer->syncWorkingTree($target, $request->worktree, $mountToken));
-            StageTimer::run($progress, 'compose', fn () => $this->composer->compose($target, $progress));
+            StageTimer::run($progress, 'compose', fn () => $this->composer->compose($target, $request->worktree, $source->hostSha, $progress));
             $verification = StageTimer::run($progress, 'readiness', fn (): VerificationReport => $this->ready($target, $source));
             $topology = new TopologyRecord($construction, $source, $verification, $mounts);
             $state->writeTopology($topology);
