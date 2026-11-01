@@ -14,6 +14,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Operation;
@@ -194,3 +195,26 @@ it('requires consent for a role that appears before the locked Node is reloaded'
         Node::setEventDispatcher($dispatcher);
     }
 });
+
+it('admits the TaskVM guest token boundary only from records and worker selection', function (string $target): void {
+    FleetFixtures::bind();
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 fixture-bootstrap-public');
+    app()->instance(SshKeyProvider::class, $keys);
+    $node = FleetFixtures::node('removal-token-'.$target);
+    $node->update(['wireguard_public_key' => null]);
+    config(['swamp_workers.nodes' => $target === 'selected' || $target === 'guest-selected-config' ? [$node->id] : []]);
+    if (str_starts_with($target, 'guest')) {
+        TaskVm::query()->create(['node_id' => $node->id, 'name' => $node->name, 'wireguard_ip' => $node->wireguard_ip, 'provider' => 'incus', 'state' => 'destroying']);
+    }
+    if ($target === 'host') {
+        TaskVm::query()->create(['host_node_id' => $node->id, 'name' => 'tvm-child', 'wireguard_ip' => '10.44.0.230', 'provider' => 'incus', 'state' => 'ready']);
+    }
+    $selected = app(NodeWorkerRollout::class)->allows($node);
+    $snapshot = [...app(NodeRemovalPlan::class)->build($node, true), 'task_vm_guest' => true];
+
+    $captured = app(NodeRemovalInput::class)->capture($snapshot);
+
+    expect($selected)->toBe($target === 'selected');
+    expect($captured['intent']['task_vm_guest'])->toBe(str_starts_with($target, 'guest'));
+})->with(['ordinary', 'selected', 'host', 'guest', 'guest-selected-config']);

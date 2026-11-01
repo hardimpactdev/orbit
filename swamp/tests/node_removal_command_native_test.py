@@ -84,7 +84,7 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
         self.role = {'schema_version': 1, 'node_id': 701, 'assignment_id': 101, 'role': 'database', 'ssh': self.ssh,
                      'publications': [], 'stop_units': [], 'stop_containers': [], 'remove_containers': [],
                      'ci_host': [], 'firewall': [], 'certificates': [], 'remove_units': [], 'remove_footprints': [], 'reload_units': []}
-        self.intent = {'schema_version': 1, 'node_id': 701, 'name': 'disposable', 'offline': False,
+        self.intent = {'schema_version': 1, 'node_id': 701, 'name': 'disposable', 'offline': False, 'task_vm_guest': False,
                        'platform': 'linux', 'probe': {'host': 'disposable.test', 'port': 22}, 'ssh': self.ssh,
                        'roles': [self.role], 'public_ssh': {'argv': ['ufw', 'allow', '22']},
                        'managed_keys': [PIN], 'hub': [], 'router_rules': [], 'peers': [], 'dns': [],
@@ -100,6 +100,26 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
             Path(evidence).mkdir(parents=True, exist_ok=True)
             Path(evidence, name + '-' + result['id'] + '.json').write_text(json.dumps(history, indent=2))
         return result, history
+
+    def test_task_vm_guest_skips_all_token_phases_but_finishes_node_removal(self):
+        self.intent['task_vm_guest'] = True
+        workflow_path = self.repo / 'workflows/workflow-operation-node-remove.yaml'
+        workflow = yaml.safe_load(workflow_path.read_text())
+        for job in workflow['jobs']:
+            for step in job['steps']:
+                if step['name'] in ('worker_tokens', 'access_tokens', 'revoke_worker', 'revoke_access'):
+                    step['task']['inputs']['run'] = 'exit 77'
+        workflow_path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        self.cli('workflow', 'validate', 'operation-node-remove')
+
+        result, history = self.run_root('operation-node-remove', self.intent)
+
+        self.assertEqual(result['status'], 'succeeded', history)
+        token_job = next(job for job in history['jobs'] if job['name'] == 'phase_worker_tokens')
+        self.assertEqual({step['name']: step['status'] for step in token_job['steps']},
+                         {'worker_tokens': 'skipped', 'access_tokens': 'skipped', 'tokens': 'skipped'})
+        output = json.loads(history['jobs'][-1]['steps'][-1]['outputs']['stdout'])
+        self.assertTrue(output['removed'])
 
     def test_success_empty_fanouts_then_retirement_and_terminal_stdout(self):
         self.cli('workflow', 'validate', 'operation-node-remove')
