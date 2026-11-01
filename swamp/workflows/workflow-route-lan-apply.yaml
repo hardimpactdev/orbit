@@ -1,6 +1,6 @@
 id: b14d2aa1-9248-43ef-a2f1-233044ec7cb6
 name: route-lan-apply
-description: Converge captured shared Route LAN tuples with the official firewall model.
+description: Converge captured shared Route LAN tuples through official pinned SSH.
 vaults: []
 inputs:
   type: object
@@ -47,103 +47,78 @@ inputs:
 jobs:
 - name: lan
   steps:
-  - name: input
+  - name: observe-before
     target: orbit-node-209
-    labels: &id001
-      node: '209'
+    task: &observe
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "route-lan-" + run.id }}'
+      methodName: exec
+      globalArgs: &ssh
+        name: '${{ "route-lan-" + run.id }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.connection.nodeUser }}'
+          identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
+          port: '${{ inputs.intent.connection.nodePort }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.connection.nodeHost }}'
+          transport: {hostKeys: '${{ inputs.intent.host_keys }}'}
+      inputs: {hosts: 'name:target', argv: [/usr/sbin/ufw, status], sudo: true}
+  - name: changes
+    target: orbit-node-209
+    dependsOn: [{step: observe-before, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: route-lan-input
-      methodName: lan
-      inputs:
-        intent: ${{ inputs.intent.rule }}
+      behaviorName: route-lan-changes
+      methodName: lanChanges
+      inputs: {plan: '${{ inputs.intent.rule }}', current: '${{ steps["observe-before"].outputs.stdout }}'}
   - name: apply
     target: orbit-node-209
-    labels: *id001
-    forEach:
-      item: rule
-      in: ${{ inputs.intent.rule.rules }}
-    dependsOn:
-    - step: input
-      condition:
-        type: succeeded
+    forEach: {item: rule, in: '${{ inputs.intent.rule.rules }}'}
+    dependsOn: [{step: changes, condition: {type: succeeded}}]
+    guard: '${{ !(self.rule.model_name in steps.changes.outputs.model_names) }}'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/firewall'
-      behaviorName: ${{ "route-lan-" + run.id + "-" + self.rule.model_name }}
-      methodName: apply
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodePort: ${{ inputs.intent.connection.nodePort }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        port: ${{ self.rule.port }}
-        protocol: ${{ self.rule.protocol }}
-        source: ${{ self.rule.source }}
-        ensure: ${{ self.rule.ensure }}
-        action: allow
-        direction: in
-      inputs: {}
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "route-lan-" + run.id + "-" + self.rule.model_name }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["/usr/sbin/ufw"] + (self.rule.ensure == "absent" ? ["delete"] : []) + ["allow", "from", self.rule.source, "to", "any", "port", string(self.rule.port), "proto", self.rule.protocol] }}', sudo: true}
+  - name: observe-after
+    target: orbit-node-209
+    dependsOn: [{step: changes, condition: {type: succeeded}}, {step: apply, condition: {type: always}}]
+    task: *observe
   - name: verify-tuples
     target: orbit-node-209
-    labels: *id001
-    dependsOn:
-    - step: input
-      condition:
-        type: succeeded
-    - step: apply
-      condition:
-        type: always
+    dependsOn: [{step: observe-after, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
       behaviorName: route-lan-applied
       methodName: lanApplied
-      inputs:
-        plan: ${{ steps.input.outputs }}
-        outcomes: ${{ steps }}
+      inputs: {plan: '${{ inputs.intent.rule }}', outcomes: '${{ steps }}'}
   - name: migrate
     target: orbit-node-209
-    labels: *id001
-    forEach:
-      item: plan
-      in: '${{ inputs.intent.rule.migrate ? [inputs.intent] : [] }}'
-    dependsOn:
-    - step: input
-      condition:
-        type: succeeded
-    - step: verify-tuples
-      condition:
-        type: succeeded
+    forEach: {item: plan, in: '${{ inputs.intent.rule.migrate ? [inputs.intent] : [] }}'}
+    dependsOn: [{step: verify-tuples, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: route-lan-migrate
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        intent: ${{ self.plan }}
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        execution_secrets: '${{ inputs.execution_secrets }}'
+        intent: '${{ self.plan }}'
   - name: result
     target: orbit-node-209
-    labels: *id001
-    dependsOn:
-    - step: input
-      condition:
-        type: succeeded
-    - step: apply
-      condition:
-        type: always
-    - step: migrate
-      condition:
-        type: always
+    dependsOn: [{step: verify-tuples, condition: {type: succeeded}}, {step: migrate, condition: {type: always}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
       behaviorName: route-lan-result
       methodName: lanResult
-      inputs:
-        plan: ${{ steps.input.outputs }}
-        outcomes: ${{ steps }}
+      inputs: {plan: '${{ inputs.intent.rule }}', outcomes: '${{ steps }}'}

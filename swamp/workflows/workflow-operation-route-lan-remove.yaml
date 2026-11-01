@@ -63,8 +63,6 @@ jobs:
   steps:
   - name: converge-lan
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: workflow
       workflowIdOrName: route-lan-apply
@@ -83,8 +81,6 @@ jobs:
             migrate: ${{ inputs.intent.migrate }}
   - name: remove-lan
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: converge-lan
       condition:
