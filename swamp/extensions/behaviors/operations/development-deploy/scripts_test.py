@@ -25,7 +25,7 @@ def script(name):
     program = program.replace("${projectEnvironmentRuntime}", (HERE.parent / "task-repository/scripts/project_environment.py").read_text())
     body = body.replace('APP_RUNTIME = "__APP_STEP_RUNTIME__"', "APP_RUNTIME = " + repr(program))
     environment = (HERE.parent / "task-repository/scripts/project_environment.py").read_text()
-    common = (HERE / "scripts/common.py").read_text().replace("from project_environment import load_project_environment\n", "")
+    common = (HERE / "scripts/common.py").read_text().replace("if TYPE_CHECKING:\n    from project_environment import load_project_environment\n", "")
     return environment + "\n" + common + "\n" + body
 
 
