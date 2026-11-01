@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Tools\ConvergeToolManagerAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
+use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -40,7 +42,7 @@ it('admits keyed installs without manager execution or premature Tool ownership'
     $this->postJson('/api/v1/tools', $body)->assertAccepted()->assertJsonPath('data.id', $start->json('data.id'));
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('tool.install')->and($operation->node_id)->toBe($this->node->id)
-        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->lock_key)->toBe('node_tools:'.$this->node->id.':apt')
         ->and($operation->input['version_constraint'])->toBe('^1.0')->and($operation->input)->not->toHaveKey('constraint_intervals')->and(Tool::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });
@@ -194,3 +196,116 @@ it('retains an unconfirmed native cancellation without inventing terminal succes
     expect($operation->fresh()->status->terminal())->toBeFalse()->and($operation->fresh()->cancel_requested_at)->not->toBeNull();
     expect(Tool::query()->count())->toBe(0);
 });
+
+it('captures native removal and projects only its selected Tool once', function (bool $failed, bool $intentOnly): void {
+    $record = $this->node->toolManagers()->create(['name' => 'vp', 'status' => LifecycleStatus::Active, 'installed_version' => '3.0.0']);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'is-number', 'status' => $intentOnly ? ToolStatus::Failed : ToolStatus::Installed,
+        'installed_version' => $intentOnly ? null : '7.0.0', 'error_code' => $intentOnly ? 'tool.version_probe_failed' : null]);
+    $other = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'other', 'status' => ToolStatus::Installed]);
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
+    $operation = Operation::query()->sole();
+    $inputs = $this->socket->sent[0]['payload']['inputs'];
+    expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-tool-remove-209')
+        ->and($inputs['intent']['intent_only'])->toBe($intentOnly)
+        ->and($inputs['ssh']['target']['host_keys'])->toBe(['ssh-ed25519 '.$this->node->ssh_host_key]);
+    $this->node->update(['wireguard_ip' => '10.44.0.99', 'user' => 'changed']);
+    expect(app(ToolIntentProjection::class)->input($operation))->toBe(['intent' => $inputs['intent'], 'ssh' => $inputs['ssh']]);
+    $status = $failed ? 'failed' : 'succeeded';
+    $result = $failed ? ['error_code' => 'tool.version_probe_failed'] : ['installed_version' => null, 'outcome' => 'applied'];
+    $run = ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-tool-remove-209', 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tool.remove'],
+        'startedAt' => '2026-11-01T01:00:00Z', 'completedAt' => '2026-11-01T01:00:01Z',
+        'jobs' => [['name' => 'tools', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+    $projector = app(SwampCommandStep::class);
+    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'result']);
+    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'result']);
+    expect($operation->fresh()->status->value)->toBe($status);
+    if ($failed) {
+        expect($tool->refresh()->status)->toBe(ToolStatus::Failed)->and($tool->installed_version)->toBe('7.0.0')
+            ->and($tool->error_code)->toBe('tool.version_probe_failed');
+    } else {
+        $this->assertModelMissing($tool);
+    }
+    $this->assertModelExists($other);
+    expect($record->refresh()->installed_version)->toBe('3.0.0')->and($operation->fresh()->lock_key)->toBeNull();
+    $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'f4c20822-d85f-4212-a60d-a81a52c30baa']]];
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'vp', 'package' => 'after-release'])->assertAccepted();
+})->with([[false, false], [true, false], [false, true]]);
+
+it('rejects removal callbacks and sends cancellation to its bound native root', function (): void {
+    $record = $this->node->toolManagers()->create(['name' => 'apt', 'status' => LifecycleStatus::Active]);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'jq', 'status' => ToolStatus::Installed]);
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
+    $operation = Operation::query()->sole();
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $run = $operation->state['swamp_run_id'];
+    $this->getJson($path.'?run_id='.$run)->assertForbidden();
+    $this->postJson($path.'/result', ['run_id' => $run, 'status' => 'succeeded',
+        'started_at' => '2026-11-01T01:00:00.000Z', 'finished_at' => '2026-11-01T01:00:01.000Z', 'result' => []])->assertForbidden();
+    Http::preventStrayRequests();
+    Http::fake(['https://swamp.orbit/api/v1/cancel/workflow-run/*' => Http::response(['status' => 'cancelled'])]);
+    app(CancelOperationAction::class)->execute($operation);
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://swamp.orbit/api/v1/cancel/workflow-run/'.$run);
+    $this->assertModelExists($tool);
+    expect($operation->fresh()->status->terminal())->toBeFalse()
+        ->and($operation->fresh()->lock_key)->toBe('node_tools:'.$this->node->id.':apt');
+});
+
+it('refuses native removal without full pins before creating work', function (): void {
+    $record = $this->node->toolManagers()->create(['name' => 'apt', 'status' => LifecycleStatus::Active]);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'jq', 'status' => ToolStatus::Installed]);
+    $this->node->update(['ssh_host_key' => null]);
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertStatus(503)->assertJsonPath('error.code', 'swamp.ssh_target_unavailable');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+    $this->assertModelExists($tool);
+});
+
+it('holds exactly one Node manager pair across native removal and retained writes', function (string $verb): void {
+    $manager = $this->node->toolManagers()->create(['name' => 'composer', 'status' => LifecycleStatus::Active]);
+    $first = $this->node->tools()->create(['tool_manager_id' => $manager->id, 'package' => 'vendor/first', 'status' => ToolStatus::Installed]);
+    $second = $this->node->tools()->create(['tool_manager_id' => $manager->id, 'package' => 'vendor/second', 'status' => ToolStatus::Installed]);
+    $this->withHeader('Idempotency-Key', 'held-removal')->deleteJson('/api/v1/tools/'.$first->id)->assertAccepted();
+    $held = Operation::query()->sole();
+    expect($held->lock_key)->toBe('node_tools:'.$this->node->id.':composer');
+    $this->withHeader('Idempotency-Key', 'held-removal')->deleteJson('/api/v1/tools/'.$first->id)->assertAccepted()->assertJsonPath('data.id', $held->id);
+    $this->withHeader('Idempotency-Key', 'conflicting-write');
+    (match ($verb) {
+        'remove' => $this->deleteJson('/api/v1/tools/'.$second->id),
+        'update' => $this->postJson('/api/v1/tools/'.$second->id.'/update'),
+        'install' => $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'composer', 'package' => 'vendor/third']),
+        'adopt' => $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'composer', 'package' => 'vendor/third']),
+    })->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Operation::query()->count())->toBe(1)->and($this->socket->sent)->toHaveCount(1);
+    $this->withHeader('Idempotency-Key', 'independent-manager')->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
+    expect(Operation::query()->count())->toBe(2)->and($this->socket->sent)->toHaveCount(2);
+})->with(['remove', 'update', 'install', 'adopt']);
+
+it('excludes native removal while the retained manager action owns its pair', function (): void {
+    $manager = $this->node->toolManagers()->create(['name' => 'composer', 'status' => LifecycleStatus::Active]);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $manager->id, 'package' => 'vendor/package', 'status' => ToolStatus::Installed]);
+    $held = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::Composer);
+    expect($held->lock_key)->toBe('node_tools:'.$this->node->id.':composer');
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Operation::query()->count())->toBe(1)->and($this->socket->sent)->toHaveCount(1);
+});
+
+it('admits the same manager independently on different Nodes', function (): void {
+    $other = toolOperationNode('other', '10.44.0.4');
+    foreach ([$this->node, $other] as $node) {
+        $this->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
+    }
+    expect(Operation::query()->pluck('lock_key')->all())->toBe(['node_tools:'.$this->node->id.':apt', 'node_tools:'.$other->id.':apt']);
+    expect($this->socket->sent)->toHaveCount(2);
+});
+
+it('releases the manager hold on normal cancellation and interruption projection', function (string $status): void {
+    $manager = $this->node->toolManagers()->create(['name' => 'composer', 'status' => LifecycleStatus::Active]);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $manager->id, 'package' => 'vendor/package', 'status' => ToolStatus::Installed]);
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
+    $operation = Operation::query()->sole();
+    app(ToolIntentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
+        'started_at' => '2026-11-01T01:00:00.000Z', 'finished_at' => '2026-11-01T01:00:01.000Z', 'result' => []]);
+    expect($operation->refresh()->status->value)->toBe($status)->and($operation->lock_key)->toBeNull();
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'composer', 'package' => 'vendor/next'])->assertAccepted();
+})->with(['cancelled', 'interrupted']);

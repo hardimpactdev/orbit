@@ -4,7 +4,6 @@ import { Input } from "./contract.ts";
 export const Kind = z.enum([
   "tool.install",
   "tool.update",
-  "tool.remove",
   "tool.manager_converge",
 ]);
 export const Identity = z.object({

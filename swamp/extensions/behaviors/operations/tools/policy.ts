@@ -17,7 +17,7 @@ export async function executeToolPolicy(
   hasMaterialize: boolean,
 ): Promise<Result> {
   const verb = kind.slice(5);
-  if (verb !== "remove") validateConstraint(input);
+  validateConstraint(input);
   let final: Result;
   if (
     hasMaterialize
@@ -41,11 +41,10 @@ export async function executeToolPolicy(
     if (verb === "update" && before === null) {
       throw new ToolRefusal("tool.version_probe_failed");
     }
-    if (before !== null && verb !== "remove") {
+    if (before !== null) {
       verifyInstalled(input, before);
     }
-    let mutate = !(verb === "install" && before !== null) &&
-      !(verb === "remove" && before === null);
+    let mutate = !(verb === "install" && before !== null);
     if (
       mutate && (verb === "install" || verb === "update") &&
       input.version_constraint !== null
@@ -66,16 +65,6 @@ export async function executeToolPolicy(
         mutate = false;
       }
     }
-    if (
-      mutate && verb === "remove" &&
-      ["apt", "vp", "composer"].includes(input.manager)
-    ) {
-      const plan = await run("package-removal-plan");
-      if (
-        !Array.isArray(plan.packages) || plan.packages.length !== 1 ||
-        plan.packages[0] !== input.package
-      ) throw new ToolRefusal("tool.removal_plan_unsafe");
-    }
     if (mutate) {
       await run("package-mutate");
     }
@@ -84,14 +73,8 @@ export async function executeToolPolicy(
     if (after !== null && !safeVersion(after)) {
       throw new ToolRefusal("tool.version_probe_failed");
     }
-    if (verb === "remove") {
-      if (after !== null) throw new ToolRefusal("tool.remove_failed");
-    } else {
-      if (after === null) {
-        throw new ToolRefusal("tool.version_probe_failed");
-      }
-      verifyInstalled(input, after);
-    }
+    if (after === null) throw new ToolRefusal("tool.version_probe_failed");
+    verifyInstalled(input, after);
   }
 
   return final;

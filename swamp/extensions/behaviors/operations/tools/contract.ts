@@ -94,7 +94,6 @@ export function refusalCode(step: string, code: string, kind: string): string {
   if (step === "package-candidate") {
     return "tool.candidate_version_probe_failed";
   }
-  if (step === "package-removal-plan") return "tool.remove_failed";
   if (step === "package-mutate") return `${kind}_failed`;
   return "tool.version_probe_failed";
 }

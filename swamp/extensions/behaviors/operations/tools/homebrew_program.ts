@@ -62,7 +62,7 @@ def path_class(path,prefix,home):
  if '/' not in path or any(path==b or path.startswith(b+'/') for b in bases):return 'user'
  return 'authorization' if path.startswith(('/','$APPDIR')) else 'unsupported'
 
-def artifacts_check(artifacts,prefix,home,removal=False):
+def artifacts_check(artifacts,prefix,home):
  if not isinstance(artifacts,list):refuse('tool.output_invalid')
  installs=0;authorization=False
  for artifact in artifacts:
@@ -80,7 +80,6 @@ def artifacts_check(artifacts,prefix,home,removal=False):
     continue
    known=kind in PREFIX_KINDS|HOME_KINDS|APP_KINDS|PRIVILEGED_KINDS|{'artifact'}
    if not known:
-    if removal:continue
     refuse('tool.homebrew_cask_artifact_unsupported')
    installs+=1
    paths=[]
@@ -90,9 +89,9 @@ def artifacts_check(artifacts,prefix,home,removal=False):
    if kind in PRIVILEGED_KINDS:authorization=True
    else:
     classes=[path_class(p,prefix,home) for p in paths]
-    if not removal and 'unsupported' in classes:refuse('tool.homebrew_cask_artifact_unsupported')
+    if 'unsupported' in classes:refuse('tool.homebrew_cask_artifact_unsupported')
     if 'authorization' in classes:authorization=True
- if not removal and installs==0:refuse('tool.homebrew_cask_artifact_unsupported')
+ if installs==0:refuse('tool.homebrew_cask_artifact_unsupported')
  if authorization:refuse('tool.homebrew_cask_authorization_required')
 
 def assess_cask(value,name,prefix,home):
@@ -134,7 +133,7 @@ def brew(host,verb,data):
  if verb=='inventory':return inventory()
  name=package(host.node['manager'],data.get('package'))
  if name in ('wireguard-tools','wireguard-go'):refuse('tool.package_protected')
- tag=brew_tag(host) if verb!='remove' or cask else None;coordinate=('homebrew/cask/' if cask else 'homebrew/core/')+name
+ tag=brew_tag(host);coordinate=('homebrew/cask/' if cask else 'homebrew/core/')+name
  def metadata_(refresh=False):
   code,out,err=call(['info','--json=v2','--cask' if cask else '--formula',coordinate],refresh,False)
   if len(out)>131072 or len(err)>131072:refuse('tool.output_invalid')
@@ -154,17 +153,6 @@ def brew(host,verb,data):
   if not official(value,name) or value.get('disabled') is not False or not version(stable) or not bottle(value,tag):refuse('tool.homebrew_candidate_unavailable')
   return stable
  if verb=='candidate':return {'version':candidate(metadata_(True))}
- if verb=='remove':
-  if cask:
-   value=metadata_()
-   if value is None:
-    values=object_(json_(call(['info','--json=v2','--cask','--installed'])[1])).get('casks')
-    if not isinstance(values,list):refuse('tool.output_invalid')
-    values=[v for v in values if isinstance(v,dict) and v.get('token')==name]
-    if len(values)!=1 or values[0].get('tap')!='homebrew/cask':refuse('tool.homebrew_cask_source_unsupported')
-    value={**values[0],**object_(object_(values[0].get('variations',{})).get(tag,{}))};coordinate=name
-   artifacts_check(value.get('artifacts'),prefix,host.home,True)
-  call(['uninstall','--cask' if cask else '--formula',coordinate]);return {}
  value=metadata_(True)
  if candidate(value) is None:refuse('tool.homebrew_candidate_unavailable')
  call(['install' if verb=='install' else 'upgrade','--cask',coordinate] if cask else ['install' if verb=='install' else 'upgrade','--formula','--force-bottle',coordinate],True);return {}

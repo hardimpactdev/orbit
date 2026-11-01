@@ -131,6 +131,7 @@
     {"workflow": "operation-task-vm-upcloud-image-build", "actions": ["run", "read"]},
     {"workflow": "operation-task-vms", "actions": ["run", "read"]},
     {"workflow": "operation-tool-adopt-209", "actions": ["run", "read"]},
+    {"workflow": "operation-tool-remove-209", "actions": ["run", "read"]},
     {"workflow": "operation-tool-direct", "actions": ["run", "read"]},
     {"workflow": "operation-tool-install-direct", "actions": ["run", "read"]},
     {"workflow": "operation-vault-direct", "actions": ["run", "read"]},
