@@ -6,10 +6,13 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -76,14 +79,6 @@ describe('environment request wiring', function (): void {
             'body' => ['value' => 'true'],
             'operation' => 'update',
         ]],
-        'synchronize' => [[
-            'command' => 'env:sync',
-            'arguments' => ['--instance' => 'app.com'],
-            'request_class' => SynchronizeInstanceEnvironmentRequest::class,
-            'path' => '/api/v1/instances/app.com/environment/sync',
-            'body' => [],
-            'operation' => 'sync',
-        ]],
     ]);
 
     it('accepts a numeric Instance ID for every operation', function (
@@ -114,7 +109,6 @@ describe('environment request wiring', function (): void {
             'update',
             'APP_DEBUG',
         ],
-        'synchronize' => ['env:sync', [], SynchronizeInstanceEnvironmentRequest::class, 'sync', 'sync'],
     ]);
 });
 
@@ -198,24 +192,6 @@ describe('environment output', function (): void {
             ->artisan('env:import', ['--instance' => 'app.com', '--json' => true])
             ->expectsOutput(environment_cli_result_json('import', workloadFileChanged: false))
             ->assertExitCode(0);
-    });
-
-    it('reports synchronization without claiming cache or process refreshes', function (): void {
-        MockClient::global([
-            SynchronizeInstanceEnvironmentRequest::class => environment_cli_response('sync', changed: false),
-        ]);
-
-        [$exit, $output] = environment_cli_display('env:sync', ['--instance' => 'app.com']);
-        $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
-        expect($exit)->toBe(0);
-        expect($flat)->toContain('Instance ID 17');
-        expect($flat)->toContain('Operation sync');
-        expect($flat)->toContain('Changed false');
-        expect($flat)->toContain('Stored keys 3');
-        expect($output)->toContain(environment_cli_request_id());
-        expect($output)->not->toContain('cache');
-        expect($output)->not->toContain('restart');
-        expect($output)->not->toContain('refresh');
     });
 });
 
@@ -423,30 +399,64 @@ describe('environment failures', function (): void {
     });
 });
 
-it('renders production PHP refresh outcomes in human and JSON sync output', function (string $outcome, string $message): void {
-    $ids = str_starts_with($outcome, 'skipped_') ? [] : [12, 14];
-    foreach ([false, true] as $json) {
-        MockClient::global([SynchronizeInstanceEnvironmentRequest::class => MockResponse::make([
-            'data' => ['instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1, 'runtime_refresh' => $outcome, 'restarted_process_ids' => $ids],
-            'meta' => ['request_id' => environment_cli_request_id()],
-        ])]);
-        [$exit, $output] = environment_cli_display('env:sync', ['--instance' => '17', '--json' => $json]);
-        expect($exit)->toBe(0);
-        if ($json) {
-            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['runtime_refresh'])->toBe($outcome)
-                ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['restarted_process_ids'])->toBe($ids);
-        } else {
-            expect($output)->toContain($message, 'Processes restarted', $ids === [] ? 'none' : '12, 14');
-        }
-        MockClient::destroyGlobal();
-    }
-})->with([
-    ['config_cache_and_opcache_refreshed', 'config cache rebuilt; FPM opcache reset'],
-    ['opcache_refreshed_config_uncached', 'FPM opcache reset; config remains uncached'],
-    ['skipped_unchanged', 'refresh skipped: environment file unchanged'],
-    ['skipped_no_php_version', 'refresh skipped: no PHP version selected'],
-    ['skipped_no_current_release', 'refresh skipped: no current release'],
-]);
+describe('environment synchronization', function (): void {
+    it('follows the started operation and emits only the final Operation in JSON', function (string $selector): void {
+        $mock = environment_cli_sync_mock('succeeded');
+
+        $exit = Artisan::call('env:sync', ['--instance' => $selector, '--json' => true, '--no-interaction' => true]);
+        $output = trim(Artisan::output());
+        $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exit)->toBe(0)
+            ->and($data['id'])->toBe(901)
+            ->and($data['kind'])->toBe('instance.sync_environment')
+            ->and($data['status'])->toBe('succeeded')
+            ->and($data['result'])->toBe(['instance_id' => 17, 'changed' => true, 'environment_changed' => true, 'key_count' => 3]);
+        $mock->assertSent(fn ($request, $response): bool => $request instanceof SynchronizeInstanceEnvironmentRequest
+            && $response->getPendingRequest()->getUrl() === "https://10.44.0.1/api/v1/instances/{$selector}/environment/sync"
+            && (string) $response->getPendingRequest()->body() === '{}');
+        $mock->assertSent(ShowOperationRequest::class);
+    })->with(['Route domain' => 'app.com', 'Instance ID' => '17']);
+
+    it('reports the outcome in human output', function (string $status, int $exitCode, string $message): void {
+        environment_cli_sync_mock($status);
+
+        [$exit, $output] = environment_cli_display('env:sync', ['--instance' => 'app.com']);
+
+        expect($exit)->toBe($exitCode)
+            ->and($output)->toContain($message, 'Operation: 901', environment_cli_request_id());
+    })->with([
+        'success' => ['succeeded', 0, 'Environment synchronization succeeded.'],
+        'failure' => ['failed', 1, 'Environment synchronization failed.'],
+    ]);
+
+    it('reports the production runtime refresh and restarted Processes in human output', function (string $refresh, array $ids, string $message, string $restarted): void {
+        environment_cli_sync_mock('succeeded', ['runtime_refresh' => $refresh, 'restarted_process_ids' => $ids]);
+
+        [$exit, $output] = environment_cli_display('env:sync', ['--instance' => 'app.com']);
+
+        expect($exit)->toBe(0)
+            ->and($output)->toContain('Production PHP: '.$message, 'Processes restarted: '.$restarted);
+    })->with([
+        ['config_cache_and_opcache_refreshed', [12, 14], 'config cache rebuilt; FPM opcache reset', '12, 14'],
+        ['opcache_refreshed_config_uncached', [12], 'FPM opcache reset; config remains uncached', '12'],
+        ['skipped_unchanged', [], 'refresh skipped: environment file unchanged', 'none'],
+        ['skipped_no_php_version', [], 'refresh skipped: no PHP version selected', 'none'],
+        ['skipped_no_current_release', [], 'refresh skipped: no current release', 'none'],
+    ]);
+
+    it('exits nonzero and prints the failed Operation in JSON', function (): void {
+        environment_cli_sync_mock('failed');
+
+        $exit = Artisan::call('env:sync', ['--instance' => 'app.com', '--json' => true, '--no-interaction' => true]);
+        $data = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exit)->toBe(1)
+            ->and($data['status'])->toBe('failed')
+            ->and($data['failed_step'])->toBe('write')
+            ->and($data['error_code'])->toBe('env.write_failed');
+    });
+});
 
 /**
  * @param  array<string, mixed>  $arguments
@@ -457,6 +467,24 @@ function environment_cli_display(string $command, array $arguments = []): array
     $tester = new CommandTester(app(Kernel::class)->all()[$command]);
 
     return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
+
+/** Records the Gateway's 202 Operation contract for `env:sync`, then a terminal Operation for the follower. */
+/** @param array<string, mixed> $result */
+function environment_cli_sync_mock(string $status, array $result = []): MockClient
+{
+    $started = ['id' => 901, 'kind' => 'instance.sync_environment', 'target_type' => 'instance', 'target_id' => 17,
+        'input' => ['instance_id' => 17], 'status' => 'running', 'sequence' => 1, 'current_step' => null, 'failed_step' => null,
+        'error_code' => null, 'result' => null, 'cancel_requested' => false, 'attempts' => 0, 'poll_after_seconds' => 0];
+    $final = [...$started, 'status' => $status, 'sequence' => 6, ...($status === 'succeeded'
+        ? ['result' => ['instance_id' => 17, 'changed' => true, 'environment_changed' => true, 'key_count' => 3, ...$result]]
+        : ['failed_step' => 'write', 'error_code' => 'env.write_failed'])];
+
+    return MockClient::global([
+        SynchronizeInstanceEnvironmentRequest::class => MockResponse::make(['data' => $started, 'meta' => ['request_id' => environment_cli_request_id()]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => environment_cli_request_id()]]),
+    ]);
 }
 
 function environment_cli_response(string $operation, bool $changed = true): MockResponse

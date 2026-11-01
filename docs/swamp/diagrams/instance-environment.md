@@ -125,8 +125,7 @@ Differences from legacy:
 - Sync refreshes the production runtime on every run; legacy skipped it when nothing changed (`skipped_unchanged`).
 - Sync's capacity is a fixed 2 MiB; legacy used 1 MiB plus the stored bytes.
 - An open deploy or rollback now refuses through the generic `operation.target_busy`.
-- The `orbit env:sync` CLI still parses the legacy synchronous response (`EnvironmentOperationResponse`, which needs `operation: sync`).
-- The API now answers `202` with an Operation. By the code, the CLI reports a failure even after the sync was admitted. The CLI must follow the Operation.
+- The API answers `202` with an Operation, and `orbit env:sync` follows it to the end.
 - `SynchronizeInstanceEnvironmentAction` survives for two synchronous internal callers, `ConvergeRouteAction` and `NativeProjectUpdateProjectionMutator`, which still read the file through the agent.
 
 ## Mapping
