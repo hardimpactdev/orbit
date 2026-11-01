@@ -264,9 +264,22 @@ final readonly class DirectOperation
         return app($primitive);
     }
 
+    public function usesNativeTerminal(Operation $operation): bool
+    {
+        if (! isset($this->definitions[$operation->kind]['terminal_result'])) {
+            return false;
+        }
+        $projection = $this->projection($operation);
+
+        return ! $projection instanceof NativeOperationProjection || $projection->native($operation);
+    }
+
     public function githubTokenGrant(Operation $operation): GitHubTokenGrant
     {
-        $this->projection($operation);
+        $projection = $this->projection($operation);
+        if ($projection instanceof DirectOperationGitHubGrant) {
+            return $projection->githubTokenGrant($operation);
+        }
         $grant = $this->definitions[$operation->kind]['github_token'] ?? null;
         if ($grant === null) {
             throw new ResourceOperationException('operation.github_token_forbidden', 'This intent declares no GitHub credential.', 403);
