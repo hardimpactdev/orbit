@@ -43,6 +43,7 @@ On Ubuntu, services run natively under systemd. Container Processes and the `met
 | `websocket` | Runs the realtime server. One per fleet. |
 | `metrics` | Collects fleet metrics. One per fleet. |
 | `analytics` | Collects visit analytics. One per fleet. |
+| `swamp` | Runs Swamp serve and its workers, and serves `swamp.orbit`. One per fleet. |
 
 A role refuses a Node that holds a conflicting role. For example, the `gateway` role never shares a Node with `app-dev`, `app-prod`, `database`, `analytics`, or `ingress`. [Node provisioning](/reference/node-provisioning) lists every conflict.
 

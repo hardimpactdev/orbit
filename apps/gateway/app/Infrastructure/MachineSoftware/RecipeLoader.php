@@ -186,7 +186,7 @@ final readonly class RecipeLoader
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
-        $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', RoleName::CiRunner->value];
+        $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', RoleName::CiRunner->value, RoleName::Swamp->value];
         $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
         $this->require(array_diff($phpSets['pcov'], [...$roleNames, 'base']) === [], 'php.pcov: expected recipe profiles.');
         $this->require(array_diff($phpSets['opentelemetry'], ['app-dev']) === [], 'php.opentelemetry: only the app-dev profile may load OpenTelemetry.');

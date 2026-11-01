@@ -21,6 +21,7 @@ final readonly class RoleRegistry
             RoleName::WebSocket,
             RoleName::Analytics,
             RoleName::CiRunner,
+            RoleName::Swamp,
         ];
     }
 
@@ -109,6 +110,14 @@ final readonly class RoleRegistry
                 mutable: true,
                 relocatable: false,
                 conflicts: [RoleName::Gateway, RoleName::Vpn],
+            ),
+            // Swamp serve, its workers and the Caddy that serves swamp.orbit (ADR 0243).
+            RoleName::Swamp => new RoleDefinition(
+                name: $role,
+                singleton: true,
+                assignableDuringProvisioning: false,
+                mutable: true,
+                relocatable: true,
             ),
             RoleName::Analytics => new RoleDefinition(
                 name: $role,

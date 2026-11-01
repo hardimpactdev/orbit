@@ -41,6 +41,19 @@ it('returns one idempotent asynchronous role intent without executing a Node com
     expect($first->getContent())->not->toContain(str_repeat('e', 64), 'secret_hash');
 })->with(['database', 'ci-runner']);
 
+it('admits the swamp role as a Caddy role of its own Node and keeps it a singleton', function (): void {
+    $ack = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'swamp'])->assertAccepted();
+    $snapshot = Operation::query()->findOrFail($ack->json('data.id'))->input['_role'];
+    expect($snapshot['role'])->toBe('swamp')
+        ->and($snapshot['publication']['caddy_node_ids'])->toBe([$this->node->id])
+        ->and($snapshot['prerequisites']['packages'])->toContain('caddy');
+
+    $other = FleetFixtures::node('role-http-other');
+    $other->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();
+    config(['swamp_workers.nodes' => [$this->node->id, $other->id]]);
+    $this->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'swamp'])->assertUnprocessable();
+});
+
 it('hydrates only the existing owned hash through the real shared private reader', function (): void {
     $ack = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])->assertAccepted();
     $operation = Operation::query()->findOrFail($ack->json('data.id'));

@@ -173,7 +173,7 @@ export function nodeRoleAdd(
     };
     return {
         type: "@nckrtl/node-role-add-direct",
-        version: "2026.10.31.1",
+        version: "2026.11.01.1",
         globalArguments: Globals,
         resources: {
             ...parentManagerResources,

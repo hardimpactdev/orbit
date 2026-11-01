@@ -31,7 +31,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:platform`](#orbit-nodeplatform) | Set the platform of an unmanaged Node. |
 | [`node:role:add`](#orbit-noderoleadd) | Add a role, or converge an existing role. |
 | [`node:role:list`](#orbit-noderolelist) | List the roles of a Node. |
-| [`node:role:relocate`](#orbit-noderolerelocate) | Move `gateway`, `websocket`, or `metrics` to another Node. |
+| [`node:role:relocate`](#orbit-noderolerelocate) | Move `gateway`, `websocket`, `metrics`, or `swamp` to another Node. |
 | [`node:role:remove`](#orbit-noderoleremove) | Remove a role. |
 | [`node:access:add`](#orbit-nodeaccessadd) | Grant one Node access to another. |
 | [`node:access:remove`](#orbit-nodeaccessremove) | Remove an access grant. |
@@ -318,7 +318,7 @@ Some steps report a failure without failing the role. The role stays `active`, a
 
 The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the Incus host boundary without creating or registering containers. It cannot share `gateway` or `vpn`. Add it to CI-only hosts and alongside Beast's existing roles through this command.
 
-Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
+Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, `metrics`, or `swamp`.
 
 Use `--idempotency-key=KEY` to retry the same native role admission.
 
@@ -332,7 +332,7 @@ orbit node:role:list <node> [--json]
 
 ## orbit node:role:relocate
 
-Move `gateway`, `websocket`, or `metrics` from its current Node to another Node. One assignment stays active for the whole request.
+Move `gateway`, `websocket`, `metrics`, or `swamp` from its current Node to another Node. One assignment stays active for the whole request.
 
 ```bash
 orbit node:role:relocate <node> <role> [--from=NODE] [--force] [--json]
@@ -341,7 +341,7 @@ orbit node:role:relocate <node> <role> [--from=NODE] [--force] [--json]
 | Argument or option | Meaning |
 | --- | --- |
 | `node` | Target Node ID or name. It must be active and hold no conflicting role. |
-| `role` | `gateway`, `websocket`, or `metrics`. |
+| `role` | `gateway`, `websocket`, `metrics`, or `swamp`. |
 | `--from=NODE` | Source Node. Omit it to use the current holder. When the target already holds the role, `--from` names the Node whose leftovers to remove. |
 | `--force` | Confirm the move. Required without a terminal and with `--json`. |
 
@@ -354,7 +354,7 @@ For `gateway`, the Gateway opens the `orbit:gateway-https` firewall rule on the 
 
 Relocating `gateway` does not move `vpn`, the Gateway checkout, its SQLite database, the Orbit CA, or the SSH keys. It does not stop Caddy or PHP-FPM on the source, so clients that still use the old address keep working. [Relocate the gateway role](/solutions/relocate-gateway-role) gives the full order.
 
-For `websocket`, the Gateway copies the Reverb server's Laravel `APP_KEY` only when the target lacks one. The [Reverb apps](/reference/websocket-apps) stay in the Gateway database, so every app keeps its credentials. For `metrics`, the Gateway copies role credentials that the target lacks, without overwriting any. It moves the assignment, converges the target, and removes the runtime and publication from the source.
+For `websocket`, the Gateway copies the Reverb server's Laravel `APP_KEY` only when the target lacks one. The [Reverb apps](/reference/websocket-apps) stay in the Gateway database, so every app keeps its credentials. For `metrics`, the Gateway copies role credentials that the target lacks, without overwriting any. It moves the assignment, converges the target, and removes the runtime and publication from the source. For `swamp`, the move covers the role's Caddy build; move the `swamp.orbit` Route with the Route commands.
 
 When a step on the target or the source fails, the role already runs on the target. The command fails with its usual code, `details.step` set to `converge:STEP` or `remove:STEP`, and `details.error_code` set to the step's own code. The message names the `--from` command that finishes the move. The Gateway reconciles Metrics once, after the source is done. A failed reconcile does not fail the move: `follow_up` names the Metrics Node and the `orbit node:role:add <metrics-node> metrics --converge` command.
 
@@ -482,7 +482,7 @@ The Gateway process serves the API. Removing the last `gateway` assignment and a
 
 ### One relocate action for every relocatable role
 
-Each role definition states whether the role is relocatable. Orbit does not infer it from singleton and mutable, because generic add and remove is a wider contract than a move. `gateway`, `websocket`, and `metrics` are relocatable. One relocate action runs the shared steps for all three: the singleton lock, the source check, the settings copy, and the assignment transfer. Role-specific work runs as a step for that role inside the same action. A new relocatable role adds the flag and its step, not a new command.
+Each role definition states whether the role is relocatable. Orbit does not infer it from singleton and mutable, because generic add and remove is a wider contract than a move. `gateway`, `websocket`, `metrics`, and `swamp` are relocatable. One relocate action runs the shared steps for all four: the singleton lock, the source check, the settings copy, and the assignment transfer. Role-specific work runs as a step for that role inside the same action. A new relocatable role adds the flag and its step, not a new command.
 
 ### The target's credentials win
 

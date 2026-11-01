@@ -124,7 +124,7 @@ it('captures and completes every mutable role removal without PHP effects', func
     $operation->save();
     app(NodeRoleRemovalProjection::class)->apply($operation, roleLifecycleData('succeeded', ['removed' => true]));
     expect($node->roles()->where('role', $role)->exists())->toBeFalse();
-})->with(['gateway', 'app-dev', 'app-prod', 'ingress', 'metrics', 'database', 'websocket', 'analytics', 'ci-runner']);
+})->with(['gateway', 'app-dev', 'app-prod', 'ingress', 'metrics', 'database', 'websocket', 'analytics', 'ci-runner', 'swamp']);
 
 it('admits both relocation Nodes and confines runtime and hash reads to the target', function (): void {
     $target = FleetFixtures::node('relocation-target');

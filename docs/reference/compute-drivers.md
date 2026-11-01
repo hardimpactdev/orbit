@@ -1252,7 +1252,7 @@ The table accepts established traffic and drops all other traffic to or from the
 
 TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener for every private site on that Node, so the hub table cannot tell `reverb.orbit` from `executor.orbit` or `analytics.orbit`. Caddy closes that gap. On every Node, every site except `gateway.orbit`, `reverb.orbit`, and the optional Swamp site named by `task_vms.swamp_host` aborts a client in `task_vms.wireguard_range`. [Caddy configuration](/reference/caddy-configuration#listener-addresses) shows the guard.
 
-Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` for the managed private Swamp Route on the `websocket` Node. The hub already admits TCP 443 on that Node; the setting adds no hub rule. The exception matches exactly one hostname on port 443 and never a public Ingress site or a block with extra hostnames. The other client-range guard still applies. It admits no sibling site, subdomain, or alternate port. An unset or empty value admits no Swamp site.
+Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` for the managed private Swamp Route on the `swamp` Node. The setting adds no hub rule, so a task VM reaches the site only when the hub admits TCP 443 on that Node, as it does on the Gateway and `websocket` Nodes. The exception matches exactly one hostname on port 443 and never a public Ingress site or a block with extra hostnames. The other client-range guard still applies. It admits no sibling site, subdomain, or alternate port. An unset or empty value admits no Swamp site.
 
 Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `model_proxy_origin`, `swamp_host`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition, `task_vms.wireguard_range`, and `task_vms.swamp_host`. Another invalid task VM value never changes a Caddyfile or blocks a build.
 
@@ -1273,7 +1273,7 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
 | `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
 | `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
-| `task_vms.swamp_host` | `ORBIT_TASK_VMS_SWAMP_HOST` | One DNS hostname for the private Swamp Route, such as `swamp.orbit`, served on TCP 443 by the `websocket` Node. No scheme, port, path, wildcard, or list. Unset or empty admits no Swamp site |
+| `task_vms.swamp_host` | `ORBIT_TASK_VMS_SWAMP_HOST` | One DNS hostname for the private Swamp Route, such as `swamp.orbit`, served on TCP 443 by the `swamp` Node. No scheme, port, path, wildcard, or list. Unset or empty admits no Swamp site |
 | `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials. It must be the CLIProxyAPI URL of the [ai-router extension](/reference/ai-router) |
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |

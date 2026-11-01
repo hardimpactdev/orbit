@@ -23,7 +23,18 @@ describe(RoleRegistry::class, function (): void {
                 RoleName::WebSocket,
                 RoleName::Analytics,
                 RoleName::CiRunner,
+                RoleName::Swamp,
             ])
+            ->and($registry->definition(RoleName::Swamp)->singleton)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Swamp)->assignableDuringProvisioning)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Swamp)->mutable)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Swamp)->relocatable)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Swamp)->conflicts)
+            ->toBe([])
             ->and($registry->definition(RoleName::Gateway)->singleton)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Gateway)->assignableDuringProvisioning)

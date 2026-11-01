@@ -34,7 +34,7 @@ use App\Models\TaskVm;
  * 1. `app-dev` (and `agent`)
  * 2. `ci-runner`, `metrics` and `analytics` (and `s3`)
  * 3. `database`, `websocket`, `vpn`, and `router`
- * 4. `app-prod` and `ingress`
+ * 4. `app-prod`, `ingress` and `swamp`
  *
  * Inside a group the Node ID decides. `ORBIT_FLEET_ROLLOUT_ORDER` overrides the order: the Nodes it
  * names, by name and comma-separated, go first in that order, and the others follow in the default
@@ -56,6 +56,7 @@ final readonly class FleetRolloutMembership
         RoleName::Router->value => 3,
         RoleName::AppProd->value => 4,
         RoleName::Ingress->value => 4,
+        RoleName::Swamp->value => 4,
     ];
 
     /**

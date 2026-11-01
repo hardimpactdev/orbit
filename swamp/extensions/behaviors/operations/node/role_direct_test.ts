@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { BaselineStage } from "./role_direct_local.ts";
 import { nodeRoleAdd } from "../fleet-recipe/node_role.ts";
-import type { RoleSnapshot } from "./role_direct_contract.ts";
+import { RoleSnapshot } from "./role_direct_contract.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { Stage } from "./converge_direct_contract.ts";
 import { z } from "npm:zod@4.4.3";
@@ -110,6 +110,10 @@ async function admitted(f: ReturnType<typeof fixture>) {
     refusal: null;
   };
 }
+
+Deno.test("the swamp role snapshot is a valid role root", () => {
+  assertEquals(RoleSnapshot.shape.role.parse("swamp"), "swamp");
+});
 
 Deno.test("baseline checks cancellation at its own boundary without another observation step", async () => {
   const f = fixture();

@@ -523,7 +523,7 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
+`router`, `metrics`, `websocket`, and `swamp` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
 
 Not every role can be added the same way.
 
@@ -533,6 +533,7 @@ Not every role can be added the same way.
 | `gateway` | Yes, as a singleton | Yes, as a singleton |
 | `vpn` | Yes, as a singleton | No |
 | `ingress`, `analytics`, `ci-runner` | No | Yes |
+| `swamp` | No | Yes, as a singleton |
 | `router` | No | No. Use [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset). |
 
 ## Package sources
@@ -562,7 +563,7 @@ Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` s
 
 Analytics role effects run in their native parent workflow. The Node PHP baseline refuses Analytics. An unported Analytics kind returns `operation.kind_unavailable`.
 
-The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, and `swamp` install Caddy when they converge. The `swamp` role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 
 `caddy.install-package` owns package installation for every caller. The Gateway sends the release pins and keeps the operation error mapping. The agent owns the download URL, kernel setting, and obsolete source paths. It checks the pins and host paths before mutation, verifies the downloaded package before apt sees it, and publishes the kernel setting atomically. Package and system commands share the command deadline. Rust tests cover installation, repetition, drift, and refusal; Gateway tests cover intent. `caddy.order-after-vpn` then orders Caddy after WireGuard. Its failure maps to `gateway.caddy_start_failed`.
 

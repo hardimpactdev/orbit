@@ -25,6 +25,7 @@ final readonly class CaddySiteRoles
         RoleName::AppProd,
         RoleName::WebSocket,
         RoleName::Analytics,
+        RoleName::Swamp,
     ];
 
     /**
