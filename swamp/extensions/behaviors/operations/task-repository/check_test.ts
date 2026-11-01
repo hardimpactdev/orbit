@@ -1,5 +1,10 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { candidateResult, ciResult, setupResult } from "./check.ts";
+import {
+    candidateResult,
+    ciResult,
+    localResult,
+    setupResult,
+} from "./check.ts";
 const commit = "a".repeat(40), start = "2026-10-31T22:00:00Z";
 const input = {
     group_id: 1,
@@ -109,4 +114,42 @@ Deno.test("missing setup output is a failed preparation", () => {
     }, {});
     assertEquals(setup.passed, false);
     assertEquals(setup.exit_code, 255);
+});
+
+Deno.test("a failed Project check retains failed evidence when command deliverables are skipped", () => {
+    const observation = (value: unknown) => ({
+        status: "succeeded",
+        outputs: { stdout: JSON.stringify(value) },
+    });
+    const value = localResult({
+        ...input,
+        phase: "handoff",
+        command: "exit 23",
+        deliverables: [{
+            id: "project-check",
+            type: "command",
+            path: "",
+            change: "any",
+            command: "touch never",
+            directory: ".",
+            fails_on_base: false,
+            paths: [],
+        }],
+    }, {
+        original: observation({ head: commit }),
+        before: observation({ head: commit, tree: commit }),
+        after: observation({ head: commit, tree: commit }),
+        project: observation({ exit_code: 23, output: "project check failed" }),
+        "deliverable-0": { status: "skipped" },
+        diff: observation({ diff: [] }),
+        changed: observation({ diff: [] }),
+    });
+    if (!("outcome" in value)) {
+        throw new Error("Expected public local check evidence");
+    }
+    assertEquals(value.outcome, "failed");
+    assertEquals(value.exit_code, 23);
+    assertEquals(value.evidence?.commands, {});
+    assertEquals(value.deliverables[0].outcome, "failed");
+    assertEquals(value.commit, null);
 });
