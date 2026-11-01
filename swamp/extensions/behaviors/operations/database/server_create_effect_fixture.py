@@ -103,7 +103,7 @@ def effect(driver):
         print(json.dumps({'driver':driver,'scrubbed':True,'repaired':True}))
     finally:
         for name in (container,container+'-candidate',container+'-rollback-running',container+'-rollback-stopped',container+'-failed'):
-            docker('rm','--force',name,check=False)
+            docker('rm','--force','--volumes',name,check=False)
         docker('volume','rm',volume,check=False)
 
 
