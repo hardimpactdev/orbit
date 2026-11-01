@@ -6,6 +6,7 @@ namespace App\Domain\Metrics;
 
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -216,7 +217,50 @@ final readonly class MetricsFleetCapture
         return array_map(self::canonical(...), $value);
     }
 
-    /** @return array<string,mixed> */
+    /** Full public configuration for official exporter models; no host work.
+     * @return array<string,mixed>
+     */
+    public function forExporter(Node $metrics, Node $target, bool $enabled): array
+    {
+        $node = $this->services->forNode($metrics, $target);
+        $connection = app(NativeCaddyPublicationInput::class)->connectionForNode($target);
+        $host = $connection['connection'];
+        $state = $this->service($node, (string) $metrics->wireguard_ip);
+        $address = $target->wireguard_ip;
+        $exporter = "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$address}:9100 --collector.systemd --collector.systemd.unit-include=orbit-node-worker[.]service\nRestart=always\nRestartSec=2\n";
+        $cadvisor = "# Managed by Orbit: metrics-cadvisor\n[Unit]\nDescription=Orbit cAdvisor exporter\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart=/usr/local/bin/orbit-cadvisor --listen_ip={$address} --port=9102 --store_container_labels=false --docker_only=false --disable_metrics=sched,percpu,memory_numa,cpuLoad,diskIO,disk,network,tcp,advtcp,udp,app,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,oom_event,pressure\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n";
+        $files = [
+            ['path' => '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf', 'ensure' => $enabled ? 'present' : 'absent', 'content' => $exporter],
+            ['path' => '/etc/systemd/system/orbit-cadvisor.service', 'ensure' => $enabled ? 'present' : 'absent', 'content' => $cadvisor],
+            ['path' => '/etc/systemd/system/orbit-fpm-exporter.service', 'ensure' => $state['active'] ? 'present' : 'absent', 'content' => $state['unit'] ?? ''],
+            ['path' => '/etc/orbit/service-metrics/fpm.yml', 'ensure' => $state['active'] ? 'present' : 'absent', 'content' => $state['config'] ?? '', 'mode' => '0600'],
+            ...($enabled ? [] : [['path' => '/usr/local/bin/orbit-cadvisor', 'ensure' => 'absent']]),
+            ...($state['active'] ? [] : [['path' => '/usr/local/bin/orbit-fpm-exporter', 'ensure' => 'absent']]),
+        ];
+        $units = [
+            ['service' => 'prometheus-node-exporter.service', 'enabled' => $enabled],
+            ['service' => 'orbit-cadvisor.service', 'enabled' => $enabled],
+            ['service' => 'orbit-fpm-exporter.service', 'enabled' => $state['active']],
+        ];
+        $downloads = [
+            ...($enabled ? [['url' => 'https://github.com/google/cadvisor/releases/download/v0.60.5/cadvisor-v0.60.5-linux-amd64', 'path' => '/usr/local/bin/orbit-cadvisor', 'checksum' => '6f258bed28113218c88729634c47ead8d928b81b1504b75fd911b98d29003a87']] : []),
+            ...($state['binary'] ? [['url' => 'https://github.com/cboxdk/fpm-exporter/releases/download/v3.1.1/fpm-exporter-linux-amd64', 'path' => '/usr/local/bin/orbit-fpm-exporter', 'checksum' => '570d2b3d3284179c47acff8efd8f73ea650e42a2c6bd08c0a8e95cb4b0e3ca98']] : []),
+        ];
+        $rules = array_map(static fn (int $port, bool $selected): array => [...$host, 'port' => $port, 'source' => $metrics->wireguard_ip,
+            'action' => 'allow', 'ensure' => $selected ? 'present' : 'absent'], [9100, 9102, 9114, 9103], [$enabled, $enabled, $state['active'], $node->caddy]);
+
+        return [
+            'connection' => $host, 'rules' => $rules,
+            'files' => array_map(static fn (array $file): array => [...$host, 'owner' => 'root', 'group' => 'root', 'mode' => '0644', ...$file], $files),
+            'downloads' => array_map(static fn (array $file): array => [...$host, 'owner' => 'root', 'group' => 'root', 'mode' => '0755', ...$file], $downloads),
+            'units' => array_map(static fn (array $unit): array => [...$host, 'ensure' => $unit['enabled'] ? 'running' : 'stopped', ...$unit], $units),
+            'checks' => array_values(array_map(static fn (array $rule): string => 'http://'.$address.':'.$rule['port'].'/metrics', array_filter($rules, static fn (array $rule): bool => $rule['ensure'] === 'present'))),
+            'pools' => array_map(static fn (array $pool): array => ['node_id' => $target->id, ...$connection, 'php_runtime' => $pool[$node->fpm ? 'enabled' : 'disabled']], $this->pools($node)),
+            'caddy' => CaddySiteRoles::nodeExpectsCaddy($target->id) ? app(NativeCaddyPublicationInput::class)->forNode($target) : null,
+        ];
+    }
+
+    /** @return array{config:?string,unit:?string,rules:list<list<string|null>>,active:bool,enabled:bool,binary:bool} */
     private function service(ServiceMetricsNode $node, string $metricsAddress): array
     {
         $fpm = $node->fpm && $node->instances !== [];

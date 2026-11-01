@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Metrics\DisableMetricsExporterRequest;
 use Orbit\Sdk\Requests\Metrics\DisableMetricsRequest;
 use Orbit\Sdk\Requests\Metrics\EnableMetricsExporterRequest;
@@ -9,7 +10,10 @@ use Orbit\Sdk\Requests\Metrics\EnableMetricsRequest;
 use Orbit\Sdk\Requests\Metrics\ResetMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 it('exposes the seven metrics routes', function (string $class, Method $method, string $path): void {
     $request = match ($class) {
@@ -35,3 +39,12 @@ it('sends enable and disable payloads', function (): void {
         ->and(new DisableMetricsRequest(force: true, purgeData: true)->body()->all())
         ->toBe(['force' => true, 'purge_data' => true]);
 });
+
+it('decodes exporter admission as a native Operation', function (string $class, string $kind): void {
+    $request = new $class(7);
+    $mock = new MockClient([$class => MockResponse::make(['data' => ['id' => 42, 'kind' => $kind, 'target_type' => 'metrics', 'target_id' => 3, 'status' => 'queued', 'sequence' => 1, 'steps' => []], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 202)]);
+    $connector = new GatewayConnector('https://gateway.example.test');
+    $connector->withMockClient($mock);
+    $result = $connector->send($request)->dto();
+    expect($result)->toBeInstanceOf(OperationResponse::class)->and($result->id)->toBe(42)->and($result->kind)->toBe($kind);
+})->with([[EnableMetricsExporterRequest::class, 'metrics.exporter_enable'], [DisableMetricsExporterRequest::class, 'metrics.exporter_disable']]);

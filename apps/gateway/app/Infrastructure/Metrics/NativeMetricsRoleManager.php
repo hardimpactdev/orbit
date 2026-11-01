@@ -7,15 +7,10 @@ namespace App\Infrastructure\Metrics;
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Metrics\MetricsMutationData;
-use App\Domain\Metrics\ExporterPreference;
-use App\Domain\Metrics\ExporterPreferenceRepository;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRoleManager;
-use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 
@@ -24,10 +19,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
     public function __construct(
         private AddNodeRoleAction $add,
         private RemoveNodeRoleAction $remove,
-        private ExporterPreferenceRepository $preferences,
-        private MetricsFleetReconciler $fleet,
         private MetricsPublicationReport $report,
-        private ManagedNodeEligibility $eligibility,
     ) {}
 
     public function enable(int $nodeId): MetricsMutationData
@@ -70,53 +62,6 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         // Gateway state again here would report a guess, and the guess is
         // wrong whenever that state moved between the two reads.
         return new MetricsMutationData($node->id, 'removed', $this->report->take());
-    }
-
-    public function enableExporter(int $nodeId): MetricsMutationData
-    {
-        $node = $this->activeNode($nodeId);
-        $this->guardLinuxPlatform($node);
-
-        if (! $this->eligibility->allows($node)) {
-            throw new ResourceOperationException(
-                'metrics.exporter_node_ineligible',
-                'Metrics exporters require an active managed Linux node with WireGuard and Gateway SSH management.',
-                409,
-            );
-        }
-
-        $this->preferences->put($nodeId, ExporterPreference::Enabled);
-        $this->fleet->reconcile();
-
-        return new MetricsMutationData($nodeId, 'enabled');
-    }
-
-    public function disableExporter(int $nodeId): MetricsMutationData
-    {
-        $node = $this->activeNode($nodeId);
-        $this->guardLinuxPlatform($node);
-        if ($node->roles()->where('role', RoleName::Metrics->value)->exists()) {
-            throw new RoleAssignmentException('The metrics node exporter cannot be disabled.');
-        }
-        $this->preferences->put($nodeId, ExporterPreference::Disabled);
-        $this->fleet->reconcile();
-
-        return new MetricsMutationData($nodeId, 'disabled');
-    }
-
-    private function activeNode(int $nodeId): Node
-    {
-        $node = Node::query()->findOrFail($nodeId);
-
-        if ($node->status !== LifecycleStatus::Active) {
-            throw new ResourceOperationException(
-                'metrics.exporter_node_inactive',
-                'Metrics exporters require an active node.',
-                409,
-            );
-        }
-
-        return $node;
     }
 
     private function guardLinuxPlatform(Node $node): void
