@@ -153,7 +153,11 @@ export function incusGuest(
       }
       await guard();
       const cloud = await invoke(
-        guestArgv(project, name, ["/usr/bin/cloud-init", "status", "--wait"]),
+        guestArgv(project, name, [
+          "/usr/bin/cloud-init",
+          "status",
+          "--wait",
+        ]),
         new Uint8Array(),
         600,
       );

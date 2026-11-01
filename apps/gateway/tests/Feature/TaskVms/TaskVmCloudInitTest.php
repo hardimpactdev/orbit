@@ -3,11 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\TaskVmCloudInit;
 
 const CLOUD_INIT_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
 
-it('renders only the orbit user and the Gateway key for a task VM, whose base image already put orbit in incus-admin', function (): void {
+it('renders the orbit user with the existing key and canonical209 key for a task VM, whose base image already put orbit in incus-admin', function (): void {
     expect(new TaskVmCloudInit()->render(CLOUD_INIT_KEY))->toBe(<<<'YAML'
         #cloud-config
         {
@@ -18,7 +19,8 @@ it('renders only the orbit user and the Gateway key for a task VM, whose base im
                     "shell": "/bin/bash",
                     "sudo": "ALL=(ALL) NOPASSWD:ALL",
                     "ssh_authorized_keys": [
-                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway"
+                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway",
+                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND"
                     ]
                 }
             ]
@@ -38,7 +40,8 @@ it('declares the builder account for native UID and GID verification without run
                     "shell": "/bin/bash",
                     "sudo": "ALL=(ALL) NOPASSWD:ALL",
                     "ssh_authorized_keys": [
-                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway"
+                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway",
+                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND"
                     ],
                     "uid": 1000,
                     "no_user_group": false
@@ -61,3 +64,9 @@ it('refuses a Gateway key that is not one public key line', function (string $ke
     'trailing newline' => ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake orbit@gateway\n"],
     'options prefix' => ['command="sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake'],
 ]);
+
+it('does not duplicate the209 key when it is already the requested key', function (): void {
+    $key = app(SwampSshExecutionInput::class)->identity()['public_key'];
+    $config = json_decode(substr(new TaskVmCloudInit()->render($key), 14), true, flags: JSON_THROW_ON_ERROR);
+    expect($config['users'][0]['ssh_authorized_keys'])->toBe([$key]);
+});

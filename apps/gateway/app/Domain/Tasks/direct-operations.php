@@ -24,8 +24,8 @@ return ['tasks.provision' => [
             'private_material' => ['token' => 'github.dependency_merge'],
         ], 'tasks.park' => [
             'workflow' => 'operation-task-park',
-            'writer_config' => 'swamp.direct_writers',
-            'writer_state' => 'task_park_writer',
             'projection' => TaskParkProjection::class,
-            'private_material' => ['upcloud_token' => 'upcloud.api'],
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'park', 'step' => 'result'],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
         ]];

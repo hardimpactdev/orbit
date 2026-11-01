@@ -4,7 +4,6 @@ tags: {}
 jobs:
 - name: admission
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: intent
     writes: true
@@ -13,13 +12,17 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: admit
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
 - name: build
   dependsOn:
   - job: admission
-    condition: {type: succeeded}
+    condition:
+      type: succeeded
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: reset
     writes: true
@@ -28,7 +31,12 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: reset}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: reset
   - name: launch
     writes: true
     task:
@@ -36,9 +44,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: launch}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: launch
     dependsOn:
-    - {step: reset, condition: {type: succeeded}}
+    - step: reset
+      condition:
+        type: succeeded
   - name: boot
     writes: true
     task:
@@ -46,9 +61,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: boot}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: boot
     dependsOn:
-    - {step: launch, condition: {type: succeeded}}
+    - step: launch
+      condition:
+        type: succeeded
   - name: apt-source
     writes: true
     task:
@@ -56,9 +78,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: apt-source}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: apt-source
     dependsOn:
-    - {step: boot, condition: {type: succeeded}}
+    - step: boot
+      condition:
+        type: succeeded
   - name: packages
     writes: true
     task:
@@ -66,9 +95,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: packages}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: packages
     dependsOn:
-    - {step: apt-source, condition: {type: succeeded}}
+    - step: apt-source
+      condition:
+        type: succeeded
   - name: javascript
     writes: true
     task:
@@ -76,9 +112,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: javascript}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: javascript
     dependsOn:
-    - {step: packages, condition: {type: succeeded}}
+    - step: packages
+      condition:
+        type: succeeded
   - name: rust
     writes: true
     task:
@@ -86,9 +129,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: rust}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: rust
     dependsOn:
-    - {step: javascript, condition: {type: succeeded}}
+    - step: javascript
+      condition:
+        type: succeeded
   - name: agent
     writes: true
     task:
@@ -96,9 +146,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: agent}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: agent
     dependsOn:
-    - {step: rust, condition: {type: succeeded}}
+    - step: rust
+      condition:
+        type: succeeded
   - name: pi
     writes: true
     task:
@@ -106,9 +163,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: pi}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: pi
     dependsOn:
-    - {step: agent, condition: {type: succeeded}}
+    - step: agent
+      condition:
+        type: succeeded
   - name: prepare
     writes: true
     task:
@@ -116,9 +180,61 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: prepare}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: prepare
     dependsOn:
-    - {step: pi, condition: {type: succeeded}}
+    - step: pi
+      condition:
+        type: succeeded
+  - name: ssh-enable
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "image-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "image-ssh-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/incus
+        - --project
+        - ${{ inputs.project }}
+        - exec
+        - --mode=non-interactive
+        - --user
+        - '0'
+        - --group
+        - '0'
+        - --
+        - ${{ inputs.name }}
+        - /usr/bin/systemctl
+        - enable
+        - --now
+        - ssh.service
+        timeoutSec: 30
   - name: clean
     writes: true
     task:
@@ -126,9 +242,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: clean}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: clean
     dependsOn:
-    - {step: prepare, condition: {type: succeeded}}
+    - step: ssh-enable
+      condition:
+        type: succeeded
   - name: publish
     writes: true
     task:
@@ -136,9 +259,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: publish}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: publish
     dependsOn:
-    - {step: clean, condition: {type: succeeded}}
+    - step: clean
+      condition:
+        type: succeeded
   - name: smoke
     writes: true
     task:
@@ -146,9 +276,49 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: smoke}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: smoke
     dependsOn:
-    - {step: publish, condition: {type: succeeded}}
+    - step: publish
+      condition:
+        type: succeeded
+  - name: ssh-smoke
+    target: orbit-node-209
+    dependsOn:
+    - step: smoke
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "image-ssh-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/incus
+        - --project
+        - ${{ inputs.project }}
+        - exec
+        - --mode=non-interactive
+        - --user
+        - '0'
+        - --group
+        - '0'
+        - --
+        - ${{ inputs.name + "-smoke" }}
+        - /usr/bin/systemctl
+        - is-active
+        - ssh.service
+        timeoutSec: 30
   - name: seed
     writes: true
     task:
@@ -156,9 +326,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: seed}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: seed
     dependsOn:
-    - {step: smoke, condition: {type: succeeded}}
+    - step: ssh-smoke
+      condition:
+        type: succeeded
   - name: delete-smoke
     writes: true
     task:
@@ -166,9 +343,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: delete-smoke}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: delete-smoke
     dependsOn:
-    - {step: seed, condition: {type: succeeded}}
+    - step: seed
+      condition:
+        type: succeeded
   - name: finish-seed
     writes: true
     task:
@@ -176,9 +360,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: finish-seed}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: finish-seed
     dependsOn:
-    - {step: delete-smoke, condition: {type: succeeded}}
+    - step: delete-smoke
+      condition:
+        type: succeeded
   - name: promote
     writes: true
     task:
@@ -186,9 +377,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: promote}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: promote
     dependsOn:
-    - {step: finish-seed, condition: {type: succeeded}}
+    - step: finish-seed
+      condition:
+        type: succeeded
   - name: prune
     writes: true
     task:
@@ -196,9 +394,16 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: prune}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: prune
     dependsOn:
-    - {step: promote, condition: {type: succeeded}}
+    - step: promote
+      condition:
+        type: succeeded
   - name: complete
     writes: true
     task:
@@ -206,15 +411,25 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: step
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: complete}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: complete
     dependsOn:
-    - {step: prune, condition: {type: succeeded}}
+    - step: prune
+      condition:
+        type: succeeded
 - name: cleanup
   dependsOn:
-  - {job: admission, condition: {type: always}}
-  - {job: build, condition: {type: always}}
+  - job: admission
+    condition:
+      type: always
+  - job: build
+    condition:
+      type: always
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: cleanup
     writes: true
@@ -223,16 +438,37 @@ jobs:
       behaviorType: '@nckrtl/task-vm-image-build'
       behaviorName: ${{ "task-vm-image-build-" + run.id }}
       methodName: cleanup
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
 version: 1
-description: Build, verify, seed and promote one image in one native run; no Gateway children.
+description: Build, verify, seed and promote one image in one native run; no Gateway
+  children.
 inputs:
   properties:
-    operation_id: {type: integer, minimum: 1}
-    node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [task_vm.image_build]}
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.image_build
+    ssh_execution:
+      type: object
+    project:
+      type: string
+    name:
+      type: string
   required:
   - operation_id
   - node_id
   - kind
+  - ssh_execution
+  - project
+  - name
 vaults: []

@@ -34,6 +34,7 @@ export const intent = () =>
     candidate_alias: "candidate-7",
     base_alias: "orbit-task-base",
     gateway_public_key: "public-key",
+    ssh_execution: {},
     certificate: "public-root",
     recipe: {
       identity: "sha256:" + "b".repeat(64),
@@ -61,13 +62,16 @@ function fixture(failSmoke = false) {
     assertEquals(call.sudo, true);
     assertEquals(
       call.input.project ??
-        (call.input.vm as Record<string, unknown> | undefined)?.project ??
-        (call.input.location as Record<string, unknown> | undefined)?.project,
+        (call.input.vm as Record<string, unknown> | undefined)
+          ?.project ??
+        (call.input.location as Record<string, unknown> | undefined)
+          ?.project,
       "orbit-tasks",
     );
     calls.push(
       call.name + ":" +
-        ((call.input.operation as Record<string, unknown> | undefined)?.kind ??
+        ((call.input.operation as Record<string, unknown> | undefined)
+          ?.kind ??
           "seed"),
     );
     return Promise.resolve(
@@ -145,7 +149,12 @@ Deno.test("a failed native smoke never reaches seed or promotion", async () => {
   await assertRejects(
     async () => {
       for (
-        const stage of ["smoke", "seed", "finish-seed", "promote"] as const
+        const stage of [
+          "smoke",
+          "seed",
+          "finish-seed",
+          "promote",
+        ] as const
       ) {
         await imageStage(
           stage,
@@ -173,7 +182,9 @@ Deno.test("a new image attempt replaces the same candidate safely and retries it
   ]]);
   let publications = 0;
   let failPublish = true;
-  const host: (call: NodeCall) => Promise<Record<string, unknown>> = (call) => {
+  const host: (call: NodeCall) => Promise<Record<string, unknown>> = (
+    call,
+  ) => {
     assertEquals(call.name, "incus.image");
     const op = call.input.operation as Record<string, string>;
     if (op.kind === "publish") {
@@ -372,9 +383,10 @@ Deno.test("the image owner read runs as orbit while privileged guest commands ru
         return Promise.resolve({
           success: accepted,
           bytes: new TextEncoder().encode(JSON.stringify(
-            accepted
-              ? { ok: true, data: { ready: true } }
-              : { ok: false, error: { code: "agent.identity_mismatch" } },
+            accepted ? { ok: true, data: { ready: true } } : {
+              ok: false,
+              error: { code: "agent.identity_mismatch" },
+            },
           )),
         });
       },
@@ -609,4 +621,9 @@ Deno.test("a successful phase read resets the consecutive channel outage budget"
   await time.runMicrotasks();
   assertEquals(await result, null);
   assertEquals(reads, 101);
+});
+
+Deno.test("the retained image adapter does not require native SSH step metadata for cleanup", () => {
+  const { ssh_execution: _nativeOnly, ...input } = intent();
+  assertEquals(ImageIntent.parse(input).name, input.name);
 });

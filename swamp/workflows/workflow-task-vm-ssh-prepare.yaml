@@ -1,0 +1,249 @@
+id: b861e576-9871-42aa-bd9e-6f57ecf54184
+name: task-vm-ssh-prepare
+description: Converge guest SSH through the trusted provider, then verify209 with
+  the observed full host pin.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  additionalProperties: false
+jobs:
+- name: ssh
+  target: orbit-node-209
+  steps:
+  - name: available
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "vm-ssh-bootstrap-"+run.id }}
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution
+            : inputs.intent.ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution
+            : inputs.intent.ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution
+            : inputs.intent.ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution
+            : inputs.intent.ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution
+              : inputs.intent.ssh_execution).target.host_keys }}'
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/true"] : ["/usr/bin/true"] }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        timeoutSec: 180
+  - name: package
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "/usr/bin/apt-get",
+          "install", "-y", "--no-install-recommends", "openssh-server"] : ["/usr/bin/env",
+          "DEBIAN_FRONTEND=noninteractive", "/usr/bin/apt-get", "install", "-y", "--no-install-recommends",
+          "openssh-server"] }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        timeoutSec: 180
+    dependsOn:
+    - step: available
+      condition:
+        type: succeeded
+  - name: host-keys
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/ssh-keygen", "-A"] : ["/usr/bin/ssh-keygen", "-A"] }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        timeoutSec: 180
+    dependsOn:
+    - step: package
+      condition:
+        type: succeeded
+  - name: authorize-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-command'
+      behaviorName: ${{ "vm-ssh-authorize-"+run.id }}
+      methodName: authorized_key
+      inputs:
+        user: ${{ inputs.intent.user }}
+        public_key: ${{ inputs.intent.ssh_identity.public_key }}
+    dependsOn:
+    - step: host-keys
+      condition:
+        type: succeeded
+  - name: authorize
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["authorize-assets"].outputs.script_body]
+          : ["/usr/bin/python3","-B","-c",steps["authorize-assets"].outputs.script_body]
+          }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        timeoutSec: 180
+    dependsOn:
+    - step: authorize-assets
+      condition:
+        type: succeeded
+  - name: firewall-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-lifecycle-input'
+      behaviorName: ${{ "vm-ssh-input-"+run.id }}
+      methodName: ssh_firewall
+      inputs: {}
+    dependsOn:
+    - step: authorize
+      condition:
+        type: succeeded
+  - name: firewall
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["firewall-assets"].outputs.script_body]
+          : ["/usr/bin/python3","-B","-c",steps["firewall-assets"].outputs.script_body]
+          }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        timeoutSec: 180
+    dependsOn:
+    - step: firewall-assets
+      condition:
+        type: succeeded
+  - name: sshd
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/systemctl", "enable", "--now", "ssh.service"] : ["/usr/bin/systemctl",
+          "enable", "--now", "ssh.service"] }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        timeoutSec: 180
+    dependsOn:
+    - step: firewall
+      condition:
+        type: succeeded
+  - name: host-key
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/cat", "/etc/ssh/ssh_host_ed25519_key.pub"] : ["/usr/bin/cat",
+          "/etc/ssh/ssh_host_ed25519_key.pub"] }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        timeoutSec: 180
+    dependsOn:
+    - step: sshd
+      condition:
+        type: succeeded
+  - name: guest
+    target: orbit-node-209
+    task: &id002
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-ssh-input'
+      behaviorName: ${{ "vm-ssh-guest-"+run.id }}
+      methodName: observe
+      inputs:
+        intent: ${{ inputs.intent }}
+        public_key: ${{ steps["host-key"].outputs.stdout }}
+    dependsOn:
+    - step: host-key
+      condition:
+        type: succeeded
+  - name: verify
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-ssh-verify-"+run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "vm-ssh-verify-"+run.id }}
+        transport:
+          kind: ssh
+          user: ${{ steps.guest.outputs.ssh_execution.target.user }}
+          port: 22
+          identityFile: ${{ steps.guest.outputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ steps.guest.outputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ steps.guest.outputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/true
+        timeoutSec: 30
+    dependsOn:
+    - step: guest
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    task: *id002
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded

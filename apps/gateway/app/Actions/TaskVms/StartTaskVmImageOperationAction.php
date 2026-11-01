@@ -11,7 +11,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageInput;
 use App\Infrastructure\TaskVms\RecipeImagePruning;
@@ -22,7 +22,7 @@ use App\Models\TaskVmImageBuild;
 final readonly class StartTaskVmImageOperationAction
 {
     public function __construct(private StartOperationAction $start, private TaskVmSettings $settings, private RecipeLoader $recipes,
-        private RecipeImageInput $inputs, private SshKeyProvider $keys, private LeafCertificateSigner $certificates, private AgentDelivery $delivery, private RecipeImagePruning $pruning) {}
+        private RecipeImageInput $inputs, private SwampSshExecutionInput $keys, private LeafCertificateSigner $certificates, private AgentDelivery $delivery, private RecipeImagePruning $pruning) {}
 
     public function execute(TaskVmImageBuild $build): Operation
     {
@@ -45,7 +45,8 @@ final readonly class StartTaskVmImageOperationAction
             'network' => $host->network, 'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk,
             'source' => $build->source_fingerprint ?? TaskVmHost::SourceImage,
             'candidate_alias' => $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, 'base', $build->id),
-            'base_alias' => $host->imageAlias, 'gateway_public_key' => $this->keys->publicKey(), 'certificate' => $this->certificates->rootCertificate(),
+            'ssh_execution' => $this->keys->forNode($node),
+            'base_alias' => $host->imageAlias, 'gateway_public_key' => $this->keys->identity()['public_key'], 'certificate' => $this->certificates->rootCertificate(),
             'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'pi_artifact' => $pi === null ? null : ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location, 'sha256' => $pi->digest],
             'pi_artifact_file' => ['$secret' => 'task_vm.image_artifact', 'id' => $build->id],
             'prune' => $this->pruning->input($build),
