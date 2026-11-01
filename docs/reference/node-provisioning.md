@@ -667,15 +667,15 @@ Peer convergence still runs over SSH. It generates or reads the peer key and ins
 
 Removal selects serving participants by their actual network, Route, private DNS and stale Route residue contributions. Global peer DNS work is needed only when removal changes the canonical routing domains. An unrelated TaskVM receives no work when that namespace stays the same. Route and DNS owners remain required even without a Node access edge; an unavailable worker refuses required work instead of hiding its owner. The hub and Metrics participants retain their separate parent-owned captures.
 
-`orbit node:remove <node> [--offline] [--force] [--idempotency-key=KEY]` records one `node.remove` Operation and follows its native Swamp run. The Gateway validates ownership, confirmation and resource guards, records Route withdrawal intent, and retains every Node and Route association until cleanup finishes. Swamp owns reachability checks, ordering, exact Node placement, host effects and compensation. Removal begin and restoration are steps in this run.
+`orbit node:remove <node> [--offline] [--force] [--idempotency-key=KEY]` records one `node.remove` Operation. The Gateway captures the full public intent, stored WireGuard addresses, full host pins and vault key references before starting its native Swamp workflow. Every step runs on Node209. Host effects use official `@swamp/ssh` with the approved209 identity; removal needs no worker on the departing Node or its participants.
 
-Remove Instances, Database servers, Schedules, active Routes and firewall rules first. Online removal also requires no remaining roles or Processes. The caller, Gateway and VPN Nodes are protected. Drain a task VM host and clear `settings.task_vms` before removing it. A TaskVM guest is removed through its owning native TaskVM workflow after provider deletion; provider absence alone never proves Node cleanup.
+Remove Instances, Database servers, Schedules, active Routes and user firewall rules first. The caller, Gateway, VPN and Swamp control Node are protected. Drain a task VM host and clear `settings.task_vms` before removing it. TaskVM guests stay with their owning lifecycle; standalone removal accepts no provider-deletion assertion.
 
-The native run restores public SSH for an online Linux target, revokes Metrics access and retires its selected fleet state, withdraws hub membership, and updates every admitted serving Node's network, Route artifacts and DNS. Each effect runs on its exact admitted Node. Workerless vpn1 and usexit18 require the shared SSH proxy; removal never substitutes another worker. Final observer and worker retirement runs off-worker over the existing pinned SSH identity so stopping the worker cannot lose its own completion response.
+The parent sheds admitted roles through native workflow children, restores public SSH, removes the obsolete worker and observer footprint, revokes the departing worker credentials, and removes the managed access key last. It retains user data, package managers and unrelated SSH keys. Network and serving publications use their shared native children from209. A child failure prevents later retirement steps and keeps the Node record.
 
-`--offline --force` permits cleanup of an unreachable Node's registry membership while leaving its machine untouched. Swamp checks reachability before withdrawal. It retains a reachable target's ordinary resource guards. macOS retains its user, package managers and host WireGuard configuration. An iPadOS peer retains its host WireGuard configuration.
+`--offline --force` permits removal of an unreachable Node's registry membership while leaving its machine untouched. The native workflow checks reachability first. A reachable target runs ordinary cleanup. The result names the artifacts retained on an unreachable machine; offline confirmation does not fabricate their removal.
 
-If a required step fails, Swamp stops later effects. Native compensation restores the admitted membership, hub and serving publications before reporting restoration. Failed or uncertain restoration reports `node.removal_rollback_failed` and retains the Node record. An unavailable required worker or lower action cannot produce successful removal. The Gateway broadcasts Node deletion only after its final database transaction commits.
+The workflow returns one public terminal result. Only successful native completion with `removed: true` deletes the Gateway Node record and its owned records; failed, cancelled or interrupted work retains them. Steps do not fetch intent, post progress or project state through Gateway callbacks. Node deletion broadcasts after the database transaction commits.
 
 
 ## Why it works this way
@@ -684,7 +684,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Removal retains user data
 
-Remove Processes, roles and Instances with their own commands before online Node removal. Removing a Node retires its Orbit observer and worker, management credentials and Gateway records. It retains user data and package managers. macOS and iPadOS retain their host WireGuard configuration. Create and destroy remain the names for machines at a hosting provider.
+Remove Instances and role-owned resources before online Node removal. The native removal workflow sheds admitted roles before retiring its Orbit observer, worker, management credentials and Gateway records. It retains user data and package managers. macOS and iPadOS retain their host WireGuard configuration. Create and destroy remain the names for machines at a hosting provider.
 
 ### One shared SSH connection per Node
 
