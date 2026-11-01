@@ -74,6 +74,10 @@ it('uses a provided admitted Process target without resolving current owner plac
     expect($input['node_id'])->toBe($this->node->id);
 });
 
+it('holds the Instance for a native Process restart', function (): void {
+    expect($this->runtime->execute($this->instance, 'process.restart_instance')->lock_key)->toBe('instance:'.$this->instance->id);
+});
+
 it('publishes public member definitions with distinct environment copies and no child Operations', function (): void {
     $first = runtimeDefinitionProcess($this->instance, 'first', 'first-private-fixture');
     $second = runtimeDefinitionProcess($this->instance, 'second', 'second-private-fixture');
@@ -82,6 +86,7 @@ it('publishes public member definitions with distinct environment copies and no 
     $puts = array_values(array_filter($this->socket->sent, fn (array $request): bool => $request['type'] === 'vault.put'));
     $input = $runs[0]['payload']['inputs'];
     expect($runs)->toHaveCount(1)
+        ->and($operation->lock_key)->toBe('instance:'.$this->instance->id)
         ->and($runs[0]['payload']['workflowIdOrName'])->toBe('operation-process-install-instance-definitions')
         ->and(array_column($input['intent']['members'], 'id'))->toBe([$first->id, $second->id])
         ->and($input['intent']['members'][0]['intent']['installation']['definition']['image'])->toBe('example:1')

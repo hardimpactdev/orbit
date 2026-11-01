@@ -181,7 +181,7 @@ it('holds the shared Node firewall admission while a named contribution is being
     $first = app(RemoveFirewallRuleAction::class)->execute($this->rule);
 
     expect(fn () => app(RemoveFirewallRuleAction::class)->execute($alias))
-        ->toThrow(ResourceOperationException::class, 'Another Operation owns this target.');
+        ->toThrow(ResourceOperationException::class, 'Another operation on this target has not ended. Follow it, or cancel it, before you start another.');
     expect($alias->fresh()->status)->toBe(LifecycleStatus::Active)
         ->and($first->input['firewall']['tuples'])->toBe([['port' => 45678, 'ensure' => 'present']]);
     expect($socket->sent)->toHaveCount(1);

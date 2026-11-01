@@ -341,7 +341,13 @@ The kind supplies the current step’s read and stop hooks. A read returns the s
 
 ### One operation per target
 
-An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost worker and a resume. A rollback is the one exception: it supersedes a deploy of the Instance that no worker has started, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time), as before.
+An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy` and the holder's ID in `details.operation_id`. The hold lasts across a lost worker and a resume.
+
+Every Operation whose target type is `instance` holds its Instance; the Gateway takes this hold in one place, when it records the start. Smoke runs (`instance_smoke`) and automatic deploy policy events (`instance_policy`) use their own target types, so they can run while a deploy holds the Instance. Route and database Operations hold their own targets, not the Instance.
+
+A keyed start that an Instance hold refuses leaves a terminal receipt under its `Idempotency-Key`: `status` `failed`, `error_code` `operation.target_busy`, zero attempts, no result, no hold and no native run. A repeat of the key returns that receipt. A caller such as the automatic deploy policy reads it as a definite failure before submission and may start again with a new key. A start without a key leaves no receipt.
+
+A rollback is the one exception to the hold: it supersedes a deploy of the Instance that the Gateway has not yet submitted to Swamp, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time), as before.
 
 ### Recover a lost worker
 

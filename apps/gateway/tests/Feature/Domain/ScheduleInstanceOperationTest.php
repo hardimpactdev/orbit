@@ -111,7 +111,8 @@ it('starts one native parent with every public member and no command copy', func
     config(['swamp.run_token' => 'shared.scoped.fixture']);
 
     $operation = $this->runtime->execute($this->instance);
-    expect(Operation::query()->count())->toBe(1)->and($socket->sent)->toHaveCount(1);
+    expect(Operation::query()->count())->toBe(1)->and($socket->sent)->toHaveCount(1)
+        ->and($operation->lock_key)->toBe('instance:'.$this->instance->id);
     $request = $socket->sent[0];
     expect($request['type'])->toBe('workflow.run')
         ->and($request['payload']['workflowIdOrName'])->toBe('operation-schedule-install-instance-definitions')

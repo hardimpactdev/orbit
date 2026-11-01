@@ -225,6 +225,8 @@ export async function tickDevelopment(
             "swamp.start_refused",
             "swamp.start_unavailable",
             "swamp.vault_sync_unavailable",
+            // The Gateway's Instance hold refused the keyed start before submission.
+            "operation.target_busy",
           ].includes(
             operation.error_code ?? "",
           ) &&

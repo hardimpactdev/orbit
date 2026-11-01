@@ -6,6 +6,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -87,7 +88,7 @@ it('refuses an invalid success and another run before projection', function (): 
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
-it('submits once after commit and records a native run without acquiring a target hold', function (): void {
+it('submits once after commit and records a native run that holds its Instance', function (): void {
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-cleanup', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
@@ -101,7 +102,7 @@ it('submits once after commit and records a native run without acquiring a targe
         'workflowIdOrName' => 'operation-database-cleanup', 'inputs' => [...app(DirectOperation::class)->workflowInputs($operation)],
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
     ]]);
-    expect($operation->fresh()->lock_key)->toBeNull();
+    expect($operation->fresh()->lock_key)->toBe(OperationStore::lockKey('instance', $this->node->id));
     expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
     expect($socket->closed)->toBeTrue();
 });

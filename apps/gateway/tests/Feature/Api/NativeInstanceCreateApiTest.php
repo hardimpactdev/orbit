@@ -48,6 +48,7 @@ it('records one native root with source environment and setup steps before any N
     $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->assertJsonPath('data.id', $id);
 
     $instance = Instance::query()->sole();
+    expect(Operation::query()->findOrFail($id)->lock_key)->toBe('instance:'.$instance->id);
     $operation = Operation::query()->sole();
     expect($instance->status)->toBe(InstanceState::Reserved)
         ->and($instance->checkout_path)->toBe('/srv/apps/native-create/proof')

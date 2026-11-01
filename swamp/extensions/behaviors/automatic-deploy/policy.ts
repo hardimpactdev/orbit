@@ -376,7 +376,11 @@ export async function tick(
       "instance.auto_deploy_role_inactive",
       "instance.smoke_held",
       "instance.auto_deploy_policy_owner",
-    ].includes(receipt.error_code ?? "");
+    ].includes(receipt.error_code ?? "") ||
+      // The Gateway's Instance hold refused the keyed start before submission.
+      receipt.status === "failed" &&
+        receipt.error_code === "operation.target_busy" &&
+        receipt.attempts === 0 && receipt.result === null;
     state.intent = null;
     if (
       !noEffect &&

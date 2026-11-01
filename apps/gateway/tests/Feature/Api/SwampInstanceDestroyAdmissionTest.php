@@ -57,6 +57,7 @@ it('admits stored source intent and one native root without Gateway source or ac
     $this->deleteJson($this->path, ['force' => $force])->assertAccepted()->assertJsonPath('data.id', $id);
     $operation = Operation::query()->findOrFail($id);
     expect($operation->node_id)->toBe($this->node->id)->and($operation->target_id)->toBe($this->instance->id)
+        ->and($operation->lock_key)->toBe('instance:'.$this->instance->id)
         ->and($operation->input['force'])->toBe($force)
         ->and($operation->input['members'][0]['starting_commit'])->toBe(str_repeat('a', 40))
         ->and($operation->input['members'][0]['source_commit'])->toBe(str_repeat('a', 40))

@@ -98,7 +98,8 @@ describe('instance:analytics:enable', function (): void {
         $socket = analytics_intent_socket();
         $response = $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.kind', 'analytics.enable');
         $operation = Operation::query()->findOrFail($response->json('data.id'));
-        expect($operation->input['site'])->toBe(['domain' => 'shop.example.com', 'previous_domain' => null, 'timezone' => 'Europe/Amsterdam', 'goals' => []])
+        expect($operation->lock_key)->toBe('instance:'.$operation->target_id)
+            ->and($operation->input['site'])->toBe(['domain' => 'shop.example.com', 'previous_domain' => null, 'timezone' => 'Europe/Amsterdam', 'goals' => []])
             ->and($operation->input['hosts'])->toBe(['analytics.shop.example.com'])
             ->and($operation->input['execution_secrets']['plausible_credentials']['vault'])->toBe('orbit-control-inputs')
             ->and($socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-analytics-enable-direct')
