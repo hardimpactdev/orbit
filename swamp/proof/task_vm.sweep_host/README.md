@@ -1,0 +1,11 @@
+# TaskVM sweep proof inputs
+
+This is a v0 `bin/swamp-proof` fixture, not a proof runner or a receipt. It uses only B's isolated control and target VMs. No production serve, admission or host is a target.
+
+The envelope follows `TaskVmSweepWorkflowInput::capture` and its Gateway admission tests. Bind only the admitted Operation/Node IDs, expiry and canonical public SSH map. `deadline_at` uses B's approved `${proof.epoch+300}` integer binding, as in the actual Gateway input. F12 selects the `app-dev` topology, and the receipt records its version. No raw key or credential belongs in the envelope.
+
+The target setup creates an isolated Incus project and pool, one **container** named `tvm-6` and one topology volume. This choice is explicit because nested KVM is unproved. The sweep operates on Incus instances; the canonical name and captured ownership/highwater make this instance an orphan. Its expired label records proof provenance; the product does not select by that label. All other product placement and selection rules remain unchanged.
+
+The real root must succeed, report `tvm-6` and its volume deleted, and report an empty final observation. The provider phase's native duration includes its asset resolver and must fit 225 seconds; the script has a 220-second coreutils timeout plus a five-second kill grace. The whole root must fit 300 seconds. `queueTimeout:10` deliberately refuses unavailable worker capacity quickly; it is not a claim that loaded root startup is below ten seconds. Existing production root starts of 33–55 seconds (Operations 6457 and 6462) are the known loaded reference. The proof records actual root and phase timings separately; shared queue or startup delays cannot be hidden in script time.
+
+The parity command runs all 11 named native regressions. Their scratch provider boundaries prove expiry, exact owner disagreements, later allocations protected by the ID limit, inventory failure, independent cleanup after refusal, volume safety, empty repeats, error stdout and the total timeout. They supplement the actual isolated Incus phase; they do not substitute for it. B's receipt must include the real root/run and after-observation, timing, every parity outcome and destruction of both VMs. No receipt exists yet.

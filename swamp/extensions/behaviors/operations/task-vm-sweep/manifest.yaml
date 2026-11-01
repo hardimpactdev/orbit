@@ -9,4 +9,3 @@ behaviors:
 - operations/task-vm-sweep/metadata.ts
 additionalFiles:
 - scripts/incus.py
-- scripts/cloud.py

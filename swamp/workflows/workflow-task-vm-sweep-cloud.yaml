@@ -51,19 +51,11 @@ jobs:
     target: orbit-node-209
     task:
       type: behavior
-      behaviorType: '@nckrtl/task-vm-sweep-input'
+      behaviorType: '@nckrtl/task-vm-lifecycle-input'
       behaviorName: ${{ "swp-assets-"+run.id }}
-      methodName: assets
+      methodName: sweep_assets
       inputs:
         intent: ${{ inputs.intent }}
-  - name: api
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: ${{ "swp-api-"+run.id }}
-      methodName: api_assets
-      inputs: {}
   - name: sweep
     target: orbit-node-209
     task:
@@ -77,15 +69,12 @@ jobs:
           '
         ignoreExitCode: true
         env:
-          SCRIPT: ${{ steps.assets.outputs.cloud_script }}
-          PYTHONPATH: ${{ steps.api.outputs.directory }}
+          SCRIPT: ${{ steps.assets.outputs.script }}
+          PYTHONPATH: ${{ steps.assets.outputs.directory }}
           ORBIT_SWEEP_INTENT: ${{ steps.assets.outputs.input_json }}
           ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
     dependsOn:
     - step: assets
-      condition:
-        type: succeeded
-    - step: api
       condition:
         type: succeeded
 queueTimeout: 10

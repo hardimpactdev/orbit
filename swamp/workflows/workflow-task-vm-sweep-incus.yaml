@@ -79,7 +79,7 @@ jobs:
         - 0
         - 1
       globalArgs:
-        name: ${{ "swp-host-"+run.id }}
+        name: ${{ "swp-sweep-"+run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}

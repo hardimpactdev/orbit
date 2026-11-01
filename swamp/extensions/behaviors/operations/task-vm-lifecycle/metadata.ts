@@ -15,12 +15,16 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
-    version: "2026.11.01.3",
+    version: "2026.11.01.4",
     resources: {
-        api_assets: {
+        sweep_assets: {
             lifetime: "infinite",
             garbageCollection: 10,
-            schema: z.object({ directory: z.string() }),
+            schema: z.object({
+                directory: z.string(),
+                script: z.string(),
+                input_json: z.string(),
+            }),
         },
         provider_input: {
             schema: z.object({ intent: ProviderInput, input_json: z.string() }),
@@ -58,17 +62,29 @@ export const behavior = {
         },
     },
     methods: {
-        api_assets: {
+        sweep_assets: {
             description:
-                "Resolve the canonical UpCloud API library on this worker",
-            arguments: z.object({}).strict(),
-            async execute(_args: Record<string, never>, ctx: Context) {
+                "Resolve the sweep and canonical provider API assets together",
+            arguments: z.object({ intent: z.record(z.string(), z.unknown()) })
+                .strict(),
+            async execute(
+                args: { intent: Record<string, unknown> },
+                ctx: Context,
+            ) {
                 const path = ctx.extensionFile("scripts/upcloud.py");
                 return {
                     dataHandles: [
-                        await ctx.writeResource("api_assets", "api_assets", {
-                            directory: path.slice(0, path.lastIndexOf("/")),
-                        }),
+                        await ctx.writeResource(
+                            "sweep_assets",
+                            "sweep_assets",
+                            {
+                                directory: path.slice(0, path.lastIndexOf("/")),
+                                script: ctx.extensionFile(
+                                    "scripts/upcloud_sweep.py",
+                                ),
+                                input_json: JSON.stringify(args.intent),
+                            },
+                        ),
                     ],
                 };
             },

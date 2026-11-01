@@ -1,0 +1,91 @@
+{
+  "kind": "task_vm.sweep_host",
+  "workflow": "operation-task-vm-sweep",
+  "topology": "app-dev",
+  "budget_seconds": 300,
+  "queue_timeout_seconds": 10,
+  "envelope": {
+    "operation_id": "${proof.operation_id}",
+    "node_id": "${proof.target.node_id}",
+    "kind": "task_vm.sweep_host",
+    "intent": {
+      "node_id": "${proof.target.node_id}",
+      "provider": "incus",
+      "deadline_at": "${proof.epoch+300}",
+      "ci_runner": false,
+      "stray_vm_ids": [],
+      "image_cutoff": 0,
+      "running_stamps": [],
+      "scope": {
+        "project": "orbit-proof-sweep",
+        "pool": "orbit-proof-sweep",
+        "operator_owned": [],
+        "live_names": [],
+        "max_task_vm_id": 6,
+        "max_build_id": 0,
+        "recorded_build_ids": [],
+        "retired_build_ids": [],
+        "protected_build_ids": []
+      },
+      "ssh_execution": {
+        "control_node_id": "${proof.control.node_id}",
+        "identity_file": "${proof.control.identity_file}",
+        "public_key": "${proof.control.public_key}",
+        "target": {
+          "name": "${proof.target.name}",
+          "host": "${proof.target.host}",
+          "user": "${proof.target.user}",
+          "port": "${proof.target.port}",
+          "host_keys": "${proof.target.host_keys}"
+        }
+      }
+    },
+    "execution_secrets": {}
+  },
+  "secrets": [],
+  "target_setup": "task_vm.sweep_host/target-setup.sh",
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "sweep",
+      "step": "result",
+      "match": {
+        "ready": true,
+        "stdout": "{\"ready\":true,\"observed_names\":[],\"deleted_names\":[\"tvm-6\",\"tvm-6-topology-seed\"]}"
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "sweep",
+      "job": "sweep",
+      "step": "incus",
+      "budget_seconds": 225
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "swamp/tests",
+      "-p",
+      "task_vm_sweep_native_test.py"
+    ],
+    "cases": [
+      "test_incus_cleanup_preserves_live_and_future_resources",
+      "test_ssh_failure_skips_cleanup_and_keeps_native_failure",
+      "test_cloud_cleanup_uses_canonical_api_vault_and_preserves_live_and_future_ids",
+      "test_cloud_pending_stop_fails_once_without_a_delete_or_custom_wait",
+      "test_cloud_owner_change_after_stop_refuses_delete",
+      "test_one_proven_deletion_refusal_still_observes_the_host_and_processes_other_orphans",
+      "test_an_expired_admitted_sweep_performs_no_deletion",
+      "test_a_VM_claimed_after_the_first_ownership_snapshot_is_rechecked_before_deletion",
+      "test_failed_native_inventory_cannot_become_an_empty_successful_list",
+      "test_UpCloud_exact_UUID_name_hostname_label_disagreement_refuses_a_destructive_detail",
+      "test_the_native_phase_timeout_bounds_all_orphans_together"
+    ]
+  }
+}

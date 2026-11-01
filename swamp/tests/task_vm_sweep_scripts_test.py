@@ -19,7 +19,7 @@ def load(name, path):
 
 INCUS = load('incus_sweep', ROOT / 'task-vm-sweep/scripts/incus.py')
 with patch.dict(sys.modules, {'upcloud': load('upcloud_sweep_api', ROOT / 'task-vm-lifecycle/scripts/upcloud.py')}):
-    CLOUD = load('cloud_sweep', ROOT / 'task-vm-sweep/scripts/cloud.py')
+    CLOUD = load('cloud_sweep', ROOT / 'task-vm-lifecycle/scripts/upcloud_sweep.py')
 
 
 def intent():

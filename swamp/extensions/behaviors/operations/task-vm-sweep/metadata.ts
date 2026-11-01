@@ -22,7 +22,6 @@ type Context = {
 };
 const Asset = z.object({
     script_body: z.string(),
-    cloud_script: z.string(),
     input_json: z.string(),
 });
 const Result = z.object({ stdout: z.string(), ready: z.boolean() });
@@ -52,7 +51,6 @@ export const behavior = {
                             script_body: await Deno.readTextFile(
                                 ctx.extensionFile("scripts/incus.py"),
                             ),
-                            cloud_script: ctx.extensionFile("scripts/cloud.py"),
                             input_json: JSON.stringify(args.intent),
                         }),
                     ],
