@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Doctor;
 
-use App\Actions\Doctor\Intent\ApplicationDoctorIntent;
-use App\Actions\Doctor\Intent\InfrastructureDoctorIntent;
 use App\Actions\Doctor\Intent\NodeDoctorIntent;
 use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Operations\StartOperationAction;
@@ -14,12 +12,11 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\ProblemCollectorState;
 use App\Models\TaskVm;
-use App\Support\ValidatedData;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
@@ -28,8 +25,7 @@ final readonly class StartDoctorAction
 {
     public function __construct(private StartOperationAction $start, private NodeAccessAuthorizer $access,
         private NodeDoctorIntent $node, private RuntimeDoctorIntent $runtime,
-        private ApplicationDoctorIntent $applications, private InfrastructureDoctorIntent $infrastructure,
-        private ManagedNodeEligibility $eligibility, private AgentDelivery $agents) {}
+        private ManagedNodeEligibility $eligibility, private NodeRoleServiceCatalog $services) {}
 
     /** @param list<DoctorFamily> $families */
     public function execute(Node $consumer, ?int $nodeId, array $families, ?string $requestId = null): Operation
@@ -62,33 +58,21 @@ final readonly class StartDoctorAction
         $has = static fn (array $families): bool => array_intersect(array_map(static fn (DoctorFamily $family): string => $family->value, $selected), $families) !== [];
         $intents = [];
         foreach ($nodes as $node) {
-            $resources = ['schedules' => [], 'database_servers' => [],
+            $resources = [
                 ...($has(['node']) ? $this->node->execute($node) : []),
-                ...($has(['process', 'schedule', 'tool', 'firewall']) ? $this->runtime->execute($node) : []),
-                ...($has(['project', 'instance', 'route']) ? $this->applications->execute($node) : []),
-                ...($has(['role', 'database_connection', 'database_server']) ? $this->infrastructure->execute($node) : [])];
-            foreach ($resources['schedules'] as &$schedule) {
-                $schedule['input'] = ValidatedData::object($schedule['input']);
-                $schedule['command_sha256'] = hash('sha256', ValidatedData::string($schedule['input']['command']));
-                unset($schedule['input']['command']);
-            }
-            unset($schedule);
+                ...($has(['process']) ? $this->runtime->execute($node) : []),
+            ];
             $managed = $this->eligibility->isManagedForObservation($node);
             $intents[] = ['id' => $node->id, 'name' => $node->name, 'platform' => $node->platform,
                 'architecture' => $node->architecture ?? '', 'user' => $node->user,
                 'address' => $node->wireguard_ip, 'managed' => $managed,
                 'parked' => TaskVm::query()->where('node_id', $node->id)->where('state', TaskVmState::Parked)->exists(),
-                'roles' => $node->roles->map(static fn ($role): array => ['role' => $role->role->value, 'status' => $role->status->value])->all(),
-                'agent_sha256' => $managed ? $this->agents->pin($node) : str_repeat('0', 64), 'resources' => $resources];
+                'roles' => $has(['role']) ? $node->roles->map(fn ($role): array => ['id' => $role->id, 'role' => $role->role->value, 'status' => $role->status->value, 'services' => $this->services->forRole($role->role)])->all() : [],
+                'resources' => (object) $resources];
         }
         $participants = array_values(array_unique([$rootId, ...array_column($intents, 'id')]));
-        $readers = array_column($intents, 'id');
-        $binding = ['owner_node_id' => $rootId, 'read_node_ids' => $readers, 'write_node_ids' => []];
         $input = ['nodes' => $intents, 'families' => array_map(static fn (DoctorFamily $family): string => $family->value, $selected),
-            'collect_problems' => $collect, 'participant_node_ids' => $participants,
-            'private_bindings' => ['database_servers' => $binding, 'schedules' => $binding],
-            'database_servers' => ['$secret' => 'doctor.database_servers', 'id' => $rootId],
-            'schedules' => ['$secret' => 'doctor.schedules', 'id' => $rootId]];
+            'collect_problems' => $collect, 'participant_node_ids' => $participants];
         if ($collect) {
             $state = ProblemCollectorState::query()->orderBy('id')->first();
             $input['logs'] = ['log_directory' => storage_path('logs'), 'base_directory' => base_path(),

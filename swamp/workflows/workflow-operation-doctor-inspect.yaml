@@ -1,66 +1,132 @@
 id: d195304a-0be0-4f02-91b2-4f7f99f76976
 name: operation-doctor-inspect
-description: Inspect admitted Nodes locally and record one bounded Doctor report.
-vaults: []
+description: Read native host facts through official SSH from209; compare once against public registry intent.
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [doctor.inspect] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - doctor.inspect
+    intent:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  additionalProperties: false
 jobs:
-  - name: prepare
-    steps:
-      - name: prepare
-        writes: true
-        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-        labels: { node: "${{ string(inputs.node_id) }}" }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/doctor"
-          behaviorName: '${{ "doctor-root-" + string(inputs.node_id) }}'
-          methodName: prepare
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-  - name: inspect
-    dependsOn: [{ job: prepare, condition: { type: succeeded } }]
-    steps:
-      - name: inspect-${{ self.node }}
-        writes: true
-        forEach:
-          item: node
-          in: "${{ steps.prepare.outputs.node_ids }}"
-        target: '${{ "orbit-node-" + string(self.node) }}'
-        labels: { node: "${{ string(self.node) }}" }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/doctor"
-          behaviorName: '${{ "doctor-node-" + string(self.node) }}'
-          methodName: inspect
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            target_node_id: "${{ self.node }}"
-  - name: finish
-    dependsOn: [{ job: prepare, condition: { type: always } }, { job: inspect, condition: { type: always } }]
-    steps:
-      - name: finish
-        writes: true
-        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-        labels: { node: "${{ string(inputs.node_id) }}" }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/doctor"
-          behaviorName: '${{ "doctor-root-" + string(inputs.node_id) }}'
-          methodName: finish
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            node_results: "${{ steps }}"
+- name: plan
+  target: orbit-node-209
+  steps:
+  - name: plan
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/doctor'
+      behaviorName: ${{ "doctor-plan-" + run.id }}
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+- name: reads
+  target: orbit-node-209
+  dependsOn:
+  - job: plan
+    condition:
+      type: succeeded
+  steps:
+  - name: ${{ self.read.key }}
+    writes: false
+    allowFailure: true
+    forEach:
+      item: read
+      in: ${{ steps.plan.outputs.reads }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "doctor-read-" + run.id + "-" + string(self._index) }}
+      globalArgs:
+        name: ${{ "doctor-read-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.read.ssh.user }}
+          port: ${{ self.read.ssh.port }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: target
+          address: ${{ self.read.ssh.host }}
+          transport:
+            hostKeys: ${{ self.read.ssh.host_keys }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv: ${{ self.read.argv }}
+        sudo: ${{ self.read.sudo }}
+        okExitCodes:
+        - 0
+        - 1
+- name: logs
+  target: orbit-node-209
+  dependsOn:
+  - job: plan
+    condition:
+      type: succeeded
+  steps:
+  - name: logs
+    writes: false
+    allowFailure: true
+    forEach:
+      item: node
+      in: ${{ inputs.intent.nodes.filter(n, n.id == inputs.node_id && n.managed && !n.parked && inputs.intent.collect_problems) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "doctor-logs-" + run.id + "-" + string(self._index) }}
+      methodName: script
+      globalArgs:
+        name: ${{ "doctor-logs-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ self.node.ssh.user }}
+          port: ${{ self.node.ssh.port }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: target
+          address: ${{ self.node.ssh.host }}
+          transport:
+            hostKeys: ${{ self.node.ssh.host_keys }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: false
+        script: ${{ steps.plan.outputs.log_script }}
+- name: report
+  target: orbit-node-209
+  dependsOn:
+  - job: reads
+    condition:
+      type: always
+  - job: logs
+    condition:
+      type: always
+  - job: plan
+    condition:
+      type: succeeded
+  steps:
+  - name: result
+    writes: false
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/doctor'
+      behaviorName: ${{ "doctor-result-" + run.id }}
+      methodName: result
+      inputs:
+        intent: ${{ inputs.intent }}
+        results: ${{ steps }}

@@ -5,7 +5,6 @@ import {
 } from "jsr:@std/assert@1.0.14";
 import { localFilesystem } from "./local-worker.ts";
 import { selectVitePort } from "../processes-schedules/vite-system.ts";
-import { collectLogs } from "../../observation/doctor_logs.ts";
 
 Deno.test("a route or process job in a proxy cgroup refuses before any local effect", async () => {
   const original = Deno.Command;
@@ -39,16 +38,6 @@ Deno.test("a route or process job in a proxy cgroup refuses before any local eff
     );
     await assertRejects(
       () => selectVitePort({ preferred: 5173, excluded: [] }),
-      Error,
-      "proxy Node effect locally",
-    );
-    await assertRejects(
-      () =>
-        collectLogs({
-          log_directory: "/nonexistent-orbit-proxy-proof",
-          base_directory: "/nonexistent-orbit-proxy-proof",
-          cursor: null,
-        }),
       Error,
       "proxy Node effect locally",
     );

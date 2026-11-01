@@ -402,7 +402,7 @@ The agent reads the file when it starts. It exits with an error when the file is
 
 Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone direct footprint convergence sets `allow_secret_rotation=false`: a missing or mismatched secret refuses before writes, and the returned hash stays inside the private callback. Deleting the secret and running standalone `node:converge` does not rotate it. Coordinate planned rotation through the credential owner; there is no scheduled rotation.
 
-Retained configuration that permits rotation writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. Doctor then reports `mismatch`, and the next converge repairs it.
+Retained configuration that permits rotation writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. The next converge verifies and repairs any mismatch.
 
 Retained Gateway enrollment and role callers serialize agent configuration under a lock in a file cache store under `ORBIT_HOME`. Native direct convergence uses Swamp concurrency and the agent update lock instead. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 7 minutes, which covers the wait for the Node's update lock below. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
 
@@ -527,7 +527,7 @@ Prepare then writes the manifest into the release and installs the pin on the Ga
 
 The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes.
 
-Convergence, Doctor's binary check, the fleet verifier, the release handoff, and the [desired fleet state](/reference/self-update#desired-fleet-state) all read this one pin.
+Convergence, the fleet verifier, the release handoff, and the [desired fleet state](/reference/self-update#desired-fleet-state) all read this one pin.
 
 ## Install and upgrade
 
@@ -566,7 +566,7 @@ The Gateway converges the agent at these points.
 | When | Result of a failure |
 | --- | --- |
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
-| A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
+| A role converge on the Node | The role converge continues. The Gateway logs a warning, and The native convergence result records the drift. |
 
 During the freeze, Gateway releases keep the same agent pin. After the Swamp port, one final agent release will remove its action commands. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
 
@@ -574,7 +574,7 @@ The rollout leaves out the Gateway's own Node. [Prepare](/reference/gateway-reco
 
 `agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. `agent.configure` and `agent.remove` hold the same lock, after the installation. So no two of them swap or restart the agent at the same time. A CLI self-update that keeps the lock longer than 5 minutes fails `agent.configure` with `agent.update_busy`.
 
-An installation changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another binary.
+An installation changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. The fleet verifier reports each Node that runs another binary.
 
 The observer sends its version with each channel authorization: the Cargo version with the first 16 hexadecimal digits of its binary's SHA-256 as build metadata, such as `0.5.0+ad999ffe1ab24dca`. The Gateway derives the same string from the delivery for each Node, so presence proves the exact pinned binary. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `cli.self-update`, and the catch-up visits a Node whose agent reports another version.
 
@@ -595,7 +595,7 @@ The agent recovers from each failure below without an operator.
 | A snapshot is lost | The subscriber asks for a new one within about 10 seconds. |
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits, and systemd restarts it. |
-| The secret differs from the Gateway's hash, such as after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`. Doctor reports `node.agent_secret_mismatch`, and a converge writes a new secret. |
+| The secret differs from the Gateway's hash, such as after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`. A converge verifies the stored secret and writes a new one when needed. |
 
 The agent logs to the systemd journal. Its logs contain no Reverb key, signature, secret, or streamed log line.
 
@@ -605,27 +605,11 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 ## Doctor
 
-Doctor checks the agent in the `node` family on every managed Linux Node. Doctor reads existing continuous unit and Docker observations through the Gateway. Swamp performs domain reads directly and never starts a request-time agent helper. The agent remains frozen at its last published pin during the port; its old command definitions stay until the final observer-only cleanup.
+Doctor reads current host facts through official `@swamp/ssh` from Node209. The Gateway passes public intent and stored SSH pins. Every `uname`, `df`, `systemctl show`, filtered Docker state or awake-marker read is a native step. One typed comparison returns the public report through the shared terminal projector. Doctor reads no credentials, private configuration, package inventory or agent action command.
 
-| Issue code | Meaning |
-| --- | --- |
-| `node.agent_missing` | The binary or the unit is absent. |
-| `node.agent_binary_mismatch` | The binary exists but does not match the pinned checksum. |
-| `node.agent_inactive` | The unit exists but is not active. |
-| `node.agent_secret_mismatch` | The secret file is `missing`, or its hash does not match the stored one: `mismatch`. Doctor reads only the hash, and the report shows neither the secret nor a hash. |
-| `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
-| `node.release_lag` | The [fleet rollout](/reference/gateway-recovery#catch-up) is on, and this Node of the rollout set does not run the desired state of the Gateway's commit. |
+On managed Linux Nodes, Doctor checks `orbit-agent.service` and the freshness of the Gateway's cached continuous observation at result comparison time. It reports `node.agent_missing`, `node.agent_inactive`, or `node.agent_view_stale`. Provisioning owns agent binary, secret and configuration verification; Doctor does not duplicate it. The agent remains an observer.
 
-Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances. Repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
-
-`node.agent_view_stale` reports what it observed.
-
-| Observed | Meaning | Repair |
-| --- | --- | --- |
-| `subscriber_down` | The subscriber stopped, or wrote no health in the last 30 seconds. | Check `systemctl state orbit-agent-view` on the Gateway host, or run `php artisan orbit:gateway-web`. |
-| `disconnected` | The subscriber runs but has no Reverb connection. | Check the `websocket` role with `orbit doctor --family=role`. |
-| `missing` | The subscriber has no complete snapshot from this agent. It asks for one within about 10 seconds of the agent's next event. | Check `journalctl -u orbit-agent` on the Node. |
-| `stale` | No agent event arrived in the last 15 seconds. | Check the Node's network and `journalctl -u orbit-agent`. |
+See [Doctor](/cli/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
 
 ## Checks
 
@@ -711,4 +695,4 @@ The WireGuard address alone does not tell the agent apart from other users on th
 
 ### The hash is stored last
 
-Storing a new hash before the agent restarts would refuse the running agent if the restart fails, while the file would match the record. Doctor would then report nothing. Storing it last keeps the running agent accepted and leaves a mismatch that Doctor reports.
+Storing a new hash before the agent restarts would refuse the running agent if the restart fails, while the file would match the record. A file-only verification could then miss the mismatch. Storing it last keeps the running agent accepted and leaves a mismatch that Doctor reports.

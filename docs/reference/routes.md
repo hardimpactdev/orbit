@@ -70,11 +70,7 @@ Route responses show target IDs and positions. They never show infrastructure ad
 
 ### Check Route status with Doctor
 
-Every Route is expected to be `active`. Doctor reports any other status as `route.lifecycle_not_active` in the `route` family. So a Route that an operation left `pending`, `activating`, `retiring`, or `failed` stays visible until a retry or cleanup finishes it. Doctor reads only the stored status, so the check also runs when the Node is unreachable.
-
-No Route may hold a reserved name, such as `gateway.orbit`. A Route that took a name before core or an extension reserved it keeps the name until you move the Route. Doctor reports such a Route as `route.domain_reserved` in the `route` family. It also reads only stored state.
-
-Doctor reports each Route on one Node. A Node-scoped Route belongs to its Node. A Cluster-scoped app Route belongs to the Node that holds the Cluster's Router role. A public Process Route belongs to its Ingress and is checked only when both the Ingress and Process Node are selected and accessible. A Route with no serving Node is not reported.
+Use the native Route Operation result for Route status. [Doctor](/cli/doctor#what-each-family-checks) does not repeat Route lifecycle or configuration validation.
 
 ## Select a domain and scope
 
@@ -298,27 +294,11 @@ It keeps the activation for retry and Doctor reports the blocked path. Orbit add
 
 Node convergence restores the WireGuard member rule; Ingress convergence rebuilds the public site and HTTP rules. Removing the last public Route closes the public Ingress rules, including after offline residue cleanup. Process removal stays refused with `process.has_routes`.
 
-Configuration and image updates are allowed when they preserve the Route's resolved upstream; see [Process updates](/reference/processes-and-schedules#update-in-place). The Route keeps its ID, active state, site, certificate, DNS, and firewall rules. A container replacement can briefly interrupt requests while the listener restarts. Caddy reconnects to the same upstream; no Route activation or rebuild is needed. Doctor's existing upstream check reports an unreachable listener after an update, for both public and private Process Routes.
+Configuration and image updates are allowed when they preserve the Route's resolved upstream; see [Process updates](/reference/processes-and-schedules#update-in-place). The Route keeps its ID, active state, site, certificate, DNS, and firewall rules. A container replacement can briefly interrupt requests while the listener restarts. Caddy reconnects to the same upstream; no Route activation or rebuild is needed.
 
 Process Route creation and Process updates serialize their admission transactions in the Gateway database. Creation reads and resolves the current Process listener inside that transaction. If creation reserves the Route first, an update must preserve that Route's listener.
 
-Doctor checks public Process Routes on the Ingress in the `route` family only when both Nodes are in its selected scope. Otherwise it reports nothing about that Route and does not inspect the Process Node. It checks lifecycle, reserved names, private DNS, rendered site, public certificate, forwarding from the Ingress, and both firewall ends. A missing or expiring public certificate is a certificate mismatch. An unavailable observation is an inspection failure.
-
-The DNS check queries the recorded Orbit DNS server directly from the Gateway and expects the Ingress's WireGuard address. It bypasses system resolver routing and caches. The Ingress's system resolver may return a public address for the same hostname; that is not private DNS drift.
-
 The first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) on a Node backs up and stops serving any hand-placed Caddy site. Create a custom proxy Route for such a site before that build. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) shows an example.
-
-Doctor checks each custom proxy Route on its serving Node in the `route` family:
-
-| Doctor issue code | Difference |
-| --- | --- |
-| `route.dns_mismatch` | Private DNS does not answer the domain with the serving Node address. |
-| `route.certificate_mismatch` | The private Route's Orbit CA leaf is missing, or the public Route's ACME certificate is missing or expiring. |
-| `route.caddy_mismatch` | The serving Node's Caddy does not contain the site. |
-| `route.upstream_unreachable` | The upstream does not accept a connection. |
-| `route.firewall_mismatch` | The public Ingress rules or the managed Process listener path do not match. |
-| `route.inspection_failed` | A required observation is missing, malformed, or unreachable. |
-| `route.node_unreachable` | The Gateway could not observe the serving Node. |
 
 ## Set up private traffic
 
@@ -430,7 +410,7 @@ Public traffic enters only through Ingress, on HTTP and HTTPS. The firewall neve
 
 A public app Route terminates HTTPS on the Cluster's Ingress, forwards privately to the Cluster's Router, and reaches the `app-prod` workload. [Public Process Routes](#public-process-hostnames) use the same Ingress and send HTTP directly to their Process. The public endpoint never shows which Node runs the workload.
 
-A Cluster has at most one active Ingress. The database refuses a second one, and Doctor reports `role.cluster_cardinality_conflict` if two exist. The public app edge exists only when all of these hold: the Route is Cluster-scoped, the Cluster is active, the Cluster has an active Router, and its Ingress serves. An Ingress serves while its role is active, while it converges, and after a failed convergence step. A new public activation, or its repeat on deploy, starts only while the Ingress role is active. When a condition is missing, the Route keeps `publication=public` but gets no public listener, certificate, or firewall opening.
+A Cluster has at most one active Ingress. The database refuses a second one. The public app edge exists only when all of these hold: the Route is Cluster-scoped, the Cluster is active, the Cluster has an active Router, and its Ingress serves. An Ingress serves while its role is active, while it converges, and after a failed convergence step. A new public activation, or its repeat on deploy, starts only while the Ingress role is active. When a condition is missing, the Route keeps `publication=public` but gets no public listener, certificate, or firewall opening.
 
 A public edge is live when the Route is `active` or `activating`, its Cluster is eligible, and its `replacement_step` is at or past `public-activated`. A finished public Route stores `ingress-firewall`, a later step. A public Route whose `replacement_step` is empty has not finished activation and has no live public site.
 
@@ -448,7 +428,7 @@ The Ingress firewall opens `orbit:ingress-http` (port 80) and `orbit:ingress-htt
 
 A publication-only change keeps the Route ID and the domain. To publish, the Gateway verifies the private hops, stores `public-activated`, and builds the Ingress Node, so Caddy can obtain the certificate. Then it opens the Ingress firewall and stores `ingress-firewall`. The public site stays unreachable until those steps succeed, also when another Route already keeps the Ingress ports open. A failed step returns its error to the caller. On a Route that is not `active`, it also stores `failed_step` and `error_code`.
 
-Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Doctor reports a public Route whose Let's Encrypt certificate is missing or expires within the renewal margin, in addition to checking that the site asks Caddy to manage its certificate. Other issuance failures appear in Caddy's log on the Ingress Node and as a TLS failure for clients.
+Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Other issuance failures appear in Caddy's log on the Ingress Node and as a TLS failure for clients.
 
 A change of both domain and publication reserves a replacement Route with the new publication. The current Route stays authoritative until cutover, as in [Change an explicit domain](#change-an-explicit-domain). An app Route can be public only when its targets are production Instances. A [public Process Route](#public-process-hostnames) has no Instance targets.
 
@@ -623,7 +603,7 @@ The Caddy, PHP-FPM, certificate, and firewall steps change Nodes over SSH. When 
 
 `route:destroy --offline` checks each Node before it changes anything. It skips a Node that is not `active`, or that the [reachability probe](/reference/node-provisioning#remove-a-node) finds unreachable. A Node that answers keeps every step, and a failure on it still stops the removal. The Gateway runs the other steps, deletes the Route, and records a residue for each skipped Node in the same transaction. The response lists them under `retained_on_nodes`, each with `node_id`, `node`, and the `steps` the Node still needs.
 
-Doctor reports each residue as `node.route_residue_retained` in the `node` family, also while the Node is down. The `route-residue` artifact of [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) finishes the removal once the Node answers. It builds Caddy and converges PHP-FPM from stored state, which has no record of the removed Route. Then it removes the Route's certificates and firewall rules by Route ID, reconciles public firewall policy on an Ingress, and deletes the residue.
+The `route-residue` artifact of [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) finishes the removal once the Node answers. It builds Caddy and converges PHP-FPM from stored state, which has no record of the removed Route. Then it removes the Route's certificates and firewall rules by Route ID, reconciles public firewall policy on an Ingress, and deletes the residue.
 
 A failed cleanup keeps the residue and counts the attempt. The artifact is then `skipped`, so another site's broken Caddyfile or pool never halts the fleet rollout, and the next converge tries again. Node removal deletes the residues with the Node.
 
@@ -650,33 +630,7 @@ When an operation needs several owners, it takes them in this order: Node lifecy
 
 ## Check Routes with Doctor
 
-The `instance` family checks every active Route of an Instance on every Node that serves it. The checks change nothing and use only Nodes that the caller may address. An unselected related Node gives `instance.related_node_unverifiable`. A valid serving configuration stays healthy when the application returns HTTP 500.
-
-Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more reports `instance.removal_stuck`. When a removal starts during an inspection, Doctor drops that Instance's findings. See the [Doctor family rules](/cli/doctor#what-each-family-checks).
-
-| Doctor issue code | Difference |
-| --- | --- |
-| `instance.private_routing_scope_mismatch` | The Route's Node or Cluster scope differs from the target's placement. |
-| `instance.router_caddy_mismatch` | Router Caddy does not match the Route. |
-| `instance.workload_caddy_mismatch` | Workload Caddy does not match the Route. |
-| `instance.private_certificate_mismatch` | A Route certificate is missing or stale. |
-| `instance.private_dns_mismatch` | Private DNS does not answer the domain with the expected address. |
-| `instance.private_firewall_mismatch` | Role firewall rules differ from the Route's expected rules. |
-| `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain, or from the domain of the Route that wins a [web-root directory](#serve-several-web-roots). The summary names that directory. |
-| `instance.target_set_mismatch` | Router Caddy does not publish the Route's ordered target set. |
-| `instance.route_association_mismatch` | An Instance has no Route without a web root, or more than one. |
-| `instance.public_ingress_mismatch` | The Ingress Caddyfile lacks the public site that a build renders for it. |
-| `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, lacks `tls force_automate` while the Node disables certificate management, or its Let's Encrypt certificate is missing or expires within the renewal margin. |
-| `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to an address its public site forwards to. |
-| `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks a managed rule for port 80 or 443. |
-| `instance.related_node_unverifiable` | A required related Node is outside the selected set. |
-| `instance.inspection_failed` | A required observation is missing, malformed, or unreachable. |
-
-Doctor builds the expected public site the same way the build does. The Gateway sends that site and the intended forwarding addresses to `doctor.inspect-public-route`; Rust reads the live Caddyfile, probes those addresses, and checks the certificate on the public listener. The certificate check trusts only Ubuntu’s packaged Mozilla roots, verifies the domain, and applies no local Orbit CA trust.
-
-It also checks that a public Route's Let's Encrypt certificate exists and does not expire within the renewal margin, defined as one sixth of that certificate's lifetime from `notBefore` to `notAfter`. This relative margin avoids raising an alarm at Caddy's own renewal point and scales to shorter certificate lifetimes. While a public Route is mid-issuance and the Ingress serves no valid public certificate yet, Doctor can report a transient TLS issue; it clears once issuance completes.
-
-The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
+Native Route operations own site, certificate, DNS, firewall and forwarding validation. Their results carry the outcome. [Doctor](/cli/doctor#what-each-family-checks) does not repeat these checks or reads related Nodes for a Route. Its role and Process checks cover current service/runtime liveness only.
 
 ## Why it works this way
 

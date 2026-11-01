@@ -24,9 +24,9 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 ## Native execution
 
-Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan, manager list, and Doctor keep their read paths.
+Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan and manager list keep their read paths.
 
-Swamp owns manager convergence, candidate constraints, adoption, exact removal, retries and cancellation. Its worker runs fixed system commands directly, using sudo where required and the exact admitted Node account for account-owned scopes. Tool writes never invoke agent actions. The agent retains read-only observations for scan and Doctor. It uses fixed system commands on the admitted Node's exact worker. Package-manager output and credentials never enter public results. The Gateway projects only bounded version, outcome and error fields into the selected Tool and manager records. It does not check execution receipts or repeat native completion policy.
+Swamp owns manager convergence, candidate constraints, adoption, exact removal, retries and cancellation. Its worker runs fixed system commands directly, using sudo where required and the exact admitted Node account for account-owned scopes. Tool writes never invoke agent actions. The agent retains read-only observations for scan. It uses fixed system commands on the admitted Node's exact worker. Package-manager output and credentials never enter public results. The Gateway projects only bounded version, outcome and error fields into the selected Tool and manager records. It does not check execution receipts or repeat native completion policy.
 
 Node and Instance workflows compose manager prerequisites as native steps in their own root DAG. They do not create `tool.manager_converge` child Operations. Project runtime environments belong to the Instances family.
 
@@ -80,7 +80,7 @@ On macOS, `vp` is the enrolled account's existing Vite+ global store. The scope 
 
 The read-only `tool.inspect-vp-scope` agent command resolves the enrolled account's Vite+ binary with native account and filesystem APIs. It returns the selected path or a typed absent, conflicting, or unreadable result. Scope discovery runs no shell, installs nothing, and changes no launchers.
 
-Vite+ global package operations use the `tool.vp-version`, `tool.vp-candidate`, `tool.vp-inventory`, `tool.vp-removal-plan`, `tool.vp-install`, `tool.vp-update`, and `tool.vp-remove` agent commands. Each command resolves the account's scope and runs fixed Vite+ arguments from that account's home directory in one call. Rust validates manager output, limits each output stream to 1 MiB, and stops child processes at the command deadline. Doctor passes its shorter probe budget to the same commands. The Gateway keeps package constraints, adoption policy, and registered Tool records. Mutations run as the enrolled account and never return raw manager output.
+Vite+ global package operations use the `tool.vp-version`, `tool.vp-candidate`, `tool.vp-inventory`, `tool.vp-removal-plan`, `tool.vp-install`, `tool.vp-update`, and `tool.vp-remove` agent commands. Each command resolves the account's scope and runs fixed Vite+ arguments from that account's home directory in one call. Rust validates manager output, limits each output stream to 1 MiB, and stops child processes at the command deadline. The Gateway keeps package constraints, adoption policy, and registered Tool records. Mutations run as the enrolled account and never return raw manager output.
 
 A missing scope is scan state `absent`. A scope with the wrong owner, a non-official Homebrew origin, or a dirty Linux Homebrew tree is scan state `conflicting`. On macOS, two Vite+ stores with `bin/vp`, or one store with the wrong owner or shape, is `conflicting`. On Linux, the chosen Vite+ store is `conflicting` when it is a symlink, not a directory, owned by someone else, or its present `bin/vp` is not executable or is owned by someone else. A second Linux store is not a conflict. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
 
@@ -130,7 +130,7 @@ An `apt` install, update, or remove returns `tool.install_failed`, `tool.update_
 
 ## Project environments in the Vite+ store
 
-Swamp executes Project environment installation and pruning for the Instances family. The Gateway Tools adapter keeps the read probes that Doctor needs.
+Swamp executes Project environment installation and pruning for the Instances family. The Gateway Tools adapter keeps its scan read boundary.
 
 Before a JavaScript deploy step, Orbit reads the release's manifest, lockfile, and Node version files as data without running Project code. The lockfile selects the exact vite-plus release, including catalog, workspace, npm aliases, and prereleases. Node must have an exact pin in `.node-version`, `.nvmrc`, or `engines.node`, in that order. The pin must also satisfy Project and locked vite-plus engine constraints. Ranges and moving tags cannot silently change the deployed runtime.
 
@@ -160,7 +160,7 @@ Each Instance records its resolved store path, vp version, Node version, package
 
 Release cleanup drops a checkout's references only after taking that release out of the retained set; releases kept for running processes keep their references. Mutable checkouts keep earlier runtime references until the Instance is removed because release cleanup cannot prove that their old processes have stopped. Garbage collection counts these references and the current recipe Node reference under the installation lock. It removes only deploy-installed versions with no remaining references; content without a deploy checksum receipt stays.
 
-Doctor batches checks by store. Missing recorded active content is drift. Lock timeouts, invalid requirements, and unreadable stores are unverifiable, not store drift.
+Native environment operations validate their selected store and refuse unreadable or invalid state.
 
 The installer saves each component's verified checksum receipt as soon as it publishes that component. If a later package-manager download or integrity check fails, retry keeps the Node receipt rather than treating that Node version as adopted content. Collection can remove it once no checkout references it.
 
@@ -206,9 +206,9 @@ Packages inside a `complete` manager are ordered by package name, ascending. A f
 | `adoption` | string | `supported` or `unsupported`. |
 | `adoption_block` | string or null | Null when adoption is supported. Otherwise a block token. |
 
-The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. An unsupported cask stays in the list with adoption unavailable and one of those tokens. Doctor and the Node's Tools page use this inspector. See [informational package discoveries](/cli/doctor#informational-package-discoveries).
+The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. An unsupported cask stays in the list with adoption unavailable and one of those tokens. The Node's Tools page uses this inspector.
 
-The scan stores a normalized SemVer version, or null. A readable formula revision such as `25.8.1_1`, and a readable cask version such as `3.003`, normalize to null and can still be `supported`. `version_unreadable` means there is no readable version string, such as `latest`. It does not mean readable text failed the SemVer check. `tool:scan` prints a null version as an em dash. The Tools page shows `unreadable`. Doctor prints `version=unknown`.
+The scan stores a normalized SemVer version, or null. A readable formula revision such as `25.8.1_1`, and a readable cask version such as `3.003`, normalize to null and can still be `supported`. `version_unreadable` means there is no readable version string, such as `latest`. It does not mean readable text failed the SemVer check. `tool:scan` prints a null version as an em dash. The Tools page shows `unreadable`.
 
 `tool.homebrew-scan` inspects the scope and bottle tag once, then reads formula and cask inventories independently. A failed inventory leaves the other manager's successful result available. Inside the agent, Homebrew inventory uses two reads for each of `brew` and `brew-cask`. `info --json=v2 --formula --installed` and `info --json=v2 --cask --installed` supply metadata. `list --formula -1` and `list --cask -1` supply installed names without loading formulae or casks. Both use the usual Homebrew environment and do not set `HOMEBREW_FORCE_API_AUTO_UPDATE`.
 
@@ -330,7 +330,7 @@ A caller sends only the Node, the manager, the package name, and an optional ver
 
 The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). Use explicit [adoption](#adopt-a-tool) to take ownership.
 
-When Doctor or a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. Nonempty Homebrew version lists are validated one value at a time; a valid installed version remains verifiable during fleet recipe checks. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
+When a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. Nonempty Homebrew version lists are validated one value at a time; a valid installed version remains verifiable during fleet recipe checks. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
 
 A new install records its Operation, installs the package, and reads the installed version. A success records the Tool as `installed` and reports `applied`. A package-phase failure retains a `failed` Tool, so the same command can retry it or removal can drop it. A manager failure creates no Tool. List Tools to find the retained record. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
@@ -457,13 +457,13 @@ Swamp serializes Tool mutations through the stable `tools-node-<node_id>` behavi
 
 ## Check removal with Doctor
 
-The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`, including a `failed` install that never placed the package. A normalized version that violates the stored constraint reports `tool.version_mismatch`. An unconstrained Tool needs only to be installed; the recorded version is the last operation's result, not desired intent. The report never contains raw dpkg output. Those drift issues use the Tool id as `resource_id` and leave `resource_name` null. Unregistered discoveries are a separate informational kind. They do not replace these drift checks.
+Use the Tool removal result and native Tool scan to inspect installation state. [Doctor](/cli/doctor#what-each-family-checks) does not repeat package inventory, version constraints or account-scope checks.
 
 ## Direct Swamp execution
 
 Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, remove, adopt and manager convergence all run on the admitted Node's exact `orbit-node-<id>` worker with its matching Node label. There is no migration-pool fallback or polled writer.
 
-Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Read-only scan and Doctor probes stay in Orbit.
+Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Read-only scan stays in Orbit.
 
 
 ## Why it works this way
@@ -492,7 +492,7 @@ Discovery shows installed packages and creates no Tool rows. Adoption is the sep
 
 Owning every installed package was rejected because a scan is not a request to own the machine. Silent adoption during install was rejected because installing and taking ownership are different intentions. Storing discoveries as Tools was rejected because a Tool row is selected intent, not an observation. One identity for a formula and a cask was rejected because the names can collide and the operations differ. Separate locks were rejected because both change the same Homebrew prefix. Adopting tunnel and bootstrap packages was rejected because removal would then uninstall SSH, WireGuard, DNS, Docker, the firewall, sudo, Caddy, or a manager.
 
-A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan. Doctor shows `unknown`, the Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
+A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan. The Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
 
 ## Recipe convergence
 

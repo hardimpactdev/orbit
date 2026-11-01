@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { collectLogs } from "./doctor_logs.ts";
+import { collectLogs } from "./doctor_read_fixture.ts";
 import type { Row } from "./doctor_contract.ts";
 const record = (
   className = "RuntimeException",
