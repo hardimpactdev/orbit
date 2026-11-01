@@ -11,8 +11,8 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
+use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Domain\DatabaseServers\MysqlNames;
-use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
@@ -47,7 +47,7 @@ final readonly class CreateServerDatabaseAction
 
     public function __construct(
         private MysqlNames $names,
-        private MysqlStatements $statements,
+        private DatabaseUserPrivileges $privileges,
         private RecordEventBroadcaster $broadcaster,
         private PostgresTestDatabases $postgresTests,
         private RecordDatabaseOperationAction $operations,
@@ -119,7 +119,7 @@ final readonly class CreateServerDatabaseAction
                     'database_connection_id' => $connection->id, 'username' => $credentials['username'],
                     'privileges' => $redis ? implode(' ', ['on', ...array_map(static fn (string $pattern): string => '~'.$pattern, $data->patterns),
                         'resetchannels', '-@all', ...array_map(static fn (string $rule): string => '+'.$rule, $data->allow), '-@admin', '-@dangerous', '-function', '-script'])
-                        : $this->statements->forDriver($server->driver)->privilegeText($database, prefix: $test),
+                        : $this->privileges->text($server->driver, $database, prefix: $test),
                     'created_by' => $createdBy,
                 ]);
             }
@@ -213,7 +213,7 @@ final readonly class CreateServerDatabaseAction
                 DatabaseUser::query()->create([
                     'database_connection_id' => $connection->id,
                     'username' => $credentials['username'],
-                    'privileges' => $this->statements->forDriver($server->driver)->privilegeText($database, prefix: $testDatabase),
+                    'privileges' => $this->privileges->text($server->driver, $database, prefix: $testDatabase),
                     'created_by' => $createdBy,
                 ]);
 

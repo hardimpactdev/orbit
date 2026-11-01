@@ -1,5 +1,10 @@
 """Native database-create composition, guards, fan-out, private inputs and resume."""
 
+import os
+import socket
+import subprocess
+import time
+import urllib.request
 import json
 import sys
 import unittest
@@ -35,6 +40,8 @@ class CreateNative(DatabaseCommands):
         run = self.run_create()
         self.assertEqual([x['action'] for x in self.calls()], ['sql_probe_user', 'sql_probe_databases', 'sql_create_user', 'sql_authenticate', 'mysql_grant', 'mysql_grant', 'mysql_grant', 'sql_create_database', 'sql_create_database'])
         self.assertEqual(self.outcome(run), {'backend': 'active'})
+        records = reply(self.cli('data','query','modelName.startsWith("database-create-action-") && name == "run-exec-server"','--select','modelName').stdout)['results']
+        self.assertEqual(len(set(records)), len(self.calls()))
         self.assert_private_absent(json.dumps(self.history(run)))
 
     def test_postgres_each_database_has_separate_create_revoke_and_schema_grant(self):
@@ -59,12 +66,35 @@ class CreateNative(DatabaseCommands):
         self.assertEqual(self.outcome(run), {'error_code': 'database.name_conflict'})
 
     def test_failed_foreach_child_blocks_later_mutations_then_resumes_natively(self):
-        self.fail('mysql_grant')
-        run = self.run_create(False)
-        self.assertNotIn('sql_create_database', [x['action'] for x in self.calls()])
-        self.fail('')
-        self.cli('workflow', 'resume', 'operation-database-create', '--run', run['id'])
-        self.assertEqual(self.outcome(run), {'backend': 'active'})
+        # Official e459 forwards new-model globals through serve, but not local CLI resume.
+        self.cli('access','token','mint','fixture-admin','--principal','user:fixture')
+        token=self.repo/'admin-token'
+        token.write_text(reply(self.cli('access','token','reveal','fixture-admin','--yes').stdout)['token'])
+        token.chmod(0o600)
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+        env=dict(os.environ,SWAMP_NO_UPDATE_CHECK='1',SWAMP_NO_TELEMETRY='1')
+        for name in ('SWAMP_SERVER_URL','SWAMP_SERVE_URL','SWAMP_SERVER_TOKEN','SWAMP_SERVER_TOKEN_FILE','SWAMP_REPO_DIR','SWAMP_CA_CERT','SWAMP_EXTENSIONS_DIR'):
+            env.pop(name,None)
+        with (self.repo/'serve.log').open('w') as log:
+            serve=subprocess.Popen([os.environ.get('SWAMP_BIN','swamp'),'serve','--host','127.0.0.1','--port',str(port),'--auth-mode','token','--admins','user:fixture'],cwd=self.repo,env=env,stdout=log,stderr=log)
+            try:
+                for _ in range(100):
+                    try:
+                        urllib.request.urlopen(f'http://127.0.0.1:{port}/ready',timeout=1).close();break
+                    except OSError:
+                        self.assertIsNone(serve.poll(),(self.repo/'serve.log').read_text()[-2000:]);time.sleep(.1)
+                flags=('--server',f'ws://127.0.0.1:{port}','--token-file',str(token))
+                self.fail('mysql_grant')
+                run=reply(self.cli('workflow','run','operation-database-create','--input',json.dumps(self.public),*flags,success=False).stdout)
+                self.assertNotIn('sql_create_database',[x['action'] for x in self.calls()])
+                self.fail('')
+                self.cli('workflow','resume','operation-database-create','--run',run['id'],*flags)
+                self.assertEqual(self.outcome(run),{'backend':'active'})
+            finally:
+                serve.terminate()
+                try:serve.wait(timeout=10)
+                except subprocess.TimeoutExpired:serve.kill();serve.wait(timeout=5)
 
     def test_terminal_delivery_resume_after_later_run_does_not_repeat_effects(self):
         marker = self.repo / 'delivery-failed'

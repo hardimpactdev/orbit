@@ -4,44 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
-use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseServer;
-use App\Models\Process;
 use SensitiveParameter;
 
-/** Records protected SQL user or Valkey intent for native execution.
+/** Records protected Valkey intent for native execution.
  * @phpstan-import-type Command from \App\Models\DatabaseExecutionIntent
  */
 final readonly class DatabaseCommands
 {
-    /** @param list<string> $redactions
-     * @return Command
-     */
-    public static function sql(DatabaseServer $server, #[SensitiveParameter] string $sql, string $backend = 'active', bool $expectEmpty = false, string $refusal = 'database.name_conflict', array $redactions = []): array
-    {
-        $process = $server->process;
-        if (! $process instanceof Process) {
-            throw new ResourceOperationException('database.server_command_failed', 'The database server has no Process.', 502);
-        }
-
-        return ['name' => 'database.server-admin', 'input' => [
-            'operation' => 'execute', 'container' => app(DockerProcessRenderer::class)->containerName($process),
-            'password' => $server->root_password,
-            'password_variable' => $server->driver === DatabaseDriver::Pgsql ? 'PGPASSWORD' : 'MYSQL_PWD',
-            'client' => self::client($server), 'sql' => $sql,
-        ], 'protected' => ['password', 'sql'], 'backend' => $backend, 'expect_empty' => $expectEmpty, 'refusal' => $refusal, 'redactions' => [$server->root_password, ...$redactions]];
-    }
-
-    /** @return list<string> */
-    public static function client(DatabaseServer $server): array
-    {
-        return $server->driver === DatabaseDriver::Pgsql
-            ? ['psql', '--no-psqlrc', '--host=127.0.0.1', '--username=postgres', '--dbname=postgres', '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1']
-            : ['mysql', '--user=root', '--batch', '--skip-column-names'];
-    }
-
     /** @param array<string, mixed> $payload
      * @return Command
      */

@@ -21,13 +21,15 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
     public function input(Operation $operation): array
     {
         $intent = $this->intent($operation);
-        $command = $intent->payload['commands']['database-apply'];
-        $input = $operation->input;
-        $container = $command['input']['container'] ?? null;
+        $input = $intent->payload['commands']['database-apply']['input'];
+        $container = $input['container'] ?? null;
         $username = $input['username'] ?? null;
         if (! in_array($input['driver'] ?? null, ['mysql', 'pgsql'], true)
             || ! is_string($container) || preg_match('/\Aorbit-process-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*\z/D', $container) !== 1
             || ! is_string($username) || preg_match('/\A[A-Za-z0-9_]{1,32}\z/D', $username) !== 1
+            || ! is_string($input['database'] ?? null) || preg_match('/\A[A-Za-z0-9_]{1,'.($input['driver'] === 'pgsql' ? '63' : '64').'}\z/D', $input['database']) !== 1
+            || ! is_string($input['owner_username'] ?? null) || preg_match('/\A[A-Za-z0-9_]{1,63}\z/D', $input['owner_username']) !== 1
+            || ! is_bool($input['read_only'] ?? null)
             || ! is_bool($input['replication'] ?? null) || ! is_bool($input['known_user'] ?? null)) {
             $this->invalid();
         }
@@ -36,10 +38,11 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
         $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-user-create-intent-'.$intent->id];
         if (! $operation->status->terminal()) {
             $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'],
-                json_encode(array_intersect_key($command['input'], array_flip(['password', 'sql'])), JSON_THROW_ON_ERROR));
+                json_encode(array_intersect_key($input, array_flip(['password', 'payload'])), JSON_THROW_ON_ERROR));
         }
 
         return ['intent' => ['driver' => $input['driver'], 'container' => $container,
+            'database' => $input['database'], 'owner_username' => $input['owner_username'], 'read_only' => $input['read_only'],
             'username' => $username, 'replication' => $input['replication'], 'known_user' => $input['known_user'],
             'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
                 'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)

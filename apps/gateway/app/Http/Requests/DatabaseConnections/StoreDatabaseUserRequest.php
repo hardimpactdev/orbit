@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\DatabaseConnections;
 
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
-use App\Domain\DatabaseServers\MysqlStatements;
+use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
@@ -18,7 +18,7 @@ final class StoreDatabaseUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'username' => ['required', 'string', 'max:32', 'regex:'.MysqlStatements::USERNAME_PATTERN],
+            'username' => ['required', 'string', 'max:32', 'regex:'.DatabaseUserPrivileges::USERNAME_PATTERN],
             'password' => ['required', 'string', 'max:1024', 'not_regex:/[\x00\r\n]/'],
             'read_only' => ['sometimes', 'boolean:strict'],
             'replication' => ['sometimes', 'boolean:strict'],

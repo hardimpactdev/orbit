@@ -1,4 +1,6 @@
 """Native SQL-user DAG with vault-backed official SSH and no Gateway callbacks."""
+import base64
+import uuid
 import json
 import shutil
 import sys
@@ -33,13 +35,17 @@ if '-M' in sys.argv or '-O' in sys.argv:sys.exit(0)
 args=shlex.split(sys.argv[-1]);scripts=[Path(a).name for a in args if a.endswith('.py')]
 if not scripts:sys.exit(0)
 path=Path(STATE);value=json.loads(path.read_text());action=scripts[0]
-material=json.load(sys.stdin);assert isinstance(material['password'],str) and isinstance(material['sql'],str)
-assert material['password'] not in repr(args) and material['sql'] not in repr(args)
+material=json.load(sys.stdin);assert set(material)=={'password','payload'} and isinstance(material['payload']['password'],str)
+assert material['password'] not in repr(args) and material['payload']['password'] not in repr(args)
 value['calls'].append(action);code=0;result={'ready':True}
 if action=='user_wal.py' and value['wal']!='logical':code=1;result={'error_code':'database.wal_level_not_logical'}
 if action=='user_apply.py':
  value['effects']+=1
  if value['fail_apply']:code=1;result={'error_code':'database.server_admin_failed'}
+ else:result={'ready':True}
+if action=='user_grant.py':
+ value['effects']+=1
+ if value.get('fail_grant'):code=1;result={'error_code':'database.server_admin_failed'}
  else:result={'backend':'active'}
 path.write_text(json.dumps(value));print(json.dumps(result));sys.exit(code)
 '''.replace('STATE',repr(str(self.state))));fake.chmod(0o700)
@@ -53,8 +59,8 @@ path.write_text(json.dumps(value));print(json.dumps(result));sys.exit(code)
                 if step['task'].get('behaviorType')=='@swamp/ssh':
                     args=step['task']['globalArgs'];args['sshBinary']=str(fake);args['scpBinary']=str(scp);args['transport']['identityFile']=str(key)
         self.save()
-        self.material={'password':'private-root-user-sentinel','sql':"CREATE USER proof PASSWORD 'private-new-login-sentinel';"};self.secrets=(self.material['password'],self.material['sql'],'private-new-login-sentinel')
-        self.public={'operation_id':17,'node_id':9,'kind':'database_user.create','intent':{'driver':'mysql','container':'orbit-process-42-proof','username':'proof','replication':False,'known_user':False,'ssh':{'host':'fixture','user':'orbit','host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}},'execution_secrets':{'user_create':{'vault':'orbit-control-inputs','key':'database-user-create-intent-17'}}}
+        self.material={'password':'private-root-user-sentinel','payload':{'password':'private-new-login-sentinel','salt':base64.b64encode(uuid.uuid4().bytes).decode()}};self.secrets=(self.material['password'],'private-new-login-sentinel',self.material['payload']['salt'])
+        self.public={'operation_id':17,'node_id':9,'kind':'database_user.create','intent':{'driver':'mysql','container':'orbit-process-42-proof','database':'catalog_proof','owner_username':'catalog_owner','username':'proof','read_only':True,'replication':False,'known_user':False,'ssh':{'host':'fixture','user':'orbit','host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}},'execution_secrets':{'user_create':{'vault':'orbit-control-inputs','key':'database-user-create-intent-17'}}}
         self.cli('vault','create','local_encryption','orbit-control-inputs')
         self.cli('vault','put','orbit-control-inputs','database-user-create-intent-17',input=json.dumps(self.material))
 
@@ -74,13 +80,13 @@ path.write_text(json.dumps(value));print(json.dumps(result));sys.exit(code)
 
     def test_mysql_runs_one_sql_action_with_vault_material_absent_from_history(self):
         run=self.run_user();state=json.loads(self.state.read_text())
-        self.assertEqual(state['calls'],['user_apply.py']);self.assertEqual(state['effects'],1)
+        self.assertEqual(state['calls'],['user_apply.py','user_grant.py']);self.assertEqual(state['effects'],2)
         self.assertEqual(self.outcome(run),{'backend':'active'})
         self.assert_private_absent(json.dumps(self.history(run)),self.state.read_text())
 
     def test_postgres_wal_check_is_a_separate_step_before_sql(self):
         self.public['intent'].update(driver='pgsql',replication=True)
-        run=self.run_user();self.assertEqual(json.loads(self.state.read_text())['calls'],['user_wal.py','user_apply.py'])
+        run=self.run_user();self.assertEqual(json.loads(self.state.read_text())['calls'],['user_wal.py','user_apply.py','user_grant.py'])
         self.assertEqual(self.outcome(run),{'backend':'active'})
 
     def test_postgres_refusal_prevents_sql_and_keeps_bounded_error(self):
@@ -93,6 +99,16 @@ path.write_text(json.dumps(value));print(json.dumps(result));sys.exit(code)
         state=json.loads(self.state.read_text());state['fail_apply']=True;self.state.write_text(json.dumps(state))
         run=self.run_user(False);self.assertEqual(self.outcome(run),{'error_code':'database.server_admin_failed'})
         self.assert_private_absent(json.dumps(self.history(run)))
+
+    def test_grant_failure_resumes_without_repeating_the_login_action(self):
+        state=json.loads(self.state.read_text());state['fail_grant']=True;self.state.write_text(json.dumps(state))
+        run=self.run_user(False)
+        self.assertEqual(self.outcome(run),{'error_code':'database.server_admin_failed'})
+        self.assertEqual(json.loads(self.state.read_text())['calls'],['user_apply.py','user_grant.py'])
+        state=json.loads(self.state.read_text());state['fail_grant']=False;self.state.write_text(json.dumps(state))
+        self.cli('workflow','resume','operation-database-user-create','--run',run['id'],'--from','grant')
+        self.assertEqual(json.loads(self.state.read_text())['calls'],['user_apply.py','user_grant.py','user_grant.py'])
+        self.assertEqual(self.outcome(run),{'backend':'active'})
 
     def test_later_run_does_not_overwrite_saved_result_for_terminal_resume(self):
         marker=self.repo/'delivery-failed';marker.touch()

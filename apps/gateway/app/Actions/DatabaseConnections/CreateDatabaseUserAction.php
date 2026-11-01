@@ -7,11 +7,10 @@ namespace App\Actions\DatabaseConnections;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
-use App\Domain\DatabaseServers\MysqlStatements;
-use App\Domain\DatabaseServers\PostgresStatements;
+use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
@@ -25,7 +24,7 @@ use App\Models\Operation;
 final readonly class CreateDatabaseUserAction
 {
     public function __construct(
-        private MysqlStatements $statements,
+        private DatabaseUserPrivileges $privileges,
         private RecordDatabaseOperationAction $operations,
     ) {}
 
@@ -56,6 +55,10 @@ final readonly class CreateDatabaseUserAction
             );
         }
 
+        if ($server->driver === DatabaseDriver::Pgsql && ($data->password === '' || preg_match('/[^\x20-\x7e]/', $data->password) === 1)) {
+            throw new ResourceOperationException('validation.failed', 'A PostgreSQL password must contain printable ASCII characters.', 422);
+        }
+
         app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
 
         $ownsConnection = DatabaseConnection::query()
@@ -72,19 +75,21 @@ final readonly class CreateDatabaseUserAction
         }
 
         $knownUser = DatabaseUser::query()->where('database_connection_id', $connection->id)->where('username', $data->username)->exists();
-        $statements = $this->statements->forDriver($server->driver);
         $readOnly = $data->readOnly || $data->replication;
-        $ensureUser = $statements instanceof PostgresStatements
-            ? $statements->ensureUser($data->username, $data->password, replication: $data->replication, knownUser: $knownUser)
-            : $statements->ensureUser($data->username, $data->password);
+        $safe = ['driver' => $server->driver->value,
+            'container' => app(DockerProcessRenderer::class)->containerName($server->process ?? throw new ResourceOperationException('database.server_command_failed', 'The server has no Process.', 502)),
+            'database' => $connection->database, 'owner_username' => $connection->username,
+            'username' => $data->username, 'read_only' => $readOnly,
+            'replication' => $data->replication, 'known_user' => $knownUser];
 
         return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
-            ['connection_id' => $connection->id, 'driver' => $server->driver->value, 'username' => $data->username,
-                'replication' => $data->replication, 'known_user' => $knownUser],
-            ['database-apply' => DatabaseCommands::sql($server, $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username), redactions: [$data->password])], ['upsert_user' => [
-                'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
-                'privileges' => $statements->privilegeText($connection->database, $readOnly), 'replication' => $data->replication,
-                'created_by' => $createdBy,
-            ]]);
+            ['connection_id' => $connection->id, ...$safe],
+            ['database-apply' => ['name' => 'database_user.create', 'input' => [...$safe, 'password' => $server->root_password,
+                'payload' => ['password' => $data->password, 'salt' => base64_encode(random_bytes(16))]],
+                'protected' => ['password', 'payload'], 'redactions' => [$server->root_password, $data->password]]], ['upsert_user' => [
+                    'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
+                    'privileges' => $this->privileges->text($server->driver, $connection->database, $readOnly), 'replication' => $data->replication,
+                    'created_by' => $createdBy,
+                ]]);
     }
 }
