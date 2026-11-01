@@ -239,6 +239,9 @@ jobs:
         run: |
           python3 -m unittest discover -s tools -p 'test_ci_*.py'
           python3 tools/test_swamp_import_base.py
+          python3 -m venv "$RUNNER_TEMP/release-load-tests"
+          "$RUNNER_TEMP/release-load-tests/bin/pip" install --disable-pip-version-check PyYAML==6.0.3
+          "$RUNNER_TEMP/release-load-tests/bin/python" -B -m unittest discover -s platform/swamp-load -p release_load_test.py
       - name: Select changed build inputs
         id: plan
         env:

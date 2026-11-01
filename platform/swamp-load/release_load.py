@@ -8,19 +8,29 @@ import concurrent.futures
 import datetime
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import ssl
+import stat
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import manifest_grants
-import release_source_inventory
+
+
+def workflow_identity(path):
+    import yaml
+    value = yaml.safe_load(path.read_text())
+    require(isinstance(value, dict) and isinstance(value.get("id"), str)
+            and isinstance(value.get("name"), str), "workflow_identity_unreadable")
+    return value["id"], value["name"]
 
 SCHEMA = "orbit.swamp.release-load.v1"
 CHECKOUT = Path("/home/orbit/apps/orbit-monorepo-staging/checkout")
@@ -28,19 +38,21 @@ STATE = Path("/var/lib/orbit-swamp-main-load/releases")
 LOCK = Path("/home/orbit/.local/state/orbit-swamp/serve-load.lock")
 TOKEN = Path("/home/orbit/.config/swamp/serve-driver-token")
 SERVE = "orbit-process-392-swamp-serve.service"
-MODULES = ("release_load.py", "release_rpc.ts", "release_source_inventory.py", "manifest_grants.py")
+MODULES = ("release_load.py", "manifest_grants.py")
 IDENTITY = ("schema", "release_sha", "release_id", "gateway_release_record", "target_node_id", "attempt_id")
 LIMITATIONS = [
     "workflow.get equality excludes path and fields omitted by the official API, including placement/forEach",
     "extension version equality is not bundle-byte or helper-freshness proof",
-    "deleted registrations are reported; full registry equality is not claimed",
+    "workflow identities cover all current rows; full definition equality covers only changed workflow files",
+    "full extension registry equality is not claimed",
     "hot reload only; no run is cancelled or inferred terminal",
 ]
 
 
 class Refused(Exception):
-    def __init__(self, code):
+    def __init__(self, code, retry_safe=False):
         self.code = code
+        self.retry_safe = retry_safe
         super().__init__(code)
 
 
@@ -60,8 +72,7 @@ def digest(value):
 
 def identity(request):
     require(isinstance(request, dict), "invalid_request")
-    require(not set(request) - set(IDENTITY) - {"action", "gateway_release_lock", "active_release_record",
-                                               "receipt_hash", "configured_token_proof"}, "unknown_request_field")
+    require(not set(request) - set(IDENTITY) - {"action", "receipt_hash"}, "unknown_request_field")
     require(request.get("schema") == SCHEMA and request.get("target_node_id") == 209, "invalid_target")
     sha = request.get("release_sha")
     require(isinstance(sha, str) and re.fullmatch(r"[a-f0-9]{40}", sha), "invalid_revision")
@@ -70,8 +81,6 @@ def identity(request):
     require(type(record) is int and record > 0, "active_release_missing")
     attempt = request.get("attempt_id")
     require(isinstance(attempt, str) and re.fullmatch(r"[a-zA-Z0-9_-]{16,96}", attempt), "invalid_attempt")
-    require(request.get("gateway_release_lock") == "GatewayReleaseLock::run"
-            and request.get("active_release_record") == record, "gateway_interlock_missing")
     require(request.get("action") in ("prepare", "accept"), "invalid_action")
     return {key: request[key] for key in IDENTITY}
 
@@ -95,6 +104,7 @@ class Host:
     def __init__(self):
         self.checkout = CHECKOUT
         self.app = CHECKOUT / "swamp"
+        self.deadline = time.monotonic() + 600
 
     def command(self, args, *, owner=False, timeout=60, input_text=None):
         environment = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/root",
@@ -104,8 +114,11 @@ class Host:
             args = ["/usr/sbin/runuser", "-u", "orbit", "--", "env", "-i",
                     "HOME=/home/orbit", "PATH=/home/orbit/.local/bin:/usr/local/bin:/usr/bin:/bin",
                     "SWAMP_HOME=/home/orbit/.swamp", "SWAMP_CONFIG_DIR=/home/orbit/.config/swamp",
+                    "SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key",
                     "SWAMP_NO_UPDATE_CHECK=1", "SWAMP_NO_TELEMETRY=1",
                     "SWAMP_SERVE_TIMEOUT_MS=120000", *args]
+        require(self.deadline > time.monotonic(), "load_deadline_exceeded")
+        timeout = min(timeout, self.deadline - time.monotonic())
         result = subprocess.run(args, cwd=self.app, env=environment, input=input_text,
                                 text=True, capture_output=True, timeout=timeout, check=False)
         require(result.returncode == 0 and len(result.stdout) <= 16 * 1024 * 1024, "command_refused_or_uncertain")
@@ -123,15 +136,29 @@ class Host:
         require(int(value.get("MainPID", "0")) > 0 and value.get("InvocationID"), "serve_unavailable")
         return {"pid": int(value["MainPID"]), "invocation": value["InvocationID"]}
 
-    def stage(self, sha):
+    def preflight(self, sha):
         self.clean()
+        before = self.runtime()
+        accepted = json.loads((STATE.parent / "last-proof.json").read_text())
+        old_sha = accepted.get("loaded_sha")
+        runtime = accepted.get("runtime_after", {})
+        require(isinstance(old_sha, str) and re.fullmatch(r"[a-f0-9]{40}", old_sha)
+                and {key: runtime.get(key) for key in before} == before, "live_source_unverified")
+        require(self.git("rev-parse", "HEAD") == old_sha, "starting_source_requires_recovery")
+        # Fetch only the admitted object; never resolve latest main as a target.
+        self.git("fetch", "--no-tags", "origin", sha)
         require(self.git("rev-parse", sha + "^{commit}") == sha, "commit_missing")
-        # A pinned rollback may move backwards; it must remain on admitted main history.
-        self.git("merge-base", "--is-ancestor", sha, "refs/remotes/origin/main")
+        return before, self.git("rev-parse", sha + ":swamp"), old_sha
+
+    def stage(self, sha):
         self.git("checkout", "--detach", sha)
         self.clean()
         require(self.git("rev-parse", "HEAD") == sha, "source_revision_mismatch")
-        return self.git("rev-parse", "HEAD:swamp")
+
+    def native(self, *args, remote=False):
+        flags = (["--server", "ws://127.0.0.1:9418", "--token-file", str(TOKEN)]
+                 if remote else ["--repo-dir", str(self.app)])
+        return json.loads(self.command(["/home/orbit/.local/bin/swamp", *args, *flags, "--json"], owner=True))
 
     def reload(self):
         result = json.loads(self.command([
@@ -141,75 +168,72 @@ class Host:
         # Never retain raw native errors or arbitrary response fields in a public receipt.
         return {"success": True, "errors": []}
 
-    def rpc(self, requests):
-        script = Path(__file__).resolve().with_name("release_rpc.ts")
-        return json.loads(self.command([
-            "/home/orbit/.swamp/deno/deno", "run", "--quiet", "--no-prompt",
-            "--allow-read=" + str(TOKEN), "--allow-net=127.0.0.1:9418", str(script), str(TOKEN)],
-            owner=True, timeout=180, input_text=json.dumps(requests)))
+    def verify(self, old_sha, sha):
+        rows = self.native("workflow", "list").get("results")
+        require(isinstance(rows, list) and rows, "workflow_inventory_unreadable")
+        require(all(isinstance(row, dict) and isinstance(row.get("id"), str)
+                    and isinstance(row.get("name"), str) for row in rows), "workflow_identity_unreadable")
+        identities = {(row["id"], row["name"]) for row in rows}
+        require(len(identities) == len(rows), "workflow_identity_duplicate")
+        served_rows = self.native("workflow", "list", remote=True).get("results")
+        require(isinstance(served_rows, list) and all(isinstance(row, dict) and isinstance(row.get("id"), str)
+                and isinstance(row.get("name"), str) for row in served_rows), "served_workflow_inventory_unreadable")
+        require({(row["id"], row["name"]) for row in served_rows} == identities
+                and len(served_rows) == len(rows), "served_workflow_inventory_mismatch")
+        changed = self.git("diff", "--no-renames", "--name-only", old_sha + ".." + sha, "--", "swamp/workflows").splitlines()
+        selected = []
+        for relative in changed:
+            path = self.checkout / relative
+            if path.is_file() and path.suffix in (".yaml", ".yml"):
+                workflow_id, name = workflow_identity(path)
+                require((workflow_id, name) in identities, "changed_workflow_identity_missing")
+                selected.append({"id": workflow_id, "name": name})
 
-    def workflows(self):
-        rows = []
-        for path in sorted((self.app / "workflows").glob("*.yaml")):
-            text = path.read_text()
-            workflow_id = re.search(r"^id: ([a-f0-9-]{36})$", text, re.MULTILINE)
-            name = re.search(r"^name: ([a-zA-Z0-9_-]+)$", text, re.MULTILINE)
-            require(workflow_id and name, "workflow_identity_unreadable")
-            rows.append({"id": workflow_id[1], "name": name[1]})
-        require(rows and len({row["id"] for row in rows}) == len(rows), "workflow_inventory_invalid")
-
-        def local(row):
-            result = json.loads(self.command([
-                "/home/orbit/.local/bin/swamp", "workflow", "get", row["id"],
-                "--repo-dir", str(self.app), "--json"], owner=True))
-            return {**row, "disk": result}
+        def compare(row):
+            # list gives identities/counts only, so full gets remain necessary for DAG/task equality.
+            disk = self.native("workflow", "get", row["id"])
+            served = self.native("workflow", "get", row["id"], remote=True)
+            require(disk.get("id") == row["id"] and served.get("id") == row["id"], "workflow_identity_mismatch")
+            disk = {key: value for key, value in disk.items() if key != "path"}
+            served = {key: value for key, value in served.items() if key != "path"}
+            require(disk == served, "served_workflow_mismatch")
+            return {"id": row["id"], "name": row["name"], "disk_hash": digest(disk),
+                    "served_hash": digest(served), "equal": True,
+                    "comparison_scope": "official_exposed_fields_except_path"}
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            return list(pool.map(local, rows))
-
-    def verify(self):
-        workflows = self.workflows()
-        inventory = release_source_inventory.inventory(self.app)
-        ambiguous = [{"type": row["type"], "code": "source_version_ambiguous"}
-                     for row in inventory if row.get("error")]
-        require(not ambiguous, "source_version_ambiguous")
-        requests = [{"type": "workflow.get", "payload": {"workflowIdOrName": row["id"]}}
-                    for row in workflows]
-        requests += [{"type": "model.type.describe", "payload": {"typeArg": row["type"]}}
-                     for row in inventory]
-        requests += [{"type": "model.type.search", "payload": {}},
-                     {"type": "run.history", "payload": {"active": True}}]
-        replies = self.rpc(requests)
-        require(len(replies) == len(requests), "native_inventory_incomplete")
-        proofs = []
-        for row, reply in zip(workflows, replies):
-            served = reply.get("data")
-            require(isinstance(served, dict), "workflow_unreadable")
-            disk = {key: value for key, value in row["disk"].items() if key != "path"}
-            live = {key: value for key, value in served.items() if key != "path"}
-            require(disk.get("id") == row["id"] and live.get("id") == row["id"], "workflow_identity_mismatch")
-            require(disk == live, "served_workflow_mismatch")
-            proofs.append({"id": row["id"], "name": row["name"], "disk_hash": digest(disk),
-                           "served_hash": digest(live), "equal": True, "comparison_scope": "official_exposed_fields_except_path"})
-        version_replies = replies[len(workflows):len(workflows) + len(inventory)]
-        for row, reply in zip(inventory, version_replies):
-            require(reply.get("data", {}).get("version") == row["expected"], "served_extension_version_mismatch")
-        registry = replies[-2].get("data", {}).get("results")
-        require(isinstance(registry, list), "registry_unreadable")
-        coverage = release_source_inventory.coverage(inventory, [row["normalized"] for row in registry])
-        require(not coverage["source_not_served"], "current_source_not_served")
-        runs = replies[-1].get("runs")
+            workflows = list(pool.map(compare, selected))
+        # Retain the existing, installed post-reload source-version audit. Do not create another parser.
+        spec = importlib.util.spec_from_file_location("release_behavior_versions", "/usr/local/libexec/behavior_versions.py")
+        audit_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(audit_module)
+        audit = audit_module.audit(self.app, lambda name: self.native("behavior", "type", "describe", name,
+                                                                    remote=True)["version"])
+        require(audit.get("checked", 0) > 0 and audit["checked"] == audit.get("matched")
+                and not audit.get("errors") and not audit.get("mismatches"), "served_extension_version_mismatch")
+        runs = self.native("run", "history", "--active", remote=True).get("runs")
         require(isinstance(runs, list) and all(isinstance(row, dict) and row.get("status") == "running"
                                              and isinstance(row.get("id"), str) for row in runs), "native_drain_unreadable")
-        return {"workflows": proofs, "extension_audit": {
-            "checked": len(inventory), "matched": len(inventory), "mismatches": [], "source_missing": [],
-            "deleted": coverage["served_without_source"], "ambiguous": ambiguous},
+        return {"workflows": workflows, "workflow_inventory": {
+            "equal": True, "disk_count": len(rows), "served_count": len(served_rows),
+            "scope": "all_id_name_pairs", "before_sha": old_sha,
+            "changed_files": len(changed), "full_definition_checks": len(selected),
+            "cli_get_calls": 2 * len(selected)}, "extension_audit": {
+            "checked": audit["checked"], "matched": audit["matched"], "mismatches": [],
+            "scope": audit.get("scope"), "limit": audit.get("limit"),
+            "registry_equality": False},
             "drain": {"queried_at": now(), "active_running_run_ids": [row["id"] for row in runs]}}
 
     def grants(self, sha, directory):
         raw = (self.app / "config/gateway-workflow-grants.json").read_bytes()
+
+        def native(args):
+            remaining = self.deadline - time.monotonic()
+            require(remaining > 0, "load_deadline_exceeded")
+            return manifest_grants.native(args, str(self.app), timeout=min(90, remaining))
+
         result = manifest_grants.reconcile(raw, sha, directory,
-                                          lambda args: manifest_grants.native(args, str(self.app)))
+                                          native)
         return {"source_sha": sha, "hash": hashlib.sha256(raw).hexdigest(),
                 "scope_count": len(manifest_grants.scopes(json.loads(raw))),
                 "created_count": len(result["created"]), "checkpoint": str(directory / (sha + ".json")),
@@ -218,7 +242,9 @@ class Host:
     def health(self):
         context = ssl.create_default_context(cafile="/usr/local/share/ca-certificates/orbit-root.crt")
         for url in ("http://127.0.0.1:9418/health", "https://swamp.orbit/health"):
-            with urllib.request.urlopen(url, context=context if url.startswith("https:") else None, timeout=5) as response:
+            remaining = self.deadline - time.monotonic()
+            require(remaining > 0, "load_deadline_exceeded")
+            with urllib.request.urlopen(url, context=context if url.startswith("https:") else None, timeout=min(5, remaining)) as response:
                 require(response.status == 200 and json.load(response).get("status") == "ok", "health_unverified")
         return {"loopback_status": 200, "configured_ca_status": 200, "checked_at": now()}
 
@@ -246,30 +272,27 @@ def process(request, host, directory):
         marker = json.loads(pending.read_text())
         require(marker.get("identity") == expected and marker.get("state") == "awaiting_gateway_verification",
                 "attempt_requires_inspection")
-        proof = request.get("configured_token_proof")
-        require(isinstance(proof, dict) and proof.get("principal") == "user:orbit-gateway"
-                and proof.get("verified") is True and type(proof.get("check_count")) is int
-                and proof["check_count"] >= receipt["manifest"]["scope_count"]
-                and proof.get("manifest_hash") == receipt["manifest"]["hash"], "configured_gateway_token_unverified")
         host.unchanged(expected["release_sha"], receipt["runtime_after"])
         host.health()
-        fresh = host.verify()
-        require(fresh["workflows"] == receipt["workflows"]
-                and fresh["extension_audit"] == receipt["extension_audit"], "prepared_definition_changed")
-        receipt.update(state="verified", completed_at=now(), configured_token_proof={
-            key: proof[key] for key in ("principal", "verified", "check_count", "manifest_hash")},
-            drain=fresh["drain"])
+        save(directory.parent / "last-proof.json", {"loaded_sha": expected["release_sha"],
+             "runtime_after": receipt["runtime_after"], "behavior_versions": receipt["extension_audit"],
+             "workflow_inventory": receipt.get("workflow_inventory"), "ready_at": now(),
+             "health": receipt["health"], "receipt_hash": receipt["receipt_hash"]})
+        receipt.update(state="verified", completed_at=now())
         save(receipt_path, receipt)
         pending.unlink()
         return receipt
 
     require(not pending.exists() and not receipt_path.exists(), "attempt_requires_inspection")
+    try:
+        before, tree, old_sha = host.preflight(expected["release_sha"])
+    except Exception as error:
+        raise Refused("preflight_unavailable", retry_safe=True) from error
     marker = {"identity": expected, "state": "preparing", "phase": "source", "started_at": now()}
     save(pending, marker)
     phase = "source"
     try:
-        before = host.runtime()
-        tree = host.stage(expected["release_sha"])
+        host.stage(expected["release_sha"])
         phase = "reload"
         marker["phase"] = phase
         save(pending, marker)
@@ -282,7 +305,7 @@ def process(request, host, directory):
         phase = "verification"
         marker["phase"] = phase
         save(pending, marker)
-        evidence = host.verify()
+        evidence = host.verify(old_sha, expected["release_sha"])
         health = host.health()
         host.unchanged(expected["release_sha"], before)
         receipt = {**expected, **evidence, "requested_sha": expected["release_sha"],
@@ -311,12 +334,14 @@ def main():
         request = json.loads(raw)
         identity(request)
         attempt = request["attempt_id"]
-        # Use the existing publication inode; never unlink or replace its lock file.
-        with LOCK.open("a") as lock:
+        # No create and no symlink following: use the existing publication inode.
+        descriptor = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "r") as lock:
+            require(stat.S_ISREG(os.fstat(lock.fileno()).st_mode), "invalid_publication_lock")
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
-                raise Refused("publication_busy") from error
+                raise Refused("publication_busy", retry_safe=True) from error
             print(json.dumps(process(request, Host(), STATE), sort_keys=True))
         return 0
     except Exception as error:  # noqa: BLE001 -- public boundary must never print raw native errors or input
@@ -332,7 +357,7 @@ def main():
         print(json.dumps({"schema": SCHEMA, "state": "outcome_uncertain", "attempt_id": attempt,
                           "code": error.code if isinstance(error, Refused) else "load_refused_or_uncertain",
                           "phase": phase, "last_verified_sha": None,
-                          "retry_safe": False, "checkpoint": str(marker)}))
+                          "retry_safe": isinstance(error, Refused) and error.retry_safe, "checkpoint": str(marker)}))
         return 1
 
 

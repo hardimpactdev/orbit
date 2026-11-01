@@ -1,5 +1,7 @@
 """Publication and custody regressions; no live host, credentials or native runs."""
 import copy
+import fcntl
+import io
 import json
 import os
 import subprocess
@@ -17,9 +19,8 @@ OTHER = "b" * 40
 
 def request(action="prepare"):
     return {"schema": loader.SCHEMA, "release_sha": SHA, "release_id": SHA[:12],
-            "gateway_release_record": 42, "active_release_record": 42, "target_node_id": 209,
-            "attempt_id": "release42_attempt_0123456789", "action": action,
-            "gateway_release_lock": "GatewayReleaseLock::run"}
+            "gateway_release_record": 42, "target_node_id": 209,
+            "attempt_id": "release42_attempt_0123456789", "action": action}
 
 
 class FakeHost:
@@ -40,9 +41,12 @@ class FakeHost:
         self.call("runtime")
         return {"pid": 1234, "invocation": "same-runtime"}
 
+    def preflight(self, sha):
+        self.call("preflight")
+        return {"pid": 1234, "invocation": "same-runtime"}, "c" * 40, OTHER
+
     def stage(self, sha):
         self.call("stage:" + sha)
-        return "c" * 40
 
     def reload(self):
         self.call("reload")
@@ -52,7 +56,7 @@ class FakeHost:
         self.call("grants")
         return {"source_sha": sha, "hash": "d" * 64, "scope_count": 4, "created_count": 0, "applied": True}
 
-    def verify(self):
+    def verify(self, old_sha, sha):
         self.call("verify")
         return copy.deepcopy(self.evidence)
 
@@ -76,9 +80,8 @@ class PublicationTest(unittest.TestCase):
         return loader.process(request(), self.host, self.state)
 
     def accept(self, prepared):
-        return {**request("accept"), "receipt_hash": prepared["receipt_hash"],
-                "configured_token_proof": {"principal": "user:orbit-gateway", "verified": True,
-                                           "check_count": 8, "manifest_hash": prepared["manifest"]["hash"]}}
+        return {**request("accept"), "receipt_hash": prepared["receipt_hash"]}
+
 
     def test_prepare_loads_only_pinned_source_and_keeps_custody_with_live_runs(self):
         receipt = self.prepare()
@@ -87,15 +90,14 @@ class PublicationTest(unittest.TestCase):
         self.assertEqual(receipt["restarts"], 0)
         self.assertEqual(receipt["worker_restarts"], 0)
         self.assertEqual(receipt["drain"]["active_running_run_ids"], ["live-root"])
-        self.assertEqual(self.host.calls, ["runtime", "stage:" + SHA, "reload", "grants", "verify", "health", "unchanged"])
+        self.assertEqual(self.host.calls, ["preflight", "stage:" + SHA, "reload", "grants", "verify", "health", "unchanged"])
         self.assertTrue((self.state / "pending.json").is_file())
         self.assertNotIn("configured_token_proof", receipt)
 
-    def test_accept_requires_gateway_proof_and_rechecks_host_before_releasing_custody(self):
+    def test_accept_binds_exact_receipt_and_rechecks_host_before_releasing_custody(self):
         prepared = self.prepare()
         accepted = loader.process(self.accept(prepared), self.host, self.state)
         self.assertEqual(accepted["state"], "verified")
-        self.assertEqual(accepted["configured_token_proof"]["principal"], "user:orbit-gateway")
         self.assertFalse((self.state / "pending.json").exists())
         calls = self.host.calls.copy()
         self.assertEqual(loader.process(self.accept(prepared), self.host, self.state), accepted)
@@ -103,7 +105,6 @@ class PublicationTest(unittest.TestCase):
 
     def test_invalid_identity_changes_nothing(self):
         for changes in ({"release_sha": "main"}, {"release_id": OTHER[:12]}, {"target_node_id": 13},
-                        {"active_release_record": 43}, {"gateway_release_lock": ""},
                         {"gateway_release_record": 0}, {"attempt_id": "../../other"}):
             with self.subTest(changes=changes), self.assertRaises(loader.Refused):
                 loader.process({**request(), **changes}, self.host, self.state)
@@ -132,73 +133,152 @@ class PublicationTest(unittest.TestCase):
                 self.assertNotIn("private-input", json.dumps(marker))
                 self.assertEqual(host.calls[-1], failure)
 
-    def test_wrong_accept_identity_hash_or_grant_manifest_cannot_clear_marker(self):
+    def test_wrong_accept_identity_or_hash_cannot_clear_marker(self):
         prepared = self.prepare()
         valid = self.accept(prepared)
-        invalid = [{**valid, "receipt_hash": "wrong"},
-                   {**valid, "gateway_release_record": 43, "active_release_record": 43},
-                   {**valid, "configured_token_proof": {**valid["configured_token_proof"], "manifest_hash": "wrong"}},
-                   {**valid, "configured_token_proof": {**valid["configured_token_proof"], "check_count": 1}}]
-        for candidate in invalid:
-            with self.subTest(candidate=candidate), self.assertRaises(loader.Refused):
-                loader.process(candidate, self.host, self.state)
+        for invalid in ({"receipt_hash": "wrong"}, {"gateway_release_record": 43}):
+            with self.subTest(invalid=invalid), self.assertRaises(loader.Refused):
+                loader.process({**valid, **invalid}, self.host, self.state)
             self.assertTrue((self.state / "pending.json").is_file())
 
-    def test_changed_runtime_or_definition_between_prepare_and_accept_stays_pending(self):
+    def test_no_effect_failure_leaves_no_marker_and_is_retryable(self):
+        self.host.failure = "preflight"
+        with self.assertRaises(loader.Refused) as caught:
+            self.prepare()
+        self.assertTrue(caught.exception.retry_safe)
+        self.assertFalse((self.state / "pending.json").exists())
+        self.assertEqual(self.host.calls, ["preflight"])
+        self.host.failure = None
+        self.assertEqual(self.prepare()["state"], "awaiting_gateway_verification")
+
+    def test_changed_runtime_before_accept_stays_pending(self):
         prepared = self.prepare()
         self.host.changed = True
         with self.assertRaisesRegex(loader.Refused, "unexpected_runtime_change"):
-            loader.process(self.accept(prepared), self.host, self.state)
-        self.host.changed = False
-        self.host.evidence["workflows"][0]["id"] = "different"
-        with self.assertRaisesRegex(loader.Refused, "prepared_definition_changed"):
             loader.process(self.accept(prepared), self.host, self.state)
         self.assertTrue((self.state / "pending.json").is_file())
 
 
 class DefinitionVerificationTest(unittest.TestCase):
     def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
         self.host = loader.Host()
-        self.disk = {"id": "a-workflow", "name": "public", "jobs": [{"steps": []}], "path": "/disk/local"}
+        self.host.checkout = Path(self.temporary.name)
+        self.path = self.host.checkout / "swamp/workflows/changed.yaml"
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("id: 'changed-id'\nname: '@nckrtl/settings'\n")
+        self.rows = [{"id": "changed-id", "name": "@nckrtl/settings"}, {"id": "unchanged-id", "name": "unchanged"}]
+        self.disk = {"id": "changed-id", "name": "@nckrtl/settings", "jobs": [{"steps": []}], "path": "/disk/local"}
         self.served = {**self.disk, "path": "/serve/elsewhere"}
-        self.replies = [{"data": self.served}, {"data": {"version": "1.0.0"}},
-                        {"data": {"results": [{"normalized": "@test/live"}, {"normalized": "@test/deleted"}]}},
-                        {"runs": [{"id": "still-running", "status": "running"}]}]
-        self.rows = [{"type": "@test/live", "expected": "1.0.0"}]
+        self.audit = {"checked": 2, "matched": 2, "errors": [], "mismatches": [], "scope": "source versions", "limit": "not bytes"}
+        self.calls = []
+        self.bad_inventory = False
+        self.runs = [{"id": "live-run", "status": "running"}]
+
+    def native(self, *args, remote=False):
+        self.calls.append((args, remote))
+        if args[:2] == ("workflow", "list"):
+            return {"results": self.rows[:-1] if remote and self.bad_inventory else self.rows}
+        if args[:2] == ("workflow", "get"):
+            self.assertEqual(args[2], "changed-id")
+            return self.served if remote else self.disk
+        if args[:2] == ("run", "history"):
+            return {"runs": self.runs}
+        raise AssertionError(args)
 
     def verify(self):
-        with patch.object(loader.Host, "workflows", return_value=[{"id": "a-workflow", "name": "public", "disk": self.disk}]), \
-             patch.object(loader.Host, "rpc", return_value=self.replies), \
-             patch.object(loader.release_source_inventory, "inventory", return_value=self.rows):
-            return self.host.verify()
+        from types import SimpleNamespace
+        audit_module = SimpleNamespace(audit=lambda app, describe: self.audit)
+        spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
+        with patch.object(loader.Host, "native", side_effect=self.native), \
+             patch.object(loader.Host, "git", return_value="swamp/workflows/changed.yaml"), \
+             patch.object(loader.importlib.util, "spec_from_file_location", return_value=spec), \
+             patch.object(loader.importlib.util, "module_from_spec", return_value=audit_module):
+            return self.host.verify(OTHER, SHA)
 
-    def test_normalizes_only_transport_path_and_reports_deleted_entries_without_registry_claim(self):
+    def test_quoted_names_and_ids_parse_and_only_changed_definition_gets_run(self):
         result = self.verify()
-        self.assertTrue(result["workflows"][0]["equal"])
+        self.assertTrue(result["workflow_inventory"]["equal"])
+        self.assertEqual(result["workflow_inventory"]["disk_count"], 2)
+        self.assertEqual(result["workflow_inventory"]["cli_get_calls"], 2)
+        self.assertEqual([call for call in self.calls if call[0][:2] == ("workflow", "get")],
+                         [(("workflow", "get", "changed-id"), False), (("workflow", "get", "changed-id"), True)])
         self.assertEqual(result["workflows"][0]["disk_hash"], result["workflows"][0]["served_hash"])
-        self.assertEqual(result["extension_audit"]["deleted"], ["@test/deleted"])
 
-    def test_stale_exposed_workflow_field_blocks_acceptance(self):
+    def test_mismatched_full_inventory_and_stale_changed_definition_fail_closed(self):
+        self.bad_inventory = True
+        with self.assertRaisesRegex(loader.Refused, "served_workflow_inventory_mismatch"):
+            self.verify()
+        self.bad_inventory = False
         self.served["jobs"] = [{"steps": [{"name": "stale"}]}]
         with self.assertRaisesRegex(loader.Refused, "served_workflow_mismatch"):
             self.verify()
 
-    def test_stale_current_extension_blocks_acceptance(self):
-        self.replies[1]["data"]["version"] = "0.9.0"
+    def test_failed_existing_version_audit_and_unreadable_drain_fail_closed(self):
+        self.audit["matched"] = 1
         with self.assertRaisesRegex(loader.Refused, "served_extension_version_mismatch"):
             self.verify()
-
-    def test_unknown_source_version_and_unreadable_native_drain_fail_closed(self):
-        self.rows[0]["error"] = "ambiguous"
-        with self.assertRaisesRegex(loader.Refused, "source_version_ambiguous"):
-            self.verify()
-        self.rows[0].pop("error")
-        self.replies[-1] = {}
+        self.audit["matched"] = 2
+        self.runs = None
         with self.assertRaisesRegex(loader.Refused, "native_drain_unreadable"):
             self.verify()
 
 
 class HostCommandTest(unittest.TestCase):
+    def test_new_commit_is_fetched_before_it_is_resolved(self):
+        calls = []
+        fetched = False
+
+        def git(*args):
+            nonlocal fetched
+            calls.append(args)
+            if args == ("rev-parse", "HEAD"):
+                return OTHER
+            if args[:2] == ("fetch", "--no-tags"):
+                self.assertEqual(args, ("fetch", "--no-tags", "origin", SHA))
+                fetched = True
+                return ""
+            if args[:1] == ("rev-parse",):
+                self.assertTrue(fetched, "A release commit need not exist locally before fetch")
+                return SHA if args[1].endswith("^{commit}") else OTHER
+            raise AssertionError(args)
+
+        with patch.object(loader.Host, "clean"), patch.object(loader.Host, "runtime", return_value={"pid": 1}), \
+             patch.object(loader.Host, "git", side_effect=git), \
+             patch.object(Path, "read_text", return_value=json.dumps({"loaded_sha": OTHER, "runtime_after": {"pid": 1}})):
+            loader.Host().preflight(SHA)
+        self.assertLess(calls.index(("fetch", "--no-tags", "origin", SHA)),
+                        calls.index(("rev-parse", SHA + "^{commit}")))
+
+    def test_split_starting_source_refuses_before_fetch_or_effects(self):
+        with patch.object(loader.Host, "clean"), patch.object(loader.Host, "runtime", return_value={"pid": 1}), \
+             patch.object(loader.Host, "git", return_value=SHA) as git, \
+             patch.object(Path, "read_text", return_value=json.dumps({"loaded_sha": OTHER, "runtime_after": {"pid": 1}})), \
+             self.assertRaisesRegex(loader.Refused, "starting_source_requires_recovery"):
+                loader.Host().preflight(SHA)
+        self.assertEqual(git.call_args_list, [unittest.mock.call("rev-parse", "HEAD")])
+
+    def test_grants_cannot_start_native_commands_after_the_load_deadline(self):
+        host = loader.Host()
+        host.deadline = 0
+        raw = b'{"version":2,"principal":"user:orbit-gateway","workflows":[{"workflow":"test","actions":["run","read"]}],"vaults":[]}'
+
+        def reconcile(raw, sha, directory, native):
+            native(["access", "grant", "list"])
+
+        with patch.object(Path, "read_bytes", return_value=raw), \
+             patch.object(loader.manifest_grants, "reconcile", side_effect=reconcile), \
+             patch.object(loader.manifest_grants, "native") as native, \
+             self.assertRaisesRegex(loader.Refused, "load_deadline_exceeded"):
+                host.grants(SHA, Path("unused"))
+        native.assert_not_called()
+
+    def test_partial_native_reload_is_not_success(self):
+        with patch.object(loader.Host, "command", return_value='{"success":true,"errors":["private detail"]}'), \
+             self.assertRaisesRegex(loader.Refused, "native_reload_unconfirmed"):
+                loader.Host().reload()
+
     def test_clean_environment_uses_absolute_privilege_tool_without_inheriting_credentials(self):
         result = subprocess.CompletedProcess([], 0, "public result", "")
         with patch.object(loader.subprocess, "run", return_value=result) as run:
@@ -207,6 +287,44 @@ class HostCommandTest(unittest.TestCase):
         self.assertEqual(args[:6], ["/usr/sbin/runuser", "-u", "orbit", "--", "env", "-i"])
         self.assertNotIn("SWAMP_SERVER_TOKEN", repr(run.call_args.kwargs))
         self.assertNotIn("SWAMP_API_KEY", repr(run.call_args.kwargs))
+
+
+class EntryLockTest(unittest.TestCase):
+    def test_busy_lock_is_retryable_without_creating_custody(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "publication.lock"
+            path.touch()
+            output = io.StringIO()
+            with path.open("r") as held:
+                fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch.object(loader, "LOCK", path), patch.object(loader, "STATE", Path(directory) / "state"), \
+                     patch.object(loader.os, "geteuid", return_value=0), \
+                     patch.object(loader.sys, "argv", ["entry", "--stdin-json"]), \
+                     patch.object(loader.sys, "stdin", io.StringIO(json.dumps(request()))), \
+                     patch.object(loader.sys, "stdout", output):
+                    self.assertEqual(loader.main(), 1)
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["code"], "publication_busy")
+            self.assertTrue(result["retry_safe"])
+            self.assertFalse((Path(directory) / "state/pending.json").exists())
+
+    def test_lock_open_never_creates_or_follows_a_symlink(self):
+        for symlink in (False, True):
+            with self.subTest(symlink=symlink), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "publication.lock"
+                target = Path(directory) / "preserved"
+                target.write_text("preserve")
+                if symlink:
+                    path.symlink_to(target)
+                with patch.object(loader, "LOCK", path), patch.object(loader, "STATE", Path(directory) / "state"), \
+                     patch.object(loader.os, "geteuid", return_value=0), \
+                     patch.object(loader.sys, "argv", ["entry", "--stdin-json"]), \
+                     patch.object(loader.sys, "stdin", io.StringIO(json.dumps(request()))), \
+                     patch.object(loader.sys, "stdout", io.StringIO()):
+                    self.assertEqual(loader.main(), 1)
+                self.assertEqual(target.read_text(), "preserve")
+                if not symlink:
+                    self.assertFalse(path.exists())
 
 
 class InstallationTest(unittest.TestCase):
@@ -219,9 +337,6 @@ class InstallationTest(unittest.TestCase):
         self.source.mkdir(parents=True)
         self.destination = self.base / "libexec"
         self.destination.mkdir(mode=0o755)
-        (self.destination / "orbit-swamp-main-load.py").write_text(
-            "def main():\n    with LOCK.open('a') as lock:\n        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
-            + installer.ANCHOR + "        consume(ready)\n")
         self.content = {name: ("public pinned " + name).encode() for name in installer.FILES}
         for name, data in self.content.items():
             (self.source / name).write_bytes(data)
@@ -243,8 +358,6 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(receipt["state"], "installed")
         self.assertEqual(receipt["loads"], 0)
         self.assertFalse(receipt["release_dependency_enabled"])
-        publisher = (self.destination / "orbit-swamp-main-load.py").read_text()
-        self.assertEqual(publisher.count(installer.PENDING_GUARD), 1)
         entry = Path(receipt["entry"])
         self.assertEqual(entry.resolve().read_bytes(), self.content["release_load.py"])
         self.assertEqual(self.install(), receipt)
@@ -264,22 +377,6 @@ class InstallationTest(unittest.TestCase):
             self.install()
         self.assertEqual(entry.resolve(), foreign)
 
-    def test_unknown_publisher_revision_refuses_without_changing_publisher_or_entry(self):
-        publisher = self.destination / "orbit-swamp-main-load.py"
-        publisher.write_text("# unknown publisher; preserve me\n")
-        with self.assertRaises(RuntimeError):
-            self.install()
-        self.assertEqual(publisher.read_text(), "# unknown publisher; preserve me\n")
-        self.assertFalse((self.destination / "orbit-swamp-release-load.py").exists())
-
-    def test_retry_with_existing_package_keeps_publisher_executable(self):
-        self.install()
-        publisher = self.destination / "orbit-swamp-main-load.py"
-        publisher.write_text(publisher.read_text().replace(installer.PENDING_GUARD, ""))
-        publisher.chmod(0o755)
-        self.install()
-        self.assertEqual(publisher.stat().st_mode & 0o777, 0o755)
-        self.assertEqual(publisher.read_text().count(installer.PENDING_GUARD), 1)
 
 
 if __name__ == "__main__":

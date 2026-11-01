@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Install the pinned entry before releases depend on it. No load or restart.
 
-Run from the existing privileged publication path on209 with one reviewed SHA.
+Run from the existing privileged publication path on Node 209 with one reviewed SHA.
 The installed package survives subsequent source checkout changes.
 """
 import argparse
@@ -20,11 +20,7 @@ from pathlib import Path
 CHECKOUT = Path("/home/orbit/apps/orbit-monorepo-staging/checkout")
 LIBEXEC = Path("/usr/local/libexec")
 LOCK = Path("/home/orbit/.local/state/orbit-swamp/serve-load.lock")
-FILES = ("release_load.py", "release_rpc.ts", "release_source_inventory.py", "manifest_grants.py")
-ANCHOR = "        ready = FEED/'ready.json'\n"
-PENDING_GUARD = ("        # Pinned-release custody outlives its Gateway/SSH caller.\n"
-                 "        if (STATE / 'releases/pending.json').exists():\n"
-                 "            print(json.dumps({'state': 'deferred', 'code': 'pinned_release_pending'})); return\n")
+FILES = ("release_load.py", "manifest_grants.py")
 
 
 def require(value):
@@ -44,14 +40,6 @@ def git(*args):
     return result.stdout
 
 
-def transition(source):
-    require(source.count(ANCHOR) == 1)
-    if PENDING_GUARD + ANCHOR not in source:
-        source = source.replace(ANCHOR, PENDING_GUARD + ANCHOR)
-    compile(source, "orbit-swamp-main-load.py", "exec")
-    return source
-
-
 def install(sha, checkout, destination, read_git, *, owner=0):
     require(isinstance(sha, str) and re.fullmatch(r"[a-f0-9]{40}", sha))
     trusted_directory(destination, owner)
@@ -66,12 +54,6 @@ def install(sha, checkout, destination, read_git, *, owner=0):
         require(data == read_git("show", sha + ":platform/swamp-load/" + name))
         content[name] = data
     hashes = {name: hashlib.sha256(data).hexdigest() for name, data in content.items()}
-    publisher = destination / "orbit-swamp-main-load.py"
-    publisher_info = publisher.lstat()
-    require(stat.S_ISREG(publisher_info.st_mode) and publisher_info.st_uid == owner
-            and publisher_info.st_mode & 0o022 == 0)
-    original_publisher = publisher.read_bytes()
-    updated_publisher = transition(original_publisher.decode()).encode()
     packages = destination / "orbit-swamp-release-load"
     packages.mkdir(mode=0o755, exist_ok=True)
     trusted_directory(packages, owner)
@@ -105,19 +87,6 @@ def install(sha, checkout, destination, read_git, *, owner=0):
                 and re.fullmatch(r"[a-f0-9]{40}", target.parent.name) and target.name == "release_load.py")
     elif entry.exists():
         require(False)
-    if original_publisher != updated_publisher:
-        candidate_publisher = destination / (".orbit-swamp-main-load-" + str(os.getpid()))
-        try:
-            with candidate_publisher.open("xb") as stream:
-                stream.write(updated_publisher)
-                stream.flush()
-                os.fsync(stream.fileno())
-            candidate_publisher.chmod(stat.S_IMODE(publisher_info.st_mode))
-            require(publisher.read_bytes() == original_publisher)
-            candidate_publisher.replace(publisher)
-        finally:
-            if candidate_publisher.exists():
-                candidate_publisher.unlink()
     temporary = destination / (".orbit-swamp-release-load-" + str(os.getpid()))
     try:
         temporary.symlink_to(package / "release_load.py")
@@ -140,10 +109,14 @@ def main():
     args = parser.parse_args()
     try:
         require(os.geteuid() == 0)
-        with LOCK.open("a") as lock:
+        import yaml
+        require(callable(yaml.safe_load))
+        require(Path("/usr/local/libexec/behavior_versions.py").is_file())
+        descriptor = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "r") as lock:
+            require(stat.S_ISREG(os.fstat(lock.fileno()).st_mode))
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             receipt = install(args.sha, CHECKOUT, LIBEXEC, git)
-        receipt["publisher_pending_guard"] = True
         print(json.dumps(receipt, sort_keys=True))
         return 0
     except Exception:  # noqa: BLE001 -- do not expose privileged command output or source paths

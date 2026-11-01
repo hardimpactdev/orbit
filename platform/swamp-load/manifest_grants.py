@@ -132,14 +132,14 @@ def reconcile(raw, revision, directory, native):
         raise
 
 
-def native(args, cwd):
+def native(args, cwd, *, timeout=90):
     env = {'HOME': '/home/orbit', 'PATH': '/home/orbit/.local/bin:/usr/local/bin:/usr/bin:/bin',
            'SWAMP_HOME': '/home/orbit/.swamp', 'SWAMP_CONFIG_DIR': '/home/orbit/.config/swamp',
            'SWAMP_API_KEY_FILE': '/etc/orbit/swamp-issuer/api-key', 'SWAMP_NO_UPDATE_CHECK': '1',
            'SWAMP_NO_TELEMETRY': '1', 'SWAMP_SERVE_TIMEOUT_MS': '60000'}
     result = subprocess.run(['/home/orbit/.local/bin/swamp', *args, '--server', 'ws://127.0.0.1:9418',
                              '--token-file', '/etc/orbit/swamp-issuer/operator.token', '--json'],
-                            cwd=cwd, env=env, check=False, capture_output=True, timeout=90)
+                            cwd=cwd, env=env, check=False, capture_output=True, timeout=timeout)
     if result.returncode or len(result.stdout) > 8 * 1024 * 1024:
         raise RuntimeError('native_policy_refused_or_uncertain')
     text = result.stdout.decode()
