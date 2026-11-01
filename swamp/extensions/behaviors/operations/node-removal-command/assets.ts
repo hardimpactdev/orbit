@@ -63,7 +63,7 @@ const save = async (ctx: Context, spec: string, value: unknown) => ({
 /** Public asset shaping and typed results only. This behavior performs no operation or transport. */
 export const behavior = {
     type: "@nckrtl/node-removal-command",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         assets: {
             schema: z.object({ script_body: z.string() }).strict(),
@@ -71,20 +71,13 @@ export const behavior = {
             garbageCollection: 10,
         },
         paths: {
-            schema: z.object({ probe: z.string() }).strict(),
+            schema: z.object({ probe: z.string(), revoke_token: z.string() })
+                .strict(),
             lifetime: "1d",
             garbageCollection: 10,
         },
         preflight: {
             schema: z.object({ offline: z.boolean() }).strict(),
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
-        tokens: {
-            schema: z.object({
-                worker: z.array(z.string()),
-                server: z.array(z.string()),
-            }).strict(),
             lifetime: "1d",
             garbageCollection: 10,
         },
@@ -136,6 +129,7 @@ export const behavior = {
             execute: async (_args: unknown, ctx: Context) =>
                 await save(ctx, "paths", {
                     probe: ctx.extensionFile("scripts/probe.py"),
+                    revoke_token: ctx.extensionFile("scripts/revoke_token.py"),
                 }),
         },
         preflight: {
@@ -160,38 +154,6 @@ export const behavior = {
                 }
                 return await save(ctx, "preflight", {
                     offline: args.offline && !result.reachable,
-                });
-            },
-        },
-        tokens: {
-            description:
-                "Select only this Node's existing worker and worker-access token names",
-            arguments: z.object({
-                node_id: Id.refine((id) => id !== 209),
-                worker_stdout: z.string(),
-                server_stdout: z.string(),
-            }).strict(),
-            execute: async (
-                args: {
-                    node_id: number;
-                    worker_stdout: string;
-                    server_stdout: string;
-                },
-                ctx: Context,
-            ) => {
-                const names = (stdout: string) => {
-                    const result = z.array(
-                        z.object({ name: z.string() }).passthrough(),
-                    ).parse(JSON.parse(stdout));
-                    return result.map((token) => token.name);
-                };
-                return await save(ctx, "tokens", {
-                    worker: names(args.worker_stdout).filter((name) =>
-                        name === `orbit-node-${args.node_id}`
-                    ),
-                    server: names(args.server_stdout).filter((name) =>
-                        name === `orbit-node-${args.node_id}-access`
-                    ),
                 });
             },
         },

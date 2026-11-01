@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/node-removal-command"
-version: 2026.11.01.1
+version: 2026.11.01.2
 visibility: private
 license: MIT
 description: Public Node and role removal assets; effects use native SSH steps.
@@ -18,3 +18,4 @@ additionalFiles:
   - scripts/ci_project.py
   - scripts/remove_unit.py
   - scripts/reload_units.py
+  - scripts/revoke_token.py

@@ -51,21 +51,36 @@ Deno.test("offline consent does not skip a reachable target or authenticate with
         "ssh_target_unavailable",
     );
 });
-Deno.test("native token selection is exact and cannot revoke shared209 or Gateway access", async () => {
+Deno.test("token revoke uses one exact Node identity with no list or fan-out", async () => {
     const ctx = context();
-    await behavior.methods.tokens.execute({
-        node_id: 701,
-        worker_stdout: JSON.stringify([{ name: "orbit-node-701" }, {
-            name: "orbit-node-7010",
-        }, { name: "orbit-node-209" }]),
-        server_stdout: JSON.stringify([{ name: "orbit-node-701-access" }, {
-            name: "orbit-gateway",
-        }, { name: "orbit-node-209-access" }]),
-    }, ctx);
-    assertEquals(ctx.output(), {
-        worker: ["orbit-node-701"],
-        server: ["orbit-node-701-access"],
-    });
+    await behavior.methods.paths.execute({}, ctx);
+    assertEquals(
+        (ctx.output() as { revoke_token: string }).revoke_token.endsWith(
+            "scripts/revoke_token.py",
+        ),
+        true,
+    );
+    assertEquals("tokens" in behavior.methods, false);
+    assertEquals("tokens" in behavior.resources, false);
+    const steps = nodeRemovalWorkflow().jobs.flatMap((job) => job.steps);
+    assertEquals(
+        steps.some((step) =>
+            ["worker_tokens", "access_tokens", "tokens"].includes(
+                String(step.name),
+            )
+        ),
+        false,
+    );
+    for (const name of ["revoke_worker", "revoke_access"]) {
+        const step = steps.find((step) => step.name === name)!;
+        assertEquals("forEach" in step, false);
+        assertEquals(step.queueTimeout, 30);
+        assertEquals(
+            String(step.guard).includes("inputs.intent.task_vm_guest"),
+            true,
+        );
+        assertEquals(JSON.stringify(step).includes(" token list"), false);
+    }
 });
 Deno.test("terminal output is typed and reports intentionally retained host data", async () => {
     const ctx = context();

@@ -216,7 +216,7 @@ it('requires consent for a role that appears before the locked Node is reloaded'
     }
 });
 
-it('admits the TaskVM guest token boundary only from records and worker selection', function (string $target): void {
+it('admits the TaskVM guest token boundary only from records regardless of configured worker selection', function (string $target): void {
     FleetFixtures::bind();
     $keys = Mockery::mock(SshKeyProvider::class);
     $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 fixture-bootstrap-public');

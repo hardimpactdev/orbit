@@ -3,7 +3,6 @@ import copy
 import json
 import os
 import re
-import shlex
 import shutil
 import socket
 import subprocess
@@ -52,10 +51,20 @@ class NodeRemovalNative(NativeTestCase):
 from pathlib import Path
 if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv or '-M' in sys.argv:raise SystemExit(0)
 with Path(os.environ['SSH_AUDIT']).open('a') as stream:stream.write('action\\n')
+sys.stdin.buffer.read()
 raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
 ''')
         ssh.chmod(0o755)
         self.native_env = {'SSH_AUDIT': str(self.audit), 'SSH_FAIL': '0'}
+        token_action = self.repo / 'extensions/behaviors/operations/node-removal-command/scripts/revoke_token.py'
+        token_action.write_text(token_action.read_text().replace(
+            'CLI = "/home/orbit/.local/bin/swamp"',
+            'CLI = ' + repr(shutil.which(os.environ.get('SWAMP_BIN', 'swamp'))),
+        ).replace(
+            'REPOSITORY = "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp"',
+            'REPOSITORY = ' + repr(str(self.repo)),
+        ))
+
         for name in ('operation-route-php-delta', 'operation-route-caddy', 'route-dns-publish'):
             (self.repo / ('workflows/workflow-' + name + '.yaml')).write_text(yaml.safe_dump({
                 'id': {'operation-route-php-delta': '639b4222-dc89-4eb5-bba3-7d6ab656b1b1',
@@ -75,9 +84,9 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
                         task['globalArgs']['sshBinary'] = str(ssh)
                     if step['name'] == 'probe':
                         task['inputs']['run'] = "printf '%s' '{\"reachable\":true}'"
-                    if step['name'] in ('worker_tokens', 'access_tokens'):
-                        self.assertIn(' token list', task['inputs']['run'])
-                        task['inputs']['run'] = "printf '%s' '[]'"
+                    if step['name'] in ('revoke_worker', 'revoke_access'):
+                        task['inputs']['env']['SWAMP_HOME'] = str(self.repo / 'home')
+                        task['inputs']['env']['SWAMP_CONFIG_DIR'] = str(self.repo / 'config')
             (self.repo / ('workflows/workflow-' + name + '.yaml')).write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.ssh = {'target': {'host': 'disposable.test', 'user': 'fixture', 'port': 22, 'host_keys': [PIN]},
                     'identity_file': '/fixture/public-only-identity'}
@@ -107,7 +116,7 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
         workflow = yaml.safe_load(workflow_path.read_text())
         for job in workflow['jobs']:
             for step in job['steps']:
-                if step['name'] in ('worker_tokens', 'access_tokens', 'revoke_worker', 'revoke_access'):
+                if step['name'] in ('revoke_worker', 'revoke_access'):
                     step['task']['inputs']['run'] = 'exit 77'
         workflow_path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.cli('workflow', 'validate', 'operation-node-remove')
@@ -115,9 +124,10 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
         result, history = self.run_root('operation-node-remove', self.intent)
 
         self.assertEqual(result['status'], 'succeeded', history)
-        token_job = next(job for job in history['jobs'] if job['name'] == 'phase_worker_tokens')
-        self.assertEqual({step['name']: step['status'] for step in token_job['steps']},
-                         {'worker_tokens': 'skipped', 'access_tokens': 'skipped', 'tokens': 'skipped'})
+        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+        self.assertFalse({'worker_tokens', 'access_tokens', 'tokens'} & steps.keys())
+        self.assertEqual(steps['revoke_worker']['status'], 'skipped')
+        self.assertEqual(steps['revoke_access']['status'], 'skipped')
         output = json.loads(history['jobs'][-1]['steps'][-1]['outputs']['stdout'])
         self.assertTrue(output['removed'])
 
@@ -210,33 +220,88 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
                             process.kill()
                             process.wait(timeout=5)
 
-    def test_real_native_cli_revokes_only_departing_node_tokens(self):
-        for node in (701, 702):
-            self.cli('worker', 'token', 'create', f'orbit-node-{node}', '--duration', '10m')
-            self.cli('access', 'token', 'mint', f'orbit-node-{node}-access', '--principal', f'worker:orbit-node-{node}')
-        workflow_path = self.repo / 'workflows/workflow-operation-node-remove.yaml'
-        workflow = yaml.safe_load(workflow_path.read_text())
-        binary = shlex.quote(os.environ.get('SWAMP_BIN', 'swamp'))
-        flags = ' --repo-dir ' + shlex.quote(str(self.repo)) + ' --json'
-        commands = {
-            'worker_tokens': binary + ' worker token list' + flags,
-            'access_tokens': binary + ' access token list' + flags,
-            'revoke_worker': binary + " worker token revoke '${{ self.token }}'" + flags,
-            'revoke_access': binary + " access token revoke '${{ self.token }}'" + flags,
-        }
-        for job in workflow['jobs']:
-            for step in job['steps']:
-                if step['name'] in commands:
-                    step['task']['inputs'] = {'run': commands[step['name']]}
-        workflow_path.write_text(yaml.safe_dump(workflow, sort_keys=False))
-        result, history = self.run_root('operation-node-remove', self.intent)
-        self.assertEqual(result['status'], 'succeeded', history)
-        workers = json.loads(self.cli('worker', 'token', 'list').stdout)
-        access = json.loads(self.cli('access', 'token', 'list').stdout)
-        self.assertEqual(next(t['state'] for t in workers if t['name'] == 'orbit-node-701'), 'revoked')
-        self.assertEqual(next(t['state'] for t in workers if t['name'] == 'orbit-node-702'), 'unused')
-        self.assertEqual(next(t['state'] for t in access if t['name'] == 'orbit-node-701-access'), 'revoked')
-        self.assertEqual(next(t['state'] for t in access if t['name'] == 'orbit-node-702-access'), 'active')
+    def test_real_native_cli_revokes_only_departing_node_tokens_and_replays(self):
+        for node in (701, 702, 7010, 209):
+            self.cli(
+                "worker", "token", "create", f"orbit-node-{node}", "--duration", "10m"
+            )
+            self.cli(
+                "access",
+                "token",
+                "mint",
+                f"orbit-node-{node}-access",
+                "--principal",
+                f"worker:orbit-node-{node}",
+            )
+        self.cli(
+            "access", "token", "mint", "orbit-gateway", "--principal", "user:fixture"
+        )
+
+        def content(name):
+            return json.loads(self.cli("data", "get", name, "token-main").stdout)[
+                "content"
+            ]
+
+        survivors = [
+            f"orbit-node-{node}{suffix}"
+            for node in (702, 7010, 209)
+            for suffix in ("", "-access")
+        ] + ["orbit-gateway"]
+        before = {name: content(name) for name in survivors}
+        for replay in (False, True):
+            result, history = self.run_root("operation-node-remove", self.intent)
+            self.assertEqual(result["status"], "succeeded", history)
+            steps = {
+                step["name"]: step for job in history["jobs"] for step in job["steps"]
+            }
+            for step, name in [
+                ("revoke_worker", "orbit-node-701"),
+                ("revoke_access", "orbit-node-701-access"),
+            ]:
+                self.assertEqual(content(name)["state"], "revoked")
+                receipt = json.loads(steps[step]["outputs"]["stdout"])
+                self.assertEqual(
+                    receipt,
+                    {"name": name, "state": "revoked", "already_revoked": replay},
+                )
+        self.assertEqual({name: content(name) for name in survivors}, before)
+
+    def test_absent_exact_names_succeed_without_a_token_list(self):
+        result, history = self.run_root("operation-node-remove", self.intent)
+        self.assertEqual(result["status"], "succeeded", history)
+        steps = {step["name"]: step for job in history["jobs"] for step in job["steps"]}
+        for step, name in [
+            ("revoke_worker", "orbit-node-701"),
+            ("revoke_access", "orbit-node-701-access"),
+        ]:
+            self.assertEqual(
+                json.loads(steps[step]["outputs"]["stdout"]),
+                {"name": name, "state": "absent"},
+            )
+
+    def test_unproven_token_failure_stops_later_cleanup_and_terminal_removal(self):
+        rejected = self.repo / "reject-token-cli"
+        rejected.write_text(
+            '#!/usr/bin/python3\nimport sys\nprint(\'{"error":"Permission denied"}\',file=sys.stderr)\nraise SystemExit(1)\n'
+        )
+        rejected.chmod(0o755)
+        token_action = (
+            self.repo
+            / "extensions/behaviors/operations/node-removal-command/scripts/revoke_token.py"
+        )
+        source = token_action.read_text()
+        source = re.sub(
+            r"^CLI = .*$", "CLI = " + repr(str(rejected)), source, flags=re.MULTILINE
+        )
+        token_action.write_text(source)
+        result, history = self.run_root(
+            "operation-node-remove", self.intent, success=False
+        )
+        self.assertEqual(result["status"], "failed")
+        steps = {step["name"]: step for job in history["jobs"] for step in job["steps"]}
+        self.assertEqual(steps["revoke_worker"]["status"], "failed")
+        self.assertEqual(steps["revoke_access"]["status"], "skipped")
+        self.assertEqual(steps["result"]["status"], "skipped")
 
     def publications(self):
         return [{'node_id': 702, 'control_node_id': 209, 'host_keys': [PIN],
