@@ -949,6 +949,30 @@
       ]
     },
     {
+      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
+      "rule": "custom-control",
+      "count": 9,
+      "evidence": [
+        "embedded-control",
+        "lock"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
+      "rule": "inline-script",
+      "count": 172,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
+      "rule": "multi-action",
+      "count": 2,
+      "evidence": [
+        "/usr/bin/python3",
+        "/usr/bin/sudo"
+      ]
+    },
+    {
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
       "rule": "custom-control",
       "count": 5,

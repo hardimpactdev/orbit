@@ -1,8 +1,8 @@
 # Role parent source line accounting
 
-Comparison base: `c036958fa167ef8e365332169743cd35732b5e44` (PR merge base). Includes the imported Nodes checkpoints. Counts describe this draft; it does not meet the requested net-negative target yet. Recompute after the parent/residue deletion is complete.
+Comparison base: `adcf542120a14cea21cad594a83c9e669053b722` (accepted main at this rebase). Includes the imported Nodes checkpoints. Counts describe this draft; it does not meet the requested net-negative target yet. Recompute after the parent/residue deletion is complete.
 
-Gateway app +379, Gateway tests +357, Docs/other +20, Swamp +5396.
+Gateway app +379, Gateway tests +357, Docs/other +20, Swamp +5559.
 
 | File | Added | Deleted | Net | Reason |
 | --- | ---: | ---: | ---: | --- |
@@ -24,10 +24,10 @@ Gateway app +379, Gateway tests +357, Docs/other +20, Swamp +5396.
 | `docs/reference/node-provisioning.md` | +19 | −3 | +16 | Document native contribution boundaries, source cleanup and remaining parent limits. |
 | `docs/reference/node-role-certificates.md` | +2 | −0 | +2 | Document the consumed role supplier and its unchanged public/private contract. |
 | `swamp/config/gateway-workflow-grants.json` | +1 | −1 | +0 | Keep existing exact workflow and secret scopes aligned with native parent registration. |
-| `swamp/config/swamp-shape-baseline.json` | +0 | −31 | -31 | Remove obsolete allowances for extracted or deleted legacy source; add none. |
+| `swamp/config/swamp-shape-baseline.json` | +4 | −11 | -7 | Retain existing Nodes-owned DNS allowances at reduced counts; remove obsolete router-preparation allowance; add no rows. |
 | `swamp/extensions/behaviors/operations/certificates/README.md` | +1 | −1 | +0 | Document the consumed role supplier and its unchanged public/private contract. |
-| `swamp/extensions/behaviors/operations/certificates/native_test.py` | +75 | −26 | +49 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
-| `swamp/extensions/behaviors/operations/certificates/role_native_test.py` | +24 | −0 | +24 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
+| `swamp/extensions/behaviors/operations/certificates/residue_native_test.py` | +189 | −0 | +189 | Preserve the original residue-removal parity case on current native children; adapt only its disposable fixture. |
+| `swamp/extensions/behaviors/operations/certificates/role_native_test.py` | +23 | −0 | +23 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
 | `swamp/extensions/behaviors/operations/certificates/script_actions_test.py` | +55 | −27 | +28 | Cover admission identity, private absence, legacy parity and native success/failure behavior. |
 | `swamp/extensions/behaviors/operations/certificates/scripts/role_cleanup.py` | +3 | −3 | +0 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
 | `swamp/extensions/behaviors/operations/certificates/scripts/role_paths.py` | +2 | −1 | +1 | Consume canonical WebSocket reverb pair paths and prove signing, reuse and removal parity. |
