@@ -246,7 +246,7 @@ export function registerValkeyCreateEffect() {
   Deno.test({
     name: "disposable Valkey ACL create, replay and foreign password refusal",
     fn: async () => {
-      const { ValkeyClient } = await import("./valkey_client.ts");
+      const { ValkeyClient } = await import("../../../../tests/_support/valkey_client.ts");
       const container = `orbit-process-999999-database-create-${
         crypto.randomUUID().slice(0, 8)
       }`;

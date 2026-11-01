@@ -1,7 +1,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { invokeSql } from "./local_sql.ts";
 import { copyMysqlClone, createDatabase } from "./native_create_fixture.ts";
-import { destroyDatabase } from "./destroy.ts";
+import { destroyDatabase } from "../../../../tests/_support/database_destroy_command.ts";
 
 const docker = async (...args: string[]) => {
   const result = await new Deno.Command("/usr/bin/sudo", {
@@ -197,37 +197,23 @@ export function registerMysqlLocalSqlEffect() {
           "70726F6F665C5F617070",
         );
         let failed = false;
-        const failAfterFirstDrop: typeof invokeSql = (call, signal) => {
-          const sql = String(call.input.sql ?? "");
-          if (!failed && sql.startsWith("DROP DATABASE")) {
+        const failAfterFirstDrop = (action: string) => {
+          if (!failed && action === "drop_database") {
             failed = true;
-            return invokeSql({
-              ...call,
-              input: {
-                ...call.input,
-                sql: sql.split("\n")[0] +
-                  "\nSIGNAL SQLSTATE '45000';\n",
-              },
-            }, signal);
+            throw { error_code: "database.server_admin_failed" };
           }
-          return invokeSql(call, signal);
         };
         assertEquals(
           await destroyDatabase(
             destroy,
-            async (f) => {
-              await f({ password });
-            },
-            undefined,
+            password,
             failAfterFirstDrop,
           ),
           { error_code: "database.server_admin_failed" },
         );
         assertEquals(failed, true);
         assertEquals(
-          await destroyDatabase(destroy, async (f) => {
-            await f({ password });
-          }),
+          await destroyDatabase(destroy, password),
           { backend: "absent" },
         );
         assertEquals(
@@ -348,10 +334,7 @@ export function registerPgsqlLocalSqlEffect() {
           test_prefixes: [],
           owners: { proof_app: "proof_owner" },
         };
-        const use = (
-          f: (value: Record<string, unknown>) => Promise<void>,
-        ) => f({ password });
-        assertEquals(await destroyDatabase(destroy, use), {
+        assertEquals(await destroyDatabase(destroy, password), {
           error_code: "database.in_use",
         });
         assertEquals(
@@ -366,7 +349,7 @@ export function registerPgsqlLocalSqlEffect() {
           ),
           { output: "" },
         );
-        assertEquals(await destroyDatabase(destroy, use), {
+        assertEquals(await destroyDatabase(destroy, password), {
           backend: "absent",
         });
         assertEquals(

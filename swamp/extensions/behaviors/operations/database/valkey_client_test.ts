@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { ValkeyClient } from "./valkey_client.ts";
+import { ValkeyClient } from "../../../../tests/_support/valkey_client.ts";
 
 function client(reply: string) {
   let position = 0;
