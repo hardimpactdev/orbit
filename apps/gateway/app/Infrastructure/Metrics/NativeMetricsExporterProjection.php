@@ -11,6 +11,7 @@ use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsExporterProjectionItem;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -27,10 +28,17 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
     public function for(Node $metricsNode): array
     {
         $items = [];
+        $candidate = app(RouteRenderContext::class)->enrollment();
 
         foreach (Node::query()
             ->with('roles')
-            ->where('status', LifecycleStatus::Active->value)
+            ->where(static function ($query) use ($candidate): void {
+                $query->where('status', LifecycleStatus::Active);
+                if ($candidate !== null && $candidate->platform === 'linux') {
+                    $query->orWhere(static fn ($query) => $query->whereKey($candidate->nodeId)
+                        ->whereIn('status', [LifecycleStatus::Provisioning, LifecycleStatus::Failed]));
+                }
+            })
             ->orderBy('id')
             ->get() as $node) {
             $item = $this->item($metricsNode, $node);
@@ -49,10 +57,17 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
             return null;
         }
 
+        $candidate = app(RouteRenderContext::class)->enrollment();
         $projectedNode = Node::query()
             ->with('roles')
             ->whereKey($node->getKey())
-            ->where('status', LifecycleStatus::Active->value)
+            ->where(static function ($query) use ($candidate): void {
+                $query->where('status', LifecycleStatus::Active);
+                if ($candidate !== null && $candidate->platform === 'linux') {
+                    $query->orWhere(static fn ($query) => $query->whereKey($candidate->nodeId)
+                        ->whereIn('status', [LifecycleStatus::Provisioning, LifecycleStatus::Failed]));
+                }
+            })
             ->first();
 
         if (! $projectedNode instanceof Node) {
@@ -78,9 +93,12 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
 
         // A task VM Node never hosts an exporter: the hub filter lets only the Gateway reach it, so the
         // Metrics Node could not scrape it, and its enrollment skips the Metrics reconcile.
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        $prospective = $candidate?->nodeId === $node->id && $candidate->platform === 'linux'
+            && in_array($node->status, [LifecycleStatus::Active, LifecycleStatus::Provisioning, LifecycleStatus::Failed], true);
         $selection = $this->selector->select(
             $roles,
-            $this->eligibility->allows($node) && ! TaskVm::forNode($node) instanceof TaskVm,
+            ($prospective || $this->eligibility->allows($node)) && ! TaskVm::forNode($node) instanceof TaskVm,
             $this->preferences->get($node->id),
             $node->is($metricsNode),
         );

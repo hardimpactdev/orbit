@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Routes\RouteRenderContext;
 use Symfony\Component\Yaml\Yaml;
 
 final readonly class PrometheusConfigRenderer
@@ -37,8 +38,9 @@ final readonly class PrometheusConfigRenderer
     {
         $jobs = [];
         foreach ($targets as $target) {
-            $address = (string) $target->node->wireguard_ip;
-            $this->guardTargets([['name' => $target->node->name, 'address' => $address]]);
+            $render = app(RouteRenderContext::class);
+            $address = (string) $render->wireguardIp($target->node);
+            $this->guardTargets([['name' => $render->name($target->node), 'address' => $address]]);
             foreach (['caddy' => $target->caddy, 'fpm' => $target->fpm && $target->instances !== []] as $kind => $enabled) {
                 if (! $enabled) {
                     continue;
@@ -63,7 +65,7 @@ final readonly class PrometheusConfigRenderer
                     'sample_limit' => 20000,
                     'static_configs' => [[
                         'targets' => [$address.':'.$port],
-                        'labels' => ['node' => $target->node->name, 'node_id' => (string) $target->node->id, 'service' => $kind],
+                        'labels' => ['node' => $render->name($target->node), 'node_id' => (string) $target->node->id, 'service' => $kind],
                     ]],
                     'metric_relabel_configs' => $rules,
                 ];

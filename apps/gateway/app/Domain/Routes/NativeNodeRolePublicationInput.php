@@ -38,7 +38,9 @@ final readonly class NativeNodeRolePublicationInput
             throw new ResourceOperationException('node.role_publication_invalid', 'The prospective identity must name the actual admitted Node.', 422);
         }
 
-        return $this->render->renderActual(function () use ($node, $role, $candidate): array {
+        $settings = $this->render->settings($node);
+
+        return $this->render->renderActual(function () use ($node, $role, $candidate, $settings): array {
             if (CaddySiteRoles::serving($role, $node->id) === []) {
                 throw new ResourceOperationException('node.role_publication_invalid', 'Role capture requires its existing admitted serving assignment.', 409);
             }
@@ -64,7 +66,8 @@ final readonly class NativeNodeRolePublicationInput
 
                 return $rows;
             });
-            $rows = $candidate === null ? $forward() : $this->render->renderEnrollment($candidate, $forward);
+            $prepared = fn (): array => $this->render->renderSettings($node, $settings, $forward);
+            $rows = $candidate === null ? $prepared() : $this->render->renderEnrollment($candidate, $prepared);
             $participants = array_values(array_unique([$node->id, 209, ...$participants, ...NodeRoleCertificateInput::participants($certificates)]));
             sort($participants);
 

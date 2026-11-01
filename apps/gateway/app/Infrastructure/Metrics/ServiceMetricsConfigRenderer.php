@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Routes\RouteRenderContext;
 use InvalidArgumentException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -48,7 +49,8 @@ final readonly class ServiceMetricsConfigRenderer
 
     public function fpm(ServiceMetricsNode $target): string
     {
-        $this->guardAddress((string) $target->node->wireguard_ip);
+        $address = app(RouteRenderContext::class)->wireguardIp($target->node);
+        $this->guardAddress((string) $address);
         $pools = [];
         foreach ($target->instances as $instance) {
             $identity = ProductionPhpRuntimeIdentity::from($instance);
@@ -66,7 +68,7 @@ final readonly class ServiceMetricsConfigRenderer
 
         return self::Marker."\n".Yaml::dump([
             'monitor' => [
-                'listen_addr' => $target->node->wireguard_ip.':'.self::FpmPort,
+                'listen_addr' => $address.':'.self::FpmPort,
                 'enable_json' => false,
                 'scrape_timeout' => '10s',
             ],

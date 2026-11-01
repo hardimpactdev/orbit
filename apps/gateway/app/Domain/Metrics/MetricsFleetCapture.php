@@ -6,6 +6,7 @@ namespace App\Domain\Metrics;
 
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -45,9 +46,12 @@ final readonly class MetricsFleetCapture
      */
     public function captureFor(NodeRole $assignment, bool $enabled = true): array
     {
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        $prospective = $candidate?->nodeId === $assignment->node_id && $candidate->platform === 'linux'
+            && in_array($assignment->node->status, [LifecycleStatus::Provisioning, LifecycleStatus::Failed], true);
         if (! $assignment->exists || $assignment->role !== RoleName::Metrics
             || ! in_array($assignment->status, [LifecycleStatus::Provisioning, LifecycleStatus::Active, LifecycleStatus::Removing], true)
-            || $assignment->node->status !== LifecycleStatus::Active) {
+            || ($assignment->node->status !== LifecycleStatus::Active && ! $prospective)) {
             throw new ResourceOperationException('metrics.assignment_missing', 'A fleet capture requires its owned Metrics role assignment.', 409);
         }
 
@@ -98,32 +102,35 @@ final readonly class MetricsFleetCapture
     /** @return array<string,mixed> */
     private function build(NodeRole $assignment, bool $enabled, ?Node $retiring = null): array
     {
+        $render = app(RouteRenderContext::class);
+        $candidate = $render->enrollment();
         $metrics = $assignment->node;
         $members = [];
         $targets = [];
         $services = [];
         foreach ($this->exporters->for($metrics) as $item) {
             $node = $item->node;
-            if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            $address = $render->wireguardIp($node);
+            if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
                 throw new ResourceOperationException('metrics.exporter_address_invalid', 'An exporter needs its recorded WireGuard IPv4.', 409);
             }
             $selected = $enabled && $node->id !== $retiring?->id;
             $service = $this->services->forNode($metrics, $node, $selected);
-            $members[] = ['node_id' => $node->id, 'name' => $node->name, 'address' => $node->wireguard_ip,
-                'agent_sha256' => $this->agents->pin($node), 'worker' => $this->workers->allows($node),
+            $members[] = ['node_id' => $node->id, 'name' => $render->name($node), 'address' => $address,
+                'agent_sha256' => $this->agents->pin($candidate?->nodeId === $node->id ? $candidate : $node), 'worker' => $this->workers->allows($node),
                 'selected' => $selected && $item->selection->selected, 'selection_reason' => $item->selection->reason->value,
                 'caddy' => $service->caddy, 'caddy_managed' => CaddySiteRoles::nodeExpectsCaddy($node->id), 'fpm' => $service->fpm, 'hosts' => $service->hosts,
                 'instance_ids' => array_map(static fn ($instance): int => $instance->id, $service->instances),
-                'service' => $this->service($service, (string) $metrics->wireguard_ip), 'pools' => $this->pools($service)];
+                'service' => $this->service($service, (string) $render->wireguardIp($metrics)), 'pools' => $this->pools($service)];
             if ($selected && $item->selection->selected) {
-                $targets[] = ['name' => $node->name, 'address' => $node->wireguard_ip];
+                $targets[] = ['name' => $render->name($node), 'address' => $address];
             }
             $services[] = $service;
         }
         usort($members, static fn (array $a, array $b): int => $a['node_id'] <=> $b['node_id']);
         usort($targets, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
         $plan = ['schema_version' => 1, 'assignment_id' => $assignment->id, 'metrics_node_id' => $metrics->id,
-            'metrics_address' => $metrics->wireguard_ip, 'fleet' => $members,
+            'metrics_address' => $render->wireguardIp($metrics), 'fleet' => $members,
             'runtime_files' => $this->runtime->publicFiles($targets, $services)];
 
         return [...$plan, 'digest' => self::digest($plan)];
@@ -227,7 +234,7 @@ final readonly class MetricsFleetCapture
             }
             foreach (['allow', 'deny'] as $action) {
                 $rules[] = [$action, 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $action === 'allow' ? $metricsAddress : 'any',
-                    'to', $node->node->wireguard_ip, 'port', $kind === 'caddy' ? ServiceMetricsConfigRenderer::CaddyPort : ServiceMetricsConfigRenderer::FpmPort,
+                    'to', app(RouteRenderContext::class)->wireguardIp($node->node), 'port', $kind === 'caddy' ? ServiceMetricsConfigRenderer::CaddyPort : ServiceMetricsConfigRenderer::FpmPort,
                     'comment', 'orbit:metrics-service-'.$kind.'-'.$action];
             }
         }

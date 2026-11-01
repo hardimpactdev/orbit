@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Analytics\PlausibleProcess;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Nodes\RoleName;
@@ -13,6 +14,7 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
@@ -78,7 +80,21 @@ final readonly class NodeRoleRuntimeSource implements OperationSecretSource
      *
      * @param  array<string,mixed>  $snapshot
      */
-    public function resolveRoleMaterial(array $snapshot, int $id): OperationSecretValue
+    public function resolveRoleMaterial(array $snapshot, int $id, ?NodeEnrollmentCandidate $candidate = null): OperationSecretValue
+    {
+        if ($candidate !== null && ($candidate->nodeId !== $id || $candidate->platform !== 'linux')) {
+            $this->refuse();
+        }
+        $resolve = fn (): OperationSecretValue => $this->resolveCapturedMaterial($snapshot, $id, $candidate);
+
+        $render = app(RouteRenderContext::class);
+
+        return $render->renderActual(fn (): OperationSecretValue => $candidate === null
+            ? $resolve() : $render->renderEnrollment($candidate, $resolve));
+    }
+
+    /** @param array<string,mixed> $snapshot */
+    private function resolveCapturedMaterial(array $snapshot, int $id, ?NodeEnrollmentCandidate $candidate): OperationSecretValue
     {
         $reference = ['$secret' => $this->name(), 'id' => $id];
         if (($snapshot['schema_version'] ?? null) !== 1 || ($snapshot['node_id'] ?? null) !== $id
@@ -139,17 +155,18 @@ final readonly class NodeRoleRuntimeSource implements OperationSecretSource
         }
         $installation = ValidatedData::object($runtime['installation'] ?? []);
         $process = Process::query()->find($installation['process_id'] ?? null);
+        $target = $candidate === null || ! $process instanceof Process ? null : $this->targets->forNodeCapture($node, $candidate);
         if (($installation['runtime'] ?? null) !== 'docker'
             || ($installation['agent_sha256'] ?? null) !== $snapshot['agent_sha256']
             || ! $process instanceof Process || ($installation['name'] ?? null) !== $this->docker->containerName($process)
             || $process->owner_type !== Node::class || $process->owner_id !== $id
             || $process->name !== PlausibleProcess::NAME || $process->runtime !== ProcessRuntime::Docker
-            || ($installation['spec'] ?? null) !== $this->docker->specHash($process, $this->targets->forInstallation($process))) {
+            || ($installation['spec'] ?? null) !== $this->docker->specHash($process, $target ?? $this->targets->forInstallation($process))) {
             $this->refuse();
         }
 
         return new OperationSecretValue(['installation' => ['runtime' => 'docker', 'spec' => $installation['spec'],
-            'definition' => $this->docker->containerInput($process, $this->targets->forInstallation($process))]]);
+            'definition' => $this->docker->containerInput($process, $target ?? $this->targets->forInstallation($process))]]);
     }
 
     /** @return array<string,mixed> */

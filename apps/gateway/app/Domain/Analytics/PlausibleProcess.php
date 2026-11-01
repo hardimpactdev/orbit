@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Analytics;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Shared\ResourceOperationException;
@@ -32,7 +33,12 @@ final readonly class PlausibleProcess
         AnalyticsStorageConnection $storage,
         #[SensitiveParameter]
         string $secretKeyBase,
+        ?NodeEnrollmentCandidate $candidate = null,
     ): AddProcessData {
+        if ($candidate !== null && $candidate->nodeId !== $node->id) {
+            throw new ResourceOperationException('process.target_unsupported', 'The candidate must name the admitted Analytics Node.', 422);
+        }
+        $address = $candidate->wireguardIp ?? $node->wireguard_ip;
         if (preg_match('/\A\d+\.\d+\.\d+\z/D', $version) !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'analytics.version_invalid',
@@ -41,7 +47,7 @@ final readonly class PlausibleProcess
             );
         }
 
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+        if (! is_string($address) || $address === '') {
             throw new ResourceOperationException(
                 errorCode: 'process.wireguard_ip_missing',
                 message: "Node [{$node->name}] has no WireGuard address.",
@@ -65,7 +71,7 @@ final readonly class PlausibleProcess
             ],
             // WireGuard only: the Node's own Caddy site serves the dashboard, and the Router
             // reaches the tracking paths over WireGuard.
-            ports: ["{$node->wireguard_ip}:".self::PORT.':'.self::PORT.'/tcp'],
+            ports: ["{$address}:".self::PORT.':'.self::PORT.'/tcp'],
             volumes: [],
             restartPolicy: 'unless-stopped',
             start: true,
