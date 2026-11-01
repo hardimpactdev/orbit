@@ -60,7 +60,7 @@ final readonly class TaskVmSweepWorkflowInput
             ...($host === null ? [] : ['ssh_execution' => $this->ssh->forNode($node)]), 'scope' => $scope,
             'ci_runner' => $node->roles()->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists(),
             'stray_vm_ids' => $host === null ? [] : array_map(static fn (TaskVm $vm): int => $vm->id, TaskVmHostAudit::strayRecords($node)),
-            'image_cutoff' => now()->subHours(2)->getTimestamp(),
+            'deadline_at' => now()->addSeconds(300)->getTimestamp(), 'image_cutoff' => now()->subHours(2)->getTimestamp(),
             'running_stamps' => UpCloudTaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Running)
                 ->get()->map(static fn (UpCloudTaskVmImageBuild $build): ?string => $build->intent['stamp'] ?? null)->filter()->values()->all(),
             'execution_secrets' => $host !== null ? [] : ['upcloud' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-upcloud-token', $this->upcloud->token())]];

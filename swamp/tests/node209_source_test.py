@@ -31,10 +31,9 @@ class Node209SourceTest(unittest.TestCase):
     def test_no_unmeasured_top_level_queue_timeout_override(self):
         for path in (ROOT/'workflows').glob('*.yaml'):
             definition = yaml.safe_load(path.read_text())
-            if definition['name'] in ('operation-task-vm-sweep', 'task-vm-sweep-incus', 'task-vm-sweep-cloud',
-                                      'task-vm-sweep-incus-cleanup', 'task-vm-sweep-cloud-cleanup'):
+            if definition['name'] in ('operation-task-vm-sweep', 'task-vm-sweep-incus', 'task-vm-sweep-cloud'):
                 # Measured sweep budget; docs/swamp/porting.md F8 permits per-kind queue bounds.
-                self.assertEqual(definition['queueTimeout'], 60)
+                self.assertEqual(definition['queueTimeout'], 10)
             elif definition['name'] == 'operation-task-vm-dispatch':
                 # Existing #162 native unclaimed-child bound; not a local override.
                 self.assertEqual(definition['queueTimeout'], 60)
