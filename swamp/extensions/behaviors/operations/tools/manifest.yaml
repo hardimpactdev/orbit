@@ -1,0 +1,17 @@
+manifestVersion: 1
+name: '@nckrtl/tool-adopt-command'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Typed public assets and selected package adoption policy for official
+  SSH observations.
+behaviors:
+- operations/tools/adopt.ts
+additionalFiles:
+- queries/support.py
+- queries/apt.py
+- queries/composer.py
+- queries/vp.py
+- queries/brew_query.py
+- queries/brew.py
+- queries/brew_cask.py

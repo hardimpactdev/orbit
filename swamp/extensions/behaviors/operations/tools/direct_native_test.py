@@ -50,7 +50,7 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
     def test_each_kind_uses_the_same_direct_dag_without_executor_calls(self):
-        for kind in ('tool.install','tool.update','tool.remove','tool.adopt','tool.manager_converge'):
+        for kind in ('tool.install','tool.update','tool.remove','tool.manager_converge'):
             self.state['operation']['kind'] = kind
             self.state['operation']['status'] = 'queued'
             self.state['installed'] = None if kind in ('tool.install','tool.manager_converge') else '1.0.0'
@@ -96,7 +96,7 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
 
     def test_engine_failure_keeps_native_evidence_without_a_gateway_callback(self):
         self.state['engineRefused'] = True
-        for kind in ('tool.install','tool.update','tool.remove','tool.adopt','tool.manager_converge'):
+        for kind in ('tool.install','tool.update','tool.remove','tool.manager_converge'):
             self.state['operation']['kind'] = kind
             self.state['operation']['status'] = 'queued'
             self.state['calls'] = []
@@ -126,7 +126,7 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
     def test_each_kind_uses_an_admitted_non209_node(self):
-        for kind in ('tool.install','tool.update','tool.remove','tool.adopt','tool.manager_converge'):
+        for kind in ('tool.install','tool.update','tool.remove','tool.manager_converge'):
             self.state['operation']['kind'] = kind
             self.state['operation']['node_id'] = 14
             self.state['operation']['input']['node_id'] = 14

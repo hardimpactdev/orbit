@@ -5,7 +5,6 @@ export const Kind = z.enum([
   "tool.install",
   "tool.update",
   "tool.remove",
-  "tool.adopt",
   "tool.manager_converge",
 ]);
 export const Identity = z.object({

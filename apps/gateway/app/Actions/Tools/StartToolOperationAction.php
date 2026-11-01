@@ -20,6 +20,7 @@ use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -89,6 +90,7 @@ final readonly class StartToolOperationAction
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
                     'intent_only' => $intentOnly,
                     'protected_packages' => $protected,
+                    ...($verb === 'adopt' ? ['ssh' => app(SwampSshExecutionInput::class)->forNode($node)] : []),
                     ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name()) : []),
                 ], 'operator', request()->attributes->getString('orbit.request_id'));
             });

@@ -155,14 +155,6 @@ def composer(host,verb,data):
    except Refusal:continue
    packages.append({'name':name,'version':entry.get('version') if version(entry.get('version')) else None})
   return {'packages':packages}
- if verb=='scope':
-  owned('/opt/orbit',0,0);owned('/opt/orbit/composer',host.account.pw_uid,host.account.pw_gid)
-  path='/opt/orbit/composer/composer.json';value=object_(json_(read(path,host.account.pw_uid,host.account.pw_gid)))
-  roots=value.get('require',{})
-  if roots==[]:roots={}
-  roots=object_(roots)
-  if any(not safe(k) or re.fullmatch(r'-?\d+',k) for k in roots):refuse('tool.output_invalid')
-  return {'roots':sorted(roots)}
  name=package('composer',data.get('package'));op={'install':'require','update':'update','remove':'remove','removal-plan':'remove','candidate':'require' if data.get('operation')=='install' else 'update'}[verb]
  target=name+':*' if op=='require' else name;args=['global',op,target]
  if verb in ('candidate','removal-plan'):args+=['--dry-run']
