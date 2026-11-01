@@ -175,6 +175,26 @@ class TopologyObservationTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.run_parity(kind, self.observations(kind))
 
+    def test_rotation_consumes_the_pre_request_observer_after_native_parity(self):
+        with patch.object(
+            parity.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0),
+        ) as observed:
+            self.run_parity(
+                "websocket.app_rotate", self.observations("websocket.app_rotate")
+            )
+        argv = observed.call_args.args[0]
+        self.assertEqual(["python3", "-I"], argv[:2])
+        self.assertEqual(
+            Path(__file__).parents[2]
+            / "websocket.app_rotate/tests/socket_observer.py",
+            Path(argv[2]),
+        )
+        self.assertEqual(["check"], argv[3:])
+        self.assertTrue(observed.call_args.kwargs["check"])
+        self.assertEqual(50, observed.call_args.kwargs["timeout"])
+
     def test_rotation_requires_the_pre_request_observer_result(self):
         with (
             patch.object(
@@ -194,6 +214,14 @@ class TopologyObservationTests(unittest.TestCase):
                 "websocket.sync",
                 self.observations("websocket.sync"),
                 {"data": {"accepted": True, "stdout": "{}"}},
+            )
+
+    def test_decoded_stdout_cannot_replace_the_selected_native_object(self):
+        with self.assertRaisesRegex(AssertionError, "Selected native outputs"):
+            self.run_parity(
+                "websocket.sync",
+                self.observations("websocket.sync"),
+                {"outcome": "succeeded", "data": {"backend": "applied"}},
             )
 
     def test_foreign_runtime_refused_before_handshake(self):
