@@ -53,3 +53,11 @@ This is a dependency order, not permission to bypass a family that is parked or 
 6. Revoke that worker's enrollment token and its worker-specific server-access token through supported native commands. Derive the exact names from the inventory; do not revoke shared Gateway/operator or retained209 pool tokens. Recheck roster/queue, absence of target Swamp processes/binaries/worker units, official SSH reachability and accepted209-only placement. Record the terminal retirement receipt per Node. Preserve run history and audit receipts.
 
 Token revocation and file removal occur only after the same per-Node clearance as worker stop. An idle roster, zero Gateway-bound operations, a source-only draft or a successful standalone canary is insufficient.
+
+## Retired source entrypoints
+
+The dedicated Node1 and Node18 proxy setup, preflight, enrollment and rotation workflows are removed from the source. They cannot recreate a proxy unit or mint another per-Node credential. Runtime retirement is separate: installed worker units stay until their owners clear current and saved roots, accepted family placement and recreation paths. Source cleanup never stops or removes an installed unit.
+
+Schedules, database reads, Vault sync, Conn pairing revocation, Route update and task publication execute on209 and carry their effect Node as public SSH intent. Their operation envelope does not select a worker. They consume the shared pinned SSH provider; none enrolls or selects an effect-Node worker. The shared209 identity file remains an approved existing credential.
+
+The source regression follows child workflows too: these nine operation workflows reach23 workflow files, all placed on209. This does not clear unrelated families. The retained shared command runner and proxy transport still serve Node roles, PHP, Metrics, TaskVM and other Route operations. Their owners must move those effects to native steps before the shared runner can be removed. The remaining enrollment issuer is also used by those active families; removing an obsolete rotation entrypoint does not remove that issuer.
