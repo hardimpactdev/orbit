@@ -86,7 +86,7 @@ export function deployDirect(ports: Ports = {}) {
   const rollback = rollbackDirect(ports.rollback);
   return {
     type: "@nckrtl/instance-deploy-direct",
-    version: "2026.10.31.5",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     resources: {
       rollbackExecution: rollback.resources.rollbackExecution,
@@ -146,7 +146,12 @@ export function deployDirect(ports: Ports = {}) {
             ) return { status: "held" };
             const at = new Date(now()).toISOString();
             const outcome = checkpoint.outcome ??
-              { status: "failed", error_code: "deployment.interrupted" };
+              {
+                status: "failed",
+                error_code: checkpoint.stage === 6
+                  ? "operation.native_failed"
+                  : "deployment.interrupted",
+              };
             await gateway.project({
               ...outcome,
               started_at: checkpoint.started_at,
@@ -188,6 +193,34 @@ export function deployDirect(ports: Ports = {}) {
           return { status: "failed" };
         },
       },
+      prepareProduction: {
+        description:
+          "Prepare the production release before native Process children",
+        arguments: Args,
+        execute: (raw: z.infer<typeof Args>, ctx: Context) =>
+          runProductionDeploy(raw, ctx, {
+            ...ports.production,
+            http: ports.http,
+            now,
+            source: ports.source,
+            inspectRunner: ports.inspectRunner,
+            run: ports.run,
+          }, "prepare"),
+      },
+      finishProduction: {
+        description:
+          "Continue production deployment after native Process children succeeded",
+        arguments: Args,
+        execute: (raw: z.infer<typeof Args>, ctx: Context) =>
+          runProductionDeploy(raw, ctx, {
+            ...ports.production,
+            http: ports.http,
+            now,
+            source: ports.source,
+            inspectRunner: ports.inspectRunner,
+            run: ports.run,
+          }, "finish"),
+      },
       run: {
         description:
           "Run the admitted deploy on its exact Node in one native run",
@@ -218,22 +251,12 @@ export function deployDirect(ports: Ports = {}) {
             return current;
           };
           const initial = await read();
-          if (["succeeded", "failed", "cancelled"].includes(initial.status)) {
-            return { status: initial.status };
-          }
           if (
-            z.object({ deployment: z.object({ variant: z.string() }) }).parse(
-              initial.input,
-            ).deployment.variant === "production"
+            ["succeeded", "failed", "cancelled"].includes(
+              initial.status,
+            )
           ) {
-            return await runProductionDeploy(args, ctx, {
-              ...ports.production,
-              http: ports.http,
-              now,
-              source: ports.source,
-              inspectRunner: ports.inspectRunner,
-              run: ports.run,
-            });
+            return { status: initial.status };
           }
           const activeOwner = await assertDeploymentExecutionAvailable(
             ctx,
@@ -264,7 +287,9 @@ export function deployDirect(ports: Ports = {}) {
             const admitted = d.steps.find((step) =>
               step.name === saved.name && step.phase === saved.phase
             );
-            if (!admitted) throw new Error("deployment.identity_changed");
+            if (!admitted) {
+              throw new Error("deployment.identity_changed");
+            }
             const runner = stepRunner(args, saved);
             const reply = z.object({
               runner: z.literal(runner),
@@ -373,7 +398,9 @@ export function deployDirect(ports: Ports = {}) {
               await mark(false);
               return value;
             } catch (error) {
-              if (error instanceof LocalDeployError) await mark(false);
+              if (error instanceof LocalDeployError) {
+                await mark(false);
+              }
               throw error;
             }
           };
@@ -441,37 +468,47 @@ export function deployDirect(ports: Ports = {}) {
               let outcome: Awaited<ReturnType<typeof prepareDeployVp>> = {
                 error_code: "deployment.vp_store_failed",
               };
-              await gateway.withPrivateMaterial(async (material) => {
-                outcome = await prepareDeployVp(
-                  {
-                    node_id: args.node_id,
-                    platform: input.platform!,
-                    architecture: input.architecture!,
-                    path: d.home,
-                    user: d.node_user,
-                    node_user: d.node_user,
-                    materialize: z.record(z.string(), z.unknown()).parse(
-                      material.vp_materialize,
-                    ),
-                  },
-                  deadline,
-                  {
-                    ...ports.vp,
-                    mutation: effect,
-                    current,
-                    now,
-                    reference: async (pins, status) => {
-                      await check();
-                      await gateway.project({
-                        status: "running",
-                        started_at,
-                        result: { vp_environment: { ...pins, status } },
-                      });
+              await gateway.withPrivateMaterial(
+                async (material) => {
+                  outcome = await prepareDeployVp(
+                    {
+                      node_id: args.node_id,
+                      platform: input.platform!,
+                      architecture: input.architecture!,
+                      path: d.home,
+                      user: d.node_user,
+                      node_user: d.node_user,
+                      materialize: z.record(
+                        z.string(),
+                        z.unknown(),
+                      ).parse(
+                        material.vp_materialize,
+                      ),
                     },
-                  },
-                  ctx.signal,
-                );
-              });
+                    deadline,
+                    {
+                      ...ports.vp,
+                      mutation: effect,
+                      current,
+                      now,
+                      reference: async (pins, status) => {
+                        await check();
+                        await gateway.project({
+                          status: "running",
+                          started_at,
+                          result: {
+                            vp_environment: {
+                              ...pins,
+                              status,
+                            },
+                          },
+                        });
+                      },
+                    },
+                    ctx.signal,
+                  );
+                },
+              );
               const resolved = outcome as Awaited<
                 ReturnType<typeof prepareDeployVp>
               >;

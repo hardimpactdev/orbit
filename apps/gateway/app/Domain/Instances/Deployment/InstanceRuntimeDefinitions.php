@@ -6,12 +6,12 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessLifecycleInput;
+use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessOperationSecrets;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\DockerProcessRenderer;
-use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
@@ -27,8 +27,6 @@ final readonly class InstanceRuntimeDefinitions
     public function __construct(
         private InstantiateProjectRuntimeDefinitionsAction $definitions,
         private ProcessTargetResolver $targets,
-        private SystemdProcessRenderer $systemd,
-        private DockerProcessRenderer $docker,
     ) {}
 
     /** Called inside root admission before its immutable input is stored.
@@ -66,7 +64,7 @@ final readonly class InstanceRuntimeDefinitions
     }
 
     /** Existing instance.deployment private material; no leaf Operation or new secret source.
-     * @return array{processes:array<int,array<string,mixed>>,schedules:array<string,array<string,mixed>>}
+     * @return array{schedules:array<string,array<string,mixed>>}
      */
     public function material(Operation $operation): array
     {
@@ -75,18 +73,7 @@ final readonly class InstanceRuntimeDefinitions
             throw $this->refused();
         }
         $runtime = $this->admitted($operation);
-        $processes = $schedules = [];
-        foreach ($runtime['processes'] as $entry) {
-            $id = ValidatedData::integer($entry['process_id']);
-            $row = $this->processes($instance)->whereKey($id)->whereNotNull('source_definition_id')->first();
-            if ($row === null || Arr::sortRecursive($this->processInput($row, true)) !== Arr::sortRecursive($entry)) {
-                throw $this->refused();
-            }
-            $target = $this->targets->forInstallation($row);
-            $processes[$id] = ['installation' => $row->runtime === ProcessRuntime::Systemd
-                ? ['runtime' => 'systemd', 'content' => $this->systemd->render($row, $target), 'environment' => $this->systemd->environmentContent($row, $target)]
-                : ['runtime' => 'docker', 'spec' => $entry['spec'], 'definition' => $this->docker->containerInput($row, $target)]];
-        }
+        $schedules = [];
         foreach ($runtime['schedules'] as $entry) {
             $id = ValidatedData::string($entry['id']);
             $row = $this->schedules($instance)->whereKey($id)->whereNotNull('source_definition_id')->first();
@@ -96,7 +83,31 @@ final readonly class InstanceRuntimeDefinitions
             $schedules[$id] = ['command' => $row->command];
         }
 
-        return ['processes' => $processes, 'schedules' => $schedules];
+        return ['schedules' => $schedules];
+    }
+
+    /** @return array{members:list<array<string,mixed>>,execution_secrets:array<string,array{vault:string,key:string}>} */
+    public function processWorkflowInput(Operation $operation): array
+    {
+        $instance = $this->parent($operation);
+        $members = $copies = [];
+        foreach ($this->admitted($operation)['processes'] as $entry) {
+            $row = $this->processes($instance)->whereKey(ValidatedData::integer($entry['process_id']))->whereNotNull('source_definition_id')->first();
+            if ($row === null || Arr::sortRecursive($this->processInput($row, true)) !== Arr::sortRecursive($entry)) {
+                throw $this->refused();
+            }
+            $target = $this->targets->forInstallation($row);
+            $input = $entry;
+            $material = ValidatedData::object(app(ProcessOperationSecrets::class)->materialFor($row, $target, $input)->value);
+            $native = app(ProcessLifecycleInput::class)->forRenderedInstallation($input, $material, $target->node,
+                'process-parent-operation-'.$operation->id.'-node-'.$target->node->id.'-member-'.$row->id);
+            $members[] = ['id' => $row->id, 'node_id' => $target->node->id, 'intent' => $native['intent']];
+            if (isset($native['execution_secrets']['environment'])) {
+                $copies['node_'.$target->node->id.'_member_'.$row->id] = $native['execution_secrets']['environment'];
+            }
+        }
+
+        return ['members' => $members, 'execution_secrets' => $copies];
     }
 
     /** Record bounded native member outcomes. The Gateway does not revalidate runtime work.
@@ -147,28 +158,8 @@ final readonly class InstanceRuntimeDefinitions
     /** @return array<string,mixed> */
     private function processInput(Process $row, bool $installation): array
     {
-        $target = $this->targets->forInstallation($row);
-        $systemd = $row->runtime === ProcessRuntime::Systemd;
-        $safe = ['process_id' => $row->id, 'runtime' => $row->runtime->value,
-            'name' => $systemd ? $this->systemd->unitName($row) : $this->docker->containerName($row),
-            'on_demand' => $target->onDemandHostStart];
-        if ($target->productionReleaseLayout && ($row->desired_state === DesiredProcessState::Running || ! $installation)) {
-            $safe['directory'] = $target->defaultWorkingDirectory;
-        }
-        if (! $installation) {
-            return [...$safe, 'vite' => null];
-        }
-        $retired = null;
-        if ($row->retired_runtime !== null) {
-            $prior = clone $row;
-            $prior->runtime = $row->retired_runtime;
-            $retired = ['runtime' => $prior->runtime->value, 'name' => $prior->runtime === ProcessRuntime::Systemd
-                ? $this->systemd->unitName($prior) : $this->docker->containerName($prior)];
-        }
-
-        return [...$safe, 'desired' => $row->desired_state->value, 'retired' => $retired,
-            ...($systemd ? ['content_hash' => hash('sha256', $this->systemd->render($row, $target)),
-                'activation_pending' => $row->systemd_activation_pending] : ['spec' => $this->docker->specHash($row, $target)])];
+        $input = app(ProcessOperationAdmission::class)->inputForTarget($row, $installation ? 'create' : 'restart', $this->targets->forInstallation($row));
+        return $installation ? $input : Arr::only($input, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
     }
 
     /** Actual account group remains worker-local, never guessed during Gateway admission.

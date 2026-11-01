@@ -14,15 +14,10 @@ import {
   scheduleSystem,
 } from "../processes-schedules/schedule-system.ts";
 import { localProcessAction } from "../processes-schedules/native-action.ts";
-import { processSystem } from "../processes-schedules/process-system.ts";
 import {
   installSchedule,
   ScheduleInstallation,
 } from "../processes-schedules/installation.ts";
-import {
-  installProcess,
-  ProcessInstallation,
-} from "../processes-schedules/process-installation.ts";
 import { processAction } from "../processes-schedules/process-control.ts";
 import { Input as ProcessControl } from "../processes-schedules/process-input.ts";
 import {
@@ -154,7 +149,6 @@ type Ports = {
     Parameters<typeof refreshDeployPhp>[2],
     "install" | "profile" | "runtime" | "refresh"
   >;
-  process?: Parameters<typeof installProcess>[3];
   processControl?: Parameters<typeof processAction>[0];
   schedule?: typeof scheduleSystem;
   account?: typeof lookupScheduleAccount;
@@ -173,6 +167,7 @@ export async function runProductionDeploy(
   raw: z.infer<typeof Args>,
   ctx: Context,
   ports: Ports = {},
+  segment: "prepare" | "finish" = "prepare",
 ) {
   const args = Args.parse(raw),
     now = ports.now ?? Date.now,
@@ -283,7 +278,9 @@ export async function runProductionDeploy(
     }
     const row = await current();
     if (row.cancel_requested) throw new Refused("operation.cancelled");
-    if (now() >= deadline) throw new Refused("deployment.deadline_exceeded");
+    if (now() >= deadline) {
+      throw new Refused("deployment.deadline_exceeded");
+    }
   };
   let uncertain = false, phase = "operation";
   if (state.active) {
@@ -395,18 +392,6 @@ export async function runProductionDeploy(
     }
     return reply;
   };
-  const processLocal = ports.process ??
-    (async (name, data, _digest, signal) =>
-      await processSystem()(name, data, signal));
-  const memberProcess: NonNullable<Parameters<typeof installProcess>[3]> = (
-    name,
-    data,
-    digest,
-    signal,
-  ) =>
-    ["process.check-release", "process.status"].includes(name)
-      ? processLocal(name, data, digest, signal)
-      : mutation(() => processLocal(name, data, digest, signal));
   const controlLocal = ports.processControl ?? localProcessAction;
   const memberControl: NonNullable<Parameters<typeof processAction>[0]> = (
     name,
@@ -417,16 +402,15 @@ export async function runProductionDeploy(
     ["process.check-release", "process.status"].includes(name)
       ? controlLocal(name, data, digest, signal)
       : mutation(() => controlLocal(name, data, digest, signal));
-  const materialFor = (kind: "processes" | "schedules", id: string) => ({
+  const materialFor = (id: string) => ({
     withPrivateMaterial: (
       use: (value: Record<string, unknown>) => Promise<void>,
     ) =>
       gateway.withPrivateMaterial(async (material) => {
         const aggregate = z.object({
-          processes: PrivateMap,
           schedules: PrivateMap,
         }).parse(material.definitions_material);
-        await use(SafeObject.parse(aggregate[kind][id]));
+        await use(SafeObject.parse(aggregate.schedules[id]));
       }),
   });
   const app = () =>
@@ -582,21 +566,6 @@ export async function runProductionDeploy(
       );
     }],
     ["runtime_definitions", async () => {
-      for (const raw of input.runtime_definitions.processes) {
-        const member = ProcessInstallation.parse(raw);
-        const outcome = await installProcess(
-          member,
-          materialFor("processes", String(member.process_id)),
-          ctx.signal,
-          memberProcess,
-        );
-        state.result.runtime_definitions.processes.push({
-          process_id: member.process_id,
-          ready: !("error_code" in outcome),
-          ...outcome,
-        });
-        failed(outcome);
-      }
       for (const member of input.runtime_definitions.schedules) {
         if (
           member.user !== home.user || member.home !== home.home ||
@@ -614,7 +583,7 @@ export async function runProductionDeploy(
         }
         const outcome = await installSchedule(
           { ...member, group: account.group },
-          materialFor("schedules", member.id),
+          materialFor(member.id),
           ctx.signal,
           (name, data, signal) =>
             mutation(() =>
@@ -678,7 +647,11 @@ export async function runProductionDeploy(
   ];
   let error_code: string | null = null;
   try {
-    if (stored !== null || !["queued", "running"].includes(initial.status)) {
+    if (
+      (segment === "prepare" && stored !== null) ||
+      (segment === "finish" && (stored === null || state.stage !== 6)) ||
+      !["queued", "running"].includes(initial.status)
+    ) {
       throw new Refused(
         initial.cancel_requested
           ? "operation.cancelled"
@@ -693,7 +666,17 @@ export async function runProductionDeploy(
         result: {},
       });
     }
-    while (state.stage < stages.length) {
+    if (segment === "finish") {
+      state.result.runtime_definitions.processes = input
+        .runtime_definitions.processes.map((member) => ({
+          process_id: z.number().int().positive().parse(
+            member.process_id,
+          ),
+          ready: true,
+          state: member.desired === "running" ? "active" : "inactive",
+        }));
+    }
+    while (state.stage < (segment === "prepare" ? 6 : stages.length)) {
       [phase] = stages[state.stage];
       await check();
       await stages[state.stage][1]();
@@ -730,6 +713,7 @@ export async function runProductionDeploy(
   ) {
     throw new Error("deployment.execution_unconfirmed");
   }
+  if (segment === "prepare" && error_code === null) return { ready: true };
   state.outcome = {
     status: error_code === null
       ? "succeeded"

@@ -48,11 +48,13 @@ Only environment bytes use native execution copies. Each key includes the parent
 
 The shared terminal reader projects the parent result into the captured set. Success marks the set active and records the admitted activation generation. Failure or interruption marks the captured set failed and retains applied files for normal convergence. Cancellation preserves the records. No rollback runs. Restart, deploy and transfer installers keep their separate paths until converted.
 
-### Transfer installation capture
+### Deploy and transfer installation
 
-A transfer captures both Process placements before it starts native execution. `ProcessInstallationBatch::materialForCapture(Instance, ProcessTarget, capture)` renders the existing installation material at either captured target while database ownership remains on the captured origin. It uses the same Process renderers and account placeholders as installation admission. It performs no account discovery or host action. A changed origin Node, checkout, member set or Process specification refuses the snapshot before publication.
+Deploy and transfer compose the existing Process-create workflow as native children on Node 209. Each member supplies its public unit or container definition, desired state, content or specification hash, and pinned SSH target at root submission. Only environment bytes enter execution copies. Copy keys include the parent Operation, placement Node and member Process, so source and destination cannot overwrite each other.
 
-The owning parent passes that protected material through the shared [command-step execution copy](/reference/swamp-command-steps) and keeps only vault/key descriptors outside public intent. Public Process descriptors come from `ProcessInstallationBatch::input`. Swamp executes from these captured inputs without an intermediate Gateway placement projection. The transfer parent owns placement changes, fixed vault fields and final projection.
+Production deployment pauses after PHP refresh, installs the captured Processes, then continues Schedule installation and restart-on-deploy. Transfer installs the prospective destination after its existing cutover and publication steps. Its existing recovery branch installs the captured source through the same native children. There is no Process installation private-material callback, local installer loop, or member Operation in either path. Other deployment and transfer phases retain their separate execution paths.
+
+Transfer validates both captured placements before native submission while the Instance still belongs to its origin. A changed origin, member ownership, member set or specification refuses submission. Public definitions use the existing renderers and account placeholders; official SSH resolves the account on the target. Native failure retains applied state for forward convergence.
 
 ## Owners
 

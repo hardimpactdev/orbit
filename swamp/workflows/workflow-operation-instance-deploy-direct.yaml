@@ -1,46 +1,98 @@
 id: 738a2f9d-dc6c-4754-92c3-f51de9cb91f9
 name: operation-instance-deploy-direct
 description: Instance deployment on its admitted Node and development or production account.
-vaults: []
-inputs:
-  properties:
-    operation_id: {type: integer, minimum: 1}
-    node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [instance.deploy]}
-  required: [operation_id, node_id, kind]
+vaults:
+- orbit-control-inputs
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [instance.deploy]},
+    intent: {type: object}, execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [
+              orbit-control-inputs]}, key: {type: string, pattern: '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'}},
+        required: [vault, key], additionalProperties: false}}}, required: [operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
+- name: deploy
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  writes: true
+  steps:
   - name: deploy
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels:
-      node: '${{ string(inputs.node_id) }}'
-    writes: true
-    steps:
-      - name: deploy
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-deploy-direct'
-          behaviorName: '${{ "instance-deploy-node-" + string(inputs.node_id) }}'
-          methodName: run
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'
-  - name: failure
-    dependsOn: [{job: deploy, condition: {type: failed}}]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels:
-      node: '${{ string(inputs.node_id) }}'
-    writes: true
-    steps:
-      - name: report
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-deploy-direct'
-          behaviorName: '${{ "instance-deploy-node-" + string(inputs.node_id) }}'
-          methodName: failure
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-deploy-direct'
+      behaviorName: ${{ "instance-deploy-node-" + string(inputs.node_id) }}
+      methodName: run
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+    guard: ${{ inputs.intent.deployment.variant != "development" }}
+  - guard: ${{ inputs.intent.deployment.variant != "production" }}
+    name: prepare-production
+    task:
+      behaviorName: ${{ "instance-deploy-node-" + string(inputs.node_id) }}
+      behaviorType: '@nckrtl/instance-deploy-direct'
+      inputs:
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ run.id }}
+      methodName: prepareProduction
+      type: behavior
+  - name: install-processes
+    target: orbit-node-209
+    forEach:
+      item: member
+      in: ${{ inputs.intent.process_members }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ self.member.node_id }}
+        kind: process.create
+        intent: ${{ self.member.intent }}
+        execution_secrets: '${{ "node_" + string(self.member.node_id) + "_member_" + string(self.member.id) in inputs.execution_secrets ? {"environment":
+          inputs.execution_secrets["node_" + string(self.member.node_id) + "_member_" + string(self.member.id)]} : {} }}'
+    dependsOn:
+    - step: prepare-production
+      condition:
+        type: succeeded
+  - guard: ${{ inputs.intent.deployment.variant != "production" }}
+    name: finish-production
+    task:
+      behaviorName: ${{ "instance-deploy-node-" + string(inputs.node_id) }}
+      behaviorType: '@nckrtl/instance-deploy-direct'
+      inputs:
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        operation_id: ${{ inputs.operation_id }}
+        run_id: ${{ run.id }}
+      methodName: finishProduction
+      type: behavior
+    dependsOn:
+    - step: install-processes
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: prepare-production
+      condition:
+        type: succeeded
+- name: failure
+  dependsOn:
+  - job: deploy
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  writes: true
+  steps:
+  - name: report
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-deploy-direct'
+      behaviorName: ${{ "instance-deploy-node-" + string(inputs.node_id) }}
+      methodName: failure
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}

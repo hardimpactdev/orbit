@@ -2,23 +2,12 @@ id: d58dd3f3-ed2f-44ad-bdce-128aa2399481
 name: operation-instance-transfer
 description: Transfer one Instance through native placed archive and Route steps.
 writes: true
-vaults: []
-inputs:
-  properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - instance.transfer
-  required:
-  - operation_id
-  - node_id
-  - kind
+vaults:
+- orbit-control-inputs
+inputs: {properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [instance.transfer]},
+    intent: {type: object}, execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [
+              orbit-control-inputs]}, key: {type: string, pattern: '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'}},
+        required: [vault, key], additionalProperties: false}}}, required: [operation_id, node_id, kind, intent, execution_secrets]}
 jobs:
 - name: archive
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
@@ -194,12 +183,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign-" + run.id }}'
+      behaviorName: ${{ "certificate-sign-" + run.id }}
       methodName: execute
       inputs:
-        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
+        run: /usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"
         env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps["cert-sign-http-input"].outputs.sign_script }}'
+          ORBIT_CERTIFICATE_SIGN_SCRIPT: ${{ steps["cert-sign-http-input"].outputs.sign_script }}
           ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
           ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
           ORBIT_CERTIFICATE_MODE: batch
@@ -437,20 +426,20 @@ jobs:
       type: succeeded
   steps:
   - name: install-runtime
-    writes: true
+    target: orbit-node-209
+    forEach:
+      item: member
+      in: ${{ inputs.intent.destination_processes }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/instance-transfer'
-      behaviorName: ${{ "instance-transfer-" + run.id }}
-      methodName: runtime
+      type: workflow
+      workflowIdOrName: operation-process-create
       inputs:
         operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.admission.outputs.destination_node_id }}
-        phase: install
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+        node_id: ${{ self.member.node_id }}
+        kind: process.create
+        intent: ${{ self.member.intent }}
+        execution_secrets: '${{ "node_" + string(self.member.node_id) + "_member_" + string(self.member.id) in inputs.execution_secrets ? {"environment":
+          inputs.execution_secrets["node_" + string(self.member.node_id) + "_member_" + string(self.member.id)]} : {} }}'
   - name: verify-runtime
     writes: true
     task:
@@ -469,7 +458,10 @@ jobs:
     dependsOn:
     - step: install-runtime
       condition:
-        type: succeeded
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
 - name: retirement
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   steps:
@@ -583,8 +575,7 @@ jobs:
     - step: recovery
       condition:
         type: succeeded
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
-      }}
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
   dependsOn:
   - job: completion
     condition:
@@ -609,10 +600,8 @@ jobs:
     target: ${{ "orbit-node-" + string(self.member) }}
     forEach:
       item: member
-      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids
-        : [] }}'
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
-      }}
+      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids : [] }}'
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
   dependsOn:
   - job: recover-state
     condition:
@@ -637,10 +626,8 @@ jobs:
     target: ${{ "orbit-node-" + string(self.member) }}
     forEach:
       item: member
-      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.dns_node_ids
-        : [] }}'
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
-      }}
+      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.dns_node_ids : [] }}'
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
   dependsOn:
   - job: recover-caddy
     condition:
@@ -667,8 +654,27 @@ jobs:
         target_node_id: ${{ inputs.node_id }}
         phase: restore
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
-      }}
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
+  - name: restore-processes
+    target: orbit-node-209
+    forEach:
+      item: member
+      in: ${{ inputs.intent.source_processes }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ self.member.node_id }}
+        kind: process.create
+        intent: ${{ self.member.intent }}
+        execution_secrets: '${{ "node_" + string(self.member.node_id) + "_member_" + string(self.member.id) in inputs.execution_secrets ? {"environment":
+          inputs.execution_secrets["node_" + string(self.member.node_id) + "_member_" + string(self.member.id)]} : {} }}'
+    dependsOn:
+    - step: restore-runtime
+      condition:
+        type: succeeded
+    guard: ${{ !("restore-runtime" in steps && "outputs" in steps["restore-runtime"] && steps["restore-runtime"].outputs.restore) }}
 - name: recover-leaves
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   steps:
@@ -689,10 +695,8 @@ jobs:
     target: ${{ "orbit-node-" + string(self.member) }}
     forEach:
       item: member
-      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids
-        : [] }}'
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
-      }}
+      in: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs.caddy_node_ids : [] }}'
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
   dependsOn:
   - job: recover-runtime
     condition:
@@ -760,8 +764,7 @@ jobs:
         decision: ${{ steps.recovery.outputs }}
         target_node_id: ${{ steps.recovery.outputs.destination_node_id }}
     target: ${{ "orbit-node-" + string(steps.recovery.outputs.destination_node_id) }}
-    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
-      }}
+    guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover) }}
   dependsOn:
   - job: recover-leaves
     condition:
@@ -806,12 +809,10 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
         failed: true
-        decision: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs :
-          {"recover": false, "cancelled": false, "destination_node_id": inputs.node_id, "caddy_node_ids":
-          [], "dns_node_ids": []} }}'
+        decision: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs : {"recover": false, "cancelled": false,
+          "destination_node_id": inputs.node_id, "caddy_node_ids": [], "dns_node_ids": []} }}'
     dependsOn:
     - step: finish
       condition:
         type: always
-    guard: ${{ ("retire" in steps && steps.retire.status == "succeeded") || !("discard" in steps && steps.discard.status
-      == "succeeded") }}
+    guard: ${{ ("retire" in steps && steps.retire.status == "succeeded") || !("discard" in steps && steps.discard.status == "succeeded") }}

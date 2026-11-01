@@ -10,6 +10,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\ProcessInstallationBatch;
 use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\ResourceOperationException;
@@ -35,7 +36,11 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
 
     public function input(Operation $operation): array
     {
-        return $this->publicInput($operation, ValidatedData::integer($operation->node_id));
+        $source = app(ProcessInstallationBatch::class)->nativeInput($operation, 'source_installations');
+        $destination = app(ProcessInstallationBatch::class)->nativeInput($operation, 'destination_installations');
+
+        return ['intent' => ['source_processes' => $source['members'], 'destination_processes' => $destination['members']],
+            'execution_secrets' => [...$source['execution_secrets'], ...$destination['execution_secrets']]];
     }
 
     public function publicInput(Operation $operation, int $callerNodeId): array

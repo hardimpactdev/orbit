@@ -94,5 +94,54 @@ class RuntimeMembers(ProcessLifecycleNative):
         self.assertTrue(json.loads(self.state.read_text())["units"][unit.name]["active"])
 
 
+class SharedInstallerParents(RuntimeMembers):
+    def run_shared(self, family, success=True):
+        filename = 'workflow-operation-instance-' + ('deploy-direct' if family == 'deploy' else 'transfer') + '.yaml'
+        workflow = yaml.safe_load((ROOT / 'workflows' / filename).read_text())
+        job = next(job for job in workflow['jobs'] if job['name'] == ('deploy' if family == 'deploy' else 'activate-runtime'))
+        job.pop('target', None)
+        job.pop('dependsOn', None)
+        marker = self.repo / 'parent-completed'
+        marker.unlink(missing_ok=True)
+        for step in job['steps']:
+            if step['task']['type'] == 'workflow':
+                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step['task']['workflowIdOrName'], 'operation-process-create')
+            else:
+                step.pop('target', None)
+                step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': step['name'], 'methodName': 'execute', 'inputs': {'run': 'touch ' + str(marker) if step['name'] in ('finish-production', 'verify-runtime') else 'true'}}
+        workflow['jobs'] = [job]
+        workflow['id'] = 'e4aba95a-13dd-4b45-bc5f-ad08d986eeba'
+        workflow['name'] = 'shared-parent-proof'
+        (self.repo / 'workflows/workflow-shared-parent-proof.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
+        members = [{**member, 'node_id': 9} for member in self.parent['intent']['members']]
+        copies = {'node_9_' + key: value for key, value in self.parent['execution_secrets'].items()}
+        intent = {'deployment': {'variant': 'production'}, 'process_members': members} if family == 'deploy' else {'source_processes': [], 'destination_processes': members}
+        inputs = {'operation_id': 17, 'node_id': 9, 'kind': 'instance.' + family, 'intent': intent, 'execution_secrets': copies}
+        reply = self.cli('workflow', 'run', 'shared-parent-proof', '--stdin', input=json.dumps(inputs), success=success)
+        run = json.JSONDecoder().raw_decode(reply.stdout.lstrip())[0]
+        self.assertEqual(run['status'], 'succeeded' if success else 'failed')
+        self.assertEqual(marker.exists(), success)
+
+    def test_deploy_and_transfer_install_native_children_before_parent_continuation(self):
+        self.add_member(7)
+        self.add_member(11, desired='stopped')
+        for family in ('deploy', 'transfer'):
+            with self.subTest(family=family):
+                self.run_shared(family)
+                state = json.loads(self.state.read_text())['units']
+                self.assertTrue(state['orbit-process-7-proof.service']['active'])
+                self.assertFalse(state['orbit-process-11-proof.service']['active'])
+
+    def test_failed_native_install_blocks_both_parent_continuations(self):
+        self.add_member(7)
+        for family in ('deploy', 'transfer'):
+            with self.subTest(family=family):
+                self.save_state(units={}, calls=[], failures=['start'])
+                self.run_shared(family, success=False)
+
+
+# Run each owning class's cases once, without inherited direct-kind cases.
 def load_tests(loader, tests, pattern):
-    return unittest.TestSuite(RuntimeMembers(name) for name in RuntimeMembers.__dict__ if name.startswith("test_"))
+    return unittest.TestSuite(cls(name) for cls in (RuntimeMembers, SharedInstallerParents)
+                              for name in cls.__dict__ if name.startswith('test_'))

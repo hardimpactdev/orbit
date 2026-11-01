@@ -3,9 +3,16 @@ import {
   processAccountContent,
   ProcessAccountHome,
 } from "./process-account.ts";
-import { installProcess } from "./process-installation.ts";
+import { installProcessMaterial as applyMaterial } from "./process-installation.ts";
 import type { SystemTransport } from "../node/system_command.ts";
 
+const installProcessMaterial = (
+  input: Parameters<typeof applyMaterial>[0],
+  material: { installation: Parameters<typeof applyMaterial>[1] },
+  signal: AbortSignal | undefined,
+  invoke: Parameters<typeof applyMaterial>[3],
+  account?: Parameters<typeof applyMaterial>[4],
+) => applyMaterial(input, material.installation, signal, invoke, account);
 const content =
   `[Unit]\nX-Orbit-Process-ID=7\n[Service]\nUser=orbit\nEnvironment=VITE_DEV_SERVER_CERT=${ProcessAccountHome}/.orbit/certificates/app-instance-1/current/cert.pem\nExecStart="/usr/bin/env" "VITE_DEV_SERVER_KEY=${ProcessAccountHome}/.orbit/certificates/app-instance-1/current/key.pem" "/usr/bin/true"\n`;
 const digest = async (value: string) =>
@@ -98,17 +105,14 @@ Deno.test("Process account lookup refuses absent, root, foreign, ambiguous or un
 Deno.test("Process installer checks the template hash before account discovery or effects", async () => {
   let effects = 0, lookups = 0;
   await assertRejects(() =>
-    installProcess(
+    installProcessMaterial(
       { ...base, content_hash: "b".repeat(64) },
       {
-        withPrivateMaterial: async (use) =>
-          await use({
-            installation: {
-              runtime: "systemd",
-              content,
-              environment: "# private environment",
-            },
-          }),
+        installation: {
+          runtime: "systemd",
+          content,
+          environment: "# private environment",
+        },
       },
       undefined,
       () => {
@@ -126,17 +130,14 @@ Deno.test("Process installer checks the template hash before account discovery o
 
 Deno.test("Process installer resolves private unit contents before staging and keeps environment bytes intact", async () => {
   const calls: Array<{ name: string; input: Record<string, unknown> }> = [];
-  const outcome = await installProcess(
+  const outcome = await installProcessMaterial(
     base,
     {
-      withPrivateMaterial: async (use) =>
-        await use({
-          installation: {
-            runtime: "systemd",
-            content,
-            environment: "SECRET=private-only\n",
-          },
-        }),
+      installation: {
+        runtime: "systemd",
+        content,
+        environment: "SECRET=private-only\n",
+      },
     },
     undefined,
     (name, input) => {
@@ -168,17 +169,17 @@ Deno.test("Process installer resolves private unit contents before staging and k
 Deno.test("Process account failure happens before any unit or retired-runtime effect", async () => {
   let effects = 0;
   await assertRejects(() =>
-    installProcess(
-      { ...base, retired: { runtime: "docker", name: "orbit-process-7-old" } },
+    installProcessMaterial(
       {
-        withPrivateMaterial: async (use) =>
-          await use({
-            installation: {
-              runtime: "systemd",
-              content,
-              environment: "# private",
-            },
-          }),
+        ...base,
+        retired: { runtime: "docker", name: "orbit-process-7-old" },
+      },
+      {
+        installation: {
+          runtime: "systemd",
+          content,
+          environment: "# private",
+        },
       },
       undefined,
       () => {

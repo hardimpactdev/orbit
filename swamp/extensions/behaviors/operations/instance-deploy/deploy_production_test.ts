@@ -107,15 +107,6 @@ async function fixture() {
       testing: null,
     },
     definitions_material: {
-      processes: {
-        14: {
-          installation: {
-            runtime: "systemd",
-            content: unit,
-            environment: "TOKEN=private-unit",
-          },
-        },
-      },
       schedules: { [schedule.id]: { command: scheduleCommand } },
     },
   };
@@ -255,7 +246,7 @@ async function fixture() {
       return Promise.resolve();
     },
   };
-  const execute = () => {
+  const execute = async () => {
     const trace = async (
       name: string,
       input: Record<string, unknown>,
@@ -286,7 +277,7 @@ async function fixture() {
     const source = localFixture((call) =>
       trace(methods[call.name] ?? call.name, call.input, call.mutates)
     );
-    return deployDirect({
+    const model = deployDirect({
       http: ports.http,
       now: ports.now,
       run: ports.run,
@@ -306,17 +297,6 @@ async function fixture() {
               input.mode !== "inspect",
             ),
         },
-        process: (name, input, _digest) =>
-          ports.invoke({
-            name,
-            input,
-            pin: "fixture",
-            mutates: !["process.check-release", "process.status"].includes(
-              name,
-            ),
-            sudo: true,
-            deadlineMs: 900000,
-          }),
         processControl: (name, input, _digest) =>
           ports.invoke({
             name,
@@ -349,7 +329,13 @@ async function fixture() {
             }
           >,
       },
-    }).methods.run.execute(args, ctx);
+    });
+    const prepared = await model.methods.prepareProduction.execute(
+      args,
+      ctx,
+    );
+    if (!("ready" in prepared)) return prepared;
+    return await model.methods.finishProduction.execute(args, ctx);
   };
   return {
     args,
@@ -386,10 +372,6 @@ Deno.test("production composes source environment app steps activation definitio
     "instance.inspect-environment-sync",
     "instance.write-environment",
     "instance.activate-release",
-    "process.check-release",
-    "process.stage-unit",
-    "process.activate-unit",
-    "process.status",
     "account.lookup",
     "schedule.install",
     "process.check-release",
@@ -644,8 +626,6 @@ Deno.test("production uncertain activation never asserts a selected release or e
 Deno.test("production Schedule-only aggregate accepts PHP empty Process map without guessing account group", async () => {
   const f = await fixture();
   f.input.runtime_definitions.processes = [];
-  f.material.definitions_material.processes =
-    [] as unknown as typeof f.material.definitions_material.processes;
   assertEquals(await f.execute(), { status: "succeeded" });
   assertEquals(
     f.calls.some((call) => call.name === "process.stage-unit"),
