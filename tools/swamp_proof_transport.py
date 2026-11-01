@@ -48,4 +48,3 @@ def pins(root=ROOT):
         if not name.startswith('@swamp/') or not record.get('version') or not re.fullmatch('[a-f0-9]{64}', record.get('checksum', '')):
             raise ProofError('An official extension pin is missing.')
     return {'version': version, 'sha256': sha256, 'bytes': int(size), 'extensions': extensions}
-
