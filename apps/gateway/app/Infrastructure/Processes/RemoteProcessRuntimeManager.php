@@ -76,20 +76,14 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     public function converge(#[SensitiveParameter] Process $process): void
     {
         $this->lease->run($process, function (Process $fresh): void {
+            if ($fresh->runtime !== ProcessRuntime::Systemd) {
+                throw new \LogicException('Docker installation belongs to the native Process workflow.');
+            }
             $target = $this->targets->forInstallation($fresh);
 
             $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
 
-            if ($fresh->isVpDev()) {
-                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->convergeAndActivateSystemd($fresh, $this->targets->forInstallation($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), $fresh->desired_state === DesiredProcessState::Running);
-
-                return;
-            }
-
-            match ($fresh->runtime) {
-                ProcessRuntime::Systemd => $this->convergeAndActivateSystemd($fresh, $target),
-                ProcessRuntime::Docker => $this->convergeDocker($fresh, $target),
-            };
+            $this->convergeAndActivateSystemd($fresh, $target);
         });
     }
 
@@ -162,11 +156,6 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         return $process->runtime === ProcessRuntime::Systemd
             ? LogReadLimit::journalInTimeOrder($output)
             : LogReadLimit::wholeLines($output);
-    }
-
-    public function dockerSpecHash(#[SensitiveParameter] Process $process): string
-    {
-        return $this->docker->specHash($process, $this->targets->forInspection($process));
     }
 
     private function startUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
@@ -255,17 +244,6 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                 message: "Process [{$process->name}] runtime step [remove-unit-backup] failed.",
             );
         }
-    }
-
-    private function convergeDocker(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->call($process, 'process.converge-container', [
-            'process_id' => $process->id,
-            'container' => $this->docker->containerName($process),
-            'desired' => $process->desired_state->value,
-            'spec' => $this->docker->specHash($process, $target),
-            ...$this->docker->containerInput($process, $target),
-        ], 'converge-container', 'process.docker_converge_failed');
     }
 
     private function assertReleaseAvailable(
@@ -402,13 +380,8 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             $code === 'process.name_collision' => ($docker ? "Docker container [{$artifact}]" : "Systemd unit [{$artifact}]").' is not owned by this process.',
             $code === 'process.not_found' => "Process [{$process->name}] has no native runtime artifact.",
             $code === 'process.candidate_invalid' && ! $docker => "Process [{$process->name}] systemd candidate validation failed.",
-            $code === 'process.candidate_invalid' => ($step === 'verify-container' ? 'Docker container' : 'Docker candidate')." [{$artifact}] does not match the desired process specification.",
-            $code === 'process.activation_failed' && $docker => "Docker process [{$process->name}] activation failed; the previous container was restored.",
             $code === 'process.activation_failed' && $change !== 'reload' => "Process [{$process->name}] systemd activation failed; the previous unit was restored.",
             in_array($code, ['process.start_failed', 'process.stop_failed'], true) && ($details['restored'] ?? false) === true => sprintf('Process [%s] failed to %s; %s.', $process->name, $code === 'process.start_failed' ? 'start' : 'stop', $restoration),
-            $code === 'process.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_rollback' => "Docker process [{$process->name}] has ambiguous rollback state.",
-            $code === 'process.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_candidate' => "Docker process [{$process->name}] has ambiguous candidate and rollback state.",
-            $code === 'process.recovery_required' && ($details['reason'] ?? null) === 'no_canonical' => "Docker process [{$process->name}] has no canonical runtime after recovery.",
             default => "Process [{$process->name}] runtime step [{$step}] failed.",
         };
     }

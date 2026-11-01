@@ -21,8 +21,8 @@ final readonly class DockerProcessRenderer
     }
 
     /**
-     * The container definition that `process.converge-container` creates, apart from its name and labels. The
-     * environment travels in the command's protected input, and the agent hands it to Docker in a root-only file.
+     * The container definition used by native installation, apart from its name and labels.
+     * Environment values use the execution copy and official SSH stdin, never argv.
      *
      * @return array{
      *     image: string,

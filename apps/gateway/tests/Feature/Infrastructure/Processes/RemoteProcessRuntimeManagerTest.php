@@ -274,71 +274,13 @@ it('records the activation before it reports a backup that could not be deleted'
         ->and($process->systemd_activation_pending)->toBeFalse();
 });
 
-it('converges a Docker process with its typed definition in one command', function (): void {
-    $process = runtime_manager_docker_process($this->instance, ['DB_PASSWORD' => 'secret-value', 'APP_NAME' => 'docs']);
-    $process->update(['desired_state' => 'running']);
-    $this->agents->answer('process.converge-container', []);
-
-    $this->manager->converge($process);
-
-    expect($this->agents->commands())->toBe(['process.converge-container'])
-        ->and($this->agents->calls[0]['input'])->toBe([
-            'process_id' => $process->id,
-            'container' => "orbit-process-{$process->id}-redis",
-            'desired' => 'running',
-            'spec' => $this->manager->dockerSpecHash($process),
-            'image' => 'redis:8-alpine',
-            'command' => ['redis-server'],
-            'restart' => 'unless-stopped',
-            'working_directory' => '/data',
-            'ports' => ['127.0.0.1:6380:6379/tcp'],
-            'mounts' => [['source' => 'redis-data', 'target' => '/data', 'read_only' => false]],
-            'environment' => ['APP_NAME' => 'docs', 'DB_PASSWORD' => 'secret-value'],
-        ]);
-});
-
-it('sends an empty Docker environment as an object', function (): void {
+it('leaves Docker installation to the native workflow before any agent call', function (): void {
     $process = runtime_manager_docker_process($this->instance);
-    $this->agents->answer('process.converge-container', []);
 
-    $this->manager->converge($process);
-
-    expect(json_encode($this->agents->calls[0]['input']['environment']))->toBe('{}');
+    expect(fn () => $this->manager->converge($process))
+        ->toThrow(LogicException::class, 'Docker installation belongs to the native Process workflow.');
+    expect($this->agents->commands())->toBe([]);
 });
-
-it('validates Docker rendering before any Node change', function (): void {
-    $process = runtime_manager_docker_process($this->instance);
-    $process->update(['runtime_config' => ['image' => 'bad image', 'command' => ['redis-server']]]);
-
-    expect(fn () => $this->manager->converge($process))->toThrow(InvalidArgumentException::class);
-    expect($this->agents->calls)->toBeEmpty();
-});
-
-it('maps Docker refusals to their codes and messages and redacts environment values', function (string $code, array $details, string $expectedCode, string $expectedMessage): void {
-    $process = runtime_manager_docker_process($this->instance, ['DB_PASSWORD' => 'secret-value']);
-    $name = "orbit-process-{$process->id}-redis";
-    $details = array_map(static fn (mixed $value): mixed => is_string($value) ? str_replace('{name}', $name, $value) : $value, $details);
-    $this->agents->refuse('process.converge-container', $code, [...$details, 'output' => ['exit_code' => 1, 'stdout' => 'secret-value', 'stderr' => 'failed with secret-value']]);
-
-    expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception) use ($details, $expectedCode, $expectedMessage, $name): void {
-        expect($exception->errorCode)->toBe($expectedCode)
-            ->and($exception->step)->toBe($details['step'])
-            ->and($exception->getMessage())->toBe(str_replace('{name}', $name, $expectedMessage))
-            ->and($exception->result?->stdout)->toBe('[REDACTED]')
-            ->and($exception->result?->stderr)->toBe('failed with [REDACTED]');
-    });
-})->with([
-    'replacement start' => ['process.start_failed', ['step' => 'start', 'restored' => true], 'process.start_failed', 'Process [redis] failed to start; the previous container was restored.'],
-    'desired start' => ['process.start_failed', ['step' => 'start', 'restored' => false], 'process.start_failed', 'Process [redis] runtime step [start] failed.'],
-    'activation' => ['process.activation_failed', ['step' => 'activate-container'], 'process.docker_activation_failed', 'Docker process [redis] activation failed; the previous container was restored.'],
-    'ambiguous rollback' => ['process.recovery_required', ['step' => 'inspect-rollback-container', 'reason' => 'ambiguous_rollback'], 'process.docker_recovery_required', 'Docker process [redis] has ambiguous rollback state.'],
-    'ambiguous candidate' => ['process.recovery_required', ['step' => 'inspect-rollback-container', 'reason' => 'ambiguous_candidate'], 'process.docker_recovery_required', 'Docker process [redis] has ambiguous candidate and rollback state.'],
-    'no canonical' => ['process.recovery_required', ['step' => 'inspect-container', 'reason' => 'no_canonical'], 'process.docker_recovery_required', 'Docker process [redis] has no canonical runtime after recovery.'],
-    'restore' => ['process.recovery_required', ['step' => 'restore-container', 'reason' => 'step_failed'], 'process.docker_recovery_required', 'Process [redis] runtime step [restore-container] failed.'],
-    'candidate' => ['process.candidate_invalid', ['step' => 'verify-candidate-container', 'artifact' => 'orbit-process-1-redis-candidate'], 'process.docker_candidate_invalid', 'Docker candidate [orbit-process-1-redis-candidate] does not match the desired process specification.'],
-    'collision' => ['process.name_collision', ['step' => 'inspect-container', 'artifact' => '{name}'], 'process.runtime_name_collision', 'Docker container [{name}] is not owned by this process.'],
-    'create' => ['process.converge_failed', ['step' => 'create-container'], 'process.docker_converge_failed', 'Process [redis] runtime step [create-container] failed.'],
-]);
 
 it('serializes runtime convergence for the same node and process', function (): void {
     $process = runtime_manager_docker_process($this->instance);
