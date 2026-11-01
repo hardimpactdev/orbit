@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design from ADR 0244: native Swamp schedules, nothing installed on the Node; DECISIONS R1-R3.
+  %% Target design: ADR 0244 one task system, native Swamp schedules; DECISIONS Schedules (Nick 2026-11-02), R2-R4.
   %% status: draft
+  %% command: schedule:run
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,23 +11,82 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: schedule:run<br/>{schedule: 7f3c…}
-  Note over GW: Admit a task from template<br/>trigger: operator · #5130
-  GW->>SW: Start run, full intent<br/>task-command-run · vault key name
-  GW-->>CLI: 202 Accepted<br/>task #5130
-  SW->>N: Check account, directory<br/>getent, test -d, @swamp/ssh
-  SW->>N: Verify the command hash<br/>stdin: vault.get(command key)
+  CLI->>GW: schedule:run 7f3c…<br/>Schedule UUID
+  %%> Command:
+  %%> - `orbit schedule:run 7f3c9a2e-41d0-4b8a-9c11-2f6e0d5b7a10`
+  %%> - syntax: `<uuid> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the UUID of the Schedule, as `schedule:list` shows it
+  %%> Not changed:
+  %%> - the Schedule's timing; the next calendar fire stays as it was
+  %%> - an enabled Schedule stays enabled, and a disabled one stays disabled
+  Note over GW: Admit a task from template<br/>task #5140 · trigger: operator
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, which runs Instance 42
+  %%> - Schedule 7f3c… is active, enabled or disabled
+  %%> - Instance 42 is still on Node 12
+  %%> Result:
+  %%> - task #5140 recorded from the Schedule's template, with trigger `operator`
+  %%> - the same intent a calendar fire gets: user, working directory, shell, timeout and command
+  GW->>SW: Start run, full intent<br/>task-command-run
+  %%> What it does:
+  %%> - starts one root run on serve (Node 209), the same workflow a calendar fire starts
+  %%> Inputs:
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the user, the working directory, the shell and the timeout
+  %%> - the command's vault key name, never the command (R3)
+  GW-->>CLI: 202 Accepted<br/>task #5140
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Check user and directory<br/>@swamp/ssh · getent, test -d
+  %%> What it does:
+  %%> - checks that the Schedule's user exists on Node 12
+  %%> - checks that the working directory exists, for example the Instance's application directory
+  %%> Why:
+  %%> - the command fails early with a clear error instead of half-running
   SW->>N: Run the command<br/>sudo -u user, timeout, stdin
-  alt exit 0 in budget
+  %%> How:
+  %%> - reads the command with `vault.get` and checks its hash against the recorded one
+  %%> - sends it to Node 12 on stdin, never in argv
+  %%> Runs as:
+  %%> - the Schedule's user, in its working directory, with its shell
+  %%> - production Instances resolve `current` at start, so a new release changes later runs
+  %%> Timeout:
+  %%> - the Schedule's timeout is the run's time budget
+  alt exit 0 in time
     N-->>SW: exit 0, output
-    SW-->>GW: Run succeeded<br/>terminal event, run reader
-    Note over GW: Close the task<br/>output in the Swamp step
+    %%> Returns:
+    %%> - the exit code; the output stays in the Swamp step
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>task succeeded · last run
+    %%> Result:
+    %%> - task #5140 succeeds
+    %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set
   else fails or times out
     N--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - the user or directory is missing, SSH fails, the command exits non-zero, or it runs past its timeout
     SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the task failed<br/>timer state unchanged
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the task failed<br/>Schedule state unchanged
+    %%> Result:
+    %%> - task #5140 fails; the Schedule's last run is marked as an error
+    %%> - the Schedule itself and its trigger stay as they were
+    %%> On the Node:
+    %%> - whatever the command changed before it failed stays; Orbit does not roll it back
+    %%> Retry:
+    %%> - run `schedule:run` again after fixing the cause; it is a new task
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5130
+    CLI->>GW: operation:show #5140
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
