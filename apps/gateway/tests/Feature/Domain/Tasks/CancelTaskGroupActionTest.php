@@ -6,6 +6,10 @@ use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
+use App\Domain\Tasks\AgentThreadObserver;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -13,11 +17,14 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskWorkspaceLeaseRecord;
+use Tests\Support\FakeAgentDriver;
 
 function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): Task
 {
@@ -149,3 +156,34 @@ it('deletes a handoff branch after native workspace cleanup only when a check pu
 
     expect(app(CancelTaskGroupAction::class)->execute($group)->status)->toBe(TaskGroupStatus::Cancelled);
 })->with([true, false]);
+
+it('refuses busy cancellation without changing actors or leaving a queued teardown', function (string $role): void {
+    $group = $this->group;
+    $task = $group->tasks()->sole();
+    $groupStatus = $role === 'reviewer' ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running;
+    $taskStatus = $role === 'reviewer' ? TaskStatus::Reviewing : TaskStatus::Running;
+    $group->update(['status' => $groupStatus]);
+    $task->update(['status' => $taskStatus]);
+    test_link_agent_threads($group);
+    $instance = $group->workspace()->firstOrFail();
+    $this->markAsGateway($instance->node);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $threadId = $role === 'reviewer' ? $group->reviewer_agent_thread_id : $task->fresh()->implementer_agent_thread_id;
+    $holder = app(TaskWorkspaceLease::class)->acquire($group, $role, 'thread:'.$threadId, $threadId, $task->id);
+    $holder->update(['dispatch_started_at' => now()]);
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Working, turnId: 'busy-turn');
+    $registry = new AgentDriverRegistry([$driver]);
+    app()->instance(AgentDriverRegistry::class, $registry);
+    app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/cancel")
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.workspace_waiting');
+
+    expect($group->fresh()->status)->toBe($groupStatus)
+        ->and($group->fresh()->taskable_id)->toBe($instance->id)
+        ->and($task->fresh()->status)->toBe($taskStatus)
+        ->and($holder->fresh()->status)->toBe('held')
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->count())->toBe(0);
+    $this->assertModelExists($instance);
+})->with(['reviewer', 'implementer']);

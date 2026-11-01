@@ -9,14 +9,23 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
+use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 
+beforeEach(function (): void {
+    bind_task_node_reachability();
+    $project = Project::query()->create(['name' => 'Lease', 'slug' => 'lease', 'repository_url' => 'https://example.test/lease.git']);
+    $node = Node::query()->create(['name' => 'lease-node', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '192.0.2.10']);
+    $workspace = test_ready_task_workspace($project, $node, ['checkout_path' => '/srv/lease', 'branch' => 'main'], ['orchestration' => 'external']);
+    $this->group = Task::topLevel()->findOrFail($workspace->task_workspace_owner_id);
+});
+
 it('serializes independent groups and preserves FIFO ownership across a process restart', function (): void {
-    tick_bind_defaults();
-    $first = tick_group();
+    $first = $this->group;
     $second = $first->replicate(['taskable_id', 'taskable_type', ...TaskAssistance::Fields]);
     $second->title = 'Another group sharing the Instance';
     $second->save();
@@ -183,9 +192,8 @@ function lease_concurrency_read($socket): array
 }
 
 it('refuses a real cancellation request while another process records group completion', function (): void {
-    tick_bind_defaults();
     app(TaskExtensionState::class)->enable();
-    $group = tick_group();
+    $group = $this->group;
     $directory = sys_get_temp_dir().'/orbit-action-contention-'.bin2hex(random_bytes(8));
     app()->instance(TaskExecutionLock::class, new NativeTaskExecutionLock($directory));
     [$parent, $child] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
