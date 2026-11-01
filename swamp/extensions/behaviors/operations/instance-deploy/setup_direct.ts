@@ -49,7 +49,7 @@ export function setupDirect(
 ) {
   return {
     type: "@nckrtl/instance-setup-direct",
-    version: "2026.10.30.1",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     methods: {
       run: {
