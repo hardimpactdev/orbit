@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { classifyProvisioningProfile, ProvisioningRefusal } from "./source_profile.ts";
+export { classifyProvisioningProfile, ProvisioningRefusal } from "./source_profile.ts";
 import type { NodeCall } from "../_lib/node-agent.ts";
 import { runLocalSource } from "./source_system.ts";
 import {
