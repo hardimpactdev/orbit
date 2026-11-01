@@ -21,8 +21,6 @@ inputs:
     - kind
   additionalProperties: false
 target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-labels:
-  node: '${{ string(inputs.node_id) }}'
 jobs:
   - name: admission
     steps:

@@ -30,7 +30,10 @@ export function roleRemovalJobs(afterJob: string) {
     jobs.push({
       name: name + "_job",
       dependsOn: [dep(previous)],
-      steps: [{ name, writes: true, ...placement, task: task(method, extra) }],
+      steps: [{ name, writes: true, ...placement, task: {
+        ...task(method, extra),
+        ...(placement.forEach ? { behaviorName: expr('"cert-remove-" + run.id + "-" + string(self._index)') } : {}),
+      } }],
     });
     return name + "_job";
   };

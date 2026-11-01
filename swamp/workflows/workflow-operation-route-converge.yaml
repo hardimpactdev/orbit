@@ -25,8 +25,6 @@ jobs:
   steps:
   - name: admit
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -43,8 +41,6 @@ jobs:
   steps:
   - name: certificate-request
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/certificates'
@@ -78,8 +74,6 @@ jobs:
   steps:
   - name: certificate-sign-http-input
     target: orbit-node-209
-    labels:
-      node: '209'
     guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
       == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
       run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
@@ -101,8 +95,6 @@ jobs:
           }}
   - name: certificate-sign-http
     target: orbit-node-209
-    labels:
-      node: '209'
     guard: ${{ data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.mode
       == "state_only" || data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" +
       run.id).attributes.intent.mode == "replace_pending" || data.latest("route-convergence-node-" + string(inputs.node_id),
@@ -111,78 +103,12 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: orbit-certificate-signing-http
+      behaviorName: '${{ "certificate-sign-" + run.id }}'
       methodName: execute
       inputs:
-        run: |
-          #!/bin/sh
-          set -eu
-          /usr/bin/python3 - <<'PYTHON'
-          import json
-          import os
-          import re
-          import ssl
-          import sys
-          import urllib.request
-
-
-          class NoRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-
-
-          try:
-              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
-              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
-              if not re.fullmatch(r"[1-9][0-9]*", operation):
-                  raise ValueError("Invalid operation")
-              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
-              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
-                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
-                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
-              else:
-                  raw = [record for batch in raw for record in batch]
-              if len(raw) > 256:
-                  raise ValueError("Too many requests")
-              requests = [record for record in raw if record.get("state") == "request"]
-              if not requests:
-                  print(json.dumps({"certificates": []}))
-                  sys.exit(0)
-              body = {"run_id": run_id, "requests": requests}
-              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
-                  body["restoring"] = True
-              payload = json.dumps(body).encode()
-              url = (
-                  "https://gateway.orbit/api/v1/direct-operations/"
-                  + operation
-                  + "/certificates/sign"
-              )
-              request = urllib.request.Request(
-                  url,
-                  data=payload,
-                  method="POST",
-                  headers={
-                      "Content-Type": "application/json",
-                      "Accept": "application/json",
-                  },
-              )
-              context = ssl.create_default_context(
-                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
-              )
-              opener = urllib.request.build_opener(
-                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
-              )
-              with opener.open(request, timeout=60) as response:
-                  raw_response = response.read(16_777_217)
-                  if len(raw_response) > 16_777_216 or response.status != 200:
-                      raise ValueError("Invalid signing response")
-              result = json.loads(raw_response)["data"]
-              print(json.dumps(result))
-          except Exception:
-              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
-              sys.exit(1)
-          PYTHON
+        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
         env:
+          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps["certificate-sign-http-input"].outputs.sign_script }}'
           ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
           ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
           ORBIT_CERTIFICATE_MODE: batch
@@ -193,8 +119,6 @@ jobs:
         type: succeeded
   - name: certificate-sign
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/certificates'
@@ -228,8 +152,6 @@ jobs:
   steps:
   - name: certificate-publish
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/certificates'
@@ -266,8 +188,6 @@ jobs:
   steps:
   - name: prepare-web-roots
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -303,8 +223,6 @@ jobs:
   steps:
   - name: production-urls
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -341,8 +259,6 @@ jobs:
   steps:
   - name: publish-sites
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -376,8 +292,6 @@ jobs:
   steps:
   - name: source-access
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -400,8 +314,6 @@ jobs:
     writes: true
   - name: production-runtime
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -441,8 +353,6 @@ jobs:
   steps:
   - name: php-pools
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -485,8 +395,6 @@ jobs:
   steps:
   - name: workload-firewall
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -531,8 +439,6 @@ jobs:
   steps:
   - name: workload-caddy
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -578,8 +484,6 @@ jobs:
   steps:
   - name: workload-lan
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -629,9 +533,6 @@ jobs:
   - name: verify-workloads
     target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
       + run.id).attributes.intent.router_node_id) }}
-    labels:
-      node: ${{ string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.router_node_id)
-        }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -682,9 +583,6 @@ jobs:
   - name: router-caddy
     target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
       + run.id).attributes.intent.router_node_id) }}
-    labels:
-      node: ${{ string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.router_node_id)
-        }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -736,8 +634,6 @@ jobs:
   steps:
   - name: synchronize-environment
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -793,8 +689,6 @@ jobs:
   steps:
   - name: dns
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -851,8 +745,6 @@ jobs:
   steps:
   - name: upstream-firewall
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -911,9 +803,6 @@ jobs:
   - name: verify-public
     target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
       + run.id).attributes.intent.ingress_node_id) }}
-    labels:
-      node: ${{ string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.ingress_node_id)
-        }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -973,8 +862,6 @@ jobs:
   steps:
   - name: public-state
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1033,8 +920,6 @@ jobs:
   steps:
   - name: public-caddy
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -1099,9 +984,6 @@ jobs:
   - name: public-firewall
     target: ${{ "orbit-node-" + string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-"
       + run.id).attributes.intent.ingress_node_id) }}
-    labels:
-      node: ${{ string(data.latest("route-convergence-node-" + string(inputs.node_id), "admission-" + run.id).attributes.intent.ingress_node_id)
-        }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1166,8 +1048,6 @@ jobs:
   steps:
   - name: rollback-state
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1231,8 +1111,6 @@ jobs:
   steps:
   - name: rollback-dns
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -1260,8 +1138,6 @@ jobs:
   steps:
   - name: rollback-caddy
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -1291,8 +1167,6 @@ jobs:
   steps:
   - name: rollback-upstream-firewall
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1324,8 +1198,6 @@ jobs:
   steps:
   - name: rollback-runtime
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1359,8 +1231,6 @@ jobs:
   steps:
   - name: rollback-php
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -1396,8 +1266,6 @@ jobs:
   steps:
   - name: rollback-urls
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1435,8 +1303,6 @@ jobs:
   steps:
   - name: rollback-certificates
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1478,8 +1344,6 @@ jobs:
   steps:
   - name: rollback-firewall
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1520,8 +1384,6 @@ jobs:
   steps:
   - name: rollback-lan
     target: ${{ "orbit-node-" + string(self.node) }}
-    labels:
-      node: ${{ string(self.node) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'
@@ -1564,8 +1426,6 @@ jobs:
   steps:
   - name: finish
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-convergence'

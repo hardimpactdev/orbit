@@ -5,7 +5,7 @@ import {
 import { routeMutationSteps } from "../routes/mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
-const placement = { target: "orbit-node-209", labels: { node: "209" } };
+const placement = { target: "orbit-node-209" };
 const completed = { type: "always" };
 const after = (
     name: string,

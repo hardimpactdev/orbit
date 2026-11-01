@@ -82,11 +82,12 @@ export function certificates(
   });
   return {
     type: "@nckrtl/certificates",
-    version: "2026.10.31.5",
+    version: "2026.11.01.1",
     resources: {
       signingInput: {
         schema: z.object({
           mode: z.string(),
+          sign_script: z.string(),
           requests_json: z.string(),
           leaf_json: z.string(),
         }),
@@ -138,6 +139,7 @@ export function certificates(
         ) => {
           const value = {
             mode: "single",
+            sign_script: await ctx.extensionFile("scripts/sign.py"),
             requests_json: JSON.stringify(args.request),
             leaf_json: JSON.stringify(args.leaf),
           };
@@ -163,6 +165,7 @@ export function certificates(
         ) => {
           const value = {
             mode: "batch",
+            sign_script: await ctx.extensionFile("scripts/sign.py"),
             requests_json: JSON.stringify(args.requests),
             leaf_json: "{}",
           };

@@ -30,8 +30,6 @@ jobs:
   steps:
   - name: probe
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

@@ -103,7 +103,13 @@ class GatewaySigningNativeTest(NativeTestCase):
                 ROOT / "models/@nckrtl/certificates/orbit-certificate-signing-http.yaml"
             ).read_text()
         )
-        script = model["globalArguments"]["run"]
+        script = (
+            "#!/bin/sh\nset -eu\n/usr/bin/python3 -B - <<'PYTHON'\n"
+            + (
+                ROOT / "extensions/behaviors/operations/certificates/scripts/sign.py"
+            ).read_text()
+            + "PYTHON\n"
+        )
         self.production_script = script
         self.script = script.replace(
             "https://gateway.orbit", f"https://127.0.0.1:{self.server.server_port}"

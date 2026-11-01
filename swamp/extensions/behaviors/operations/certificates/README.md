@@ -6,9 +6,11 @@ and root digest against the recorded intent and applies the existing RSA4096 CA,
 RSA2048 leaf and 397-day certificate policy. Only public leaf and root
 certificates return to Swamp.
 
-The placed `command/shell.execute` model `orbit-certificate-signing-http`
-contains the visible signing request script in its `globalArguments.run`. It
-makes one POST to `/api/v1/direct-operations/{operation}/certificates/sign` with
+The shipped `scripts/sign.py` owns the signing request. Public metadata resolves
+its `sign_script` path; placed `command/shell.execute` steps run it with Python
+`-B`, each under a run-specific behavior name. The shared command model contains
+only this command. Workflow inputs cannot choose the script or Gateway origin.
+The script makes one POST to `/api/v1/direct-operations/{operation}/certificates/sign` with
 `run_id` and public `requests`. Current leaves require no request. No key,
 token, private input callback, binding wait or retry is involved. The fixed
 Gateway origin and numeric Operation path cannot be selected by workflow input.

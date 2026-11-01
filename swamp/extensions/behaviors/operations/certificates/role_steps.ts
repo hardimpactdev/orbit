@@ -11,7 +11,7 @@ export function roleCertificateSteps(
     return [{
         name,
         target: "orbit-node-209",
-        labels: { node: "209" },
+
         ...(dependency
             ? {
                 dependsOn: [{

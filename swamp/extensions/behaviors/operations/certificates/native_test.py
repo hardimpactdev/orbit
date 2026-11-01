@@ -212,6 +212,17 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.secrets = (self.key.read_text(),)
+        signer = (
+            self.repo / "extensions/behaviors/operations/certificates/scripts/sign.py"
+        )
+        signer.write_text(
+            signer.read_text()
+            .replace("https://gateway.orbit", f"https://127.0.0.1:{server.server_port}")
+            .replace(
+                "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+                str(self.ca),
+            )
+        )
         for kind in ("converge", "remove"):
             production = yaml.safe_load(
                 (
@@ -220,24 +231,12 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
             )
             for step in production["jobs"][0]["steps"]:
                 self.assertEqual("orbit-node-209", step["target"])
-                self.assertEqual({"node": "209"}, step["labels"])
+                self.assertNotIn("labels", step)
                 step.pop("target", None)
                 step.pop("labels", None)
                 task = step["task"]
                 if task["behaviorType"] == "@swamp/ssh":
                     task["globalArgs"].update(sshBinary=str(fake), scpBinary=str(scp))
-                if task["behaviorType"] == "command/shell":
-                    task["inputs"]["run"] = (
-                        task["inputs"]["run"]
-                        .replace(
-                            "https://gateway.orbit",
-                            f"https://127.0.0.1:{server.server_port}",
-                        )
-                        .replace(
-                            "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
-                            str(self.ca),
-                        )
-                    )
             # Only disposable paths, placement and documented executable seams differ.
             raw = yaml.safe_dump(production, sort_keys=False).replace(
                 "/tmp/orbit-certificate-", str(self.fixture / "staging-")

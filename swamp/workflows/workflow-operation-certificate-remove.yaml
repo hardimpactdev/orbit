@@ -95,8 +95,6 @@ jobs:
   steps:
   - name: assets
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: true
     task:
       type: behavior
@@ -132,8 +130,6 @@ jobs:
         - -p
         - ${{ "/tmp/orbit-certificate-" + run.id }}
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: assets
       condition:
@@ -153,16 +149,12 @@ jobs:
         direction: to
         recursive: true
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: prepare-assets
       condition:
         type: succeeded
   - name: reload-withdrawal
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: true
     dependsOn:
     - step: copy-assets
@@ -199,8 +191,6 @@ jobs:
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/remove.py" }}
         sudo: true
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: reload-withdrawal
       condition:
@@ -224,8 +214,6 @@ jobs:
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/inspect.py" }}
         sudo: true
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: remove
       condition:
@@ -245,8 +233,6 @@ jobs:
         - -rf
         - ${{ "/tmp/orbit-certificate-" + run.id }}
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: inspect
       condition:

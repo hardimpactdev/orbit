@@ -1,0 +1,63 @@
+import json
+import os
+import re
+import ssl
+import sys
+import urllib.request
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+try:
+    operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
+    run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
+    if not re.fullmatch(r"[1-9][0-9]*", operation):
+        raise ValueError("Invalid operation")
+    raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
+    if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
+        leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
+        raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
+    else:
+        raw = [record for batch in raw for record in batch]
+    if len(raw) > 256:
+        raise ValueError("Too many requests")
+    requests = [record for record in raw if record.get("state") == "request"]
+    if not requests:
+        print(json.dumps({"certificates": []}))
+        sys.exit(0)
+    body = {"run_id": run_id, "requests": requests}
+    if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
+        body["restoring"] = True
+    payload = json.dumps(body).encode()
+    url = (
+        "https://gateway.orbit/api/v1/direct-operations/"
+        + operation
+        + "/certificates/sign"
+    )
+    request = urllib.request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    context = ssl.create_default_context(
+        cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+    )
+    opener = urllib.request.build_opener(
+        NoRedirect(), urllib.request.HTTPSHandler(context=context)
+    )
+    with opener.open(request, timeout=60) as response:
+        raw_response = response.read(16_777_217)
+        if len(raw_response) > 16_777_216 or response.status != 200:
+            raise ValueError("Invalid signing response")
+    result = json.loads(raw_response)["data"]
+    print(json.dumps(result))
+except (OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError):
+    print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
+    sys.exit(1)
