@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run) + 2 (DNS held).
+  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call), 2 (DNS held); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
   %% status: draft
+  %% command: instance:transfer
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,28 +11,163 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant S as Source Node<br/>app-dev over ssh
-  participant D as Destination<br/>app-dev over ssh
-  CLI->>GW: instance:transfer 42<br/>{node: 15, sqlite_source_path?}
-  Note over GW: Preflight, record intent<br/>Route, Process, Schedule plan
+  participant S as Node 12<br/>source · over ssh
+  participant D as Node 15<br/>destination · ssh
+  CLI->>GW: instance:transfer 42 15<br/>--sqlite-source-path=… --force
+  %%> Command:
+  %%> - `orbit instance:transfer 42 15 --sqlite-source-path=/fast/apps/acme/feature/database/database.sqlite --force`
+  %%> - syntax: `<instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--idempotency-key=KEY] [--json]`
+  %%> What it does:
+  %%> - moves development Instance 42 from Node 12 to Node 15; the Instance id and Project stay
+  %%> Confirmation:
+  %%> - without `--force`, the CLI asks for consent that names the source, destination and downtime; the default is No
+  %%> - without a terminal, or with `--json`, `--force` is required
+  %%> Options:
+  %%> - `--name`: another Instance name on Node 15
+  %%> - `--sqlite-source-path`: also copy this SQLite file; without it, no database file moves
+  Note over GW: Preflight, render .env<br/>Instance 42 · task #5133
+  %%> Requirements:
+  %%> - your Node has access grants to Node 12 and Node 15
+  %%> - both Nodes have the `app-dev` role and belong to active Clusters
+  %%> - Project 7 may be placed on Node 15, and the destination path is free
+  %%> - Instance 42 is an active development Instance with one active Route, and no removal runs
+  %%> Plans:
+  %%> - the Processes from Project 7's definitions for `development`, with Node 15's ports
+  %%> - the Route on Node 15, and the Schedules' new target
+  %%> Renders .env:
+  %%> - from the stored environment of Instance 42, with Node 15 values such as `APP_URL`
+  %%> Result:
+  %%> - Instance 42 marked transferring; task #5133 recorded with the full intent
+  GW->>SW: Pause Schedule triggers<br/>workflow trigger removal
+  %%> What it does:
+  %%> - removes the native Swamp schedule trigger of each Schedule of Instance 42
+  %%> - there is no Node work here; Schedules install nothing on Nodes
+  %%> Why:
+  %%> - no fire runs against Node 12 during the move
+  GW->>SW: Push .env to the vault<br/>vault: env-5133
+  %%> Why:
+  %%> - `.env` can hold secrets, which travel only through the vault
+  %%> Result:
+  %%> - the run reads it with `vault.get`; no step asks the Gateway for it
   GW->>SW: Start run, full intent<br/>operation-instance-transfer
-  GW-->>CLI: 202 Accepted<br/>operation #5133
-  SW->>S: Stop runtime, archive<br/>git + .env, SQLite if chosen
-  SW->>D: Copy, install the archive<br/>@swamp/ssh copy via 209, sha256
-  SW->>D: Start Processes, Schedules<br/>process/schedule.create shape
-  SW->>D: Make a CSR<br/>key stays on the destination
-  SW->>GW: Ask to sign the CSR<br/>certificate-sign primitive
-  Note over SW: Move the Route<br/>route-mutation-forward · DNS held
-  alt cutover ready
-    SW->>S: Retire source runtime<br/>remove Processes, Schedules
-    SW-->>GW: Run succeeded<br/>terminal event · transfer.result
-    Note over GW: Instance 42 on Node 15<br/>Route moved · task succeeded
+  %%> What it does:
+  %%> - starts one run of `operation-instance-transfer` on Swamp serve (Node 209)
+  %%> Inputs:
+  %%> - both Nodes' addresses and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - paths, Process plan, Route plan, SQLite path when chosen
+  %%> - secrets only as vault key names
+  GW-->>CLI: 202 Accepted<br/>task #5133
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>D: Check the destination<br/>@swamp/ssh · path, ports free
+  %%> What it does:
+  %%> - checks that the destination path is free and the planned ports are unused
+  %%> Why first:
+  %%> - Node 12 keeps running until Node 15 is known to be ready
+  SW->>S: Stop source Processes<br/>Instance 42 only
+  %%> What it does:
+  %%> - stops the Processes of Instance 42 on Node 12; downtime starts here
+  %%> Keeps:
+  %%> - the Process units, for a restore if the move fails
+  SW->>S: Archive the checkout<br/>git state, SQLite if chosen
+  %%> What it does:
+  %%> - packs the Git history, branch, origin, index, unstaged edits and untracked files
+  %%> - adds the SQLite file only when `--sqlite-source-path` was given
+  %%> Not included:
+  %%> - `.env`; the Gateway rendered a new one for Node 15
+  %%> Linked worktree:
+  %%> - becomes an independent checkout on Node 15; the common repository on Node 12 stays unchanged
+  SW->>D: Copy, extract archive<br/>via 209 scratch · sha256
+  %%> How:
+  %%> - copies the archive over `@swamp/ssh` through private scratch space on 209, and checks its hash
+  %%> What it does:
+  %%> - extracts it into the destination path, as Node 15's managed user
+  %%> Refuses:
+  %%> - paths or links that escape the checkout
+  %%> Cleanup:
+  %%> - removes the scratch archives on all three Nodes
+  SW->>D: Write .env<br/>vault.get env-5133
+  %%> What it does:
+  %%> - writes the rendered `.env` from the vault into the checkout, readable only by its owner
+  SW->>D: Run Project setup steps<br/>@swamp/ssh · own timeout each
+  %%> What it does:
+  %%> - runs the Project's setup steps, as in `instance:create`, so dependencies match Node 15
+  %%> Typical steps:
+  %%> - `composer install`, `vp install`, `php artisan migrate`
+  SW->>D: Make a CSR<br/>key stays on Node 15
+  %%> What it does:
+  %%> - creates a private key and a certificate signing request for the Route's domain
+  %%> Why:
+  %%> - the private key never leaves the Node that serves the Route
+  SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
+  %%> Why a call to the Gateway:
+  %%> - only the Gateway holds the Orbit CA key
+  %%> - this is the one call a step may make to the Gateway (decision 1)
+  GW-->>SW: signed certificate
+  %%> Returns:
+  %%> - the certificate for the CSR, scoped to task #5133
+  SW->>D: Publish the Route<br/>Caddy site, PHP pool, reload
+  %%> What it does:
+  %%> - installs the certificate, the Caddy site and the PHP pool on Node 15
+  %%> - reloads Caddy; no restart
+  %%> Cutover:
+  %%> - from here Node 15 serves Instance 42
+  Note over SW: DNS publication held<br/>open: Nick decides
+  %%> Open:
+  %%> - DNS publication for Routes is on hold (`native-dns-takeover-held`)
+  %%> - until Nick decides, the run changes no DNS record
+  SW->>D: Create, start Processes<br/>Project definitions · development
+  %%> What it does:
+  %%> - creates the Instance's Processes on Node 15 from Project 7's definitions for `development`, and starts them
+  %%> - Processes recorded as stopped stay stopped
+  SW->>D: Check the destination<br/>Vite listens, site answers
+  %%> What it does:
+  %%> - checks that the Processes run and the Route answers on Node 15
+  alt destination checks pass
+    SW->>S: Retire the source<br/>Processes, site, cert, checkout
+    %%> What it does:
+    %%> - removes the Process units, Caddy site, PHP pool and certificate of Instance 42 on Node 12, and reloads Caddy
+    %%> - deletes only the checkout whose identity the run captured
+    %%> If it fails:
+    %%> - Node 15 stays authoritative; the leftovers on Node 12 are reported for repair
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record Node 15<br/>Instance, Processes, Route
+    %%> Result:
+    %%> - Instance 42, its Processes and its Route are recorded on Node 15, in one change
+    %%> - task #5133 succeeds
+    GW->>SW: Publish Schedule triggers<br/>workflow.trigger.set · Node 15
+    %%> What it does:
+    %%> - sets each Schedule's trigger again, now with Node 15 as its target
+    %%> Result:
+    %%> - the Schedules have moved; their next fire runs on Node 15
   else a step fails before cutover
-    SW->>S: Restore source runtime<br/>route-mutation-restore
-    SW--xGW: Run failed<br/>failed_step, error_code
-    Note over GW: Instance stays on source<br/>destination discarded
+    SW->>S: Restore the source<br/>start Processes again
+    %%> What it does:
+    %%> - starts the Processes of Instance 42 on Node 12 again; the source is untouched otherwise
+    SW->>D: Discard the destination<br/>only the proven checkout
+    %%> What it does:
+    %%> - removes what the run created on Node 15, and only that
+    %%> If cleanup fails:
+    %%> - the leftovers stay visible as a failure; nothing unproven is deleted
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep Node 12, mark failed<br/>triggers back · rerun is safe
+    %%> Result:
+    %%> - Instance 42 stays on Node 12, active again; task #5133 fails
+    %%> - the Gateway sets the Schedule triggers again for Node 12
+    %%> Retry:
+    %%> - run the same command again; it is a new task
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5133
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
