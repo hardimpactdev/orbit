@@ -24,7 +24,6 @@ def run(argv, check=True):
         argv,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
         check=check,
     )
 

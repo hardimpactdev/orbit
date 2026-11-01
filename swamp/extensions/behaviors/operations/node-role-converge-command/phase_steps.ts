@@ -49,6 +49,7 @@ export function rolePhase(
             inputs: {
                 hosts: "name:target",
                 sudo: true,
+                timeoutSec: budget + 10,
                 argv,
                 ...(options.stdin ? { stdin: ex(options.stdin) } : {}),
             },

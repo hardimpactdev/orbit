@@ -55,9 +55,14 @@ add/relocate. Synchronous Node enrollment still reaches `WebSocketRoleBaseline`
 through `AddNodeRoleAction::executeDuringProvisioning`; its root must switch
 before that baseline and installer can be deleted.
 
-Database, Ingress and WebSocket already share account, observer, package,
-peer-DNS, CLI and terminal assembly in `root_steps.ts`. AppDev and AppProd are
-the next intended consumers of those duties after their canonical PHP,
+The retained converge Gateway DNS caller and standalone generic
+`node.role_remove` caller still use `node/gateway_role_system.ts`. The Nodes
+lane owns both callers. Lane21's add/relocate retirement does not retire them;
+their three remaining shape findings stay explicit draft gates.
+
+Database, Ingress, AppProd and WebSocket share account, observer, package,
+peer-DNS, CLI and terminal assembly in `root_steps.ts`. AppDev remains a
+future consumer of these duties after its canonical PHP,
 Composer and JavaScript prerequisites are ported. Metrics must consume its
 owning lane's native runtime contribution. These future consumers are not
 claimed as migrated here.
@@ -68,8 +73,9 @@ JavaScript runtime, order and publish Caddy, then apply the role firewall.
 The PHP build uses the recipe installer rather than generic APT PHP aliases.
 Composer refuses a foreign scope; JavaScript uses the existing Fleet recipe
 policy, including NodeSource and Corepack retirement. Native parity runs must
-measure the p95 before selecting the F8 run budget and queue timeout. This work
-does not activate AppProd until the complete contribution passes those checks.
+measure the p95 before accepting the F8 run budget and queue timeout. The draft
+source selects this contribution for supported AppProd plans; topology proof
+and live activation are not claimed.
 
 ## F13 topology proof
 

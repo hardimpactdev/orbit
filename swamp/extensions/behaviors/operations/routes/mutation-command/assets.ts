@@ -90,7 +90,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.11.01.3",
+    version: "2026.11.01.4",
     resources: {
         lan_changes: {
             schema: z.object({
@@ -333,12 +333,15 @@ export const behavior = {
                     z.string(),
                     z.object({ status: z.string() }).passthrough(),
                 ),
+                outcome_statuses: z.record(z.string(), z.array(z.string()))
+                    .optional(),
             }),
             execute: async (
                 args: {
                     stage: { routes: z.infer<typeof RouteObservation>[] };
                     mode: string;
                     required: Record<string, number>;
+                    outcome_statuses?: Record<string, string[]>;
                     outcomes: Record<
                         string,
                         {
@@ -352,6 +355,16 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 for (const [name, count] of Object.entries(args.required)) {
+                    if (args.outcome_statuses !== undefined) {
+                        const statuses = args.outcome_statuses[name];
+                        if (
+                            statuses?.length !== count ||
+                            statuses.some((status) => status !== "succeeded")
+                        ) {
+                            throw new Error("route.contribution_incomplete");
+                        }
+                        continue;
+                    }
                     for (let index = 0; index < count; index++) {
                         if (
                             args.outcomes[`${name}-${index}`]?.status !==

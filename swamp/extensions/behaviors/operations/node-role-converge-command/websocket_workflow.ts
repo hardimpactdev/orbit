@@ -130,6 +130,7 @@ export function websocketWorkflow() {
                 inputs: {
                     hosts: "name:target",
                     sudo: true,
+                    timeoutSec: budgets[name] + 10,
                     argv,
                     ...(name === "environment"
                         ? {

@@ -1,6 +1,6 @@
 type Fields = Record<string, unknown>;
 const expr = (source: string) => "${{ " + source + " }}";
-const placement = { target: "orbit-node-209" };
+const placement = { target: "orbit-node-209", queueTimeout: 30 };
 
 /** Publish only the duties captured by NativeNodeRolePublicationInput. */
 export function rolePublicationSteps(
@@ -154,7 +154,17 @@ export function rolePublicationSteps(
                 stage: { routes: [] },
                 mode,
                 required,
-                outcomes: expr("steps"),
+                outcomes: {},
+                outcome_statuses: Object.fromEntries(
+                    Object.keys(required).map((name) => [
+                        name,
+                        expr(
+                            `steps.filter(k,k.startsWith(${
+                                JSON.stringify(name + "-")
+                            })).map(k,steps[k].status)`,
+                        ),
+                    ]),
+                ),
             },
         },
     });

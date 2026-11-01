@@ -152,11 +152,67 @@ Deno.test("shared runtime workflows have unique steps,209 placement and a decisi
         for (const job of flow.jobs) {
             for (const step of job.steps) {
                 assertEquals(step.target, "orbit-node-209");
+                assertEquals(step.queueTimeout, 30);
                 assertEquals("labels" in step, false);
             }
         }
     }
     assertEquals(websocketWorkflow().jobs[0].steps.at(-1)!.name, "proven");
+});
+
+Deno.test("publication passes only named statuses and refuses incomplete fan-out", async () => {
+    const { publicationWorkflow } = await import("./publication_workflow.ts");
+    const inputs = (publicationWorkflow().jobs[0].steps.at(-1)!.task as Record<
+        string,
+        unknown
+    >).inputs;
+    assertEquals(JSON.stringify(inputs).includes("${{ steps }}"), false);
+    const { behavior: route } = await import(
+        "../routes/mutation-command/assets.ts"
+    );
+    const base = {
+        stage: { routes: [] },
+        mode: "forward",
+        required: { dns: 1 },
+        outcomes: {},
+    };
+    await route.methods.result.execute({
+        ...base,
+        outcome_statuses: { dns: ["succeeded"] },
+    }, ctx);
+    for (
+        const statuses of [[], ["failed"], ["cancelled"], ["skipped"], [
+            "succeeded",
+            "succeeded",
+        ]]
+    ) {
+        await assertRejects(
+            () =>
+                route.methods.result.execute({
+                    ...base,
+                    outcome_statuses: { dns: statuses },
+                }, ctx),
+            Error,
+            "route.contribution_incomplete",
+        );
+    }
+});
+
+Deno.test("SSH execution outlives the bounded prerequisite phase", async () => {
+    const { rolePhase } = await import("./phase_steps.ts");
+    const step = rolePhase(
+        "packages",
+        "phase_prerequisites",
+        {},
+        600,
+        "account",
+    );
+    const inputs = (step.task as Record<string, unknown>).inputs as Record<
+        string,
+        unknown
+    >;
+    assertEquals(inputs.timeoutSec, 610);
+    assertEquals((inputs.argv as string[])[1], "600");
 });
 
 Deno.test("prepared tool proof refuses another Node and missing packages", async () => {
