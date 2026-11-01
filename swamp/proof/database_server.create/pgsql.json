@@ -5,7 +5,7 @@
     "app-dev+database"
   ],
   "budget_seconds": 1800,
-  "queue_timeout_seconds": null,
+  "queue_timeout_seconds": 30,
   "prepare": [],
   "request": {
     "argv": [

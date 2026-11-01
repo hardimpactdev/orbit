@@ -4,8 +4,8 @@
   "topology": [
     "app-dev+database"
   ],
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": null,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
   "prepare": [
     {
       "argv": [
@@ -56,25 +56,25 @@
       "name": "validate-index",
       "job": "actions",
       "step": "action_11_valkey_index",
-      "budget_seconds": 1800
+      "budget_seconds": 120
     },
     {
       "name": "probe-acl-user",
       "job": "actions",
       "step": "action_12_valkey_user",
-      "budget_seconds": 1800
+      "budget_seconds": 120
     },
     {
       "name": "create-acl-user",
       "job": "actions",
       "step": "action_13_valkey_set_user",
-      "budget_seconds": 1800
+      "budget_seconds": 120
     },
     {
       "name": "save-acl",
       "job": "actions",
       "step": "action_14_valkey_save",
-      "budget_seconds": 1800
+      "budget_seconds": 120
     }
   ],
   "parity": {

@@ -4,7 +4,7 @@ These F13 fixtures prepare `database.create`, `database_server.create` and `data
 
 ## Readiness
 
-This PR prepares parity checks. It carries no topology receipt, successful native timing sample or measured F8 budget. The 1,800-second ceiling is the unmeasured-kind default, not a p95 claim. `queue_timeout_seconds: null` records each root workflow's absent explicit `queueTimeout`; native inheritance is currently 600 seconds. The owning port must measure the kind, set its explicit queue timeout and phase/run budgets, and update these files before claiming F8 readiness. Phase ceilings below are provisional observations, not additive legacy budgets. No `secrets` or `target_setup` fields use the retired pre-F13 format.
+This PR prepares parity checks. It carries no topology receipt or measured native p95. The fixture budgets below use current-execution-path public Operation timing and the existing shared F8 policy; they are not new phase measurements. No `secrets` or `target_setup` fields use the retired pre-F13 format.
 
 The database extra role and real Swamp Gateway installation must work in the proof topology before these fixtures can run. One-shot topology teardown owns all created servers, connections, volumes and marker files. Persistent topologies retain them until `down`. Destruction deliberately preserves its named volume; the parity check must not remove it to make cleanup look complete. Production Connection 47 and historical 6624 target-v2 remain outside these fixtures; the load owner retains their runtime custody.
 
@@ -29,3 +29,19 @@ Parity runs on the proof VM host with the staged worktree as cwd and reads only 
 Destroy's `before_request` and parity both run from the staged repository root, with repo-relative script paths and no fallback. After the normal server-create prepare call, it verifies the owned container/volume and writes a small run-specific marker into that disposable named volume. Parity checks the exact marker after normal destruction. It never writes Gateway or Swamp state. A missing marker fails before admission; no deletion or silent replacement repairs the evidence.
 
 Local checker tests inject wrong targets, native outcomes, changing transport request IDs, unsafe bindings, residual secrets, missing ownership, ACL mistakes, leftover containers and lost volume contents. They test the checker; they are not an F13 receipt. Run them with `python3 -I swamp/proof/database-lifecycle/parity_test.py`.
+
+## Budget binding
+
+These fixtures are stacked on #2404 at `aa7604ea772b629d074ad8587de36932defc49ae`, whose explicit workflow queue timeout is 30 seconds. Test that staged product source with the canonical #2314 runner (lane 25's branch until it reaches main). Every fixture records queue 30, strictly below its run budget. No workflow or shared Operations regression is changed here. #2404 and these drafts wait for D's receipts; no topology run is implied.
+
+The saved Gateway succeeded-list snapshot is from 2026-11-01 14:40:14Z. Samples belong to the current SSH execution paths below. The existing policy applies `max(60, ceil(longest_seconds * 1.5 / 60) * 60)`; no current-shape success in this snapshot uses 1800. Raw values are shown separately. This caller-visible snapshot is not complete 14-day native history, and zero selected successes does not prove no historical success. These are kind-wide budgets, not engine-specific or p95 measurements.
+
+| Kind | Current execution path | Successes | Longest seconds | Raw × 1.5 | Budget seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `database.create` | #2150/c0da681743 (#2208 extends accepted kind/vault pattern only, no ordinary-create effect change) | 2 | 77 | 115.5 | 120 |
+| `database_server.create` | #2106/03af844b07 | 0 | — | — | 1800 |
+| `database_server.destroy` | #2116/8102c7fc1f | 0 | — | — | 1800 |
+
+Earlier-shape Operations excluded: 1162.
+
+Each phase ceiling is capped at the kind budget. Those ceilings are not additive and are not measured phase budgets. Supplementary parity calls retain their bounded transport timeout. The source classification and raw values come from `evidence/database-queue-timeouts-current-shape-fixture-budgets.json` in the execution evidence directory; the same table is recorded in #2404.

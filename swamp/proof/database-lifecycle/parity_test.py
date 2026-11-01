@@ -292,6 +292,13 @@ class FixtureTests(unittest.TestCase):
                 self.assertEqual(fixture["kind"], path.parent.name)
                 self.assertEqual(fixture["topology"], ["app-dev+database"])
                 self.assertEqual(fixture["queue_timeout_seconds"], flow.get("queueTimeout"))
+                self.assertIs(type(fixture["budget_seconds"]), int)
+                self.assertIs(type(fixture["queue_timeout_seconds"]), int)
+                self.assertLess(0, fixture["queue_timeout_seconds"])
+                self.assertLess(fixture["queue_timeout_seconds"], fixture["budget_seconds"])
+                self.assertTrue(all(type(phase["budget_seconds"]) is int and
+                                    0 < phase["budget_seconds"] <= fixture["budget_seconds"]
+                                    for phase in fixture["phases"]))
                 self.assertEqual(fixture["request"]["operation"], "$.id")
                 self.assertFalse(set(fixture) & {"secrets", "target_setup"})
                 for call in [fixture["request"], *fixture.get("prepare", [])]:
