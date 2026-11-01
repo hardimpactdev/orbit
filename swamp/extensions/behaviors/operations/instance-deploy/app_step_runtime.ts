@@ -115,7 +115,7 @@ try:
    if not binary.exists():continue
    for path in [candidate,binary]:
     st=path.lstat()
-    if stat.S_ISLNK(st.st_mode) or st.st_uid!=uid or st.st_gid!=gid or st.st_mode&0o022:refuse('tool.vp_scope_conflict')
+    if stat.S_ISLNK(st.st_mode) or st.st_uid!=uid or st.st_gid!=gid or st.st_mode&0o002:refuse('tool.vp_scope_conflict')
    scopes.append(str(candidate))
    break
   if scopes:env.update(VP_HOME=scopes[0],PATH=scopes[0]+'/bin:'+env['PATH'])
@@ -131,10 +131,10 @@ try:
   if store not in ['/opt/orbit/vite-plus',owner.pw_dir+'/.vite-plus',owner.pw_dir+'/.local/share/vite-plus']:refuse('tool.vp_scope_conflict')
   for path in reversed([Path(store),*Path(store).parents]):
    st=path.lstat()
-   if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0,owner.pw_uid) or st.st_mode&0o022:refuse('tool.vp_scope_conflict')
+   if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0,owner.pw_uid) or st.st_mode&0o002 or (st.st_mode&0o020 and st.st_gid!=owner.pw_gid):refuse('tool.vp_scope_conflict')
   for path in [Path(store),Path(store)/'bin',Path(store)/'bin/vp']:
    st=path.lstat()
-   if st.st_uid!=owner.pw_uid or st.st_mode&0o022 or stat.S_ISLNK(st.st_mode):refuse('tool.vp_scope_conflict')
+   if st.st_uid!=owner.pw_uid or st.st_gid!=owner.pw_gid or st.st_mode&0o002 or stat.S_ISLNK(st.st_mode):refuse('tool.vp_scope_conflict')
   for version in ['vp_version','node_version','package_manager_version']:
    if not isinstance(vp[version],str) or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?',vp[version]):refuse()
   manager=vp['package_manager'];pin=vp['package_manager_hash']

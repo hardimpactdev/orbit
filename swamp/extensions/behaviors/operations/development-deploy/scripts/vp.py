@@ -15,7 +15,7 @@ def scope():
     store = found[0]
     for path in (store, store / "bin", store / "bin/vp"):
         info = path.lstat()
-        need(info.st_uid == ACCOUNT.pw_uid and info.st_gid == ACCOUNT.pw_gid and not info.st_mode & 0o022
+        need(info.st_uid == ACCOUNT.pw_uid and info.st_gid == ACCOUNT.pw_gid and not info.st_mode & 0o002
              and not path.is_symlink(), "tool.vp_scope_conflict")
     return store
 

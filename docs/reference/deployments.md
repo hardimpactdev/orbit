@@ -124,6 +124,8 @@ Swamp fetches the branch and checks out the commit over pinned official SSH as t
 
 Development commands are captured as named vault execution copies and delivered on SSH stdin. GitHub App reads use the existing numeric Operation token-mint endpoint with repository-scoped Contents read permission; the root key stays in the Gateway. Public origins outside GitHub need no credential. GitHub CLI source access is refused for this native path. Command output is suppressed so application secrets cannot enter native history.
 
+The managed Vite+ scope may be writable by its owner's primary group. Deployment still refuses a world-writable scope, foreign ownership, or a symlink in the scope or its binary path.
+
 Required steps must pass before Orbit records the commit as deployed. A failed best-effort step (`required: false`) is reported but does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
 
 ### Production deploy steps

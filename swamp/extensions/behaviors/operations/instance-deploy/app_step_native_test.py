@@ -5,7 +5,10 @@ The scratch container is the cleanup boundary; never run on an enrolled Node.
 import fcntl,hashlib,json,os,pwd,shlex,shutil,subprocess,time,unittest
 from pathlib import Path
 NODE='orbit-node-proof';APP='orbit-app-99009';HOME=Path('/home')/APP;RELEASE=HOME/'releases/proof-1'
-def run(*argv,**kwargs):return subprocess.run(argv,check=True,capture_output=True,text=True,timeout=20,cwd='/tmp',**kwargs).stdout.strip()
+def run(*argv,**kwargs):
+ result=subprocess.run(argv,check=False,capture_output=True,text=True,timeout=20,cwd='/tmp',**kwargs)
+ if result.returncode:raise AssertionError(result.stderr or result.stdout)
+ return result.stdout.strip()
 class AppSteps(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
@@ -76,6 +79,7 @@ print('probe-ok')
   scopes=[Path('/opt/orbit/vite-plus'),home/'.vite-plus',home/'.local/share/vite-plus']
   for scope in scopes:
    (scope/'bin').mkdir(parents=True);(scope/'bin/vp').write_text('#!/bin/sh\nexit 0\n');(scope/'bin/vp').chmod(0o755);run('chown','-R',NODE+':'+NODE,str(scope))
+   (scope/'bin').chmod(0o775)
   try:
    result=self.call('test "$VP_HOME" = /opt/orbit/vite-plus; vp; printf "vp-opt-ok\\n"',changes={'target':target})
    self.assertEqual(result['exit_code'],0,result);self.assertIn('vp-opt-ok',result['output_tail'])
@@ -97,6 +101,7 @@ except OSError:pass
 os.execve(args[6],args[6:],os.environ)
 """
   binary.write_text(fake);binary.chmod(0o755);run('chown','-R',NODE+':'+NODE,str(store))
+  (store/'bin').chmod(0o775)
   runtime={'store':str(store),'owner':NODE,'vp_version':'0.3.3','node_version':'24.22.0','package_manager':'npm','package_manager_version':'11.12.0','package_manager_hash':None}
   try:
    result=self.call('test "$VP_HOME" = '+str(store)+'; printf "pinned-vp-ok\\n"',changes={'phase':'before_activation','vp_environment':runtime})

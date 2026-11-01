@@ -255,6 +255,19 @@ packages:
         with self.assertRaises(namespace["Refused"]):
             namespace["action"]()
 
+    def test_vp_scope_accepts_the_managed_accounts_group_writable_bin(self):
+        store = self.repo / "vp-store"
+        (store / "bin").mkdir(parents=True)
+        (store / "bin/vp").write_text("#!/bin/sh\nexit 0\n")
+        (store / "bin/vp").chmod(0o755)
+        (store / "bin").chmod(0o775)
+        namespace = self.definitions("vp")
+        namespace["Path"] = lambda value: store if str(value) == "/opt/orbit/vite-plus" else Path(value)
+        self.assertEqual(namespace["scope"](), store)
+        (store / "bin").chmod(0o777)
+        with self.assertRaises(namespace["Refused"]):
+            namespace["scope"]()
+
     def test_cancellation_forwards_to_existing_runtime_and_reaps_escaped_children(self):
         import shlex
         child = "import os,signal,time;from pathlib import Path;os.setsid();signal.signal(signal.SIGTERM,signal.SIG_IGN);Path('cancel.pid').write_text(str(os.getpid()));time.sleep(30)"
