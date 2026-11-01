@@ -1,5 +1,6 @@
 id: 9b7c8d6f-2e2a-4a8a-b0bb-bb626fe1008b
 name: operation-database-destroy-owned
+queueTimeout: 30
 description: Remove an admitted owned set through independent native SQL and SQLite children from209.
 writes: true
 vaults: [orbit-control-inputs]

@@ -1,5 +1,6 @@
 id: b33533ee-6cf6-5929-860d-6455ce15fc04
 name: operation-database-sqlite-seed
+queueTimeout: 30
 description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
 writes: true
 vaults: []

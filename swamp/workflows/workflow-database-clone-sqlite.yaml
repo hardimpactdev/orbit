@@ -1,5 +1,6 @@
 id: e30d6747-70ce-41e0-b82b-e5d438f1cfde
 name: database-clone-sqlite
+queueTimeout: 30
 description: One admitted database clone through placed native actions and official SSH from Node 209.
 writes: true
 vaults:
