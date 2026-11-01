@@ -153,7 +153,9 @@ A step cut short by the list budget, or with no time left to start, ends the Ope
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 
-The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`. Orbit retains a bounded stderr tail internally, without including command output in the public error. Fix or destroy the step, then run `instance:destroy` again.
+The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`.
+
+A failed native run exposes a bounded, redacted stderr tail or native step error in the Operation’s `error.detail`, with its `failed_step`. Known target environment secrets and credential-shaped values are redacted before the 4 KiB tail is taken and again afterward. Stdout is never failure evidence. Fix or destroy the step, then run `instance:destroy` again.
 
 ## Bootstrap the Orbit repository
 

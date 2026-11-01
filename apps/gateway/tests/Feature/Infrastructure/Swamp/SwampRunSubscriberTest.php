@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Operations\OperationData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
@@ -717,4 +718,131 @@ it('allows explicit recovery after a queued terminal history read fails', functi
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
     Bus::assertDispatched(ProjectSwampTerminal::class, 2);
     expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('projects live step events without reading history and ignores replayed progress', function (): void {
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $history = new FakeRoutePublicationSocket;
+    $history->onConnect = static function (): void {
+        throw new RuntimeException('History must not be read for progress.');
+    };
+    app()->instance(WebSocketClient::class, $history);
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $started = ['type' => 'event', 'id' => $request['id'], 'event' => ['seq' => 5, 'kind' => 'step_started', 'jobId' => 'prepare', 'stepId' => 'create-mint', 'startedAt' => '2026-11-01T10:00:00Z']];
+    $socket->push(nativeSubscriberAttached($request), $started);
+
+    $subscriber->pass();
+
+    $current = $operation->fresh();
+    expect($current->current_step)->toBe('create-mint');
+    expect(OperationData::fromModel($current)->toArray()['current_step_started_at'])->toBe('2026-11-01T10:00:00Z');
+    expect($history->sent)->toBeEmpty();
+    $sequence = $current->sequence;
+    $socket->push($started);
+    $subscriber->pass();
+    expect($operation->fresh()->sequence)->toBe($sequence);
+});
+
+it('retains redacted step failure events while terminal history is unavailable', function (): void {
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $socket->push(nativeSubscriberAttached($request), ['type' => 'event', 'id' => $request['id'], 'event' => [
+        'seq' => 6, 'kind' => 'step_failed', 'jobId' => 'prepare', 'stepId' => 'create-mint', 'error' => "password=private-event-password\nCannot mint credential.",
+    ]]);
+
+    $subscriber->pass();
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($operation->fresh()->failed_step)->toBe('create-mint');
+    expect(OperationData::fromModel($operation->fresh())->toArray()['error']['detail'])->toBe("password=[REDACTED]\nCannot mint credential.");
+    expect(json_encode($operation->fresh()->state))->not->toContain('private-event-password');
+});
+
+it('does not publish an allowed failure as the Operations causal step error', function (): void {
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $socket->push(nativeSubscriberAttached($request), ['type' => 'event', 'id' => $request['id'], 'event' => [
+        'seq' => 6, 'kind' => 'step_failed', 'jobId' => 'prepare', 'stepId' => 'optional', 'allowedFailure' => true, 'error' => 'Optional failure.',
+    ]]);
+
+    $subscriber->pass();
+
+    expect($operation->fresh()->failed_step)->toBeNull();
+    expect(OperationData::fromModel($operation->fresh())->toArray()['error'])->toBeNull();
+});
+
+it('keeps separate progress for simultaneous forEach iterations of one step', function (): void {
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $frame = static fn (int $seq, string $kind, int $index): array => ['type' => 'event', 'id' => $request['id'], 'event' => [
+        'seq' => $seq, 'kind' => $kind, 'jobId' => 'parallel', 'stepId' => 'inspect', 'forEachIndex' => $index,
+    ]];
+    $socket->push(nativeSubscriberAttached($request), $frame(2, 'step_started', 0), $frame(3, 'step_started', 1), $frame(4, 'step_completed', 0));
+
+    $subscriber->pass();
+
+    expect($operation->fresh()->current_step)->toBe('inspect')
+        ->and($operation->fresh()->state['native_progress']['active'])->toHaveCount(1);
+});
+
+it('keeps observing live steps after another root queues terminal history', function (): void {
+    Bus::fake([ProjectSwampTerminal::class]);
+    $completed = nativeSubscriberOperation();
+    $running = nativeSubscriberOperation('b075eb23-7ac4-4487-80d1-57a038a92676');
+    $socket = new FakeSwampEventSocket;
+    $history = new FakeRoutePublicationSocket;
+    $history->onConnect = static function (): void {
+        throw new RuntimeException('History must run outside the observer.');
+    };
+    app()->instance(WebSocketClient::class, $history);
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    [$terminal, $live] = $socket->sent;
+    $socket->push(nativeSubscriberAttached($terminal), nativeSubscriberFrame($terminal, $completed),
+        nativeSubscriberAttached($live), ['type' => 'event', 'id' => $live['id'], 'event' => [
+            'seq' => 2, 'kind' => 'step_started', 'jobId' => 'prepare', 'stepId' => 'validate',
+        ]]);
+
+    $subscriber->pass();
+
+    Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $completed->id
+        && $job->connection === 'gateway' && $job->queue === 'operations');
+    $public = OperationData::fromModel($running->fresh())->toArray();
+    expect($public['current_step'])->toBe('validate');
+    expect($public['current_step_started_at'])->toBeNull();
+    expect($public['current_step_observed_at'])->toBeString();
+    expect($history->sent)->toBeEmpty();
+});
+
+it('retains other active steps when one parallel step completes and ignores a foreign child', function (): void {
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $frame = static fn (int $seq, string $kind, string $step, array $extra = []): array => [
+        'type' => 'event', 'id' => $request['id'], 'event' => [
+            'seq' => $seq, 'kind' => $kind, 'jobId' => 'parallel', 'stepId' => $step, ...$extra,
+        ],
+    ];
+    $socket->push(nativeSubscriberAttached($request), $frame(2, 'step_started', 'left'),
+        $frame(3, 'step_started', 'right'), $frame(4, 'step_completed', 'right'),
+        $frame(5, 'step_started', 'foreign', ['parentRunId' => 'c075eb23-7ac4-4487-80d1-57a038a92676']));
+    $subscriber->pass();
+
+    expect($operation->fresh()->current_step)->toBe('left');
+    expect($operation->fresh()->state['native_progress']['active'])->toHaveCount(1);
+    expect($operation->fresh()->state['native_progress']['seq'])->toBe(4);
 });

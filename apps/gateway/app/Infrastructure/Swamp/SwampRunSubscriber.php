@@ -256,6 +256,11 @@ final class SwampRunSubscriber
         }
         $event = $message['event'] ?? null;
         $run = is_array($event) ? ($event['run'] ?? null) : null;
+        if ($type === 'event' && $entry['attached'] && is_array($event) && is_int($event['seq'] ?? null) && $event['seq'] > 0
+            && (! isset($event['parentRunId']) || $event['parentRunId'] === $entry['run'])) {
+            app(NativeRunProgress::class)->apply($operationId, $entry['run'], $event);
+        }
+
         if ($type !== 'event' || ! $entry['attached'] || ! is_array($event) || isset($event['parentRunId'])
             || ! is_int($event['seq'] ?? null) || $event['seq'] < 1
             || ! in_array($event['kind'] ?? null, ['completed', 'cancelled'], true) || ! is_array($run)

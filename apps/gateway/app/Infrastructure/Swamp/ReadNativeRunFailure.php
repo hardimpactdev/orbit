@@ -15,7 +15,8 @@ final readonly class ReadNativeRunFailure
 {
     public function __construct(private WebSocketClient $socket) {}
 
-    public function status(Operation $operation, string $workflow, string $runId): ?OperationStatus
+    /** @return array{status:OperationStatus,failure:array{failed_step:string,detail:string,stderr_recorded:bool}|null,finished_at:?string}|null */
+    public function read(Operation $operation, string $workflow, string $runId): ?array
     {
         $token = config('swamp.read_token');
         $address = config('swamp.address');
@@ -44,11 +45,14 @@ final readonly class ReadNativeRunFailure
                         return null;
                     }
 
-                    return match ($run['status'] ?? null) {
+                    $status = match ($run['status'] ?? null) {
                         'failed' => OperationStatus::Failed,
                         'interrupted' => OperationStatus::Interrupted,
                         default => null,
                     };
+
+                    return $status === null ? null : ['status' => $status, 'failure' => app(NativeStepFailure::class)->fromRun($run, $operation),
+                        'finished_at' => NativeRunTimestamp::parse($run['completedAt'] ?? null)?->toIso8601String()];
                 }
             }
         } catch (Throwable) {
