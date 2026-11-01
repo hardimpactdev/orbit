@@ -27,8 +27,11 @@ return ['task_vm.hub_converge' => [
 ], 'task_vm.provision' => [
     'workflow' => 'operation-task-vm-provision',
     'projection' => TaskVmProvisionProjection::class,
-    'private_material' => ['upcloud_token' => 'upcloud.api', 'installation' => 'task_vm.installation', 'configuration' => 'node.vpn_configuration', 'first_visit' => 'task_vm.first_visit', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'secret_hash' => 'node.agent_secret_hash', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
-    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'provision', 'step' => 'result'],
+    'private_material' => [],
+    'secret_outputs' => [],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
 ], 'task_vm.enroll' => [
     'workflow' => 'operation-task-vm-enroll',
     'projection' => TaskVmEnrollmentProjection::class,

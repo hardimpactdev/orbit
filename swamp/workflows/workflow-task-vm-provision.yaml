@@ -1,0 +1,127 @@
+id: 33e944fe-e0a1-4e6a-a19d-69103536273b
+name: task-vm-provision
+description: Provision one admitted Task VM with provider commands and209 official SSH; no guest Swamp worker.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.provision
+      - tasks.provision
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: provision
+  target: orbit-node-209
+  steps:
+  - name: eligible
+    target: orbit-node-209
+    task:
+      type: assert
+      expr: inputs.intent.eligible == true && inputs.intent.provider == "incus"
+      message: Native provision currently requires an eligible Incus VM; UpCloud is unavailable
+  - name: incus
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-incus
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+    dependsOn:
+    - step: eligible
+      condition:
+        type: succeeded
+  - name: incus-first-visit
+    target: orbit-node-209
+    dependsOn:
+    - step: incus
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-incus-first-visit
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent }}
+  - name: guest
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment-input'
+      behaviorName: ${{ "vm-enrollment-input-"+run.id }}
+      methodName: guest
+      inputs:
+        intent: ${{ inputs.intent }}
+        provider: ${{ steps.incus.outputs.provider }}
+        public_key: ${{ steps["incus-first-visit"].outputs["guest-key"].stdout }}
+    dependsOn:
+    - step: incus-first-visit
+      condition:
+        type: succeeded
+  - name: enrollment
+    target: orbit-node-209
+    dependsOn:
+    - step: guest
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-enrollment
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        guest: ${{ steps.guest.outputs }}
+        provider: ${{ steps.incus.outputs.provider }}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: enrollment
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment-input'
+      behaviorName: ${{ "vm-enrollment-result-"+run.id }}
+      methodName: forward
+      inputs:
+        receipt: ${{ steps.enrollment.outputs.result }}

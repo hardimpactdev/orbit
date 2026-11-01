@@ -109,6 +109,14 @@ export const behavior = {
     type: "@nckrtl/node-bootstrap-command",
     version: "2026.10.31.1",
     resources: {
+        observer_identity: {
+            schema: z.object({
+                observer_ready: z.literal(true),
+                observer_digest: Sha,
+            }).strict(),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
         observation: {
             schema: PublicObservation,
@@ -117,6 +125,40 @@ export const behavior = {
         },
     },
     methods: {
+        observer_identity: {
+            description:
+                "Read the fixed observer identity action without credential input",
+            arguments: z.object({}).strict(),
+            execute: async (_args: Record<string, never>, ctx: Context) => {
+                const result = Assets.parse({
+                    script_body: await Deno.readTextFile(
+                        ctx.extensionFile(
+                            "scripts/bootstrap_observer_identity.py",
+                        ),
+                    ),
+                });
+                await ctx.writeResource("assets", "assets", result);
+                return result;
+            },
+        },
+        observer_identity_result: {
+            description:
+                "Read the public one-way observer digest from its action",
+            arguments: z.object({ stdout: z.string() }).strict(),
+            execute: async (args: { stdout: string }, ctx: Context) => {
+                const result = z.object({
+                    observer_ready: z.literal(true),
+                    observer_digest: Sha,
+                }).strict().parse(JSON.parse(args.stdout));
+                await ctx.writeResource(
+                    "observer_identity",
+                    "observer_identity",
+                    result,
+                );
+                return result;
+            },
+        },
+
         observer: {
             description: "Read the canonical pinned observer delivery action",
             arguments: Artifact,

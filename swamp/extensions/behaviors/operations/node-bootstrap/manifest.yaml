@@ -15,3 +15,4 @@ additionalFiles:
   - scripts/bootstrap_sudo.py
   - scripts/bootstrap_observer.py
   - scripts/bootstrap_verify.py
+  - scripts/bootstrap_observer_identity.py

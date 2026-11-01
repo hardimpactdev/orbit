@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Actions\Nodes\RecordNodeSshHostKeyAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateBindings;
@@ -12,6 +13,7 @@ use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Ssh\HostKey;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -99,8 +101,19 @@ final readonly class TaskVmEnrollmentProjection implements DirectOperationProjec
         $runtime = ValidatedData::object($intent['runtime']);
         $process = ValidatedData::object($runtime['process']);
         $node = ValidatedData::object($result['node'] ?? []);
+        if (($result['ready'] ?? null) !== true || ! is_string($node['observer_digest'] ?? null)
+            || preg_match('/\A[a-f0-9]{64}\z/D', $node['observer_digest']) !== 1) {
+            throw new ResourceOperationException('operation.invalid_result', 'Enrollment requires its complete runtime and observer result.', 422);
+        }
+        $guest = Node::query()->findOrFail($nodeId);
+        app(RecordNodeSshHostKeyAction::class)->execute($guest, (string) $vm->wireguard_ip, new HostKey(
+            ValidatedData::string($node['ssh_host_key_type'] ?? null),
+            ValidatedData::string($node['ssh_host_key'] ?? null),
+            ValidatedData::string($node['ssh_host_fingerprint'] ?? null),
+        ));
         Node::query()->findOrFail($nodeId)->update([
-            ...Arr::only($node, ['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint', 'wireguard_public_key', 'architecture']),
+            'agent_secret_hash' => $node['observer_digest'],
+            ...Arr::only($node, ['wireguard_public_key', 'architecture']),
             ...isset($node['address']) ? ['public_ssh_host' => $node['address']] : [],
             'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
         ]);
