@@ -11,7 +11,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
-/** Registry state stays here; confirmation waits belong to Swamp. */
+/** Immutable inputs and public terminal projection; no registry re-read or family callback. */
 final readonly class DirectWebSocketProjection implements DirectOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
@@ -20,7 +20,8 @@ final readonly class DirectWebSocketProjection implements DirectOperationProject
     {
         $this->assertKind($operation);
 
-        return Arr::only($operation->input ?? [], ['registry_operation_id', 'epoch', 'revision']);
+        return ['intent' => ValidatedData::object($operation->input['native_registry']),
+            'execution_secrets' => ValidatedData::object($operation->input['execution_secrets'])];
     }
 
     public function apply(Operation $operation, array $data): Operation

@@ -27,7 +27,7 @@ beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture.shared']);
     $this->operation = Operation::query()->create(['kind' => 'websocket.sync', 'target_type' => 'websocket_sync', 'target_id' => $registry->revision,
         'node_id' => $this->gateway->id, 'status' => 'queued', 'sequence' => 1,
-        'input' => ['registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision, 'password' => 'private-sentinel'],
+        'input' => ['registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision, 'password' => 'private-sentinel', 'native_registry' => ['start_tag' => $registry->id, 'registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision, 'change' => 'sync', 'app_id' => null, 'credential_generation' => null, 'runtimes' => [], 'missing_node_ids' => []], 'execution_secrets' => []],
         'state' => ['swamp_run_id' => $this->run]]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
@@ -62,9 +62,9 @@ it('records a native failure without a second registry error allowlist', functio
 it('records native completion after the registry history row is removed', function (): void {
     $this->registry->delete();
 
-    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
-        'registry_operation_id' => $this->registry->id, 'epoch' => $this->registry->epoch, 'revision' => $this->registry->revision,
-    ])->assertDontSee('private-sentinel');
+    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent.registry_operation_id', $this->registry->id)
+        ->assertJsonPath('data.input.intent.epoch', $this->registry->epoch)
+        ->assertJsonPath('data.input.intent.revision', $this->registry->revision)->assertDontSee('private-sentinel');
     $this->postJson($this->path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded');
     $sequence = $this->operation->fresh()->sequence;
     $this->postJson($this->path.'/result', $this->body)->assertOk();
@@ -78,9 +78,9 @@ it('selects direct registry kinds by default and binds root starts before exposi
     $this->operation->update(['state' => []]);
     $this->getJson($this->path.'?run_id='.$this->run)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
     app(StartSwampRun::class)->start($this->operation);
-    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
-        'registry_operation_id' => $this->registry->id, 'epoch' => $this->registry->epoch, 'revision' => $this->registry->revision,
-    ])->assertDontSee('private-sentinel');
+    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent.registry_operation_id', $this->registry->id)
+        ->assertJsonPath('data.input.intent.epoch', $this->registry->epoch)
+        ->assertJsonPath('data.input.intent.revision', $this->registry->revision)->assertDontSee('private-sentinel');
     Http::assertNothingSent();
 });
 
@@ -131,9 +131,9 @@ it('starts app creation directly and exposes only recorded confirmation input', 
     $path = '/api/v1/direct-operations/'.$operation->id;
     $secret = WebSocketApp::query()->where('name', 'direct-disposable')->sole()->secret;
 
-    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
-        'registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
-    ])->assertDontSee($secret);
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent.registry_operation_id', $registry->id)
+        ->assertJsonPath('data.input.intent.epoch', $registry->epoch)
+        ->assertJsonPath('data.input.intent.revision', $registry->revision)->assertDontSee($secret);
     WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-create',
         'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
     $this->postJson($path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded')->assertDontSee($secret);
@@ -212,9 +212,9 @@ it('confirms app destruction directly without repeating or exposing the saved re
     expect($operation->state['swamp_run_id'])->toBe($this->run)->and($operation->lock_key)->toBeNull()->and($operation->attempts)->toBe(0);
     $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
-        'registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
-    ])->assertDontSee($secret);
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent.registry_operation_id', $registry->id)
+        ->assertJsonPath('data.input.intent.epoch', $registry->epoch)
+        ->assertJsonPath('data.input.intent.revision', $registry->revision)->assertDontSee($secret);
     WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-destroy',
         'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
     $this->postJson($path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded')->assertDontSee($secret);
@@ -236,9 +236,9 @@ it('confirms rotation directly without transferring or rotating credentials twic
     $rotated = $app->secret;
     $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
-        'registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
-    ])->assertDontSee($secret)->assertDontSee($rotated);
+    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.intent.registry_operation_id', $registry->id)
+        ->assertJsonPath('data.input.intent.epoch', $registry->epoch)
+        ->assertJsonPath('data.input.intent.revision', $registry->revision)->assertDontSee($secret)->assertDontSee($rotated);
     WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-rotate',
         'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
     $this->postJson($path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded')->assertDontSee($rotated);

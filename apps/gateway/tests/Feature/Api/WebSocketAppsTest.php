@@ -56,7 +56,7 @@ describe('websocket:app:create', function (): void {
 
         $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
             ->assertStatus(202)
-            ->assertJsonPath('data.status', 'queued');
+            ->assertJsonPath('data.status', 'running');
 
         Sleep::assertNeverSlept();
     });
@@ -87,12 +87,12 @@ describe('websocket:app:create', function (): void {
         expect(WebSocketApp::query()->pluck('name')->all())->toBe(['hauzer']);
     });
 
-    it('keeps the created app queued while runtime reports are pending', function (): void {
+    it('keeps the created app running until native terminal confirmation', function (): void {
         websocket_apps_activate_role($this->caller);
 
         $response = $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
             ->assertStatus(202)
-            ->assertJsonPath('data.status', 'queued');
+            ->assertJsonPath('data.status', 'running');
 
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
         expect($response->getContent())->not->toContain($app->secret);
@@ -156,14 +156,14 @@ describe('websocket:app:destroy', function (): void {
         expect(WebSocketApp::query()->count())->toBe(1);
     });
 
-    it('keeps deletion queued while runtime reports are pending', function (): void {
+    it('keeps deletion running until native terminal confirmation', function (): void {
         websocket_apps_activate_role($this->caller);
         $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
 
         $this->deleteJson('/api/v1/websocket-apps/hauzer')
             ->assertStatus(202)
-            ->assertJsonPath('data.status', 'queued');
+            ->assertJsonPath('data.status', 'running');
 
         expect(WebSocketApp::query()->whereKey($app->id)->exists())->toBeFalse()
             ->and(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway']);
@@ -281,6 +281,8 @@ function websocket_apps_node(string $name, string $wireguardIp): Node
         'public_ssh_host' => '192.0.2.'.substr($wireguardIp, strrpos($wireguardIp, '.') + 1),
         'wireguard_ip' => $wireguardIp,
         'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519',
+        'ssh_host_key' => 'fixture-pin',
     ]);
 }
 

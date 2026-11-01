@@ -738,22 +738,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/integrations/websocket_direct.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/websocket_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/integrations/websocket_runtime_system.ts",
       "rule": "custom-control",
       "count": 4,
