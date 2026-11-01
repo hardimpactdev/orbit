@@ -91,10 +91,13 @@ final readonly class AllocateTaskVmAction
             }
             $recipe = $this->images->currentRecipe();
             $hosts = $this->capacity->activeHosts();
-            $free = $this->capacity->freeSlots($hosts);
+            $free = $this->policy->eligibleSlots($group, $this->capacity->freeSlots($hosts));
             $images = [];
             $waiting = [];
             foreach ($hosts as [$host, $node]) {
+                if (! array_key_exists($host->nodeId, $free)) {
+                    continue;
+                }
                 $build = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)
                     ->where('recipe_identity', $recipe->identity)->where('state', TaskVmImageBuildState::Succeeded)
                     ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
