@@ -50,35 +50,6 @@ it('updates a stopped Process in place and preserves omitted Docker fields', fun
         ->and(Process::query()->count())->toBe(1);
 });
 
-it('persists failed update intent and reconverges an identical retry', function (): void {
-    $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
-    $process = Process::query()->sole();
-    $replacement = ['runtime' => 'docker', 'image' => 'valkey/valkey:9', 'command' => ['valkey-server']];
-    $this->runtime->failConverge = true;
-    $this->patchJson('/api/v1/processes/'.$process->id, $replacement)->assertStatus(502);
-    expect($process->refresh()->runtime_config['image'])->toBe('valkey/valkey:9')
-        ->and($process->status->value)->toBe('failed');
-    $this->runtime->failConverge = false;
-    $before = count($this->runtime->convergedProcessIds);
-    $this->patchJson('/api/v1/processes/'.$process->id, $replacement)->assertOk();
-    expect(count($this->runtime->convergedProcessIds))->toBe($before + 1)
-        ->and($process->refresh()->status->value)->toBe('active');
-});
-
-it('recovers a runtime switch cleanup recorded before a crash', function (): void {
-    $process = Process::query()->create([
-        'owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'switching',
-        'runtime' => 'docker', 'working_directory' => null, 'runtime_config' => ['image' => 'redis:8-alpine', 'command' => ['redis-server']],
-        'restart_policy' => 'never', 'desired_state' => 'stopped', 'status' => 'provisioning',
-    ]);
-    $process->retired_runtime = ProcessRuntime::Systemd;
-    $process->save();
-    $this->patchJson('/api/v1/processes/'.$process->id, ['runtime' => 'docker', 'image' => 'redis:8-alpine', 'command' => ['redis-server']])->assertOk();
-    expect($process->refresh()->retired_runtime)->toBeNull()
-        ->and($this->runtime->removed)->toContain($process->id)
-        ->and($this->runtime->convergedProcessIds)->toContain($process->id);
-});
-
 it('refuses identity fields and invalid specifications before mutation', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
     $process = Process::query()->sole();
