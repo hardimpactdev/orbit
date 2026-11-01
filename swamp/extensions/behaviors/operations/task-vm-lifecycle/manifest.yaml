@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/task-vm-lifecycle"
-version: 2026.11.01.6
+version: 2026.11.01.7
 visibility: private
 license: MIT
 description: Public lifecycle intent and provider result shaping; official SSH and native steps own effects.
