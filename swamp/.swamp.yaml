@@ -15,3 +15,4 @@ garbageCollection:
   retention: 30d
   workflowRuns: 6h
   outputs: 1d
+  bookkeeping: 2h
