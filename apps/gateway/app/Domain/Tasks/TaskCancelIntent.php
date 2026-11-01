@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -90,7 +91,7 @@ final readonly class TaskCancelIntent
                     'instance_id' => $workspace?->id, 'checkout_path' => $workspace?->checkout_path,
                     'ssh_execution' => $teardown !== [] && $workspace instanceof Instance ? app(SwampSshExecutionInput::class)->forNode($workspace->node) : null,
                     'teardown' => $teardown,
-                ], $caller, $request);
+                ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
         }, wait: false);
     }

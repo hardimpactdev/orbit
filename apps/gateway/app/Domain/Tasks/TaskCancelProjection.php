@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
@@ -28,6 +29,10 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if ($data['status'] === OperationStatus::Interrupted->value) {
+            $data['status'] = OperationStatus::Failed->value;
+        }
+
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($operation->status->terminal()) {
