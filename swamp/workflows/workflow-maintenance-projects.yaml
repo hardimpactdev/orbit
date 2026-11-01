@@ -2,7 +2,7 @@ id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
 name: maintenance-projects
 description: Select Project maintenance from Gateway-published full public intent.
 trigger:
-  schedule: '40 * * * * *'
+  schedule: '40 17 * * * *'
 inputs:
   type: object
   required: [revision, snapshot_hash, projects, groups, operations, admissions]
