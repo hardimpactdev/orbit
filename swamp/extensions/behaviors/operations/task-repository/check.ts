@@ -16,6 +16,59 @@ type Context = {
         options?: { tags: Record<string, string> },
     ): Promise<unknown>;
 };
+type ActiveContext = Context & {
+    readResource(name: string): Promise<Record<string, unknown> | null>;
+};
+const Active = z.object({
+    schema: z.literal(1),
+    entries: z.array(ObjectValue).max(128),
+});
+function activeRecord(value: unknown) {
+    if (value === null) throw new Error("tasks.check_active_uninitialized");
+    const state = Active.parse(value);
+    const ids = state.entries.map((row) => {
+        z.literal(true).parse(row.pending);
+        return handoff(row).operation_id;
+    });
+    if (new Set(ids).size !== ids.length) {
+        throw new Error("tasks.check_active_duplicate");
+    }
+    if (
+        new TextEncoder().encode(JSON.stringify(state)).length > 8 * 1024 * 1024
+    ) {
+        throw new Error("tasks.check_active_capacity");
+    }
+    return state;
+}
+function handoff(value: Record<string, unknown>) {
+    const inputs = ObjectValue.parse(value.inputs),
+        result = ObjectValue.parse(value.result);
+    z.literal("tasks.check").parse(inputs.kind);
+    return {
+        operation_id: z.number().int().positive().parse(inputs.operation_id),
+        node_id: z.number().int().positive().parse(inputs.node_id),
+        root_run_id: z.uuid().parse(value.root_run_id),
+        commit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).parse(
+            result.commit,
+        ),
+    };
+}
+function sameHandoff(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+) {
+    return JSON.stringify(handoff(left)) === JSON.stringify(handoff(right));
+}
+function pendingValue(value: Record<string, unknown>) {
+    z.literal(true).parse(value.pending);
+    handoff(value);
+    const { input_json: _input, inputs_json: _intent, ...row } = value;
+    return {
+        ...row,
+        input_json: JSON.stringify(row),
+        inputs_json: JSON.stringify(ObjectValue.parse(row.inputs).intent),
+    };
+}
 const output = async (ctx: Context, value: unknown) => ({
     dataHandles: [await ctx.writeResource("public", "output", value)],
 });
@@ -259,7 +312,7 @@ export function finish(args: Record<string, unknown>) {
 /** Pure public check data and native asset paths. Commands and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         public: {
             description: "Public check observations",
@@ -267,10 +320,10 @@ export const behavior = {
             lifetime: "infinite",
             garbageCollection: 10,
         },
-        pending: {
+        active: {
             description:
-                "Admitted CI check state for native scheduled observations",
-            schema: ObjectValue,
+                "Bounded current active handoffs, read and merged under the native model lock",
+            schema: Active,
             lifetime: "infinite",
             garbageCollection: 10,
         },
@@ -288,26 +341,37 @@ export const behavior = {
                     ),
                 }),
         },
-        collect: {
-            description: "Collect this tick's public terminal results",
-            arguments: ObjectValue,
-            execute: (args: Record<string, unknown>, ctx: Context) => {
-                const checks = Object.entries(ObjectValue.parse(args.steps))
-                    .filter(([name]) => name.startsWith("observed-")).map((
-                        [, step],
-                    ) => ObjectValue.parse(ObjectValue.parse(step).outputs))
-                    .map((item) => {
-                        const inputs = ObjectValue.parse(item.inputs);
-                        return {
-                            operation_id: inputs.operation_id,
-                            node_id: inputs.node_id,
-                            kind: inputs.kind,
-                            root_run_id: item.root_run_id,
-                            status: item.status,
-                            result: item.result,
-                        };
-                    });
-                return output(ctx, { result_json: JSON.stringify({ checks }) });
+        initialize: {
+            description:
+                "One-time load transition from freshly read native active handoffs",
+            arguments: z.object({ checks: z.array(ObjectValue).max(128) }),
+            execute: async (
+                args: { checks: Record<string, unknown>[] },
+                ctx: ActiveContext,
+            ) => {
+                if (await ctx.readResource("active") !== null) {
+                    throw new Error("tasks.check_active_initialized");
+                }
+                const state = activeRecord({
+                    schema: 1,
+                    entries: args.checks.map(pendingValue),
+                });
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("active", "active", state),
+                    ],
+                };
+            },
+        },
+        snapshot: {
+            description:
+                "Snapshot the bounded current active handoffs before fan-out",
+            arguments: z.object({}),
+            execute: async (_args: unknown, ctx: ActiveContext) => {
+                const state = activeRecord(await ctx.readResource("active"));
+                return output(ctx, {
+                    checks: state.entries.map((attributes) => ({ attributes })),
+                });
             },
         },
         prepare: {
@@ -407,19 +471,33 @@ export const behavior = {
         },
         pending: {
             description:
-                "Record a public pending check in native data for the scheduled workflow",
+                "Merge one admitted handoff into the current native active record",
             arguments: ObjectValue,
-            execute: async (args: Record<string, unknown>, ctx: Context) => ({
-                dataHandles: [
-                    await ctx.writeResource("pending", "pending", {
-                        ...args,
-                        input_json: JSON.stringify(args),
-                        inputs_json: JSON.stringify(
-                            ObjectValue.parse(args.inputs).intent,
-                        ),
-                    }, { tags: { "task_check": "pending" } }),
-                ],
-            }),
+            execute: async (
+                args: Record<string, unknown>,
+                ctx: ActiveContext,
+            ) => {
+                const row = pendingValue(args), identity = handoff(row);
+                const state = activeRecord(await ctx.readResource("active"));
+                const prior = state.entries.find((item) =>
+                    handoff(item).operation_id === identity.operation_id
+                );
+                if (prior) {
+                    if (!sameHandoff(prior, row)) {
+                        throw new Error("tasks.check_handoff_changed");
+                    }
+                    return output(ctx, { pending: true });
+                }
+                const current = activeRecord({
+                    schema: 1,
+                    entries: [...state.entries, row],
+                });
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("active", "active", current),
+                    ],
+                };
+            },
         },
         observed: {
             description: "Compare terminal CI against the current VM candidate",
@@ -472,32 +550,55 @@ export const behavior = {
                 ),
         },
         settle: {
-            description: "Retain terminal check evidence in native data",
-            arguments: ObjectValue,
-            execute: async (args: Record<string, unknown>, ctx: Context) => ({
-                dataHandles: [
-                    await ctx.writeResource(
-                        "pending",
-                        "pending",
-                        (() => {
-                            const value = ObjectValue.parse(args.value);
-                            const { input_json: _, ...publicValue } = value;
-                            return {
-                                ...publicValue,
-                                input_json: JSON.stringify(publicValue),
-                            };
-                        })(),
-                        {
-                            tags: {
-                                "task_check":
-                                    ObjectValue.parse(args.value).pending
-                                        ? "pending"
-                                        : "settled",
-                            },
-                        },
-                    ),
-                ],
-            }),
+            description:
+                "Merge observed handoffs into the latest current record and retain public terminal evidence",
+            arguments: z.object({ values: z.array(ObjectValue).max(128) }),
+            execute: async (
+                args: { values: Record<string, unknown>[] },
+                ctx: ActiveContext,
+            ) => {
+                const state = activeRecord(await ctx.readResource("active"));
+                const values = args.values.map((value) => {
+                    handoff(value);
+                    z.boolean().parse(value.pending);
+                    z.enum(["succeeded", "failed"]).parse(value.status);
+                    return value;
+                }).filter((value) =>
+                    state.entries.some((row) => sameHandoff(row, value))
+                );
+                const ids = values.map((row) => handoff(row).operation_id);
+                if (new Set(ids).size !== ids.length) {
+                    throw new Error("tasks.check_active_duplicate");
+                }
+                const entries = state.entries.flatMap((row) => {
+                    const value = values.find((item) => sameHandoff(row, item));
+                    return value
+                        ? value.pending ? [pendingValue(value)] : []
+                        : [row];
+                });
+                const current = activeRecord({ schema: 1, entries });
+                const checks = values.map((item) => {
+                    const inputs = ObjectValue.parse(item.inputs);
+                    return {
+                        operation_id: inputs.operation_id,
+                        node_id: inputs.node_id,
+                        kind: inputs.kind,
+                        root_run_id: item.root_run_id,
+                        status: item.status,
+                        result: item.result,
+                    };
+                });
+                // Keep terminal evidence before dropping an exact active handoff.
+                const result = await output(ctx, {
+                    result_json: JSON.stringify({ checks }),
+                });
+                return {
+                    dataHandles: [
+                        ...result.dataHandles,
+                        await ctx.writeResource("active", "active", current),
+                    ],
+                };
+            },
         },
     },
 };

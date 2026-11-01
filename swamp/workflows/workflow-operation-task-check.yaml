@@ -700,7 +700,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-pending-" + string(inputs.operation_id) }}
+      behaviorName: task-check-active-current
       methodName: pending
       inputs:
         pending: true

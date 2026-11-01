@@ -1,5 +1,6 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
+    behavior,
     candidateResult,
     ciResult,
     localResult,
@@ -152,4 +153,191 @@ Deno.test("a failed Project check retains failed evidence when command deliverab
     assertEquals(value.evidence?.commands, {});
     assertEquals(value.deliverables[0].outcome, "failed");
     assertEquals(value.commit, null);
+});
+
+function activeCheckContext(active: Record<string, unknown> | null) {
+    const writes: { spec: string; name: string; value: unknown }[] = [];
+    return {
+        writes,
+        context: {
+            extensionFile(name: string) {
+                return name;
+            },
+            readResource(name: string) {
+                assertEquals(name, "active");
+                return Promise.resolve(active);
+            },
+            writeResource(spec: string, name: string, value: unknown) {
+                writes.push({ spec, name, value });
+                return Promise.resolve({});
+            },
+        },
+    };
+}
+
+Deno.test("pending admission refuses an absent load-time seed without losing the handoff", async () => {
+    const fixture = activeCheckContext(null);
+    await assertRejects(
+        () => behavior.methods.pending.execute(pending, fixture.context),
+        Error,
+        "tasks.check_active_uninitialized",
+    );
+    assertEquals(fixture.writes, []);
+});
+
+Deno.test("pending admission merges with the current active record and preserves other Operations", async () => {
+    const other = {
+        ...pending,
+        inputs: { ...pending.inputs, operation_id: 8 },
+    };
+    const fixture = activeCheckContext({ schema: 1, entries: [other] });
+    await behavior.methods.pending.execute(pending, fixture.context);
+    const active = fixture.writes.find((item) => item.name === "active");
+    assertEquals(active?.spec, "active");
+    assertEquals(
+        (active?.value as { entries: typeof pending[] }).entries.map((row) =>
+            row.inputs.operation_id
+        ),
+        [8, 7],
+    );
+});
+
+Deno.test("a repeated admission cannot overwrite a different recorded root handoff", async () => {
+    const previous = {
+        ...pending,
+        root_run_id: "ad94b7fa-e19a-456a-8610-d0b6a00ed89e",
+    };
+    const fixture = activeCheckContext({ schema: 1, entries: [previous] });
+    await assertRejects(
+        () => behavior.methods.pending.execute(pending, fixture.context),
+        Error,
+        "tasks.check_handoff_changed",
+    );
+    assertEquals(fixture.writes, []);
+});
+
+Deno.test("load initialization is explicit and cannot overwrite an existing active record", async () => {
+    const fresh = activeCheckContext(null);
+    await behavior.methods.initialize.execute({ checks: [] }, fresh.context);
+    assertEquals(fresh.writes, [{
+        spec: "active",
+        name: "active",
+        value: { schema: 1, entries: [] },
+    }]);
+    const current = activeCheckContext({ schema: 1, entries: [pending] });
+    await assertRejects(
+        () =>
+            behavior.methods.initialize.execute(
+                { checks: [] },
+                current.context,
+            ),
+        Error,
+        "tasks.check_active_initialized",
+    );
+    assertEquals(current.writes, []);
+});
+
+Deno.test("snapshot refuses missing initialization instead of silently dispatching an empty queue", async () => {
+    const current = activeCheckContext(null);
+    await assertRejects(
+        () => behavior.methods.snapshot.execute({}, current.context),
+        Error,
+        "tasks.check_active_uninitialized",
+    );
+    assertEquals(current.writes, []);
+});
+
+Deno.test("replayed admission keeps a newer CI observation on the same root and commit", async () => {
+    const current = activeCheckContext({
+        schema: 1,
+        entries: [{
+            ...pending,
+            result: { ...pending.result, ci: { state: "running" } },
+        }],
+    });
+    await behavior.methods.pending.execute(pending, current.context);
+    assertEquals(current.writes.some((row) => row.name === "active"), false);
+});
+
+Deno.test("aggregate settlement preserves intervening admissions, changed roots and pending observations", async () => {
+    const changed = {
+        ...pending,
+        inputs: { ...pending.inputs, operation_id: 8 },
+        root_run_id: "ad94b7fa-e19a-456a-8610-d0b6a00ed89e",
+    };
+    const admitted = {
+        ...pending,
+        inputs: { ...pending.inputs, operation_id: 9 },
+    };
+    const waiting = {
+        ...pending,
+        inputs: { ...pending.inputs, operation_id: 10 },
+    };
+    const current = activeCheckContext({
+        schema: 1,
+        entries: [pending, changed, admitted, waiting],
+    });
+    const complete = { ...pending, pending: false, status: "succeeded" };
+    await behavior.methods.settle.execute({
+        values: [complete, { ...complete, inputs: changed.inputs }, {
+            ...waiting,
+            status: "succeeded",
+            result: { ...waiting.result, ci: { state: "running" } },
+        }],
+    }, current.context);
+    const state = current.writes.find((row) => row.name === "active")!
+        .value as { entries: typeof pending[] };
+    assertEquals(state.entries.map((row) => row.inputs.operation_id), [
+        8,
+        9,
+        10,
+    ]);
+    assertEquals(state.entries[0], changed);
+    assertEquals(state.entries[1], admitted);
+    assertEquals((state.entries[2].result as Record<string, unknown>).ci, {
+        state: "running",
+    });
+    const value = current.writes.find((row) => row.spec === "public")!
+        .value as { result_json: string };
+    assertEquals(
+        JSON.parse(value.result_json).checks.map((
+            row: { operation_id: number },
+        ) => row.operation_id),
+        [7, 10],
+    );
+});
+
+Deno.test("an over-capacity admission leaves the current active record intact", async () => {
+    const current = activeCheckContext({
+        schema: 1,
+        entries: Array.from(
+            { length: 128 },
+            (_, i) => ({
+                ...pending,
+                inputs: { ...pending.inputs, operation_id: i + 1 },
+            }),
+        ),
+    });
+    await assertRejects(
+        () =>
+            behavior.methods.pending.execute({
+                ...pending,
+                inputs: { ...pending.inputs, operation_id: 1000 },
+            }, current.context),
+        Error,
+    );
+    assertEquals(current.writes, []);
+});
+
+Deno.test("an oversized active record refuses dispatch instead of building a large worker frame", async () => {
+    const current = activeCheckContext({
+        schema: 1,
+        entries: [{ ...pending, output: "x".repeat(8 * 1024 * 1024) }],
+    });
+    await assertRejects(
+        () => behavior.methods.snapshot.execute({}, current.context),
+        Error,
+        "tasks.check_active_capacity",
+    );
+    assertEquals(current.writes, []);
 });

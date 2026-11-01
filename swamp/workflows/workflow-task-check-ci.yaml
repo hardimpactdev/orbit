@@ -6,8 +6,22 @@ trigger:
 vaults:
 - orbit-control-inputs
 jobs:
-- name: checks
+- name: pending
+  steps:
+  - name: active_checks
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: task-check-active-current
+      methodName: snapshot
+      inputs: {}
+- name: observe
   target: orbit-node-209
+  dependsOn:
+  - job: pending
+    condition:
+      type: succeeded
   steps:
   - name: assets
     target: orbit-node-209
@@ -35,8 +49,7 @@ jobs:
             }}
     forEach: &id001
       item: check
-      in: ${{ data.query('modelType == "@nckrtl/task-check-data" && specName == "pending" && tags.task_check == "pending" && attributes.pending == true')
-        }}
+      in: ${{ steps.active_checks.outputs.checks }}
     dependsOn:
     - step: assets
       condition:
@@ -46,7 +59,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: ${{ "task-check-ci-data-" + run.id + "-" + string(self._index) }}
       methodName: ci
       inputs:
         pending: ${{ self.check.attributes }}
@@ -125,7 +138,8 @@ jobs:
         argv:
         - /usr/bin/python3
         - -B
-        - ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/scripts/snapshot.py" }}
+        - ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/scripts/snapshot.py"
+          }}
         stdin: ${{ self.check.attributes.inputs_json }}
     dependsOn:
     - step: copy_assets-${{ self.check.attributes.inputs.operation_id }}
@@ -139,13 +153,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: ${{ "task-check-ci-data-" + run.id + "-" + string(self._index) }}
       methodName: observed
       inputs:
         value: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs }}
-        snapshot: '${{ "snapshot-" + string(self.check.attributes.inputs.operation_id) in steps && "outputs" in steps["snapshot-" + string(self.check.attributes.inputs.operation_id)]
-          && "stdout" in steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs ? steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs.stdout
-          : "{}" }}'
+        snapshot: '${{ "snapshot-" + string(self.check.attributes.inputs.operation_id) in steps && "outputs" in steps["snapshot-"
+          + string(self.check.attributes.inputs.operation_id)] && "stdout" in steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs
+          ? steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs.stdout : "{}" }}'
     dependsOn:
     - step: snapshot-${{ self.check.attributes.inputs.operation_id }}
       condition:
@@ -173,20 +187,24 @@ jobs:
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
     allowFailure: true
-  - name: settle-${{ self.check.attributes.inputs.operation_id }}
+- name: checks
+  target: orbit-node-209
+  dependsOn:
+  - job: observe
+    condition:
+      type: always
+  steps:
+  - name: settle
     target: orbit-node-209
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-pending-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: task-check-active-current
       methodName: settle
       inputs:
-        value: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs }}
-    forEach: *id001
-    dependsOn:
-    - step: observed-${{ self.check.attributes.inputs.operation_id }}
-      condition:
-        type: succeeded
+        values: ${{ steps.active_checks.outputs.checks.filter(c, "observed-" + string(c.attributes.inputs.operation_id) in
+          steps && steps["observed-" + string(c.attributes.inputs.operation_id)].status == "succeeded").map(c, steps["observed-"
+          + string(c.attributes.inputs.operation_id)].outputs) }}
   - name: revoke_read-${{ self.check.attributes.inputs.operation_id }}
     target: orbit-node-209
     forEach: *id001
@@ -204,27 +222,11 @@ jobs:
           ORBIT_GITHUB_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
             }}
     dependsOn:
-    - step: settle-${{ self.check.attributes.inputs.operation_id }}
+    - step: settle
       condition:
         type: succeeded
     guard: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs.pending }}
     allowFailure: true
-  - name: collect
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
-      methodName: collect
-      inputs:
-        steps: ${{ steps }}
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
-    - step: settle-${{ self.check.attributes.inputs.operation_id }}
-      condition:
-        type: always
   - name: result
     target: orbit-node-209
     task:
@@ -237,8 +239,9 @@ jobs:
 
           '
         env:
-          ORBIT_RESULT: ${{ steps.collect.outputs.result_json }}
+          ORBIT_RESULT: ${{ steps.settle.outputs.result_json }}
     dependsOn:
-    - step: collect
+    - step: revoke_read-${{ self.check.attributes.inputs.operation_id }}
       condition:
-        type: succeeded
+        type: always
+queueTimeout: 60
