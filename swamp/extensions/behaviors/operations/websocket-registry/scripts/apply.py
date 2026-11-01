@@ -75,6 +75,14 @@ def apply(intent, credential):
 def main():
     try:
         result = apply(json.loads(sys.argv[1]), sys.stdin.read(16385))
+    except TimeoutError:
+        result = {"error_code": "websocket.registry_pending"}
+    except urllib.error.URLError as error:
+        result = {
+            "error_code": "websocket.registry_pending"
+            if isinstance(error.reason, TimeoutError)
+            else "websocket.registry_unavailable"
+        }
     except (
         OSError,
         ValueError,

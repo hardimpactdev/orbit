@@ -238,3 +238,5 @@ Every required runtime captured at admission must confirm. Missing runtime membe
 The workflow declares its per-kind queue timeout. The source PR reports native-harness p95 and its sample, plus the run budget for the shared timeout-at-start rollout. Until that shared rollout is live, the budget declaration is not a claim that the Gateway enforces it. F1 error projection is also adopted through the shared rollout; the family adds no error wrapper or projector.
 
 The provisional run budget is `30 + 20 × admitted runtime count` seconds, The queue timeout is five seconds. Each SSH request has a limit of fifteen seconds. Samples from local native history measured p95 of 0.420 seconds for sync (four samples), 0.301 for create, 0.340 for destroy and 0.343 for rotate (three samples each). These fixture timings do not replace the required disposable task-VM proof.
+
+The Reverb apply phase runs under coreutils `timeout` for twelve seconds, with two seconds to force termination. SSH has a fifteen-second limit. A phase or HTTP expiry returns `websocket.registry_pending`; it does not certify socket closure or repeat the request.

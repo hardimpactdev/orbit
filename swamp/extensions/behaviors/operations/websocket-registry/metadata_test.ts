@@ -101,3 +101,19 @@ Deno.test("native WebSocket aggregation cannot count one runtime twice", () => {
         "websocket.registry_mismatch",
     );
 });
+
+Deno.test("phase timeout is public pending without parsing empty command output", () => {
+    for (const exitCode of [124, 137]) {
+        assertEquals(
+            data(
+                terminal(intent, {
+                    "apply-0": {
+                        status: "succeeded",
+                        outputs: { exitCode, stdout: "" },
+                    },
+                }),
+            ).error_code,
+            "websocket.registry_pending",
+        );
+    }
+});

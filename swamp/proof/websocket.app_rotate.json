@@ -75,7 +75,7 @@
       "name": "reconcile-confirm",
       "job": "runtimes",
       "step": "apply-0",
-      "budget_seconds": 20
+      "budget_seconds": 12
     },
     {
       "name": "terminal-result",

@@ -25,6 +25,7 @@ class WebSocketRegistryNative(NativeTestCase):
         install_ssh(self)
         self.calls = []
         self.error = None
+        self.stall = False
         self.credential = 'private-runtime-registry-fixture-719263'
         owner = self
 
@@ -35,6 +36,9 @@ class WebSocketRegistryNative(NativeTestCase):
             def do_POST(self):
                 request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 owner.calls.append(request)
+                if owner.stall:
+                    threading.Event().wait(3)
+                    return
                 if self.headers.get('Authorization') != 'Bearer ' + owner.credential:
                     code, data = 403, {'error_code': 'websocket.registry_unauthorized'}
                 elif owner.error:
@@ -64,7 +68,8 @@ class WebSocketRegistryNative(NativeTestCase):
             for step in job['steps']:
                 self.assertEqual(step.pop('target'), 'orbit-node-209')
                 self.assertNotIn('labels', step)
-        (self.repo / 'workflows/workflow-registry.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
+        self.workflow_path = self.repo / 'workflows/workflow-registry.yaml'
+        self.workflow_path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.intent = {'start_tag': BOOT, 'registry_operation_id': BOOT, 'epoch': 'epoch-fixture', 'revision': 7,
                        'change': 'sync', 'app_id': None, 'credential_generation': None, 'missing_node_ids': [],
                        'runtimes': [{'process_id': PROCESS, 'node_id': 9, 'port': self.server.server_port,
@@ -114,3 +119,17 @@ class WebSocketRegistryNative(NativeTestCase):
         self.intent['runtimes'] = []
         self.run_kind(success=False)
         self.assertEqual(self.calls, [])
+
+    def test_phase_timeout_returns_pending_without_a_second_apply(self):
+        workflow = yaml.safe_load(self.workflow_path.read_text())
+        argv = workflow['jobs'][1]['steps'][0]['task']['inputs']['argv']
+        self.assertEqual(argv[:3], ['/usr/bin/timeout', '--kill-after=2s', '12s'])
+        argv[2] = '1s'  # Only the disposable fixture shortens the production phase budget.
+        self.workflow_path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        self.stall = True
+        self.run_kind(success=False)
+        history = json.loads(self.cli('workflow', 'history', 'get', self.native_run['id']).stdout)
+        result = next(step for job in history['jobs'] if job['name'] == 'result'
+                      for step in job['steps'] if step['name'] == 'result')
+        self.assertEqual(json.loads(result['outputs']['stdout']), {'error_code': 'websocket.registry_pending'})
+        self.assertEqual(len(self.calls), 1)
