@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: "@nckrtl/node-agent-native"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public metadata and results for frozen agent commands over official SSH.
+behaviors:
+  - operations/node-agent-native/assets.ts

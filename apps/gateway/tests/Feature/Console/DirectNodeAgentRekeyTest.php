@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeAgentRekeyInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Models\Operation;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -24,7 +24,7 @@ it('refuses recovery without native configure ownership proof and preserves the 
     $agents->shouldNotReceive('run', 'install');
     app()->instance(AgentCommandRunner::class, $agents);
 
-    expect(fn () => app(NodeAgentHashSource::class)->rekeyInput($node, $source->id))
+    expect(fn () => app(NodeAgentRekeyInput::class)->capture($node, $source->id))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('node.agent_rekey_unavailable')
                 ->and($exception->status)->toBe(409);

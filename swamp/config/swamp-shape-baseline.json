@@ -958,14 +958,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/converge_direct.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
       "rule": "custom-control",
       "count": 5,
@@ -1142,28 +1134,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/rekey_direct.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/rekey_local.ts",
-      "rule": "agent-action",
-      "count": 1,
-      "evidence": [
-        "agent.configure"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/rekey_local.ts",
-      "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/role_baseline_system.ts",
       "rule": "custom-control",
       "count": 1,
@@ -1245,29 +1215,6 @@
       "rule": "private-material",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/settings.ts",
-      "rule": "agent-action",
-      "count": 2,
-      "evidence": [
-        "account.lookup",
-        "node.prepare-storage-root"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/settings.ts",
-      "rule": "agent-dynamic",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/settings.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/node/test-fixture.ts",

@@ -1,52 +1,20 @@
-id: 8ae4fb17-d77a-4fb3-8ecb-cf6f5384e65e
-name: operation-node-agent-rekey
-description: Recover an admitted Node agent on its exact worker without Gateway execution.
-inputs:
-  type: object
-  properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum: [node.agent_rekey]
-  required: [operation_id, node_id, kind]
-  additionalProperties: false
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+# deno-fmt-ignore-file
+id: "8ae4fb17-d77a-4fb3-8ecb-cf6f5384e65e"
+name: "operation-node-agent-rekey"
+description: "Frozen agent commands and native footprint actions from209 through official pinned SSH."
+vaults: []
+inputs: {"type":"object","properties":{"operation_id":{"type":"integer","minimum":1},"node_id":{"type":"integer","minimum":1},"kind":{"type":"string","enum":["node.agent_rekey"]},"intent":{"type":"object"},"execution_secrets":{"type":"object","additionalProperties":false}},"required":["operation_id","node_id","kind","intent","execution_secrets"],"additionalProperties":false}
 jobs:
-  - name: recovery
-    steps:
-      - name: observe
-        writes: false
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/node-agent-rekey"
-          behaviorName: ${{ "node-agent-rekey-" + string(inputs.node_id) }}
-          methodName: observe
-          inputs:
-            operation_id: ${{ inputs.operation_id }}
-            kind: ${{ inputs.kind }}
-            node_id: ${{ inputs.node_id }}
-            run_id: ${{ run.id }}
-      - name: rekey
-        writes: true
-        dependsOn:
-          - step: observe
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/node-agent-rekey"
-          behaviorName: ${{ "node-agent-rekey-" + string(inputs.node_id) }}
-          methodName: execute
-          inputs:
-            operation_id: ${{ inputs.operation_id }}
-            kind: ${{ inputs.kind }}
-            node_id: ${{ inputs.node_id }}
-            run_id: ${{ run.id }}
-            observation: ${{ steps.observe.outputs }}
+- name: recovery
+  steps:
+  - {"name":"account_input","target":"orbit-node-209","task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":"${{ \"account_input-\"+run.id }}","methodName":"envelope","inputs":{"command":"account.lookup","pin":"${{ inputs.intent.agent_sha256 }}","input":{"user":"${{ inputs.intent.configuration.user }}"}}},"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
+  - {"name":"account_command","target":"orbit-node-209","writes":true,"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":"${{ \"ssh-account_command-\"+run.id }}","methodName":"exec","globalArgs":{"name":"${{ \"ssh-account_command-\"+run.id }}","transport":{"kind":"ssh","user":"${{ inputs.intent.ssh.target.user }}","port":"${{ inputs.intent.ssh.target.port }}","identityFile":"${{ inputs.intent.ssh.identity_file }}"},"hosts":[{"name":"target","address":"${{ inputs.intent.ssh.target.host }}","transport":{"hostKeys":"${{ inputs.intent.ssh.target.host_keys }}"}}]},"inputs":{"hosts":"name:target","sudo":false,"argv":["/usr/local/bin/orbit-agent","command","account.lookup"],"stdin":"${{ steps[\"account_input\"].outputs.stdin }}","timeoutSec":"${{ steps[\"account_input\"].outputs.timeoutSec }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
+  - {"name":"account","target":"orbit-node-209","task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":"${{ \"account-\"+run.id }}","methodName":"decode","inputs":{"stdout":"${{ steps[\"account_command\"].outputs.stdout }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
+  - {"name":"observer_input","target":"orbit-node-209","task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":"${{ \"observer_input-\"+run.id }}","methodName":"configure","inputs":{"configuration":"${{ inputs.intent.configuration }}","pin":"${{ inputs.intent.agent_sha256 }}","account":"${{ steps.account.outputs }}","changed":false,"rotate":true,"verifier_hash":null}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}},{"step":"account","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
+  - {"name":"observer_command","target":"orbit-node-209","writes":true,"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":"${{ \"ssh-observer_command-\"+run.id }}","methodName":"exec","globalArgs":{"name":"${{ \"ssh-observer_command-\"+run.id }}","transport":{"kind":"ssh","user":"${{ inputs.intent.ssh.target.user }}","port":"${{ inputs.intent.ssh.target.port }}","identityFile":"${{ inputs.intent.ssh.identity_file }}"},"hosts":[{"name":"target","address":"${{ inputs.intent.ssh.target.host }}","transport":{"hostKeys":"${{ inputs.intent.ssh.target.host_keys }}"}}]},"inputs":{"hosts":"name:target","sudo":true,"argv":["/usr/local/bin/orbit-agent","command","agent.configure"],"stdin":"${{ steps.observer_input.outputs.stdin }}","timeoutSec":"${{ steps.observer_input.outputs.timeoutSec }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}},{"step":"account","condition":{"type":"always"}},{"step":"observer_input","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
+  - {"name":"observer","target":"orbit-node-209","task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":"${{ \"observer-\"+run.id }}","methodName":"decode","inputs":{"stdout":"${{ steps.observer_command.outputs.stdout }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}},{"step":"account","condition":{"type":"always"}},{"step":"observer_input","condition":{"type":"always"}},{"step":"observer_command","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
+- name: result
+  dependsOn: [{"job":"recovery","condition":{"type":"always"}}]
+  steps:
+  - {"name":"result","target":"orbit-node-209","task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":"${{ \"result-\"+run.id }}","methodName":"result","inputs":{"kind":"node.agent_rekey","intent":"${{ inputs.intent }}","steps":"${{ steps }}"}}}
+  - {"name":"proven","target":"orbit-node-209","task":{"type":"assert","expr":"!has(steps.result.outputs.error_code)","severity":"high","message":"The native Node action must complete"},"dependsOn":[{"step":"result","condition":{"type":"always"}}]}
