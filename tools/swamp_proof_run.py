@@ -163,63 +163,69 @@ def exact_history(topology, operation, fixture):
 
 
 def phase_histories(topology, root, fixture):
-    """Select descendants from official parentRun metadata, then recheck full histories."""
+    """Official history-search summaries omit parentRun; resolve links from history get."""
     wanted = {phase['workflow'] for phase in fixture['phases'] if phase.get('workflow', root['workflowName']) != root['workflowName']}
     if not wanted:
         return {}, []
-    rows = topology.history('search')['results']
-    indexed = {}
-    for row in rows:
-        if row['runId'] in indexed:
-            raise ProofError('Native search returned ambiguous run identities.')
-        indexed[row['runId']] = row
     histories = {root['id']: root}
+    linked = {}
 
     def identity(row, summary=False):
         return (row['runId' if summary else 'id'], row['workflowId'], row['workflowName'])
 
-    def lineage(row, seen):
-        if row['runId'] in seen:
+    def read(run_id):
+        if run_id not in histories:
+            history = topology.history('get', run_id)
+            if history['id'] != run_id:
+                raise ProofError('Native child history returned another run identity.')
+            histories[run_id] = history
+        return histories[run_id]
+
+    def lineage(child, seen):
+        if child['id'] in seen:
             raise ProofError('Native child history has a cyclic parent link.')
-        parent = row.get('parentRun')
-        if not parent:
+        ref = child.get('parentRun')
+        if not ref:
             return None
-        if parent['runId'] == root['id']:
-            if (parent['runId'], parent['workflowId'], parent['workflowName']) != identity(root):
-                raise ProofError('Native child history has a conflicting root link.')
-            return [row]
-        ancestor = indexed.get(parent['runId'])
-        if ancestor is None:
-            return None
-        if (parent['runId'], parent['workflowId'], parent['workflowName']) != identity(ancestor, True):
+        parent = read(ref['runId'])
+        if (ref['runId'], ref['workflowId'], ref['workflowName']) != identity(parent):
             raise ProofError('Native child history has a conflicting parent link.')
-        chain = lineage(ancestor, seen | {row['runId']})
-        return None if chain is None else [*chain, row]
+        chain = [] if parent['id'] == root['id'] else lineage(parent, seen | {child['id']})
+        if chain is None:
+            return None
+        steps = [step for job in parent['jobs'] for step in job['steps'] if step['name'] == ref['stepName']]
+        if len(steps) != 1:
+            raise ProofError('Native child history lacks one exact parent step.')
+        # nestedRun exists for suspended children; completed children still carry parentRun.
+        link = steps[0].get('nestedRun')
+        if link and (link['runId'], link['workflowId'], link['workflowName']) != identity(child):
+            raise ProofError('Native parent step names another child run.')
+        if child['status'] not in TERMINAL:
+            raise ProofError('Native phase child has no terminal history.')
+        return [*chain, child]
 
     selected = {}
     for workflow in sorted(wanted):
-        candidates = [chain for row in rows if row['workflowName'] == workflow and (chain := lineage(row, set()))]
+        rows = topology.history('search', '--workflow', workflow)['results']
+        candidates, seen = [], set()
+        for row in rows:
+            if row['workflowName'] != workflow:
+                continue
+            if row['runId'] in seen:
+                raise ProofError('Native search returned ambiguous run identities.')
+            seen.add(row['runId'])
+            child = read(row['runId'])
+            if identity(child) != identity(row, True):
+                raise ProofError('Native child history identity differs from its search record.')
+            chain = lineage(child, set())
+            if chain:
+                candidates.append(chain)
         if len(candidates) != 1:
             raise ProofError('Native history must contain exactly one linked phase workflow: ' + workflow)
-        for row in candidates[0]:
-            if row['runId'] in histories:
-                continue
-            child = topology.history('get', row['runId'])
-            if identity(child) != identity(row, True) or child.get('parentRun') != row['parentRun']:
-                raise ProofError('Native child history identity differs from its linked search record.')
-            parent = histories[row['parentRun']['runId']]
-            steps = [step for job in parent['jobs'] for step in job['steps'] if step['name'] == row['parentRun']['stepName']]
-            if len(steps) != 1:
-                raise ProofError('Native child history lacks one exact parent step.')
-            # nestedRun is present for suspended children; completed children still carry parentRun.
-            link = steps[0].get('nestedRun')
-            if link and (link['runId'], link['workflowId'], link['workflowName']) != identity(child):
-                raise ProofError('Native parent step names another child run.')
-            if child['status'] not in TERMINAL:
-                raise ProofError('Native phase child has no terminal history.')
-            histories[child['id']] = child
-        selected[workflow] = histories[candidates[0][-1]['runId']]
-    return selected, [row for key, row in histories.items() if key != root['id']]
+        for child in candidates[0]:
+            linked[child['id']] = child
+        selected[workflow] = candidates[0][-1]
+    return selected, list(linked.values())
 
 
 def step_report(history):

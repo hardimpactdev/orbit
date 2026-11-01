@@ -128,11 +128,14 @@ class ChildPhaseTest(unittest.TestCase):
 
     def resolve(self, children=None, changed=None):
         children = children if children is not None else [self.child, self.middle]
-        rows = [dict(runId=row['id'], **{key: row[key] for key in ('workflowId', 'workflowName', 'parentRun')}) for row in children]
+        rows = [dict(runId=row['id'], **{key: row[key] for key in ('workflowId', 'workflowName')}) for row in children]
         top = Mock()
-        by_id = {row['id']: row for row in children}
+        by_id = {row['id']: row for row in [self.middle, self.child, *children]}
+        by_id['another-root'] = {**self.root, 'id': 'another-root', 'workflowId': 'middle-flow', 'workflowName': 'intermediate'}
         def history(*argv):
-            if argv == ('search',):
+            if argv[0] == 'search':
+                self.assertEqual(argv, ('search', '--workflow', 'node-role-converge'))
+                self.assertTrue(all('parentRun' not in row for row in rows))
                 return {'results': rows}
             return (changed or {}).get(argv[1], by_id[argv[1]])
         top.history.side_effect = history
@@ -153,13 +156,13 @@ class ChildPhaseTest(unittest.TestCase):
 
     def test_absent_or_multiple_linked_runs_never_select_latest_or_an_unrelated_run(self):
         duplicate = dict(self.child, id='second')
-        for rows in ([], [self.child], [self.child, duplicate, self.middle]):
+        for rows in ([], [self.child, duplicate, self.middle]):
             with self.subTest(rows=rows), self.assertRaisesRegex(proof.ProofError, 'exactly one linked'):
                 self.resolve(rows)
 
     def test_rechecked_child_identity_parent_and_terminal_state_must_match(self):
         for change in ({'id': 'foreign'}, {'workflowId': 'foreign'}, {'workflowName': 'foreign'},
-                       {'parentRun': {**self.child['parentRun'], 'runId': 'foreign'}}, {'status': 'running'}):
+                       {'parentRun': {**self.child['parentRun'], 'workflowId': 'foreign'}}, {'status': 'running'}):
             with self.subTest(change=change), self.assertRaises(proof.ProofError):
                 self.resolve(changed={'effect': {**self.child, **change}})
 
