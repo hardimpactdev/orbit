@@ -6,6 +6,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -21,6 +22,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Cluster;
@@ -482,11 +484,12 @@ it('fails the guest Node of incomplete cleanup and lets a later admission claim 
         ->and($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed)
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroying)
         ->and($this->vm->fresh()->error_code)->toBe($code ?? 'task_vm.destroy_failed');
+    expect($operation->fresh()->status)->toBe($status === 'cancelled' ? OperationStatus::Cancelled : OperationStatus::Failed);
     $again = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
     expect($again->id)->not->toBe($operation->id)->and($node->fresh()->status)->toBe(LifecycleStatus::Removing);
 })->with([['failed', 'operation.native_failed'], ['cancelled', null], ['interrupted', 'operation.native_failed']]);
 
-it('fails the guest Node when the destroy budget expires', function (): void {
+it('holds destroy admission after expiry until exact native terminal settlement', function (string $terminal): void {
     $this->freezeSecond();
     $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
     $operation->update(['state' => ['swamp_run_id' => '3d8cf201-24cd-4ba5-b0ce-885530dcd327'], 'status' => OperationStatus::Running, 'started_at' => now()]);
@@ -497,7 +500,18 @@ it('fails the guest Node when the destroy budget expires', function (): void {
     expect($node->status)->toBe(LifecycleStatus::Failed)->and($node->error_code)->toBe('operation.timed_out')
         ->and($node->failed_step)->toBe('remove:operation')
         ->and($this->vm->fresh()->error_code)->toBe('operation.timed_out');
-});
+    $this->vm->update(['model_key' => str_repeat('a', 64)]);
+    expect(fn () => app(StartTaskVmDestroyAction::class)->execute($this->vm->id))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect($node->fresh()->status)->toBe(LifecycleStatus::Failed);
+    $this->assertDatabaseCount('operations', 1);
+    $this->vm->update(['model_key' => null]);
+    settleExpiredTaskVmOperation($operation->fresh(), $terminal);
+    expect($operation->fresh()->lock_key)->toBeNull()->and($operation->fresh()->error_code)->toBe('operation.timed_out');
+    expect($operation->fresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->fresh()->state['native_timeout']['native_terminal_status'])->toBe($terminal);
+    expect(app(StartTaskVmDestroyAction::class)->execute($this->vm->id)->id)->not->toBe($operation->id);
+})->with(['interrupted', 'succeeded']);
 
 it('fails the guest Node when Tasks cleanup with a VM fails or expires', function (string $end): void {
     $this->freezeSecond();
@@ -518,19 +532,34 @@ it('fails the guest Node when Tasks cleanup with a VM fails or expires', functio
         $this->travel(3900)->seconds();
         expect(app(ExpireOperationAction::class)->execute($operation->fresh())->error_code)->toBe('operation.timed_out');
     } else {
-        app(TaskCancelProjection::class)->apply($operation->fresh(), ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->toISOString(),
-            'finished_at' => now()->toISOString(), 'error_code' => 'operation.native_failed', 'result' => []]);
+        app(TaskCancelProjection::class)->apply($operation->fresh(), ['run_id' => $run, 'status' => $end, 'started_at' => now()->toISOString(),
+            'finished_at' => now()->toISOString(), 'error_code' => $end === 'cancelled' ? null : 'operation.native_failed', 'result' => []]);
     }
 
     expect($node->fresh()->status)->toBe(LifecycleStatus::Failed)
-        ->and($node->fresh()->error_code)->toBe($end === 'expired' ? 'operation.timed_out' : 'operation.native_failed')
+        ->and($node->fresh()->error_code)->toBe(match ($end) {
+            'expired' => 'operation.timed_out', 'cancelled' => 'node.remove_failed', default => 'operation.native_failed'
+        })
         ->and($workspace->fresh())->not->toBeNull()->and($group->fresh()->taskable_id)->toBe($workspace->id);
-})->with(['failed', 'expired']);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+    if ($end === 'expired') {
+        expect(fn () => app(TaskCancelIntent::class)->start($group, 'fixture', null))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+        expect($node->fresh()->status)->toBe(LifecycleStatus::Failed);
+        $this->assertDatabaseCount('operations', 1);
+        settleExpiredTaskVmOperation($operation->fresh());
+        expect($operation->fresh()->lock_key)->toBeNull()->and($operation->fresh()->error_code)->toBe('operation.timed_out');
+    } else {
+        expect($operation->fresh()->status)->toBe($end === 'cancelled' ? OperationStatus::Cancelled : OperationStatus::Failed)
+            ->and($operation->fresh()->lock_key)->toBeNull();
+    }
+    expect(app(TaskCancelIntent::class)->start($group->fresh(), 'fixture', null)->id)->not->toBe($operation->id);
+})->with(['failed', 'cancelled', 'interrupted', 'expired']);
 
 it('readmits each destroying VM in the sweep even when admission refuses another one', function (): void {
     Log::spy();
     $this->vm->update(['state' => TaskVmState::Destroying]);
-    Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $this->vm->id, 'node_id' => $this->host->id,
+    $busy = Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $this->vm->id, 'node_id' => $this->host->id,
         'status' => OperationStatus::Running, 'sequence' => 1, 'input' => [], 'state' => []]);
     $other = TaskVm::query()->create(['name' => 'pending-other', 'provider' => 'incus', 'state' => TaskVmState::Destroying,
         'host_node_id' => $this->host->id, 'wireguard_ip' => '10.44.0.143']);
@@ -540,5 +569,40 @@ it('readmits each destroying VM in the sweep even when admission refuses another
 
     expect(Operation::query()->where('kind', 'task_vm.destroy')->where('target_id', $other->id)->exists())->toBeTrue()
         ->and(Operation::query()->where('kind', 'task_vm.destroy')->where('target_id', $this->vm->id)->exists())->toBeFalse();
-    Log::shouldHaveReceived('warning')->with('A destroying task VM was not readmitted.', ['task_vm_id' => $this->vm->id, 'error_code' => 'operation.target_busy'])->once();
+    Log::shouldHaveReceived('warning')->with('A destroying task VM was not readmitted.', ['task_vm_id' => $this->vm->id, 'error_code' => 'operation.target_busy', 'details' => ['operation_id' => $busy->id]])->once();
+});
+
+function settleExpiredTaskVmOperation(Operation $operation, string $status = 'interrupted'): void
+{
+    $history = new FakeRoutePublicationSocket;
+    $definition = app(DirectOperation::class)->definition($operation->kind);
+    $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => $definition['workflow'], 'status' => $status, 'completedAt' => now()->toISOString(),
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+    ]]]];
+    $startSocket = app(WebSocketClient::class);
+    app()->instance(WebSocketClient::class, $history);
+    config(['swamp.read_token' => 'fixture.read']);
+
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $operation->state['swamp_run_id']], $definition['terminal_result']);
+
+    app()->instance(WebSocketClient::class, $startSocket);
+}
+
+it('refuses a held cleanup before cancelling another group Operation', function (): void {
+    enable_operation_queue();
+    app(TaskExtensionState::class)->enable();
+    destroyOwnedWorkspace($this->vm);
+    $group = Task::topLevel()->findOrFail($this->vm->group_id);
+    Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id,
+        'node_id' => $this->host->id, 'status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out',
+        'lock_key' => 'task_group:'.$group->id, 'input' => [], 'state' => []]);
+    $other = Operation::query()->create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $group->id,
+        'node_id' => $this->host->id, 'status' => OperationStatus::Running, 'input' => [], 'state' => []]);
+
+    expect(fn () => app(TaskCancelIntent::class)->start($group, 'fixture', null))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+
+    expect($other->fresh()->status)->toBe(OperationStatus::Running)->and($other->fresh()->cancel_requested_at)->toBeNull();
+    $this->assertDatabaseCount('operations', 2);
 });

@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteRemovalCompletion;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
@@ -28,6 +29,10 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if ($data['status'] === OperationStatus::Interrupted->value) {
+            $data['status'] = OperationStatus::Failed->value;
+        }
+
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($operation->status->terminal()) {
@@ -63,7 +68,7 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
                 $group->fill(['status' => $operation->kind === 'tasks.maintenance_finish' || $group->status === TaskGroupStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null])->save();
                 $group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
                     ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
-            } elseif (in_array($data['status'], ['failed', 'cancelled', 'interrupted'], true)) {
+            } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                 $this->failed($operation, ValidatedData::nullableString($data['error_code'] ?? null));
             }
 

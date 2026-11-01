@@ -27,6 +27,10 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if ($data['status'] === OperationStatus::Interrupted->value) {
+            $data['status'] = OperationStatus::Failed->value;
+        }
+
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $result = ValidatedData::object($data['result'] ?? []);
@@ -37,7 +41,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($data['status'] === OperationStatus::Succeeded->value) {
                 $this->record($vm, $operation->input, $result);
-            } elseif (in_array($data['status'], [OperationStatus::Failed->value, OperationStatus::Cancelled->value, OperationStatus::Interrupted->value], true)) {
+            } elseif (in_array($data['status'], [OperationStatus::Failed->value, OperationStatus::Cancelled->value], true)) {
                 $this->failed($vm, $operation->input, ValidatedData::nullableString($data['error_code'] ?? null));
             }
 

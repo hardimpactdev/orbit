@@ -170,7 +170,7 @@ To stop a waiting provision, use `tasks:cancel`. Cancellation first requests can
 
 Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. A stopped VM skips guest teardown. The exact group, Project and VM must own the workspace. At most one Route may target it; that Route must belong to the same Project and target only that workspace. Shared or foreign Routes refuse cancellation. Route withdrawal must succeed before VM deletion.
 
-The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed, interrupted or timed-out cleanup retains the records for recovery; it does not mark the group cancelled. Its captured VM cleanup [fails like a standalone destroy](/reference/compute-drivers#destroy-a-task-vm): the guest Node becomes `failed`, and another cancel claims it again. A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
+The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed, interrupted or timed-out cleanup retains the records for recovery; it does not mark the group cancelled. Its captured VM cleanup [fails like a standalone destroy](/reference/compute-drivers#destroy-a-task-vm): the guest Node becomes `failed`, and another cancel claims it again after [native settlement](/reference/operations#native-run-budgets). A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
 
 A completed group with an owned residual VM or workspace uses this same cleanup and stays `completed`; a completed group with neither returns `tasks.not_cancellable`. A VM without a group uses `task_vm.destroy`.
 
@@ -385,7 +385,7 @@ A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one
 
 One group uses one task VM and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
 
-A declared native Operation with the same `task_group` target and a nonterminal status makes the group busy. A new key returns `operation.target_busy`; the original key still replays its Operation. This lookup also finds the group's operation for cancellation. It uses the recorded target, kind and status, without requiring a writer stamp or `lock_key`. Terminal Operations and unrelated targets do not block admission.
+A declared native Operation with the same `task_group` target and a nonterminal status makes the group busy. A new key returns `operation.target_busy`; the original key still replays its Operation. This lookup also finds the group's operation for cancellation. It uses the recorded target, kind and status, without requiring a writer stamp or `lock_key`. Unrelated targets do not block admission. A timed-out `tasks.cancel` or `tasks.maintenance_finish` Operation still holds `task_group:<id>`: another cleanup admission returns `operation.target_busy` until [native settlement](/reference/operations#native-run-budgets) releases that hold. Other terminal Operations do not block admission.
 
 ## Tasks and subtasks
 
