@@ -82,6 +82,7 @@ jobs:
             action: inspect_source
             input:
               member: '${{ self.member }}'
+              retained: '${{ inputs.intent.source_capture }}'
               force: '${{ inputs.intent.force }}'
               repository: '${{ inputs.intent.repository }}'
         forEach:
@@ -209,10 +210,11 @@ jobs:
               ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
+        guard: '${{ inputs.intent.force || inputs.intent.members.all(member,member.failed_creation) }}'
       - name: destroy-fetch-files
         target: orbit-node-209
         dependsOn:
-          - step: destroy-mint
+          - step: destroy-source-assets
             condition:
               type: succeeded
         task:
@@ -275,6 +277,7 @@ jobs:
               member: '${{ self.member }}'
               capture: '${{ steps["destroy-inspect"].outputs.members.filter(row,row.instance_id == self.member.instance_id)[0] }}'
               force: '${{ inputs.intent.force }}'
+              removal_id: '${{ inputs.intent.removal_id }}'
         forEach:
           item: member
           in: '${{ inputs.intent.members }}'
@@ -433,20 +436,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-19-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>0?inputs.intent.teardown_commands[0].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>0?inputs.execution_secrets[inputs.intent.teardown_commands[0].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>0?inputs.intent.teardown_commands[0].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>0?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[0].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[0].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=0 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-1
         target: orbit-node-209
@@ -458,20 +463,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-20-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>1?inputs.intent.teardown_commands[1].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>1?inputs.execution_secrets[inputs.intent.teardown_commands[1].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>1?inputs.intent.teardown_commands[1].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>1?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[1].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[1].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=1 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-2
         target: orbit-node-209
@@ -483,20 +490,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-21-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>2?inputs.intent.teardown_commands[2].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>2?inputs.execution_secrets[inputs.intent.teardown_commands[2].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>2?inputs.intent.teardown_commands[2].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>2?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[2].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[2].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=2 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-3
         target: orbit-node-209
@@ -508,20 +517,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-22-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>3?inputs.intent.teardown_commands[3].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>3?inputs.execution_secrets[inputs.intent.teardown_commands[3].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>3?inputs.intent.teardown_commands[3].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>3?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[3].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[3].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=3 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-4
         target: orbit-node-209
@@ -533,20 +544,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-23-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>4?inputs.intent.teardown_commands[4].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>4?inputs.execution_secrets[inputs.intent.teardown_commands[4].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>4?inputs.intent.teardown_commands[4].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>4?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[4].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[4].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=4 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-5
         target: orbit-node-209
@@ -558,20 +571,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-24-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>5?inputs.intent.teardown_commands[5].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>5?inputs.execution_secrets[inputs.intent.teardown_commands[5].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>5?inputs.intent.teardown_commands[5].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>5?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[5].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[5].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=5 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-6
         target: orbit-node-209
@@ -583,20 +598,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-25-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>6?inputs.intent.teardown_commands[6].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>6?inputs.execution_secrets[inputs.intent.teardown_commands[6].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>6?inputs.intent.teardown_commands[6].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>6?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[6].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[6].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=6 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-7
         target: orbit-node-209
@@ -608,20 +625,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-26-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>7?inputs.intent.teardown_commands[7].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>7?inputs.execution_secrets[inputs.intent.teardown_commands[7].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>7?inputs.intent.teardown_commands[7].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>7?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[7].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[7].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=7 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-8
         target: orbit-node-209
@@ -633,20 +652,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-27-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>8?inputs.intent.teardown_commands[8].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>8?inputs.execution_secrets[inputs.intent.teardown_commands[8].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>8?inputs.intent.teardown_commands[8].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>8?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[8].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[8].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=8 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-9
         target: orbit-node-209
@@ -658,20 +679,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-28-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>9?inputs.intent.teardown_commands[9].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>9?inputs.execution_secrets[inputs.intent.teardown_commands[9].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>9?inputs.intent.teardown_commands[9].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>9?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[9].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[9].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=9 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-10
         target: orbit-node-209
@@ -683,20 +706,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-29-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>10?inputs.intent.teardown_commands[10].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>10?inputs.execution_secrets[inputs.intent.teardown_commands[10].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>10?inputs.intent.teardown_commands[10].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>10?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[10].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[10].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=10 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-11
         target: orbit-node-209
@@ -708,20 +733,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-30-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>11?inputs.intent.teardown_commands[11].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>11?inputs.execution_secrets[inputs.intent.teardown_commands[11].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>11?inputs.intent.teardown_commands[11].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>11?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[11].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[11].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=11 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-12
         target: orbit-node-209
@@ -733,20 +760,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-31-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>12?inputs.intent.teardown_commands[12].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>12?inputs.execution_secrets[inputs.intent.teardown_commands[12].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>12?inputs.intent.teardown_commands[12].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>12?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[12].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[12].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=12 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-13
         target: orbit-node-209
@@ -758,20 +787,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-32-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>13?inputs.intent.teardown_commands[13].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>13?inputs.execution_secrets[inputs.intent.teardown_commands[13].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>13?inputs.intent.teardown_commands[13].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>13?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[13].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[13].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=13 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-14
         target: orbit-node-209
@@ -783,20 +814,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-33-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>14?inputs.intent.teardown_commands[14].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>14?inputs.execution_secrets[inputs.intent.teardown_commands[14].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>14?inputs.intent.teardown_commands[14].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>14?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[14].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[14].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=14 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-15
         target: orbit-node-209
@@ -808,20 +841,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-34-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>15?inputs.intent.teardown_commands[15].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>15?inputs.execution_secrets[inputs.intent.teardown_commands[15].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>15?inputs.intent.teardown_commands[15].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>15?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[15].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[15].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=15 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-16
         target: orbit-node-209
@@ -833,20 +868,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-35-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>16?inputs.intent.teardown_commands[16].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>16?inputs.execution_secrets[inputs.intent.teardown_commands[16].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>16?inputs.intent.teardown_commands[16].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>16?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[16].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[16].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=16 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-17
         target: orbit-node-209
@@ -858,20 +895,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-36-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>17?inputs.intent.teardown_commands[17].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>17?inputs.execution_secrets[inputs.intent.teardown_commands[17].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>17?inputs.intent.teardown_commands[17].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>17?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[17].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[17].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=17 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-18
         target: orbit-node-209
@@ -883,20 +922,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-37-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>18?inputs.intent.teardown_commands[18].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>18?inputs.execution_secrets[inputs.intent.teardown_commands[18].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>18?inputs.intent.teardown_commands[18].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>18?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[18].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[18].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=18 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-19
         target: orbit-node-209
@@ -908,20 +949,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-38-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>19?inputs.intent.teardown_commands[19].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>19?inputs.execution_secrets[inputs.intent.teardown_commands[19].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>19?inputs.intent.teardown_commands[19].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>19?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[19].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[19].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=19 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-20
         target: orbit-node-209
@@ -933,20 +976,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-39-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>20?inputs.intent.teardown_commands[20].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>20?inputs.execution_secrets[inputs.intent.teardown_commands[20].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>20?inputs.intent.teardown_commands[20].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>20?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[20].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[20].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=20 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-21
         target: orbit-node-209
@@ -958,20 +1003,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-40-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>21?inputs.intent.teardown_commands[21].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>21?inputs.execution_secrets[inputs.intent.teardown_commands[21].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>21?inputs.intent.teardown_commands[21].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>21?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[21].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[21].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=21 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-22
         target: orbit-node-209
@@ -983,20 +1030,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-41-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>22?inputs.intent.teardown_commands[22].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>22?inputs.execution_secrets[inputs.intent.teardown_commands[22].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>22?inputs.intent.teardown_commands[22].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>22?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[22].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[22].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=22 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-23
         target: orbit-node-209
@@ -1008,20 +1057,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-42-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>23?inputs.intent.teardown_commands[23].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>23?inputs.execution_secrets[inputs.intent.teardown_commands[23].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>23?inputs.intent.teardown_commands[23].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>23?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[23].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[23].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=23 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-24
         target: orbit-node-209
@@ -1033,20 +1084,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-43-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>24?inputs.intent.teardown_commands[24].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>24?inputs.execution_secrets[inputs.intent.teardown_commands[24].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>24?inputs.intent.teardown_commands[24].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>24?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[24].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[24].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=24 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-25
         target: orbit-node-209
@@ -1058,20 +1111,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-44-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>25?inputs.intent.teardown_commands[25].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>25?inputs.execution_secrets[inputs.intent.teardown_commands[25].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>25?inputs.intent.teardown_commands[25].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>25?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[25].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[25].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=25 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-26
         target: orbit-node-209
@@ -1083,20 +1138,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-45-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>26?inputs.intent.teardown_commands[26].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>26?inputs.execution_secrets[inputs.intent.teardown_commands[26].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>26?inputs.intent.teardown_commands[26].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>26?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[26].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[26].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=26 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-27
         target: orbit-node-209
@@ -1108,20 +1165,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-46-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>27?inputs.intent.teardown_commands[27].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>27?inputs.execution_secrets[inputs.intent.teardown_commands[27].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>27?inputs.intent.teardown_commands[27].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>27?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[27].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[27].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=27 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-28
         target: orbit-node-209
@@ -1133,20 +1192,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-47-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>28?inputs.intent.teardown_commands[28].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>28?inputs.execution_secrets[inputs.intent.teardown_commands[28].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>28?inputs.intent.teardown_commands[28].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>28?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[28].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[28].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=28 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-29
         target: orbit-node-209
@@ -1158,20 +1219,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-48-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>29?inputs.intent.teardown_commands[29].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>29?inputs.execution_secrets[inputs.intent.teardown_commands[29].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>29?inputs.intent.teardown_commands[29].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>29?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[29].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[29].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=29 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-30
         target: orbit-node-209
@@ -1183,20 +1246,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-49-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>30?inputs.intent.teardown_commands[30].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>30?inputs.execution_secrets[inputs.intent.teardown_commands[30].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>30?inputs.intent.teardown_commands[30].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>30?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[30].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[30].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=30 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-31
         target: orbit-node-209
@@ -1208,20 +1273,22 @@ jobs:
                 - type: succeeded
                 - type: skipped
         task:
-          type: workflow
-          workflowIdOrName: instance-project-command
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-destro-50-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent:
-              ssh_execution: '${{ inputs.intent.ssh_execution }}'
-              script: '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-              timeout_seconds: '${{ size(inputs.intent.teardown_commands)>31?inputs.intent.teardown_commands[31].timeout_seconds:60 }}'
-              reference: >-
-                ${{
-                size(inputs.intent.teardown_commands)>31?inputs.execution_secrets[inputs.intent.teardown_commands[31].secret_field]:inputs.execution_secrets.git_read
-                }}
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
+            timeoutSec: '${{ size(inputs.intent.teardown_commands)>31?inputs.intent.teardown_commands[31].timeout_seconds:60 }}'
+            stdin: >-
+              ${{
+              size(inputs.intent.teardown_commands)>31?vault.get(inputs.execution_secrets[inputs.intent.teardown_commands[31].secret_field].vault,inputs.execution_secrets[inputs.intent.teardown_commands[31].secret_field].key):""
+              }}
         guard: '${{ size(inputs.intent.teardown_commands)<=31 || steps.exists(key,steps[key].status=="failed") }}'
       - name: destroy-teardown-ready
         target: orbit-node-209
@@ -1384,7 +1451,10 @@ jobs:
         target: orbit-node-209
         forEach:
           item: part
-          in: '${{ inputs.intent.route_mutations.forward.prepare_certificates }}'
+          in: >-
+            ${{
+            inputs.intent.route_mutations.forward.prepare_certificates.filter(item,inputs.intent.route_mutations.forward.prepare_certificates.filter(first,first.node_id
+            == item.node_id)[0].scope == item.scope) }}
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: destroy-database-ready
@@ -1398,10 +1468,11 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             intent:
-              leaf: '${{ self.part }}'
+              leaves: '${{ inputs.intent.route_mutations.forward.prepare_certificates.filter(leaf,leaf.node_id == self.part.node_id) }}'
               control_node_id: 209
               connection: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}'
               host_keys: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}'
+              node_id: '${{ self.part.node_id }}'
             execution_secrets: {}
             parent_run_id: '${{ run.id }}'
             restoring: false
@@ -1413,7 +1484,7 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: &ref_1
+            condition: &ref_2
               type: always
           - step: destroy-database-ready
             condition:
@@ -1443,9 +1514,9 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1470,11 +1541,11 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1499,13 +1570,13 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1536,15 +1607,15 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1570,17 +1641,17 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1608,19 +1679,19 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1641,21 +1712,21 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1682,27 +1753,29 @@ jobs:
         target: orbit-node-209
         forEach:
           item: part
-          in: '${{ inputs.intent.route_mutations.forward.certificates }}'
+          in: >-
+            ${{ inputs.intent.route_mutations.forward.certificates.filter(item,inputs.intent.route_mutations.forward.certificates.filter(first,first.node_id ==
+            item.node_id)[0].scope == item.scope) }}
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_withdraw_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1714,10 +1787,11 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             intent:
-              leaf: '${{ self.part }}'
+              leaves: '${{ inputs.intent.route_mutations.forward.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}'
               control_node_id: 209
               connection: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}'
               host_keys: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}'
+              node_id: '${{ self.part.node_id }}'
             execution_secrets: {}
             parent_run_id: '${{ run.id }}'
             restoring: false
@@ -1729,25 +1803,25 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_withdraw_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1778,27 +1852,27 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_withdraw_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1826,29 +1900,29 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_withdraw_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1875,31 +1949,31 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_withdraw_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_cleanup
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1924,33 +1998,33 @@ jobs:
         guard: '${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_withdraw_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_cleanup
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_retire_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -1974,35 +2048,35 @@ jobs:
           in: '${{ [inputs.intent.route_mutations.forward] }}'
         dependsOn:
           - step: withdraw_prepare_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_php
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_urls
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_prepare_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns_grace
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_withdraw_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_certificates
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_live_caddy
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_dns
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_cleanup
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_retire_lan
-            condition: *ref_1
+            condition: *ref_2
           - step: withdraw_retire_ingress
-            condition: *ref_1
+            condition: *ref_2
           - step: destroy-database-ready
             condition:
               type: succeeded
@@ -2015,7 +2089,10 @@ jobs:
             stage: '${{ self.stage }}'
             mode: forward
             required:
-              withdraw_prepare_certificates: '${{ size(inputs.intent.route_mutations.forward.prepare_certificates) }}'
+              withdraw_prepare_certificates: >-
+                ${{
+                size(inputs.intent.route_mutations.forward.prepare_certificates.filter(item,inputs.intent.route_mutations.forward.prepare_certificates.filter(first,first.node_id
+                == item.node_id)[0].scope == item.scope)) }}
               withdraw_php: '${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}'
               withdraw_lan: '${{ size(inputs.intent.route_mutations.forward.lan) }}'
               withdraw_ingress: '${{ size(inputs.intent.route_mutations.forward.ingress) }}'
@@ -2026,37 +2103,41 @@ jobs:
                 ${{ size(inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest != p.after.dns.digest) ? [{}] :
                 []) }}
               withdraw_withdraw_caddy: '${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}'
-              withdraw_live_certificates: '${{ size(inputs.intent.route_mutations.forward.certificates) }}'
+              withdraw_live_certificates: >-
+                ${{
+                size(inputs.intent.route_mutations.forward.certificates.filter(item,inputs.intent.route_mutations.forward.certificates.filter(first,first.node_id
+                == item.node_id)[0].scope == item.scope)) }}
               withdraw_live_caddy: '${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}'
               withdraw_dns: '${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null)) }}'
               withdraw_cleanup: '${{ size(inputs.intent.route_mutations.forward.cleanup) }}'
               withdraw_retire_lan: '${{ size(inputs.intent.route_mutations.forward.retire_lan) }}'
               withdraw_retire_ingress: '${{ size(inputs.intent.route_mutations.forward.retire_ingress) }}'
             outcomes: '${{ steps }}'
-      - name: remove-source-asset
+      - name: remove-worktree-source-asset
         target: orbit-node-209
-        dependsOn:
-          - step: withdraw
-            condition:
-              type: succeeded
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-remove-0-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "idm-remove-0-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: read
           inputs:
             action: finalize_source
             input:
               member: '${{ self.member }}'
-              capture: '${{ steps["destroy-inspect"].outputs.members.filter(row,row.instance_id == self.member.instance_id)[0] }}'
+              capture: '${{ steps["destroy-inspect"].outputs.members.filter(row,row.instance_id==self.member.instance_id)[0] }}'
               removal_id: '${{ inputs.intent.removal_id }}'
+              force: '${{ inputs.intent.force }}'
         forEach:
           item: member
-          in: '${{ inputs.intent.members }}'
-      - name: remove-source
+          in: '${{ inputs.intent.members.filter(member,member.source_layout=="worktree") }}'
+        dependsOn:
+          - step: withdraw
+            condition:
+              type: succeeded
+      - name: remove-worktree-source
         target: orbit-node-209
         dependsOn:
-          - step: remove-source-asset
+          - step: remove-worktree-source-asset
             condition:
               type: succeeded
         task:
@@ -2064,7 +2145,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-remove-1-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: script
-          globalArgs:
+          globalArgs: &ref_1
             name: '${{ "id-remove-" + run.id }}'
             transport:
               kind: ssh
@@ -2079,10 +2160,90 @@ jobs:
           inputs:
             hosts: 'name:target'
             interpreter: python3
-            script: '${{ steps["remove-source-asset-" + string(self._index)].outputs.script_body }}'
+            script: '${{ steps["remove-worktree-source-asset-"+string(self._index)].outputs.script_body }}'
         forEach:
           item: member
-          in: '${{ inputs.intent.members }}'
+          in: '${{ inputs.intent.members.filter(member,member.source_layout=="worktree") }}'
+      - name: remove-worktree-ready
+        target: orbit-node-209
+        dependsOn:
+          - step: remove-worktree-source
+            condition:
+              type: always
+          - step: withdraw
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-remove-2-" + run.id }}'
+          methodName: require_actions
+          inputs:
+            names:
+              - remove-worktree-source
+            counts:
+              - '${{ size(inputs.intent.members.filter(member,member.source_layout=="worktree")) }}'
+            steps: '${{ steps }}'
+      - name: remove-checkout-source-asset
+        target: orbit-node-209
+        dependsOn:
+          - step: remove-worktree-ready
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-remove-3-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          methodName: read
+          inputs:
+            action: finalize_source
+            input:
+              member: '${{ self.member }}'
+              capture: '${{ steps["destroy-inspect"].outputs.members.filter(row,row.instance_id==self.member.instance_id)[0] }}'
+              removal_id: '${{ inputs.intent.removal_id }}'
+              force: '${{ inputs.intent.force }}'
+        forEach:
+          item: member
+          in: '${{ inputs.intent.members.filter(member,member.source_layout=="checkout") }}'
+      - name: remove-checkout-source
+        target: orbit-node-209
+        dependsOn:
+          - step: remove-checkout-source-asset
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "ids-remove-4-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          methodName: script
+          globalArgs: *ref_1
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["remove-checkout-source-asset-"+string(self._index)].outputs.script_body }}'
+        forEach:
+          item: member
+          in: '${{ inputs.intent.members.filter(member,member.source_layout=="checkout") }}'
+      - name: remove-checkout-ready
+        target: orbit-node-209
+        dependsOn:
+          - step: remove-checkout-source
+            condition:
+              type: always
+          - step: remove-worktree-ready
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-remove-5-" + run.id }}'
+          methodName: require_actions
+          inputs:
+            names:
+              - remove-checkout-source
+            counts:
+              - '${{ size(inputs.intent.members.filter(member,member.source_layout=="checkout")) }}'
+            steps: '${{ steps }}'
       - name: remove-result
         target: orbit-node-209
         dependsOn:
@@ -2296,16 +2457,28 @@ jobs:
           - step: withdraw
             condition:
               type: always
-          - step: remove-source-asset
+          - step: remove-worktree-source-asset
             condition:
               type: always
-          - step: remove-source
+          - step: remove-worktree-source
+            condition:
+              type: always
+          - step: remove-worktree-ready
+            condition:
+              type: always
+          - step: remove-checkout-source-asset
+            condition:
+              type: always
+          - step: remove-checkout-source
+            condition:
+              type: always
+          - step: remove-checkout-ready
             condition:
               type: always
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-remove-2-" + run.id }}'
+          behaviorName: '${{ "idm-remove-6-" + run.id }}'
           methodName: destroy_result
           inputs:
             intent: '${{ inputs.intent }}'

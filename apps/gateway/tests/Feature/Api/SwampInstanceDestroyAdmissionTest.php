@@ -153,7 +153,7 @@ it('records the owning database snapshot before marking the Instance Removing', 
     $operation = Operation::query()->findOrFail($id);
 
     expect($operation->input['source_pending'])->toBeTrue()
-        ->and($operation->input['direct_destroy']['databases'][0]['connections'][0]['connection_id'])->toBe($database->id)
+        ->and($operation->input['direct_destroy']['database']['sqlite'][0]['connection_id'])->toBe($database->id)
         ->and($operation->input['direct_destroy']['teardown'][0]['user'])->toBe('orbit')
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing);
     expect(fn () => $database->update(['path' => $this->instance->checkout_path.'/replacement.sqlite']))
@@ -230,7 +230,7 @@ it('admits a new native retry after terminal failure using the same immutable so
     $retried = Operation::query()->findOrFail($next);
     expect($retried->input)->toBe($saved)
         ->and($retried->state['swamp_run_id'])->not->toBe($first->state['swamp_run_id'])
-        ->and($retried->input['direct_destroy']['databases'][0]['connections'][0]['connection_id'])->toBe($database->id)
+        ->and($retried->input['direct_destroy']['database']['sqlite'][0]['connection_id'])->toBe($database->id)
         ->and($this->socket->sent)->toHaveCount(2);
     expect(Operation::query()->count())->toBe(2);
     $executable = app(InstanceDestroySourceInspection::class)->executable(Operation::query()->findOrFail($next)->input);

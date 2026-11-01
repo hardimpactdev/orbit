@@ -114,31 +114,23 @@ export function createCompletionSteps(): Fields[] {
         direction: "to",
     });
     for (let index = 0; index < 32; index++) {
-        end.add("setup-" + index, {
-            type: "workflow",
-            workflowIdOrName: "instance-project-command",
-            inputs: {
-                operation_id: e("inputs.operation_id"),
-                node_id: e("inputs.node_id"),
-                kind: e("inputs.kind"),
-                intent: {
-                    ssh_execution: e(ssh),
-                    script: e(
-                        '"/tmp/orbit-instance-"+run.id+"/run_project_step.py"',
-                    ),
-                    timeout_seconds: e(
-                        "size(" + intent + ".setup_commands)>" + index + "?" +
-                            intent + ".setup_commands[" + index +
-                            "].timeout_seconds:60",
-                    ),
-                    reference: e(
-                        "size(" + intent + ".setup_commands)>" + index +
-                            "?inputs.execution_secrets[" + intent +
-                            ".setup_commands[" + index +
-                            '].secret_field]:inputs.execution_secrets.git_read',
-                    ),
-                },
-            },
+        end.sshAction("setup-" + index, "exec", {
+            argv: [
+                "/usr/bin/python3",
+                "-B",
+                e('"/tmp/orbit-instance-"+run.id+"/run_project_step.py"'),
+            ],
+            timeoutSec: e(
+                "size(" + intent + ".setup_commands)>" + index + "?" + intent +
+                    ".setup_commands[" + index + "].timeout_seconds:60",
+            ),
+            stdin: e(
+                "size(" + intent + ".setup_commands)>" + index +
+                    "?vault.get(inputs.execution_secrets[" + intent +
+                    ".setup_commands[" + index +
+                    "].secret_field].vault,inputs.execution_secrets[" + intent +
+                    ".setup_commands[" + index + '].secret_field].key):""',
+            ),
         }, {
             guard: e(
                 "size(" + intent + ".setup_commands)<=" + index +

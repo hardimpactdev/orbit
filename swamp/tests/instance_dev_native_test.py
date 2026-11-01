@@ -52,13 +52,6 @@ class InstanceDevelopmentNative(NativeTestCase):
                 task = step['task']
                 if task.get('behaviorType') == '@swamp/ssh': task['globalArgs'].update(sshBinary=str(binary), scpBinary=str(scp))
                 if step['name'] == 'create-mint': task['inputs']['run'] = 'true'
-        child=yaml.safe_load((ROOT/'workflows/workflow-instance-project-command.yaml').read_text())
-        child=json.loads(json.dumps(child).replace('/tmp/orbit-instance-',str(self.control)+'/stage-'))
-        for job in child['jobs']:
-            job.pop('target',None)
-            for step in job['steps']:
-                step.pop('target',None);step['task']['globalArgs'].update(sshBinary=str(binary),scpBinary=str(scp))
-        (self.repo/'workflows/workflow-command.yaml').write_text(yaml.safe_dump(child,sort_keys=False))
         (self.repo / 'workflows/workflow-create.yaml').write_text(yaml.safe_dump(self.workflow,sort_keys=False))
         self.cli('vault','create','local_encryption','orbit-control-inputs')
         self.cli('vault','put','orbit-control-inputs','environment',json.dumps({'values':{'STORED':'stored-private-sentinel'},'name':'Fixture','framework_key':None}))
@@ -99,12 +92,15 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.assertEqual(history['status'],'succeeded');self.assertTrue((self.application/'.git/second').is_file())
         self.assertNotIn('private-setup-sentinel',json.dumps(history))
 
-    def test_failed_setup_skips_later_command_and_same_root_resume_finishes(self):
+    def test_failed_setup_skips_later_command_and_fresh_root_converges(self):
         self.setup_commands(['test -f .git/allow','touch .git/second'])
         history=self.run_create(False)
         self.assertEqual(history['status'],'failed');self.assertFalse((self.application/'.git/second').exists())
         (self.application/'.git/allow').touch()
-        self.cli('workflow','resume','operation-instance-create','--run',self.run_id)
+        self.input['operation_id']=72
+        self.input['intent']['environment_output']['key']='instance-create-environment-result-72'
+        history=self.run_create()
+        self.assertEqual(history['status'],'succeeded')
         self.assertTrue((self.application/'.git/second').exists())
 
 
@@ -127,7 +123,7 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
         (self.repo/'workflows/workflow-destroy.yaml').write_text(yaml.safe_dump(workflow,sort_keys=False))
         from uuid import uuid4
         member={'instance_id':17,'checkout_path':str(self.application),'source_root':str(self.host/'apps'),'source_layout':'checkout','repository_identity':'github.com/example/project','branch':'main','starting_commit':self.git('rev-parse','HEAD').strip(),'user':self.input['intent']['ssh_execution']['target']['user'],'source_prepare_id':'admitted-prepare','registration_request_id':None,'stored_status':'active','failed_creation':False}
-        intent={'instance_id':17,'removal_id':str(uuid4()),'force':True,'inventory_digest':'a'*64,'source_pending':True,'repository':'https://github.com/example/project.git','protected_source_roots':[],'members':[member],'direct_destroy':{'node_user':member['user'],'runtime':{'processes':[],'schedules':[]},'database':{'sqlite':[],'servers':[]}},'native_runtime':{'processes':[],'schedules':[]},'teardown_commands':[],'route_mutations':{'forward':{name:[] for name in ['publications','prepare_certificates','certificates','cleanup','lan','retire_lan','url_writes','routes','ingress','retire_ingress']}},'ssh_execution':self.input['intent']['ssh_execution'],'execution_references_json':'{}'}
+        intent={'instance_id':17,'removal_id':str(uuid4()),'force':True,'inventory_digest':'a'*64,'source_pending':True,'repository':'https://github.com/example/project.git','protected_source_roots':[],'members':[member],'direct_destroy':{'node_user':member['user'],'runtime':{'processes':[],'schedules':[]},'database':{'sqlite':[],'servers':[]}},'native_runtime':{'processes':[],'schedules':[]},'source_capture':None,'teardown_commands':[],'route_mutations':{'forward':{name:[] for name in ['publications','prepare_certificates','certificates','cleanup','lan','retire_lan','url_writes','routes','ingress','retire_ingress']}},'ssh_execution':self.input['intent']['ssh_execution'],'execution_references_json':'{}'}
         self.input={'operation_id':71,'node_id':9,'kind':'instance.destroy','intent':intent,'execution_secrets':{'git_read':{'vault':'orbit-control-inputs','key':'git'}}}
     def test_full_destroy_empty_children_removes_only_owned_checkout(self):
         run=json.loads(self.cli('workflow','run','operation-instance-destroy','--input',json.dumps(self.input)).stdout)
@@ -137,7 +133,7 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
         self.assertTrue(result['removed']);self.assertEqual(result['source_inspection']['members'][0]['instance_id'],17)
     test_full_create_keeps_environment_private_and_empty_vp_setup_valid=None
     test_setup_commands_run_in_order_with_private_stdin=None
-    test_failed_setup_skips_later_command_and_same_root_resume_finishes=None
+    test_failed_setup_skips_later_command_and_fresh_root_converges=None
 
 
 SSH = '''import os,subprocess,sys

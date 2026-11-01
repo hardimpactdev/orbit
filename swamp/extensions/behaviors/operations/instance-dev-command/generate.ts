@@ -5,7 +5,6 @@ import {
 } from "./create_steps.ts";
 import { vpPreparationJobs } from "../instance-vp-command/steps.ts";
 import { destroySteps } from "./destroy_steps.ts";
-import { instanceActions } from "../instance-vp-command/native_steps.ts";
 import { expression as e } from "../instance-vp-command/native_steps.ts";
 const reference = {
     type: "object",
@@ -81,43 +80,6 @@ export function workflow(kind: "create" | "destroy") {
     };
 }
 if (import.meta.main) {
-    const command = instanceActions("project", "inputs.intent.ssh_execution");
-    command.sshAction("execute", "exec", {
-        argv: ["/usr/bin/python3", "-B", e("inputs.intent.script")],
-        timeoutSec: e("inputs.intent.timeout_seconds"),
-        stdin: e(
-            "vault.get(inputs.intent.reference.vault,inputs.intent.reference.key)",
-        ),
-    });
-    await Deno.writeTextFile(
-        new URL(
-            "../../../../workflows/workflow-instance-project-command.yaml",
-            import.meta.url,
-        ),
-        stringify({
-            id: "e8bc85c5-e568-46d8-8818-2ba87659ef75",
-            name: "instance-project-command",
-            description:
-                "One admitted private Project lifecycle command over official SSH.",
-            vaults: ["orbit-control-inputs"],
-            inputs: {
-                type: "object",
-                properties: {
-                    operation_id: { type: "integer" },
-                    node_id: { type: "integer" },
-                    kind: { type: "string" },
-                    intent: { type: "object" },
-                },
-                required: ["operation_id", "node_id", "kind", "intent"],
-                additionalProperties: false,
-            },
-            jobs: [{
-                name: "command",
-                target: "orbit-node-209",
-                steps: command.steps,
-            }],
-        }, { lineWidth: 160 }),
-    );
     for (const kind of ["create", "destroy"] as const) {
         await Deno.writeTextFile(
             new URL(

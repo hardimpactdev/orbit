@@ -6,7 +6,6 @@ license: MIT
 description: Shared SQLite files for the existing Instance lower APIs.
 behaviors:
   - operations/instance-lifecycle/transfer_root.ts
-  - operations/instance-lifecycle/destroy_root.ts
 additionalFiles:
   - database-server-commands/scripts/sqlite_actions.py
   - database-server-commands/scripts/sqlite_seed_common.py

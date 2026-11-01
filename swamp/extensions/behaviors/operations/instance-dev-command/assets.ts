@@ -78,6 +78,29 @@ export const behavior = {
                 },
                 ctx: Context,
             ) => {
+                if (
+                    args.input.source_capture !== null &&
+                    args.input.source_capture !== undefined
+                ) {
+                    const retained = z.object({
+                        members: z.array(ObjectValue),
+                        inventory_digest: z.string().regex(/^[a-f0-9]{64}$/),
+                    }).parse(args.input.source_capture);
+                    const ids =
+                        (args.input.members as Record<string, unknown>[]).map(
+                            (member) => member.instance_id,
+                        ).sort();
+                    if (
+                        JSON.stringify(ids) !==
+                            JSON.stringify(
+                                retained.members.map((member) =>
+                                    member.instance_id
+                                ).sort(),
+                            )
+                    ) throw new Error("instance.source_identity_invalid");
+                    await ctx.writeResource("result", "inspection", retained);
+                    return retained;
+                }
                 const observations = Object.entries(args.steps).filter((
                     [key],
                 ) => /^destroy-observe-[0-9]+$/.test(key)).map(([, step]) => {
@@ -104,7 +127,7 @@ export const behavior = {
                     ) throw new Error("instance.source_identity_invalid");
                     const address =
                         String(origin.outputs?.stdout ?? "").trim() ||
-                        (member.failed_creation
+                        (row.origin_required === false
                             ? String(args.input.repository)
                             : "");
                     row.source.origin = btoa(

@@ -24,6 +24,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
     public function input(Operation $operation): array
     {
         $input = $operation->input;
+        $sourceCapture = InstanceRemoval::query()->findOrFail(ValidatedData::string($input['removal_id']))->native_sources;
         $native = ValidatedData::object($input['native_destroy']);
         $secrets = ValidatedData::object($native['execution_secrets']);
         unset($native['execution_secrets']);
@@ -49,7 +50,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             }
         }
 
-        return ['intent' => [...$public, ...$native, 'teardown_commands' => $commands, 'execution_references_json' => json_encode(['git_read' => InstanceGitHubReadTokens::reference($operation)], JSON_THROW_ON_ERROR)],
+        return ['intent' => [...$public, ...$native, 'source_capture' => $sourceCapture, 'teardown_commands' => $commands, 'execution_references_json' => json_encode(['git_read' => InstanceGitHubReadTokens::reference($operation)], JSON_THROW_ON_ERROR)],
             'execution_secrets' => [...$secrets, 'git_read' => InstanceGitHubReadTokens::reference($operation)]];
     }
 
@@ -70,18 +71,22 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
                     app(ProjectDirectInstanceDestroyAction::class)->execute(app(InstanceDestroySourceInspection::class)->executable($operation->input), $result);
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update(['status' => InstanceRemovalStatus::Failed,
-                        'error_code' => $data['error_code'] ?? 'operation.cancelled', 'failed_step' => $this->failedStep($result)]);
+                        'error_code' => $data['error_code'] ?? 'operation.cancelled', 'current_step' => $this->failedStep($result), 'failed_step' => $this->failedStep($result)]);
                 }
             }
 
             return $this->direct->project($operation, $data, $result);
         });
     }
+
     /** @param array<string,mixed> $result */
     private function failedStep(array $result): InstanceRemovalStep
     {
         $step = $result['failed_step'] ?? '';
-        if (! is_string($step)) return InstanceRemovalStep::SourcePreparation;
+        if (! is_string($step)) {
+            return InstanceRemovalStep::SourcePreparation;
+        }
+
         return match (true) {
             str_starts_with($step, 'remove-source') => InstanceRemovalStep::SourceFinalization,
             str_starts_with($step, 'withdraw') => InstanceRemovalStep::RouteTargetClear,
@@ -89,5 +94,4 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             default => InstanceRemovalStep::SourcePreparation,
         };
     }
-
 }

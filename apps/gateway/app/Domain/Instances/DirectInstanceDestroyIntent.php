@@ -176,10 +176,12 @@ final readonly class DirectInstanceDestroyIntent
         $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes,
             'participant_node_ids' => array_values(array_unique([$node->id, ...$captured['participant_node_ids']])),
             'environment' => 'development',
-            'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
-            'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
-            'database_material' => ['$secret' => 'database.intent', 'id' => $databases['intent_id']],
-            'private_bindings' => ['database_material' => ['owner_node_id' => $node->id, 'read_node_ids' => array_values(array_unique(array_column($databases['servers'], 'node_id'))), 'write_node_ids' => []]],
+            ...($parentOwnsRoutes ? [
+                'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+                'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
+                'database_material' => ['$secret' => 'database.intent', 'id' => $databases['intent_id']],
+                'private_bindings' => ['database_material' => ['owner_node_id' => $node->id, 'read_node_ids' => array_values(array_unique(array_column($databases['servers'], 'node_id'))), 'write_node_ids' => []]],
+            ] : []),
             'native_destroy' => ['ssh_execution' => $ssh, 'native_runtime' => [...$runtime, 'processes' => $nativeProcesses], 'route_mutations' => $captured['route_mutations'],
                 'execution_secrets' => $captured['execution_secrets']],
             'direct_destroy' => [

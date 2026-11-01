@@ -11,6 +11,8 @@ from pathlib import Path
 
 def observe(value):
     member = value['member']
+    if value.get('retained') is not None:
+        return {'instance_id':member['instance_id'],'origin_required':False}
     path = Path(member['checkout_path'])
     account = pwd.getpwuid(os.geteuid())
     if account.pw_name != member['user'] or path.is_symlink() or path.resolve() != path:

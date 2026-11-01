@@ -12,6 +12,7 @@ export function destroySteps(): Fields[] {
     });
     a.script("observe", "inspect_source", {
         member: e("self.member"),
+        retained: e(intent + ".source_capture"),
         force: e(intent + ".force"),
         repository: e(intent + ".repository"),
     }, { forEach: { item: "member", in: e(intent + ".members") } });
@@ -104,12 +105,20 @@ export function destroySteps(): Fields[] {
             },
         },
     });
+    a.steps.at(-1)!.guard = e(
+        intent + ".force || " + intent +
+            ".members.all(member,member.failed_creation)",
+    );
     a.sshAction("fetch-files", "copy", {
         src: e(o("source-assets") + '.directory + "/."'),
         dst: e('"/tmp/orbit-instance-" + run.id + "/"'),
         direction: "to",
         recursive: true,
     });
+    a.steps.at(-1)!.dependsOn = [{
+        step: "destroy-source-assets",
+        condition: { type: "succeeded" },
+    }];
     a.sshAction("fetch", "exec", {
         argv: [
             "/usr/bin/python3",
@@ -132,6 +141,7 @@ export function destroySteps(): Fields[] {
                 ".members.filter(row,row.instance_id == self.member.instance_id)[0]",
         ),
         force: e(intent + ".force"),
+        removal_id: e(intent + ".removal_id"),
     }, {
         forEach: { item: "member", in: e(intent + ".members") },
         dependsOn: [{
@@ -238,31 +248,24 @@ export function destroySteps(): Fields[] {
         direction: "to",
     });
     for (let index = 0; index < 32; index++) {
-        a.add("teardown-" + index, {
-            type: "workflow",
-            workflowIdOrName: "instance-project-command",
-            inputs: {
-                operation_id: e("inputs.operation_id"),
-                node_id: e("inputs.node_id"),
-                kind: e("inputs.kind"),
-                intent: {
-                    ssh_execution: e(ssh),
-                    script: e(
-                        '"/tmp/orbit-instance-"+run.id+"/run_project_step.py"',
-                    ),
-                    timeout_seconds: e(
-                        "size(" + intent + ".teardown_commands)>" + index +
-                            "?" + intent + ".teardown_commands[" + index +
-                            "].timeout_seconds:60",
-                    ),
-                    reference: e(
-                        "size(" + intent + ".teardown_commands)>" + index +
-                            "?inputs.execution_secrets[" + intent +
-                            ".teardown_commands[" + index +
-                            '].secret_field]:inputs.execution_secrets.git_read',
-                    ),
-                },
-            },
+        a.sshAction("teardown-" + index, "exec", {
+            argv: [
+                "/usr/bin/python3",
+                "-B",
+                e('"/tmp/orbit-instance-"+run.id+"/run_project_step.py"'),
+            ],
+            timeoutSec: e(
+                "size(" + intent + ".teardown_commands)>" + index + "?" +
+                    intent + ".teardown_commands[" + index +
+                    "].timeout_seconds:60",
+            ),
+            stdin: e(
+                "size(" + intent + ".teardown_commands)>" + index +
+                    "?vault.get(inputs.execution_secrets[" + intent +
+                    ".teardown_commands[" + index +
+                    "].secret_field].vault,inputs.execution_secrets[" + intent +
+                    ".teardown_commands[" + index + '].secret_field].key):""',
+            ),
         }, {
             guard: e(
                 "size(" + intent + ".teardown_commands)<=" + index +
@@ -340,29 +343,59 @@ export function destroySteps(): Fields[] {
             condition: { type: "succeeded" },
         }];
     }
-    const end = instanceActions("remove", ssh, "withdraw");
-    end.script("source", "finalize_source", {
-        member: e("self.member"),
-        capture: e(
-            o("inspect") +
-                ".members.filter(row,row.instance_id == self.member.instance_id)[0]",
-        ),
-        removal_id: e(intent + ".removal_id"),
-    }, {
-        forEach: { item: "member", in: e(intent + ".members") },
-        dependsOn: [{
-            step: "remove-source-asset",
-            condition: { type: "succeeded" },
-        }],
-    });
-    end.steps[0].forEach = { item: "member", in: e(intent + ".members") };
-    (end.steps[1].task as Fields).inputs = {
-        hosts: "name:target",
-        interpreter: "python3",
-        script: e(
-            'steps["remove-source-asset-" + string(self._index)].outputs.script_body',
-        ),
-    };
+    const end = instanceActions("remove", ssh);
+    let prior = "withdraw";
+    for (const layout of ["worktree", "checkout"]) {
+        const list = intent + '.members.filter(member,member.source_layout=="' +
+            layout + '")';
+        const suffix = layout + "-source";
+        end.metadata(
+            suffix + "-asset",
+            "read",
+            {
+                action: "finalize_source",
+                input: {
+                    member: e("self.member"),
+                    capture: e(
+                        o("inspect") +
+                            ".members.filter(row,row.instance_id==self.member.instance_id)[0]",
+                    ),
+                    removal_id: e(intent + ".removal_id"),
+                    force: e(intent + ".force"),
+                },
+            },
+            "@nckrtl/instance-dev-command",
+            {
+                forEach: { item: "member", in: e(list) },
+                dependsOn: [{ step: prior, condition: { type: "succeeded" } }],
+            },
+        );
+        end.sshAction(suffix, "script", {
+            hosts: "name:target",
+            interpreter: "python3",
+            script: e(
+                'steps["remove-' + suffix +
+                    '-asset-"+string(self._index)].outputs.script_body',
+            ),
+        }, { forEach: { item: "member", in: e(list) } });
+        end.metadata(
+            layout + "-ready",
+            "require_actions",
+            {
+                names: ["remove-" + suffix],
+                counts: [e("size(" + list + ")")],
+                steps: e("steps"),
+            },
+            "@nckrtl/instance-dev-command",
+            {
+                dependsOn: [{
+                    step: "remove-" + suffix,
+                    condition: { type: "always" },
+                }, { step: prior, condition: { type: "succeeded" } }],
+            },
+        );
+        prior = "remove-" + layout + "-ready";
+    }
     end.metadata(
         "result",
         "destroy_result",

@@ -35,9 +35,10 @@ export function destroyResult(intent: Record<string, unknown>, steps: Steps) {
                 "destroy-teardown-ready",
                 "destroy-database-ready",
                 "withdraw",
-                "remove-source",
+                "remove-worktree-ready",
+                "remove-checkout-ready",
             ],
-            [1, 1, 1, 1, 1, (intent.members as unknown[]).length],
+            [1, 1, 1, 1, 1, 1, 1],
             steps,
         );
         if (steps["withdraw-0"]?.outputs?.ready !== true) throw new Error();

@@ -82,7 +82,8 @@ Deno.test("destroy cannot accept skipped verification or publication and retains
         "destroy-teardown-ready": done(),
         "destroy-database-ready": done(),
         "withdraw-0": done({ ready: true }),
-        "remove-source-0": done(),
+        "remove-worktree-ready": done(),
+        "remove-checkout-ready": done(),
     };
     assertEquals(destroyResult(intent, steps).ready, true);
     const result = destroyResult(intent, {

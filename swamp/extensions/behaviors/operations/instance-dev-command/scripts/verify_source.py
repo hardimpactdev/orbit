@@ -13,6 +13,12 @@ def verify(value):
         if path.exists() or path.is_symlink():
             raise ValueError('instance.removal_conflict')
         return {'ready': True}
+    if not path.exists() and not path.is_symlink():
+        receipt = Path(member['source_root']) / ('.orbit-removal-'+value['removal_id']+'-'+str(member['instance_id'])+'.json')
+        expected = {'instance_id':member['instance_id'],'removal_id':value['removal_id'],'source_digest':captured['source_digest'],'identity':captured['source_identity']}
+        if receipt.is_symlink() or not receipt.is_file() or json.loads(receipt.read_text()) != expected:
+            raise ValueError('instance.removal_conflict')
+        return {'ready':True}
     info = path.lstat()
     if not path.is_dir() or path.is_symlink() or str(info.st_dev)+':'+str(info.st_ino) != captured['source_identity']:
         raise ValueError('instance.removal_conflict')
