@@ -16,6 +16,8 @@ final class SetAnalyticsCredentialsRequest extends FormRequest
     {
         return [
             'api_key' => ['required', 'string', 'min:8', 'max:512'],
+            'management_email' => ['sometimes', 'required', 'string', 'email:rfc', 'max:254'],
+            'management_password' => ['sometimes', 'required', 'string', 'max:4096', 'not_regex:/[\x00-\x1F\x7F]/'],
         ];
     }
 
@@ -23,7 +25,7 @@ final class SetAnalyticsCredentialsRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['api_key']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['api_key', 'management_email', 'management_password']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -34,5 +36,19 @@ final class SetAnalyticsCredentialsRequest extends FormRequest
         $validated = $this->validated();
 
         return is_string($validated['api_key'] ?? null) ? $validated['api_key'] : '';
+    }
+
+    public function managementEmail(): ?string
+    {
+        $email = $this->validated('management_email');
+
+        return is_string($email) ? $email : null;
+    }
+
+    public function managementPassword(): ?string
+    {
+        $password = $this->validated('management_password');
+
+        return is_string($password) ? $password : null;
     }
 }

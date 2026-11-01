@@ -594,7 +594,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, script, analyze, turn, publish, park, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
-            ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
+            ->toContain('- Analytics: pin the Plausible version, and show presence, set, and unset Plausible credentials (Stats key and optional management email/password). Values are never returned.')
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')
             ->toContain('- Vault: status, setup, sync, and teardown.')
             ->toContain(

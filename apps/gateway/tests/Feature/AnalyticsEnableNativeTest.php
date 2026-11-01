@@ -58,6 +58,22 @@ function analyticsEnableTerminal(object $test, string $status = 'succeeded'): Op
     return app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'finish', 'step' => 'result']);
 }
 
+it('accepts enable after management credentials are set through the normal API', function (): void {
+    $settings = app(SettingRepository::class);
+    $settings->delete($this->scope, 'analytics.management_email');
+    $settings->delete($this->scope, 'analytics.management_password');
+    $this->postJson($this->url)->assertConflict()->assertJsonPath('error.code', 'analytics.credentials_missing');
+    $this->putJson('/api/v1/analytics/credentials', [
+        'api_key' => 'new-private-stats-sentinel',
+        'management_email' => 'owner@example.test',
+        'management_password' => 'new-private-password-sentinel',
+    ])->assertOk();
+    $this->postJson($this->url)->assertAccepted();
+    $operation = Operation::query()->sole();
+    expect($operation->kind)->toBe('analytics.enable')
+        ->and(json_encode($operation->input))->not->toContain('new-private-stats-sentinel', 'new-private-password-sentinel', 'owner@example.test');
+});
+
 it('captures prospective router ingress and DNS publication before dispatch with names-only secrets', function (): void {
     $this->postJson($this->url)->assertAccepted();
     $operation = Operation::query()->sole();

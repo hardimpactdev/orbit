@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Domain\Activity\ActivityInputRedaction;
+use App\Domain\Analytics\AnalyticsCredentialsRedaction;
 use App\Domain\Analytics\AnalyticsDatabaseConnectionGuard;
 use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -32,6 +34,7 @@ final class AnalyticsServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([AnalyticsCredentialsRedaction::class], ActivityInputRedaction::class);
         $this->app->tag([AnalyticsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([AnalyticsProcessOwnership::class], ProcessRemovalGuard::class);

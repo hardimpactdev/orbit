@@ -14,12 +14,30 @@ use Saloon\Http\Faking\MockResponse;
 function analytics_credentials_payload(bool $configured = true): array
 {
     return [
-        'data' => ['configured' => $configured, 'driver' => 'plausible_ce'],
+        'data' => ['configured' => $configured, 'driver' => 'plausible_ce', 'management_email_configured' => false, 'management_password_configured' => false],
         'meta' => ['request_id' => node_role_request_id()],
     ];
 }
 
 describe('analytics credentials requests', function (): void {
+    it('transports optional management credentials only in the protected body', function (): void {
+        $email = 'private-owner@example.test';
+        $password = 'private-management-sentinel';
+        $mockClient = new MockClient([SetAnalyticsCredentialsRequest::class => MockResponse::make(analytics_credentials_payload())]);
+        $request = new SetAnalyticsCredentialsRequest('private-api-sentinel', $email, $password);
+        node_role_gateway_connector($mockClient)->send($request);
+        expect($mockClient->getLastPendingRequest()?->body()->all())->toBe([
+            'api_key' => 'private-api-sentinel', 'management_email' => $email, 'management_password' => $password,
+        ])->and(print_r($request, true))->not->toContain($email, $password, 'private-api-sentinel');
+    });
+
+    it('requires boolean management presence metadata', function (): void {
+        $payload = analytics_credentials_payload();
+        $payload['data']['management_password_configured'] = 'private-value';
+        $mockClient = new MockClient([ShowAnalyticsCredentialsRequest::class => MockResponse::make($payload)]);
+        expect(fn () => node_role_gateway_connector($mockClient)->send(new ShowAnalyticsCredentialsRequest)->dto())
+            ->toThrow(GatewayApiException::class, 'invalid analytics credentials data');
+    });
     it('reads whether a Stats API key is stored and never expects the key', function (): void {
         $mockClient = new MockClient([
             ShowAnalyticsCredentialsRequest::class => MockResponse::make(analytics_credentials_payload(false)),
@@ -34,6 +52,8 @@ describe('analytics credentials requests', function (): void {
                 'configured' => false,
                 'driver' => 'plausible_ce',
                 'request_id' => node_role_request_id(),
+                'management_email_configured' => false,
+                'management_password_configured' => false,
             ]);
     });
 
@@ -67,7 +87,7 @@ describe('analytics credentials requests', function (): void {
     it('refuses an answer that lacks configured', function (): void {
         $mockClient = new MockClient([
             ShowAnalyticsCredentialsRequest::class => MockResponse::make([
-                'data' => ['driver' => 'plausible_ce'],
+                'data' => ['driver' => 'plausible_ce', 'management_email_configured' => false, 'management_password_configured' => false],
                 'meta' => ['request_id' => node_role_request_id()],
             ]),
         ]);

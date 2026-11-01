@@ -120,6 +120,10 @@ Dashboard publication first runs the shared [Caddy package step](/reference/node
 
 ## Publish a tracking host
 
+Before enabling tracking, register the Plausible owner at `https://analytics.orbit` and create its Stats API key. Store that key and the owner's email and password through the existing `PUT /api/v1/analytics/credentials` endpoint. Its JSON body requires `api_key` and accepts optional `management_email` and `management_password`. Omitted management fields keep their stored values; an explicit empty value is refused. All three values are encrypted as Gateway settings and are never returned. This configures access to an existing Plausible account; it does not create one.
+
+For the CLI, use `orbit analytics:credentials --set --management-email=EMAIL`. The command asks for the key and password with hidden prompts. In automation, `--management-password-stdin` reads one password line from stdin; there is no password argument or option value. `analytics:credentials` reports only whether the key, email and password are stored. `--unset` clears all three. The topology fixture prepares them through the same API with generated values in the request body, never command arguments or database seeds.
+
 A tracking host is a Route of kind `analytics_tracking` that belongs to one Instance. It proxies only Plausible's script and event paths.
 
 `orbit instance:analytics:enable INSTANCE` publishes `analytics.<instance domain>`. The analytics role must be active (`analytics.role_missing`). The Instance must already serve a domain (`analytics.domain_required`). `--host=HOST` names another host. You can repeat it up to ten times. The command sets the exact host set, so it removes a host that you leave out. A host that another Route owns fails with `analytics.host_taken`.

@@ -23,7 +23,7 @@ The SDK models exactly 248 concrete public Gateway API operations:
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
 - Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance. Attachments accept an Instance ID or exact Route domain and an app name. They are bodyless. Responses omit the secret and environment values.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
-- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
+- Analytics: pin the Plausible version, and show presence, set, and unset Plausible credentials (Stats key and optional management email/password). Values are never returned.
 - GitHub App: install, show, and destroy.
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.

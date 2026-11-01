@@ -51,17 +51,19 @@ Human output names the Node, the version, and the previous version. JSON returns
 
 ## orbit analytics:credentials
 
-Show whether the Gateway has a Plausible Stats API key, store one, or clear it.
+Show whether Plausible credentials are stored, store them, or clear them.
 
 ```bash
-orbit analytics:credentials [--set] [--api-key=KEY] [--unset] [--json]
+orbit analytics:credentials [--set] [--api-key=KEY] [--management-email=EMAIL] [--management-password-stdin] [--unset] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--set` | Store a key. In a terminal the command asks for it when `--api-key` is absent. |
 | `--api-key` | The key to store. Use it with `--set`. |
-| `--unset` | Clear the stored key. |
+| `--management-email` | Existing Plausible owner email. With `--set`, ask for the password through a hidden prompt. |
+| `--management-password-stdin` | With `--set`, read one password line from piped stdin instead of prompting. No password option value exists. |
+| `--unset` | Clear the key, management email and management password. |
 
 ```bash
 orbit analytics:credentials
@@ -70,13 +72,15 @@ orbit analytics:credentials --set --api-key=plausible-read-only-key
 orbit analytics:credentials --unset --json
 ```
 
-The command never prints the key. Human output says whether a key is stored and names the driver `plausible_ce`. JSON returns `configured`, `driver`, and the request ID.
+The command never prints any credential. Human output reports whether each value is stored. JSON returns `configured` for the Stats key, `management_email_configured`, `management_password_configured`, `driver`, and the request ID. All presence fields are booleans. The Gateway encrypts all three stored values.
 
-Create the key in Plausible at `https://analytics.orbit`, then store it here. The Gateway sends it only to the fleet Plausible Stats API. `--set` and `--unset` together are refused.
+Register the owner and create the key in Plausible at `https://analytics.orbit`, then store them here. `orbit analytics:credentials --set --management-email=EMAIL` uses hidden prompts for the omitted key and password. For automation, pipe the password through stdin with `--management-password-stdin`; never put it in command arguments. Omitted management fields keep their stored values, and empty values are refused. The API accepts these fields in the existing credentials JSON body; it never returns their values. The Gateway sends it only to the fleet Plausible Stats API. `--set` and `--unset` together are refused.
 
 | Error code | Meaning |
 | --- | --- |
 | `analytics.credentials_conflict` | `--set` and `--unset` were both given. |
+| `analytics.management_credentials_invalid` | A management option was used without `--set`, or the email is invalid. |
+| `analytics.management_password_invalid` | The stdin password is empty, unavailable, over 4096 bytes, or contains a control character. Use piped stdin or the hidden prompt. |
 | `analytics.api_key_invalid` | The key is missing, shorter than 8 or longer than 512 characters, or holds control characters. The CLI refuses it before any request. |
 
 The Gateway stores the key even while no analytics role is assigned. The next stats read uses it.
