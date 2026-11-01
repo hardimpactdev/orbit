@@ -25,7 +25,12 @@ it('registers maintenance schedules without the retired task tick when tasks are
     $file = collect($schedule->events())->first(
         static fn ($event): bool => str_contains((string) $event->command, 'problems:file'),
     );
-    expect($schedule->events())->toHaveCount(3)
+    $batches = collect($schedule->events())->first(
+        static fn ($event): bool => str_contains((string) $event->command, 'queue:prune-batches'),
+    );
+    expect($schedule->events())->toHaveCount(4)
+        ->and($batches)->not->toBeNull()
+        ->and($batches->expression)->toBe('0 0 * * *')
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:tick')))->toBeFalse()
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:collect-t3-metrics')))->toBeFalse()
         ->and($file)->not->toBeNull()
@@ -43,7 +48,7 @@ it('skips task maintenance schedules while keeping the reader when tasks are dis
             || str_contains((string) $event->command, 'gateway:swamp-reader:check'),
     );
 
-    expect($schedule->events())->toHaveCount(3)
+    expect($schedule->events())->toHaveCount(4)
         ->and(array_all($schedule->events(), static fn ($event): bool => $event->filtersPass(app())))->toBeFalse()
         ->and($reader)->not->toBeNull()
         ->and($reader->filtersPass(app()))->toBeTrue();

@@ -18,6 +18,7 @@ use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\ValidateRequestBodySize;
 use App\Http\Responses\ApiErrorResponse;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
+use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -56,6 +57,12 @@ $app = Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (Schedule $schedule): void {
         app(TaskSchedule::class)->register($schedule);
         // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
+        // Housekeeping of the Gateway's own tables and Horizon metrics: Gateway-local, no Node and no Swamp work.
+        GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
+        GatewaySchedule::command($schedule, 'queue:prune-failed', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--hours='.config()->integer('retention.failed_jobs_hours')])->daily();
+        // Horizon's metrics for its dashboard, only while Horizon runs.
+        GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
+            ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
