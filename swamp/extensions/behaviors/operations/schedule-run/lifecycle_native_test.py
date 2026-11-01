@@ -360,3 +360,35 @@ p.write_text(json.dumps(s))
         self.assertEqual(len(set(paths)), 4)
         self.assertFalse(self.unit("timer").exists())
         self.assertFalse(self.unit("service").exists())
+
+    def test_definition_parent_converges_two_members_without_model_lock_collisions(self):
+        import copy
+        import uuid
+        workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-schedule-install-instance-definitions.yaml").read_text())
+        for job in workflow["jobs"]:
+            self.assertEqual(job.pop("target"), "orbit-node-209")
+            for step in job["steps"]:
+                self.assertEqual(step.pop("target"), "orbit-node-209")
+        (self.repo / "workflows/workflow-operation-schedule-install-instance-definitions.yaml").write_text(yaml.safe_dump(workflow, sort_keys=False))
+        systemctl = self.repo / "cfgmgmt-tools/systemctl"
+        text = systemctl.read_text()
+        text = text.replace("import json,sys", "import json,sys,fcntl\nlock=open(" + repr(str(self.host / "systemd.lock")) + ", 'a')\nfcntl.flock(lock,fcntl.LOCK_EX)")
+        systemctl.write_text(text)
+        members = []
+        for _ in range(2):
+            intent = copy.deepcopy(self.inputs["intent"])
+            intent["schedule"].update(id=str(uuid.uuid4()), desired="disabled")
+            members.append({"id": intent["schedule"]["id"], "intent": intent})
+        value = {"operation_id": 17, "node_id": 9, "kind": "schedule.install_instance_definitions", "intent": {"instance_id": 4, "members": members}, "execution_secrets": {}}
+        reply = self.cli("workflow", "run", "operation-schedule-install-instance-definitions", "--stdin", input=json.dumps(value))
+        self.assertEqual(json.JSONDecoder().raw_decode(reply.stdout.lstrip())[0]["status"], "succeeded")
+        for member in members:
+            name = "orbit-schedule-" + member["id"]
+            for suffix in [".service", ".timer"]:
+                self.assertTrue((self.host / "units" / (name + suffix)).exists())
+            state = json.loads(self.state.read_text())["units"][name + ".timer"]
+            self.assertFalse(state["active"])
+            self.assertFalse(state["enabled"])
+        value["intent"]["members"] = []
+        reply = self.cli("workflow", "run", "operation-schedule-install-instance-definitions", "--stdin", input=json.dumps(value))
+        self.assertEqual(json.JSONDecoder().raw_decode(reply.stdout.lstrip())[0]["status"], "succeeded")
