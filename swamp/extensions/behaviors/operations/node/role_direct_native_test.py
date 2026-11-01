@@ -30,8 +30,6 @@ class DirectRoleNative(NativeTestCase):
         for filename, factory in [('role_metrics.ts', 'roleMetrics'), ('role_publication.ts', 'rolePublication'), ('role_certificates.ts', 'roleCertificates')]:
             helper = self.repo / 'extensions/behaviors/operations/node' / filename
             helper.write_text('import {fixtureHttp} from "./role_direct_native_fixture.ts";\n' + helper.read_text().replace(f'export const behavior = {factory}();', f'export const behavior = {factory}(() => fixtureHttp);'))
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./node/role_direct_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         source = ROOT / ('workflows/workflow-' + getattr(self, 'workflow_name', 'operation-node-role-add-direct') + '.yaml')
         self.source = source.read_text()
         parsed = subprocess.run(['/tmp/lane0d-deno/deno', 'eval',
@@ -165,7 +163,7 @@ class DirectRoleNative(NativeTestCase):
             owner.state['operation']['status'] = 'queued'
             owner.state['operation']['result'] = None
             self.run_workflow(success=False)
-            self.assertEqual(owner.state['operation']['status'], 'failed')
+            self.assertEqual(owner.state['operation']['status'], 'running')
             self.assertEqual(len(private_reads), 2)
             self.assertEqual(private_reads[-1], self.run_id)
             self.assertEqual(errors, [])

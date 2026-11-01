@@ -30,9 +30,9 @@ return [
 - `POST .../{operation}/result` records `run_id`, native `status`, timestamps, bounded `result`, and optional `error_code`.
 - The shared layer checks caller authority and the bound root UUID. It does not revalidate native work. Public `operation:list`, `operation:show` and `operation:cancel` remain. Executor/claim/run/step/child/receipt APIs do not.
 
-`POST .../{operation}/failure` accepts only `run_id` from the exact root Node and records fixed `operation.native_failed` without family projection. A separate root-placed failed-dependency job calls `@nckrtl/operation-failure` v2026.10.31.1 `report` with the four direct arguments. This covers upstream behavior rejection. Pinned Swamp does not provide a durable terminal outbox; delivery failure still needs native retry and must not be claimed crash-safe.
+The shared subscriber follows kinds with `terminal_result`; normal operation reads retain their existing native failure check. A failed or interrupted run without selected public output records `operation.native_failed`. A family that needs a specific public error code prints it in the result step stdout. Workflows contain no HTTP failure reporter, and the Gateway has no `POST .../{operation}/failure` endpoint.
 
-`directOperation` reads the intent before the family action. A recorded cancellation skips the action and projects cancellation. A workflow must also project an engine-level failure that occurs before a behavior can callback; this is shared native failure handling, not a Gateway poller.
+Existing `directOperation` callers still read their admitted intent before the family action. Recorded cancellation skips that action and records cancellation. New-shape families use full workflow inputs and public result stdout through the shared terminal projector.
 
 ## Multi-Node public and private steps
 

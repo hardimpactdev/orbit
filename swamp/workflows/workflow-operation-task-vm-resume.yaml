@@ -98,21 +98,3 @@ jobs:
             run_id: '${{ run.id }}'
             admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs : null }}'
             outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.guest) && has(steps.guest.outputs) ? [steps.guest.outputs] : []) + (has(steps.pi) && has(steps.pi.outputs) ? [steps.pi.outputs] : []) }}'
-
-  - name: failure
-    dependsOn: [{ job: projection, condition: { type: failed } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: settle-failure
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/operation-failure'
-          behaviorName: task-vm-resume-failure
-          methodName: report
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'

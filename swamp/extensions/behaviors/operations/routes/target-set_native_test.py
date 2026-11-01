@@ -26,9 +26,6 @@ class TargetSetNative(NativeTestCase):
         (route / 'publication.ts').write_text('import {publicationFixture} from "./target-set_native_fixture.ts"; export const behavior={...publicationFixture,type:"@nckrtl/route-publication"};')
         cert = self.repo / 'extensions/behaviors/operations/certificates/mod.ts'
         cert.write_text('import {certificateFixture} from "../routes/target-set_native_fixture.ts"; export const behavior={...certificateFixture,type:"@nckrtl/certificates"};')
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./routes/target-set_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace(
-            'export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp({node_id:9}));'))
         source = yaml.safe_load((ROOT / 'workflows/workflow-operation-route-target-set.yaml').read_text())
         signer_steps = [s for j in source['jobs'] for s in j['steps'] if s['task']['methodName'] == 'signBatch']
         self.assertEqual(len(signer_steps), 2)

@@ -21,9 +21,6 @@ class BootstrapNative(NativeTestCase):
         self.secrets=(secret,)
         self.copy_behaviors('automatic-deploy','operations/_lib','operations/node-bootstrap','operations/routes','operations/php')
         base=self.repo/'extensions/behaviors/operations'
-        shutil.copy(ROOT/'extensions/behaviors/operations/failure.ts',base/'failure.ts')
-        failure=base/'failure.ts'
-        failure.write_text('import {fixtureHttp} from "./node-bootstrap/native_fixture.ts";\n'+failure.read_text().replace('nativeFailure();','nativeFailure(() => fixtureHttp);'))
         direct=base/'node-bootstrap/direct.ts'
         direct.write_text('import {fixtureHttp,fixtureApply,engineRefused} from "./native_fixture.ts";\n'+direct.read_text().replace('export const behavior = nodeBootstrapDirect();','''
 const fixture=nodeBootstrapDirect(() => fixtureHttp,fixtureApply);
@@ -45,7 +42,7 @@ execute:async (...args:Parameters<typeof fixture.methods.apply.execute>) => {
         for kind in KINDS:
             name='workflow-operation-'+kind.replace('.','-').replace('_','-')+'.yaml'
             workflow=yaml.safe_load((ROOT/'workflows'/name).read_text())
-            self.assertEqual([j['name'] for j in workflow['jobs']],['packages' if kind == 'node.prepare_php_packages' else 'bootstrap','failure'])
+            self.assertEqual([j['name'] for j in workflow['jobs']],['packages' if kind == 'node.prepare_php_packages' else 'bootstrap'])
             for job in workflow['jobs']:
                 self.assertEqual(job.pop('target'),'${{ "orbit-node-" + string(inputs.node_id) }}')
                 self.assertEqual(job.pop('labels'),{'node':'${{ string(inputs.node_id) }}'})
@@ -71,14 +68,16 @@ execute:async (...args:Parameters<typeof fixture.methods.apply.execute>) => {
             self.assertTrue(all('/direct-operations/17' in c['path'] for c in state['calls']))
             self.assertFalse(any('children' in c['path'] or 'executor' in c['path'] for c in state['calls']))
 
-    def test_engine_failure_closes_the_original_parent_before_private_material_or_effects(self):
+    def test_engine_failure_stays_in_native_history_without_a_worker_callback(self):
         self.state['engineRefused']=True
         for kind in KINDS:
             state=self.run_root(kind,False)
-            self.assertEqual(state['operation']['status'],'failed')
-            self.assertEqual(state['operation']['error_code'],'operation.native_failed')
+            self.assertEqual(state['operation']['status'],'queued')
+            self.assertIsNone(state['operation'].get('error_code'))
             self.assertEqual(state['actions'],0)
-            self.assertEqual([c['path'] for c in state['calls']],['/api/v1/direct-operations/17/failure'])
+            self.assertEqual(state['calls'],[])
+            history=json.loads(self.cli('workflow','history','get',self.run_id).stdout)
+            self.assertEqual(history['status'],'failed')
 
     def test_private_failure_is_bounded_and_cannot_enter_native_data(self):
         self.state['privateFailure']=True

@@ -104,13 +104,3 @@ jobs:
       - {job: agent_job, condition: {type: always}}
     steps:
       - {name: project, writes: true, guard: '${{ !has(steps.admit) || !has(steps.admit.outputs) }}', task: {type: behavior, behaviorType: '@nckrtl/node-converge-direct', behaviorName: '${{ "node-converge-" + string(inputs.node_id) }}', methodName: project, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', outcomes: '${{ (has(steps.agent_install) && has(steps.agent_install.outputs) ? [steps.agent_install.outputs] : []) + (has(steps.caddy_package) && has(steps.caddy_package.outputs) ? [steps.caddy_package.outputs] : []) + (has(steps.caddy) && has(steps.caddy.outputs) ? [steps.caddy.outputs] : []) + (has(steps.peer_dns) && has(steps.peer_dns.outputs) ? [steps.peer_dns.outputs] : []) + (has(steps.private_dns) && has(steps.private_dns.outputs) ? [steps.private_dns.outputs] : []) + (has(steps.route_residue) && has(steps.route_residue.outputs) ? [steps.route_residue.outputs] : []) + (has(steps.php_runtime) && has(steps.php_runtime.outputs) ? [steps.php_runtime.outputs] : []) + (has(steps.tmpfiles) && has(steps.tmpfiles.outputs) ? [steps.tmpfiles.outputs] : []) + (has(steps.agent) && has(steps.agent.outputs) ? [steps.agent.outputs] : []) }}'}}}
-  - name: admission_failure
-    dependsOn:
-      - {job: admission, condition: {type: failed}}
-    steps:
-      - {name: report_admission_failure, task: {type: behavior, behaviorType: '@nckrtl/operation-failure', behaviorName: '${{ "operation-failure-node-" + string(inputs.node_id) }}', methodName: report, inputs: &ref_0 {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: failure_callback
-    dependsOn:
-      - {job: projection, condition: {type: failed}}
-    steps:
-      - {name: report_failure, task: {type: behavior, behaviorType: '@nckrtl/operation-failure', behaviorName: '${{ "operation-failure-node-" + string(inputs.node_id) }}', methodName: report, inputs: *ref_0}}

@@ -31,8 +31,6 @@ fail: {...root.methods.fail, execute: (...args: Parameters<typeof root.methods.f
 }};'''))
         publication=self.repo/'extensions/behaviors/operations/routes/publication.ts'
         publication.write_text('import {fixtureHttp, fixtureInvoke, fixturePhp} from "../instance-lifecycle/fixtures/destroy_native.ts";\n'+publication.read_text().replace('export const behavior = publication();','export const behavior = publication(() => fixtureHttp, fixtureInvoke, undefined, undefined, undefined, fixturePhp);'))
-        failure=self.repo/'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./instance-lifecycle/fixtures/destroy_native.ts";\n'+failure.read_text().replace('nativeFailure();','nativeFailure(() => fixtureHttp);'))
         source=ROOT/'workflows/workflow-operation-instance-destroy.yaml'
         workflow=yaml.safe_load(source.read_text())
         for job in workflow['jobs']:
@@ -70,10 +68,10 @@ fail: {...root.methods.fail, execute: (...args: Parameters<typeof root.methods.f
         state=self.read();self.assertEqual(state['status'],'failed')
         self.assertEqual(state['result']['failed_step'],'caddy')
         self.assertFalse(any(r.get('stage') in ['databases','finalize_sources'] for r in state['events']))
-    def test_engine_failure_before_first_callback_still_closes_the_operation(self):
+    def test_engine_failure_is_retained_without_a_step_callback(self):
         state=self.read();state['engineRefused']=True;self.save(state);self.run_destroy(success=False)
-        state=self.read();self.assertEqual(state['status'],'failed');self.assertEqual(state['error_code'],'operation.native_failed')
-        self.assertEqual([r['path'] for r in state['events'] if 'path'in r],['/api/v1/direct-operations/7/failure'])
+        state=self.read();self.assertEqual(state['status'],'queued');self.assertIsNone(state.get('error_code'))
+        self.assertEqual(state['events'],[])
 
     def test_foreign_database_uses_the_exact_selected_http_view_and_private_field(self):
         state=self.read();state['foreignDatabase']=True;self.save(state);self.run_destroy()

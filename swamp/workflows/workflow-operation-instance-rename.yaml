@@ -25,19 +25,3 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             run_id: '${{ run.id }}'
-  - name: native-failure
-    dependsOn: [{ job: rename, condition: { type: failed } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: record-native-failure
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/operation-failure'
-          behaviorName: '${{ "operation-failure-node-" + string(inputs.node_id) }}'
-          methodName: report
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'

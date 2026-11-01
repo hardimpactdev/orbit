@@ -17,11 +17,9 @@ class ProvisionNative(NativeTestCase):
         module=self.repo / "extensions/behaviors/operations/task-vms/provision_direct.ts"
         module.write_text('import {fixtureHttp,fixtureActions} from "./provision_native_fixture.ts";\n'+module.read_text().replace('export const behavior = nativeProvision(undefined, provisionNativeActions());','export const behavior = nativeProvision(() => fixtureHttp,fixtureActions);'))
         (self.repo/"extensions/behaviors/operations/task-vms/model_keys_native.ts").write_text('import {fixtureModelKeys} from "./provision_native_fixture.ts"; export const behavior=fixtureModelKeys;\n')
-        failure=self.repo/"extensions/behaviors/operations/failure.ts"
-        failure.write_text('import {fixtureHttp} from "./task-vms/provision_native_fixture.ts";\n'+failure.read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
         (self.repo/"extensions/behaviors/operations/node/wireguard_direct.ts").write_text('import {fixtureHub} from "../task-vms/provision_native_fixture.ts"; export const behavior=fixtureHub;\n')
         source=yaml.safe_load((ROOT/"workflows/workflow-operation-task-vm-provision.yaml").read_text())
-        self.assertEqual([job["name"] for job in source["jobs"]],["admission","provider","bootstrap","prepare-network","publish-hub","publish-network","issue-worker","configure-worker","worker-ready","issue-model","prepare-runtime","confirm-runtime","projection","failure"])
+        self.assertEqual([job["name"] for job in source["jobs"]],["admission","provider","bootstrap","prepare-network","publish-hub","publish-network","issue-worker","configure-worker","worker-ready","issue-model","prepare-runtime","confirm-runtime","projection"])
         for job in source["jobs"]:
             stage=job["name"]
             node='steps.admit.outputs.input.guest_node_id' if stage in ['worker-ready','prepare-runtime','confirm-runtime'] else 'steps.admit.outputs.input.gateway_node_id' if stage in ['publish-hub','issue-model'] else 'steps.admit.outputs.input.issuer_node_id' if stage=='issue-worker' else 'inputs.node_id' 

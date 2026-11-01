@@ -26,11 +26,6 @@ class RecipePrNative(NativeTestCase):
         destination = behaviors / 'operations/fleet/recipe-pr'
         shutil.copytree(FAMILY, destination)
         shutil.copy(ROOT / 'extensions/behaviors/operations/fleet/maintenance.ts', destination.parent / 'maintenance.ts')
-        failure = behaviors / 'operations/failure.ts'
-        shutil.copy(ROOT / 'extensions/behaviors/operations/failure.ts', failure)
-        failure.write_text('import {fixtureHttp} from "./fleet/recipe-pr/native_fixture.ts";\n' +
-            failure.read_text().replace('export const behavior = nativeFailure();',
-                                       'export const behavior = nativeFailure(() => fixtureHttp);'))
         direct = destination / 'direct.ts'
         original = 'export const behavior = recipePr();'
         self.assertIn(original, direct.read_text())
@@ -86,17 +81,17 @@ class RecipePrNative(NativeTestCase):
         self.assertEqual(state['operation']['result']['url'], 'https://github.com/hardimpactdev/orbit/pull/999')
         self.scan()
 
-    def test_family_refusal_reports_same_root_without_mint_or_effect(self):
+    def test_family_refusal_retains_native_failure_without_callback_or_mint(self):
         direct = self.repo / 'extensions/behaviors/operations/fleet/recipe-pr/direct.ts'
         direct.write_text(direct.read_text().replace(
             'const gateway = makeGateway(makeHttp(ctx), args);',
             'throw new Error("Family refused before start");\nconst gateway = makeGateway(makeHttp(ctx), args);'))
         self.run_workflow(success=False)
         state = self.read()
-        self.assertEqual(state['operation']['status'], 'failed')
-        self.assertEqual(state['operation']['error_code'], 'operation.native_failed')
+        self.assertEqual(state['operation']['status'], 'queued')
+        self.assertIsNone(state['operation'].get('error_code'))
         self.assertEqual((state['mints'], state['writes']), (0, 0))
-        self.assertEqual(len([call for call in state['calls'] if call['path'].endswith('/failure')]), 1)
+        self.assertEqual(state['calls'], [])
         self.scan()
 
     def test_lost_committed_projection_resumes_without_mint_or_effect(self):

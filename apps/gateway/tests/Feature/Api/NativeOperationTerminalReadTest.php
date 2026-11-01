@@ -128,22 +128,9 @@ it('does not read history for unbound or already terminal Operations', function 
     expect($this->socket->sent)->toBe([]);
 })->with([false, true]);
 
-it('uses the identical root failure transition without reading native history', function (): void {
-    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/failure', ['run_id' => $this->runId])
-        ->assertOk()->assertJsonPath('data.status', 'failed');
-    expect($this->operation->fresh()->error_code)->toBe('operation.native_failed')
-        ->and($this->operation->fresh()->lock_key)->toBeNull()->and($this->socket->sent)->toBe([]);
-});
-
-it('keeps the root failure callback bound to its original native run', function (): void {
-    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/failure', ['run_id' => 'e58fe178-0374-4f5e-a934-b985d34b9538'])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.run_mismatch');
-    expect($this->operation->fresh()->status->value)->toBe('running')->and($this->socket->sent)->toBe([]);
-});
-
-it('never replaces an already completed domain result through a late root failure callback', function (): void {
-    $this->operation->update(['status' => 'succeeded', 'result' => ['registered' => true], 'finished_at' => now(), 'lock_key' => null]);
-    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/failure', ['run_id' => $this->runId])
-        ->assertOk()->assertJsonPath('data.status', 'succeeded');
-    expect($this->operation->fresh()->result)->toBe(['registered' => true]);
+it('does not accept worker assertions through the retired failure callback', function (): void {
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/failure', ['run_id' => $this->runId])->assertNotFound();
+    expect($this->operation->fresh()->status->value)->toBe('running')
+        ->and($this->operation->fresh()->lock_key)->toBe('native-read-fixture')
+        ->and($this->socket->sent)->toBe([]);
 });

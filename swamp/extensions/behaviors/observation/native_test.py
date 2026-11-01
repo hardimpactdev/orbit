@@ -14,7 +14,6 @@ class ObservationNativeTest(NativeTestCase):
         super().setUp()
         self.copy_behaviors('observation', 'automatic-deploy', 'operations/_lib',
                             'operations/database', 'operations/tools')
-        shutil.copy(ROOT / 'extensions/behaviors/operations/failure.ts', self.repo / 'extensions/behaviors/operations/failure.ts')
         for path in ROOT.glob('workflows/workflow-observation-*.yaml'):
             shutil.copy(path, self.repo / 'workflows' / path.name)
         for name in ('doctor-inspect','observation-maintain'):

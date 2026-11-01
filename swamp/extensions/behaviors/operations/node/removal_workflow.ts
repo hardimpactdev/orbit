@@ -307,33 +307,6 @@ export function nodeRemovalWorkflow() {
       step("failed", "fail", { restored: expr(restored) }, restoreBlocked),
     ],
   });
-  for (
-    const [name, after] of [["admission_failure", "admission"], [
-      "failure_callback",
-      "failure",
-    ]]
-  ) {
-    jobs.push({
-      name,
-      dependsOn: [dep(after, "failed")],
-      steps: [{
-        name: name + "_report",
-        ...placed("inputs.node_id"),
-        task: {
-          type: "behavior",
-          behaviorType: "@nckrtl/operation-failure",
-          behaviorName: expr(
-            '"operation-failure-node-"+string(inputs.node_id)',
-          ),
-          methodName: "report",
-          inputs: root,
-        },
-        ...(after === "projection"
-          ? { guard: expr(`!(${has("finish")})`) }
-          : {}),
-      }],
-    });
-  }
   return {
     id: "450e57df-e174-4ad6-bba5-306c2581d919",
     name: "operation-node-remove",

@@ -19,8 +19,6 @@ class MetricsCredentialsResetNative(NativeTestCase):
         shutil.copy(ROOT / 'extensions/behaviors/operations/node/system_command.ts', node)
         target = self.repo / 'extensions/behaviors/operations/integrations'
         target.mkdir()
-        failure_source = (ROOT / 'extensions/behaviors/operations/failure.ts').read_text()
-        (self.repo / 'extensions/behaviors/operations/failure.ts').write_text('import { http } from \"./integrations/metrics_credentials_reset_native_fixture.ts\";\n' + failure_source.replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => http);'))
         for name in ('metrics_credentials_reset.ts', 'metrics_credentials_reset_native_fixture.ts', 'metrics_runtime_actions.ts', 'metrics_system.ts'):
             shutil.copy(ROOT / 'extensions/behaviors/operations/integrations' / name, target)
         source = target / 'metrics_credentials_reset.ts'

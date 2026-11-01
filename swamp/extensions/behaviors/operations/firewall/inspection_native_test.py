@@ -29,9 +29,6 @@ class FirewallInspectionNative(NativeTestCase):
         module = modules / 'operations/firewall/inspection.ts'
         module.write_text('import {fixtureHttp,fixtureLocal} from "./inspection_native_fixture.ts";\n' + module.read_text().replace(
             'export const behavior = firewallInspection();', 'export const behavior = firewallInspection(() => fixtureHttp,fixtureLocal);'))
-        failure = modules / 'operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./firewall/inspection_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace(
-            'export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         source = yaml.safe_load((ROOT / 'workflows/workflow-operation-firewall-inspect.yaml').read_text())
         for job in source['jobs']:
             self.assertEqual(job.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')

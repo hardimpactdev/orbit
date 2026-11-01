@@ -19,7 +19,7 @@ class DockerMigrationNative(NativeTestCase):
         files = ["automatic-deploy/development.ts", "automatic-deploy/gateway.ts", "automatic-deploy/policy.ts",
                  "node-worker/command.ts", "operations/_lib/direct.ts", "operations/_lib/node-command-process.ts",
                  "operations/_lib/node-commands.ts", "operations/node/docker_migration_system.ts", "operations/node/system_command.ts",
-                 "operations/processes-schedules/process-system.ts", "operations/processes-schedules/system.ts", "operations/failure.ts"]
+                 "operations/processes-schedules/process-system.ts", "operations/processes-schedules/system.ts"]
         for file in files:
             dest = self.repo / "extensions/behaviors" / file
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -31,9 +31,6 @@ class DockerMigrationNative(NativeTestCase):
         source = dest / "docker_migration_direct.ts"
         source.write_text('import {fixtureHttp, fixtureAction} from "./docker_migration_direct_native_fixture.ts";\n' +
                           source.read_text().replace("export const behavior = dockerMigration();", "export const behavior = dockerMigration(() => fixtureHttp, undefined, fixtureAction);"))
-        failure = self.repo / "extensions/behaviors/operations/failure.ts"
-        failure.write_text('import {fixtureHttp} from "./fleet/docker_migration_direct_native_fixture.ts";\n' +
-                           failure.read_text().replace("export const behavior = nativeFailure();", "export const behavior = nativeFailure(() => fixtureHttp);"))
         workflow = ROOT / "workflows/workflow-operation-fleet-docker-migrate.yaml"
         # Scratch local execution only. Shipped workflow keeps its exact Node placement.
         (self.repo / "workflows" / workflow.name).write_text("\n".join(line for line in workflow.read_text().splitlines() if not line.startswith(("target:", "labels:"))))

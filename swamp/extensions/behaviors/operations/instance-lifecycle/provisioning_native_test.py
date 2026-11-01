@@ -39,9 +39,6 @@ fail: {...root.methods.fail, execute: (...args: Parameters<typeof root.methods.f
 }},
 }};
 ''')
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./instance-lifecycle/provisioning_native_fixture.ts";\n' +
-                           failure.read_text().replace('nativeFailure();', 'nativeFailure(() => fixtureHttp);'))
         self.state_file = self.repo / 'provisioning-fixture.json'
 
     def run_create(self, success=True):
@@ -74,16 +71,16 @@ fail: {...root.methods.fail, execute: (...args: Parameters<typeof root.methods.f
         self.assertTrue(all('/direct-operations/' in row['path'] for row in state['requests']))
         self.assertFalse(any('/failure' in row['path'] for row in state['requests']))
 
-    def test_engine_failure_before_first_callback_closes_the_operation_without_effects(self):
+    def test_engine_failure_retains_native_proof_without_a_gateway_callback(self):
         self.state_file.write_text(json.dumps({'operation': {'id': 7, 'kind': 'instance.create', 'node_id': 9,
                                    'status': 'running', 'result': None, 'cancel_requested': False, 'input': {}},
                                    'engineRefused': True, 'effects': [], 'requests': []}))
         self.run_create(success=False)
         state = json.loads(self.state_file.read_text())
-        self.assertEqual(state['operation']['status'], 'failed')
-        self.assertEqual(state['operation']['error_code'], 'operation.native_failed')
+        self.assertEqual(state['operation']['status'], 'running')
+        self.assertIsNone(state['operation'].get('error_code'))
         self.assertEqual(state['effects'], [])
-        self.assertEqual([row['path'] for row in state['requests']], ['/api/v1/direct-operations/7/failure'])
+        self.assertEqual(state['requests'], [])
 
 
 if __name__ == '__main__':
