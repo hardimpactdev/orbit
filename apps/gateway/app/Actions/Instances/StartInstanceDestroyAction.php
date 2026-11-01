@@ -67,7 +67,7 @@ final readonly class StartInstanceDestroyAction
     }
 
     /** @return array<string, mixed> */
-    public function snapshot(Instance $instance, bool $force, bool $routesOwnedByParent = false): array
+    public function snapshot(Instance $instance, bool $force): array
     {
         if (! $instance->placedOnAppDev() || DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
@@ -93,7 +93,7 @@ final readonly class StartInstanceDestroyAction
         $snapshots = [];
         $additional = [];
         foreach ($members as $position => $member) {
-            $route = $routesOwnedByParent ? $member->routes->sortBy('id')->first() : $this->route($member);
+            $route = $this->route($member);
             foreach ($member->routes as $candidate) {
                 if ($route === null || $candidate->id !== $route->id) {
                     $additional[] = $candidate->id;

@@ -153,8 +153,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Jobs/RunScheduledCommand.php',
         // Command rendering for image/topology tooling; these classes do not execute the rendered commands.
         'app/Infrastructure/Nodes/RemotePhpPackageManager.php',
-        // The source lifecycle supplies the SSH callback to the workspace command runner for Git import.
-        'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
         // Private DNS is excluded from this port; the remaining raw calls in these classes serve it.
         'app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php',
         'app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php',
