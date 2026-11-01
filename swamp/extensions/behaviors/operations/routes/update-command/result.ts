@@ -16,7 +16,11 @@ const PhaseArgs = z.object({
     mode: z.enum(["forward", "restore"]),
     steps: States,
 });
+const FailureCode = z.enum(["route.update_failed", "route.target_set_failed"]);
 const Args = z.object({
+    failure_code: FailureCode.default("route.update_failed"),
+    preparation_counts: z.record(z.string(), z.number().int().nonnegative())
+        .default({}),
     effectful: z.boolean(),
     workload_count: z.number().int().nonnegative().default(0),
     route_id: Id,
@@ -41,7 +45,15 @@ export function phaseResult(raw: unknown) {
     };
 }
 export function updateResult(raw: unknown) {
-    const { effectful, workload_count, route_id, result_route_id, steps } = Args
+    const {
+        effectful,
+        workload_count,
+        route_id,
+        result_route_id,
+        steps,
+        failure_code,
+        preparation_counts,
+    } = Args
         .parse(raw);
     const forward = succeeded(steps, "forward")
         ? Phase.parse(steps.forward.outputs?.result)
@@ -49,15 +61,21 @@ export function updateResult(raw: unknown) {
     const restore = succeeded(steps, "restore")
         ? Phase.parse(steps.restore.outputs?.result)
         : undefined;
-    const all = (name: string) =>
+    const all = (name: string, count = workload_count) =>
         Array.from(
-            { length: workload_count },
+            { length: count },
             (_, i) => succeeded(steps, `${name}-${i}`),
         ).every(Boolean);
     const ready = !effectful ||
-        forward?.ready === true && all("prepare") && all("retire");
+        forward?.ready === true && all("prepare") && all("retire") &&
+            Object.entries(preparation_counts).every(([name, count]) =>
+                all(name, count)
+            );
     const restored = !ready && restore?.ready === true &&
         all("restore-workload");
+    const preparedMigrations = Object.entries(steps).filter(([name, step]) =>
+        name.startsWith("prepare-lan-") && step.status === "succeeded"
+    ).flatMap(([, step]) => step.outputs?.result?.migrated_node_ids ?? []);
     return {
         stdout: JSON.stringify({
             ready,
@@ -65,12 +83,17 @@ export function updateResult(raw: unknown) {
             route_id,
             result_route_id,
             selected: ready ? "after" : restored ? "before" : "unknown",
-            migrated_node_ids: ready
-                ? forward?.migrated_node_ids ?? []
-                : restored
-                ? restore.migrated_node_ids
+            migrated_node_ids: ready || restored
+                ? [
+                    ...new Set([
+                        ...(ready
+                            ? forward?.migrated_node_ids ?? []
+                            : restore?.migrated_node_ids ?? []),
+                        ...preparedMigrations,
+                    ]),
+                ]
                 : [],
-            ...(!ready ? { error_code: "route.update_failed" } : {}),
+            ...(!ready ? { error_code: failure_code } : {}),
         }),
     };
 }
@@ -80,7 +103,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-update-result",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         result: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
         phase: { schema: Phase, lifetime: "infinite", garbageCollection: 10 },
@@ -121,11 +144,13 @@ export const behavior = {
                 "Fail the run after its public terminal result records incomplete work",
             arguments: Output,
             execute: async (args: z.infer<typeof Output>, ctx: Context) => {
-                if (
-                    !z.object({ ready: z.boolean() }).parse(
-                        JSON.parse(args.stdout),
-                    ).ready
-                ) throw new Error("route.update_failed");
+                const result = z.object({
+                    ready: z.boolean(),
+                    error_code: FailureCode.optional(),
+                }).parse(JSON.parse(args.stdout));
+                if (!result.ready) {
+                    throw new Error(result.error_code ?? "route.update_failed");
+                }
                 await ctx.writeResource("result", "result", args);
                 return args;
             },

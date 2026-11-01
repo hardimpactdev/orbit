@@ -58,6 +58,11 @@ final readonly class DevelopmentSite
         return clone ($this, ['websocketKey' => $key, 'websocketAppId' => $websocketAppId]);
     }
 
+    public function withCertificateScope(string $scope): self
+    {
+        return clone ($this, ['certificateScope' => $scope]);
+    }
+
     public function asSecondary(): self
     {
         return clone ($this, ['secondary' => true]);
