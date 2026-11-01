@@ -1,5 +1,5 @@
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
-import type { StageAction } from "./converge_direct.ts";
+import type { StageAction } from "../fleet-recipe/node_converge.ts";
 import { footprintActions } from "./converge_footprint.ts";
 
 const file = "native-converge.json";

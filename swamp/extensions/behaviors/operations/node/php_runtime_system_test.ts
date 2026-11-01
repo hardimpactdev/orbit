@@ -1,5 +1,8 @@
+const PhpRuntimeProgram = await Deno.readTextFile(
+    new URL("../fleet-recipe/scripts/php_runtime.py", import.meta.url),
+);
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { PhpRuntimeProgram, phpRuntimeSystem } from "./php_runtime_system.ts";
+import { phpRuntimeSystem } from "./php_runtime_system.ts";
 
 const setup = String.raw`
 import os,tempfile,shutil,json,subprocess
@@ -55,20 +58,22 @@ def fixed_service(argv,required=True):
 ns['call']=fixed_service
 `;
 async function python(body: string) {
-  const result = await new Deno.Command("/usr/bin/python3", {
-    args: [
-      "-c",
-      "SOURCE=" + JSON.stringify(PhpRuntimeProgram) + "\n" + setup +
-      "\ntry:\n" + body.split("\n").map((l) => "    " + l).join("\n") +
-      "\nfinally:\n    shutil.rmtree(base)\n",
-    ],
-    stdout: "piped",
-    stderr: "piped",
-  }).output();
-  if (!result.success) throw new Error(new TextDecoder().decode(result.stderr));
+    const result = await new Deno.Command("/usr/bin/python3", {
+        args: [
+            "-c",
+            "SOURCE=" + JSON.stringify(PhpRuntimeProgram) + "\n" + setup +
+            "\ntry:\n" + body.split("\n").map((l) => "    " + l).join("\n") +
+            "\nfinally:\n    shutil.rmtree(base)\n",
+        ],
+        stdout: "piped",
+        stderr: "piped",
+    }).output();
+    if (!result.success) {
+        throw new Error(new TextDecoder().decode(result.stderr));
+    }
 }
 Deno.test("shared pools validate complete staged config and preserve inode on repeat", async () => {
-  await python(String.raw`
+    await python(String.raw`
 p={'configurations':{'8.4':pool(1),'8.5':pool(2)}}
 assert ns['shared_pools'](p)=={'changed':True,'missing_pools':[]}
 assert len(validations)==2
@@ -80,14 +85,14 @@ assert changes==[] and file.stat().st_ino==inode
 `);
 });
 Deno.test("version swap retires both sockets before activating either destination", async () => {
-  await python(String.raw`
+    await python(String.raw`
 ns['pool_path']('8.4').write_text(pool(1));ns['pool_path']('8.5').write_text(pool(2))
 assert ns['shared_pools']({'configurations':{'8.4':pool(2),'8.5':pool(1)}})['changed']
 assert changes==[('reload-or-restart','8.4',None),('reload-or-restart','8.5',None),('reload-or-restart','8.4',pool(2)),('reload-or-restart','8.5',pool(1))]
 `);
 });
 Deno.test("missing directories are reported and omitted while stale pools retire", async () => {
-  await python(String.raw`
+    await python(String.raw`
 ns['pool_path']('8.4').write_text(pool(9,'/apps/gone'))
 r=ns['shared_pools']({'configurations':{'8.5':pool(1)+pool(2,'/apps/missing')}})
 assert r['missing_pools']==[dict(pool='orbit-app-instance-2',version='8.5',directory='/apps/missing',installed=False)]
@@ -96,7 +101,7 @@ assert not ns['pool_path']('8.4').exists()
 `);
 });
 Deno.test("invalid input, unsafe sibling and ambiguous includes refuse before publication", async () => {
-  await python(String.raw`
+    await python(String.raw`
 for configurations in [{'../8.5':pool(1)},{'8.5':'[global]\ninclude=/evil\n'},{'8.5':pool(1,'relative')},{'8.4':pool(1),'8.5':pool(1)}]:
     try: ns['shared_pools']({'configurations':configurations});raise AssertionError('accepted')
     except ns['Refusal']: pass
@@ -111,7 +116,7 @@ assert changes==[] and not ns['pool_path']('8.4').exists()
 `);
 });
 Deno.test("failed validation leaves every live file and service unchanged", async () => {
-  await python(String.raw`
+    await python(String.raw`
 f=ns['pool_path']('8.5');f.write_text(pool(2));inode=f.stat().st_ino
 fail_validate=True
 try: ns['shared_pools']({'configurations':{'8.5':pool(1)}});raise AssertionError('accepted')
@@ -120,7 +125,7 @@ assert f.read_text()==pool(2) and f.stat().st_ino==inode and changes==[]
 `);
 });
 Deno.test("failed activation restores modes and services without restoring missing directories", async () => {
-  await python(String.raw`
+    await python(String.raw`
 f=ns['pool_path']('8.5');f.write_text(pool(1)+pool(9,'/apps/gone'));f.chmod(0o600)
 services['8.4']=[False,False];fail_activation='8.4'
 r=ns['shared_pools']({'configurations':{'8.4':pool(1)}})
@@ -131,7 +136,7 @@ assert services['8.4']==[False,False] and services['8.5']==[True,True]
 `);
 });
 Deno.test("failed recovery is explicit and empty prior files retain mode", async () => {
-  await python(String.raw`
+    await python(String.raw`
 f=ns['pool_path']('8.5');f.write_text('');f.chmod(0o600)
 fail_activation='8.5';fail_recovery=True
 r=ns['shared_pools']({'configurations':{'8.5':pool(1)}})
@@ -140,7 +145,7 @@ assert f.read_text()=='' and f.stat().st_mode&0o7777==0o600
 `);
 });
 Deno.test("runtime settings enforce size relationships, exact keys and platform", async () => {
-  await python(String.raw`
+    await python(String.raw`
 assert len(ns['settings'](profile))==8
 for post,upload,valid in [('1G','1024M',True),('64M','65537K',False),('2G','64M',False),('64M','65536K',True)]:
     p=dict(profile,runtime_ini=ini.replace('post_max_size = 64M','post_max_size = '+post).replace('upload_max_filesize = 64M','upload_max_filesize = '+upload))
@@ -156,7 +161,7 @@ assert changes==[]
 `);
 });
 Deno.test("runtime publication verifies loaded INI and idempotent control timeout", async () => {
-  await python(String.raw`
+    await python(String.raw`
 r=ns['configure'](profile);assert r['changed'] and r['reloaded']
 module=base/'etc/php/8.5/mods-available/orbit-runtime.ini';main=base/'etc/php/8.5/fpm/php-fpm.conf'
 assert module.read_text()==ini and module.stat().st_mode&0o7777==0o644
@@ -167,7 +172,7 @@ assert not any(c[0]=='reload' for c in changes) and module.stat().st_ino==inode
 `);
 });
 Deno.test("unmanaged INI override rolls back file, symlink and FPM master bytes", async () => {
-  await python(String.raw`
+    await python(String.raw`
 module=base/'etc/php/8.5/mods-available/orbit-runtime.ini';module.write_text('previous')
 link=base/'etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini';link.symlink_to('old.ini')
 main=base/'etc/php/8.5/fpm/php-fpm.conf';before=main.read_text()
@@ -179,7 +184,7 @@ assert changes==[]
 `);
 });
 Deno.test("PCOV FPM refusal restores prior configuration after reload", async () => {
-  await python(String.raw`
+    await python(String.raw`
 main=base/'etc/php/8.5/fpm/php-fpm.conf';before=main.read_text();profile_pcov=True
 r=ns['configure'](profile)
 assert r['error_code']=='php.runtime_configuration_failed' and r['restored']
@@ -188,34 +193,35 @@ assert len([c for c in changes if c[0]=='reload'])==2
 `);
 });
 Deno.test("transport sends data only on stdin and bounds uncertain diagnostics", async () => {
-  const action = phpRuntimeSystem((command) => {
-    assertEquals(command.command, "/usr/bin/sudo");
-    assertEquals(command.args.slice(-1), ["php.converge-shared-pools"]);
-    assertEquals(command.stdin, JSON.stringify({ configurations: {} }));
-    return Promise.resolve({
-      success: true,
-      stdout: '{"changed":false,"missing_pools":[]}',
-    });
-  });
-  assertEquals(
-    await action("php.converge-shared-pools", { configurations: {} }),
-    { changed: false, missing_pools: [] },
-  );
-  await assertRejects(
-    () =>
-      phpRuntimeSystem(() =>
-        Promise.resolve({ success: false, stdout: "PRIVATE" })
-      )(
-        "php.converge-shared-pools",
-        { configurations: {} },
-      ),
-    Error,
-    "no confirmed outcome",
-  );
+    const action = phpRuntimeSystem((command) => {
+        assertEquals(command.command, "/usr/bin/sudo");
+        assertEquals(command.args.slice(-1), ["php.converge-shared-pools"]);
+        assertEquals(command.stdin, JSON.stringify({ configurations: {} }));
+        return Promise.resolve({
+            success: true,
+            stdout: '{"changed":false,"missing_pools":[]}',
+        });
+    }, PhpRuntimeProgram);
+    assertEquals(
+        await action("php.converge-shared-pools", { configurations: {} }),
+        { changed: false, missing_pools: [] },
+    );
+    await assertRejects(
+        () =>
+            phpRuntimeSystem(
+                () => Promise.resolve({ success: false, stdout: "PRIVATE" }),
+                PhpRuntimeProgram,
+            )(
+                "php.converge-shared-pools",
+                { configurations: {} },
+            ),
+        Error,
+        "no confirmed outcome",
+    );
 });
 
 Deno.test("runtime missing build is a no-op and occupied module link refuses", async () => {
-  await python(String.raw`
+    await python(String.raw`
 binary=base/'usr/sbin/php-fpm8.5';binary.unlink()
 assert ns['configure'](profile)=={'changed':False,'reloaded':False} and changes==[]
 binary.write_text('binary')
@@ -226,7 +232,7 @@ assert link.read_text()=='foreign' and changes==[]
 `);
 });
 Deno.test("invalid dedicated FPM configuration defers reload without changing unrelated units", async () => {
-  await python(String.raw`
+    await python(String.raw`
 dedicated=base/'etc/orbit/dedicated.conf';dedicated.parent.mkdir();dedicated.write_text('[global]\nprocess_control_timeout = 1s\n[pool]\n')
 unit='orbit-example-php8.5-fpm.service'
 original=ns['call'];calls=[]

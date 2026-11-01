@@ -1,7 +1,7 @@
 import type { BaselineOutcome } from "./role_baseline_system.ts";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { convergeCli } from "../fleet/cli_converge_local.ts";
-import type { StageAction } from "./converge_direct.ts";
+import type { StageAction } from "../fleet-recipe/node_converge.ts";
 import { footprintActions } from "./converge_footprint.ts";
 
 const endpoint = Deno.env.get("ORBIT_ROLE_HTTP_FIXTURE");

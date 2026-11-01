@@ -8,6 +8,7 @@ use App\Domain\Fleet\RecipeDirectInput;
 use App\Domain\Fleet\RecipeDirectProjection;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -34,15 +35,15 @@ it('captures recipe and canonical footprint intent without calling a Node', func
     $recipe = new RecipeLoader()->load();
 
     $input = app(RecipeDirectInput::class)->capture($node, $recipe);
-    $safe = app(RecipeDirectProjection::class)->input(new Operation(['input' => $input]));
 
     expect($agents->calls)->toBe([])
         ->and($input['node_id'])->toBe($node->id)
         ->and($input['identity'])->toBe($recipe->identity)
         ->and($input['footprint']['node_id'])->toBe($node->id)
-        ->and($input['secret_hash'])->toBe(['$secret' => 'node.agent_secret_hash', 'id' => $node->id])
-        ->and($safe)->not->toHaveKey('secret_hash')
-        ->and($safe['footprint'])->not->toHaveKey('secret_hash');
+        ->and($input)->not->toHaveKey('secret_hash')
+        ->and($input['ssh']['control_node_id'])->toBe(209)
+        ->and($input['ssh']['target']['host_keys'])->toBe([$node->ssh_host_key_type.' '.$node->ssh_host_key])
+        ->and($input['footprint'])->not->toHaveKey('secret_hash');
 });
 
 it('excludes Incus intent from the automatic local recipe without inspecting the Node', function (): void {
@@ -99,16 +100,22 @@ it('admits one direct recipe run without host calls or executor prerequisites', 
     FleetFixtures::node('recipe-gateway', [RoleName::Gateway]);
     $node = FleetFixtures::node('recipe-admission', [RoleName::AppDev]);
     $node->update(['settings' => ['machine_recipe' => ['version' => 'previous'], ...($automatic ? ['task_vms' => []] : [])]]);
-    $socket = new FakeRoutePublicationSocket;
+    $node->forceFill(['agent_secret_hash' => str_repeat('a', 64)])->save();
+    $socket = recipeNativeSocket();
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture-token']);
 
     $operation = app(AdmitNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), $automatic);
 
     expect($agents->calls)->toBe([])
-        ->and($socket->sent)->toHaveCount(1)
-        ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-fleet-recipe-direct')
-        ->and($socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $operation->id, 'kind' => 'fleet.recipe', 'node_id' => $node->id])
+        ->and($socket->sent)->toHaveCount(2)
+        ->and($socket->sent[0]['type'])->toBe('vault.put')
+        ->and($socket->sent[0]['payload']['key'])->toBe('recipe-operation-'.$operation->id.'-observer')
+        ->and($socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-fleet-recipe-direct')
+        ->and($socket->sent[1]['payload']['inputs']['intent'])->toBe($operation->input)
+        ->and($socket->sent[1]['payload']['inputs']['execution_secrets'])->toBe(['observer' => ['vault' => 'orbit-control-inputs', 'key' => 'recipe-operation-'.$operation->id.'-observer']])
+        ->and(json_encode($socket->sent[1]))->not->toContain(str_repeat('a', 64), 'worker_credentials', 'enrollment_token')
+        ->and($operation->lock_key)->toBe('recipe:node:'.$node->id)
         ->and($operation->state)->not->toHaveKeys(['executor_runs', 'children', 'lease', 'steps'])
         ->and($operation->run_constraints)->toBeNull()
         ->and($node->refresh()->settings['machine_recipe'])->toBe(['version' => 'previous']);
@@ -116,6 +123,37 @@ it('admits one direct recipe run without host calls or executor prerequisites', 
         expect($node->settings['machine_recipe_incus_hold']['pins'])->toBe($operation->input['incus_hold']);
     }
 })->with([false, true]);
+
+it('holds one recipe admission per Node until terminal native projection', function (string $status): void {
+    FleetFixtures::bind();
+    $agents = new FakeAgentCommandRunner;
+    FleetFixtures::recipeDelivery($agents);
+    app()->instance(AgentCommandRunner::class, $agents);
+    FleetFixtures::node('recipe-hold-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('recipe-held-node', [RoleName::AppDev]);
+    $node->forceFill(['agent_secret_hash' => str_repeat('a', 64)])->save();
+    $other = FleetFixtures::node('recipe-independent-node', [RoleName::AppDev]);
+    $other->forceFill(['agent_secret_hash' => str_repeat('b', 64)])->save();
+    app()->instance(WebSocketClient::class, recipeNativeSocket());
+    config(['swamp.run_token' => 'fixture-token']);
+    $action = app(AdmitNodeRecipeAction::class);
+    $recipe = new RecipeLoader()->load();
+    $first = $action->execute($node, $recipe);
+    try {
+        $action->execute($node, $recipe);
+        test()->fail('A second recipe root must be refused.');
+    } catch (ResourceOperationException $error) {
+        expect($error->errorCode)->toBe('operation.target_busy');
+    }
+    expect(Operation::count())->toBe(1);
+    $independent = $action->execute($other, $recipe);
+    projectRecipeDirect($first, $status);
+    expect($first->fresh()->lock_key)->toBeNull()
+        ->and($independent->fresh()->lock_key)->toBe('recipe:node:'.$other->id);
+    $next = $action->execute($node, $recipe);
+    expect($next->id)->not->toBe($first->id)
+        ->and($next->lock_key)->toBe('recipe:node:'.$node->id);
+})->with(['succeeded', 'failed', 'cancelled', 'interrupted']);
 
 it('refuses an automatic restricted admission outside its window before capture or start', function (): void {
     FleetFixtures::bind();
@@ -249,20 +287,14 @@ it('previews desired recipe pins without an agent or native transport call', fun
         ->and($agents->calls)->toBe([]);
 });
 
-it('limits recipe private material to the admitted Node and refuses secret output writes', function (): void {
+it('declares only an observer execution copy and no per-Node worker material', function (): void {
     [$operation, $node] = recipeDirectIntent();
-    $node->forceFill(['agent_secret_hash' => str_repeat('a', 64)])->save();
-    $source = app(NodeAgentHashSource::class);
-    $workers = app(NodeWorkerEnrollment::class);
-    expect($source->ownerId($operation))->toBe($node->id)
-        ->and($workers->ownerId($operation))->toBe($node->id)
-        ->and($source->resolve($operation, $node->id, '', 'secret_hash')->value)->toBe(str_repeat('a', 64));
-    expect(fn () => $source->store($operation, $node->id, str_repeat('b', 64)))
-        ->toThrow(ResourceOperationException::class);
-    $operation->input = [...$operation->input, 'footprint' => ['node_id' => $node->id + 1]];
-    expect($source->ownerId($operation))->toBeNull()
-        ->and($workers->ownerId($operation))->toBeNull()
-        ->and($node->fresh()->agent_secret_hash)->toBe(str_repeat('a', 64));
+    $definition = app(DirectOperation::class)->definition('fleet.recipe');
+    expect($definition)->not->toHaveKey('private_material')
+        ->and($definition['workflow_inputs'])->toBeTrue()
+        ->and($definition['terminal_result'])->toBe(['job' => 'result', 'step' => 'result'])
+        ->and(app(NodeWorkerEnrollment::class)->ownerId($operation))->toBeNull()
+        ->and(app(NodeAgentHashSource::class)->ownerId($operation))->toBeNull();
 });
 
 it('admits HTTP recipe intent through existing Node access without an executor role', function (): void {
@@ -275,12 +307,23 @@ it('admits HTTP recipe intent through existing Node access without an executor r
     $caller = FleetFixtures::node('recipe-http-caller');
     $caller->accessibleNodes()->attach($node);
     app(GatewayServingHost::class)->remember($gateway);
-    $socket = new FakeRoutePublicationSocket;
+    $node->forceFill(['agent_secret_hash' => str_repeat('a', 64)])->save();
+    $socket = recipeNativeSocket();
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture-token', 'operation_executor.worker_node_ids' => []]);
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
     $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/recipe', ['automatic' => false])->assertUnprocessable();
     $response = $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/recipe', ['automatic' => true])->assertAccepted();
     expect($response->json('data.kind'))->toBe('fleet.recipe')
-        ->and($agents->calls)->toBe([])->and($socket->sent)->toHaveCount(1);
+        ->and($agents->calls)->toBe([])->and($socket->sent)->toHaveCount(2);
 });
+
+function recipeNativeSocket(): FakeRoutePublicationSocket
+{
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => $message['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => 'orbit-control-inputs', 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-fleet-recipe-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+
+    return $socket;
+}
