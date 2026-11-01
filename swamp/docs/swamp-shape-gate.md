@@ -134,6 +134,8 @@ uses stdin for its public script body and has no separate stdin argument. Use
 `exec` to run a shipped script when it needs a vault value on stdin; private
 values do not belong in argv or the script body.
 
+Each `forEach` behavior or model-method step uses a per-item model name: a CEL expression referencing `self._index` or its `self.<item>` binding. A shared name serializes execution on Swamp's model lock and can lose receipts. Existing `foreach-shared-identity` findings are grandfathered in the baseline; new findings or increased caps fail. Workflow-child and non-model tasks have no model identity and are outside this check.
+
 Each embedded operational program has a 20-line threshold before grandfathering.
 Independent short strings are not combined to cross it. Script metrics count each
 contributing source literal once, including when a wrapper passes it to Python.

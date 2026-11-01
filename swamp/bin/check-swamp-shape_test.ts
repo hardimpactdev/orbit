@@ -1670,3 +1670,52 @@ Deno.test("HTTP move proof follows the unchanged caller body and distinguishes l
   assert(changedCaller !== head.get(caller));
   assertEquals(proof(new Map([...head, [caller, changedCaller]])), undefined);
 });
+
+Deno.test("forEach model identities use the item or index, with no grandfather growth", () => {
+  const findings = (behaviorName: string, type = "behavior", stepName = "step") =>
+    analyzeYaml(
+      "workflows/loop.yaml",
+      JSON.stringify({
+        jobs: [{
+          name: "job",
+          steps: [{
+            name: stepName,
+            forEach: { item: "node", in: "${{ inputs.nodes }}" },
+            task: {
+              type,
+              ...(type === "model_method"
+                ? { modelType: "command/shell", modelIdOrName: behaviorName }
+                : { behaviorType: "command/shell", behaviorName }),
+              methodName: "execute",
+              inputs: { run: "true" },
+            },
+          }],
+        }],
+      }),
+    ).findings.filter((f) => f.rule === "foreach-shared-identity");
+  for (
+    const name of [
+      "shared",
+      '${{ "shared-" + run.id }}',
+      '${{ "self.node" }}',
+      '${{ "shared" // self.node\n }}',
+      "literal-self._index",
+      "${{ self.other }}",
+      "${{ inputs.self.node }}",
+    ]
+  ) {
+    assertEquals(findings(name).length, 1);
+  }
+  for (
+    const name of ['${{ "node-" + string(self._index) }}', '${{ "node-" + self.node.id }}', '${{ self["node"].id }}']
+  ) {
+    assertEquals(findings(name).length, 0);
+  }
+  assertEquals(findings("shared", "workflow").length, 0);
+  assertEquals(findings("shared", "model_method").length, 1);
+  assertEquals(findings("${{ self.node.id }}", "model_method").length, 0);
+  const entries = aggregate(findings("shared"));
+  assert(ratchet(aggregate(findings("shared", "behavior", "other")), { schema: 1, entries }).length > 0);
+  assertEquals(ratchet(entries, { schema: 1, entries }), []);
+  assert(ratchet(aggregate([...findings("shared"), ...findings("shared")]), { schema: 1, entries }).length > 0);
+});
