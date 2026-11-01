@@ -134,7 +134,9 @@ class GatewaySigningNativeTest(NativeTestCase):
             "node_id": 9,
             "scope": self.leaf["scope"],
             "state": "request",
-            "request_base64": base64.b64encode(b"public CSR").decode(),
+            "request_base64": base64.b64encode(
+                b"-----BEGIN CERTIFICATE REQUEST-----\npublic\n-----END CERTIFICATE REQUEST-----\n"
+            ).decode(),
         }
 
     def stop_server(self):
@@ -154,6 +156,7 @@ class GatewaySigningNativeTest(NativeTestCase):
         }
         return subprocess.run(
             ["/bin/sh"],
+            check=False,
             input=script or self.script,
             env=env,
             text=True,
@@ -164,45 +167,21 @@ class GatewaySigningNativeTest(NativeTestCase):
     def test_native_shell_calls_signer_once_then_pure_decoder_records_public_output(
         self,
     ):
-        args = {
-            "operation_id": 19,
-            "kind": "certificate.converge",
-            "node_id": 9,
-            "run_id": "${{ run.id }}",
-            "leaves": [self.leaf],
-            "requests": [[self.request]],
-        }
         steps = [
             {
-                "name": "input",
-                "task": {
-                    "type": "behavior",
-                    "behaviorType": "@nckrtl/certificates",
-                    "behaviorName": "orbit-certificate-signing",
-                    "methodName": "prepareSignBatch",
-                    "inputs": args,
-                },
-            },
-            {
                 "name": "http",
-                "dependsOn": [{"step": "input", "condition": {"type": "succeeded"}}],
                 "task": {
                     "type": "behavior",
                     "behaviorType": "command/shell",
                     "behaviorName": "orbit-certificate-signing-http",
                     "methodName": "execute",
                     "inputs": {
-                        "run": (
-                            '${{ model["orbit-certificate-signing-http"]'
-                            ".input.globalArguments.run }}"
-                        ),
+                        "run": '${{ model["orbit-certificate-signing-http"].input.globalArguments.run }}',
                         "env": {
                             "ORBIT_CERTIFICATE_OPERATION_ID": "19",
                             "ORBIT_CERTIFICATE_MODE": "batch",
                             "ORBIT_CERTIFICATE_RUN_ID": "${{ run.id }}",
-                            "ORBIT_CERTIFICATE_REQUESTS": (
-                                "${{ steps.input.outputs.requests_json }}"
-                            ),
+                            "ORBIT_CERTIFICATE_REQUESTS": json.dumps([[self.request]]),
                         },
                     },
                 },
@@ -212,12 +191,13 @@ class GatewaySigningNativeTest(NativeTestCase):
                 "dependsOn": [{"step": "http", "condition": {"type": "succeeded"}}],
                 "task": {
                     "type": "behavior",
-                    "behaviorType": "@nckrtl/certificates",
-                    "behaviorName": "orbit-certificate-signing",
-                    "methodName": "signBatch",
+                    "behaviorType": "@nckrtl/node-certificate-assets",
+                    "behaviorName": "fixture-node-certificate-assets",
+                    "methodName": "signed",
                     "inputs": {
-                        **args,
-                        "native_stdout": "${{ steps.http.outputs.stdout }}",
+                        "leaves": [self.leaf],
+                        "requests": [self.request],
+                        "stdout": "${{ steps.http.outputs.stdout }}",
                     },
                 },
             },

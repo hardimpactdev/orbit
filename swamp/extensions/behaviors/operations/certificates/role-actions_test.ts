@@ -1,6 +1,5 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior } from "./role_assets.ts";
-import { certificates } from "./mod.ts";
 
 const leaf = {
     node_id: 9,
@@ -14,8 +13,10 @@ const ctx = {
     writeResource: () => Promise.resolve({}),
 };
 Deno.test("role publication has no retained local executor and refuses private-key intent", async () => {
-    assertEquals("roleRequest" in certificates().methods, false);
-    assertEquals("rolePublish" in certificates().methods, false);
+    await assertRejects(
+        () => Deno.stat(new URL("mod.ts", import.meta.url)),
+        Deno.errors.NotFound,
+    );
     await assertRejects(() =>
         behavior.methods.read.execute(
             { leaf: { ...leaf, key: "private" } } as never,
