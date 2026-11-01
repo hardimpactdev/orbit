@@ -157,7 +157,6 @@ it('picks up a catalog republish without restarting the listener once it is alre
         $manager = $harness->listenerManager();
         $manager->converge();
         $harness->clearServiceLog();
-        $manager->converge();
         orb_catalog_change();
         $manager->converge();
 
