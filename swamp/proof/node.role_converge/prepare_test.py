@@ -20,7 +20,7 @@ class Preparation(unittest.TestCase):
     def cli(self, command, node, *arguments):
         self.calls.append([command, node, *arguments])
         if command == "node:show":
-            return {"id": 7}
+            return {"id": 7, "status": "active", "platform": "linux"}
         if command == "node:role:list":
             return {
                 "assignments": []
@@ -55,6 +55,45 @@ class Preparation(unittest.TestCase):
         self.assertEqual(self.assignment_id, before)
         self.assertNotIn("node:role:remove", [call[0] for call in self.calls])
         self.assertNotIn("node:role:add", [call[0] for call in self.calls])
+
+    def test_existing_app_dev_assignment_needs_no_role_mutation(self):
+        self.role = "app-dev"
+        result = PREPARE.prepare("app-dev", 7, self.cli)
+        self.assertEqual(result, {"role": "app-dev", "node_id": 7, "assignment_id": 1})
+        self.assertNotIn("node:role:remove", [call[0] for call in self.calls])
+        self.assertNotIn("node:role:add", [call[0] for call in self.calls])
+
+    def test_appdev_never_replaces_a_role_or_assigns_a_seeded_roleless_node(self):
+        for existing in [None, "app-prod", "database"]:
+            with self.subTest(existing=existing):
+                self.role = existing
+                self.calls = []
+                with self.assertRaisesRegex(
+                    ValueError, "prepare-needs-bootstrapped-app-dev"
+                ):
+                    PREPARE.prepare("app-dev", 7, self.cli)
+                self.assertEqual(
+                    [call[0] for call in self.calls], ["node:show", "node:role:list"]
+                )
+                self.assertEqual(self.role, existing)
+
+    def test_appdev_refuses_incomplete_enrollment_before_any_role_mutation(self):
+        self.role = "app-dev"
+        for changes in [{"status": "provisioning"}, {"platform": None}]:
+            with self.subTest(changes=changes):
+                self.calls = []
+
+                def cli(command, node, *arguments, changes=changes):
+                    result = self.cli(command, node, *arguments)
+                    return {**result, **changes} if command == "node:show" else result
+
+                with self.assertRaisesRegex(
+                    ValueError, "prepare-needs-bootstrapped-app-dev"
+                ):
+                    PREPARE.prepare("app-dev", 7, cli)
+                self.assertEqual(
+                    [call[0] for call in self.calls], ["node:show", "node:role:list"]
+                )
 
     def test_failed_removal_does_not_assign_target_role(self):
         self.failure = "remove"

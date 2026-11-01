@@ -57,6 +57,7 @@ function fake(calls: SystemCommand[]): SystemTransport {
         });
     };
 }
+const storageSource = await Deno.readTextFile(new URL("../fleet-recipe/scripts/storage_root.py", import.meta.url));
 Deno.test("role prerequisites use the actual account and canonical system program", async () => {
     const calls: SystemCommand[] = [];
     const inputs: Record<string, unknown>[] = [];
@@ -91,14 +92,14 @@ Deno.test("role prerequisites use the actual account and canonical system progra
 Deno.test("storage uses the discovered account home and exact configured custom root", async () => {
     const calls: SystemCommand[] = [];
     const run = roleBaseline(fake(calls));
-    assertEquals(await run(snapshot("app-dev"), "storage"), { ok: true });
+    assertEquals(await run(snapshot("app-dev"), "storage", undefined, undefined, undefined, storageSource), { ok: true });
     assertEquals(calls[1].command, "/usr/bin/sudo");
     assertEquals(calls[1].stdin?.includes("/srv/users/nckrtl/apps"), true);
     calls.length = 0;
     assertEquals(
         await run(
             { ...snapshot("app-dev"), storage_root: "/srv/orbit/apps" },
-            "storage",
+            "storage", undefined, undefined, undefined, storageSource,
         ),
         { ok: true },
     );

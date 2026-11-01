@@ -16,7 +16,7 @@ type Context = {
 /** Resolve each canonical supplier once. This method has no host effects. */
 export const behavior = {
     type: "@nckrtl/node-role-phase-assets",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
     },
@@ -45,6 +45,9 @@ export const behavior = {
                 }
                 for (
                     const name of [
+                        "storage",
+                        "hibernation",
+                        "tmpfiles",
                         "prerequisites",
                         "observer",
                         "php_runtime",
@@ -61,6 +64,9 @@ export const behavior = {
                 }
                 for (
                     const name of [
+                        "storage_root",
+                        "hibernation",
+                        "footprint",
                         "role_prerequisites",
                         "recipe",
                         "caddy_ordering",

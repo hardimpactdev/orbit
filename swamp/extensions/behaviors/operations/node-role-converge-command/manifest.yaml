@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/node-role-converge-command"
-version: 2026.11.01.5
+version: 2026.11.01.6
 visibility: private
 license: MIT
 description: Native Node role actions and terminal results.

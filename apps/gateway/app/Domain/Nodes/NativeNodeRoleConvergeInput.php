@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeNodeRolePublicationInput;
 use App\Domain\Shared\ResourceOperationException;
@@ -29,7 +31,7 @@ final readonly class NativeNodeRoleConvergeInput
     /** Implemented forward contributions; owning parents validate role policy and required duties. */
     public static function supportsContribution(Node $node, RoleName $role): bool
     {
-        return $node->platform === 'linux' && in_array($role, [RoleName::Database, RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd], true);
+        return $node->platform === 'linux' && in_array($role, [RoleName::Database, RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd, RoleName::AppDev], true);
     }
 
     /** @param array<string,mixed> $snapshot
@@ -54,11 +56,14 @@ final readonly class NativeNodeRoleConvergeInput
         foreach ($entries as $artifact) {
             $artifact = ValidatedData::object($artifact);
             $supported = ['agent', 'peer-dns'];
-            if (in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd], true)) {
+            if (in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd, RoleName::AppDev], true)) {
                 $supported = [...$supported, 'caddy-package', 'caddy'];
             }
-            if ($assignment->role === RoleName::AppProd) {
+            if (in_array($assignment->role, [RoleName::AppDev, RoleName::AppProd], true)) {
                 $supported[] = 'php-runtime';
+                if ($assignment->role === RoleName::AppDev) {
+                    $supported[] = 'tmpfiles';
+                }
             }
             if ($artifact['required'] === true && ! in_array($artifact['name'], $supported, true)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'An applicable role footprint has no native action.', 422);
@@ -69,15 +74,15 @@ final readonly class NativeNodeRoleConvergeInput
             'created' => $snapshot['created'], 'role' => $assignment->role->value, 'user' => $node->user,
             'agent_sha256' => $snapshot['agent_sha256'], 'prerequisites' => $snapshot['prerequisites'],
             'ssh' => $ssh,
-            ...(in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd], true) ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),
+            ...(in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket, RoleName::AppProd, RoleName::AppDev], true) ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),
                 'caddy_package' => AgentCaddyPackage::input(), 'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $assignment->role)] : []),
             'footprint' => $footprint, 'cli' => $snapshot['cli'], 'metrics_fleet' => null];
 
         $participants = [209, $node->id];
-        if ($assignment->role === RoleName::AppProd) {
+        if (in_array($assignment->role, [RoleName::AppDev, RoleName::AppProd], true)) {
             $recipe = new RecipeLoader()->load();
             $versions = NodeRecipeProgram::phpVersions($recipe, app(NodeRecipeProgram::class)->toolsForRoles($node, $recipe, array_values($node->roles->map(static fn (NodeRole $role): RoleName => $role->role)->all())));
-            $intent['php'] = app(NodePhpPackagesInput::class)->forNode($node, $versions);
+            $intent['php'] = app(NodePhpPackagesInput::class)->forNode($node, $versions, $assignment->role);
             $intent['javascript'] = $snapshot['javascript'];
             $prerequisites = ValidatedData::object($intent['prerequisites']);
             $prerequisites['packages'] = array_values(array_filter(
@@ -85,6 +90,12 @@ final readonly class NativeNodeRoleConvergeInput
                 static fn (string $package): bool => ! str_starts_with($package, 'php-'),
             ));
             $intent['prerequisites'] = $prerequisites;
+        }
+        if ($assignment->role === RoleName::AppDev) {
+            $intent['storage'] = app(ConfiguredStoragePathValidator::class)->directIntent(app(NodeSettingsNormalizer::class)->fromStored($node->settings), $node, true);
+            $publication = app(NativeNodeRolePublicationInput::class)->capture($node, $assignment->role);
+            $intent['publications'] = $publication['publications'];
+            $participants = [...$participants, ...$publication['participant_node_ids']];
         }
         if ($assignment->role === RoleName::WebSocket) {
             $runtime = ValidatedData::object($snapshot['runtime']);

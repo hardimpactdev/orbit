@@ -460,6 +460,9 @@ export function nodeRoleAdd(
                                         ),
                                     )
                                     : undefined,
+                                ["storage", "hibernation"].includes(args.stage) && baseline === convergeRoleBaseline
+                                    ? await Deno.readTextFile(ctx.extensionFile("scripts/" + (args.stage === "storage" ? "storage_root" : "hibernation") + ".py"))
+                                    : undefined,
                             );
                     const outcome = Outcome.parse({
                         stage: args.stage,

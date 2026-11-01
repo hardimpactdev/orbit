@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROLES = {"database", "ingress", "app-prod", "websocket"}
+ROLES = {"database", "ingress", "app-prod", "app-dev", "websocket"}
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -68,7 +68,7 @@ def public_receipt(operation, role, outputs):
 
 # The target check reads public files, unit state and local listeners only.
 HOST_CHECK = r"""
-import hashlib,json,pathlib,socket,stat,subprocess,sys
+import grp,hashlib,json,pathlib,pwd,socket,stat,subprocess,sys
 data=json.loads(sys.argv[1]);intent=data['intent'];role=intent['role']
 def require(value,message):
  if not value:raise ValueError(message)
@@ -81,15 +81,27 @@ active('orbit-agent.service')
 for path in ['/etc/orbit/agent/config.toml','/etc/orbit/agent/ca.pem']:
  require(pathlib.Path(path).is_file(),'observer-public-file-missing')
 if role=='database':command(['/usr/bin/docker','--version'])
-if role in ['ingress','app-prod','websocket']:
+if role in ['ingress','app-prod','app-dev','websocket']:
  active('caddy.service')
  command(['/usr/bin/caddy','validate','--config','/etc/caddy/Caddyfile','--adapter','caddyfile'])
  expected=data['caddy_content']
  require(pathlib.Path('/etc/caddy/Caddyfile').read_text()==expected,'caddy-catalog-differs')
-if role=='app-prod':
+if role in ['app-prod','app-dev']:
  for version in intent['php']['versions']:
   command(['/usr/bin/php'+version,'--version'])
  command(['/usr/bin/composer','--version','--no-ansi'])
+if role=='app-dev':
+ account=pwd.getpwnam(intent['storage']['user']);root=pathlib.Path(intent['storage']['root'] or account.pw_dir+'/apps')
+ for path in [root,*root.parents]:require(path.is_dir() and not path.is_symlink(),'storage-root-symlink')
+ metadata=root.stat();mode=stat.S_IMODE(metadata.st_mode)
+ require(metadata.st_uid==account.pw_uid and metadata.st_gid==account.pw_gid and mode&0o700==0o700 and not mode&0o022,'storage-root-owner-mode')
+ for path,expected in [('/dev/shm/orbit/hibernation',0o755),('/data/caddy/orbit/hibernation',0o2775)]:
+  metadata=pathlib.Path(path).lstat()
+  require(stat.S_ISDIR(metadata.st_mode) and (metadata.st_uid,metadata.st_gid,stat.S_IMODE(metadata.st_mode))==(0,grp.getgrnam('caddy').gr_gid,expected),'hibernation-tree-mode')
+ rule=pathlib.Path('/etc/tmpfiles.d/orbit.conf');metadata=rule.lstat()
+ require(stat.S_ISREG(metadata.st_mode) and (metadata.st_uid,metadata.st_gid,stat.S_IMODE(metadata.st_mode))==(0,0,0o644),'tmpfiles-owner-mode')
+ digest=hashlib.sha256((intent['agent_sha256']+'\0'+hashlib.sha256(rule.read_bytes()).hexdigest()).encode()).hexdigest()
+ require(digest==intent['tmpfiles_digest'],'tmpfiles-rule-differs')
 if role=='websocket':
  active('orbit-websocket.service')
  runtime=intent['runtime'];link=pathlib.Path(runtime['install_path'])
@@ -124,6 +136,11 @@ def role_certificate(intent):
         "root": str(directory / "root-ca.pem"),
         "root_hash": leaves[0]["root_hash"],
     }
+
+
+def target_node(role):
+    require(role in ROLES, "unsupported-role-variant")
+    return "app-dev" if role == "app-dev" else "app-prod"
 
 
 def target_publication(intent):
@@ -171,20 +188,27 @@ def main(role):
     # Keep the target check below argv limits; recipe archives and full public
     # admission plans are checked through the operator, not sent to the Node.
     target_intent = {key: intent[key] for key in ["role", "agent_sha256"]}
-    if role == "app-prod":
+    if role in ["app-prod", "app-dev"]:
         target_intent["php"] = {"versions": intent["php"]["versions"]}
+    if role == "app-dev":
+        target_intent["storage"] = intent["storage"]
+        target_intent["tmpfiles_digest"] = next(
+            item["digest"]
+            for item in intent["footprint"]["artifacts"]
+            if item["name"] == "tmpfiles"
+        )
     if role == "websocket":
         target_intent["runtime"] = {
             key: intent["runtime"][key] for key in ["install_path", "ref", "port"]
         }
     descriptor = {"intent": target_intent}
-    if role in ["ingress", "app-prod", "websocket"]:
+    if role in ["ingress", "app-prod", "app-dev", "websocket"]:
         descriptor["caddy_content"] = target_publication(intent)
     if role == "websocket":
         descriptor["certificate"] = role_certificate(intent)
     observed = topology_command(
         prefix,
-        "app-prod",
+        target_node(role),
         ["sudo", "-n", "python3", "-I", "-c", HOST_CHECK, json.dumps(descriptor)],
     )
     require(

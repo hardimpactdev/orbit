@@ -7,7 +7,13 @@ const Args = z.object({
     intent: z.object({
         node_id: z.number().int().positive(),
         assignment_id: z.number().int().positive(),
-        role: z.enum(["database", "ingress", "websocket", "app-prod"]),
+        role: z.enum([
+            "database",
+            "ingress",
+            "websocket",
+            "app-prod",
+            "app-dev",
+        ]),
         created: z.boolean(),
         footprint: z.object({
             artifacts: z.array(
@@ -22,16 +28,32 @@ const Args = z.object({
     }).passthrough(),
     steps: z.record(z.string(), Step),
     certificate_statuses: z.array(z.string()).default([]),
+    private_dns_statuses: z.array(z.string()).default([]),
 }).strict();
 export function roleResult(raw: unknown) {
-    const { intent, steps, certificate_statuses } = Args.parse(raw);
+    const { intent, steps, certificate_statuses, private_dns_statuses } = Args
+        .parse(raw);
     const ok = (name: string) => steps[name]?.status === "succeeded";
-    const role_proven = ok("account") && ok("observer_install") &&
+    const dnsCount = intent.role === "app-dev"
+        ? z.object({
+            publications: z.array(
+                z.object({ after: z.object({ dns: z.unknown() }) })
+                    .passthrough(),
+            ),
+        }).parse(intent).publications.filter((row) => row.after.dns != null)
+            .length
+        : 0;
+    const appDevProven = intent.role !== "app-dev" ||
+        (ok("storage") && ok("hibernation") &&
+            private_dns_statuses.length === dnsCount &&
+            private_dns_statuses.every((status) => status === "succeeded"));
+    const role_proven = appDevProven && ok("account") &&
+        ok("observer_install") &&
         ok("packages") &&
         (intent.role !== "websocket" ||
             (ok("runtime-0") && ok("publication-0") &&
                 ok("firewall-0"))) &&
-        (!["ingress", "app-prod"].includes(intent.role) ||
+        (!["ingress", "app-prod", "app-dev"].includes(intent.role) ||
             ["caddy_service-0", "caddy-0", "firewall-0"]
                 .every(ok));
     const artifacts: { name: string; status: "applied" | "unchanged" }[] = [];
@@ -49,6 +71,8 @@ export function roleResult(raw: unknown) {
             ? ok(intent.role === "websocket" ? "publication-0" : "caddy-0")
             : artifact.name === "caddy-package"
             ? ok("packages")
+            : artifact.name === "tmpfiles"
+            ? ok("tmpfiles")
             : artifact.name === "php-runtime"
             ? ok("php_runtime")
             : false;
@@ -90,10 +114,20 @@ export function roleResult(raw: unknown) {
         : 0;
     const failed_step = !ok("account")
         ? "account"
+        : intent.role === "app-dev" && !ok("storage")
+        ? "storage"
+        : intent.role === "app-dev" &&
+                (private_dns_statuses.length !== dnsCount ||
+                    private_dns_statuses.some((status) =>
+                        status !== "succeeded"
+                    ))
+        ? "private-dns"
         : !ok("observer_install")
         ? "agent-install"
         : !ok("packages")
         ? "prerequisites"
+        : intent.role === "app-dev" && !ok("hibernation")
+        ? "hibernation"
         : (intent.role === "websocket"
             ? ["runtime-0", "publication-0", "firewall-0"]
             : ["caddy_service-0", "caddy-0", "firewall-0"]).find((name) =>
@@ -110,7 +144,13 @@ export function roleResult(raw: unknown) {
         runtime_proven: intent.role !== "websocket" || ok("runtime-0"),
         publication_proven: intent.role === "websocket"
             ? ok("publication-0")
-            : !["ingress", "app-prod"].includes(intent.role) || ok("caddy-0"),
+            : (!["ingress", "app-prod", "app-dev"].includes(intent.role) ||
+                ok("caddy-0")) &&
+                (intent.role !== "app-dev" ||
+                    (private_dns_statuses.length === dnsCount &&
+                        private_dns_statuses.every((status) =>
+                            status === "succeeded"
+                        ))),
         assignment_id: intent.assignment_id,
         created: intent.created,
         role_proven,
@@ -126,7 +166,7 @@ export function roleResult(raw: unknown) {
 export const RoleConvergeContribution = z.object({
     schema_version: z.literal(1),
     node_id: z.number().int().positive(),
-    role: z.enum(["database", "ingress", "websocket", "app-prod"]),
+    role: z.enum(["database", "ingress", "websocket", "app-prod", "app-dev"]),
     certificates_proven: z.boolean(),
     assignment_id: z.number().int().positive(),
     created: z.boolean(),
@@ -154,7 +194,7 @@ export type RoleConvergeReceipt = z.infer<typeof RoleConvergeContribution>;
 const Result = z.record(z.string(), z.unknown());
 export const behavior = {
     type: "@nckrtl/node-role-converge-result",
-    version: "2026.11.01.4",
+    version: "2026.11.01.5",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

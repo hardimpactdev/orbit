@@ -986,20 +986,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/role_baseline_system.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_baseline_system.ts",
-      "rule": "inline-script",
-      "count": 62,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/role_certificates.ts",
       "rule": "gateway-http",
       "count": 2,

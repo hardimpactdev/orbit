@@ -27,6 +27,7 @@ export async function prepareEnrollmentSettings(
   signal?: AbortSignal,
   readAccount = readRoleAccount,
   prepare = prepareStorageRoot,
+  source?: string,
 ): Promise<
   { settings_applied: true } | { error_code: "node.settings_root_failed" }
 > {
@@ -57,6 +58,7 @@ export async function prepareEnrollmentSettings(
     },
     invoke,
     signal,
+    source,
   );
   return outcome.ok ? { settings_applied: true } : failure;
 }

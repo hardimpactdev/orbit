@@ -6,6 +6,9 @@ export function roleResultInputs(intent: string, prefix: string): Fields {
         "account",
         "observer_install",
         "packages",
+        "storage",
+        "hibernation",
+        "tmpfiles",
         "runtime-0",
         "publication-0",
         "caddy_service-0",
@@ -34,6 +37,11 @@ export function roleResultInputs(intent: string, prefix: string): Fields {
                 }
                 : {}),
         }])),
+        private_dns_statuses: ex(
+            "steps.filter(k,k.startsWith(" +
+                JSON.stringify(prefix + "private_dns-") +
+                ")).map(k,steps[k].status)",
+        ),
         certificate_statuses: ex(
             "steps.filter(k,k.startsWith(" +
                 JSON.stringify(prefix + "certificates-") +

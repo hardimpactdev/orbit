@@ -42,13 +42,17 @@ function python(
   input: unknown,
   sudo: boolean,
   timeoutMs = 30000,
+  returns = false,
 ): SystemCommand {
   return {
     command: sudo ? "/usr/bin/sudo" : "/usr/bin/python3",
     args: sudo ? ["-n", "/usr/bin/python3", "-"] : ["-"],
-    stdin: `${script}\nmain(json.loads(${
-      JSON.stringify(JSON.stringify(input))
-    }))\n`,
+    stdin: script + "\n" +
+      (returns
+        ? "import json\nprint(json.dumps(main(json.loads("
+        : "main(json.loads(") +
+      JSON.stringify(JSON.stringify(input)) +
+      (returns ? "))))\n" : "))\n"),
     timeoutMs,
   };
 }
@@ -100,42 +104,21 @@ const Storage = z.object({
   group: AccountName,
   create_missing: z.boolean(),
 }).strict();
-const StorageScript = `import json, os, pwd, grp, stat
-
-def main(data):
-    try:
-        root = data['root']
-        if not os.path.isabs(root) or any(part in ('.', '..') for part in root.split('/')):
-            raise ValueError()
-        uid, gid = pwd.getpwnam(data['user']).pw_uid, grp.getgrnam(data['group']).gr_gid
-        current = '/'
-        for part in filter(None, root.split('/')):
-            current = os.path.join(current, part)
-            if os.path.lexists(current):
-                if not stat.S_ISDIR(os.lstat(current).st_mode) or os.path.realpath(current) != current:
-                    raise ValueError()
-            else:
-                if not data['create_missing']:
-                    raise ValueError()
-                os.mkdir(current, 0o755)
-                os.chown(current, uid, gid)
-        metadata = os.lstat(root)
-        mode = stat.S_IMODE(metadata.st_mode)
-        if metadata.st_uid != uid or metadata.st_gid != gid or mode & 0o700 != 0o700 or mode & 0o022:
-            raise ValueError()
-        print('{}')
-    except (ValueError, KeyError, OSError):
-        print(json.dumps({'error_code': 'node.storage_root_unusable'}))
-`;
 
 /** Every component is real; existing roots are inspected and never repaired or adopted. */
 export function prepareStorageRoot(
   raw: unknown,
   transport: SystemTransport = localSystemCommand,
   signal?: AbortSignal,
+  source?: string,
 ): Promise<BaselineOutcome> {
+  if (!source) {
+    throw new Error(
+      "The role root must supply its canonical storage asset",
+    );
+  }
   return outcome(
-    python(StorageScript, Storage.parse(raw), true),
+    python(source, Storage.parse(raw), true, 30000, true),
     "node.storage_root_unusable",
     transport,
     signal,
@@ -154,50 +137,19 @@ def main(data):
     except KeyError:
         print('null')
 `;
-const HibernationScript = `import json, os, stat
-PROTECTED = {'/dev', '/dev/shm', '/etc', '/proc', '/run', '/sys', '/tmp', '/var', '/var/tmp'}
-
-def main(data):
-    try:
-        paths = [data['marker_directory'], data['log_directory']]
-        for path in paths:
-            if not os.path.isabs(path) or path == '/' or path in PROTECTED or any(part in ('.', '..') for part in path.split('/')):
-                raise ValueError()
-            current = path
-            while True:
-                if os.path.lexists(current) and not stat.S_ISDIR(os.lstat(current).st_mode):
-                    raise ValueError()
-                if current == '/':
-                    break
-                current = os.path.dirname(current)
-        if os.path.commonpath(paths) in paths:
-            raise ValueError()
-        owner = data['owner']
-        for directory, mode in zip(paths, [0o755, 0o2775]):
-            ancestors = []
-            parent = os.path.dirname(directory)
-            while parent != '/' and parent not in PROTECTED:
-                ancestors.append(parent)
-                parent = os.path.dirname(parent)
-            for path in reversed(ancestors):
-                if not os.path.isdir(path):
-                    os.mkdir(path, 0o755)
-                os.chmod(path, 0o755)
-            if not os.path.isdir(directory):
-                os.mkdir(directory, 0o755)
-            os.chown(directory, *owner)
-            os.chmod(directory, mode)
-        print('{}')
-    except (KeyError, ValueError, OSError):
-        print(json.dumps({'error_code': 'hibernation.node_failed'}))
-`;
 
 /** Validate both trees before mutation and leave protected system-root modes untouched. */
 export async function prepareHibernationDirectories(
   raw: unknown,
   transport: SystemTransport = localSystemCommand,
   signal?: AbortSignal,
+  source?: string,
 ): Promise<BaselineOutcome> {
+  if (!source) {
+    throw new Error(
+      "The role root must supply its canonical hibernation asset",
+    );
+  }
   const input = Hibernation.parse(raw);
   signal?.throwIfAborted();
   const group = await transport(
@@ -215,7 +167,7 @@ export async function prepareHibernationDirectories(
     return { ok: false, error_code: "hibernation.node_failed" };
   }
   return outcome(
-    python(HibernationScript, { ...input, owner }, true),
+    python(source, { ...input, owner }, true, 30000, true),
     "hibernation.node_failed",
     transport,
     signal,

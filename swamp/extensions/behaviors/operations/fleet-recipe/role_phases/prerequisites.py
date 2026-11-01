@@ -10,9 +10,9 @@ def converge(data, observed):
     prepared = data["prepared_tools"]
     role = intent["role"]
     policy = module("role_prerequisites")
-    if role in ["ingress", "websocket", "app-prod"]:
+    if role in ["ingress", "websocket", "app-prod", "app-dev"]:
         policy.caddy(intent["caddy_package"])
-    if role == "app-prod":
+    if role in ["app-prod", "app-dev"]:
         policy.prerequisites(
             {
                 **observed,
@@ -20,7 +20,7 @@ def converge(data, observed):
                 "packages": [
                     p for p in intent["prerequisites"]["packages"] if p != "caddy"
                 ],
-                "apps_directory": False,
+                "apps_directory": role == "app-dev",
                 "composer_home": True,
                 "install_packages": not prepared,
             }
@@ -28,9 +28,10 @@ def converge(data, observed):
         execute("canonical_recipe", intent["php"], "php-build")
         if not prepared and intent["javascript"] is not None:
             execute("canonical_recipe", intent["javascript"], "javascript")
-        ordering = module("caddy_ordering").converge_ordering()
-        if not ordering["completed"]:
-            raise ValueError("service.ordering_failed")
+        if role == "app-prod":
+            ordering = module("caddy_ordering").converge_ordering()
+            if not ordering["completed"]:
+                raise ValueError("service.ordering_failed")
     elif not prepared:
         execute("packages")
     return {"ready": True}

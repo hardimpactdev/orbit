@@ -31,6 +31,17 @@ def prepare(role, node_id, run_cli):
     PARITY.require(node["id"] == node_id, "unexpected-topology-node")
     assignments = run_cli("node:role:list", str(node_id))["assignments"]
     PARITY.require(len(assignments) <= 1, "unexpected-mixed-role-target")
+    if role == "app-dev":
+        # The topology owner enrolls this Node through canonical bootstrap.
+        # Public reads hide its hash; admission and observer verification prove it.
+        PARITY.require(
+            node.get("status") == "active"
+            and node.get("platform") == "linux"
+            and len(assignments) == 1
+            and assignments[0]["role"] == "app-dev"
+            and assignments[0]["status"] == "active",
+            "prepare-needs-bootstrapped-app-dev",
+        )
     if assignments:
         current = assignments[0]
         PARITY.require(current["role"] in PARITY.ROLES, "refuse-unrelated-role-removal")
