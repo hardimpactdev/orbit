@@ -429,6 +429,7 @@ class RequestSequenceTest(unittest.TestCase):
         self.assertEqual(result['enrollment'], 'fixture-set')
         self.assertEqual(result['topology_ca'], 'fixture-set')
         self.assertEqual(result['fixture_repositories'], 'separate-caddy')
+        self.assertEqual(result['github_token_path'], 'not_exercised')
 
     def test_failed_before_request_never_admits_and_retains_failure_receipt(self):
         result, events, _ = self.execute(hook_exit=1)

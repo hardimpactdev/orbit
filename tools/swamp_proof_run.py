@@ -177,7 +177,7 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
                    topology=state['topology'], topology_version=state['topology_version'], nodes=state['nodes'],
                    seed=state['vm']['seed'], vm=dict(state['vm']), gateway_install=state.get('gateway_install'),
                    gateway_status=state.get('gateway_status'), sandbox_verified=state.get('sandbox_verified'), destroyed=False)
-    receipt.update(enrollment='fixture-set', topology_ca='fixture-set', fixture_repositories='separate-caddy')
+    receipt.update(enrollment='fixture-set', topology_ca='fixture-set', fixture_repositories='separate-caddy', github_token_path='not_exercised')
     save()
     try:
         # Root-owned timestamp is the only F11 activity fact; no Gateway metadata is written.
