@@ -202,7 +202,7 @@ Deno.test("native sync refuses loss of unmanaged workload keys before writing", 
   });
 });
 
-Deno.test("native sync reports a refused preflight as env.sync_preflight_failed", async () => {
+Deno.test("native sync reports a refused write check as env.write_preflight_failed", async () => {
   await fixture(async (base) => {
     await Deno.writeTextFile(`${base}/elsewhere`, "TOKEN=kept\n");
     await Deno.symlink(`${base}/elsewhere`, `${base}/.env`);
@@ -231,7 +231,7 @@ Deno.test("native sync reports a refused preflight as env.sync_preflight_failed"
     );
     assertEquals(
       [refusal.code, refusal.stage],
-      ["env.sync_preflight_failed", "preflight"],
+      ["env.write_preflight_failed", "preflight"],
     );
     assertEquals(await Deno.readTextFile(`${base}/elsewhere`), "TOKEN=kept\n");
   });

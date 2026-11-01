@@ -164,7 +164,7 @@ Runs on: Gateway.
 Runs on: the Instance's Node.
 
 - Write check: owner, mode, read-only mount, free space for the new file.
-- A missing `.env` is allowed. An unreadable or oversized one refuses (`env.import_preflight_failed`); a failed write check refuses (`env.write_preflight_failed` in legacy, `env.sync_preflight_failed` on main).
+- A missing `.env` is allowed. An unreadable or oversized one refuses (`env.import_preflight_failed`); a failed write check refuses (`env.write_preflight_failed`).
 - Read the existing key names only, on the Node. A workload key that is neither stored nor owned refuses with the key names (`env.sync_would_drop_keys`). Route transitions skip this check.
 
 ### 3. Write (Node)

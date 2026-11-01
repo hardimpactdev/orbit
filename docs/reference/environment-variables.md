@@ -231,7 +231,7 @@ Import, update, and the start of synchronization return these codes in the Orbit
 | `env.reference_unavailable` | Operation | A placeholder is left over after rendering. `.env` stays unchanged. |
 | `operation.target_busy` | 409 | Another operation holds the Instance. |
 | `env.configuration_missing` | 409 | Synchronization found no stored configuration. Import or store values first. |
-| `env.sync_preflight_failed` | Operation | The check of the user, path, file, owner, storage, or free space refused. `.env` stays unchanged. |
+| `env.write_preflight_failed` | Operation | The check of the user, path, file, owner, storage, or free space refused. `.env` stays unchanged. |
 | `env.sync_unconfirmed` | Operation | Swamp cannot confirm the write. Repeat synchronization. |
 | `env.config_cache_refresh_failed` | Operation | Config cache preparation failed or was unconfirmed. A failed build keeps the old cache; an unconfirmed result may have replaced it. FPM opcache was not reset. |
 | `env.php_runtime_refresh_failed` | Operation | Config cache preparation completed, but FPM opcache refresh failed. |

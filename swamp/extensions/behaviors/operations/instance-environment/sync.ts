@@ -139,7 +139,7 @@ export async function synchronizeEnvironment(
         const inspected = await call("instance.inspect-environment-sync", input);
         // The program answers a refused check with `state: refused`; inspection never writes.
         if (inspected.state === "refused") {
-          throw new EnvironmentRefusal("env.sync_preflight_failed", stage);
+          throw new EnvironmentRefusal("env.write_preflight_failed", stage);
         }
         const inspection = z.object({
           preflight: z.object({ state: z.literal("ok") }),
