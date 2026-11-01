@@ -22,7 +22,7 @@ class DirectAgentRekeyNative(NativeTestCase):
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/node')
         target = self.repo / 'extensions/behaviors'
         (target / 'operations/fleet').mkdir()
-        for name in ['contract.ts', 'peer_dns_local.ts']:
+        for name in ['contract.ts']:
             shutil.copy(ROOT / 'extensions/behaviors/operations/fleet' / name,
                         target / 'operations/fleet' / name)
         module = target / 'operations/node/rekey_direct.ts'

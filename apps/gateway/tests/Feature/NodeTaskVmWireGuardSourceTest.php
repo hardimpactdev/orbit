@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationPrivateBindings;
+use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
@@ -18,6 +18,20 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
+
+/** This private-source fixture does not depend on a direct Node root's projection contract. */
+final readonly class TaskVmHubSourceFixtureProjection implements DirectOperationProjection
+{
+    public function input(Operation $operation): array
+    {
+        return ['hub' => $operation->input['_wireguard']];
+    }
+
+    public function apply(Operation $operation, array $data): Operation
+    {
+        throw new LogicException('This fixture reads only the private-source boundary.');
+    }
+}
 
 beforeEach(function (): void {
     FleetFixtures::bind();
@@ -43,7 +57,7 @@ beforeEach(function (): void {
                     'private_material' => ['configuration' => 'node.vpn_configuration']]), $this->known);
             foreach (['task_vm.destroy', 'node.add'] as $kind) {
                 if (isset($definitions[$kind])) {
-                    $definitions[$kind]['projection'] = NodeNetworkProjection::class;
+                    $definitions[$kind]['projection'] = TaskVmHubSourceFixtureProjection::class;
                 }
             }
 
