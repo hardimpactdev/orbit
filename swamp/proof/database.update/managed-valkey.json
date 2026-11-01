@@ -32,7 +32,7 @@
         "--json"
       ],
       "capture": {
-        "connection_id": "$.target_id"
+        "connection_id": "$.input.connection_id"
       }
     }
   ],

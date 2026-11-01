@@ -141,6 +141,8 @@ class FixtureContractTests(unittest.TestCase):
                 self.assertNotIn("secrets", fixture)
                 self.assertNotIn("target_setup", fixture)
                 self.assertIsNone(fixture["queue_timeout_seconds"])
+                if path.stem == "managed-valkey":
+                    self.assertEqual(fixture["prepare"][1]["capture"]["connection_id"], "$.input.connection_id")
                 for call in [fixture["request"], *fixture["prepare"]]:
                     self.assertFalse(any("--password" in arg for arg in call["argv"]))
 
