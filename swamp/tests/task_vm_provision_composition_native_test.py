@@ -1,11 +1,10 @@
 """Actual209 parent DAG and official SSH at disposable provider/runtime boundaries."""
-import hashlib
 import json
 import sys
-from pathlib import Path
+import unittest
 
 import yaml
-from native_harness import NativeTestCase, ROOT
+from native_harness import ROOT, NativeTestCase
 
 
 class TaskVmProvisionComposition(NativeTestCase):
@@ -16,6 +15,7 @@ class TaskVmProvisionComposition(NativeTestCase):
         self.cli("extension", "pull", "@swamp/ssh@2026.10.23.1")
         self.copy_behaviors("operations/task-vm-lifecycle", "operations/node-peer-command", "operations/node-hub-command", "operations/node-bootstrap")
         self.events = self.repo / "events.jsonl"
+        self.verify_fault = self.repo / "verify-fault"
         public = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"
         self.peer = "A" * 43 + "="
         fake = self.repo / "ssh"
@@ -32,8 +32,20 @@ elif 'def cleanup(data)' in program:print('{"cleaned":true}')
 elif 'def render(data)' in program:print('{"published":true}')
 elif 'def record(data)' in program:print('{"dns_recorded":true}')
 elif 'context_node_id' in body:print('{"schema_version":1,"hub_id":1,"context_node_id":142,"projected":true,"restored":false,"changed":true}')
+elif 'def verify(data)' in program:
+    import io
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    namespace={'__name__':'bootstrap_verify_fixture'}
+    exec(argv[-1],namespace)
+    user=argv[argv.index('-u')+1] if '-u' in argv else 'root'
+    if Path(VERIFY_FAULT).exists():user='foreign'
+    account=SimpleNamespace(pw_name=user,pw_gid=1000,pw_dir='/home/'+user)
+    with patch('pwd.getpwuid',return_value=account), patch('os.getuid',return_value=1000 if user!='root' else 0), patch('grp.getgrgid',return_value=SimpleNamespace(gr_name=user)), patch('pathlib.Path.open',return_value=io.BytesIO(b'fixture observer')), patch('hashlib.file_digest',return_value=SimpleNamespace(hexdigest=lambda:'b'*64)), patch('subprocess.run') as sudo:
+        print(json.dumps(namespace['verify'](namespace['BOOTSTRAP_INPUT'])))
+        assert sudo.call_args.args[0]==['/usr/bin/sudo','-n','true']
 else:print('{"ready":true}')
-'''.replace("EVENTS", repr(str(self.events))).replace("PUBLIC", repr(public)).replace("PEER", repr(self.peer)))
+'''.replace("EVENTS", repr(str(self.events))).replace("VERIFY_FAULT", repr(str(self.verify_fault))).replace("PUBLIC", repr(public)).replace("PEER", repr(self.peer)))
         fake.chmod(0o755)
         for filename in ("workflow-task-vm-provision.yaml", "workflow-operation-task-vm-provision.yaml", "workflow-task-vm-ssh-prepare.yaml", "workflow-task-vm-incus-first-visit.yaml", "workflow-task-vm-enrollment.yaml"):
             value = yaml.safe_load((ROOT / "workflows" / filename).read_text())
@@ -96,8 +108,18 @@ else:print('{"ready":true}')
         self.assertNotIn("GatewayOperation", calls)
         self.assertIn("10.44.0.142", calls)
         self.assertIn("openssh-server", calls)
+        verify = next(json.loads(line) for line in calls.splitlines() if "def verify(data)" in line)
+        self.assertEqual(verify["argv"][-9:-1], ["/usr/bin/sudo", "-n", "-u", "orbit", "--", "/usr/bin/python3", "-B", "-c"])
         self.assertIn("10.44.0.15", calls)
         self.assertLess(calls.index("wg-quick@orbit.service"), calls.index("orbit-agent.service", calls.index("wg-quick@orbit.service")))
+
+    def test_foreign_bootstrap_account_fails_before_network_or_runtime(self):
+        self.verify_fault.touch()
+        run = self.run_root(success=False)
+        self.assertEqual(run["status"], "failed")
+        calls = self.events.read_text()
+        self.assertIn("def verify(data)", calls)
+        self.assertNotIn("def snapshot(data)", calls)
 
     def test_unavailable_upcloud_refuses_before_provider_or_guest_actions(self):
         self.intent["provider"] = "upcloud"
@@ -124,3 +146,9 @@ else:print('{"ready":true}')
         calls = [json.loads(line) for line in self.events.read_text().splitlines()]
         self.assertTrue(any("def restore(data)" in " ".join(call["argv"]) for call in calls))
         self.assertTrue(any('\\"restoring\\":true' in call["body"] for call in calls))
+
+
+class TaskProvisionQueueBudget(unittest.TestCase):
+    def test_tasks_provision_default_queue_budget_covers_loaded_dispatch(self):
+        workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-task-provision.yaml").read_text())
+        self.assertEqual(workflow["queueTimeout"], 30)
