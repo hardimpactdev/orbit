@@ -1,7 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
 import { AdoptInput, Facts, Observation, queryScript } from "./adopt.ts";
-import { removalProbe } from "./remove.ts";
 import { allows, normalizeVersion, safeVersion, ToolRefusal, verifyInstalled } from "./contract.ts";
 import { homebrewBlock, homebrewCandidateVersion } from "./adopt_homebrew.ts";
 const WriteShape = AdoptInput.safeExtend({ package: z.string().max(255), kind: z.enum(["tool.install", "tool.update", "tool.manager_converge"]), setup: Setup.nullable().default(null) }).refine((v) => v.kind === "tool.manager_converge" ? v.package === "" : v.package.length > 0);
@@ -15,6 +14,13 @@ const Public = z.record(z.string(), z.unknown());
 const Step = z.object({ status: z.string(), outputs: Public.optional() }).passthrough();
 type Check = { ready: boolean; error_code?: string; setup_required?: boolean; package_required?: boolean; facts?: z.infer<typeof Facts>; version?: string; allowed?: boolean; mutate?: boolean; outcome?: string };
 const refusal = (error: unknown, fallback = "tool.version_probe_failed") => ({ ready: false, error_code: error instanceof ToolRefusal ? error.code : fallback });
+export function writeInventory(observation: unknown) {
+  const facts = Facts.parse(JSON.parse(Observation.parse(observation).stdout));
+  if (facts.scope !== "present") throw new ToolRefusal("tool.manager_unavailable");
+  if (facts.error_code || !safeVersion(facts.manager_version) || facts.complete !== true || !facts.versions ||
+    facts.versions.length > 1 || facts.versions.some((version) => !safeVersion(version))) throw new ToolRefusal("tool.version_probe_failed");
+  return { facts, present: facts.versions.length === 1 };
+}
 export function inspect(input: Input, observation: unknown): Check {
   try {
     const facts = Facts.parse(JSON.parse(Observation.parse(observation).stdout));
@@ -23,8 +29,7 @@ export function inspect(input: Input, observation: unknown): Check {
 }
 export function before(input: Input, observation: unknown, final = false): Check {
   try {
-    const value = removalProbe({ ...input, intent_only: false }, observation);
-    if (!value.ready || !value.facts) throw new ToolRefusal(value.error_code ?? "tool.version_probe_failed");
+    const value = writeInventory(observation);
     const facts = value.facts;
     if (input.kind === "tool.manager_converge") return { ready: true, package_required: false, facts };
     if (!final && input.kind === "tool.install" && input.tool_id === null && value.present) throw new ToolRefusal("tool.package_already_installed");
@@ -48,8 +53,7 @@ export function candidate(input: Input, observation: unknown): Check {
 export function decision(input: Input, previous: unknown, selected: unknown, observation: unknown): Check {
   try {
     const original = Facts.parse(previous), chosen = z.object({ ready: z.literal(true), version: z.string(), allowed: z.boolean() }).parse(selected);
-    const current = removalProbe({ ...input, intent_only: false }, observation);
-    if (!current.ready || !current.facts) throw new ToolRefusal(current.error_code ?? "tool.version_probe_failed");
+    const current = writeInventory(observation);
     const now = current.facts.versions?.[0] ?? null, was = original.versions?.[0] ?? null;
     // Resume at reconcile_query keeps the original before observation and candidate.
     const completed = safeVersion(now) && allows({ ...input, materialize: null, intent_only: false }, now) && (input.kind === "tool.install" ? was === null : now !== was);
