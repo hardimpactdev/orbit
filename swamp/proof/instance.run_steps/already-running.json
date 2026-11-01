@@ -3,7 +3,7 @@
   "workflow": "operation-instance-setup-direct",
   "topology": "app-dev",
   "budget_seconds": 120,
-  "queue_timeout_seconds": 60,
+  "queue_timeout_seconds": 30,
   "prepare": [
     {
       "argv": ["orbit", "project:create", "proof-running-setup-${proof.run}", "node-package", "${proof.repo.url}", "--root=source-setup", "--default-branch=main", "--source-access=github_app", "--json"],
