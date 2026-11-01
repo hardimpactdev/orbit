@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
@@ -14,8 +15,13 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Projects the native check metadata onto the existing board. No execution or evidence judgment. */
-final readonly class TaskCheckProjection implements DirectOperationProjection
+final readonly class TaskCheckProjection implements DirectOperationProjection, NativeOperationProjection
 {
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
+
     public function input(Operation $operation): array
     {
         $intent = array_diff_key($operation->input, ['execution_secrets' => true]);

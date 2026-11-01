@@ -47,6 +47,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^swamp-proof-club-api-key$", "actions": ["write", "read"]}
   ],
   "workflows": [
+    {"workflow": "task-vm-reaper", "publishes_inputs": true, "actions": ["run", "read", "write"]},
     {"workflow": "project-observe", "actions": ["run", "read"]},
     {"workflow": "maintenance-projects", "publishes_inputs": true, "actions": ["run", "read", "write"]},
     {"workflow": "project-detect", "actions": ["run", "read"]},

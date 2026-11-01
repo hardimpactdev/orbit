@@ -1,0 +1,133 @@
+{
+  "scope": "isolated pinned-native plan/stat/select with official SSH executable fixture seam; not F10 topology proof",
+  "workflow": "task-vm-reaper",
+  "proof_project_id": 62,
+  "runs": [
+    {
+      "completed_at": "2026-11-01T13:31:49.573Z",
+      "phases": [
+        {
+          "ms": 50,
+          "name": "plan",
+          "status": "succeeded"
+        },
+        {
+          "ms": 121,
+          "name": "inspect-0",
+          "status": "succeeded"
+        },
+        {
+          "ms": 118,
+          "name": "inspect-1",
+          "status": "succeeded"
+        },
+        {
+          "ms": 121,
+          "name": "inspect-2",
+          "status": "failed"
+        },
+        {
+          "ms": 118,
+          "name": "inspect-3",
+          "status": "failed"
+        },
+        {
+          "ms": 25,
+          "name": "result",
+          "status": "succeeded"
+        }
+      ],
+      "run_id": "c1f820b7-8f46-41a9-a94c-6a90b08a5db4",
+      "started_at": "2026-11-01T13:31:49.339Z",
+      "status": "succeeded",
+      "run_seconds": 0.234
+    },
+    {
+      "completed_at": "2026-11-01T13:31:51.474Z",
+      "phases": [
+        {
+          "ms": 49,
+          "name": "plan",
+          "status": "succeeded"
+        },
+        {
+          "ms": 127,
+          "name": "inspect-0",
+          "status": "succeeded"
+        },
+        {
+          "ms": 128,
+          "name": "inspect-1",
+          "status": "succeeded"
+        },
+        {
+          "ms": 128,
+          "name": "inspect-2",
+          "status": "failed"
+        },
+        {
+          "ms": 124,
+          "name": "inspect-3",
+          "status": "failed"
+        },
+        {
+          "ms": 33,
+          "name": "result",
+          "status": "succeeded"
+        }
+      ],
+      "run_id": "93f7e02a-0856-4233-b784-fc4d42cd526e",
+      "started_at": "2026-11-01T13:31:51.234Z",
+      "status": "succeeded",
+      "run_seconds": 0.24
+    },
+    {
+      "completed_at": "2026-11-01T13:31:53.385Z",
+      "phases": [
+        {
+          "ms": 58,
+          "name": "plan",
+          "status": "succeeded"
+        },
+        {
+          "ms": 134,
+          "name": "inspect-0",
+          "status": "succeeded"
+        },
+        {
+          "ms": 129,
+          "name": "inspect-1",
+          "status": "succeeded"
+        },
+        {
+          "ms": 127,
+          "name": "inspect-2",
+          "status": "failed"
+        },
+        {
+          "ms": 132,
+          "name": "inspect-3",
+          "status": "failed"
+        },
+        {
+          "ms": 28,
+          "name": "result",
+          "status": "succeeded"
+        }
+      ],
+      "run_id": "b6b10cfc-28e5-42b8-90ca-c5cb070f70c7",
+      "started_at": "2026-11-01T13:31:53.128Z",
+      "status": "succeeded",
+      "run_seconds": 0.257
+    }
+  ],
+  "sample": 3,
+  "p95_seconds": 0.257,
+  "selection_budget_seconds": 30,
+  "queue_timeout_seconds": 15,
+  "cleanup": "existing tasks.cancel and task_vm.destroy own their phases and budgets",
+  "f10": "pending schedule-mode topology receipt; F coordinates its slot with D; canonical cleanup source PR2320 is merged",
+  "stat_timeout_seconds": 15,
+  "remote_timeout_seconds": 10,
+  "cadence": "20 */5 * * * *"
+}

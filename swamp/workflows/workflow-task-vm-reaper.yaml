@@ -1,0 +1,80 @@
+id: 97255f74-03e4-4814-aef6-f61888786763
+name: task-vm-reaper
+description: Select expired claimed Task VMs and read persistent topology last-run markers.
+trigger:
+  schedule: '20 */5 * * * *'
+queueTimeout: 15
+vaults: []
+inputs:
+  type: object
+  required: [expectations_hash, expectations]
+  additionalProperties: false
+  properties:
+    expectations_hash: {type: string, pattern: '^[a-f0-9]{64}$'}
+    expectations: {type: object}
+reports:
+  skip: ['@swamp/workflow-summary']
+jobs:
+  - name: plan
+    target: orbit-node-209
+    steps:
+      - name: plan
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-reaper-input'
+          behaviorName: '${{ "task-vm-reaper-plan-" + run.id }}'
+          methodName: plan
+          inputs:
+            expectations_hash: '${{ inputs.expectations_hash }}'
+            proof_project_id: '${{ inputs.expectations.proof_project_id }}'
+            vms: '${{ inputs.expectations.vms }}'
+  - name: inspect
+    target: orbit-node-209
+    dependsOn: [{job: plan, condition: {type: succeeded}}]
+    steps:
+      - name: inspect
+        forEach: {item: vm, in: '${{ steps.plan.outputs.targets }}'}
+        allowFailure: true
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "task-vm-reaper-stat-" + run.id + "-" + string(self._index) }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "task-vm-reaper-stat-" + run.id + "-" + string(self._index) }}'
+            transport:
+              kind: ssh
+              user: '${{ self.vm.ssh.target.user }}'
+              port: '${{ self.vm.ssh.target.port }}'
+              identityFile: '${{ self.vm.ssh.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ self.vm.ssh.target.host }}'
+                transport: {hostKeys: '${{ self.vm.ssh.target.host_keys }}'}
+          inputs:
+            hosts: name:target
+            sudo: true
+            timeoutSec: 15
+            okExitCodes: [0, 1]
+            argv: [/usr/bin/timeout, '10', /usr/bin/env, LC_ALL=C, /usr/bin/stat, -c, '%Y', --, /var/lib/orbit/swamp-proof/last-run]
+  - name: select
+    target: orbit-node-209
+    dependsOn:
+      - {job: plan, condition: {type: succeeded}}
+      - {job: inspect, condition: {type: always}}
+    steps:
+      - name: result
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-reaper-input'
+          behaviorName: '${{ "task-vm-reaper-" + run.id }}'
+          methodName: select
+          inputs:
+            expectations_hash: '${{ inputs.expectations_hash }}'
+            proof_project_id: '${{ inputs.expectations.proof_project_id }}'
+            vms: '${{ inputs.expectations.vms }}'
+            inspect_statuses: '${{ (steps.plan.outputs.inspect_steps.map(key, key in steps ? steps[key].status : "skipped")) }}'
+            inspect_exit_codes: '${{ (steps.plan.outputs.inspect_steps.map(key, key in steps && steps[key].status == "succeeded" ? steps[key].outputs.exitCode : null)) }}'
+            inspect_signals: '${{ (steps.plan.outputs.inspect_steps.map(key, key in steps && steps[key].status == "succeeded" ? steps[key].outputs.signal : null)) }}'
+            inspect_stdout: '${{ (steps.plan.outputs.inspect_steps.map(key, key in steps && steps[key].status == "succeeded" ? steps[key].outputs.stdout : "")) }}'
+            inspect_stderr: '${{ (steps.plan.outputs.inspect_steps.map(key, key in steps && steps[key].status == "succeeded" ? steps[key].outputs.stderr : "")) }}'
