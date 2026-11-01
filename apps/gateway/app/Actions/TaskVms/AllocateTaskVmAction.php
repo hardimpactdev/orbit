@@ -55,7 +55,7 @@ final readonly class AllocateTaskVmAction
 
             return $existing;
         }
-        $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds);
+        $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
         try {
             $vm = $this->place($group, $size, $admit);
         } catch (Throwable $exception) {

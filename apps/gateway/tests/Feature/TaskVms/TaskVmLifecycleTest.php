@@ -296,6 +296,29 @@ describe('allocation', function (): void {
         'two nodes' => [['app-dev', 'app-prod'], TaskVmSize::Large, 3],
     ]);
 
+    it('applies Project size grants only without a declared topology', function (bool $medium, bool $large, array $topology, TaskVmSize $size, int $slots): void {
+        TaskVmSettingsBuilder::bind([
+            'devClusterId' => null, 'modelProxyOrigin' => TVM_LIFE_ORIGIN,
+            'mediumProjectIds' => [$medium ? $this->project->id : $this->project->id + 1],
+            'largeProjectIds' => [$large ? $this->project->id : $this->project->id + 1],
+            'hosts' => [TaskVmSettingsBuilder::host($this->host->id, ['maxVms' => 4])],
+        ]);
+        $group = tvm_life_group();
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskStatus::Todo, 'topology' => $topology]);
+
+        $vm = app(AllocateTaskVmAction::class)->capture($group)->refresh();
+
+        expect($vm->size)->toBe($size)
+            ->and(app(TaskVmCapacity::class)->freeSlots(app(TaskVmCapacity::class)->activeHosts()))->toBe([$this->host->id => 4 - $slots]);
+    })->with([
+        'large grant' => [false, true, [], TaskVmSize::Large, 3],
+        'large wins both lists' => [true, true, [], TaskVmSize::Large, 3],
+        'unlisted Project' => [false, false, [], TaskVmSize::Normal, 1],
+        'medium grant unchanged' => [true, false, [], TaskVmSize::Medium, 2],
+        'one declared node still medium' => [true, true, ['app-dev'], TaskVmSize::Medium, 2],
+        'two declared nodes still large' => [true, true, ['app-dev', 'app-prod'], TaskVmSize::Large, 3],
+    ]);
+
     it('gives a group of a medium Project a medium VM of two slots, and a large one for a topology', function (): void {
         Queue::fake();
         TaskVmSettingsBuilder::bind([
