@@ -65,6 +65,7 @@ export function roleBaseline(
         signal?: AbortSignal,
         recipeSource?: string,
         prerequisiteSource?: string,
+        filesystemSource?: string,
     ): Promise<BaselineOutcome> => {
         const snapshot = RoleSnapshot.parse(raw);
         const stage = BaselineStage.parse(phase);
@@ -88,6 +89,7 @@ export function roleBaseline(
                 },
                 transport,
                 signal,
+                filesystemSource,
             );
         }
         if (stage === "prerequisites") {
@@ -118,6 +120,7 @@ export function roleBaseline(
                     },
                     transport,
                     signal,
+                    filesystemSource,
                 );
         }
         if (stage === "runtime" || stage.startsWith("manager-")) {

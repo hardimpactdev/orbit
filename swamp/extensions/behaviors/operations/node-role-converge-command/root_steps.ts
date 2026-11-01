@@ -52,8 +52,57 @@ export function roleConvergeSteps(
         globals,
         Boolean(options.preparedToolsExpr),
     );
+    steps.push(rolePhase("storage", "phase_storage", globals, 30, "account", {
+        guard: 'inputs.intent.role != "app-dev"',
+    }));
+    steps.push({
+        name: "private_dns",
+        ...target,
+        forEach: {
+            item: "dns",
+            in: ex(
+                'inputs.intent.role == "app-dev" ? inputs.intent.publications.filter(p,p.after.dns != null) : []',
+            ),
+        },
+        dependsOn: on("storage"),
+        task: {
+            type: "workflow",
+            workflowIdOrName: "route-dns-publish",
+            inputs: {
+                operation_id: ex("inputs.operation_id"),
+                node_id: ex("inputs.node_id"),
+                kind: "node.role_converge",
+                execution_secrets: {},
+                intent: {
+                    node_id: ex("self.dns.node_id"),
+                    control_node_id: ex("self.dns.control_node_id"),
+                    connection: ex("self.dns.connection"),
+                    host_keys: ex("self.dns.host_keys"),
+                    before: ex("self.dns.before.dns"),
+                    after: ex("self.dns.after.dns"),
+                    alternatives: ex(
+                        "[self.dns.before.dns,self.dns.after.dns]",
+                    ),
+                },
+            },
+        },
+    });
+    const packages = steps.find((step) => step.name === "packages")!;
+    packages.dependsOn = [
+        ...on("observer_install"),
+        ...on("storage", "always"),
+        ...on("private_dns", "always"),
+    ];
+    packages.guard = ex(
+        'inputs.intent.role == "app-dev" && (steps.storage.status != "succeeded" || size(steps.filter(k,k.startsWith("private_dns-") && steps[k].status == "succeeded")) != size(inputs.intent.publications.filter(p,p.after.dns != null)))',
+    );
+    steps.push(
+        rolePhase("hibernation", "phase_hibernation", globals, 30, "packages", {
+            guard: 'inputs.intent.role != "app-dev"',
+        }),
+    );
     const ingress =
-        'inputs.intent.role in ["ingress","app-prod"] ? [inputs.intent] : []';
+        'inputs.intent.role in ["ingress","app-prod","app-dev"] ? [inputs.intent] : []';
     steps.push(...select(
         [{
             name: "runtime",
@@ -106,11 +155,12 @@ export function roleConvergeSteps(
                 writes: true,
                 dependsOn: [
                     ...on("packages"),
+                    ...on("hibernation", "always"),
                     ...on("runtime", "always"),
                     ...on("certificates", "always"),
                 ],
                 guard: ex(
-                    'steps.exists(k,(k.startsWith("runtime-") || k.startsWith("certificates-")) && steps[k].status != "succeeded")',
+                    '(inputs.intent.role == "app-dev" && steps.hibernation.status != "succeeded") || steps.exists(k,(k.startsWith("runtime-") || k.startsWith("certificates-")) && steps[k].status != "succeeded")',
                 ),
                 task: {
                     type: "behavior",
@@ -226,7 +276,7 @@ export function roleConvergeSteps(
     firewall.forEach = {
         item: "firewall",
         in: ex(
-            'inputs.intent.role in ["ingress","websocket","app-prod"] ? [inputs.intent.firewall] : []',
+            'inputs.intent.role in ["ingress","websocket","app-prod","app-dev"] ? [inputs.intent.firewall] : []',
         ),
     };
     firewall.dependsOn = [
@@ -235,7 +285,7 @@ export function roleConvergeSteps(
         ...on("publication", "always"),
     ];
     firewall.guard = ex(
-        '(inputs.intent.role in ["ingress","app-prod"] && !("caddy-0" in steps && steps["caddy-0"].status == "succeeded")) || (inputs.intent.role == "websocket" && !("publication-0" in steps && steps["publication-0"].status == "succeeded"))',
+        '(inputs.intent.role in ["ingress","app-prod","app-dev"] && !("caddy-0" in steps && steps["caddy-0"].status == "succeeded")) || (inputs.intent.role == "websocket" && !("publication-0" in steps && steps["publication-0"].status == "succeeded"))',
     );
     steps.push(firewall);
     const transport = globals.transport as Fields;
@@ -299,6 +349,34 @@ export function roleConvergeSteps(
         guard:
             "inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null",
     }));
+    steps.push(
+        rolePhase("tmpfiles", "phase_tmpfiles", globals, 30, "packages", {
+            guard: '!("tmpfiles" in inputs.intent.footprint.payloads)',
+        }),
+    );
+    // Legacy whole-Node follow-up starts after the AppDev baseline succeeds.
+    for (
+        const phase of [
+            "observer",
+            "peer_dns",
+            "php_runtime",
+            "tmpfiles",
+            "cli",
+        ]
+    ) {
+        const step = steps.find((step) => step.name === phase)!;
+        step.dependsOn = [
+            ...(step.dependsOn as Fields[]),
+            ...on("firewall", "always"),
+        ];
+        const previous = typeof step.guard === "string"
+            ? step.guard.slice(3, -2)
+            : "false";
+        step.guard = ex(
+            '(inputs.intent.role == "app-dev" && !("firewall-0" in steps && steps["firewall-0"].status == "succeeded")) || (' +
+                previous + ")",
+        );
+    }
     for (const step of steps) {
         delete step.labels;
         step.allowFailure = true;

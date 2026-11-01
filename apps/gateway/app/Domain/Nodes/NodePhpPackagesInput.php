@@ -16,7 +16,7 @@ final readonly class NodePhpPackagesInput
     /** @param array<array-key,mixed> $versions
      * @return array<string,mixed>
      */
-    public function forNode(Node $node, array $versions): array
+    public function forNode(Node $node, array $versions, RoleName $role = RoleName::AppProd): array
     {
         if (! array_is_list($versions) || $versions === [] || count($versions) > 8
             || array_any($versions, static fn ($version): bool => ! is_string($version) || preg_match('/\A[0-9]+\.[0-9]+\z/D', $version) !== 1)
@@ -27,13 +27,13 @@ final readonly class NodePhpPackagesInput
         $recipe = new RecipeLoader()->load();
         foreach ($versions as $version) {
             if (! isset($recipe->php[$version])) {
-                throw new ResourceOperationException('app-prod.php_package_source_unavailable', 'The selected PHP build is absent from the machine recipe.', 422);
+                throw new ResourceOperationException($role->value.'.php_package_source_unavailable', 'The selected PHP build is absent from the machine recipe.', 422);
             }
         }
         $roles = $node->roles->map(static fn ($role): string => $role->role->value)->all();
 
         return PhpBuildInstaller::input($recipe, $versions, array_intersect($roles, $recipe->phpPolicy->pcovProfiles) !== [],
-            extras: 'keep', fpm: 'none', opentelemetry: array_intersect($roles, $recipe->phpPolicy->opentelemetryProfiles) !== [],
-            release: ['id' => 'ubuntu', 'codenames' => array_map(static fn (UbuntuRelease $release): string => $release->value, UbuntuRelease::forRole(RoleName::AppProd))]);
+            extras: 'keep', fpm: $role === RoleName::AppDev ? 'shared' : 'none', opentelemetry: array_intersect($roles, $recipe->phpPolicy->opentelemetryProfiles) !== [],
+            release: ['id' => 'ubuntu', 'codenames' => array_map(static fn (UbuntuRelease $release): string => $release->value, UbuntuRelease::forRole($role))]);
     }
 }

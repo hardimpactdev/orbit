@@ -60,10 +60,11 @@ The retained converge Gateway DNS caller and standalone generic
 lane owns both callers. Lane21's add/relocate retirement does not retire them;
 their three remaining shape findings stay explicit draft gates.
 
-Database, Ingress, AppProd and WebSocket share account, observer, package,
-peer-DNS, CLI and terminal assembly in `root_steps.ts`. AppDev remains a
-future consumer of these duties after its canonical PHP,
-Composer and JavaScript prerequisites are ported. Metrics must consume its
+Database, Ingress, AppProd, AppDev and WebSocket share account, observer, package,
+peer-DNS, CLI and terminal assembly in `root_steps.ts`. AppDev adds storage,
+early private DNS, hibernation and tmpfiles through the same contribution.
+Storage and hibernation use the extracted Fleet policy that retained callers
+also consume; no copied filesystem writer is introduced. Metrics must consume its
 owning lane's native runtime contribution. These future consumers are not
 claimed as migrated here.
 
@@ -82,3 +83,9 @@ and live activation are not claimed.
 The complete role variants live at `swamp/proof/node.role_converge/{database,ingress,app-prod,websocket}.json`. Run one with `bin/swamp-proof run node.role_converge --variant <role>`. Each uses the supported AppProd topology Node; a bounded preparation helper replaces its current role through the normal CLI when needed and records public assignment precondition evidence before the convergence request. Preparation requires lane21's native role-add parent. It never writes Gateway records directly.
 
 The WebSocket leaf remains `reverb.orbit` and signs through the topology Gateway's own CA and normal primitive. The proof has no signer address input or disposable signer. Its read-only parity checks recorded assignment identity, native and projected phase proofs, exact public configuration and the target's service state. The fixtures establish warm convergence, not cold installation. A passing F10 receipt is still required before merge.
+
+## AppDev contribution
+
+AppDev preserves the legacy order: account and storage validation, private DNS on its admitted publishers, Caddy/package prerequisites and recipe PHP/JavaScript, hibernation directories, Caddy ordering/publication, then firewall. A native dependency stops each later phase when its predecessor fails. Follow-up footprints run after proven AppDev firewall completion. The PHP installer uses shared-FPM policy and the canonical recipe. Admission captures the desired active footprint without changing the database claim, so PHP runtime and tmpfiles cannot disappear while the assignment is provisioning.
+
+The native observer verifies `/etc/orbit/agent/secret` against the copied existing identity hash. Its guard remains mandatory. A hashless topology Node still needs its normal identity prerequisite; the fixture never fabricates one. AppDev's `app-dev.json` uses topology `app-dev`, the actual CLI converge call and read-only storage/hibernation/tmpfiles parity. The unmeasured F8 run budget is 1800 seconds, with queueTimeout30; an actual F13 receipt and measured timings remain merge gates.

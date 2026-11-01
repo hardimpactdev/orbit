@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
@@ -37,7 +38,20 @@ final readonly class NodeRoleDirectInput
         $prerequisites = $this->prerequisites->input($node, $role,
             new ManagedUserAccount($node->user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken));
         unset($prerequisites['user'], $prerequisites['group'], $prerequisites['home']);
-        $footprint = $this->footprint->capture($node, false, false);
+        // Capture the post-convergence duties without changing the recorded claim.
+        $footprintNode = $node;
+        if ($role === RoleName::AppDev) {
+            $footprintNode = clone $node;
+            $footprintNode->setRelation('roles', $node->roles->map(static function (NodeRole $member) use ($assignment): NodeRole {
+                $desired = clone $member;
+                if ($desired->id === $assignment->id && $desired->status === LifecycleStatus::Provisioning) {
+                    $desired->status = LifecycleStatus::Active;
+                }
+
+                return $desired;
+            }));
+        }
+        $footprint = $this->footprint->capture($footprintNode, false, false);
         unset($footprint['secret_hash']);
 
         return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),

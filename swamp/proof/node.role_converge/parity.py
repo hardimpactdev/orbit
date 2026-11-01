@@ -68,7 +68,7 @@ def public_receipt(operation, role, outputs):
 
 # The target check reads public files, unit state and local listeners only.
 HOST_CHECK = r"""
-import hashlib,json,pathlib,socket,stat,subprocess,sys
+import grp,hashlib,json,pathlib,pwd,socket,stat,subprocess,sys
 data=json.loads(sys.argv[1]);intent=data['intent'];role=intent['role']
 def require(value,message):
  if not value:raise ValueError(message)
@@ -90,6 +90,18 @@ if role in ['app-prod','app-dev']:
  for version in intent['php']['versions']:
   command(['/usr/bin/php'+version,'--version'])
  command(['/usr/bin/composer','--version','--no-ansi'])
+if role=='app-dev':
+ account=pwd.getpwnam(intent['storage']['user']);root=pathlib.Path(intent['storage']['root'] or account.pw_dir+'/apps')
+ for path in [root,*root.parents]:require(path.is_dir() and not path.is_symlink(),'storage-root-symlink')
+ metadata=root.stat();mode=stat.S_IMODE(metadata.st_mode)
+ require(metadata.st_uid==account.pw_uid and metadata.st_gid==account.pw_gid and mode&0o700==0o700 and not mode&0o022,'storage-root-owner-mode')
+ for path,expected in [('/dev/shm/orbit/hibernation',0o755),('/data/caddy/orbit/hibernation',0o2775)]:
+  metadata=pathlib.Path(path).lstat()
+  require(stat.S_ISDIR(metadata.st_mode) and (metadata.st_uid,metadata.st_gid,stat.S_IMODE(metadata.st_mode))==(0,grp.getgrnam('caddy').gr_gid,expected),'hibernation-tree-mode')
+ rule=pathlib.Path('/etc/tmpfiles.d/orbit.conf');metadata=rule.lstat()
+ require(stat.S_ISREG(metadata.st_mode) and (metadata.st_uid,metadata.st_gid,stat.S_IMODE(metadata.st_mode))==(0,0,0o644),'tmpfiles-owner-mode')
+ digest=hashlib.sha256((intent['agent_sha256']+'\0'+hashlib.sha256(rule.read_bytes()).hexdigest()).encode()).hexdigest()
+ require(digest==intent['tmpfiles_digest'],'tmpfiles-rule-differs')
 if role=='websocket':
  active('orbit-websocket.service')
  runtime=intent['runtime'];link=pathlib.Path(runtime['install_path'])
@@ -178,6 +190,13 @@ def main(role):
     target_intent = {key: intent[key] for key in ["role", "agent_sha256"]}
     if role in ["app-prod", "app-dev"]:
         target_intent["php"] = {"versions": intent["php"]["versions"]}
+    if role == "app-dev":
+        target_intent["storage"] = intent["storage"]
+        target_intent["tmpfiles_digest"] = next(
+            item["digest"]
+            for item in intent["footprint"]["artifacts"]
+            if item["name"] == "tmpfiles"
+        )
     if role == "websocket":
         target_intent["runtime"] = {
             key: intent["runtime"][key] for key in ["install_path", "ref", "port"]

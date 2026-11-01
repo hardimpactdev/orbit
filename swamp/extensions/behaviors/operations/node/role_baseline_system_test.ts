@@ -4,11 +4,28 @@ import {
   assertThrows,
 } from "jsr:@std/assert@1.0.19";
 import {
-  prepareHibernationDirectories,
-  prepareStorageRoot,
+  prepareHibernationDirectories as hibernation,
+  prepareStorageRoot as storage,
   readRoleAccount,
 } from "./role_baseline_system.ts";
 import { localSystemCommand, type SystemTransport } from "./system_command.ts";
+
+const storageSource = await Deno.readTextFile(
+  new URL("../fleet-recipe/scripts/storage_root.py", import.meta.url),
+);
+const hibernationSource = await Deno.readTextFile(
+  new URL("../fleet-recipe/scripts/hibernation.py", import.meta.url),
+);
+const prepareStorageRoot = (
+  raw: unknown,
+  transport?: SystemTransport,
+  signal?: AbortSignal,
+) => storage(raw, transport, signal, storageSource);
+const prepareHibernationDirectories = (
+  raw: unknown,
+  transport?: SystemTransport,
+  signal?: AbortSignal,
+) => hibernation(raw, transport, signal, hibernationSource);
 
 /** Tests run only the fixed Python filesystem program, as the current unprivileged account. */
 const fixtureTransport: SystemTransport = (command, signal) => {
@@ -101,9 +118,15 @@ Deno.test("storage refuses symlinked components and writable roots without chang
       ),
       { ok: false, error_code: "node.storage_root_unusable" },
     );
-    assertEquals((await Deno.stat(`${directory}/real`)).mode! & 0o777, 0o775);
+    assertEquals(
+      (await Deno.stat(`${directory}/real`)).mode! & 0o777,
+      0o775,
+    );
     assertThrows(() =>
-      prepareStorageRoot({ ...input, root: "relative/apps" }, fixtureTransport)
+      prepareStorageRoot(
+        { ...input, root: "relative/apps" },
+        fixtureTransport,
+      )
     );
     assertThrows(() =>
       prepareStorageRoot(
@@ -138,21 +161,29 @@ Deno.test("hibernation validates both trees, repairs only owned modes, and prese
     const before = await Deno.stat(parent);
     const transport: SystemTransport = (command, signal) => {
       if (command.stdin?.includes("grp.getgrnam('caddy')")) {
-        return Promise.resolve({ success: true, stdout: JSON.stringify(self) });
+        return Promise.resolve({
+          success: true,
+          stdout: JSON.stringify(self),
+        });
       }
       // Sandbox the real filesystem action at this fixture's disposable root.
       // The production protected-root policy remains unchanged.
       const boundary = `PROTECTED.add(${JSON.stringify(parent)})
 fixture_chmod = os.chmod
 def owned_chmod(path, *args, **kwargs):
-    if os.path.commonpath([${JSON.stringify(directory)}, path]) != ${JSON.stringify(directory)}:
+    if os.path.commonpath([${JSON.stringify(directory)}, path]) != ${
+        JSON.stringify(directory)
+      }:
         raise AssertionError('Fixture chmod escaped its scratch directory')
     return fixture_chmod(path, *args, **kwargs)
 os.chmod = owned_chmod
 `;
       return fixtureTransport({
         ...command,
-        stdin: command.stdin?.replace("def main(data):", boundary + "def main(data):"),
+        stdin: command.stdin?.replace(
+          "def main(data):",
+          boundary + "def main(data):",
+        ),
       }, signal);
     };
     const input = {
@@ -160,9 +191,12 @@ os.chmod = owned_chmod
       log_directory: `${directory}/logs/hibernation`,
     };
     for (let attempt = 0; attempt < 2; attempt++) {
-      assertEquals(await prepareHibernationDirectories(input, transport), {
-        ok: true,
-      });
+      assertEquals(
+        await prepareHibernationDirectories(input, transport),
+        {
+          ok: true,
+        },
+      );
       for (
         const [path, mode] of [[input.marker_directory, 0o755], [
           input.log_directory,
@@ -175,7 +209,11 @@ os.chmod = owned_chmod
       }
     }
     const after = await Deno.stat(parent);
-    assertEquals([after.mode, after.uid, after.gid], [before.mode, before.uid, before.gid]);
+    assertEquals([after.mode, after.uid, after.gid], [
+      before.mode,
+      before.uid,
+      before.gid,
+    ]);
   });
 });
 Deno.test("hibernation refuses an invalid second tree and an unavailable Caddy group before creating the first", async () => {
@@ -201,7 +239,10 @@ Deno.test("hibernation refuses an invalid second tree and an unavailable Caddy g
       () => Deno.stat(`${directory}/markers`),
       Deno.errors.NotFound,
     );
-    assertEquals((await Deno.stat(`${directory}/real`)).mode! & 0o777, 0o700);
+    assertEquals(
+      (await Deno.stat(`${directory}/real`)).mode! & 0o777,
+      0o700,
+    );
     let calls = 0;
     assertEquals(
       await prepareHibernationDirectories({

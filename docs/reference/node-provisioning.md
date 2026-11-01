@@ -19,6 +19,14 @@ Standalone `node.converge` and apps-root `node.settings` run on 209 through offi
 
 When executed, frozen `agent.configure` removes an installed per-Node worker service when its observer-only configuration omits that worker. Live rollout must account for that existing side effect and any active work before execution. The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
+### Native AppDev role convergence
+
+`node:role:add <node> app-dev --converge` runs a supported sole AppDev assignment from 209 through official pinned SSH. It needs no target worker. It still requires the existing observer identity: the observer phase verifies the Node's agent secret against the recorded hash. A Node without that identity refuses with `node.agent_rekey_required`; convergence does not initialize or rotate it.
+
+Admission freezes the apps-root restrictions, private DNS publishers, package pins, Caddy catalog, firewall commands and applicable footprint. Execution resolves the real account, validates and prepares storage, publishes private DNS, installs prerequisites and recipe PHP/JavaScript, prepares hibernation directories, orders and publishes Caddy, then applies the firewall. Storage or DNS failure stops package installation. Hibernation failure stops Caddy. Whole-Node follow-up includes the observer, peer DNS, PHP runtime settings, tmpfiles rule and CLI. Capture includes the desired active AppDev footprint while the recorded role keeps its convergence claim.
+
+Mixed-role plans, Metrics fleet participation and unsupported required footprint contributions keep their existing refusal or owning-parent boundary. This role contribution does not replace Node enrollment or authorize worker retirement.
+
 ### Per-Node Swamp worker
 
 The operator selects Linux Nodes through the `ORBIT_SWAMP_WORKER_NODES` JSON array, default `[]`, exposed as `swamp_workers.nodes`. A Node read reports this intent as `swamp_worker_selected`. Update the agent fleet before selecting the first Node: the worker configuration changed from a boolean to a table, and old agents must never receive that table. The standalone converge path does not enroll or configure a worker.
