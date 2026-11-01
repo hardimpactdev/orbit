@@ -255,17 +255,9 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 | `releases/<commit>` | One built release, named after the first 12 characters of its commit. |
 | `current` | A link to the release that the Gateway serves. |
 
-`orbit:bootstrap` creates the directory and publishes the site. After a Gateway deploy that changes the site, run `php artisan orbit:gateway-web` in the Gateway checkout. It runs these steps:
+Manual `orbit:bootstrap` and `orbit:gateway-web` refuse before any host change while their native Swamp parent workflows are unavailable. `orbit:gateway-web` returns `gateway.web_unavailable`; it does not publish a site or certificate, prepare directories, reload PHP-FPM, or start services.
 
-1. It installs Caddy from the [pinned source](/reference/node-provisioning#package-sources).
-2. It grants Caddy access to the checkout's `public` directory and creates the web directory.
-3. It publishes the Gateway certificate with the public root certificate.
-4. It writes the Gateway PHP-FPM pool and installs the contributed [start hooks](/reference/extensions#plug-in-points).
-5. It runs each start hook, then `systemctl reload-or-restart php8.5-fpm`. That can restart the workers that serve the API.
-6. It publishes the site.
-7. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
-
-It changes no role, VPN setting, or Node, and it never changes the releases or `current`. A [Gateway release](/reference/gateway-recovery#web-build) installs its own web build in `releases/` and switches `current` after the release verified.
+Normal [Gateway releases](/reference/gateway-recovery#web-build) install their own web build in `releases/` and switch `current` after verification. The [runtime handoff](/reference/gateway-recovery#runtime-handoff) owns release-time service convergence.
 
 ## Release a build
 

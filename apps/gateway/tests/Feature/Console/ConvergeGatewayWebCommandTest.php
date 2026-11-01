@@ -2,28 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
-
-function recordingGatewayWebConverger(): GatewayWebConverger
-{
-    $converger = new class implements GatewayWebConverger
-    {
-        /** @var list<array{string, string}> */
-        public array $calls = [];
-
-        public function converge(Node $node, string $hostname, string $wireguardIp): void
-        {
-            $this->calls[] = [$hostname, $wireguardIp];
-        }
-    };
-    app()->instance(GatewayWebConverger::class, $converger);
-
-    return $converger;
-}
+use Tests\Support\FakeAgentCommandRunner;
 
 function gatewayWebNode(LifecycleStatus $roleStatus = LifecycleStatus::Active): Node
 {
@@ -40,26 +24,22 @@ function gatewayWebNode(LifecycleStatus $roleStatus = LifecycleStatus::Active): 
     return $node;
 }
 
-it('publishes the site for the active Gateway Node under the stored private domain', function (): void {
-    $converger = recordingGatewayWebConverger();
-    $node = gatewayWebNode();
-    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'fleet');
+it('refuses manual Gateway web convergence before any effect or state change', function (LifecycleStatus $roleStatus): void {
+    $node = gatewayWebNode($roleStatus);
+    $role = $node->roles()->sole();
+    $before = $node->fresh()->toArray();
+    $roleBefore = $role->fresh()->toArray();
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $certificates = Mockery::mock(GatewayCertificateIssuer::class);
+    $certificates->shouldNotReceive('issue');
+    app()->instance(GatewayCertificateIssuer::class, $certificates);
 
     $this->artisan('orbit:gateway-web')
-        ->expectsOutput('Gateway [gateway] site is published.')
-        ->assertExitCode(0);
-
-    expect($converger->calls)->toBe([['gateway.fleet', '10.44.0.2']])
-        ->and($node->refresh()->status)->toBe(LifecycleStatus::Active);
-});
-
-it('refuses without an active Gateway Node before publishing anything', function (): void {
-    $converger = recordingGatewayWebConverger();
-    gatewayWebNode(LifecycleStatus::Provisioning);
-
-    $this->artisan('orbit:gateway-web')
-        ->expectsOutput('Gateway web convergence failed at step [gateway-web-lookup] with error [gateway.web_node_missing].')
+        ->expectsOutput('Gateway web convergence failed at step [gateway-web] with error [gateway.web_unavailable].')
         ->assertExitCode(1);
 
-    expect($converger->calls)->toBe([]);
-});
+    expect($agents->calls)->toBe([])
+        ->and($node->fresh()->toArray())->toBe($before)
+        ->and($role->fresh()->toArray())->toBe($roleBefore);
+})->with([LifecycleStatus::Active, LifecycleStatus::Provisioning]);
