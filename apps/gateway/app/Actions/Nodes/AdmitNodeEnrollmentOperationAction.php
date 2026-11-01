@@ -170,7 +170,8 @@ final readonly class AdmitNodeEnrollmentOperationAction
             $roleCertificates['withdrawals'] = [...$roleCertificates['withdrawals'], ...$plan['withdrawals']];
         }
         $route = $spec['mode'] === 'macos' ? null : $this->routes->capture($actual,
-            new NativeRouteNodeRender($actual->id, $candidate->wireguardIp, $candidate->tld, roleCertificates: $roleCertificates), $candidate->clusterId);
+            new NativeRouteNodeRender($actual->id, $candidate->wireguardIp, $candidate->tld,
+                roleCertificates: $roleCertificates, enrollment: $candidate), $candidate->clusterId);
         $hub = $intent['hub'] === null ? null : ValidatedData::object($intent['hub']);
         $participants = array_values(array_unique([...$participants, ...($route['participant_node_ids'] ?? []),
             ...($hub === null ? [] : [ValidatedData::integer($hub['hub_id'])])]));
