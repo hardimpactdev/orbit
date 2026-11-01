@@ -26,10 +26,10 @@ it('refuses to remove a certificate that a stored site still names', function ()
     $route = Route::query()->create([
         'kind' => RouteKind::CustomProxy, 'node_id' => $node->id,
         'domain' => 'collector.lab.orbit', 'provenance' => RouteProvenance::Explicit,
-        'publication' => RoutePublication::Private, 'status' => RouteStatus::Active,
+        'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
     ]);
     $route->customProxy()->create(['node_id' => $node->id, 'upstream' => 'http://127.0.0.1:4788']);
-    $route->publishSites();
+    $route->update(['status' => RouteStatus::Active]);
     $agents = new FakeAgentCommandRunner;
     $certificates = new RemoteAppDevCertificateManager($agents,
         Mockery::mock(LeafCertificateSigner::class), Mockery::mock(ManagedUserAccountResolver::class));
