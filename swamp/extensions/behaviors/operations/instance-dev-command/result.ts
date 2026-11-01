@@ -55,7 +55,11 @@ export function createResult(intent: Record<string, unknown>, steps: Steps) {
         ...(failure
             ? {
                 failed_step: failure,
-                error_code: "instance.create_" + failure + "_failed",
+                error_code: failure === "source" &&
+                        steps["source-branch-available"]?.outputs
+                                ?.error_code === "instance.branch_in_use"
+                    ? "instance.branch_in_use"
+                    : "instance.create_" + failure + "_failed",
             }
             : {}),
     };

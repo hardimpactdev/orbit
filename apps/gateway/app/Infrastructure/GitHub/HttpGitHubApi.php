@@ -104,11 +104,11 @@ final readonly class HttpGitHubApi implements GitHubApi
             $token = $response->json('token');
             $expires = $response->json('expires_at');
             $permissions = $response->json('permissions');
-            if (is_string($token) && $token !== '' && strlen($token) <= 2048 && preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) === 1) {
+            if (is_string($token) && $token !== '' && strlen($token) <= 2048 && preg_match('/\A[A-Za-z0-9_.-]+\z/D', $token) === 1) {
                 $issued = new GitHubAccessToken($token, is_string($expires) ? $expires : '');
             }
             $phase = 'token_format';
-            if (! $response->successful() || ! is_string($token) || $token === '' || strlen($token) > 2048 || preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) !== 1) {
+            if (! $response->successful() || ! is_string($token) || $token === '' || strlen($token) > 2048 || preg_match('/\A[A-Za-z0-9_.-]+\z/D', $token) !== 1) {
                 throw new \UnexpectedValueException;
             }
             $phase = 'permission_scope';

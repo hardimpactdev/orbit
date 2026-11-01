@@ -77,6 +77,66 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.assertTrue(result['ready']);self.assertEqual(result['source']['branch'],'main')
         self.assertIn('stored-private-sentinel',(self.application/'.env').read_text())
 
+    def test_failed_source_never_dereferences_skipped_commit_or_reports_ready(self):
+        self.input['intent']['retained_source'] = None
+        self.input['intent']['resolve']['network'] = False
+        self.failure.touch()
+        history = self.run_create(False)
+        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+        self.assertEqual(steps['source-checkout']['status'], 'failed')
+        self.assertEqual(steps['source-result']['status'], 'skipped')
+        self.assertNotIn('No such key', json.dumps(history))
+        result = json.loads(steps['finish-result']['outputs']['stdout'])
+        self.assertFalse(result['ready'])
+        self.assertEqual(result['failed_step'], 'source')
+
+    def test_failed_mint_skips_source_without_missing_output_errors(self):
+        self.input['intent']['retained_source'] = None
+        for job in self.workflow['jobs']:
+            for step in job['steps']:
+                if step['name'] == 'create-mint':
+                    step['task']['inputs']['run'] = 'exit 1'
+        (self.repo / 'workflows/workflow-create.yaml').write_text(yaml.safe_dump(self.workflow, sort_keys=False))
+        history = self.run_create(False)
+        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+        self.assertEqual(steps['create-mint']['status'], 'failed')
+        self.assertEqual(steps['source-checkout']['status'], 'skipped')
+        self.assertNotIn('No such key', json.dumps(history))
+        self.assertFalse((self.application / '.env').exists())
+
+    def test_new_branch_uses_captured_seed_commit_without_moving_default(self):
+        seed = self.application
+        commit = self.git('rev-parse', 'HEAD').strip()
+        target = seed.with_name('fresh-branch')
+        self.input['intent']['retained_source'] = None
+        self.input['intent']['source'].update(checkout=str(target), seed_repository=str(seed))
+        self.input['intent']['resolve'].update(branch_override='fresh-branch', seed_commit=commit, network=False)
+        self.input['intent'].update(checkout=str(target), application=str(target))
+        history = self.run_create()
+        self.assertEqual(history['status'], 'succeeded')
+        result = subprocess.run(['git', '-C', str(target), 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), 'fresh-branch')
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), commit)
+        self.assertFalse((seed / '.env').exists())
+
+    def test_seed_branch_collision_refuses_before_preparing_target(self):
+        seed = self.application
+        commit = self.git('rev-parse', 'HEAD').strip()
+        target = seed.with_name('collision')
+        self.input['intent']['retained_source'] = None
+        self.input['intent']['source'].update(checkout=str(target), seed_repository=str(seed))
+        self.input['intent']['resolve']['seed_commit'] = commit
+        self.input['intent'].update(checkout=str(target), application=str(target))
+        history = self.run_create(False)
+        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+        self.assertEqual(steps['source-branch-accepted']['status'], 'failed')
+        self.assertEqual(steps['source-prepare-assets']['status'], 'skipped')
+        result = json.loads(steps['finish-result']['outputs']['stdout'])
+        self.assertEqual(result['error_code'], 'instance.branch_in_use')
+        self.assertFalse(target.exists())
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), commit)
+        self.assertFalse((seed / '.env').exists())
+
     def setup_commands(self, commands):
         import hashlib
         for index,command in enumerate(commands):
@@ -199,9 +259,11 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
     test_failed_setup_skips_later_command_and_fresh_root_converges=None
 
 
-SSH = '''import os,subprocess,sys
+SSH = '''import os,shlex,subprocess,sys
 if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv: sys.exit(0)
 command=sys.argv[-1].replace(CONTROL,HOST)
+if os.path.isfile(FAILURE) and 'checkout' in shlex.split(command):
+    sys.stderr.write('fixture source checkout failure\\n');sys.exit(128)
 body=sys.stdin.buffer.read().replace(CONTROL.encode(),HOST.encode())
 if 'sudo' in command or b'Install only the admitted' in body: raise AssertionError('Unadmitted installer in no-VP fixture')
 if command.startswith('test ') or command.startswith('mkdir ') or command.startswith('chmod ') or command.startswith('rm ') or command.startswith('python') or '/usr/bin/' in command or command.startswith('sh ') or command.startswith('/bin/'):

@@ -10,6 +10,30 @@ type Context = {
 };
 const observation = z.object({ stdout: z.string() }).passthrough();
 const text = (value: unknown) => observation.parse(value).stdout.trimEnd();
+function requestedBranch(resolve: Record<string, unknown>): string {
+    return z.string().min(1).parse(
+        resolve.branch_override ??
+            (resolve.instance_name === "default"
+                ? resolve.default_branch
+                : resolve.instance_name),
+    );
+}
+export function branchAvailable(
+    resolve: Record<string, unknown>,
+    checkout: string,
+    worktrees: unknown,
+) {
+    const branch = requestedBranch(resolve);
+    const occupied = text(worktrees).split("\n\n").some((entry) => {
+        const lines = entry.split("\n");
+        return lines.includes("branch refs/heads/" + branch) &&
+            !lines.includes("worktree " + checkout);
+    });
+    return occupied
+        ? { available: false, error_code: "instance.branch_in_use" }
+        : { available: true };
+}
+
 /** Compare public facts only. Native SSH owns every read and effect. */
 export function sourceResult(
     kind: string,
@@ -69,7 +93,7 @@ export function sourceResult(
 }
 export const behavior = {
     type: "@nckrtl/instance-source-command",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         assets: {
             schema: z.object({ script_body: z.string() }),
@@ -418,6 +442,37 @@ export const behavior = {
                 };
             },
         },
+        branchAvailable: {
+            description:
+                "Refuse a requested branch already checked out in another linked worktree before preparing the target",
+            arguments: z.object({
+                resolve: ObjectInput,
+                checkout: z.string(),
+                worktrees: z.unknown(),
+            }),
+            async execute(
+                args: {
+                    resolve: Record<string, unknown>;
+                    checkout: string;
+                    worktrees: unknown;
+                },
+                ctx: Context,
+            ) {
+                return {
+                    dataHandles: [
+                        await ctx.writeResource(
+                            "result",
+                            "result",
+                            branchAvailable(
+                                args.resolve,
+                                args.checkout,
+                                args.worktrees,
+                            ),
+                        ),
+                    ],
+                };
+            },
+        },
         select: {
             description:
                 "Choose the admitted branch from native Git refs without running commands",
@@ -428,12 +483,7 @@ export const behavior = {
             ) {
                 const resolve = args.resolve;
                 const refs = text(args.refs).split("\n");
-                const branch = z.string().min(1).parse(
-                    resolve.branch_override ??
-                        (resolve.instance_name === "default"
-                            ? resolve.default_branch
-                            : resolve.instance_name),
-                );
+                const branch = requestedBranch(resolve);
                 const remote = `refs/remotes/origin/${branch}`;
                 const local = `refs/heads/${branch}`;
                 if (

@@ -33,16 +33,16 @@ beforeEach(function (): void {
     app()->instance(WebSocketClient::class, $socket);
 });
 
-it('mints repository read scope into the exact native descriptor without returning values', function (): void {
-    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response(['token' => 'private-instance-sentinel', 'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'), 'permissions' => ['contents' => 'read', 'metadata' => 'read']], 201), '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])]);
+it('mints repository read scope into the exact native descriptor without returning values', function (string $token): void {
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response(['token' => $token, 'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'), 'permissions' => ['contents' => 'read', 'metadata' => 'read']], 201), '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])]);
     $before = $this->operation->fresh()->toArray();
     $result = app(InstanceGitHubReadTokens::class)->issue($this->operation, 209, $this->run);
     expect($result)->toBe(['git_read' => InstanceGitHubReadTokens::reference($this->operation)])
-        ->and($this->socket->sent[0]['payload']['value'])->toBe('{"github_token":"private-instance-sentinel"}')
-        ->and(json_encode($this->operation->fresh()->toArray()))->not->toContain('private-instance-sentinel')
+        ->and($this->socket->sent[0]['payload']['value'])->toBe(json_encode(['github_token' => $token], JSON_THROW_ON_ERROR))
+        ->and(json_encode($this->operation->fresh()->toArray()))->not->toContain($token)
         ->and($this->operation->fresh()->toArray())->toBe($before);
     Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/access_tokens') && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'read']]);
-});
+})->with(['opaque' => 'private-instance-sentinel', 'stateless' => 'ghs_12345_'.str_repeat('a', 170).'.'.str_repeat('b', 170).'.'.str_repeat('c', 170)]);
 
 it('refuses changed authority before reading or copying any credential', function (string $change): void {
     match ($change) {

@@ -106,3 +106,18 @@ Deno.test("VP preparation uses stock CLI environment installation and discrete o
     assertEquals(task.inputs.argv.slice(3, 5), ["env", "install"]);
     assertEquals(steps.every((step) => step.target === "orbit-node-209"), true);
 });
+
+Deno.test("create retains the typed source branch collision refusal", () => {
+    const result = createResult({ instance_id: 782, setup_commands: [] }, {
+        "source-branch-available": done({
+            available: false,
+            error_code: "instance.branch_in_use",
+        }),
+        "source-branch-accepted": { status: "failed" },
+    });
+    assertEquals(result.ready, false);
+    assertEquals(
+        JSON.parse(result.stdout).error_code,
+        "instance.branch_in_use",
+    );
+});
