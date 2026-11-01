@@ -228,6 +228,9 @@ raise SystemExit(r.returncode)
         ssh.write_text(script)
         ssh.chmod(0o755)
         history, steps = self.execute_provision(success=not fail)
+        # Both terminal graphs must keep the execution copy out of public history and persisted data.
+        self.assertNotIn(secret, json.dumps(history))
+        self.assert_private_absent(json.dumps(history))
         self.assertEqual(json.loads(marker.read_text()), {"user":"orbit", "private_stdin_received":True})
         self.assertEqual(steps["vm"]["outputs"]["result"]["vm_copy_keys"], [])
         return history, steps
