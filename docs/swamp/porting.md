@@ -12,11 +12,11 @@ Start every kind PR from this page. Review every kind PR against it and the [bin
 Work through these steps in order before you fill the template.
 
 1. **Start from the legacy sequence (F9).** The pre-Swamp Gateway action is the spec. Read it at the migration baseline with `git show 6291bb036:<path>`. Note each phase and the Node it changes.
-2. **One legacy phase, one step.** Each legacy phase becomes one script-file step. It keeps the phase's legacy edge cases.
+2. **One legacy phase, one step.** Each legacy phase becomes one action group: one script-file step on one Node. It keeps the phase's legacy edge cases.
 3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature). Prefer an official model (`@swamp/ssh`, `@swamp/cfgmgmt`) over a script. Record what you checked for the PR body.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Every secret becomes a `{vault, key}` descriptor under `execution_secrets`.
-5. **Refuse before the first write.** The action script checks preconditions first and exits with a public `error_code`, as the #2266 branch check refuses `instance.branch_in_use`.
-6. **Write the result and budget.** The action script prints one public JSON object. Set the [time budget](#set-the-time-budget).
+5. **Refuse first, then print the result.** The action script checks preconditions before its first write. It prints one public JSON object.
+6. **Set the [time budget](#set-the-time-budget).**
 7. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
 8. **Delete the old path in the same PR.** Remove the executor, its tests, scripts and callbacks, and its `swamp-shape-baseline.json` rows.
 
@@ -24,7 +24,7 @@ Work through these steps in order before you fill the template.
 
 Replace every `REPLACE_*` token, generate a new workflow UUID, and define the family's public intent schema. This example runs an action group on 209. For an effect on another Node, replace `command/shell` with official `@swamp/ssh` from 209, using the approved identity file and stored full host keys; see [Node execution](/reference/swamp-command-steps#node-execution-through-official-ssh). Use one selector in the effective placement: `target` only, and no `labels` at any inherited scope.
 
-Copy shape from the smallest clean reference that fits. [`firewall.inspect`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-inspect.yaml) is one pinned SSH read and a typed result. [`schedule.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-schedule-create.yaml) uses `@swamp/cfgmgmt` with `forEach`. [`instance.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-create.yaml) shows shipped scripts, guards and an `assert` refusal. The guide's Template section still names `node.bootstrap_probe`, but do not copy its placement; it sets both selectors.
+Copy shape from the smallest clean reference that fits. [`firewall.inspect`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-inspect.yaml) is one pinned SSH read and a typed result. [`schedule.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-schedule-create.yaml) uses `@swamp/cfgmgmt` with `forEach`. [`instance.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-create.yaml) is the multi-step reference for shipped scripts, guards and a result step; do not copy its step count. The guide's Template section still names `node.bootstrap_probe`, but do not copy its placement; it sets both selectors.
 
 ```yaml
 id: REPLACE_WORKFLOW_UUID
@@ -78,19 +78,24 @@ jobs:
           behaviorName: '${{ "action-" + run.id }}'
           methodName: execute
           inputs:
+            ignoreExitCode: true
             run: REPLACE_F1_RUN
             env:
               ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_START_TAG: '${{ inputs.intent.start_tag }}'
               ORBIT_PUBLIC_VALUE: '${{ inputs.intent.public_value }}'
               ORBIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}'
+      - name: accepted
+        target: orbit-node-209
+        dependsOn: [{step: action, condition: {type: succeeded}}]
+        task: {type: assert, expr: 'steps.action.outputs.exitCode == 0', severity: high, message: REPLACE_KIND did not complete.}
 ```
 
 `assets.read` is a family metadata method: resolve shipped files with `ctx.extensionFile`, record public paths with `ctx.writeResource`, and return their paths. List scripts and imports under manifest-relative `additionalFiles`. Keep this method and the command on the same worker; never assume a checkout exists there. TypeScript shapes inputs and outputs; operational code lives in script files.
 
 F1 is pending; lane 16 owns it. When it lands, shipped scripts run through its shared wrapper, and its shared projector records `failed_step` and the last 4 KB of redacted stderr as `error.detail` for any failed step, including SSH, typed and `assert` steps. Until then, `REPLACE_F1_RUN` is a plain invocation of the shipped script from the asset paths. Add no family wrapper. Never print credentials, private keys or unredacted diagnostics.
 
-A kind with more than one effect step adds a `result` step with `condition: always` as its `terminal_result`. It maps the first failed step to a public `error_code`, and a trailing `assert` on its `ready` output fails the run, as `instance.create` does. Without it, a failure in an earlier step projects only `operation.native_failed`.
+On official e459 a `command/shell` step that exits nonzero keeps no outputs, so its stdout and `error_code` are lost. The action therefore sets `ignoreExitCode: true` and is the `terminal_result`; the `accepted` assert on its `exitCode` then fails the run. A kind with several effect steps instead adds a `result` step on `condition: always` that maps the first failed step to an `error_code`, as `instance.create` does.
 
 One script file owns one action group, such as all git commands for a checkout. It runs as a placed `command/shell` step on 209, or through `@swamp/ssh` `script` for another Node. It is idempotent for the admitted `operation_id` and start tag. It refuses with a public `error_code` and a nonzero exit. It passes secrets to tools on stdin or in protected config files, never argv or tracing. Use native guards, resume, concurrency and method locks; Swamp has no step retry setting. Named apt and UFW host locks are allowed. Declare every vault the run reads, in parents and children, and check the actual grants.
 
@@ -133,17 +138,13 @@ The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A 
 
 ## Keep steps few
 
-Step count is the dominant cost of a run. Op 6639 took 957 s, while its 15 official SSH methods took 4.6 s in total. The extensions lane is finding the cause. Until it reports, follow these rules.
+Step count is the dominant cost of a run: op 6639 took 957 s for 4.6 s of SSH work. Until the extensions lane reports the cause, one script per Node per phase does the reads, precondition checks, writes and result JSON. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. The PR names the resume point, Node change or guard each extra step serves.
 
-| Rule | Detail |
-| --- | --- |
-| One script per Node per phase | Reads, precondition checks, writes and the result JSON go in one action-group script. |
-| No extra decision steps | Make decisions and `assert`-style checks in the action script. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. |
-| Justify each step | The PR names the resume point, Node change or guard that each extra step serves. |
+Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. This follows PLAN F9 and "How a kind converts" item 2; guide rule 3 still says one action per step and needs a matching update.
 
 ## Fan out over computed data
 
-Official e459 expands `forEach` before earlier step outputs exist. A `forEach.in` that reads `steps.<name>.outputs` fails, or silently expands to nothing behind a `has(steps...)` check. The manual does not say when `in` is evaluated, so treat this as the rule. `forEach.in` reads only `inputs` and literals. When the list depends on a step's observation, put the fan-out in a native child workflow. The parent step computes the plan; a `type: workflow` step passes it as child `inputs`, and the child's `forEach` reads its own inputs. `workflow-database-clone-mysql.yaml` passes step output into child inputs this way. A child run adds steps, so first try to compute the list at admission.
+Official e459 expands `forEach` before the outputs of steps in the same job exist, so a `forEach.in` that reads them fails with `No such key`. The manual does not say when `in` is evaluated. Read `inputs`, literals, or outputs of a step in an earlier job that this job `dependsOn`, as [`workflow-database-destroy-actions.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-destroy-actions.yaml) does. When that does not fit, pass the list as inputs to a `type: workflow` child whose `forEach` reads them; [`workflow-database-clone-mysql.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-clone-mysql.yaml) passes step output into child inputs.
 
 ## Test layout
 
@@ -204,8 +205,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `target: orbit-node-209`, then `@swamp/ssh` |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |
 | A many-action TypeScript behavior, an agent action call or port, or a spawn wrapper | Swamp cannot show, guard or resume the actions; the agent only observes | One step per action group in native `command/shell` or `@swamp/ssh` |
-| `forEach.in` reading `steps.<name>.outputs` | e459 expands it before the outputs exist | Compute the list at admission, or fan out in a child workflow |
-| A step for each read, decision or check | About a minute of overhead per step in op 6639 | One script per Node per phase |
+| `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read an earlier job's outputs, or fan out in a child workflow |
 | Dereferencing outputs of a failed or skipped step | CEL fails with `No such key` and hides the first error | Depend on `or [succeeded, skipped]` and guard on prior failure |
 | Strict format checks on a third-party token | GitHub stateless tokens contain dots; the check refused a valid mint | Check only documented properties: length, scope, expiry |
 | A kind without a measured p95 and run budget | Runs can wait for minutes, as op 6639 did | [Set the time budget](#set-the-time-budget) |
@@ -241,7 +241,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | --- | --- |
 | #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, legacy edge cases carried over, legacy feature tests as parity tests. |
-| Lane 5 | e459 expands `forEach` before earlier outputs exist. Fan out over `inputs`, or over a child workflow's inputs. |
+| Lane 5 and v2 review on e459 | `forEach` fails over same-job step outputs; a later job works. A nonzero `command/shell` exit drops all outputs; use `ignoreExitCode` plus an `assert`. |
 | PLAN F8 | Every kind declares a measured p95, a run budget passed as the Swamp run timeout, and a per-kind `queueTimeout`; one step per action group, not per command. |
 | v1 manual and reference check | Swamp has no step retry key. `command/shell` takes `workingDir` and `timeout`. Copy placement from `firewall.inspect`; `node.bootstrap_probe` sets both selectors. |
 | #2266 instance create | Refuse a precondition such as `instance.branch_in_use` before the first write, inside the action script since #2273. Accept documented token formats; GitHub stateless tokens contain dots. |
