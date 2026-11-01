@@ -2785,14 +2785,6 @@
       ]
     },
     {
-      "file": "workflows/workflow-operation-database-server-destroy.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "inspect/inspect-${{ self.member.slot }}"
-      ]
-    },
-    {
       "file": "workflows/workflow-operation-instance-destroy.yaml",
       "rule": "foreach-shared-identity",
       "count": 2,

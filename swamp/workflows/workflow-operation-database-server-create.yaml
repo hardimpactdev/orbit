@@ -18,10 +18,9 @@ inputs:
 jobs:
 - name: server
   target: orbit-node-209
-  labels: {node: '209'}
   steps:
   - name: prepare_database_assets
-    <<: &placed {target: orbit-node-209, labels: {node: '209'}}
+    <<: &placed {target: orbit-node-209}
     writes: false
     task:
       <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-server-assets-" + run.id }}'}
@@ -39,7 +38,7 @@ jobs:
       inputs:
         control: {process_id: '${{ inputs.intent.process_id }}', runtime: docker, name: '${{ inputs.intent.container }}', vite: null, on_demand: false}
   - name: prepare_prepare_directory
-    <<: &remote {target: orbit-node-209, labels: {node: '209'}, allowFailure: true}
+    <<: &remote {target: orbit-node-209, allowFailure: true}
     writes: false
     task:
       <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-server-" + string(inputs.operation_id) }}', globalArgs: {name: '${{ "database-server-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
