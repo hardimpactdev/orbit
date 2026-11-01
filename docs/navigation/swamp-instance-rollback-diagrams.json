@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Architecture",
+      "order": 39,
+      "pages": ["swamp/diagrams/instance-rollback"]
+    }
+  ]
+}
