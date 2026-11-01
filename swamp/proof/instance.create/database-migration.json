@@ -10,9 +10,9 @@
         "orbit",
         "project:create",
         "proof-create-db-${proof.run}",
-        "node-package",
-        "https://github.com/octocat/Spoon-Knife.git",
-        "--root=.",
+        "monorepo",
+        "${proof.repo.url}",
+        "--root=database-monorepo",
         "--default-branch=main",
         "--source-access=github_app",
         "--json"
@@ -28,7 +28,7 @@
         "${capture.project_id}",
         "${topology.app-dev.node_id}",
         "default",
-        "--root=.",
+        "--root=database-monorepo",
         "--json"
       ],
       "capture": {
@@ -73,7 +73,7 @@
         "instance:setup-step:create",
         "migrate-owned-database",
         "--project=${capture.project_id}",
-        "--command=python3 -c 'import os\nimport sqlite3\nfrom pathlib import Path\n\nif os.environ.get(\"DB_CONNECTION\") != \"sqlite\":\n    raise RuntimeError(\"database-connection-not-ready-before-setup\")\nroot = Path.cwd().resolve()\npath = Path(os.environ[\"DB_DATABASE\"])\nif not path.is_absolute() or not path.resolve().is_relative_to(root):\n    raise RuntimeError(\"database-outside-owned-checkout\")\nif not path.is_file() or path.is_symlink():\n    raise RuntimeError(\"database-not-created-before-setup\")\n# Read-write mode must never create a missing database as a side effect.\nwith sqlite3.connect(path.as_uri() + \"?mode=rw\", uri=True) as connection:\n    if connection.execute(\"SELECT marker FROM orbit_create_seed\").fetchall() != [(\"owned-source\",)]:\n        raise RuntimeError(\"database-copy-not-ready-before-setup\")\n    connection.execute(\"CREATE TABLE IF NOT EXISTS orbit_create_migrations (name TEXT PRIMARY KEY)\")\n    connection.execute(\"INSERT OR IGNORE INTO orbit_create_migrations VALUES (?)\", (\"create-before-setup\",))\n    if connection.execute(\"SELECT name FROM orbit_create_migrations\").fetchall() != [(\"create-before-setup\",)]:\n        raise RuntimeError(\"migration-not-applied\")\nprint(\"migration-ok\")\n'",
+        "--command=python3 -c 'import os\nimport sqlite3\nfrom pathlib import Path\n\nif os.environ.get(\"PROOF_PUBLIC_MARKER\") != \"database-monorepo\":\n    raise RuntimeError(\"nested-application-environment-not-loaded-before-setup\")\nif os.environ.get(\"DB_CONNECTION\") != \"sqlite\":\n    raise RuntimeError(\"database-connection-not-ready-before-setup\")\nroot = Path.cwd().resolve()\npath = Path(os.environ[\"DB_DATABASE\"])\nif not path.is_absolute() or not path.resolve().is_relative_to(root):\n    raise RuntimeError(\"database-outside-owned-checkout\")\nif not path.is_file() or path.is_symlink():\n    raise RuntimeError(\"database-not-created-before-setup\")\n# Read-write mode must never create a missing database as a side effect.\nwith sqlite3.connect(path.as_uri() + \"?mode=rw\", uri=True) as connection:\n    if connection.execute(\"SELECT marker FROM orbit_create_seed\").fetchall() != [(\"owned-source\",)]:\n        raise RuntimeError(\"database-copy-not-ready-before-setup\")\n    connection.execute(\"CREATE TABLE IF NOT EXISTS orbit_create_migrations (name TEXT PRIMARY KEY)\")\n    connection.execute(\"INSERT OR IGNORE INTO orbit_create_migrations VALUES (?)\", (\"create-before-setup\",))\n    if connection.execute(\"SELECT name FROM orbit_create_migrations\").fetchall() != [(\"create-before-setup\",)]:\n        raise RuntimeError(\"migration-not-applied\")\nprint(\"migration-ok\")\n'",
         "--timeout=30",
         "--json"
       ]
@@ -84,7 +84,7 @@
       "argv": [
         "python3",
         "-I",
-        "seed_sqlite.py",
+        "swamp/proof/instance.create/seed_sqlite.py",
         "${capture.default_checkout}"
       ],
       "timeout_seconds": 30
@@ -97,7 +97,7 @@
       "${capture.project_id}",
       "${topology.app-dev.node_id}",
       "proof-${proof.run}",
-      "--root=.",
+      "--root=database-monorepo",
       "--branch=proof-${proof.run}",
       "--json"
     ],
@@ -106,12 +106,12 @@
   "envelope": {
     "project_id": "${capture.project_id}",
     "node_id": "${topology.app-dev.node_id}",
-    "root": ".",
+    "root": "database-monorepo",
     "branch_override": "proof-${proof.run}",
     "default_branch": "main",
     "run_budget_seconds": "${match.positive_int}",
     "direct_provisioning": {
-      "project_type": "node-package",
+      "project_type": "monorepo",
       "phase_plan": {
         "source": {
           "seconds": 30
@@ -123,8 +123,10 @@
           "seconds": 30
         },
         "queue_timeout_seconds": 15
-      }
-    }
+      },
+      "skip_profile": true
+    },
+    "repository": "${proof.repo.url}"
   },
   "expect": {
     "status": "succeeded",
@@ -169,6 +171,7 @@
       "database-migration"
     ],
     "cases": [
+      "monorepo-skips-unrelated-php-metadata",
       "owned-database-created-before-setup-migration",
       "copied-database-migrated",
       "default-database-kept-unmodified",

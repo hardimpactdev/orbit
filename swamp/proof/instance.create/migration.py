@@ -2,6 +2,8 @@ import os
 import sqlite3
 from pathlib import Path
 
+if os.environ.get("PROOF_PUBLIC_MARKER") != "database-monorepo":
+    raise RuntimeError("nested-application-environment-not-loaded-before-setup")
 if os.environ.get("DB_CONNECTION") != "sqlite":
     raise RuntimeError("database-connection-not-ready-before-setup")
 root = Path.cwd().resolve()

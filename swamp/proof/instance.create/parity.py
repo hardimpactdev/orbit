@@ -67,9 +67,14 @@ def validate(selected, operation, instance, case):
         raise RuntimeError('proof-create-source-invalid')
     if instance.get('starting_commit') != source['commit']:
         raise RuntimeError('proof-create-source-projection-mismatch')
+    expected_root = 'database-monorepo' if case == 'database-migration' else 'source-setup'
+    if operation['input'].get('root') != expected_root or instance.get('root') != expected_root:
+        raise RuntimeError('proof-create-application-root-mismatch')
+    if operation['input'].get('branch_override') != source['branch']:
+        raise RuntimeError('proof-create-branch-mismatch')
     if source['php_version'] is not None or source['laravel'] is not False or result['vp_environment'] is not None:
         raise RuntimeError('proof-nonweb-source-profile-mismatch')
-    if not {'APP_NAME', 'APP_ENV', 'APP_DEBUG'} <= set(result['environment_keys']):
+    if not {'APP_NAME', 'APP_ENV', 'APP_DEBUG', 'PROOF_PUBLIC_MARKER'} <= set(result['environment_keys']):
         raise RuntimeError('proof-create-environment-incomplete')
     expected = ['migrate-owned-database'] if case == 'database-migration' else ['verify-public-source']
     steps = operation['input']['direct_provisioning']['setup']['steps']
@@ -100,7 +105,7 @@ def main():
         checked = node_json('app-dev', ['python3', '-c', DATABASE_CHECK, instance['checkout_path'], defaults[0]['checkout_path']])
         if checked != {'copied_database_migrated': True, 'source_database_preserved': True}:
             raise RuntimeError('proof-database-parity-unconfirmed')
-    print(json.dumps({'passed': 4, 'case': case}))
+    print(json.dumps({'passed': 5, 'case': case}))
 
 
 if __name__ == '__main__':

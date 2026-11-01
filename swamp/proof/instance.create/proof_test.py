@@ -33,26 +33,47 @@ class DatabaseBeforeSetup(unittest.TestCase):
 
     def migrate(self, path=None):
         return subprocess.run(shlex.split(command), cwd=self.target, env=dict(os.environ, DB_CONNECTION='sqlite',
-                              DB_DATABASE=str(path or self.path)), capture_output=True, text=True, check=False)
+                              DB_DATABASE=str(path or self.path), PROOF_PUBLIC_MARKER='database-monorepo'), capture_output=True, text=True, check=False)
 
     def seed(self, path):
         with sqlite3.connect(path) as connection:
             connection.execute('CREATE TABLE orbit_create_seed (marker TEXT NOT NULL)')
             connection.execute('INSERT INTO orbit_create_seed VALUES (?)', ('owned-source',))
 
-    def test_variants_create_distinct_repository_identities_in_one_topology(self):
+    def test_variants_use_the_runner_fresh_local_origin_and_main(self):
         fixtures = [json.loads(path.read_text()) for path in ROOT.glob('*.json')]
-        repositories = [step['argv'][4] for value in fixtures for step in value['prepare'] if step['argv'][1] == 'project:create']
-        self.assertEqual(len(repositories), len(set(repositories)))
+        for value in fixtures:
+            project = next(step['argv'] for step in value['prepare'] if step['argv'][1] == 'project:create')
+            self.assertEqual(project[4], '${proof.repo.url}')
+            self.assertIn('--default-branch=main', project)
+            self.assertEqual(value['envelope']['repository'], '${proof.repo.url}')
+            self.assertEqual(value['envelope']['default_branch'], 'main')
+            self.assertNotIn('github.com', json.dumps(value))
 
     def test_project_command_is_the_reviewed_migration(self):
         self.assertEqual(shlex.split(command), ['python3', '-c', (ROOT / 'migration.py').read_text()])
+
+    def test_before_request_helper_resolves_from_the_staged_repository_root(self):
+        argv = fixture['before_request'][0]['argv']
+        self.assertEqual(argv[:2], ['python3', '-I'])
+        self.assertEqual((ROOT.parents[2] / argv[2]).resolve(), (ROOT / 'seed_sqlite.py').resolve())
+        self.assertTrue((ROOT.parents[2] / argv[2]).is_file())
 
     def test_setup_before_database_fails_without_creating_a_database(self):
         answer = self.migrate()
         self.assertNotEqual(answer.returncode, 0)
         self.assertIn('database-not-created-before-setup', answer.stderr)
         self.assertFalse(self.path.exists())
+
+    def test_setup_without_the_nested_application_environment_cannot_migrate(self):
+        self.seed(self.path)
+        before = self.path.read_bytes()
+        answer = subprocess.run(shlex.split(command), cwd=self.target,
+                                env=dict(os.environ, DB_CONNECTION='sqlite', DB_DATABASE=str(self.path), PROOF_PUBLIC_MARKER='wrong'),
+                                capture_output=True, text=True, check=False)
+        self.assertNotEqual(answer.returncode, 0)
+        self.assertIn('nested-application-environment-not-loaded', answer.stderr)
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_an_empty_database_does_not_impersonate_a_finished_copy(self):
         with sqlite3.connect(self.path):
@@ -142,6 +163,7 @@ class SetupExecution(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        shutil.copytree(ROOT / 'repository', self.root, dirs_exist_ok=True)
         self.marker = self.root / '.orbit-proof-setup'
         self.commit = 'a' * 40
 
@@ -167,13 +189,12 @@ class SetupExecution(unittest.TestCase):
         fixture = json.loads((ROOT / 'source-setup.json').read_text())
         setup = next(arg.removeprefix('--command=') for step in fixture['prepare'] for arg in step['argv'] if arg.startswith('--command='))
         subprocess.run(['git', 'init', '-q', str(self.root)], check=True, capture_output=True)
-        (self.root / 'README').write_text('public setup proof\n')
-        subprocess.run(['git', 'add', 'README'], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(['git', 'add', '.'], cwd=self.root, check=True, capture_output=True)
         subprocess.run(['git', '-c', 'user.name=Proof', '-c', 'user.email=proof@example.test',
                         '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'public fixture'],
                        cwd=self.root, check=True, capture_output=True)
         self.commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.root, text=True).strip()
-        executed = subprocess.run(['sh', '-c', setup], cwd=self.root, env=dict(os.environ, APP_ENV='development'),
+        executed = subprocess.run(['sh', '-c', setup], cwd=self.root, env=dict(os.environ, APP_ENV='development', PROOF_PUBLIC_MARKER='source-setup'),
                                   capture_output=True, text=True, check=False)
         self.assertEqual(executed.returncode, 0, executed.stderr)
         checked = self.check()
@@ -183,8 +204,7 @@ class SetupExecution(unittest.TestCase):
     def test_failed_environment_check_does_not_record_setup_completion(self):
         fixture = json.loads((ROOT / 'source-setup.json').read_text())
         setup = next(arg.removeprefix('--command=') for step in fixture['prepare'] for arg in step['argv'] if arg.startswith('--command='))
-        (self.root / 'README').write_text('public setup proof\n')
-        executed = subprocess.run(['sh', '-c', setup], cwd=self.root, env=dict(os.environ, APP_ENV='production'),
+        executed = subprocess.run(['sh', '-c', setup], cwd=self.root, env=dict(os.environ, APP_ENV='production', PROOF_PUBLIC_MARKER='source-setup'),
                                   capture_output=True, text=True, check=False)
         self.assertNotEqual(executed.returncode, 0)
         self.assertFalse(self.marker.exists())
@@ -194,11 +214,12 @@ class TerminalParity(unittest.TestCase):
     def setUp(self):
         result = {'ready': True, 'instance_id': 17,
                   'source': {'branch': 'proof-fixture', 'commit': 'a' * 40, 'php_version': None, 'laravel': False},
-                  'environment_keys': ['APP_NAME', 'APP_ENV', 'APP_DEBUG'], 'vp_environment': None}
+                  'environment_keys': ['APP_NAME', 'APP_ENV', 'APP_DEBUG', 'PROOF_PUBLIC_MARKER'], 'vp_environment': None}
         self.selected = {'ready': True, 'stdout': json.dumps(result)}
         self.operation = {'kind': 'instance.create', 'status': 'succeeded', 'target_id': 17,
-                          'input': {'direct_provisioning': {'setup': {'steps': [{'name': 'migrate-owned-database'}]}}}}
-        self.instance = {'id': 17, 'status': 'active', 'starting_commit': 'a' * 40}
+                          'input': {'root': 'database-monorepo', 'branch_override': 'proof-fixture',
+                                    'direct_provisioning': {'setup': {'steps': [{'name': 'migrate-owned-database'}]}}}}
+        self.instance = {'id': 17, 'status': 'active', 'starting_commit': 'a' * 40, 'root': 'database-monorepo'}
 
     def test_unwrapped_outputs_and_the_exact_normal_operation_are_required(self):
         self.assertTrue(parity.validate(self.selected, self.operation, self.instance, 'database-migration')['ready'])
@@ -224,6 +245,14 @@ class TerminalParity(unittest.TestCase):
             parity.validate(self.selected, self.operation, dict(self.instance, id=18), 'database-migration')
         with self.assertRaisesRegex(RuntimeError, 'proof-create-source-projection-mismatch'):
             parity.validate(self.selected, self.operation, dict(self.instance, starting_commit='b' * 40), 'database-migration')
+
+    def test_wrong_branch_or_application_root_cannot_supply_the_proof(self):
+        with self.assertRaisesRegex(RuntimeError, 'proof-create-application-root-mismatch'):
+            parity.validate(self.selected, self.operation, dict(self.instance, root='.'), 'database-migration')
+        operation = copy.deepcopy(self.operation)
+        operation['input']['branch_override'] = 'proof-other'
+        with self.assertRaisesRegex(RuntimeError, 'proof-create-branch-mismatch'):
+            parity.validate(self.selected, operation, self.instance, 'database-migration')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,9 @@
+{
+  "name": "hardimpactdev/proof-monorepo-root",
+  "description": "Unrelated PHP metadata that a monorepo create must not inspect",
+  "type": "project",
+  "license": "MIT",
+  "require": {
+    "php": "^99.0"
+  }
+}

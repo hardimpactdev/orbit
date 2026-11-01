@@ -11,9 +11,9 @@
         "project:create",
         "proof-create-${proof.run}",
         "node-package",
-        "https://github.com/octocat/Hello-World.git",
-        "--root=.",
-        "--default-branch=master",
+        "${proof.repo.url}",
+        "--root=source-setup",
+        "--default-branch=main",
         "--source-access=github_app",
         "--json"
       ],
@@ -27,7 +27,7 @@
         "instance:setup-step:create",
         "verify-public-source",
         "--project=${capture.project_id}",
-        "--command=test -f README && test \"$APP_ENV\" = development && git rev-parse --verify HEAD > .orbit-proof-setup",
+        "--command=test -f source-setup/README.md && test \"$APP_ENV\" = development && test \"$PROOF_PUBLIC_MARKER\" = source-setup && git rev-parse --verify HEAD > .orbit-proof-setup",
         "--timeout=30",
         "--json"
       ]
@@ -40,7 +40,7 @@
       "${capture.project_id}",
       "${topology.app-dev.node_id}",
       "proof-${proof.run}",
-      "--root=.",
+      "--root=source-setup",
       "--branch=proof-${proof.run}",
       "--json"
     ],
@@ -50,10 +50,10 @@
     "project_id": "${capture.project_id}",
     "node_id": "${topology.app-dev.node_id}",
     "task_vm": false,
-    "root": ".",
+    "root": "source-setup",
     "branch_override": "proof-${proof.run}",
-    "repository": "https://github.com/octocat/Hello-World.git",
-    "default_branch": "master",
+    "repository": "${proof.repo.url}",
+    "default_branch": "main",
     "run_budget_seconds": 952,
     "direct_provisioning": {
       "project_type": "node-package",
@@ -126,7 +126,8 @@
       "source-setup"
     ],
     "cases": [
-      "public-anonymous-new-branch",
+      "topology-local-source-new-branch",
+      "nested-application-root-and-environment",
       "empty-stored-environment-object",
       "ordered-canonical-setup",
       "Gateway-terminal-projection"
