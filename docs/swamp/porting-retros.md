@@ -37,7 +37,7 @@ Fix-forward is allowed for these. They need no proof.
 
 | PR | Deleted | Baseline rows | Findings |
 | --- | --- | --- | --- |
-| #2296 | Route-comment LAN write branches | None | Deletion, −90 net |
+| #2296 | Route-comment LAN write branches | One count lowered from 260 to 233 | Deletion, −90 net |
 | #2288 | Unused TypeScript Schedule removal; three Ruff allowances | 3 removed | None |
 | #2287 | `@nckrtl/certificates` dispatcher | One count lowered from 125 to 39 | Partial cleanup lowers a count rather than deleting the row |
 | #2286 | Shared `operation-executor` client and runner | 7 removed | Kept the `maintenance` method Conn still calls; listed 27 remaining consumers |

@@ -19,7 +19,7 @@ Port one family or parent kind per PR. Every kind follows port, prove, improve (
 
 Copy the workflow and Gateway declaration from the [template](../../../docs/swamp/porting.md#fill-the-workflow) and fill every `REPLACE_*` token. `REPLACE_F1_RUN` stays a plain script invocation until lane 16 ships F1.
 
-- **Inputs:** the full non-secret intent under `intent`, and names-only `{vault, key}` descriptors under `execution_secrets`. Secrets are never inputs. Encode empty maps as objects, not `[]` (#2273). Resolve Gateway macros and aliases into real commands at admission (#2304).
+- **Inputs:** the full non-secret intent under `intent`, and names-only `{vault, key}` descriptors under `execution_secrets`. Secrets are never inputs. Encode empty maps as objects, not `[]` (#2273). Never pass a Gateway macro or alias to a shell; expand it through the Gateway supplier before the step runs (#2304).
 - **Vaults:** list every vault the workflow reads, in parents and children. `vaults: []` when there is none, by convention.
 - **Placement:** every step runs on `target: orbit-node-209`. Reach another Node with official `@swamp/ssh` from 209 using the intent's `identity_file`, stored `host_keys` and `sudo: true`. Use one selector in the effective placement: `target` only, with no `labels` at any inherited scope. Copy placement from `firewall.inspect`, not `node.bootstrap_probe`.
 - **Scripts:** one script file per action group, shipped through the behavior manifest `additionalFiles` and run as a placed `command/shell` step on 209, or through `@swamp/ssh` `exec` with the body in argv for another Node; `script` only when the script reads no input or secret. Split only at a resume point, a Node change or a guard. TypeScript only shapes typed inputs and outputs.
