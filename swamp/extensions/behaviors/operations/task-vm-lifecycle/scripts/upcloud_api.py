@@ -17,7 +17,7 @@ def _api(method, path, body=None):
         data=None if body is None else json.dumps(body).encode(),
         headers={'Authorization': 'Bearer ' + os.environ['ORBIT_UPCLOUD_TOKEN'], 'Content-Type': 'application/json', 'Accept': 'application/json'},
     )
-    with urllib.request.build_opener(NoRedirect).open(req, timeout=60) as response:
+    with urllib.request.build_opener(NoRedirect).open(req, timeout=10) as response:
         raw = response.read(1048577)
         if len(raw) > 1048576:
             raise ValueError('oversize')

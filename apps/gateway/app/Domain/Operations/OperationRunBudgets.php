@@ -47,6 +47,10 @@ final class OperationRunBudgets
         'node.role_add' => 2700,
         'task_vm.destroy' => 2700,
         'task_vm.image_build' => 2400,
+        // UpCloud phase allowance: (375 provider + 600 SSH + 1500 enrollment + 900 rollback + 1600 queues) x 1.5,
+        // rounded to five minutes. Legacy enrollment/cleanup ceilings and 160 native steps x 10 s queue bound.
+        // Remove once successful UpCloud history supplies a measured replacement covering both provider paths.
+        'task_vm.provision' => 7500,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,

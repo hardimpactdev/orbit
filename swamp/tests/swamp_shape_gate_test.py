@@ -74,7 +74,7 @@ class ShapeGate(unittest.TestCase):
             self.assertEqual(scan(source.replace("client.get('", "client.get(url='")), [])
 
     def upcloud_module(self):
-        script = ROOT / 'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py'
+        script = ROOT / 'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py'
         spec = importlib.util.spec_from_file_location('upcloud_poll_fixture', script)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -113,7 +113,7 @@ class ShapeGate(unittest.TestCase):
             self.assertEqual(request.get_method(), 'GET')
             self.assertEqual(request.full_url, 'https://api.upcloud.com/1.3/server/example')
             self.assertEqual(request.get_header('Authorization'), 'Bearer fixture-token')
-            self.assertEqual(opener.return_value.open.call_args.kwargs, {'timeout': 60})
+            self.assertEqual(opener.return_value.open.call_args.kwargs, {'timeout': 10})
             handler = opener.call_args.args[0]()
             self.assertIsNone(handler.redirect_request(None, None, 302, '', {}, 'https://example.invalid/'))
             response.read.assert_called_once_with(1048577)

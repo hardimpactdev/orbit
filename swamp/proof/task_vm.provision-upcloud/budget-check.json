@@ -17,17 +17,77 @@
   "history_window_days": 14,
   "history_p95_seconds": null,
   "longest_success_seconds": null,
-  "computed_bound_run_budget_seconds": 1800,
   "provider_planning_allowance_seconds": 375,
   "ssh_preparation_planning_allowance_seconds": 600,
   "planning_total_seconds": 975,
-  "planning_allowance_fits": true,
   "live_helper_invoked": false,
   "new_admissions": 0,
-  "budget_rows_added": 0,
+  "budget_rows_added": 1,
   "limitations": [
-    "No successful standalone provision history exists in this read, so no history p95 can be reported.",
-    "975 seconds excludes other enrollment, queues and rollback.",
-    "This is not an end-to-end phase-sum proof or real UpCloud latency measurement."
-  ]
+    "No real UpCloud success history exists; this is the agreed phase-based explicit row, not a provider latency p95.",
+    "The old 1800-second value is a historical no-history fallback, not the full-path budget.",
+    "Tasks parent keeps its independently owned tasks.provision budget; this row governs standalone task_vm.provision."
+  ],
+  "observed_before_change_bound_run_budget_seconds": 1800,
+  "explicit_run_budget_seconds": 7500,
+  "basis": {
+    "provider_seconds": 375,
+    "ssh_preparation_seconds": 600,
+    "enrollment_seconds": 1500,
+    "rollback_seconds": 900,
+    "queue_seconds": 1600,
+    "subtotal_seconds": 4975,
+    "multiplier": 1.5,
+    "unrounded_seconds": 7462.5,
+    "round_up_seconds": 300
+  },
+  "legacy_phase_sources": {
+    "enrollment": "6291bb036:apps/gateway/app/Jobs/TaskVms/EnrollTaskVm.php timeout=1500",
+    "rollback": "6291bb036:apps/gateway/app/Jobs/TaskVms/DestroyTaskVm.php timeout=900"
+  },
+  "queue_basis": {
+    "steps": 160,
+    "seconds_per_step": 10,
+    "includes_guarded_steps_conservatively": true,
+    "prefix_failure_alternative_steps": 76,
+    "workflows": {
+      "operation-task-vm-provision": {
+        "steps": 2,
+        "calls": 1
+      },
+      "task-vm-provision": {
+        "steps": 9,
+        "calls": 1
+      },
+      "task-vm-provider-upcloud": {
+        "steps": 12,
+        "calls": 1
+      },
+      "task-vm-enrollment": {
+        "steps": 52,
+        "calls": 1
+      },
+      "task-vm-ssh-prepare": {
+        "steps": 12,
+        "calls": 1
+      },
+      "task-vm-model-issue": {
+        "steps": 8,
+        "calls": 1
+      },
+      "task-vm-runtime": {
+        "steps": 24,
+        "calls": 1
+      },
+      "task-vm-model-revoke": {
+        "steps": 8,
+        "calls": 1
+      },
+      "task-vm-provider-power": {
+        "steps": 11,
+        "calls": 3
+      }
+    }
+  },
+  "removal_condition": "Remove the explicit row once successful UpCloud history supplies a measured replacement covering both provider paths, so Incus-only history cannot shrink the cloud path."
 }
