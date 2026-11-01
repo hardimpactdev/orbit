@@ -50,6 +50,11 @@ elif args[:3] == ["config", "metadata", "show"]:
     reply = "templates:\n  /var/lib/cloud/seed/nocloud-net/user-data: {template: cloud-init.tpl}\n  /etc/hostname: {template: hostname.tpl}\n"
 elif args[:3] == ["config", "metadata", "edit"]:
     state["metadata"] = sys.stdin.read()
+elif args[0] == "wait":
+    # Native `incus wait <vm> ipv4` returns once a lease exists and exits nonzero at its timeout.
+    if state.get("lease_after_wait"):
+        state["no_address"] = False
+    failure = bool(state.get("no_address"))
 elif args[0] == "start":
     state["running"] = True
     if state.get("lose_start_reply"):
@@ -180,6 +185,15 @@ raise SystemExit(result.returncode)
         self.run_provider()
         state = self.read()
         self.assertEqual(state["initial_config"]["devices"]["topology-seed"]["source"], "tvm-12-topology-seed")
+
+    def test_inspection_waits_natively_for_the_first_lease_before_its_one_read(self):
+        self.state.update(no_address=True, lease_after_wait=True)
+        self.save()
+        self.run_provider()
+        calls = [call[2:] for call in self.read()["calls"]]
+        wait = calls.index(["wait", "tvm-12", "ipv4", "--timeout", "120", "--interval", "1"])
+        self.assertEqual(calls[wait + 1][0], "list")
+        self.assertEqual([call[0] for call in calls].count("start"), 1)
 
     def test_pending_address_fails_after_one_final_observation(self):
         self.state["no_address"] = True

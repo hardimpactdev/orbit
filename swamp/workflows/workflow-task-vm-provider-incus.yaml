@@ -381,6 +381,9 @@ jobs:
 
           name=$(printf ''%s'' "$ORBIT_VM_INTENT" | jq -er ''.vm.name'')
 
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$project" wait "$name" ipv4
+          --timeout 120 --interval 1
+
           /usr/bin/sudo -n -- /usr/bin/incus --project "$project" list --format json
           -- "$name"
 
