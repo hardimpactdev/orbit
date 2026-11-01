@@ -2,7 +2,7 @@
   "kind": "instance.run_steps",
   "workflow": "operation-instance-setup-direct",
   "topology": "app-dev",
-  "budget_seconds": 120,
+  "budget_seconds": 64,
   "queue_timeout_seconds": 30,
   "prepare": [
     {
@@ -52,7 +52,7 @@
       "name": "setup-list-first-running-read",
       "job": "setup",
       "step": "run-setup",
-      "budget_seconds": 120
+      "budget_seconds": 64
     }
   ],
   "parity": {
