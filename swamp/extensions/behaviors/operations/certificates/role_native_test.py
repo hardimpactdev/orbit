@@ -100,24 +100,26 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
                 "/tmp/orbit-role-certificate-", str(self.fixture / "role-staging-")
             )
         )
-        self.globals = dict(
-            name="role-fixture",
-            sshBinary=str(fake),
-            transport=dict(
-                kind="ssh", user="orbit", identityFile=str(self.fixture / "identity")
-            ),
-            hosts=[
-                dict(
-                    name="target",
-                    address="fixture",
-                    transport=dict(
-                        hostKeys=[
+        self.globals = {
+            "name": "role-fixture",
+            "sshBinary": str(fake),
+            "transport": {
+                "kind": "ssh",
+                "user": "orbit",
+                "identityFile": str(self.fixture / "identity"),
+            },
+            "hosts": [
+                {
+                    "name": "target",
+                    "address": "fixture",
+                    "transport": {
+                        "hostKeys": [
                             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEV4aXN0aW5nUGlubmVkSG9zdElkZW50aXR5UHVibGlj"
                         ]
-                    ),
-                )
+                    },
+                }
             ],
-        )
+        }
         (self.fixture / "identity").write_text("synthetic identity never used")
         self.leaf = {
             k: v
@@ -180,32 +182,32 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
             step.pop("target")
             step.pop("labels", None)
         steps.append(
-            dict(
-                name="verify",
-                dependsOn=[dict(step="cert", condition=dict(type="succeeded"))],
-                task=dict(
-                    type="assert",
-                    expr='steps.cert.outputs.result.ready && steps.cert.outputs.result.node_id == 9 && steps.cert.outputs.result.scope == "role-metrics"',
-                    message="role child readiness",
-                    severity="high",
-                ),
-            )
+            {
+                "name": "verify",
+                "dependsOn": [{"step": "cert", "condition": {"type": "succeeded"}}],
+                "task": {
+                    "type": "assert",
+                    "expr": 'steps.cert.outputs.result.ready && steps.cert.outputs.result.node_id == 9 && steps.cert.outputs.result.scope == "role-metrics"',
+                    "message": "role child readiness",
+                    "severity": "high",
+                },
+            }
         )
-        parent = dict(
-            id="2a354750-5e1f-4a68-a950-bf8050ae3759",
-            name="role-parent-fixture",
-            inputs=dict(
-                type="object",
-                properties=dict(
-                    operation_id=dict(type="integer"),
-                    node_id=dict(type="integer"),
-                    kind=dict(type="string"),
-                    leaf=dict(type="object"),
-                    ssh=dict(type="object"),
-                ),
-            ),
-            jobs=[dict(name="parent", steps=steps)],
-        )
+        parent = {
+            "id": "2a354750-5e1f-4a68-a950-bf8050ae3759",
+            "name": "role-parent-fixture",
+            "inputs": {
+                "type": "object",
+                "properties": {
+                    "operation_id": {"type": "integer"},
+                    "node_id": {"type": "integer"},
+                    "kind": {"type": "string"},
+                    "leaf": {"type": "object"},
+                    "ssh": {"type": "object"},
+                },
+            },
+            "jobs": [{"name": "parent", "steps": steps}],
+        }
         (self.repo / "workflows/workflow-role-parent-fixture.yaml").write_text(
             yaml.safe_dump(parent, sort_keys=False)
         )
