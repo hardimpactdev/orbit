@@ -47,7 +47,11 @@ function production_native_deploy_target(): Instance
 }
 
 beforeEach(function (): void {
-    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    $socket = $this->socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.production-native.fixture']);
     $this->mock(AgentCommandRunner::class)->shouldNotReceive('run');
     $this->mock(ProcessRuntimeManager::class)->shouldNotReceive('converge');
@@ -62,6 +66,8 @@ it('admits one production parent with canonical account and private captured mem
     $secrets = app(InstanceDeploymentSecrets::class);
     $environment = $secrets->resolve($operation, $instance->id, '', 'environment_material')->value;
     $members = $secrets->resolve($operation, $instance->id, '', 'definitions_material')->value;
+    $copy = collect($this->socket->sent)->firstWhere('type', 'vault.put');
+    $submitted = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs'];
 
     expect($public['deployment'])->toMatchArray(['variant' => 'production', 'user' => 'orbit-app-'.$instance->project_id,
         'home' => '/home/orbit-app-'.$instance->project_id, 'runtime_synchronous' => false])
@@ -69,8 +75,14 @@ it('admits one production parent with canonical account and private captured mem
         ->and($public['runtime_definitions']['processes'])->toHaveCount(1)
         ->and($public['runtime_definitions']['schedules'])->toHaveCount(1)
         ->and($public['php_input'])->toBeNull()
-        ->and(json_encode($public))->not->toContain('private-member-token', 'private-schedule', 'private-deploy-environment')
-        ->and(json_encode($members))->toContain('private-member-token', 'private-schedule')
+        ->and(json_encode($public))->not->toContain('private-member-token')
+        ->and(json_encode($public))->not->toContain('private-schedule')
+        ->and(json_encode($public))->not->toContain('private-deploy-environment')
+        ->and(json_encode($members))->toContain('private-schedule')
+        ->and($copy['payload']['value'])->toContain('private-member-token')
+        ->and(json_encode($submitted))->not->toContain('private-member-token')
+        ->and(json_encode($submitted))->not->toContain('private-schedule')
+        ->and(json_encode($submitted))->not->toContain('private-deploy-environment')
         ->and($environment['values']['API_TOKEN'])->toBe('private-deploy-environment')
         ->and(Operation::query()->count())->toBe(1)
         ->and(InstanceDeployment::query()->count())->toBe(0)
@@ -156,12 +168,12 @@ it('keeps declared private material available after cooperative cancellation whi
     $run = '552822e1-e120-4bd2-a12b-2b57a145f513';
     $operation->update(['status' => 'running', 'cancel_requested_at' => now(),
         'state' => [...$operation->state, 'swamp_run_id' => $run]]);
-    $process = Process::query()->sole();
+    $schedule = Schedule::query()->sole();
     $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
 
     $response = $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$run);
     expect($response->json('error.code'))->toBeNull($response->json('error.message') ?? '');
-    $response->assertOk()->assertJsonPath('data.definitions_material.processes.'.$process->id.'.installation.runtime', 'systemd');
+    $response->assertOk()->assertJsonPath('data.definitions_material.schedules.'.$schedule->id.'.command', 'printf private-schedule');
     expect($operation->fresh()->status)->toBe(OperationStatus::Running)
         ->and($operation->fresh()->cancel_requested_at)->not->toBeNull();
 });
