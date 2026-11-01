@@ -45,9 +45,6 @@ node.worker_known_hosts
 observation.maintain
 process.install_instance_definitions
 process.restart_instance
-project.detect
-project.observe
-project.routine
 route.caddy_converge
 route.lan_remove
 route.private_dns_publish
