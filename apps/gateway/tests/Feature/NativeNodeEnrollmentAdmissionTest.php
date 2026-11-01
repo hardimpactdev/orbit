@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Nodes\AdmitNodeEnrollmentOperationAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -20,6 +21,17 @@ beforeEach(function (): void {
     $this->gateway = $this->markAsGateway($fixture['gateway']);
     $this->hub = $fixture['hub'];
     $this->socket = $fixture['socket'];
+});
+
+it('refuses an unavailable enrollment kind before recording reservations or execution copies', function (): void {
+    app()->instance(DirectOperation::class, new DirectOperation([]));
+    expect(fn () => app(AdmitNodeEnrollmentOperationAction::class)->execute(new ProvisionNodeData(
+        name: 'unavailable-enrollment', publicSshHost: '192.0.2.240', wireguardIp: '10.44.0.240',
+        roles: [RoleName::Metrics], expectedSshHostFingerprint: 'SHA256:'.str_repeat('A', 43),
+    )))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
+    expect($this->socket->sent)->toBe([])
+        ->and(Node::query()->where('name', 'unavailable-enrollment')->exists())->toBeFalse()
+        ->and(Operation::query()->exists())->toBeFalse();
 });
 
 it('reserves one real new Node and submits public native intent without agent or SSH effects', function (): void {

@@ -19,6 +19,7 @@ use App\Domain\Nodes\NodeRoleConvergeInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Routes\NativeRouteNodeMutationInput;
@@ -55,6 +56,7 @@ final readonly class AdmitNodeEnrollmentOperationAction
         if (($existing = $this->idempotency->replay('node.add')) !== null) {
             return $existing;
         }
+        app(DirectOperation::class)->writer('node.add');
         try {
             return $this->lock->run($data->name, fn (): Operation => DB::transaction(fn (): Operation => $this->admit($data, $requestId)));
         } catch (NodeProvisioningLockException $exception) {
@@ -135,6 +137,7 @@ final readonly class AdmitNodeEnrollmentOperationAction
         $footprint = $spec['mode'] === 'macos' ? null : $this->render->renderRoleCertificates(
             $roleCertificates,
             fn (): array => $this->footprints->captureFootprint($actual, $candidate, $settings['settings'] ?? []));
+        $cli = $this->cli->input($actual, $candidate);
         $nonce = bin2hex(random_bytes(8));
         $secrets = [];
         foreach ($materials as $field => $material) {
@@ -147,7 +150,7 @@ final readonly class AdmitNodeEnrollmentOperationAction
             }
         }
         $intent += ['roles' => $roleInputs, 'role_bindings' => $bindings, 'settings' => $settings,
-            'role_certificates' => $roleCertificates, 'cli' => $this->cli->input($actual, $candidate),
+            'role_certificates' => $roleCertificates, 'cli' => $cli,
             'route_mutations' => $route['route_mutations'] ?? null, 'footprint' => $footprint];
 
         return $this->operations->execute('node.add', 'node', $actual->id, $actual->id,
