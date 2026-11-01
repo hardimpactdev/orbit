@@ -35,17 +35,17 @@ final readonly class TaskTopology implements Castable
     public const array Requires = ['app-prod-2' => 'app-prod'];
 
     /**
-     * The roles an entry can add to its node, in the order the harness adds them. Each one must converge on a test
-     * node; others did not without more setup, so they wait until a task needs them.
+     * The roles an entry can request, in enrollment order. Product admission still enforces protected roles,
+     * singleton ownership and conflicts; accepting a declaration is not proof that its role can converge.
      */
-    public const array ExtraRoles = ['ingress'];
+    public const array ExtraRoles = ['ingress', 'router', 'vpn'];
 
     /**
      * The syntax of one entry, for request validation and the generated specs. A unit test checks that it accepts
      * exactly the catalog's node and role names; role conflicts and {@see self::Requires} are checked by
      * {@see self::valid()}.
      */
-    public const string EntryPattern = '/\A(?:app-dev|app-prod|app-prod-2)(?:\+ingress)?\z/';
+    public const string EntryPattern = '/\A(?:app-dev|app-prod|app-prod-2)(?:\+(?:ingress|router|vpn))*\z/';
 
     /** @param array<string, list<string>> $entries node => added roles, in declaration order */
     public function __construct(private array $entries = []) {}

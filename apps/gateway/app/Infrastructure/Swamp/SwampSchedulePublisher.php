@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /** Publish captured public intent through the official workflow.trigger.set frame. */
@@ -33,7 +34,7 @@ final readonly class SwampSchedulePublisher
         try {
             // Match the JSON data representation used by the real socket.
             $expectedInputs = json_decode(json_encode($inputs, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->connect(new WebSocketEndpoint($address, Config::integer('swamp.port'), 'swamp.orbit', '/', $ca, $token), 15);
             $this->socket->send(['type' => 'workflow.trigger.set', 'id' => $id,
                 'payload' => ['workflowName' => $name, 'schedule' => $schedule, 'inputs' => $inputs === [] ? (object) [] : $inputs]]);
             $deadline = microtime(true) + 30;

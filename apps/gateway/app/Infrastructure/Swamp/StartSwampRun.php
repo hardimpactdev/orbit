@@ -14,6 +14,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -121,7 +122,7 @@ final readonly class StartSwampRun
             throw new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is not configured.', 503);
         }
 
-        return new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $caPath, $token);
+        return new WebSocketEndpoint($address, Config::integer('swamp.port'), 'swamp.orbit', '/', $caPath, $token);
     }
 
     private function bind(Operation $operation, string $runId): void

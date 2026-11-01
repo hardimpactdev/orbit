@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 it('exposes the approved public 209 identity before a bootstrap target exists', function (): void {
     expect((new SwampSshExecutionInput)->identity())->toBe([
@@ -33,3 +36,8 @@ it('refuses an incomplete target instead of selecting an unpinned connection', f
     expect(fn () => (new SwampSshExecutionInput)->forNode($node))->toThrow(ResourceOperationException::class,
         'Official SSH requires the stored target address, user and host key.');
 })->with(['user', 'wireguard_ip', 'ssh_host_key_type', 'ssh_host_key']);
+
+it('captures the configured topology SSH identity without changing target pins', function (): void {
+    config()->set('swamp.ssh_public_key', 'ssh-ed25519 fixture-topology-key');
+    expect((new SwampSshExecutionInput)->identity()['public_key'])->toBe('ssh-ed25519 fixture-topology-key');
+});

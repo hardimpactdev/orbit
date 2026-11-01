@@ -12,7 +12,7 @@ it('reads every Node of the catalog file in composition order', function () {
     expect(array_keys($catalog->nodes))->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2', 'operator'])
         ->and($catalog->declarable())->toBe(['app-dev', 'app-prod', 'app-prod-2'])
         ->and($catalog->defaults)->toBe(['app-dev', 'app-prod'])
-        ->and($catalog->extraRoles)->toBe(['ingress'])
+        ->and($catalog->extraRoles)->toBe(['ingress', 'router', 'vpn'])
         ->and($catalog->ownClusterRoles)->toBe(['ingress'])
         ->and($catalog->node('app-prod')['memory'])->toBe('1GiB');
 });

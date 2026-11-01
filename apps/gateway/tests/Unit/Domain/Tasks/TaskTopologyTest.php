@@ -51,9 +51,6 @@ it('unites declarations per node and refuses a union larger than the largest VM'
 });
 
 it('derives the entry pattern and the messages from the catalog', function (): void {
-    expect(preg_match('#\A/\\\\A\(\?:([^)]+)\)\(\?:\\\\\+([^)]+)\)\?\\\\z/\z#', TaskTopology::EntryPattern, $match))->toBe(1)
-        ->and(explode('|', $match[1]))->toBe(array_keys(TaskTopology::Nodes))
-        ->and(explode('|', $match[2]))->toBe(TaskTopology::ExtraRoles);
     foreach ([...array_keys(TaskTopology::Nodes), 'gateway', 'operator', 'app-prod-3'] as $node) {
         foreach (['', ...array_map(static fn (string $role): string => '+'.$role, [...TaskTopology::ExtraRoles, 'websocket'])] as $roles) {
             $catalog = isset(TaskTopology::Nodes[$node]) && ($roles === '' || in_array(substr($roles, 1), TaskTopology::ExtraRoles, true));
@@ -61,7 +58,7 @@ it('derives the entry pattern and the messages from the catalog', function (): v
         }
     }
 
-    expect(TaskTopology::invalidMessage())->toBe('Topology must be a list of at most 2 distinct app-dev, app-prod, or app-prod-2 nodes, each with an optional +ingress role where it fits the node; app-prod-2 needs app-prod.')
+    expect(TaskTopology::invalidMessage())->toBe('Topology must be a list of at most 2 distinct app-dev, app-prod, or app-prod-2 nodes, each with an optional +ingress or +router or +vpn role where it fits the node; app-prod-2 needs app-prod.')
         ->and(TaskTopology::tooManyMessage())->toBe('The subtasks of a group declare more than 2 test nodes together. The largest task VM holds 2: split the work into groups.');
 });
 
@@ -160,4 +157,11 @@ it('tells the implementer about the declared topology, and nothing without one',
         ->toContain('The reviewer must prove the deliverables on app-prod')
         ->and(TaskPromptRenderer::implementer($group, new TaskPromptSubtask(1, 'Plain', 'Brief', 1, [])))
         ->not->toContain('declares the topology')->not->toContain('topology_requested');
+});
+
+it('accepts requested Router and VPN roles and canonicalizes compound declarations', function (): void {
+    expect(TaskTopology::fromInput(['app-dev+vpn+router'])->toArray())->toBe(['app-dev+router+vpn'])
+        ->and(TaskTopology::fromInput(['app-prod+router', 'app-prod-2+vpn'])->toArray())->toBe(['app-prod+router', 'app-prod-2+vpn'])
+        ->and(preg_match(TaskTopology::EntryPattern, 'app-dev+router+vpn'))->toBe(1)
+        ->and(TaskTopology::valid(['app-dev+router+router']))->toBeFalse();
 });

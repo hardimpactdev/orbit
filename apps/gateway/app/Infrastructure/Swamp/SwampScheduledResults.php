@@ -12,6 +12,7 @@ use App\Jobs\Operations\ProjectSwampScheduledTerminal;
 use Closure;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -63,7 +64,7 @@ final class SwampScheduledResults
                 if (! is_string($address) || $address === '' || ! is_string($ca) || $ca === '' || ! is_string($token) || $token === '') {
                     return;
                 }
-                $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 0.5);
+                $this->socket->connect(new WebSocketEndpoint($address, Config::integer('swamp.port'), 'swamp.orbit', '/', $ca, $token), 0.5);
                 $this->connectedAt = ($this->clock)();
             }
             $this->subscribe();

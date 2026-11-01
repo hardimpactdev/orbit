@@ -33,7 +33,10 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | Variable | Meaning |
 | --- | --- |
 | `ORBIT_SWAMP_READ_TOKEN` | Dedicated Swamp token with workflow and output-data read grants only. Store it in the Gateway environment; never expose it to the browser. |
-| `ORBIT_SWAMP_ADDRESS` | Swamp server address, default `swamp.orbit`, on port 443. Set its WireGuard address when Gateway DNS cannot resolve that name. TLS always verifies `swamp.orbit`. |
+| `ORBIT_SWAMP_ADDRESS` | Swamp server address, default `swamp.orbit`. Set its WireGuard address when Gateway DNS cannot resolve that name. TLS always verifies `swamp.orbit`. |
+| `ORBIT_SWAMP_PORT` | Swamp TLS port, default `443`. Disposable topologies use their local serve port. |
+| `ORBIT_SWAMP_RUN_TOKEN_FILE`, `ORBIT_SWAMP_READ_TOKEN_FILE` | Optional owned mode-0600 files containing the respective token. A configured file takes precedence over the inline token and refuses when unsafe or absent. |
+| `ORBIT_SWAMP_SSH_PUBLIC_KEY` | Public key matching the worker's `proxy-ssh-identity` systemd credential. Defaults to the approved control identity; topology Gateways set their local public key. |
 | `ORBIT_SWAMP_READ_TOKEN_NAME` | Installed token name, written by `gateway:swamp-reader:install`. |
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |

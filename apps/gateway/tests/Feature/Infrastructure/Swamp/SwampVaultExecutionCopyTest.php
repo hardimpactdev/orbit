@@ -34,7 +34,7 @@ it('pushes changed values in one authenticated native vault frame and returns on
     expect($this->socket->sent)->toHaveCount(1);
     $this->copies->synchronize('orbit-control-inputs', $key, $value.'changed');
     expect($this->socket->sent)->toHaveCount(2);
-    expect(Cache::get('swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0orbit-control-inputs\0".$key)))
+    expect(Cache::get('swamp:execution-copy:'.hash('sha256', "192.0.2.209\0".'443'."\0orbit-control-inputs\0".$key)))
         ->toBe(hash('sha256', $value.'changed'));
 });
 
@@ -62,7 +62,7 @@ it('does not mark a refused or mismatched copy synchronized and drops secret-bea
         expect((string) $error)->not->toContain($value);
         expect($error->getPrevious())->toBeNull();
     }
-    expect(Cache::get('swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0orbit-control-inputs\0".$key)))->toBeNull();
+    expect(Cache::get('swamp:execution-copy:'.hash('sha256', "192.0.2.209\0".'443'."\0orbit-control-inputs\0".$key)))->toBeNull();
     expect($this->socket->closed)->toBeTrue();
 })->with(['transport', 'forbidden', 'vault', 'key', 'type']);
 
@@ -145,3 +145,13 @@ it('refuses foreign or missing native output data without retaining private diag
     }
     expect($this->socket->closed)->toBeTrue();
 })->with(['refused', 'vault', 'key', 'type', 'value']);
+
+it('republishes an unchanged execution copy when the configured native endpoint changes', function (): void {
+    $key = 'endpoint-copy-'.fake()->numberBetween(100000, 999999);
+    $this->copies->synchronize('orbit-control-inputs', $key, 'synthetic-value');
+    config()->set('swamp.port', 19470);
+    $this->copies->synchronize('orbit-control-inputs', $key, 'synthetic-value');
+    expect($this->socket->sent)->toHaveCount(2)
+        ->and($this->socket->endpoint->port)->toBe(19470)
+        ->and($this->socket->endpoint->serverName)->toBe('swamp.orbit');
+});

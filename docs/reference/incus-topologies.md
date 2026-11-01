@@ -23,7 +23,7 @@ An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a t
 
 ## Declared Nodes
 
-Every topology has a `gateway` VM and an `operator` VM. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may add the role `ingress` after a `+`, for example `app-prod+ingress`. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
+Every topology has a `gateway` VM and an `operator` VM. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may request `ingress`, `router`, or `vpn` after a `+`, for example `app-dev+router` or `app-prod+ingress+router`. The product's role policy still decides whether a role can run on that Node. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
 
 | Node key | Incus address | WireGuard address | Roles | Checkout |
 | --- | --- | --- | --- | --- |
@@ -39,7 +39,7 @@ The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For 
 
 The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new workload Node kind needs one catalog entry. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
 
-The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Router, no Cluster except the one an `ingress` entry needs, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
+The harness assigns the base roles in the table and runs normal product commands for each declared extra role. A Router exists only after the declared `+router` finishes the normal Cluster Router path. Neither a declaration nor a seeded active row proves runtime readiness. Add the workloads the check needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence.
 
 | Field | Value |
 | --- | --- |
@@ -113,7 +113,7 @@ Every Node keeps the template's root disk, which has the size of the base image'
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env`, runs the Gateway and VPN programs, then runs `orbit:bootstrap` at the Gateway's address |
 | `enroll.<node>` | Enrolls each workload Node in catalog order with `orbit:node-provision`, through the guest script `converge-node.sh` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
-| `roles.<node>` | For each workload Node whose entry adds a role, runs `orbit node:role:add <node> <role> --json` from the operator. `ingress` first puts the Node in its own Cluster. |
+| `roles.<node>` | From the operator, uses `orbit cluster:router:set <cluster> <node> --json` for a declared Router, and `orbit node:role:add <node> <role> --json` for other extra roles. These commands follow their Operation to terminal. `ingress` first puts the Node in its own Cluster. |
 | `readiness` | Runs the readiness probes |
 
 ### Create the guests
@@ -131,6 +131,10 @@ A copy can override only the devices of the template, which has its root disk an
 For each workload Node, `enroll.<node>` authorizes the Gateway SSH key and reads the Node's host key. It passes the Node's roles, WireGuard address, and host key fingerprint to `orbit:node-provision`. Enrollment is serial, because it writes the Gateway's SQLite store.
 
 An `ingress` entry needs Cluster membership, and a Cluster holds one ingress Node. So the operator creates the Cluster `e2e-<node>` for that Node and adds the Node to it before it adds the role.
+
+A `router` entry uses its Node's existing Cluster membership. The normal `cluster:router:set` path creates the Cluster-bound Router assignment and converges Caddy and publication; the seeder does not create that role. A Node without Cluster membership refuses before Router admission. Declared extra roles are excluded from fixture seeding.
+
+The catalog accepts `vpn`, but current product policy protects VPN from generic mutation. The topology Gateway already owns the singleton VPN role, and that role cannot relocate. A workload `+vpn` therefore fails through the normal product path; a seeded role row cannot make it a working DNS server.
 
 The harness changes guests only through Orbit commands and its own guest scripts. It never edits the Gateway database. A failed acquisition removes every resource it created, drops the lease, and exits nonzero with the step and the redacted error. Node provisioning requests `--diagnostics`, which includes the last 40 lines of command output, limited to 4,000 characters and redacted before truncation. When cleanup itself fails, the lease stays so `release` can finish it.
 
