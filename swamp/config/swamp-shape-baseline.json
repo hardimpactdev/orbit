@@ -3273,7 +3273,6 @@
     },
     {"file":"workflows/workflow-group-fanout.yaml","rule":"foreach-shared-identity","count":1,"evidence":["groups/conflict-${{ self.conflict.workItem }}"]},
     {"file":"workflows/workflow-instance-route-workload.yaml","rule":"foreach-shared-identity","count":14,"evidence":["workload/dev-source","workload/dev-source-assets","workload/dev-source-command","workload/prod-source","workload/prod-source-assets","workload/prod-source-command","workload/runtime-identity","workload/runtime-pool","workload/runtime-pool-proof","workload/runtime-reload","workload/runtime-validate","workload/served","workload/served-assets","workload/served-command"]},
-    {"file":"workflows/workflow-operation-conn-pairing-revoke.yaml","rule":"foreach-shared-identity","count":1,"evidence":["links/link"]},
     {"file":"workflows/workflow-operation-database-destroy-owned.yaml","rule":"foreach-shared-identity","count":1,"evidence":["effects/remove-${{ self.work.key }}"]},
     {"file":"workflows/workflow-operation-database-server-destroy.yaml","rule":"foreach-shared-identity","count":1,"evidence":["inspect/inspect-${{ self.member.slot }}"]},
     {"file":"workflows/workflow-operation-instance-destroy.yaml","rule":"foreach-shared-identity","count":2,"evidence":["cleanup/cleanup-${{ self.member.node_id }}","databases/database-${{ self.work.key }}"]},

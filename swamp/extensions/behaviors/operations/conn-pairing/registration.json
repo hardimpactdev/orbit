@@ -1,0 +1,6 @@
+{
+    "kinds": [
+        "conn.pairing_create"
+    ],
+    "workflow": "operation-conn-pairing-create"
+}

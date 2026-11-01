@@ -4,25 +4,14 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
-use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use SensitiveParameter;
 
-/** Kit H extracts the one-time output before this owner-checked encrypted write. */
-final readonly class ConnPairingCredentialStore implements OperationSecretOutputStore
+/** Owner-checked encrypted record write after native terminal projection. */
+final readonly class ConnPairingCredentialStore
 {
-    public function name(): string
-    {
-        return 'conn.pairing.credential';
-    }
-
-    public function targetTypes(): array
-    {
-        return ['conn_pairing'];
-    }
-
     public function ownerId(Operation $operation): ?int
     {
         if ($operation->kind !== 'conn.pairing_create' || $operation->target_type !== 'conn_pairing'
