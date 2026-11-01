@@ -17,6 +17,9 @@ use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Project;
+use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
@@ -27,8 +30,11 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\LocalShellSshExecutor;
 
 beforeEach(function (): void {
-    tick_bind_defaults();
-    $this->group = tick_group();
+    $project = Project::query()->create(['name' => 'Lease', 'slug' => 'lease', 'repository_url' => 'https://example.test/lease.git']);
+    $node = Node::query()->create(['name' => 'lease-node', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '192.0.2.10']);
+    $workspace = test_ready_task_workspace($project, $node, ['checkout_path' => '/srv/lease', 'branch' => 'main'], ['orchestration' => 'external']);
+    $this->group = Task::topLevel()->findOrFail($workspace->task_workspace_owner_id);
+    $this->group->tasks()->create(['title' => 'Work', 'brief' => 'Work.', 'status' => 'running', 'position' => 1]);
     AgentThread::query()->delete();
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
     $this->receiptHome = sys_get_temp_dir().'/orbit-recovery-'.bin2hex(random_bytes(8));
@@ -111,7 +117,7 @@ function operator_protocol(string $mode, string $operation, string $binding, arr
 
 it('seals a lost receipt before releasing dead ownership and audits repeated operator recovery', function (): void {
     [$lease, $operation] = operator_recovery_holder();
-    test_update_task($this->group, ['assistance_requested' => true]);
+    Task::topLevel()->whereKey($this->group->id)->update(['assistance_requested' => true]);
 
     $this->artisan('tasks:lease:release', ['lease-id' => (string) $lease->id, '--reason' => 'Investigated missing receipt'])->assertSuccessful();
     $this->artisan('tasks:lease:release', ['lease-id' => (string) $lease->id, '--reason' => 'Confirm completed recovery'])->assertSuccessful();
