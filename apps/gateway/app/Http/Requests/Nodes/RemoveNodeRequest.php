@@ -43,9 +43,8 @@ final class RemoveNodeRequest extends FormRequest
                 return;
             }
 
-            // Offline removal sheds the node's roles and deletes their
-            // instances, workspaces and processes. That blast radius needs
-            // consent at the Gateway, exactly as the role route requires it.
+            // Offline removal withdraws membership and may leave host artifacts.
+            // It needs consent even when the machine cannot be reached.
             $validator->errors()->add(
                 'force',
                 'The force field must be true when offline removal is requested.',

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeNetworkProjection;
-use App\Domain\Nodes\NodeRemovalEnvironmentSource;
 use App\Domain\Nodes\NodeRemovalProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
@@ -31,8 +30,8 @@ return ['node.worker_known_hosts' => [
     'private_material' => ['configuration' => 'node.vpn_configuration'],
 ], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
-    'private_material' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity', 'configuration' => 'node.vpn_configuration', 'metrics_runtime' => 'metrics.fleet_runtime',
-        ...NodeRemovalEnvironmentSource::privateMaterial()],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'remove', 'step' => 'result'],
 ], ...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,

@@ -4,163 +4,133 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Metrics\MetricsFleetCapture;
-use App\Domain\Operations\DirectOperationPrivateBindings;
-use App\Domain\Routes\NativeRouteRemovalIntent;
-use App\Domain\Routes\NativeRouteRemovalPlan;
+use App\Domain\Routes\NativeCaddyPublicationInput;
+use App\Domain\Routes\NativeRoutePublicationInput;
+use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\RouteExecutionProof;
+use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\Nodes\NodeRoleFirewallInput;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
-use App\Models\NodeRole;
-use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** Same-root native cleanup admission. No endpoint, Node command or child operation. */
+/** Full immutable public intent. Nothing is read from the Gateway by an executing step. */
 final readonly class NodeRemovalInput
 {
     /** @param array<string,mixed> $snapshot
      * @return array<string,mixed>
      */
-    public function capture(array $snapshot, ?Node $executor = null): array
+    public function capture(array $snapshot): array
     {
-        $context = Node::query()->findOrFail(ValidatedData::integer($snapshot['node_id']));
-        $executor ??= Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
-        $accounts = new class implements ManagedUserAccountResolver
-        {
-            public function resolve(Node $node): ManagedUserAccount
-            {
-                return NodeRemovalInput::account($node);
+        $node = Node::query()->findOrFail(ValidatedData::integer($snapshot['node_id']));
+        $ssh = app(SwampSshExecutionInput::class);
+        $nativeRoles = app(NativeNodeRoleRemovalInput::class);
+        $roles = $node->roles()->orderBy('id')->lockForUpdate()->get();
+        $before = [];
+        foreach ($roles as $role) {
+            if (in_array($role->status, [LifecycleStatus::Provisioning, LifecycleStatus::Removing], true)) {
+                throw new ResourceOperationException('node.role_busy', 'Wait for the active role operation before removing this Node.', 409);
             }
-        };
-        $intent = app()->makeWith(NativeRouteRemovalIntent::class, ['accounts' => $accounts]);
-        $routes = new NativeRouteRemovalPlan($intent)->captureForNode($context,
-            ValidatedData::integerList($snapshot['route_ids']), $snapshot['offline'] ? [$context->id] : []);
-        $members = app(NodeRemovalParticipants::class)->capture($context, $routes, excludeContext: $snapshot['offline'] === true);
-        $snapshot['participants'] = $members;
-        $ids = array_map(static fn (mixed $row): int => ValidatedData::integer(ValidatedData::object($row)['node_id']),
-            $members);
-        if ($snapshot['hub_id'] !== null) {
-            $ids[] = ValidatedData::integer($snapshot['hub_id']);
+            app(RouteRemovalGuard::class)->assertRoleRemovable($node, $role->role);
+            $before[$role->id] = $nativeRoles->publications($node, $role->role);
         }
-        if ($snapshot['metrics'] !== null) {
-            $metrics = ValidatedData::object($snapshot['metrics']);
-            $ids[] = ValidatedData::integer($metrics['node_id']);
-            $ids[] = ValidatedData::integer($metrics['gateway_id']);
+        foreach ($roles as $role) {
+            $role->claimRemoval();
         }
-        if ($snapshot['offline'] === false || $snapshot['machine_deleted'] === false) {
-            $ids[] = $context->id;
+        $node->unsetRelation('roles');
+        $roleIntents = [];
+        foreach ($roles as $role) {
+            $roleIntents[] = $nativeRoles->capture($node, $role->refresh(), $before[$role->id]);
         }
-        $ids = array_values(array_unique($ids));
-        sort($ids);
-        $retirement = null;
-        if (! $snapshot['machine_deleted'] && $context->platform === 'linux' && $context->ssh_host_fingerprint !== null) {
-            $retirement = ['executor_node_id' => $executor->id, 'target' => [
-                'node_id' => $context->id, 'host' => $context->public_ssh_host,
-                'port' => $context->public_ssh_port, 'user' => $context->user, 'fingerprint' => $context->ssh_host_fingerprint]];
+        $target = null;
+        if (! $snapshot['offline'] || $roles->isNotEmpty() || (is_string($node->ssh_host_key) && $node->ssh_host_key !== '')) {
+            $target = $ssh->forNode($node);
         }
-
-        $hub = $snapshot['hub_id'] === null ? null : app(NodeWireGuardInput::class)->capture($context, $context->id);
-        if ($hub !== null) {
-            $hub['executor_node_id'] = $executor->id;
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+            throw new ResourceOperationException('swamp.ssh_target_unavailable', 'Removal reachability requires its recorded WireGuard address.', 503);
         }
-
-        $required = array_filter($ids, static fn (int $id): bool => ($id !== $context->id || ! $snapshot['offline']) && $id !== $snapshot['hub_id']);
-        $unavailable = Node::query()->whereKey($required)->get()->filter(static fn (Node $node): bool => ! app(NodeRolePlacement::class)->allows($node))->pluck('id')->all();
-
-        $onlineBlocker = null;
-        try {
-            app(NodeRemovalPolicy::class)->resources($context, false);
-        } catch (ResourceOperationException $error) {
-            $onlineBlocker = $error->errorCode;
+        $dns = [];
+        foreach (PrivateDnsPublicationNodes::query()->get() as $member) {
+            $dns[] = ['node_id' => $member->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($member),
+                'before' => app(NativeRoutePublicationInput::class)->dns($member)];
         }
-        $retiringFleet = app(MetricsFleetCapture::class)->captureRetiring($context);
-        $restoreFleet = $retiringFleet !== null && $retiringFleet['metrics_node_id'] !== $context->id
-            ? app(MetricsFleetCapture::class)->captureFor(NodeRole::query()->findOrFail(ValidatedData::integer($retiringFleet['assignment_id']))) : null;
-
-        $roles = array_map(static fn (mixed $row): RoleName => RoleName::from(ValidatedData::string(ValidatedData::object($row)['role'])), array_values(is_array($snapshot['roles']) ? $snapshot['roles'] : []));
-        $retained = match ($context->platform) {
-            'macos' => ['user', 'package-managers', 'host-wireguard'],
-            'ipados' => ['host-wireguard'],
-            default => $snapshot['offline'] ? [...app(NodeSideResidue::class)->describe($roles, nodeLeavesFleet: true), 'Swamp worker unit, credentials and cache'] : [],
-        };
-
-        return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'snapshot' => $snapshot, 'retained_on_node' => $retained, 'online_blocker' => $onlineBlocker, 'unavailable_node_ids' => $unavailable, 'placements' => array_map(static fn (int $id): array => [
-            'effect_node_id' => $id, 'execution_node_id' => $id, 'transport' => 'local'], $ids),
-            'hub' => $hub, 'restore_hub' => $hub === null ? null : NodeWireGuardInput::restorationSnapshot($hub),
-            'restore_certificates' => $this->certificates($routes),
-            'retirement' => $retirement, 'host_retained' => $context->platform !== 'linux' || $context->ssh_host_fingerprint === null,
-            'routes' => $routes, 'metrics_fleet' => $retiringFleet,
-            'restore_metrics_fleet' => $restoreFleet,
-            'metrics_access' => app(MetricsFleetCapture::class)->captureAccessRevocation(),
-            'public_ssh' => $context->platform !== 'linux' || $context->wireguard_public_key === null ? null : app(NodeRoleFirewallInput::class)->publicSsh($context)];
-    }
-
-    /** Public leaves used by the original serving state; the native signer retains CA custody.
-     * @param  array<string,mixed>  $routes
-     * @return list<array<string,mixed>>
-     */
-    private function certificates(array $routes): array
-    {
-        $leaves = [];
-        foreach (RouteExecutionProof::objects($routes['nodes']) as $member) {
-            $node = Node::query()->findOrFail(ValidatedData::integer($member['node_id']));
-            $sites = app(DevelopmentSiteRepository::class)->forNode($node);
-            foreach (ValidatedData::stringList($member['certificate_scopes']) as $scope) {
-                $site = $sites->first(static fn ($site): bool => $site->loadsCertificate($scope));
-                if ($site !== null) {
-                    $leaves[] = ['node_id' => $node->id, 'scope' => $scope, 'home' => NodeConvergeInput::HomeToken,
-                        'agent_sha256' => app(AgentDelivery::class)->pin($node),
-                        'domain' => $site->domain, 'user' => $node->user, 'version' => bin2hex(random_bytes(8)),
-                        'root_hash' => hash('sha256', app(LeafCertificateSigner::class)->rootCertificate())];
+        $routerBefore = [];
+        foreach (Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Router)->where('status', LifecycleStatus::Active))->get() as $router) {
+            $routerBefore[$router->id] = app(NodeFirewallRuleCatalog::class)->routerLanIngress($router);
+        }
+        // Desired membership is recorded in this admission transaction; no runtime callback is needed.
+        app(NodeRemovalRecords::class)->begin($snapshot);
+        foreach ($dns as &$publication) {
+            $publication['after'] = app(NativeRoutePublicationInput::class)->dns(Node::query()->findOrFail($publication['node_id']));
+            $publication['alternatives'] = [];
+        }
+        unset($publication);
+        $peers = [];
+        $policy = app(PeerDnsPolicy::class);
+        $beforeDomains = $policy->domains($node);
+        $afterDomains = $policy->domains($node, true);
+        if ($beforeDomains !== $afterDomains) {
+            foreach (Node::query()->with('roles')->whereKeyNot($node->id)->where('status', LifecycleStatus::Active)->get() as $member) {
+                if ($policy->manages($member)) {
+                    $peers[] = ['ssh' => $ssh->forNode($member), 'dns_server' => $policy->server($member),
+                        'public_key' => $member->wireguard_public_key, 'domains' => $afterDomains];
                 }
             }
         }
-
-        return $leaves;
-    }
-
-    /** Native participants resolve these account tokens through the canonical local reader. */
-    public static function account(Node $node): ManagedUserAccount
-    {
-        return new ManagedUserAccount($node->user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken);
-    }
-
-    /** The existing SSH identity remains on the one admitted Gateway worker. */
-    public static function privateOwner(Operation $operation): ?int
-    {
-        $snapshot = $operation->input['_node_removal'] ?? null;
-        $execution = $operation->input['_removal'] ?? null;
-        if ($operation->kind !== 'node.remove'
-            || $operation->status->terminal()
-            || $operation->target_type !== 'node' || ! is_array($snapshot) || ! is_array($execution)
-            || ($execution['snapshot'] ?? null) !== $snapshot || ($snapshot['node_id'] ?? null) !== $operation->target_id
-            || ($snapshot['machine_deleted'] ?? true) !== false || ! is_array($execution['retirement'] ?? null)) {
-            return null;
+        $hub = [];
+        if ($node->wireguard_public_key !== null) {
+            $owner = Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Vpn))->sole();
+            $hub[] = ['ssh' => $ssh->forNode($owner), 'input' => ['public_key' => $node->wireguard_public_key]];
         }
-        $retirement = $execution['retirement'];
-        $target = $retirement['target'] ?? null;
-        $root = $operation->node_id;
-        $node = Node::query()->find($operation->target_id);
-        $participants = $operation->input['participant_node_ids'] ?? [];
-        $bindings = $operation->input['private_bindings'] ?? [];
-        if ($node === null || $root === null || ! is_array($target) || ! is_array($participants) || ! is_array($bindings)
-            || ($retirement['executor_node_id'] ?? null) !== $root || ($target['node_id'] ?? null) !== $node->id
-            || ($snapshot['name'] ?? null) !== $node->name || $node->platform !== 'linux'
-            || ($target['host'] ?? null) !== $node->public_ssh_host || ($target['port'] ?? null) !== $node->public_ssh_port
-            || ($target['user'] ?? null) !== $node->user || ($target['fingerprint'] ?? null) !== $node->ssh_host_fingerprint
-            || ! in_array($root, $participants, true) || ! in_array($node->id, $participants, true)
-            || ($operation->input['bootstrap_identity'] ?? null) !== ['$secret' => 'node.bootstrap_ssh_identity', 'id' => $root]
-            || ($bindings['bootstrap_identity'] ?? null) !== ['owner_node_id' => $root, 'read_node_ids' => [$root], 'write_node_ids' => []]
-            || ! Node::query()->whereKey($root)->where('status', LifecycleStatus::Active)
-                ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->exists()) {
-            return null;
+        $routerRules = [];
+        foreach ($routerBefore as $id => $prior) {
+            $member = Node::query()->findOrFail($id);
+            $after = app(NodeFirewallRuleCatalog::class)->routerLanIngress($member);
+            foreach ($prior as $rule) {
+                if (! array_any($after, static fn ($desired): bool => $desired->shape->matches($rule->shape))) {
+                    $routerRules[] = ['ssh' => $ssh->forNode($member), 'input' => ['argv' => ['ufw', '--force', 'delete', ...array_slice($rule->arguments, 2)]]];
+                }
+            }
+        }
+        $publicSsh = app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node);
+        $retained = app(NodeSideResidue::class)->describe(array_values($roles->map(static fn ($role): RoleName => $role->role)->all()), nodeLeavesFleet: true);
+        $participants = [209, $node->id, ...array_column($dns, 'node_id')];
+        foreach ([...$peers, ...$hub, ...$routerRules] as $row) {
+            $participants[] = Node::query()->where('wireguard_ip', $row['ssh']['target']['host'])->sole()->id;
         }
 
-        return app(DirectOperationPrivateBindings::class)->ownerNode($operation, 'bootstrap_identity') === $root ? $root : null;
+        $metrics = app(MetricsFleetCapture::class)->captureRetiring($node);
+        $metricsFiles = [];
+        $metricsReload = [];
+        if ($metrics !== null && $metrics['metrics_node_id'] !== $node->id) {
+            $owner = Node::query()->findOrFail(ValidatedData::integer($metrics['metrics_node_id']));
+            foreach (ValidatedData::stringMap($metrics['runtime_files']) as $path => $content) {
+                $metricsFiles[] = ['ssh' => $ssh->forNode($owner), 'input' => ['path' => $path, 'content' => $content,
+                    'mode' => '0644', 'owner' => 'root:root', 'marker' => null]];
+            }
+            $metricsReload[] = ['ssh' => $ssh->forNode($owner)];
+            $participants[] = $owner->id;
+        }
+        foreach ($roleIntents as $roleIntent) {
+            foreach (RouteExecutionProof::objects($roleIntent['publications']) as $publication) {
+                $participants[] = ValidatedData::integer($publication['node_id']);
+            }
+        }
+
+        return ['snapshot' => $snapshot, 'participant_node_ids' => array_values(array_unique($participants)),
+            'intent' => ['schema_version' => 1, 'node_id' => $node->id, 'name' => $node->name,
+                'offline' => $snapshot['offline'], 'platform' => $node->platform,
+                'probe' => ['host' => $node->wireguard_ip, 'port' => 22], 'ssh' => $target,
+                'roles' => $roleIntents, 'dns' => $dns, 'peers' => $peers, 'hub' => $hub, 'router_rules' => $routerRules,
+                'public_ssh' => ['argv' => ['ufw', ...array_slice($publicSsh->arguments, 2)]],
+                'managed_keys' => array_values(array_unique([$ssh->identity()['public_key'], trim(app(SshKeyProvider::class)->publicKey())])),
+                'preserved_on_node' => ['User account, installed packages, application data, role release data and volumes, and host-side WireGuard configuration'],
+                'retained_on_node' => [...$retained, 'Swamp worker unit, credentials and cache', 'Orbit management SSH keys'],
+                'metrics_files' => $metricsFiles, 'metrics_reload' => $metricsReload]];
     }
 }

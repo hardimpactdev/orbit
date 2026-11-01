@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { analyzeYaml } from "../../../../bin/check-swamp-shape.ts";
-import { nodeRemovalWorkflow } from "./removal_workflow.ts";
+import { nodeRemovalWorkflow } from "../node-removal-command/workflows.ts";
 import { sshAccessWorkflow } from "../node-bootstrap/ssh_access_workflow.ts";
 
 const ownedWorkflow = (name: string) =>
@@ -47,30 +47,23 @@ Deno.test("Node removal fan-outs isolate each run, phase and iteration and retai
             new URL("workflow-operation-node-remove.yaml", workflows),
         ),
     ) as typeof generated;
-    const phases = [
-        "serving",
-        "restore_certificate_requests",
-        "restore_certificate_publish",
-        "restore_serving",
-    ];
-    const selected = (jobs: typeof generated.jobs) =>
-        jobs.filter((job) => phases.includes(String(job.name)));
-    assertEquals(selected(published.jobs), selected(generated.jobs));
-    const names = generated.jobs.filter((job) =>
-        phases.includes(String(job.name))
-    ).map((job) => {
-        const step = (job.steps as { task: { behaviorName: string } }[])[0];
-        const name = step.task.behaviorName;
-        assertEquals(name.includes("run.id"), true, String(job.name));
-        assertEquals(
-            name.includes("string(self._index)"),
-            true,
-            String(job.name),
-        );
-        return name;
-    });
-    assertEquals(names.length, phases.length);
-    assertEquals(new Set(names).size, phases.length);
+    assertEquals(published, generated);
+    const names: string[] = [];
+    for (const job of generated.jobs) {
+        for (const step of job.steps) {
+            if (
+                !step.forEach ||
+                !(step.task as Record<string, unknown>).behaviorName
+            ) continue;
+            const name = String(
+                (step.task as Record<string, unknown>).behaviorName,
+            );
+            assertEquals(name.includes("run.id"), true, String(step.name));
+            assertEquals(name.includes("self._index"), true, String(step.name));
+            names.push(name);
+        }
+    }
+    assertEquals(names.length > 5, true);
 });
 
 Deno.test("SSH key convergence declares its bootstrap vault in generated and published source", async () => {

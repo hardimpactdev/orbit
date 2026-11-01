@@ -1668,43 +1668,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/removal_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_root.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_routes.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_system.ts",
-      "rule": "custom-control",
-      "count": 4,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/removal_system.ts",
-      "rule": "inline-script",
-      "count": 91,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/role_baseline_system.ts",
       "rule": "custom-control",
       "count": 1,
