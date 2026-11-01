@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS 1 (token at admission, vault.get) + scope (instance.clone: Process/Schedule definitions, preview Route, DNS held).
+  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS 1 (token at admission, vault.get; signing is the one step→Gateway call), 2 (DNS held), scope (Process/Schedule definitions, same-Node preview Route); database.clone merged in as a step; .env through the vault as in instance.create. docs/reference/instance-cloning.md.
   %% status: draft
+  %% command: instance:clone
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,27 +11,153 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant C as Candidate<br/>app-dev over ssh
-  participant N as Target Node<br/>app-prod over ssh
-  CLI->>GW: instance:clone<br/>{candidate: 42, node: 14, name}
-  Note over GW: Reserve Instance 43<br/>env + token → vault · #5130
+  participant C as Node 12<br/>candidate · ssh
+  participant N as Node 14<br/>app-prod · ssh
+  CLI->>GW: instance:clone 42 14 shop<br/>--preview-name=shop.com …
+  %%> Command:
+  %%> - `orbit instance:clone 42 14 shop --preview-name=shop.com --sqlite-source-path=/srv/orbit/apps/acme/default/database/database.sqlite`
+  %%> - syntax: `<candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--idempotency-key=KEY]`
+  %%> What it does:
+  %%> - clones development Instance 42 on Node 12 into a new production Instance `shop` on Node 14
+  %%> Options:
+  %%> - `--preview-name`: combined with Node 14's TLD, such as `shop.com.prod.orbit`
+  %%> - `--branch`: another branch; the default is the candidate's branch
+  %%> - `--sqlite-source-path`: seed the production SQLite file from this file on the candidate
+  Note over GW: Validate, reserve 43<br/>render .env · task #5152
+  %%> Requirements:
+  %%> - your Node has access grants to Node 12 and Node 14
+  %%> - Node 14 is active, has the `app-prod` role and a TLD
+  %%> - Instance 42 is active with a recorded source; the branch exists in the repository
+  %%> - Project 7 has no production Instance on Node 14 yet, and the preview domain is free
+  %%> Plans:
+  %%> - the account `orbit-app-7` and its home `/home/orbit-app-7`
+  %%> - the Project's production Process and Schedule definitions
+  %%> - the preview Route, and a database clone for each attached database or the chosen SQLite file
+  %%> Renders .env:
+  %%> - from the stored values of Instance 42, without `DB_*` and WebSocket credentials
+  %%> - with the new database keys, such as `DB_DATABASE=/home/orbit-app-7/database.sqlite`
+  %%> Result:
+  %%> - Instance 43 reserved; task #5152 recorded with the full intent
+  GW->>SW: Push token and .env<br/>vault: github-token, env-5152
+  %%> Why:
+  %%> - the repository is private, and only the Gateway holds the GitHub App key
+  %%> - `.env` and database passwords travel only through the vault
+  %%> What it does:
+  %%> - mints a read token for this one repository, valid 1 hour
+  %%> - pushes the token, the rendered `.env` and any new database password into Swamp's vault
   GW->>SW: Start run, full intent<br/>operation-instance-clone
-  GW-->>CLI: 202 Accepted<br/>operation #5130
-  SW->>C: Check candidate source<br/>@swamp/ssh · branch, commit, clean
-  SW->>N: Fetch, check out branch<br/>vault.get token · git as Node user
-  SW->>N: Write .env, install Vite+<br/>vault.get .env · vp install
+  %%> What it does:
+  %%> - starts one run on Swamp serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - both Nodes' addresses and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the full intent; secrets only as vault key names
+  GW-->>CLI: 202 Accepted<br/>task #5152
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>C: Check candidate source<br/>branch, commit, clean tree
+  %%> How:
+  %%> - Swamp reaches Node 12 over `@swamp/ssh` from 209, read-only
+  %%> What it does:
+  %%> - checks the repository, branch and commit, a clean working tree and no submodules
+  %%> - refuses an origin that contains credentials
+  %%> Not included:
+  %%> - copies no working files, dependencies or logs; the candidate keeps running
+  SW->>N: Fetch the source<br/>vault.get token · as orbit-app-7
+  %%> What it does:
+  %%> - creates the account `orbit-app-7` and its home on Node 14
+  %%> - fetches the committed source into the home's release layout and checks out the commit
+  %%> - leaves `current` absent until the first deploy
+  SW->>N: Write .env, prepare Vite+<br/>vault.get env-5152 · vp install
+  %%> What it does:
+  %%> - writes the rendered `.env` from the vault, mode `0640`
+  %%> - installs and checks the pinned Vite+ runtime; a Project without one skips this
+  opt SQLite chosen or a database attached
+    SW->>C: Snapshot the database<br/>SQLite export · dump
+    %%> What it does:
+    %%> - SQLite: makes a consistent copy of the chosen file on Node 12
+    %%> - MySQL or PostgreSQL: dumps the candidate's database on its Database server
+    %%> Why here:
+    %%> - this was the kind `database.clone`; it is now a step of the clone
+    SW->>N: Install the database<br/>home/database.sqlite · restore
+    %%> What it does:
+    %%> - SQLite: installs the copy as `/home/orbit-app-7/database.sqlite`
+    %%> - MySQL or PostgreSQL: restores the dump into the new database and user on the Database server
+  end
   SW->>N: Add Processes, Schedules<br/>process/schedule.create shape
-  SW->>N: Publish preview Route<br/>same-Node Caddy · DNS held
-  alt all steps succeed
-    N-->>SW: commit, env keys, runtime
-    SW-->>GW: Run succeeded<br/>terminal event · clone.result
-    Note over GW: Project source facts<br/>Instance 43 active, preview Route
+  %%> What it does:
+  %%> - installs the Project's production Process definitions, enabled but not started; the first deploy starts them
+  %%> - installs the per-minute Laravel scheduler as a timer on Node 14
+  %%> Other Schedules:
+  %%> - become native Swamp schedules; the Gateway publishes them after success
+  SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
+  %%> What it does:
+  %%> - makes a key and a certificate request for `shop.com.prod.orbit` on Node 14
+  SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
+  %%> Why:
+  %%> - the one allowed step→Gateway call; the Orbit CA key stays in the Gateway
+  GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
+  %%> Returns:
+  %%> - the certificate for the preview domain
+  SW->>N: Publish preview Route<br/>caddy validate, then reload
+  %%> What it does:
+  %%> - installs the certificate and adds the Caddy site for `shop.com.prod.orbit` on Node 14
+  %%> - same-Node work: Caddy on Node 14 serves the Instance home
+  %%> - reloads Caddy; other sites keep serving
+  Note over N: open: Nick decides<br/>DNS hold · native-dns-takeover
+  %%> DNS:
+  %%> - private DNS publication for the preview domain is held
+  %%> - Nick decides whether Route kinds publish DNS
+  SW->>N: Check the clone<br/>commit, .env, Route answers
+  %%> What it does:
+  %%> - checks the checked-out commit and the `.env` file
+  %%> - probes the preview site over TLS
+  opt a database snapshot was made
+    SW->>C: Remove the snapshot<br/>always runs · best effort
+    %%> What it does:
+    %%> - removes the snapshot and transfer files on Node 12, 209 and Node 14
+    %%> When:
+    %%> - after success and after failure
+    %%> Failure:
+    %%> - a failed cleanup is a warning; the leftover is harmless
+  end
+  alt all steps pass
+    N-->>SW: commit, warnings
+    %%> Returns:
+    %%> - the checked-out commit
+    %%> - key-only warnings, such as development service references in `.env`
+    SW-->>GW: Run succeeded<br/>terminal event · outputs
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>Instance 43 active · no release
+    %%> Result:
+    %%> - Instance 43 active, with its preview Route, Processes and Schedules
+    %%> - the database connection is registered and attached under `DB`
+    %%> - task #5152 succeeds
+    %%> Next:
+    %%> - review the warnings with `env:update`, add deploy steps, then `instance:deploy 43`
   else a step fails
     N--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - a check, fetch, restore or Caddy step fails, or SSH fails
     SW--xGW: Run failed<br/>failed_step, error_code
-    Note over GW: Keep Instance 43 reserved<br/>task → failed · retry reuses it
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep Instance 43 reserved<br/>task failed · rerun reuses it
+    %%> Result:
+    %%> - Instance 43 stays reserved and shows the error; task #5152 fails
+    %%> On the Node:
+    %%> - what Node 14 got stays; the candidate is unchanged
+    %%> Retry:
+    %%> - the same request reuses Instance 43 and repeats only what is missing
+    %%> - a changed input returns `instance.clone_retry_conflict`
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5130
+    CLI->>GW: operation:show #5152
+    %%> What it does:
+    %%> - asks for the task's status until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
