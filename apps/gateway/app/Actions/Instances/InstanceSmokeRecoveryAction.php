@@ -85,9 +85,7 @@ final readonly class InstanceSmokeRecoveryAction
             $this->guard($instance, $caller, $data);
             $deployment = $this->intent->snapshot($instance, rollback: true);
             InstanceDeploymentAvailability::assertAvailable($deployment);
-            $queued = Operation::query()->where('lock_key', OperationStore::lockKey('instance', $instance->id))
-                ->where('kind', OperationKinds::InstanceDeploy)->where('status', 'queued')
-                ->whereIn('triggered_by', AutomaticDeployHistory::Triggers)->exists();
+            $queued = $this->redeployRequired($instance);
 
             return $this->operations->execute(OperationKinds::InstanceRollback, 'instance', $instance->id, $instance->node_id,
                 [...$data->toArray(), 'instance_id' => $instance->id, 'deployment' => $deployment, 'caller_node_id' => $caller->id, 'recovery_redeploy_required' => $queued], 'swamp:smoke', $requestId,
@@ -181,5 +179,13 @@ final readonly class InstanceSmokeRecoveryAction
                 throw new ResourceOperationException($code, 'Smoke input and verified target evidence differ.');
             }
         }
+    }
+
+    /** Whether a queued automatic deploy holds the Instance; the rollback supersedes it, so a redeploy must follow. */
+    public function redeployRequired(Instance $instance): bool
+    {
+        return Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id))
+            ->where('kind', OperationKinds::InstanceDeploy)->where('status', 'queued')
+            ->whereIn('triggered_by', AutomaticDeployHistory::Triggers)->exists();
     }
 }

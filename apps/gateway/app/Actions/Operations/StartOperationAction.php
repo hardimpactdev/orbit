@@ -25,7 +25,7 @@ final readonly class StartOperationAction
         if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
         }
-        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey);
+        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey, $supersedes);
         if ($operation->wasRecentlyCreated) {
             DB::afterCommit(static fn () => app(StartSwampRun::class)->start($operation));
         }

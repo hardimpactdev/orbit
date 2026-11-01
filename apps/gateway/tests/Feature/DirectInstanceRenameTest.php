@@ -62,6 +62,7 @@ it('admits one root and projects its result through the real HTTP boundary', fun
     $response = $this->withHeader('Idempotency-Key', 'rename.native.fixture')->postJson($path, ['branch' => 'feature'])->assertAccepted();
     $id = $response->json('data.id');
     $operation = Operation::query()->findOrFail($id);
+    expect($operation->lock_key)->toBe('instance:'.$this->instance->id);
     app(StartSwampRun::class)->start($operation);
 
     expect($socket->sent)->toHaveCount(1);

@@ -52,6 +52,7 @@ it('captures development placement and independent environment without reading t
     $operation = app(StartInstanceCloneAction::class)->execute($this->candidate, $this->data);
     $target = Instance::query()->findOrFail($operation->target_id);
     expect($operation->kind)->toBe('instance.clone')->and($operation->node_id)->toBe($this->destination->id)
+        ->and($operation->lock_key)->toBe('instance:'.$target->id)
         ->and($operation->input['candidate'])->toBe(['node_id' => $this->source->id, 'checkout' => $this->candidate->checkout_path,
             'branch' => 'main', 'repository_identity' => $this->project->repository_identity])
         ->and($target->status->value)->toBe('reserved')->and($target->production_user)->toBeNull()

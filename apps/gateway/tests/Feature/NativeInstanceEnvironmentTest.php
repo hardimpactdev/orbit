@@ -135,6 +135,7 @@ it('admits exactly one native environment root with stored placement and no secr
     config(['swamp.run_token' => 'synthetic-shared-run-token']);
     $operation = app(StartInstanceEnvironmentSyncAction::class)->execute($instance);
     expect($operation->kind)->toBe('instance.sync_environment')
+        ->and($operation->lock_key)->toBe('instance:'.$instance->id)
         ->and($operation->node_id)->toBe($instance->node_id)
         ->and($operation->input['direct_environment']['user'])->toBe($instance->node->user)
         ->and($operation->input['direct_environment'])->not->toHaveKey('agent_sha256')

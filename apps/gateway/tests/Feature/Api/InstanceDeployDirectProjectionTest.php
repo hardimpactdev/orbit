@@ -151,7 +151,12 @@ it('admits the real dev writer with only a native start and no Gateway step exec
     expect($operation->input)->not->toHaveKey('agent_sha256')
         ->and($operation->input['deployment']['variant'])->toBe('development')
         ->and($operation->input['deployment']['node_user'])->toBe($instance->node->user)
-        ->and(InstanceDeployment::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
+        ->and(InstanceDeployment::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1)
+        ->and($operation->lock_key)->toBe('instance:'.$instance->id);
+    $this->call('POST', '/api/v1/instances/'.$instance->id.'/deploy', server: [
+        'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+    ], content: '{}')->assertConflict()->assertJsonPath('error.code', 'operation.target_busy')
+        ->assertJsonPath('error.details.operation_id', $operation->id);
     app(StartSwampRun::class)->start($operation);
     expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-deploy-direct')
         ->and($socket->sent[0]['payload']['inputs'])->toMatchArray(['operation_id' => $operation->id,
@@ -282,6 +287,32 @@ it('admits an automatic dev commit once and dispatches the direct root', functio
         ->and($operation->input['commit'])->toBe($body['commit'])
         ->and(Operation::query()->count())->toBe(1)
         ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-deploy-direct');
+});
+
+it('refuses a keyed automatic deploy while another Operation holds the Instance and keeps a failed receipt', function (): void {
+    $instance = dev935_instance();
+    $instance->update(['auto_deploy' => true]);
+    $gateway = $this->markAsGateway(Node::query()->create(['name' => 'automatic-busy-gateway', 'status' => 'active',
+        'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.118', 'wireguard_ip' => '10.44.0.118']));
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.dev-deploy.fixture']);
+    $holder = Operation::query()->create(['kind' => 'instance.rename', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'input' => [], 'status' => 'running', 'sequence' => 1, 'attempts' => 1,
+        'lock_key' => 'instance:'.$instance->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $path = '/api/v1/instances/'.$instance->id.'/deploy/automatic';
+    $commit = str_repeat('a', 40);
+
+    $this->postJson($path, ['commit' => $commit], ['Idempotency-Key' => 'auto.busy'])->assertConflict()
+        ->assertJsonPath('error.code', 'operation.target_busy')->assertJsonPath('error.details.operation_id', $holder->id);
+    $this->getJson($path.'/receipt?request_key=auto.busy&commit='.$commit)->assertOk()
+        ->assertJsonPath('data.found', true)->assertJsonPath('data.operation.status', 'failed')
+        ->assertJsonPath('data.operation.error_code', 'operation.target_busy')->assertJsonPath('data.operation.attempts', 0)
+        ->assertJsonPath('data.operation.result', null);
+    expect($socket->sent)->toBe([])
+        ->and(Operation::query()->where('idempotency_key', 'auto.busy')->sole()->input)
+        ->not->toHaveKeys(['git_read', 'vp_materialize', 'environment_material', 'definitions_material']);
 });
 
 it('records production Vite references against the native prepared release', function (): void {

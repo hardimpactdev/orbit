@@ -225,7 +225,7 @@ The Gateway validates the request and the access grant, checks that the Instance
 | `operation.target_busy` | 409 | Another operation holds the Instance |
 | `operation.queue_unavailable` | 503 | The Gateway has no queue |
 
-The `rollback` step checks the release again, because a deploy's cleanup can remove it after the request. Then the operation fails at `rollback` with `rollback.release_invalid`. A rollback cancels a deploy that no worker has started, as [One operation at a time](#one-operation-at-a-time) describes.
+The `rollback` step checks the release again, because a deploy's cleanup can remove it after the request. Then the operation fails at `rollback` with `rollback.release_invalid`. A rollback cancels a deploy that the Gateway has not yet submitted to Swamp, as [One operation at a time](#one-operation-at-a-time) describes.
 
 | Step | Resumable | Failed boundary |
 | --- | --- | --- |
@@ -367,7 +367,7 @@ Resuming continues from the commit that is live then. The commit a rollback move
 
 A blocked commit stays blocked. It never deploys automatically again, until a newer commit lands on the branch: that commit deploys, and the blocked one is behind it.
 
-A rollback that came after the tick queued the deployment wins while no worker has started the deployment: the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. Once a worker has started it, the rollback is busy.
+A rollback that came after the tick queued the deployment wins while the Gateway has not yet submitted the deployment to Swamp: the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. Once it is submitted, the rollback is busy.
 
 A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused` and deploys nothing. A first attempt writes no history row. An attempt that a worker resumes after a lost worker ends its row with `deployment.paused`, which does not count as a failure of the commit.
 
@@ -468,15 +468,15 @@ Deployment, rollback, deploy-step changes, and branch changes share the Instance
 
 A deploy or rollback operation also holds the Instance from its start request to its end. A second start answers `operation.target_busy` with the first operation's ID, also while the first one waits in the queue.
 
-A rollback is the one exception. It wins over a deploy of the Instance that no worker has started, manual or automatic:
+A rollback is the one exception. It wins over a deploy of the Instance that the Gateway has not yet submitted to Swamp, manual or automatic. Such a deploy is `queued`, has zero attempts, and has no native run or dispatch time:
 
 - The deploy ends `cancelled`.
 - The deploy's `error_code` is `operation.superseded`, and its `cancel_requested` is true.
 - The rollback takes the Instance.
 
-A deploy that a worker started keeps the Instance, also while it waits to resume after a lost worker. The rollback then answers `operation.target_busy` with the deploy's ID. Cancel the deploy with [`operation:cancel`](/cli/operation), or wait for it to end. Then start the rollback again.
+A submitted deploy counts as started and keeps the Instance, also while it waits to resume after a lost worker. The rollback then answers `operation.target_busy` with the deploy's ID. Cancel the deploy with [`operation:cancel`](/cli/operation), or wait for it to end. Then start the rollback again.
 
-The Gateway cancels the deploy and creates the rollback in one database transaction. When a worker claims the deploy first, the deploy runs, and the rollback is busy. One operation holds the Instance in every case. When the Gateway then cannot queue the rollback's job, the rollback fails with `operation.dispatch_failed`, and the deploy stays cancelled; start the rollback again.
+The Gateway cancels the deploy and creates the rollback in one database transaction. When the deploy is submitted first, it runs, and the rollback is busy. A deploy cancelled first is never submitted: the Swamp start moves it from `queued` to `running` only while it is still queued. One operation holds the Instance in every case. When the Gateway then cannot queue the rollback's job, the rollback fails with `operation.dispatch_failed`, and the deploy stays cancelled; start the rollback again.
 
 ## Inspect release placement with Doctor
 
@@ -703,7 +703,11 @@ When a development deploy runs, it leaves Process definitions, Route publication
 
 ### Automatic policy
 
-A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
+A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization and a keyed start that the [Instance hold](/reference/operations#one-operation-per-target) refused with `operation.target_busy`. Both have zero attempts and no result, before workflow submission.
+
+The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
+
+A target_busy refusal at admission itself publishes `busy` with the holder's operation ID, because the holder may be an environment sync, setup, restart or analytics change. The production policy releases the same target_busy receipt without an effect hold.
 
 Policy checkpoints stay durable before and after keyed admission. When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
 

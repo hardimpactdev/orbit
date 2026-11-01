@@ -282,6 +282,7 @@ Deno.test("a definite start failure releases pending intent for the next schedul
       "swamp.start_refused",
       "swamp.start_unavailable",
       "swamp.vault_sync_unavailable",
+      "operation.target_busy",
     ]
   ) {
     for (const lost of [false, true]) {

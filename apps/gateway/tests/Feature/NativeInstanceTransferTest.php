@@ -155,6 +155,7 @@ it('records a DB-only native transfer and scopes URL material to its own Node', 
     $operation = app(StartInstanceTransferAction::class)->execute($this->instance,
         new TransferInstanceData($this->destination->id, null, null));
     expect($operation->kind)->toBe('instance.transfer')->and($operation->node_id)->toBe($this->node->id)
+        ->and($operation->lock_key)->toBe('instance:'.$this->instance->id)
         ->and($operation->input['direct_transfer']['destination']['destination'])->toBe('/srv/apps/native/native')
         ->and($operation->input['route_publication']['route_mutations'])->toHaveKeys(['forward', 'restore'])->and($this->instance->fresh()->node_id)->toBe($this->node->id)
         ->and(Operation::query()->count())->toBe(1);

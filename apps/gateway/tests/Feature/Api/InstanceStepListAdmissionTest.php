@@ -28,6 +28,7 @@ it('records setup intent and returns a keyed Operation without dispatching PHP',
     $first = $this->withHeader('Idempotency-Key', 'setup-proof')->postJson($url)->assertAccepted();
     $this->postJson($url)->assertAccepted()->assertJsonPath('data.id', $first->json('data.id'));
     expect(Operation::query()->count())->toBe(1)
+        ->and(Operation::query()->sole()->lock_key)->toBe('instance:'.$instance->id)
         ->and(Operation::query()->sole()->input)->toBe([
             'instance_id' => $instance->id,
             'source' => 'project', 'list' => 'setup',

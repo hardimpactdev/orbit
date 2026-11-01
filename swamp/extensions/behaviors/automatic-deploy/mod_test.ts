@@ -93,6 +93,39 @@ Deno.test("E10 lost admission response persists intent and holds the target", as
     1,
   );
 });
+Deno.test("a target_busy refusal receipt before submission clears intent without an effect hold", async () => {
+  const f = new PolicyFixture();
+  await f.tick();
+  const op = f.gateway.observation.holder!;
+  Object.assign(op, {
+    status: "failed",
+    attempts: 0,
+    error_code: "operation.target_busy",
+    result: null,
+  });
+  f.gateway.observation.holder = null;
+  assertEquals(await f.tick(), "started");
+  assertEquals(f.state.effect_hold, null);
+  assertEquals(f.state.intent?.key, `auto.7.${B}.2`);
+});
+Deno.test("a target_busy receipt with an attempt or a result still holds", async () => {
+  for (const change of [{ attempts: 1 }, { result: { deployment_id: 999 } }]) {
+    const f = new PolicyFixture();
+    await f.tick();
+    const op = f.gateway.observation.holder!;
+    Object.assign(op, {
+      status: "failed",
+      attempts: 0,
+      error_code: "operation.target_busy",
+      result: null,
+      ...change,
+    });
+    f.gateway.observation.holder = null;
+    assertEquals(await f.tick(), "failed");
+    assertEquals(f.state.effect_hold?.operation_id, op.id);
+    assertEquals(f.gateway.starts.length, 1);
+  }
+});
 Deno.test("E10 terminal receipt without history cannot imply safe retry", async () => {
   const f = new PolicyFixture();
   await f.tick();

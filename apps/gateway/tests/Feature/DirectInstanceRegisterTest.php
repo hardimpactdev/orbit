@@ -72,6 +72,7 @@ it('admits and completes in-place registration through one real native HTTP root
     $id = $response->json('data.id');
     $operation = Operation::query()->findOrFail($id);
     $instance = Instance::query()->findOrFail($operation->target_id);
+    expect($operation->lock_key)->toBe('instance:'.$instance->id);
     expect($instance->status->value)->toBe('reserved')->and($instance->branch)->toBeNull();
     app(StartSwampRun::class)->start($operation);
     expect($socket->sent)->toHaveCount(1);

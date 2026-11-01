@@ -22,7 +22,9 @@ use Illuminate\Testing\TestResponse;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
-    $this->markTestSkipped('Deferred: the native production rollback backend is not implemented.');
+    // instance.rollback has no native declaration, and production rollback admission needs OperationKinds::supports('children').
+    // The Instance hold and the deploy supersede predicate these tests assert are covered in Domain/InstanceHoldTest.php.
+    $this->markTestSkipped('Deferred: instance.rollback has no native declaration, so no rollback can be admitted.');
 });
 
 function start_rollback(object $test, string $release = 'initial'): TestResponse

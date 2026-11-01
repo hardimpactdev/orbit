@@ -25,6 +25,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
@@ -420,6 +421,30 @@ it('returns one native Operation without reading or writing the workload during 
         ->and($this->access->writePreflights)->toBe(0)->and($this->access->writes)->toBe([])
         ->and($socket->sent)->toHaveCount(1)
         ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-environment');
+});
+
+it('refuses a keyed synchronization while another Operation holds the Instance and keeps a failed receipt', function (): void {
+    $this->instance->node->update(['architecture' => 'x86_64']);
+    $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'synthetic-private-value']);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-shared-run-token']);
+    $holder = Operation::query()->create(['kind' => 'instance.rename', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'input' => [], 'status' => 'running', 'sequence' => 1, 'attempts' => 1,
+        'lock_key' => 'instance:'.$this->instance->id]);
+    $sync = fn (?string $key) => $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", content: '{}',
+            server: ['CONTENT_TYPE' => 'application/json', ...($key === null ? [] : ['HTTP_IDEMPOTENCY_KEY' => $key])]);
+
+    $sync('sync-busy')->assertConflict()->assertJsonPath('error.code', 'operation.target_busy')
+        ->assertJsonPath('error.details.operation_id', $holder->id);
+    $receipt = Operation::query()->where('idempotency_key', 'sync-busy')->sole();
+    expect([$receipt->kind, $receipt->status->value, $receipt->error_code, $receipt->attempts, $receipt->result, $receipt->lock_key])
+        ->toBe(['instance.sync_environment', 'failed', 'operation.target_busy', 0, null, null])
+        ->and($socket->sent)->toBe([]);
+    $sync('sync-busy')->assertAccepted()->assertJsonPath('data.id', $receipt->id)->assertJsonPath('data.status', 'failed');
+    $sync(null)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Operation::query()->count())->toBe(2);
 });
 
 it('requires exactly an empty JSON object before synchronization work', function (string $body): void {
