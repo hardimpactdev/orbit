@@ -74,7 +74,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: ${{ "process-stop-assets-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-stop-assets-" + run.id }}
       methodName: read
       inputs:
         control: ${{ inputs.intent.control }}
@@ -88,10 +88,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-stop-ssh-" + run.id }}
       methodName: exec
       globalArgs:
-        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        name: ${{ "process-stop-ssh-" + run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -118,10 +118,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-stop-ssh-" + run.id }}
       methodName: copy
       globalArgs:
-        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        name: ${{ "process-stop-ssh-" + run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -148,10 +148,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-stop-ssh-" + run.id }}
       methodName: exec
       globalArgs:
-        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        name: ${{ "process-stop-ssh-" + run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -189,10 +189,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-stop-ssh-" + run.id }}
       methodName: exec
       globalArgs:
-        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        name: ${{ "process-stop-ssh-" + run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -223,10 +223,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-stop-ssh-" + run.id }}
       methodName: exec
       globalArgs:
-        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        name: ${{ "process-stop-ssh-" + run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -257,10 +257,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-stop-ssh-" + run.id }}
       methodName: exec
       globalArgs:
-        name: ${{ "process-stop-ssh-" + string(inputs.operation_id) }}
+        name: ${{ "process-stop-ssh-" + run.id }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}

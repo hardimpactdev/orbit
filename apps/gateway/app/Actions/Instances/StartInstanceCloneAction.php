@@ -6,311 +6,107 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\CloneInstanceData;
-use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
+use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Routes\RouteDomain;
-use App\Domain\Routes\RoutePlacement;
-use App\Domain\Routes\RouteProvenance;
-use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RouteStateResolver;
-use App\Domain\Routes\RouteStatus;
+use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Route;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
-/** Records a production clone intent. Swamp inspects the recorded candidate on its own Node. */
+/** Captures development clone intent; source execution belongs to one native209 root. */
 final readonly class StartInstanceCloneAction
 {
-    public function __construct(
-        private StartOperationAction $operations,
-        private OperationIdempotency $idempotency,
-        private RouteStateResolver $routeState,
-    ) {}
+    public function __construct(private StartOperationAction $operations, private OperationIdempotency $idempotency,
+        private ManagedCheckoutOverlap $overlap) {}
 
     public function execute(Instance $candidate, CloneInstanceData $data, ?string $caller = null, ?string $requestId = null): Operation
     {
         if (($replay = $this->idempotency->replay('instance.clone')) !== null) {
             return $replay;
         }
-        app(DirectOperation::class)->writer('instance.clone');
 
         return DB::transaction(function () use ($candidate, $data, $caller, $requestId): Operation {
-            $candidate->loadMissing(['project', 'node']);
-            $target = $this->existingTarget($candidate, $data);
-            $created = ! $target instanceof Instance;
+            $candidate->refresh()->loadMissing(['project', 'node']);
             $node = Node::query()->findOrFail($data->nodeId);
-            $intent = app(NativeInstanceProvisioningIntent::class);
-            $intent->assertCloneSupported($candidate, $node, $data->sqliteSourcePath);
-            $completed = $target?->clone_completed_at !== null;
-            $branch = $completed ? (string) $target->branch : $data->branch ?? $this->candidateBranch($candidate);
-            $source = $this->candidateIntent($candidate, $branch);
-            if (! $target instanceof Instance) {
-                [$domain, $placement] = $this->preflight($candidate, $node, $data);
-                $target = $this->reserve($candidate, $node, $data, $branch, $domain, $placement);
+            app(NativeInstanceProvisioningIntent::class)->assertCloneSupported($candidate, $node, $data->sqliteSourcePath);
+            if (! $candidate->placedOnAppDev() || ! $node->roles()->where('role', RoleName::AppDev)->where('status', LifecycleStatus::Active)->exists()) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Native clone currently accepts development placements only.', 503);
             }
-
-            $participants = array_values(array_unique([$candidate->node_id, $node->id]));
-
-            $input = [
-                'instance_id' => $target->id, 'project_id' => $candidate->project_id, 'created' => $created,
-                'candidate_id' => $candidate->id, 'candidate' => $source,
-                'candidate_node_id' => $candidate->node_id,
-                'candidate_commit' => $target->clone_candidate_commit,
-                'participant_node_ids' => $participants,
-                'private_bindings' => ['git_read' => ['owner_node_id' => $node->id, 'read_node_ids' => $participants, 'write_node_ids' => []]],
-                'initial_provisioning_step' => $target->provisioning_step,
-                'selected_php_version' => $target->selected_php_version, 'source_is_laravel' => $target->source_is_laravel,
+            if ($candidate->status !== InstanceState::Active || $candidate->provisioning_step !== 'active'
+                || $candidate->node->status !== LifecycleStatus::Active || $node->status !== LifecycleStatus::Active
+                || $node->platform !== 'linux' || $candidate->node->platform !== 'linux') {
+                throw $this->conflict('instance.clone_candidate_inactive', 'The candidate and destination must be active.');
+            }
+            if (! is_bool($candidate->source_is_laravel)) {
+                new InstanceSourceProfileGuard()->refuseMissing();
+            }
+            $branch = $data->branch ?? $candidate->branch;
+            if (! is_string($branch) || ! GitBranchName::isValid($branch)
+                || ! is_string($candidate->branch) || ! GitBranchName::isValid($candidate->branch)) {
+                throw $this->conflict('instance.clone_candidate_branch_invalid', 'The candidate has no configured branch to inherit.');
+            }
+            if (preg_match('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D', $data->name) !== 1) {
+                throw $this->conflict('instance.name_invalid', 'The Instance name must be a lowercase DNS label.');
+            }
+            app(DevelopmentNodeExclusion::class)->assertAvailable($candidate->project, $node);
+            $storedRoot = data_get($node->settings, 'apps.path');
+            $root = is_string($storedRoot) ? StoragePath::tryParse($storedRoot) : null;
+            if ($root === null) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Clone requires the stored destination apps root.', 503);
+            }
+            $path = $root->value.'/'.$candidate->project->slug.'/'.$data->name;
+            $target = Instance::query()->where('project_id', $candidate->project_id)->where('name', $data->name)->lockForUpdate()->first();
+            if ($target !== null && ($target->clone_candidate_id !== $candidate->id || $target->node_id !== $node->id
+                || $target->checkout_path !== $path || $target->clone_preview_name !== $data->previewName
+                || $target->clone_requested_branch !== $data->branch || $target->clone_sqlite_source_path !== $data->sqliteSourcePath)) {
+                throw $this->conflict('instance.clone_retry_conflict', 'The target Instance already exists with different immutable clone input.');
+            }
+            if ($target?->status === InstanceState::Removing) {
+                throw $this->conflict('instance.removal_conflict', 'The target Instance is being removed.');
+            }
+            if ($target?->clone_completed_at !== null) {
+                return Operation::query()->where('kind', 'instance.clone')->where('target_type', 'instance')->where('target_id', $target->id)
+                    ->where('status', 'succeeded')->orderByDesc('id')->first()
+                    ?? throw $this->conflict('instance.clone_retry_conflict', 'The completed clone has no successful admission receipt.');
+            }
+            $this->overlap->assertAvailable($node->id, StoragePath::parse($path), 'instance.source_conflict', ignoreInstanceId: $target?->id);
+            $target ??= Instance::query()->create(['project_id' => $candidate->project_id, 'node_id' => $node->id,
+                'name' => $data->name, 'checkout_path' => $path, 'source_layout' => 'checkout', 'root' => $candidate->root,
+                'branch' => $branch, 'branch_override' => $data->branch, 'status' => InstanceState::Reserved,
+                'source_is_laravel' => $candidate->source_is_laravel, 'selected_php_version' => $candidate->selected_php_version,
+                'clone_candidate_id' => $candidate->id, 'clone_requested_branch' => $data->branch,
+                'clone_preview_name' => $data->previewName, 'clone_preview_domain' => '',
+                'source_prepare_id' => (string) Str::uuid(), 'clone_sqlite_source_path' => null, 'provisioning_step' => 'clone-reserved']);
+            if ($target->clone_completed_at === null) {
+                $contexts = app(InstanceEnvironmentContextResolver::class);
+                app(InstanceEnvironmentStore::class)->copyForClone($contexts->resolve($candidate, true), $contexts->resolveForClone($target, true));
+            }
+            $input = ['instance_id' => $target->id, 'project_id' => $candidate->project_id, 'candidate_id' => $candidate->id,
                 'repository' => $candidate->project->repository_url, 'repository_identity' => $candidate->project->repository_identity,
-                'branch' => $target->branch, 'root' => $target->root, 'checkout' => $target->checkout_path,
-                'preview_name' => $data->previewName, 'preview_domain' => $target->clone_preview_domain,
-                'sqlite_source_path' => $data->sqliteSourcePath,
-                'production_user' => $target->production_user, 'production_home' => $target->production_home,
-                'route_id' => $target->routes()->whereNull('web_root')->value('routes.id'),
-                'initial_completed' => $target->clone_completed_at !== null,
-            ];
-            $input['git_read'] = ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']];
-            $input['environment_material'] = ['$secret' => 'instance.environment_sync', 'id' => $input['instance_id']];
-            $input['direct_provisioning'] = $intent->clone($target, $input);
+                'branch' => $branch, 'checkout' => $path, 'candidate' => ['node_id' => $candidate->node_id,
+                    'checkout' => $candidate->checkout_path, 'branch' => $candidate->branch,
+                    'repository_identity' => $candidate->project->repository_identity],
+                'source_root' => $root->value, 'initial_completed' => $target->clone_completed_at !== null];
+            $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->clone($target, $input);
 
             return $this->operations->execute('instance.clone', 'instance', $target->id, $node->id, $input, $caller, $requestId);
         });
     }
 
-    /** Record placement only. The candidate worker selects and checks the real source.
-     * @return array{node_id:int,environment:string,base:string,user:string,repository:string,configured_branch:string,target_branch:string,expected_source:string}
-     */
-    private function candidateIntent(Instance $candidate, string $targetBranch): array
+    private function conflict(string $code, string $message): ResourceOperationException
     {
-        $node = $candidate->node;
-        if ($candidate->status !== InstanceState::Active || $candidate->provisioning_step !== 'active'
-            || $node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
-            throw $this->conflict('instance.clone_candidate_inactive', 'The candidate is not active.');
-        }
-        if (! is_bool($candidate->source_is_laravel)) {
-            new InstanceSourceProfileGuard()->refuseMissing();
-        }
-        if ($candidate->placedOnAppDev()) {
-            $base = $candidate->checkout_path;
-            $user = $node->user;
-            $branch = $candidate->branch;
-        } elseif ($candidate->placedOnAppProd() && $candidate->usesProductionReleaseLayout()) {
-            $base = $candidate->production_home;
-            $user = $candidate->production_user;
-            $branch = $candidate->deployment_branch ?? $candidate->branch;
-        } else {
-            throw $this->conflict('instance.clone_candidate_source_invalid', 'The candidate has no recorded source layout.');
-        }
-        if (! is_string($base) || ! str_starts_with($base, '/') || ! is_string($user) || $user === 'root'
-            || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user) !== 1 || ! is_string($branch)
-            || ! GitBranchName::isValid($branch) || ! GitBranchName::isValid($targetBranch)) {
-            throw $this->conflict('instance.clone_candidate_source_invalid', 'The candidate source identity is invalid.');
-        }
-
-        return ['node_id' => $node->id, 'environment' => $candidate->defaultAppEnv(), 'base' => $base,
-            'user' => $user, 'repository' => $candidate->project->repository_url, 'configured_branch' => $branch,
-            'target_branch' => $targetBranch, 'expected_source' => $candidate->checkout_path];
-    }
-
-    private function existingTarget(Instance $candidate, CloneInstanceData $data): ?Instance
-    {
-        $existing = Instance::query()
-            ->where('project_id', $candidate->project_id)
-            ->where('name', $data->name)
-            ->first();
-
-        if (! $existing instanceof Instance) {
-            return null;
-        }
-
-        if (
-            $existing->clone_candidate_id !== $candidate->id
-            || $existing->node_id !== $data->nodeId
-            || ! $existing->placedOnAppProd()
-            || $existing->clone_preview_name !== $data->previewName
-            || $existing->clone_requested_branch !== $data->branch
-            || $existing->clone_sqlite_source_path !== $data->sqliteSourcePath
-        ) {
-            throw $this->conflict(
-                'instance.clone_retry_conflict',
-                'The target Instance already exists with different immutable clone input.',
-            );
-        }
-
-        if ($existing->status === InstanceState::Removing) {
-            throw $this->conflict('instance.removal_conflict', 'The target Instance is being removed.');
-        }
-
-        return $existing;
-    }
-
-    private function candidateBranch(Instance $candidate): string
-    {
-        $branch = $candidate->placedOnAppProd()
-            ? $candidate->deployment_branch ?? $candidate->branch
-            : $candidate->branch;
-
-        if (! is_string($branch) || $branch === '') {
-            throw $this->conflict(
-                'instance.clone_candidate_branch_invalid',
-                'The candidate has no configured branch to inherit.',
-            );
-        }
-
-        return $branch;
-    }
-
-    /** @return array{string, RoutePlacement} */
-    private function preflight(Instance $candidate, Node $node, CloneInstanceData $data): array
-    {
-        $candidate->refresh()->loadMissing(['project', 'node']);
-        $node->refresh();
-        $placement = $this->assertPlacement($candidate, $node);
-
-        if ($candidate->requiresRoute() && (! is_string($node->tld) || $node->tld === '')) {
-            throw $this->conflict('route.tld_required', 'A clone preview requires the destination Node TLD.');
-        }
-
-        $domain = $candidate->requiresRoute()
-            ? RouteDomain::validate("{$data->previewName}.{$node->tld}")
-            : '';
-
-        if ($domain !== '' && Route::query()->where('domain', $domain)->exists()) {
-            throw $this->conflict('route.domain_conflict', "Route domain [{$domain}] is already owned.");
-        }
-
-        if (Instance::query()->where('project_id', $candidate->project_id)->where('name', $data->name)->exists()) {
-            throw $this->conflict('instance.placement_conflict', 'The target Instance name is already owned.');
-        }
-
-        return [$domain, $placement];
-    }
-
-    private function assertPlacement(Instance $candidate, Node $node): RoutePlacement
-    {
-        if ($node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
-            throw $this->conflict('instance.node_inactive', 'The selected app-prod Node is not active.');
-        }
-
-        if (! $node->roles()->where('role', RoleName::AppProd)->where('status', LifecycleStatus::Active)->exists()) {
-            throw $this->conflict('instance.node_not_app_prod', 'The selected Node has no active app-prod role.');
-        }
-
-        $placement = $this->routeState->forNode($node);
-
-        if ($placement->clusterId !== null) {
-            $this->routeState->assertRouter($placement->clusterId);
-        }
-
-        if (Instance::query()
-            ->where('project_id', $candidate->project_id)
-            ->whereHas('node.roles', static fn ($query) => $query
-                ->where('role', RoleName::AppProd)
-                ->where('status', LifecycleStatus::Active))
-            ->where('node_id', $node->id)
-            ->exists()) {
-            throw $this->conflict(
-                'instance.production_placement_conflict',
-                'The Project already has a production Instance on the selected Node.',
-            );
-        }
-
-        return $placement;
-    }
-
-    private function reserve(
-        Instance $candidate,
-        Node $node,
-        CloneInstanceData $data,
-        string $branch,
-        string $domain,
-        RoutePlacement $placement,
-    ): Instance {
-        $user = "orbit-app-{$candidate->project_id}";
-        $home = "/home/{$user}";
-
-        try {
-            $target = DB::transaction(function () use (
-                $candidate,
-                $node,
-                $data,
-                $branch,
-                $domain,
-                $placement,
-                $user,
-                $home,
-            ): Instance {
-                if ($domain !== '' && Route::query()->where('domain', $domain)->lockForUpdate()->exists()) {
-                    throw $this->conflict(
-                        'route.domain_conflict',
-                        "Route domain [{$domain}] is already owned.",
-                    );
-                }
-
-                $target = Instance::query()->create([
-                    'project_id' => $candidate->project_id,
-                    'node_id' => $node->id,
-                    'name' => $data->name,
-                    'source_layout' => InstanceSourceLayout::Checkout,
-                    'checkout_path' => "{$home}/releases/initial",
-                    'production_user' => $user,
-                    'production_home' => $home,
-                    'root' => $candidate->root,
-                    'branch' => $branch,
-                    'branch_override' => $data->branch,
-                    'clone_candidate_id' => $candidate->id,
-                    'clone_candidate_commit' => null,
-                    'clone_requested_branch' => $data->branch,
-                    'clone_preview_name' => $data->previewName,
-                    'clone_preview_domain' => $domain,
-                    'clone_sqlite_source_path' => $data->sqliteSourcePath,
-                    'provisioning_step' => 'clone-reserved',
-                    'status' => InstanceState::Reserved,
-                ]);
-
-                if ($domain !== '') {
-                    $route = Route::query()->create([
-                        'project_id' => $candidate->project_id,
-                        'node_id' => $placement->nodeId,
-                        'cluster_id' => $placement->clusterId,
-                        'generation_basis_node_id' => null,
-                        'domain' => $domain,
-                        'provenance' => RouteProvenance::Explicit,
-                        'publication' => RoutePublication::Private,
-                        'status' => RouteStatus::Pending,
-                    ]);
-                    $route->targets()->create([
-                        'instance_id' => $target->id,
-                        'position' => 0,
-                    ]);
-                }
-
-                return $target;
-            });
-        } catch (QueryException $exception) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.clone_reservation_conflict',
-                message: 'The target Instance or preview Route is already owned.',
-                status: 409,
-                previous: $exception,
-            );
-        }
-
-        return $target;
-    }
-
-    private function conflict(string $errorCode, string $message): ResourceOperationException
-    {
-        return new ResourceOperationException($errorCode, $message, 409);
+        return new ResourceOperationException($code, $message, 409);
     }
 }

@@ -1,27 +1,272 @@
 id: 5e65a942-d0c8-4b9a-8f3b-6855888af30a
 name: operation-instance-rename
-description: Verify a development checkout and record its selected branch.
+description: Read admitted development source through official SSH from209; project
+  its terminal result.
 vaults: []
-writes: true
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [instance.rename] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - instance.rename
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: rename
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
-    steps:
-      - name: inspect-and-project
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-rename'
-          behaviorName: '${{ "instance-rename-node-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            run_id: '${{ run.id }}'
+- name: source
+  target: orbit-node-209
+  steps:
+  - name: inspect-assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "ren-inspect-assets-" + run.id }}
+      methodName: read
+      inputs:
+        action: inspect
+        input: ${{ inputs.intent }}
+  - name: filesystem
+    target: orbit-node-209
+    dependsOn:
+    - step: inspect-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-filesystem-" + run.id }}
+      methodName: script
+      globalArgs: &id001
+        name: ${{ "instance-rename-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        script: ${{ steps["inspect-assets"].outputs.script_body }}
+  - name: top
+    target: orbit-node-209
+    dependsOn:
+    - step: filesystem
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-top-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout }}
+        - rev-parse
+        - --show-toplevel
+  - name: common
+    target: orbit-node-209
+    dependsOn:
+    - step: top
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-common-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout }}
+        - rev-parse
+        - --path-format=absolute
+        - --git-common-dir
+  - name: worktrees
+    target: orbit-node-209
+    dependsOn:
+    - step: common
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-worktrees-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout }}
+        - worktree
+        - list
+        - --porcelain
+  - name: origin-assets
+    target: orbit-node-209
+    dependsOn:
+    - step: worktrees
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "ren-origin-assets-" + run.id }}
+      methodName: read
+      inputs:
+        action: origin
+        input: ${{ inputs.intent }}
+  - name: origin
+    target: orbit-node-209
+    dependsOn:
+    - step: origin-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-origin-" + run.id }}
+      methodName: script
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        script: ${{ steps["origin-assets"].outputs.script_body }}
+  - name: branch
+    target: orbit-node-209
+    dependsOn:
+    - step: origin
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-branch-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout }}
+        - branch
+        - --show-current
+  - name: commit
+    target: orbit-node-209
+    dependsOn:
+    - step: branch
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-commit-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout }}
+        - rev-parse
+        - --verify
+        - HEAD^{commit}
+  - name: default
+    target: orbit-node-209
+    dependsOn:
+    - step: commit
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ren-default-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout }}
+        - for-each-ref
+        - --format=%(symref)
+        - refs/remotes/origin/HEAD
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: default
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "ren-result-" + run.id }}
+      methodName: result
+      inputs:
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        facts:
+          filesystem: ${{ steps.filesystem.outputs }}
+          top: ${{ steps.top.outputs }}
+          common: ${{ steps.common.outputs }}
+          worktrees: ${{ steps.worktrees.outputs }}
+          origin: ${{ steps.origin.outputs }}
+          branch: ${{ steps.branch.outputs }}
+          commit: ${{ steps.commit.outputs }}
+          default: ${{ steps.default.outputs }}
