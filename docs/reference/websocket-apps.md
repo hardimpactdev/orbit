@@ -225,12 +225,16 @@ Registry mutations commit their existing app state and a normal Operation before
 
 The shared `operation-websocket-registry` workflow runs on Node 209. It requests one apply on each admitted Reverb runtime through official pinned SSH. Reverb uses its existing registry refresh and socket-close events to finish that request, returning the current boot, epoch, revision and preserved-change result. No step reads the Gateway Operation or report endpoint, posts a result, or polls. The shared terminal subscriber records native completion from one history read. Registry reports remain available to ordinary status readers.
 
+### Server readiness
+
 The pinned Reverb server must include the native apply interface before this workflow is published. Loading Gateway source alone does not prove server readiness. Runtime upgrades keep their separately coordinated reconnect window; registry changes never restart the service.
 
 The legacy order remains commit, reconcile, confirm. Confirmation now comes directly from the serving Reverb boot instead of waiting for that boot's report to arrive at the Gateway. A failed refresh is returned immediately; an overlapping later request cannot turn it into success. The provider's normal background reconciliation continues independently. A later revision preserves create while its app exists, rotation while its credential generation remains current, and destroy while its app is absent. Other apps retain their sockets.
 
 Every required runtime captured at admission must confirm. Missing runtime membership, unavailable targets, unapplied revisions or lost responses fail the proof; none permits resubmission. Cancelling stops native observation and leaves committed registry intent in place. Preserve a bound failed or interrupted root; recovery uses an explicitly admitted fresh sync after its outcome is known. The existing registry operation URL remains a read of saved intent and current reports.
 
+### Execution budget
+
 The workflow declares its per-kind queue timeout. The source PR reports native-harness p95 and its sample, plus the run budget for the shared timeout-at-start rollout. Until that shared rollout is live, the budget declaration is not a claim that the Gateway enforces it. F1 error projection is also adopted through the shared rollout; the family adds no error wrapper or projector.
 
-The provisional run budget is `30 + 20 × admitted runtime count` seconds, including a five-second queue timeout and a fifteen-second SSH limit per runtime. Local native-history samples measured p95 of 0.420 seconds for sync (four samples), 0.301 for create, 0.340 for destroy and 0.343 for rotate (three samples each). These fixture timings do not replace the required disposable task-VM proof.
+The provisional run budget is `30 + 20 × admitted runtime count` seconds, The queue timeout is five seconds. Each SSH request has a limit of fifteen seconds. Samples from local native history measured p95 of 0.420 seconds for sync (four samples), 0.301 for create, 0.340 for destroy and 0.343 for rotate (three samples each). These fixture timings do not replace the required disposable task-VM proof.

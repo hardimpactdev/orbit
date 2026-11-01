@@ -1,9 +1,8 @@
-Waiting for a worker...
+Integration running...
 
 ┌  Destroy WebSocket app
 │
-├  ● Start on a worker
-│    Operation 2.
+├  ● Integration complete
 │
 └  Integration succeeded.
 
