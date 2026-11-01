@@ -615,20 +615,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/database/server_close.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/server_close.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/sqlite_native.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -3236,6 +3222,7 @@
     {"file":"workflows/workflow-operation-schedule-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-task-check.yaml","rule":"foreach-shared-identity","count":5,"evidence":["check/base-${{ self._index }}","check/base_prepare-${{ self._index }}","check/base_ready-${{ self._index }}","check/deliverable-${{ self._index }}","check/setup-${{ self._index }}"]},
     {"file":"workflows/workflow-operation-vault-sync.yaml","rule":"foreach-shared-identity","count":1,"evidence":["deletions/delete"]},
-    {"file":"workflows/workflow-task-check-ci.yaml","rule":"foreach-shared-identity","count":2,"evidence":["checks/ci-${{ self.check.attributes.inputs.operation_id }}","checks/observed-${{ self.check.attributes.inputs.operation_id }}"]}
+    {"file":"workflows/workflow-task-check-ci.yaml","rule":"foreach-shared-identity","count":2,"evidence":["checks/ci-${{ self.check.attributes.inputs.operation_id }}","checks/observed-${{ self.check.attributes.inputs.operation_id }}"]},
+    {"file":"workflows/workflow-operation-node-ssh-access-converge.yaml","rule":"workflow-vault-declaration","count":1,"evidence":["orbit-control-inputs"]}
   ]
 }

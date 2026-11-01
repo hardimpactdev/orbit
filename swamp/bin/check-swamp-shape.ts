@@ -49,6 +49,8 @@ type Analysis = {
   workflowRefs: string[];
   modelNames: string[];
   modelRefs: string[];
+  vaultReads?: string[];
+  declaredVaults?: string[];
   inlineLines: number;
   loops: number;
   agentActions: number;
@@ -1462,6 +1464,15 @@ export function analyzeYaml(
     result.unknown = true;
     return result;
   }
+  const requiredVaults = new Set<string>();
+  let unresolvedVault = false;
+  const descriptorVaults = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.flatMap(descriptorVaults);
+    const v = object(value), properties = object(v.properties), vault = object(properties.vault);
+    const names = v.key !== undefined && typeof v.vault === "string" && !v.vault.includes("${{") ? [v.vault] : [];
+    if (properties.key !== undefined && Array.isArray(vault.enum)) names.push(...vault.enum.filter((n): n is string => typeof n === "string"));
+    return [...names, ...Object.values(v).flatMap(descriptorVaults)];
+  };
   // The binding guide approves one visible Route private-DNS TTL grace.
   // This is an exact source contract, never a file/rule grandfather cap.
   const routeDnsGrace = (path: string[]) => {
@@ -1553,6 +1564,22 @@ export function analyzeYaml(
     const nativeStdin = path.length === 7 && path[5] === "inputs" &&
       path[6] === "stdin" && sshTask?.methodName === "exec" && sshDelivery;
     if (nativeIdentity && !wholeVault(value)) add("secret-native-source");
+    if (file.startsWith("workflows/") && path[0] === "jobs") {
+      descriptorVaults(value).forEach((name) => requiredVaults.add(name));
+      if (typeof value === "string") {
+        const literal = /\bvault\.get\s*\(\s*(?:(["'])(.*?)\1|([\w-]+))\s*,/g;
+        for (const m of value.matchAll(literal)) requiredVaults.add(m[2] ?? m[3]);
+        const dynamic = new Set([...value.replace(literal, "").matchAll(/\bvault\.get\s*\(\s*([^,]+)/g)].map((call) => call[1].trim()));
+        for (const m of value.matchAll(/\binputs(?:\.[A-Za-z_]\w*)+/g)) {
+          let schema = object(data.inputs);
+          for (const key of m[0].split(".").slice(1)) schema = object(object(schema.properties)[key] ?? schema.additionalProperties);
+          descriptorVaults(schema).forEach((name) => requiredVaults.add(name));
+          const selector = [...value.matchAll(/\bvault\.get\s*\(\s*([^,]+)/g)].some((call) => call[1].trim() === m[0]);
+          if ((m[0].endsWith(".vault") || selector) && Array.isArray(schema.enum)) { dynamic.delete(m[0]); schema.enum.forEach((name) => { if (typeof name === "string") requiredVaults.add(name); }); }
+        }
+        unresolvedVault ||= dynamic.size > 0 || path.includes("execution_secrets") && value.includes("${{") && !/\binputs\./.test(value) && path.at(-1) !== "key";
+      }
+    }
     if (typeof value === "string") {
       const envValue = path.length >= 4 && path.at(-2) === "env" &&
         path.at(-3) === "inputs" && path.at(-4) === "task";
@@ -1659,6 +1686,12 @@ export function analyzeYaml(
     }
   };
   walk(data, []);
+  result.declaredVaults = Array.isArray(data.vaults) ? data.vaults.filter((v): v is string => typeof v === "string") : [];
+  result.vaultReads = [...new Set([...requiredVaults, ...(unresolvedVault ? result.declaredVaults : [])])];
+  if (unresolvedVault && !requiredVaults.size && (!Array.isArray(data.vaults) || !data.vaults.length)) add("workflow-vault-declaration", ["dynamic vault reference"]);
+  for (const name of [...requiredVaults].sort()) {
+    if (!Array.isArray(data.vaults) || !data.vaults.includes(name)) add("workflow-vault-declaration", [name]);
+  }
   if (file.startsWith("models/")) {
     result.modelNames = [data.id, data.name].filter((
       value,
@@ -2124,6 +2157,17 @@ export function analyze(
       models.set(name, [...new Set([...(models.get(name) ?? []), file])]);
     }
   }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const a of analyses.values()) for (const ref of a.workflowRefs) {
+      const child = analyses.get(workflows.get(ref)?.[0] ?? "");
+      for (const name of child?.vaultReads ?? []) if (a.vaultReads && !a.vaultReads.includes(name)) { a.vaultReads.push(name); changed = true; }
+    }
+  }
+  for (const [file, a] of analyses) for (const name of a.vaultReads ?? []) {
+    a.findings = a.findings.filter((f) => f.rule !== "workflow-vault-declaration" || !f.evidence.includes("dynamic vault reference"));
+    if (!a.declaredVaults?.includes(name) && !a.findings.some((f) => f.rule === "workflow-vault-declaration" && f.evidence.includes(name))) a.findings.push({ file, rule: "workflow-vault-declaration", count: 1, line: 1, evidence: [name] });
+  }
   for (const [file, a] of analyses) {
     for (const reference of a.modelRefs) {
       const matches = models.get(reference) ?? [];
@@ -2392,7 +2436,7 @@ if (import.meta.main) {
       // separately and never writes a row at the new path.
       // Introduce this rule's existing debt from actual base source only; later caps only shrink.
       ...ratchet([], baseline, { ...prior, entries: [...prior.entries, ...baseEntries.filter((e) =>
-        e.rule === "foreach-shared-identity" && !prior.entries.some((p) => p.file === e.file && p.rule === e.rule)
+        ["foreach-shared-identity", "workflow-vault-declaration"].includes(e.rule) && !prior.entries.some((p) => p.file === e.file && p.rule === e.rule)
       )] }),
       ...ratchet(entries, movedLimits(baseline, moves)),
       ...ratchet(

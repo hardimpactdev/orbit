@@ -448,7 +448,9 @@ PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure fai
 
 ### Direct default-user closure
 
-`database:server:close` starts `operation-database-server-close` on the admitted Node. It reads only the declared admin password through the shared private-material endpoint. The native step checks other default-user clients, changes the password, saves the ACL file and disconnects default-user sessions. Save failure restores anonymous access only when it was open on entry, then reports a bounded failure. A resumed step authenticates with the admitted admin password even if the first attempt already closed anonymous access. The Gateway records `default_open=false` only after success.
+`database:server:close` starts `operation-database-server-close` with captured public intent and a vault descriptor. Native steps on 209 use official SSH to run shipped scripts on the server Node: probe default-user clients, set the password, save ACLs, restore anonymous access after a failed save, and disconnect default-user sessions. The password reaches the official Valkey CLI through a protected temporary environment file and never enters arguments or outputs.
+
+Save failure restores anonymous access only when it was open on entry, then reports a bounded failure. Native resume from the first `assets` step repeats the checks with the admitted password; terminal result delivery alone repeats no effects. The Gateway records `default_open=false` only after success.
 
 A first Valkey adoption refused before mutation releases only its reserved Database server record. Its existing Process, container, data volume and connection remain unchanged, so correcting the connection password permits another adoption. Later or uncertain failures retain their records for inspection.
 
