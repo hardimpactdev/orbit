@@ -42,12 +42,12 @@ jobs:
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: probe
         target: orbit-node-209
+        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || (has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted) }}'
         dependsOn: [{step: assets, condition: &ref_13 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "node-remove-probe-"+run.id }}', methodName: execute, inputs: {run: python3 "$PROBE_SCRIPT" "$PROBE_HOST" "$PROBE_PORT", env: {PROBE_SCRIPT: '${{ steps.assets.outputs.probe }}', PROBE_HOST: '${{ inputs.intent.probe.host }}', PROBE_PORT: '${{ string(inputs.intent.probe.port) }}'}}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: preflight
         target: orbit-node-209
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "preflight-"+run.id }}', methodName: preflight, inputs: {stdout: '${{ steps.probe.outputs.stdout }}', offline: '${{ inputs.intent.offline }}', has_ssh: '${{ inputs.intent.ssh != null }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "preflight-"+run.id }}', methodName: preflight, inputs: {stdout: '${{ has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted ? ''{"reachable":false}'' : steps.probe.outputs.stdout }}', offline: '${{ inputs.intent.offline }}', has_ssh: '${{ inputs.intent.ssh != null }}'}}
         dependsOn: [{step: probe, condition: *ref_13}]
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
   - name: phase_roles
@@ -59,7 +59,7 @@ jobs:
         target: orbit-node-209
         concurrency: 1
         forEach: {item: role, in: '${{ inputs.intent.roles }}'}
-        task: {type: workflow, workflowIdOrName: node-role-remove, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.remove, intent: '${{ self.role }}', execution_secrets: {}, offline: '${{ steps.preflight.outputs.offline }}'}}
+        task: {type: workflow, workflowIdOrName: node-role-remove, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ self.role }}', execution_secrets: {}, offline: '${{ steps.preflight.outputs.offline }}'}}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
   - name: phase_public_ssh_assets
     dependsOn:

@@ -24,7 +24,7 @@ use App\Support\ValidatedData;
 final readonly class NativeNodeRoleRemovalInput
 {
     /** @return list<array<string,mixed>> */
-    public function publications(Node $node, RoleName $role): array
+    public function publications(Node $node, RoleName $role, bool $machineDeleted = false): array
     {
         $duties = app(NodeRolePublicationInput::class)->capture($node, $role);
         if ($role === RoleName::Metrics) {
@@ -46,6 +46,9 @@ final readonly class NativeNodeRoleRemovalInput
         $sites = app(DevelopmentSiteRepository::class)->all();
         $result = [];
         foreach (NodeRolePublicationInput::participants($duties) as $id) {
+            if ($machineDeleted && $id === $node->id) {
+                continue;
+            }
             $member = Node::query()->findOrFail($id);
             $snapshot = app(NativeRoutePublicationInput::class)->snapshot($member, $sites);
             $result[] = ['node_id' => $id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($member),
@@ -61,7 +64,7 @@ final readonly class NativeNodeRoleRemovalInput
      * @param  list<array<string,mixed>>  $before
      * @return array<string,mixed>
      */
-    public function capture(Node $node, NodeRole $assignment, array $before): array
+    public function capture(Node $node, NodeRole $assignment, array $before, bool $machineDeleted = false): array
     {
         if ($assignment->node_id !== $node->id || $assignment->status !== LifecycleStatus::Removing
             || ! app(RoleRegistry::class)->definition($assignment->role)->mutable) {
@@ -70,7 +73,7 @@ final readonly class NativeNodeRoleRemovalInput
         $plan = ['firewall' => app(NodeRoleFirewallInput::class)->remove($node, $assignment->role),
             'runtime' => app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role),
             'certificates' => app(NodeRoleCertificateInput::class)->capture($node, $assignment->role, removing: true)];
-        $ssh = app(SwampSshExecutionInput::class)->forNode($node);
+        $ssh = $machineDeleted ? null : app(SwampSshExecutionInput::class)->forNode($node);
         $firewall = [];
         $wanted = array_column(RouteExecutionProof::objects(ValidatedData::object($plan['firewall'])['remove']), 'comment');
         foreach (app(NodeFirewallRuleCatalog::class)->ownedByRole($node, $assignment->role) as $rule) {
@@ -124,10 +127,13 @@ final readonly class NativeNodeRoleRemovalInput
         }
         $certificates = [];
         foreach (RouteExecutionProof::objects(ValidatedData::object($plan['certificates'])['withdrawals']) as $entry) {
+            if ($machineDeleted && $entry['node_id'] === $node->id) {
+                continue;
+            }
             $certificates[] = ['ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(ValidatedData::integer($entry['node_id']))), 'input' => ['scope' => $entry['scope']]];
         }
         $publications = [];
-        foreach ($this->publications($node, $assignment->role) as $after) {
+        foreach ($this->publications($node, $assignment->role, $machineDeleted) as $after) {
             $prior = array_find($before, static fn (array $member): bool => $member['node_id'] === $after['node_id']);
             if ($prior === null) {
                 throw new \LogicException('Role removal needs its complete prior publication.');
@@ -138,7 +144,7 @@ final readonly class NativeNodeRoleRemovalInput
                 'after' => array_intersect_key($after, array_flip(['caddy', 'php', 'dns']))];
         }
 
-        return ['schema_version' => 1, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
+        $input = ['schema_version' => 1, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
             'role' => $assignment->role->value, 'ssh' => $ssh, 'publications' => $publications,
             'stop_units' => [...$unitsForFleet, ...array_map(static fn (string $unit): array => ['ssh' => $ssh, 'input' => ['unit' => $unit]], $units)],
             'remove_footprints' => $footprints, 'reload_units' => $reloads,
@@ -147,5 +153,10 @@ final readonly class NativeNodeRoleRemovalInput
             'remove_containers' => array_map(static fn (string $name): array => ['ssh' => $ssh, 'input' => ['name' => $name, 'action' => 'rm']], $containers),
             'firewall' => $firewall, 'certificates' => $certificates,
             'ci_host' => $assignment->role === RoleName::CiRunner ? [['ssh' => $ssh, 'input' => []]] : []];
+        foreach (['stop_units', 'remove_footprints', 'reload_units', 'remove_units', 'stop_containers', 'remove_containers', 'firewall', 'ci_host'] as $field) {
+            $input[$field] = array_values(array_filter($input[$field], static fn (array $action): bool => $action['ssh'] !== null));
+        }
+
+        return $input;
     }
 }

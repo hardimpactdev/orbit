@@ -1,0 +1,275 @@
+id: a5dc9328-9812-4f24-9055-d874830f9bb7
+name: task-vm-destroy
+description: Revoke same-VM model access, delete the Incus VM, then complete canonical Node cleanup on209.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.destroy
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: destroy
+  target: orbit-node-209
+  steps:
+  - name: plan
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-destroy-input'
+      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: inspect
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent.provider_input }}
+        execution_secrets: {}
+        action: inspect
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+  - name: stop
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent.provider_input }}
+        execution_secrets: {}
+        action: stop
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    guard: ${{ !steps.inspect.outputs.result.running }}
+  - name: model
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-model-revoke
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent.model_intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    - step: stop
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.plan.outputs.model_required }}
+  - name: revoked
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-destroy-input'
+      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      methodName: revocation
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: '${{ steps.plan.outputs.model_required ? steps.model.outputs.result.stdout : "" }}'
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    - step: stop
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: model
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: delete
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent.provider_input }}
+        execution_secrets: {}
+        action: delete
+    dependsOn:
+    - step: revoked
+      condition:
+        type: succeeded
+  - name: seed-before
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-seed-"+run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "vm-provider-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.provider_input.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.provider_input.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.provider_input.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.provider_input.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.provider_input.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.plan.outputs.seed_observe_argv }}
+        timeoutSec: 180
+    dependsOn:
+    - step: delete
+      condition:
+        type: succeeded
+  - name: seed
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-destroy-input'
+      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      methodName: seed
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps["seed-before"].outputs.stdout }}
+    dependsOn:
+    - step: seed-before
+      condition:
+        type: succeeded
+  - name: seed-delete
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-seed-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.plan.outputs.seed_delete_argv }}
+        timeoutSec: 180
+    dependsOn:
+    - step: seed
+      condition:
+        type: succeeded
+    guard: ${{ !steps.seed.outputs.present }}
+  - name: seed-after
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "vm-seed-"+run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.plan.outputs.seed_observe_argv }}
+        timeoutSec: 180
+    dependsOn:
+    - step: seed
+      condition:
+        type: succeeded
+    - step: seed-delete
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: cleanup
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: operation-node-remove
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent.removal }}
+        execution_secrets: {}
+    dependsOn:
+    - step: seed-after
+      condition:
+        type: succeeded
+    guard: ${{ !steps.plan.outputs.node_present }}
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-destroy-input'
+      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      methodName: terminal
+      inputs:
+        intent: ${{ inputs.intent }}
+        provider: ${{ steps.delete.outputs.result }}
+        removal_stdout: '${{ steps.plan.outputs.node_present ? steps.cleanup.outputs.result.stdout : ""
+          }}'
+        seed_stdout: ${{ steps["seed-after"].outputs.stdout }}
+    dependsOn:
+    - step: delete
+      condition:
+        type: succeeded
+    - step: cleanup
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: seed-after
+      condition:
+        type: succeeded

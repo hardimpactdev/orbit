@@ -16,6 +16,7 @@ additionalFiles:
   - scripts/bootstrap_sudo.py
   - scripts/bootstrap_observer.py
   - scripts/bootstrap_verify.py
+  - scripts/bootstrap_observer_identity.py
   - tool_scripts/install_apt.py
   - tool_scripts/install_javascript.py
   - tool_scripts/prepare_composer.py

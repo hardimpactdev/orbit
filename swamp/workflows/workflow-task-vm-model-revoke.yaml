@@ -1,0 +1,395 @@
+id: c710f2bc-aa34-4a25-849b-daa58801b0e5
+name: task-vm-model-revoke
+description: 'One parent-local model revoke fragment: full intent, vault env, inline actions and native result.'
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.destroy
+      - task_vm.provision
+      - tasks.provision
+    intent:
+      type: object
+      properties:
+        task_vm_id:
+          type: integer
+          minimum: 1
+        gateway_node_id:
+          type: integer
+          minimum: 1
+        model_router_node_id:
+          type: integer
+          minimum: 1
+        model_origin:
+          type: string
+          format: uri
+      required:
+      - task_vm_id
+      - gateway_node_id
+      - model_router_node_id
+      - model_origin
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        model_key:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^task-vm-model-key-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        model_router_management:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^model-router-management-node-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        model_router_anchor:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^model-router-anchor-node-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - model_key
+      - model_router_management
+      - model_router_anchor
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: model
+  target: orbit-node-209
+  steps:
+  - name: anchor-ensure
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\n/usr/bin/python3 - <<'PY'\nimport json\nimport os\nimport re\nimport sys\nimport urllib.error\nimport\
+          \ urllib.parse\nimport urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
+          \ req, fp, code, msg, headers, newurl):\n        return None\n\ndef request(path, token=None, method=\"GET\", body=None):\n\
+          \    origin = os.environ[\"ORBIT_MODEL_ORIGIN\"]\n    parsed = urllib.parse.urlsplit(origin)\n    if (parsed.scheme\
+          \ not in (\"http\", \"https\") or not parsed.hostname\n            or parsed.username or parsed.password or parsed.query\
+          \ or parsed.fragment\n            or parsed.path not in (\"\", \"/\")):\n        raise ValueError()\n    headers\
+          \ = {\"Accept\": \"application/json\"}\n    if token is not None:\n        headers[\"Authorization\"] = \"Bearer\
+          \ \" + token\n    if body is not None:\n        headers[\"Content-Type\"] = \"application/json\"\n    data = None\
+          \ if body is None else json.dumps(body).encode()\n    req = urllib.request.Request(origin.rstrip(\"/\") + path,\
+          \ data=data, headers=headers, method=method)\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+          \ NoRedirect())\n    try:\n        response = opener.open(req, timeout=5)\n    except urllib.error.HTTPError as\
+          \ error:\n        response = error\n    with response:\n        status = response.status\n        content = response.read(1048577)\
+          \ if path.endswith(\"api-keys\") and method == \"GET\" else b\"\"\n    if len(content) > 1048576:\n        raise\
+          \ ValueError()\n    return status, content\n\ndef key_list():\n    status, content = request(\"/v0/management/api-keys\"\
+          , os.environ[\"ORBIT_MODEL_MANAGEMENT\"])\n    if status != 200:\n        raise ValueError()\n    value = json.loads(content.decode(\"\
+          utf-8\", errors=\"strict\"))\n    keys = value[\"api-keys\"]\n    if not isinstance(keys, list) or len(keys) > 4096\
+          \ or any(not isinstance(key, str) for key in keys):\n        raise ValueError()\n    return keys\n\ndef credentials():\n\
+          \    key, anchor = os.environ[\"ORBIT_MODEL_KEY\"], os.environ[\"ORBIT_MODEL_ANCHOR\"]\n    if key == anchor or\
+          \ not re.fullmatch(r\"[a-f0-9]{64}\", key) or not re.fullmatch(r\"[a-f0-9]{64}\", anchor):\n        raise ValueError()\n\
+          \    return key, anchor\n\ntry:\n    key, anchor = credentials()\n    before = key_list()\n    if anchor not in\
+          \ before:\n        if len(before) >= 4096:\n            raise ValueError()\n        status, _ = request(\"/v0/management/api-keys\"\
+          , os.environ[\"ORBIT_MODEL_MANAGEMENT\"], \"PATCH\", {\"old\": anchor, \"new\": anchor})\n        if status != 200:\n\
+          \            raise ValueError()\n    expected = before if anchor in before else before + [anchor]\n    if key_list()\
+          \ != expected:\n        raise ValueError()\n    print(json.dumps({\"anchor_present\": True}))\nexcept (KeyError,\
+          \ ValueError, TypeError, OSError, UnicodeError, urllib.error.URLError):\n    print('task_vm.model_key_failed', file=sys.stderr)\n\
+          \    sys.exit(1)\nPY\n"
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_MODEL_KEY: ${{ vault.get(inputs.execution_secrets.model_key.vault, inputs.execution_secrets.model_key.key)
+            }}
+          ORBIT_MODEL_MANAGEMENT: ${{ vault.get(inputs.execution_secrets.model_router_management.vault, inputs.execution_secrets.model_router_management.key)
+            }}
+          ORBIT_MODEL_ANCHOR: ${{ vault.get(inputs.execution_secrets.model_router_anchor.vault, inputs.execution_secrets.model_router_anchor.key)
+            }}
+  - name: anchor-access
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\n/usr/bin/python3 - <<'PY'\nimport json\nimport os\nimport sys\nimport urllib.error\nimport urllib.parse\n\
+          import urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
+          \ req, fp, code, msg, headers, newurl):\n        return None\n\ndef request(path, token=None, method=\"GET\", body=None):\n\
+          \    origin = os.environ[\"ORBIT_MODEL_ORIGIN\"]\n    parsed = urllib.parse.urlsplit(origin)\n    if (parsed.scheme\
+          \ not in (\"http\", \"https\") or not parsed.hostname\n            or parsed.username or parsed.password or parsed.query\
+          \ or parsed.fragment\n            or parsed.path not in (\"\", \"/\")):\n        raise ValueError()\n    headers\
+          \ = {\"Accept\": \"application/json\"}\n    if token is not None:\n        headers[\"Authorization\"] = \"Bearer\
+          \ \" + token\n    if body is not None:\n        headers[\"Content-Type\"] = \"application/json\"\n    data = None\
+          \ if body is None else json.dumps(body).encode()\n    req = urllib.request.Request(origin.rstrip(\"/\") + path,\
+          \ data=data, headers=headers, method=method)\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+          \ NoRedirect())\n    try:\n        response = opener.open(req, timeout=5)\n    except urllib.error.HTTPError as\
+          \ error:\n        response = error\n    with response:\n        status = response.status\n        content = response.read(1048577)\
+          \ if path.endswith(\"api-keys\") and method == \"GET\" else b\"\"\n    if len(content) > 1048576:\n        raise\
+          \ ValueError()\n    return status, content\n\n\ntry:\n    status, _ = request(\"/v1/models\", os.environ[\"ORBIT_MODEL_ANCHOR\"\
+          ])\n    if status != 200:\n        raise ValueError()\n    print(json.dumps({\"verified\": True}))\nexcept (KeyError,\
+          \ ValueError, TypeError, OSError, UnicodeError, urllib.error.URLError):\n    print('task_vm.model_key_failed', file=sys.stderr)\n\
+          \    sys.exit(1)\nPY\n"
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_MODEL_ANCHOR: ${{ vault.get(inputs.execution_secrets.model_router_anchor.vault, inputs.execution_secrets.model_router_anchor.key)
+            }}
+    dependsOn:
+    - step: anchor-ensure
+      condition:
+        type: succeeded
+  - name: anonymous-before
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\n/usr/bin/python3 - <<'PY'\nimport json\nimport os\nimport sys\nimport urllib.error\nimport urllib.parse\n\
+          import urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
+          \ req, fp, code, msg, headers, newurl):\n        return None\n\ndef request(path, token=None, method=\"GET\", body=None):\n\
+          \    origin = os.environ[\"ORBIT_MODEL_ORIGIN\"]\n    parsed = urllib.parse.urlsplit(origin)\n    if (parsed.scheme\
+          \ not in (\"http\", \"https\") or not parsed.hostname\n            or parsed.username or parsed.password or parsed.query\
+          \ or parsed.fragment\n            or parsed.path not in (\"\", \"/\")):\n        raise ValueError()\n    headers\
+          \ = {\"Accept\": \"application/json\"}\n    if token is not None:\n        headers[\"Authorization\"] = \"Bearer\
+          \ \" + token\n    if body is not None:\n        headers[\"Content-Type\"] = \"application/json\"\n    data = None\
+          \ if body is None else json.dumps(body).encode()\n    req = urllib.request.Request(origin.rstrip(\"/\") + path,\
+          \ data=data, headers=headers, method=method)\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+          \ NoRedirect())\n    try:\n        response = opener.open(req, timeout=5)\n    except urllib.error.HTTPError as\
+          \ error:\n        response = error\n    with response:\n        status = response.status\n        content = response.read(1048577)\
+          \ if path.endswith(\"api-keys\") and method == \"GET\" else b\"\"\n    if len(content) > 1048576:\n        raise\
+          \ ValueError()\n    return status, content\n\n\ntry:\n    status, _ = request(\"/v1/models\", None)\n    if status\
+          \ != 401:\n        raise ValueError()\n    print(json.dumps({\"verified\": True}))\nexcept (KeyError, ValueError,\
+          \ TypeError, OSError, UnicodeError, urllib.error.URLError):\n    print('task_vm.model_key_failed', file=sys.stderr)\n\
+          \    sys.exit(1)\nPY\n"
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+    dependsOn:
+    - step: anchor-access
+      condition:
+        type: succeeded
+  - name: key-revoke
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\n/usr/bin/python3 - <<'PY'\nimport json\nimport os\nimport re\nimport sys\nimport urllib.error\nimport\
+          \ urllib.parse\nimport urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
+          \ req, fp, code, msg, headers, newurl):\n        return None\n\ndef request(path, token=None, method=\"GET\", body=None):\n\
+          \    origin = os.environ[\"ORBIT_MODEL_ORIGIN\"]\n    parsed = urllib.parse.urlsplit(origin)\n    if (parsed.scheme\
+          \ not in (\"http\", \"https\") or not parsed.hostname\n            or parsed.username or parsed.password or parsed.query\
+          \ or parsed.fragment\n            or parsed.path not in (\"\", \"/\")):\n        raise ValueError()\n    headers\
+          \ = {\"Accept\": \"application/json\"}\n    if token is not None:\n        headers[\"Authorization\"] = \"Bearer\
+          \ \" + token\n    if body is not None:\n        headers[\"Content-Type\"] = \"application/json\"\n    data = None\
+          \ if body is None else json.dumps(body).encode()\n    req = urllib.request.Request(origin.rstrip(\"/\") + path,\
+          \ data=data, headers=headers, method=method)\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+          \ NoRedirect())\n    try:\n        response = opener.open(req, timeout=5)\n    except urllib.error.HTTPError as\
+          \ error:\n        response = error\n    with response:\n        status = response.status\n        content = response.read(1048577)\
+          \ if path.endswith(\"api-keys\") and method == \"GET\" else b\"\"\n    if len(content) > 1048576:\n        raise\
+          \ ValueError()\n    return status, content\n\ndef key_list():\n    status, content = request(\"/v0/management/api-keys\"\
+          , os.environ[\"ORBIT_MODEL_MANAGEMENT\"])\n    if status != 200:\n        raise ValueError()\n    value = json.loads(content.decode(\"\
+          utf-8\", errors=\"strict\"))\n    keys = value[\"api-keys\"]\n    if not isinstance(keys, list) or len(keys) > 4096\
+          \ or any(not isinstance(key, str) for key in keys):\n        raise ValueError()\n    return keys\n\ndef credentials():\n\
+          \    key, anchor = os.environ[\"ORBIT_MODEL_KEY\"], os.environ[\"ORBIT_MODEL_ANCHOR\"]\n    if key == anchor or\
+          \ not re.fullmatch(r\"[a-f0-9]{64}\", key) or not re.fullmatch(r\"[a-f0-9]{64}\", anchor):\n        raise ValueError()\n\
+          \    return key, anchor\n\ntry:\n    key, anchor = credentials()\n    before = key_list()\n    if anchor not in\
+          \ before:\n        raise ValueError()\n    expected = [value for value in before if value != key]\n    if key in\
+          \ before:\n        status, _ = request(\"/v0/management/api-keys\", os.environ[\"ORBIT_MODEL_MANAGEMENT\"], \"PUT\"\
+          , expected)\n        if status != 200:\n            raise ValueError()\n    final = key_list()\n    if anchor not\
+          \ in final or final != expected:\n        raise ValueError()\n    print(json.dumps({\"revoked\": True}))\nexcept\
+          \ (KeyError, ValueError, TypeError, OSError, UnicodeError, urllib.error.URLError):\n    print('task_vm.model_key_failed',\
+          \ file=sys.stderr)\n    sys.exit(1)\nPY\n"
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_MODEL_KEY: ${{ vault.get(inputs.execution_secrets.model_key.vault, inputs.execution_secrets.model_key.key)
+            }}
+          ORBIT_MODEL_MANAGEMENT: ${{ vault.get(inputs.execution_secrets.model_router_management.vault, inputs.execution_secrets.model_router_management.key)
+            }}
+          ORBIT_MODEL_ANCHOR: ${{ vault.get(inputs.execution_secrets.model_router_anchor.vault, inputs.execution_secrets.model_router_anchor.key)
+            }}
+    dependsOn:
+    - step: anonymous-before
+      condition:
+        type: succeeded
+  - name: key-access
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\n/usr/bin/python3 - <<'PY'\nimport json\nimport os\nimport sys\nimport urllib.error\nimport urllib.parse\n\
+          import urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
+          \ req, fp, code, msg, headers, newurl):\n        return None\n\ndef request(path, token=None, method=\"GET\", body=None):\n\
+          \    origin = os.environ[\"ORBIT_MODEL_ORIGIN\"]\n    parsed = urllib.parse.urlsplit(origin)\n    if (parsed.scheme\
+          \ not in (\"http\", \"https\") or not parsed.hostname\n            or parsed.username or parsed.password or parsed.query\
+          \ or parsed.fragment\n            or parsed.path not in (\"\", \"/\")):\n        raise ValueError()\n    headers\
+          \ = {\"Accept\": \"application/json\"}\n    if token is not None:\n        headers[\"Authorization\"] = \"Bearer\
+          \ \" + token\n    if body is not None:\n        headers[\"Content-Type\"] = \"application/json\"\n    data = None\
+          \ if body is None else json.dumps(body).encode()\n    req = urllib.request.Request(origin.rstrip(\"/\") + path,\
+          \ data=data, headers=headers, method=method)\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+          \ NoRedirect())\n    try:\n        response = opener.open(req, timeout=5)\n    except urllib.error.HTTPError as\
+          \ error:\n        response = error\n    with response:\n        status = response.status\n        content = response.read(1048577)\
+          \ if path.endswith(\"api-keys\") and method == \"GET\" else b\"\"\n    if len(content) > 1048576:\n        raise\
+          \ ValueError()\n    return status, content\n\n\ntry:\n    status, _ = request(\"/v1/models\", os.environ[\"ORBIT_MODEL_KEY\"\
+          ])\n    if status != 401:\n        raise ValueError()\n    print(json.dumps({\"verified\": True}))\nexcept (KeyError,\
+          \ ValueError, TypeError, OSError, UnicodeError, urllib.error.URLError):\n    print('task_vm.model_key_failed', file=sys.stderr)\n\
+          \    sys.exit(1)\nPY\n"
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_MODEL_KEY: ${{ vault.get(inputs.execution_secrets.model_key.vault, inputs.execution_secrets.model_key.key)
+            }}
+    dependsOn:
+    - step: key-revoke
+      condition:
+        type: succeeded
+  - name: anchor-after
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\n/usr/bin/python3 - <<'PY'\nimport json\nimport os\nimport sys\nimport urllib.error\nimport urllib.parse\n\
+          import urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
+          \ req, fp, code, msg, headers, newurl):\n        return None\n\ndef request(path, token=None, method=\"GET\", body=None):\n\
+          \    origin = os.environ[\"ORBIT_MODEL_ORIGIN\"]\n    parsed = urllib.parse.urlsplit(origin)\n    if (parsed.scheme\
+          \ not in (\"http\", \"https\") or not parsed.hostname\n            or parsed.username or parsed.password or parsed.query\
+          \ or parsed.fragment\n            or parsed.path not in (\"\", \"/\")):\n        raise ValueError()\n    headers\
+          \ = {\"Accept\": \"application/json\"}\n    if token is not None:\n        headers[\"Authorization\"] = \"Bearer\
+          \ \" + token\n    if body is not None:\n        headers[\"Content-Type\"] = \"application/json\"\n    data = None\
+          \ if body is None else json.dumps(body).encode()\n    req = urllib.request.Request(origin.rstrip(\"/\") + path,\
+          \ data=data, headers=headers, method=method)\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+          \ NoRedirect())\n    try:\n        response = opener.open(req, timeout=5)\n    except urllib.error.HTTPError as\
+          \ error:\n        response = error\n    with response:\n        status = response.status\n        content = response.read(1048577)\
+          \ if path.endswith(\"api-keys\") and method == \"GET\" else b\"\"\n    if len(content) > 1048576:\n        raise\
+          \ ValueError()\n    return status, content\n\n\ntry:\n    status, _ = request(\"/v1/models\", os.environ[\"ORBIT_MODEL_ANCHOR\"\
+          ])\n    if status != 200:\n        raise ValueError()\n    print(json.dumps({\"verified\": True}))\nexcept (KeyError,\
+          \ ValueError, TypeError, OSError, UnicodeError, urllib.error.URLError):\n    print('task_vm.model_key_failed', file=sys.stderr)\n\
+          \    sys.exit(1)\nPY\n"
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+          ORBIT_MODEL_ANCHOR: ${{ vault.get(inputs.execution_secrets.model_router_anchor.vault, inputs.execution_secrets.model_router_anchor.key)
+            }}
+    dependsOn:
+    - step: key-access
+      condition:
+        type: succeeded
+  - name: anonymous-after
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\n/usr/bin/python3 - <<'PY'\nimport json\nimport os\nimport sys\nimport urllib.error\nimport urllib.parse\n\
+          import urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,\
+          \ req, fp, code, msg, headers, newurl):\n        return None\n\ndef request(path, token=None, method=\"GET\", body=None):\n\
+          \    origin = os.environ[\"ORBIT_MODEL_ORIGIN\"]\n    parsed = urllib.parse.urlsplit(origin)\n    if (parsed.scheme\
+          \ not in (\"http\", \"https\") or not parsed.hostname\n            or parsed.username or parsed.password or parsed.query\
+          \ or parsed.fragment\n            or parsed.path not in (\"\", \"/\")):\n        raise ValueError()\n    headers\
+          \ = {\"Accept\": \"application/json\"}\n    if token is not None:\n        headers[\"Authorization\"] = \"Bearer\
+          \ \" + token\n    if body is not None:\n        headers[\"Content-Type\"] = \"application/json\"\n    data = None\
+          \ if body is None else json.dumps(body).encode()\n    req = urllib.request.Request(origin.rstrip(\"/\") + path,\
+          \ data=data, headers=headers, method=method)\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+          \ NoRedirect())\n    try:\n        response = opener.open(req, timeout=5)\n    except urllib.error.HTTPError as\
+          \ error:\n        response = error\n    with response:\n        status = response.status\n        content = response.read(1048577)\
+          \ if path.endswith(\"api-keys\") and method == \"GET\" else b\"\"\n    if len(content) > 1048576:\n        raise\
+          \ ValueError()\n    return status, content\n\n\ntry:\n    status, _ = request(\"/v1/models\", None)\n    if status\
+          \ != 401:\n        raise ValueError()\n    print(json.dumps({\"verified\": True}))\nexcept (KeyError, ValueError,\
+          \ TypeError, OSError, UnicodeError, urllib.error.URLError):\n    print('task_vm.model_key_failed', file=sys.stderr)\n\
+          \    sys.exit(1)\nPY\n"
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+    dependsOn:
+    - step: anchor-after
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          /usr/bin/python3 - <<''PY''
+
+          import json
+
+          import os
+
+
+          print(json.dumps({''task_vm_id'': int(os.environ[''ORBIT_TASK_VM_ID'']), ''revoked'': True}))
+
+          PY
+
+          '
+        env:
+          ORBIT_MODEL_ORIGIN: ${{ inputs.intent.model_origin }}
+          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
+    dependsOn:
+    - step: anonymous-after
+      condition:
+        type: succeeded

@@ -6,6 +6,7 @@ use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmProvisionAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -15,12 +16,11 @@ use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Operation;
@@ -43,6 +43,7 @@ beforeEach(function (): void {
     $model->shouldReceive('origin')->andReturn(TaskVmSettingsBuilder::Origin);
     $model->shouldReceive('assertReady');
     $model->shouldReceive('ownerNodeId')->andReturn($this->gateway->id);
+    $model->shouldReceive('privateMaterial')->andReturn(['management_key' => 'fixture-management', 'anchor_key' => 'fixture-anchor']);
     app()->instance(ModelKeyIssuer::class, $model);
     $certificates = Mockery::mock(LeafCertificateSigner::class);
     $certificates->shouldReceive('rootCertificate')->andReturn('ROOT CERTIFICATE');
@@ -56,6 +57,13 @@ beforeEach(function (): void {
     File::put($home.'/wireguard/private.key', base64_encode(str_repeat('s', 32)));
     File::put($home.'/wireguard/public.key', base64_encode(str_repeat('p', 32)));
     app()->instance(VpnConfigurationRepository::class, new VpnConfigurationRepository(app(VpnSettings::class), $home));
+    config(['orbit.home' => $home, 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem', 'swamp.run_token' => 'fixture.fake']);
+    foreach ([$this->host, $this->gateway, $vpn] as $node) {
+        $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']);
+    }
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
     $project = Project::query()->create(['name' => 'Provision', 'slug' => 'native-provision', 'repository_url' => 'https://github.com/example/provision.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Provision', 'brief' => 'Native provision', 'status' => 'reserved', 'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
     $this->vm = TaskVm::query()->create(['name' => 'pending', 'provider' => 'incus', 'state' => 'provisioning', 'host_node_id' => $this->host->id,
@@ -78,32 +86,49 @@ function savedNativeProvisionIntent(): Operation
         'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
 }
 
-it('freezes image and reserves exact guest and Process intent without contacting a provider', function (): void {
+function nativeProvisionVaultReply(array $message): array
+{
+    return [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]];
+}
+
+function nativeProvisionReceipt(Operation $operation): array
+{
+    $key = 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG';
+
+    return ['task_vm_id' => $operation->target_id, 'guest_node_id' => $operation->input['guest_node_id'], 'ready' => true,
+        'provider' => ['provider_id' => null, 'address' => '192.0.2.208', 'image_fingerprint' => $operation->input['image_fingerprint'], 'running' => true, 'settled' => true],
+        'enrollment' => ['ready' => true, 'node' => ['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $key,
+            'ssh_host_fingerprint' => 'SHA256:'.rtrim(base64_encode(hash('sha256', base64_decode($key), true)), '='),
+            'wireguard_public_key' => base64_encode(str_repeat('w', 32)), 'architecture' => 'x86_64', 'address' => '192.0.2.208', 'observer_digest' => str_repeat('e', 64)],
+            'process' => ['process_id' => $operation->input['enrollment']['runtime']['process']['process_id'], 'status' => 'active']]];
+}
+
+it('freezes full public intent and descriptor-only copies without provider effects', function (): void {
     $operation = savedNativeProvisionIntent();
-    $input = app(TaskVmProvisionIntent::class)->input($operation);
+    $envelope = app(TaskVmProvisionIntent::class)->input($operation);
+    $input = $envelope['intent'];
     expect($input['node_id'])->toBe($this->host->id)->and($input['guest_node_id'])->toBe($this->vm->fresh()->node_id)
         ->and($input['create']['image'])->toBe($this->vm->image_fingerprint)
         ->and($input['create']['expected_fingerprint'])->toBe($this->vm->image_fingerprint)
-        ->and($input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->host))
+        ->and($input['bootstrap']['public_key'])->toBe(app(SwampSshExecutionInput::class)->identity()['public_key'])
+        ->and($input['host_ssh_execution']['control_node_id'])->toBe(209)
+        ->and($input['runtime']['process']['unit_name'])->toStartWith('orbit-process-')->toEndWith('-pi-server.service')
+        ->and($input['network_input']['peer']['address'])->toStartWith($this->vm->wireguard_ip)
+        ->and($input['hub_input']['context_node_id'])->toBe($input['guest_node_id'])
         ->and($input['vm']['name'])->toBe($this->vm->name)->and($input['eligible'])->toBeTrue()
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning)
-        ->and($input['enrollment']['runtime']['process']['process_id'])->toBeInt()
-        ->and(Node::query()->count())->toBe(5)
-        ->and($input['issuer_node_id'])->toBe($this->issuer->id)
-        ->and($input['participant_node_ids'])->toContain($this->host->id, $this->gateway->id, $this->issuer->id, $input['guest_node_id'])
-        ->and($input)->not->toHaveKey('network')
-        ->and($input['enrollment']['network']['address'])->toStartWith($this->vm->wireguard_ip)
-        ->and($input['private_bindings']['installation']['owner_node_id'])->toBe($input['guest_node_id'])
-        ->and(json_encode($input, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('d', 64))->not->toContain($this->vm->fresh()->model_key);
+        ->and($envelope['execution_secrets']['pi_token'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$this->vm->id])
+        ->and($operation->input)->not->toHaveKeys(['private_bindings', 'participant_node_ids', 'worker_credentials'])
+        ->and(json_encode($envelope, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('d', 64))->not->toContain($this->vm->fresh()->model_key);
 });
 
-it('keeps UpCloud credentials as an existing private reference on the exact Gateway worker', function (): void {
-    TaskVmSettingsBuilder::bind(['devClusterId' => null, 'piArtifactPath' => '/private/pi', 'piArtifactSha256' => str_repeat('c', 64), 'piModels' => ['test-model'], 'upcloud' => new TaskVmUpCloud(true, [], '/fixture/token', 1, 'fi-hel1', '1xCPU-2GB', 20, '00000000-0000-4000-8000-000000000001')]);
-    $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null, 'image_fingerprint' => 'bb757fe7-0d7f-497e-b160-b545075e2cba']);
-    $operation = savedNativeProvisionIntent();
-    expect($operation->input['node_id'])->toBe($this->gateway->id)
-        ->and($operation->input['upcloud_token'])->toBe(['$secret' => 'upcloud.api', 'id' => $this->vm->id])
-        ->and(app(TaskVmProvisionIntent::class)->input($operation))->not->toHaveKey('upcloud_token');
+it('refuses unpublished UpCloud provision before execution copies or provider actions', function (): void {
+    $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null]);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    expect(fn () => app(TaskVmProvisionIntent::class)->capture($this->vm->fresh()))
+        ->toThrow(ResourceOperationException::class, 'Native UpCloud provision requires');
+    expect($this->vm->fresh()->node_id)->toBeNull()->and($socket->sent)->toBe([]);
 });
 
 it('refuses incomplete allocation instead of selecting an image or fabricating readiness', function (string $field): void {
@@ -134,7 +159,7 @@ it('projects native outcome once without running provider or guest work', functi
     $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
         'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:00:01.000Z',
         'error_code' => $status === 'failed' ? 'task_vm.provision_failed' : null,
-        'result' => $status === 'succeeded' ? ['ready' => true] : []];
+        'result' => $status === 'succeeded' ? nativeProvisionReceipt($operation) : []];
     $projection = app(TaskVmProvisionProjection::class);
     $projection->apply($operation, $data);
     expect($operation->fresh()->status)->toBe(OperationStatus::from($status))->and($this->vm->fresh()->state)->toBe($state);
@@ -148,14 +173,14 @@ it('records native success without Gateway runtime revalidation', function (): v
     $operation = savedNativeProvisionIntent();
     $this->vm->update(['state' => 'ready']);
     app(TaskVmProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
-        'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => ['ready' => true]]);
+        'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => nativeProvisionReceipt($operation)]);
     expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->vm->fresh()->state)->toBe(TaskVmState::Ready);
 });
 
 it('starts and deduplicates the native root without creating children or provider effects', function (): void {
     config(['swamp.run_token' => 'fixture.fake']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+    $socket->reply = fn (array $message): array => ($message['type'] ?? null) === 'vault.put' ? nativeProvisionVaultReply($message) : [['type' => 'event', 'id' => $message['id'], 'event' => [
         'kind' => 'started', 'workflowName' => 'operation-task-vm-provision', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     $operation = app(StartTaskVmProvisionAction::class)->execute($this->vm->id);
@@ -178,43 +203,43 @@ it('does not admit allocation after the VM has left provisioning', function (): 
         ->and(Operation::query()->count())->toBe(0);
 });
 
-it('records the root public peer key on the intent-selected guest before private hub reads', function (): void {
+it('does not project peer keys from intermediate progress', function (): void {
     $operation = savedNativeProvisionIntent();
     $publicKey = base64_encode(str_repeat('w', 32));
     app(TaskVmProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'running',
         'started_at' => '2026-10-31T00:00:00.000Z', 'result' => ['node' => ['wireguard_public_key' => $publicKey, 'node_id' => $this->gateway->id]]]);
-    expect($this->vm->fresh()->node->wireguard_public_key)->toBe($publicKey)
+    expect($this->vm->fresh()->node->wireguard_public_key)->toBeNull()
         ->and($this->gateway->fresh()->wireguard_public_key)->toBeNull()
-        ->and(app(TaskVmProvisionIntent::class)->input($operation->fresh())['enrollment']['wireguard_public_key'])->toBe($publicKey)
+        ->and($operation->fresh()->status)->toBe(OperationStatus::Running)
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning);
 });
 
-it('records native allocation metadata before first-visit bootstrap without promoting readiness', function (): void {
+it('does not project provider metadata before terminal success', function (): void {
     $operation = savedNativeProvisionIntent();
     app(TaskVmProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'running',
         'started_at' => '2026-10-31T00:00:00.000Z', 'result' => ['provider' => ['address' => '192.0.2.208', 'provider_id' => null, 'ssh_host_key' => null]]]);
-    expect($this->vm->fresh()->address)->toBe('192.0.2.208')->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning);
+    expect($this->vm->fresh()->address)->toBeNull()->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning);
 });
 
-it('records network enrollment without marking the VM runtime ready or granting global access', function (): void {
+it('does not activate the Node from intermediate network progress', function (): void {
     $operation = savedNativeProvisionIntent();
     $guest = $this->vm->fresh()->node;
     $edges = DB::table('node_access')->count();
     app(TaskVmProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'running',
         'started_at' => '2026-10-31T00:00:00.000Z', 'result' => ['node' => ['network_enrolled' => true]]]);
-    expect($guest->fresh()->status)->toBe(LifecycleStatus::Active)
+    expect($guest->fresh()->status)->toBe(LifecycleStatus::Provisioning)
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning)
         ->and($guest->roles()->where('role', RoleName::AppDev)->sole()->status)->toBe(LifecycleStatus::Provisioning)
         ->and(DB::table('node_access')->count())->toBe($edges);
 });
 
-it('exposes only public provision input to admitted participants without a global access edge', function (): void {
+it('builds authoritative full workflow inputs without a participant read callback', function (): void {
     $operation = savedNativeProvisionIntent();
-    $projection = app(TaskVmProvisionProjection::class);
-    $input = $projection->publicInput($operation, $operation->input['guest_node_id']);
-    expect($input['guest_node_id'])->toBe($operation->input['guest_node_id'])
-        ->and($input)->not->toHaveKeys(['installation', 'configuration', 'first_visit', 'upcloud_token']);
-    expect(fn () => $projection->publicInput($operation, 999999))->toThrow(ResourceOperationException::class);
+    $input = app(DirectOperation::class)->workflowInputs($operation);
+    expect($input['operation_id'])->toBe($operation->id)->and($input['kind'])->toBe('task_vm.provision')
+        ->and($input['node_id'])->toBe($this->host->id)
+        ->and($input['intent']['guest_node_id'])->toBe($operation->input['guest_node_id'])
+        ->and($input['intent'])->not->toHaveKeys(['execution_secrets', 'configuration', 'worker_credentials']);
 });
 
 it('serves the bound public root to its placed Gateway and enrolled guest without changing root authority', function (string $placement): void {
@@ -227,13 +252,8 @@ it('serves the bound public root to its placed Gateway and enrolled guest withou
     $run = $operation->state['swamp_run_id'];
     $edges = DB::table('node_access')->count();
 
-    $this->getJson($path.'?run_id='.$run)->assertOk()
-        ->assertJsonPath('data.node_id', $this->host->id)
-        ->assertJsonPath('data.input.gateway_node_id', $this->gateway->id)
-        ->assertJsonPath('data.input.guest_node_id', $guest->id)
-        ->assertJsonMissingPath('data.input.configuration')
-        ->assertJsonMissingPath('data.input.worker_credentials');
-    $this->getJson($path.'?run_id=f5518d34-4395-4454-ab37-7f3cdcae1ad4')->assertConflict();
+    $this->getJson($path.'?run_id='.$run)->assertForbidden();
+    $this->getJson($path.'?run_id=f5518d34-4395-4454-ab37-7f3cdcae1ad4')->assertForbidden();
     $this->postJson($path.'/result', ['run_id' => $run, 'status' => 'running', 'started_at' => '2026-10-31T00:00:00.000Z', 'result' => []])->assertForbidden();
     expect(DB::table('node_access')->count())->toBe($edges)
         ->and($operation->fresh()->status)->toBe(OperationStatus::Queued);
@@ -250,6 +270,10 @@ it('ordinary allocation records the native parent instead of dispatching provisi
         $teardownCouldEnter = $probe->get();
         if ($teardownCouldEnter) {
             $probe->release();
+        }
+
+        if (($message['type'] ?? null) === 'vault.put') {
+            return nativeProvisionVaultReply($message);
         }
 
         return [['type' => 'event', 'id' => $message['id'], 'event' => [

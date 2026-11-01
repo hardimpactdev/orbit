@@ -1,3 +1,4 @@
+import { ProvisioningRefusal } from "./source_profile.ts";
 import {
   prepareProvisioningVp,
   type ProvisioningVpPort,
@@ -23,7 +24,6 @@ import {
   prepareProvisioningSource,
   profileProvisioningSource,
   Provisioning,
-  ProvisioningRefusal,
   resolveProvisioningSource,
   seedProvisioningTemplate,
 } from "./provisioning_source.ts";
