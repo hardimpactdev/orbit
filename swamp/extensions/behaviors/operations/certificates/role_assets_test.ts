@@ -25,6 +25,8 @@ Deno.test("role metadata resolves one script directory and validates public inte
     const scripts = [
         "role_request.py",
         "role_publish.py",
+        "role_verify.py",
+        "role_cleanup.py",
         "role_paths.py",
         "local.py",
     ];

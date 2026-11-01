@@ -243,6 +243,10 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         self.assertEqual("failed", states["activate"])
         self.assertNotEqual("succeeded", states["result"])
         self.assertNotIn("restore", states)
+        self.assertNotEqual("succeeded", states["cleanup-key"])
+        pending = self.target / "role-keys" / self.leaf["scope"] / "fedcba9876543210"
+        self.assertTrue((pending / "key.pem").is_file())
+        self.assertTrue((pending / "cert.pem").is_file())
         return result
 
     def test_failed_activation_stays_failed_and_native_resume_retries_only_activation(
@@ -263,6 +267,11 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         )
         self.assertEqual("succeeded", resumed["status"])
         self.assertEqual(2, len(self.signs))
+        self.assertFalse(
+            (
+                self.target / "role-keys" / self.leaf["scope"] / "fedcba9876543210"
+            ).exists()
+        )
         self.assertEqual(pair, {p.name: p.read_bytes() for p in self.current.iterdir()})
 
     def test_fresh_admission_activates_current_pair_after_interrupted_activation(self):
