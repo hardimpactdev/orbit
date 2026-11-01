@@ -67,7 +67,7 @@ jobs:
       inputs:
         hosts: 'name:target'
         sudo: true
-        argv: [/usr/bin/timeout, '60', python3, -I, -c, '${{ steps["allowlist-assets"].outputs.script }}', '${{ steps["allowlist-assets"].outputs.input }}']
+        argv: [timeout, '60', python3, -I, -c, '${{ steps["allowlist-assets"].outputs.script }}', '${{ steps["allowlist-assets"].outputs.input }}']
         okExitCodes: [0, 1]
   - name: backend
     target: orbit-node-209
