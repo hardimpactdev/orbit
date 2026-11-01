@@ -23,4 +23,4 @@ Enrollment Route capture may pass the same `NodeEnrollmentCandidate` as the opti
 
 A candidate with no stored host pin produces an explicit `host_keys: null` publication row in both directions, with its admitted WireGuard address and account. The parent must bind that row using the existing `rolePublicationBindingSteps` for each phase's `publications` before composing `routeMutationSteps`. The binder requires the same candidate ID, address, account, canonical identity and verified full host keys. Every other participant requires stored pins. Stored targets retain their actual restoration connection and account; capture never clones or persists a Node.
 
-An enrollment PHP snapshot with no pools contributes no account or pool effects. Non-empty PHP deltas retain the existing account checks; this capture does not enable migration of active pools between accounts.
+An enrollment PHP snapshot with no pools contributes no account or pool effects. When either snapshot has pools, the existing account checks apply. This capture does not enable migration of active pools between accounts.
