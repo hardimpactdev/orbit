@@ -70,9 +70,12 @@ function bodyMentions(
         ) {
           const owner = base.expression;
           if (
-            name === "outputs" && producers.has(field(owner) ?? "") ||
+            name === "outputs" &&
+              (field(owner) === undefined || producers.has(field(owner)!)) ||
             name === "attributes" && ts.isCallExpression(owner) &&
-              owner.expression.getText(root).startsWith("data.")
+              owner.expression.getText(root).startsWith("data.") ||
+            name === undefined &&
+              /^(?:steps[.\[]|data[.])/.test(base.getText(root))
           ) {
             count = Infinity;
           }
