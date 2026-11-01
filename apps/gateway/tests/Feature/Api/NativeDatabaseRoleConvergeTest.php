@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\NativeDatabaseRoleConvergeInput;
+use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\RoleName;
@@ -14,6 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -58,7 +59,7 @@ it('admits Database-only convergence without a target worker and copies only the
 
 it('preserves the retained snapshot for other role sets and their callback reads', function (): void {
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
-    expect(NativeDatabaseRoleConvergeInput::supports($this->node, RoleName::Database))->toBeFalse();
+    expect(NativeNodeRoleConvergeInput::supports($this->node, RoleName::Database))->toBeFalse();
     $snapshot = app(NodeRoleDirectInput::class)->capture($this->node, $this->node->roles()->where('role', RoleName::Database)->sole(), false);
     $operation = new Operation(['kind' => 'node.role_converge', 'node_id' => $this->node->id, 'input' => ['_role' => $snapshot]]);
     expect(app(NodeRoleDirectProjection::class)->input($operation)['assignment_id'])->toBe($snapshot['assignment_id'])
@@ -67,7 +68,7 @@ it('preserves the retained snapshot for other role sets and their callback reads
 
 it('does not admit an absent Database assignment as existing convergence', function (): void {
     $this->node->roles()->delete();
-    expect(NativeDatabaseRoleConvergeInput::supports($this->node, RoleName::Database))->toBeFalse();
+    expect(NativeNodeRoleConvergeInput::supports($this->node, RoleName::Database))->toBeFalse();
 });
 
 it('keeps the observer configuration free of worker credentials when its Node is selected for rollout', function (): void {
@@ -79,14 +80,14 @@ it('keeps the observer configuration free of worker credentials when its Node is
 it('refuses a Metrics fleet rather than omitting its convergence', function (): void {
     $snapshot = app(NodeRoleDirectInput::class)->capture($this->node, $this->node->roles->sole(), false);
     $snapshot['metrics_fleet'] = ['metrics_node_id' => 10];
-    expect(fn () => app(NativeDatabaseRoleConvergeInput::class)->capture($this->node, $this->node->roles->sole(), $snapshot))
+    expect(fn () => app(NativeNodeRoleConvergeInput::class)->capture($this->node, $this->node->roles->sole(), $snapshot))
         ->toThrow(ResourceOperationException::class);
 });
 
 it('refuses an unimplemented required footprint contribution', function (): void {
     $snapshot = app(NodeRoleDirectInput::class)->capture($this->node, $this->node->roles->sole(), false);
     $snapshot['footprint']['artifacts'][] = ['name' => 'caddy', 'digest' => str_repeat('a', 64), 'required' => true, 'repair' => false];
-    expect(fn () => app(NativeDatabaseRoleConvergeInput::class)->capture($this->node, $this->node->roles->sole(), $snapshot))
+    expect(fn () => app(NativeNodeRoleConvergeInput::class)->capture($this->node, $this->node->roles->sole(), $snapshot))
         ->toThrow(ResourceOperationException::class);
 });
 
@@ -94,7 +95,7 @@ function databaseNativeBound(Node $node): Operation
 {
     $assignment = $node->roles()->where('role', RoleName::Database)->sole();
     $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false);
-    $native = app(NativeDatabaseRoleConvergeInput::class)->capture($node, $assignment, $snapshot);
+    $native = app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot);
     $assignment->update(['status' => 'provisioning']);
 
     return Operation::query()->create(['kind' => 'node.role_converge', 'target_type' => 'node', 'target_id' => $node->id,
@@ -148,4 +149,28 @@ it('reports an unconfirmed native cancellation without inventing terminal succes
     Http::fake(['https://swamp.orbit/api/v1/cancel/workflow-run/*' => Http::response([], 503)]);
     expect(fn () => app(CancelOperationAction::class)->execute($operation))->toThrow(ResourceOperationException::class);
     expect($operation->refresh()->cancel_requested_at)->not->toBeNull()->and($operation->status->value)->toBe('running');
+});
+
+it('captures complete pinned Ingress publication and firewall without a target worker', function (): void {
+    FleetFixtures::bind([new FakeFootprintArtifact('agent', str_repeat('a', 64)), new FakeFootprintArtifact('caddy', str_repeat('b', 64))]);
+    $node = FleetFixtures::node('ingress');
+    $cluster = Cluster::query()->create(['name' => 'native-ingress']);
+    $node->update(['cluster_id' => $cluster->id]);
+    $node->roles()->create(['role' => RoleName::Ingress, 'status' => 'active', 'cluster_id' => $cluster->id]);
+    $node->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::Ingress, true);
+    $intent = app(DirectOperation::class)->workflowInputs($operation)['intent'];
+    expect($intent['role'])->toBe('ingress')
+        ->and($intent['caddy']['connection']['nodeHost'])->toBe($node->wireguard_ip)
+        ->and($intent['caddy']['host_keys'])->toBe([$node->ssh_host_key_type.' '.$node->ssh_host_key])
+        ->and($intent['firewall']['desired'])->not->toBeEmpty()
+        ->and($intent['firewall']['desired'][0])->toBe(['ufw', 'allow', 'in', 'on', 'orbit', 'to', $node->wireguard_ip, 'comment', 'orbit:wireguard-members'])
+        ->and($intent['firewall']['remove'][0])->toBe(['ufw', '--force', 'delete', 'allow', 'in', 'proto', 'tcp', 'to', 'any', 'port', (string) $node->public_ssh_port, 'comment', 'orbit:public-ssh-recovery'])
+        ->and($intent['caddy_package'])->toHaveKeys(['release', 'minimum_version', 'amd64_sha512']);
+    $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    expect(NativeNodeRoleConvergeInput::supports($node, RoleName::Ingress))->toBeFalse();
 });

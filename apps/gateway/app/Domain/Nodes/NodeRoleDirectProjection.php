@@ -48,7 +48,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
         if (isset($operation->input['native_role'])) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'Native Database convergence has no execution callback.', 403);
+            throw new ResourceOperationException('operation.execution_forbidden', 'Native role convergence has no execution callback.', 403);
         }
         app(NodeRolePublicationInput::class)->assertPublicParticipant($operation, $callerNodeId);
     }
@@ -63,7 +63,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
     public function apply(Operation $operation, array $data): Operation
     {
         if (isset($operation->input['native_role']) && ! in_array($data['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
-            throw new ResourceOperationException('operation.result_invalid', 'Native Database convergence projects terminal results only.', 422);
+            throw new ResourceOperationException('operation.result_invalid', 'Native role convergence projects terminal results only.', 422);
         }
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $result = ValidatedData::object($data['result'] ?? []);

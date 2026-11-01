@@ -18,8 +18,34 @@ final readonly class NodeRoleFirewallInput
     /** @return array<string, mixed> */
     public function converge(Node $node, RoleName $role): array
     {
-        return $this->rules([$this->catalog->forNode($node)[1], ...$this->roleRules($node, $role)],
-            [$this->catalog->forNode($node)[0], ...$this->catalog->retiredForRole($node, $role)]);
+        [$desired, $remove] = $this->convergenceRules($node, $role);
+
+        return $this->rules($desired, $remove);
+    }
+
+    /** Canonical UFW arguments for visible native actions; no status parser or embedded program.
+     * @return array{desired:list<list<string>>,remove:list<list<string>>}
+     */
+    public function convergeCommands(Node $node, RoleName $role): array
+    {
+        [$desired, $remove] = $this->convergenceRules($node, $role);
+        $arguments = static function (UfwManagedRule $rule, bool $delete): array {
+            if ($rule->replacePort) {
+                throw new \LogicException('Native rule replacement requires its owning transition.');
+            }
+
+            return ['ufw', ...($delete ? ['--force', 'delete'] : []), ...array_slice($rule->arguments, 2)];
+        };
+
+        return ['desired' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, false), $desired),
+            'remove' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, true), $remove)];
+    }
+
+    /** @return array{list<UfwManagedRule>,list<UfwManagedRule>} */
+    private function convergenceRules(Node $node, RoleName $role): array
+    {
+        return [[$this->catalog->forNode($node)[1], ...$this->roleRules($node, $role)],
+            [$this->catalog->forNode($node)[0], ...$this->catalog->retiredForRole($node, $role)]];
     }
 
     /** @return array<string, mixed> */

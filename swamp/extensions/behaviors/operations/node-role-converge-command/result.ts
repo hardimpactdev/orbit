@@ -6,6 +6,7 @@ const Step = z.object({
 const Args = z.object({
     intent: z.object({
         assignment_id: z.number().int().positive(),
+        role: z.enum(["database", "ingress"]),
         footprint: z.object({
             artifacts: z.array(
                 z.object({ name: z.string(), required: z.boolean() })
@@ -19,11 +20,14 @@ const Args = z.object({
     }).passthrough(),
     steps: z.record(z.string(), Step),
 }).strict();
-export function databaseResult(raw: unknown) {
+export function roleResult(raw: unknown) {
     const { intent, steps } = Args.parse(raw);
     const ok = (name: string) => steps[name]?.status === "succeeded";
     const role_proven = ok("account") && ok("observer_install") &&
-        ok("packages");
+        ok("packages") &&
+        (intent.role !== "ingress" ||
+            ["caddy_package-0", "caddy_service-0", "caddy-0", "firewall-0"]
+                .every(ok));
     const artifacts: { name: string; status: "applied" | "unchanged" }[] = [];
     let failed_artifact: string | null = null;
     for (const artifact of intent.footprint.artifacts) {
@@ -35,6 +39,10 @@ export function databaseResult(raw: unknown) {
             ? ok("observer")
             : artifact.name === "peer-dns"
             ? ok("peer_dns-0")
+            : artifact.name === "caddy"
+            ? ok("caddy-0")
+            : artifact.name === "caddy-package"
+            ? ok("caddy_package-0")
             : false;
         if (proven) artifacts.push({ name: artifact.name, status: "applied" });
         else failed_artifact ??= artifact.name;
@@ -65,11 +73,17 @@ export function databaseResult(raw: unknown) {
         ...(failed_artifact ? ["role-footprint:node.footprint_failed"] : []),
         ...(cli.error_code ? ["role-cli:" + cli.error_code] : []),
     ].join(", ") || null;
-    const failed_step = !ok("observer_install")
-        ? "agent-install"
-        : !ok("account")
+    const failed_step = !ok("account")
         ? "account"
-        : "prerequisites";
+        : !ok("observer_install")
+        ? "agent-install"
+        : intent.role === "ingress" && !ok("caddy_package-0")
+        ? "caddy-package"
+        : !ok("packages")
+        ? "prerequisites"
+        : ["caddy_service-0", "caddy-0", "firewall-0"].find((name) =>
+            !ok(name)
+        ) ?? "prerequisites";
     return {
         assignment_id: intent.assignment_id,
         created: false,
@@ -93,7 +107,7 @@ export const behavior = {
     methods: {
         assemble: {
             description:
-                "Assemble the terminal Database contribution from completed native actions",
+                "Assemble the terminal role contribution from completed native actions",
             arguments: Args,
             execute: async (
                 args: z.infer<typeof Args>,
@@ -105,7 +119,7 @@ export const behavior = {
                     ): Promise<unknown>;
                 },
             ) => {
-                const result = databaseResult(args);
+                const result = roleResult(args);
                 await ctx.writeResource("result", "result", result);
                 return result;
             },

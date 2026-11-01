@@ -36,7 +36,6 @@ const dependency = (job: string, type = "succeeded") => ({
 
 export function footprintWorkflow(
   role: boolean,
-  convergeRole = false,
   relocateRole = false,
 ) {
   const behavior = role ? "node-role-add-direct" : "node-converge-direct";
@@ -153,7 +152,10 @@ export function footprintWorkflow(
       guard: inactive,
       ...(!role
         ? {
-          dependsOn: [{ step: cancellation, condition: { type: "succeeded" } }],
+          dependsOn: [{
+            step: cancellation,
+            condition: { type: "succeeded" },
+          }],
         }
         : {}),
       task: task(
@@ -256,14 +258,10 @@ export function footprintWorkflow(
     id: role
       ? relocateRole
         ? "48ce785a-7429-463e-a776-7b5a59bb2961"
-        : convergeRole
-        ? "2c3425ad-31c5-4ab3-9039-191438338fb6"
         : "36af16a4-008f-41f3-81ed-187cb11b1a6b"
       : "daace7ba-223f-47b6-9452-7c0da7cf384e",
     name: relocateRole
       ? "operation-node-role-relocate-direct"
-      : convergeRole
-      ? "operation-node-role-converge-direct"
       : `operation-${behavior}`,
     description:
       "One exact-Node native root; generated from the shared footprint chain.",
@@ -276,11 +274,7 @@ export function footprintWorkflow(
           type: "string",
           enum: [
             role
-              ? relocateRole
-                ? "node.role_relocate"
-                : convergeRole
-                ? "node.role_converge"
-                : "node.role_add"
+              ? relocateRole ? "node.role_relocate" : "node.role_add"
               : "node.converge",
           ],
         },
@@ -292,9 +286,17 @@ export function footprintWorkflow(
 
     jobs,
   };
-  if (convergeRole) {
-    const retained = JSON.parse(JSON.stringify(workflow).replaceAll("run.id", "(has(inputs.parent_run_id) ? inputs.parent_run_id : run.id)")) as typeof workflow;
-    Object.assign(retained.inputs.properties, { parent_run_id: { type: "string", format: "uuid" } });
+  if (role && !relocateRole) {
+    workflow.inputs.properties.kind.enum.push("node.role_converge");
+    const retained = JSON.parse(
+      JSON.stringify(workflow).replaceAll(
+        "run.id",
+        "(has(inputs.parent_run_id) ? inputs.parent_run_id : run.id)",
+      ),
+    ) as typeof workflow;
+    Object.assign(retained.inputs.properties, {
+      parent_run_id: { type: "string", format: "uuid" },
+    });
     return retained;
   }
   return workflow;
@@ -305,7 +307,6 @@ export function generatedFootprintWorkflows() {
     footprintWorkflow(false),
     footprintWorkflow(true),
     footprintWorkflow(true, true),
-    footprintWorkflow(true, false, true),
     roleRemovalWorkflow(),
   ].map((workflow) => {
     return {

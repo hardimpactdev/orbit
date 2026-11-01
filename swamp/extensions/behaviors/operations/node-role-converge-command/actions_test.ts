@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior, observerFiles } from "./assets.ts";
-import { databaseResult } from "./result.ts";
-import { databaseWorkflow, generatedRoleWorkflows } from "./workflows.ts";
+import { roleResult } from "./result.ts";
+import { generatedRoleWorkflows, roleWorkflow } from "./workflows.ts";
 const ctx = {
     extensionFile: (name: string) => new URL(name, import.meta.url).pathname,
     writeResource: () => Promise.resolve(),
@@ -44,20 +44,21 @@ Deno.test("terminal assembly preserves unchanged artifacts and refuses missing r
     const input = {
         intent: {
             assignment_id: 7,
+            role: "database",
             footprint: { artifacts: [{ name: "agent", required: false }] },
             cli: { skip_reason: "release_unavailable", plan_error: null },
         },
         steps: {},
     };
-    const r = databaseResult(input);
+    const r = roleResult(input);
     assertEquals(r.role_proven, false);
     assertEquals(r.footprint.artifacts, [{
         name: "agent",
         status: "unchanged",
     }]);
 });
-Deno.test("the complete Database graph has exactly one209 selector per effect", () => {
-    for (const job of databaseWorkflow().jobs) {
+Deno.test("the complete shared role graph has exactly one209 selector per effect", () => {
+    for (const job of roleWorkflow().jobs) {
         for (const step of job.steps) {
             assertEquals(step.target, "orbit-node-209");
             assertEquals("labels" in step, false);
@@ -69,4 +70,27 @@ Deno.test("the terminal relay exposes the canonical public JSON stdout receipt",
     const out = await (await import("./result.ts")).behavior.methods.relay
         .execute({ result }, ctx);
     assertEquals(JSON.parse(out.stdout), result);
+});
+
+Deno.test("Ingress requires Caddy publication and firewall proof", () => {
+    const intent = {
+        role: "ingress",
+        assignment_id: 7,
+        footprint: { artifacts: [] },
+        cli: { skip_reason: "release_unavailable", plan_error: null },
+    };
+    const steps = Object.fromEntries(
+        [
+            "account",
+            "observer_install",
+            "packages",
+            "caddy_package-0",
+            "caddy_service-0",
+            "caddy-0",
+            "firewall-0",
+        ].map((name) => [name, { status: "succeeded" }]),
+    );
+    assertEquals(roleResult({ intent, steps }).role_proven, true);
+    steps["caddy-0"].status = "failed";
+    assertEquals(roleResult({ intent, steps }).role_proven, false);
 });
