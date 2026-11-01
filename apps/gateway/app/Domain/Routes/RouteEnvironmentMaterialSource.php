@@ -9,7 +9,6 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use App\Support\ValidatedData;
 
 /** Existing Instance environment values, rendered only inside the declared private callback. */
 final readonly class RouteEnvironmentMaterialSource implements OperationSecretSource
@@ -21,7 +20,7 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
 
     public function targetTypes(): array
     {
-        return ['route', 'node', 'cluster'];
+        return ['node', 'cluster'];
     }
 
     public function ownerId(Operation $operation): ?int
@@ -31,8 +30,7 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
             return $operation->target_id;
         }
 
-        return in_array($operation->kind, ['route.create', 'route.converge'], true)
-            && $operation->target_type === 'route' ? $operation->target_id : null;
+        return null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
@@ -43,11 +41,6 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
             throw new ResourceOperationException('operation.execution_forbidden', 'The Route environment field is not bound to this workload Node.', 403);
         }
 
-        if (isset($operation->input['route_mutations'])) {
-            return new OperationSecretValue(app(NativeRouteMutationPlan::class)->environmentMaterial($operation, $nodeId));
-        }
-        $intent = ValidatedData::object($operation->input['route_convergence'] ?? []);
-
-        return new OperationSecretValue(app(NativeRouteConvergenceEnvironmentMaterial::class)->forNode($operation, $nodeId, $intent));
+        return new OperationSecretValue(app(NativeRouteMutationPlan::class)->environmentMaterial($operation, $nodeId));
     }
 }

@@ -169,4 +169,9 @@ export function firewallInspection(
     },
   };
 }
-export const behavior = firewallInspection();
+const inspection = firewallInspection();
+export const behavior = {
+  ...inspection,
+  type: "@nckrtl/firewall-inspection",
+  methods: inspection.methods,
+};

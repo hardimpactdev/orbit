@@ -10,6 +10,7 @@ export function routeMutationSteps(
     guard?: string,
     parentRunId = "run.id",
     ingress = false,
+    withdrawal = false,
 ): Fields[] {
     const side = `${intent}.${mode}`;
     const predicate = guard?.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
@@ -131,16 +132,19 @@ export function routeMutationSteps(
             mode === "forward" ? "prepare_certificates" : "certificates"
         }`,
     );
-    child("php", "operation-route-php-delta", pubs, {
-        node_id: expr("self.part.node_id"),
-        user: expr("self.part.user"),
-        host_keys: expr("self.part.host_keys"),
-        control_node_id: expr("self.part.control_node_id"),
-        connection: expr("self.part.connection"),
-        before: expr("self.part.before.php"),
-        after: expr("self.part.after.php"),
-        direction: mode,
-    });
+    function php() {
+        child("php", "operation-route-php-delta", pubs, {
+            node_id: expr("self.part.node_id"),
+            user: expr("self.part.user"),
+            host_keys: expr("self.part.host_keys"),
+            control_node_id: expr("self.part.control_node_id"),
+            connection: expr("self.part.connection"),
+            before: expr("self.part.before.php"),
+            after: expr("self.part.after.php"),
+            direction: mode,
+        });
+    }
+    if (!withdrawal) php();
     child("lan", "route-lan-apply", `${side}.lan`, targetIntent("rule"));
     if (ingress) {
         child(
@@ -150,15 +154,30 @@ export function routeMutationSteps(
             targetIntent("rule"),
         );
     }
-    if (mode === "forward") caddy("prepare_caddy", "before", "prepared");
-    child(
-        "urls",
-        "route-environment-write",
-        `${side}.url_writes`,
-        targetIntent("write"),
-        { material: expr("inputs.execution_secrets[self.part.secret_field]") },
-    );
-    if (mode === "forward") {
+    if (mode === "forward" && !withdrawal) {
+        caddy("prepare_caddy", "before", "prepared");
+    }
+    function urls() {
+        child(
+            "urls",
+            "route-environment-write",
+            `${side}.url_writes`,
+            targetIntent("write"),
+            {
+                material: expr(
+                    "inputs.execution_secrets[self.part.secret_field]",
+                ),
+            },
+        );
+    }
+    if (!withdrawal) urls();
+    if (withdrawal) {
+        dns("dns", "after");
+        grace();
+        caddy("withdraw_caddy", "before", "after");
+        php();
+        urls();
+    } else if (mode === "forward") {
         dns("prepare_dns", "prepared");
         grace();
         caddy("withdraw_caddy", "prepared", "withdrawn");

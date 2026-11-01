@@ -308,12 +308,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
-      "rule": "inline-script",
-      "count": 81,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operation-runner/mod.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -2003,20 +1997,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/convergence.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/routes/dns-publication.ts",
       "rule": "custom-control",
       "count": 5,
@@ -2080,14 +2060,6 @@
       "file": "extensions/behaviors/operations/routes/publication.ts",
       "rule": "gateway-http",
       "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/removal.ts",
-      "rule": "gateway-http",
-      "count": 4,
       "evidence": [
         "<unknown> <unknown>"
       ]

@@ -1,0 +1,572 @@
+id: ab396849-8327-40c1-bcc0-983a99ca412c
+name: route-mutation-withdraw
+target: orbit-node-209
+description: Canonical Route publications and complete native contribution proof.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties: false
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+        required:
+        - vault
+        - key
+    parent_run_id:
+      type: string
+      format: uuid
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - parent_run_id
+  additionalProperties: false
+jobs:
+- name: withdraw
+  steps:
+  - name: withdraw_prepare_certificates
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.prepare_certificates }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn: []
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          leaf: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+        parent_run_id: ${{ inputs.parent_run_id }}
+        restoring: false
+    allowFailure: true
+  - name: withdraw_lan
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.lan }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw_ingress
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.ingress }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-ingress-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw_dns
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null) }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          host_keys: ${{ self.part.host_keys }}
+          before: ${{ self.part.before.dns }}
+          after: ${{ self.part.after.dns }}
+          alternatives: ${{ [self.part.before.dns,self.part.prepared.dns,self.part.withdrawn.dns,self.part.after.dns] }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw_dns_grace
+    forEach:
+      item: part
+      in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest !=
+        p.after.dns.digest) ? [{}] : [] }}'
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-grace
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: {}
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw_withdraw_caddy
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.before.caddy }}
+          after: ${{ self.part.after.caddy }}
+          direction: forward
+          retain_removed: false
+          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw_php
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    - step: withdraw_withdraw_caddy
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-php-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.before.php }}
+          after: ${{ self.part.after.php }}
+          direction: forward
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw_urls
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.url_writes }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    - step: withdraw_withdraw_caddy
+      condition:
+        type: always
+    - step: withdraw_php
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-environment-write
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          write: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets:
+          material: ${{ inputs.execution_secrets[self.part.secret_field] }}
+    allowFailure: true
+  - name: withdraw_cleanup
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.cleanup }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    - step: withdraw_withdraw_caddy
+      condition:
+        type: always
+    - step: withdraw_php
+      condition:
+        type: always
+    - step: withdraw_urls
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-remove
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          leaf: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+        parent_run_id: ${{ inputs.parent_run_id }}
+        restoring: false
+    allowFailure: true
+  - name: withdraw_retire_lan
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.retire_lan }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    - step: withdraw_withdraw_caddy
+      condition:
+        type: always
+    - step: withdraw_php
+      condition:
+        type: always
+    - step: withdraw_urls
+      condition:
+        type: always
+    - step: withdraw_cleanup
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw_retire_ingress
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.retire_ingress }}
+    guard: ${{ steps.exists(key, key.startsWith("withdraw_") && steps[key].status == "failed") }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    - step: withdraw_withdraw_caddy
+      condition:
+        type: always
+    - step: withdraw_php
+      condition:
+        type: always
+    - step: withdraw_urls
+      condition:
+        type: always
+    - step: withdraw_cleanup
+      condition:
+        type: always
+    - step: withdraw_retire_lan
+      condition:
+        type: always
+    task:
+      type: workflow
+      workflowIdOrName: route-ingress-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: withdraw
+    forEach:
+      item: stage
+      in: ${{ [inputs.intent.route_mutations.forward] }}
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    - step: withdraw_withdraw_caddy
+      condition:
+        type: always
+    - step: withdraw_php
+      condition:
+        type: always
+    - step: withdraw_urls
+      condition:
+        type: always
+    - step: withdraw_cleanup
+      condition:
+        type: always
+    - step: withdraw_retire_lan
+      condition:
+        type: always
+    - step: withdraw_retire_ingress
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "withdraw-result-" + run.id + "-" + string(self._index) }}
+      methodName: result
+      inputs:
+        stage: ${{ self.stage }}
+        mode: forward
+        required:
+          withdraw_prepare_certificates: ${{ size(inputs.intent.route_mutations.forward.prepare_certificates) }}
+          withdraw_lan: ${{ size(inputs.intent.route_mutations.forward.lan) }}
+          withdraw_ingress: ${{ size(inputs.intent.route_mutations.forward.ingress) }}
+          withdraw_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null)) }}
+          withdraw_dns_grace: '${{ size(inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null &&
+            p.before.dns.digest != p.after.dns.digest) ? [{}] : []) }}'
+          withdraw_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
+            }}
+          withdraw_php: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes)) }}
+          withdraw_urls: ${{ size(inputs.intent.route_mutations.forward.url_writes) }}
+          withdraw_cleanup: ${{ size(inputs.intent.route_mutations.forward.cleanup) }}
+          withdraw_retire_lan: ${{ size(inputs.intent.route_mutations.forward.retire_lan) }}
+          withdraw_retire_ingress: ${{ size(inputs.intent.route_mutations.forward.retire_ingress) }}
+        outcomes: ${{ steps }}
+    allowFailure: true
+  - name: result
+    dependsOn:
+    - step: withdraw_prepare_certificates
+      condition:
+        type: always
+    - step: withdraw_lan
+      condition:
+        type: always
+    - step: withdraw_ingress
+      condition:
+        type: always
+    - step: withdraw_dns
+      condition:
+        type: always
+    - step: withdraw_dns_grace
+      condition:
+        type: always
+    - step: withdraw_withdraw_caddy
+      condition:
+        type: always
+    - step: withdraw_php
+      condition:
+        type: always
+    - step: withdraw_urls
+      condition:
+        type: always
+    - step: withdraw_cleanup
+      condition:
+        type: always
+    - step: withdraw_retire_lan
+      condition:
+        type: always
+    - step: withdraw_retire_ingress
+      condition:
+        type: always
+    - step: withdraw
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-mutation-phase
+      methodName: phase
+      inputs:
+        mode: withdraw
+        steps: ${{ steps }}

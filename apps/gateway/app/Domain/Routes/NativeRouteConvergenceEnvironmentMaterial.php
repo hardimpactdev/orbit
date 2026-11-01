@@ -44,7 +44,7 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
      * @param  array<int,Route>  $candidates  Prospective replacements keyed by original Route id.
      * @return list<array{instance_id:int,name:string,input:array<string,mixed>}>
      */
-    public function forRoute(Route $route, int $ownerNodeId, array $intent, bool $rollingBack = false, array $candidates = []): array
+    public function forRoute(Route $route, int $ownerNodeId, array $intent, bool $rollingBack = false, array $candidates = [], bool $urlsOnly = false): array
     {
         $writes = [];
         foreach (RouteExecutionProof::objects($intent['workloads'] ?? []) as $member) {
@@ -58,7 +58,7 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
             if ($instance->node_id !== $ownerNodeId) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The environment workload moved from its admitted Node.', 403);
             }
-            $urlsOnly = $route->hasWebRoot();
+            $urlsOnly = $urlsOnly || $route->hasWebRoot();
             if (! $urlsOnly && $instance->source_is_laravel) {
                 $context = $this->contexts->resolveForBoundRoute($instance, $rollingBack ? $instance->authoritativeRoute() : $route, $rollingBack ? InstanceEnvironmentRouteDomain::Authoritative : InstanceEnvironmentRouteDomain::Candidate);
                 $values = $this->store->values($instance);
@@ -76,7 +76,7 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
             }
             $routes = RouteWebRoot::applicationUrlCandidates($instance)->reject(static fn (Route $stored): bool => isset($candidates[$stored->id]));
             foreach ($candidates as $candidate) {
-                if ($candidate->hasWebRoot() && $candidate->targets->contains('instance_id', $instance->id)) {
+                if ($candidate->status->isAuthoritative() && $candidate->hasWebRoot() && $candidate->targets->contains('instance_id', $instance->id)) {
                     $routes->push($candidate);
                 }
             }

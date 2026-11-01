@@ -20,6 +20,7 @@ class FirewallInspectionNative(NativeTestCase):
         for folder, names in {
             'operations/firewall': ['inspection.ts', 'inspection_native_fixture.ts'],
             'operations/routes': ['firewall-program.ts'],
+            'operations/routes/mutation-command/scripts': ['firewall_snapshot.py'],
             'operations/tools': ['system_program.ts'],
             'observation': ['doctor_native_runtime.ts', 'doctor_contract.ts'],
         }.items():
@@ -29,7 +30,7 @@ class FirewallInspectionNative(NativeTestCase):
                 shutil.copy(ROOT / 'extensions/behaviors' / folder / name, destination)
         module = modules / 'operations/firewall/inspection.ts'
         module.write_text('import {fixtureHttp,fixtureLocal} from "./inspection_native_fixture.ts";\n' + module.read_text().replace(
-            'export const behavior = firewallInspection();', 'export const behavior = firewallInspection(() => fixtureHttp,fixtureLocal);'))
+            'const inspection = firewallInspection();', 'const inspection = firewallInspection(() => fixtureHttp,fixtureLocal);'))
         source = yaml.safe_load((ROOT / 'workflows/workflow-operation-firewall-inspect.yaml').read_text())
         for job in source['jobs']:
             self.assertEqual(job.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')
@@ -73,7 +74,9 @@ class FirewallInspectionNative(NativeTestCase):
     def test_foreign_admitted_node_fails_before_read(self):
         self.state['operation']['input']['node_id'] = 3
         state = self.run_workflow(success=False)
-        self.assertEqual(state['operation']['status'],'failed')
+        # The native failure owns settlement; pre-effect exceptions send no fake terminal callback.
+        self.assertEqual(state['operation']['status'],'running')
+        self.assertFalse(any(path.endswith('/failure') for path in state['calls']))
         self.assertEqual(state['reads'],0)
 
 

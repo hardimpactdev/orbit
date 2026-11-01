@@ -13,11 +13,20 @@ const States = z.record(
     }).passthrough(),
 );
 const PhaseArgs = z.object({
-    mode: z.enum(["forward", "restore"]),
+    mode: z.enum(["forward", "restore", "withdraw"]),
     steps: States,
 });
-const FailureCode = z.enum(["route.update_failed", "route.target_set_failed"]);
+const FailureCode = z.enum([
+    "route.update_failed",
+    "route.target_set_failed",
+    "route.create_failed",
+    "route.withdrawal_failed",
+]);
 const Args = z.object({
+    admitted: z.boolean().default(true),
+    retained_on_nodes: z.array(
+        z.object({ node_id: Id, steps: z.array(z.string()) }),
+    ).default([]),
     failure_code: FailureCode.default("route.update_failed"),
     preparation_counts: z.record(z.string(), z.number().int().nonnegative())
         .default({}),
@@ -46,6 +55,8 @@ export function phaseResult(raw: unknown) {
 }
 export function updateResult(raw: unknown) {
     const {
+        admitted,
+        retained_on_nodes,
         effectful,
         workload_count,
         route_id,
@@ -66,11 +77,11 @@ export function updateResult(raw: unknown) {
             { length: count },
             (_, i) => succeeded(steps, `${name}-${i}`),
         ).every(Boolean);
-    const ready = !effectful ||
+    const ready = admitted && (!effectful ||
         forward?.ready === true && all("prepare") && all("retire") &&
             Object.entries(preparation_counts).every(([name, count]) =>
                 all(name, count)
-            );
+            ));
     const restored = !ready && restore?.ready === true &&
         all("restore-workload");
     const preparedMigrations = Object.entries(steps).filter(([name, step]) =>
@@ -80,6 +91,7 @@ export function updateResult(raw: unknown) {
         stdout: JSON.stringify({
             ready,
             restored,
+            retained_on_nodes,
             route_id,
             result_route_id,
             selected: ready ? "after" : restored ? "before" : "unknown",
@@ -101,14 +113,85 @@ const Output = z.object({ stdout: z.string() });
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+const Selection = z.object({
+    intent: z.record(z.string(), z.unknown()),
+    admitted: z.boolean(),
+    retained_on_nodes: z.array(
+        z.object({ node_id: Id, steps: z.array(z.string()) }),
+    ),
+});
+export function selectRemoval(
+    raw: { intent: Record<string, unknown>; steps: z.infer<typeof States> },
+) {
+    const intent = structuredClone(raw.intent) as Record<string, any>;
+    const publications = intent.route_mutations.forward.publications as Record<
+        string,
+        any
+    >[];
+    const missing = publications.filter((_part, i) =>
+        !succeeded(raw.steps, `reachable-${i}`)
+    );
+    const admitted = missing.length === 0 ||
+        intent.offline && missing.every((part) => part.before.dns === null);
+    const excluded = missing.map((part) => part.node_id);
+    for (const side of ["forward", "restore"]) {
+        for (
+            const [key, rows] of Object.entries(intent.route_mutations[side])
+        ) {
+            if (Array.isArray(rows)) {
+                intent.route_mutations[side][key] = rows.filter((row) =>
+                    !excluded.includes(row.node_id)
+                );
+            }
+        }
+    }
+    intent.workloads = intent.workloads.filter((row: Record<string, any>) =>
+        !excluded.includes(row.node_id)
+    );
+    if (!admitted) {
+        intent.effectful = false;
+        intent.workloads = [];
+    }
+    return {
+        intent,
+        admitted: Boolean(admitted),
+        retained_on_nodes: admitted
+            ? missing.map((part) => ({
+                node_id: part.node_id,
+                steps: ["caddy", "php", "certificates", "firewall"],
+            }))
+            : [],
+    };
+}
 export const behavior = {
     type: "@nckrtl/route-update-result",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
+        selection: {
+            schema: Selection,
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
         result: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
         phase: { schema: Phase, lifetime: "infinite", garbageCollection: 10 },
     },
     methods: {
+        select: {
+            description:
+                "Select admitted offline residue after native SSH readiness",
+            arguments: z.object({
+                intent: z.record(z.string(), z.unknown()),
+                steps: States,
+            }),
+            execute: async (
+                args: Parameters<typeof selectRemoval>[0],
+                ctx: Context,
+            ) => {
+                const result = selectRemoval(args);
+                await ctx.writeResource("selection", "selection", result);
+                return result;
+            },
+        },
         firewall: {
             description:
                 "Return the canonical pinned tuple child's proven result",

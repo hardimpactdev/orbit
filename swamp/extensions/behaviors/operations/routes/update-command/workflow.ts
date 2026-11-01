@@ -60,6 +60,87 @@ export function targetWorkflow(): Fields {
         "route.target_set_failed",
     );
 }
+export function createWorkflow(): Fields {
+    return workloadMutationWorkflow(
+        "8882537c-e250-4b80-8690-ce8c0fa419b8",
+        "operation-route-create",
+        "route.create",
+        "route.create_failed",
+    );
+}
+export function removalWorkflow(): Fields {
+    const flow = workloadMutationWorkflow(
+        "855a0c69-2eab-4eea-8488-0b63b2312cb1",
+        "operation-route-removal",
+        "route.destroy",
+        "route.withdrawal_failed",
+    );
+    const value = JSON.parse(
+        JSON.stringify(flow).replaceAll(
+            "inputs.intent",
+            "steps.selection.outputs.intent",
+        ),
+    );
+    value.inputs.properties.kind.enum = ["route.destroy", "route.withdraw"];
+    value.jobs[0].dependsOn = [{
+        job: "readiness",
+        condition: { type: "always" },
+    }];
+    const steps: Fields[] = [{
+        name: "reachable",
+        ...placed,
+        forEach: {
+            item: "part",
+            in: expr("inputs.intent.route_mutations.forward.publications"),
+        },
+        allowFailure: true,
+        task: {
+            type: "behavior",
+            behaviorType: "@swamp/ssh",
+            behaviorName: expr(
+                '"route-readiness-" + run.id + "-" + string(self._index)',
+            ),
+            methodName: "exec",
+            globalArgs: {
+                name: expr(
+                    '"route-readiness-" + run.id + "-" + string(self._index)',
+                ),
+                transport: {
+                    kind: "ssh",
+                    user: expr("self.part.connection.nodeUser"),
+                    identityFile: expr("self.part.connection.nodeIdentityFile"),
+                    port: expr("self.part.connection.nodePort"),
+                },
+                hosts: [{
+                    name: "target",
+                    address: expr("self.part.connection.nodeHost"),
+                    transport: { hostKeys: expr("self.part.host_keys") },
+                }],
+            },
+            inputs: { hosts: "name:target", argv: ["/usr/bin/true"] },
+        },
+    }, {
+        name: "selection",
+        ...placed,
+        dependsOn: [{ step: "reachable", condition: { type: "always" } }],
+        task: {
+            type: "behavior",
+            behaviorType: "@nckrtl/route-update-result",
+            behaviorName: "route-removal-selection",
+            methodName: "select",
+            inputs: { intent: expr("inputs.intent"), steps: expr("steps") },
+        },
+    }];
+    value.jobs.unshift({ name: "readiness", steps });
+    const result = value.jobs[1].steps.find((step: Fields) =>
+        step.name === "result"
+    );
+    result.task.inputs.admitted = expr("steps.selection.outputs.admitted");
+    result.task.inputs.retained_on_nodes = expr(
+        "steps.selection.outputs.retained_on_nodes",
+    );
+    return value;
+}
 function workloadMutationWorkflow(
     id: string,
     name: string,
@@ -68,8 +149,9 @@ function workloadMutationWorkflow(
 ): Fields {
     const steps: Fields[] = [];
     const names = () => steps.map((s) => String(s.name));
-    const failure =
-        'inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))';
+    const failure = kind === "route.create"
+        ? 'inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-") || k.startsWith("verify-")) && steps[k].status == "failed"))'
+        : 'inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))';
     function workloads(name: string, side: string, guard?: string) {
         steps.push({
             name,
@@ -96,7 +178,7 @@ function workloadMutationWorkflow(
         });
     }
     workloads("prepare", "prepare");
-    if (kind === "route.target_set") {
+    if (["route.target_set", "route.create"].includes(kind)) {
         function preparation(
             name: string,
             list: string,
@@ -141,6 +223,14 @@ function workloadMutationWorkflow(
                 "inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys",
             ),
         });
+        if (kind === "route.create") {
+            preparation(
+                "prepare-upstream",
+                "upstream_firewalls",
+                "route-upstream-firewall",
+                expr("self.part"),
+            );
+        }
         preparation(
             "prepare-certificates",
             "certificates",
@@ -176,10 +266,39 @@ function workloadMutationWorkflow(
         ),
         task: {
             type: "workflow",
-            workflowIdOrName: "route-mutation-forward",
+            workflowIdOrName: kind === "route.destroy"
+                ? "route-mutation-withdraw"
+                : "route-mutation-forward",
             inputs: common,
         },
     });
+    if (kind === "route.create") {
+        steps.push({
+            name: "verify",
+            ...placed,
+            forEach: {
+                item: "part",
+                in: expr(
+                    "inputs.intent.effectful ? inputs.intent.verifications : []",
+                ),
+            },
+            dependsOn: after(...names()),
+            guard: expr(
+                '!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready',
+            ),
+            task: {
+                type: "workflow",
+                workflowIdOrName: "cluster-router-probe",
+                inputs: {
+                    operation_id: common.operation_id,
+                    node_id: common.node_id,
+                    kind: common.kind,
+                    intent: expr("self.part"),
+                    execution_secrets: {},
+                },
+            },
+        });
+    }
     workloads(
         "retire",
         "selected",
@@ -209,10 +328,12 @@ function workloadMutationWorkflow(
             inputs: {
                 effectful: expr("inputs.intent.effectful"),
                 failure_code: failureCode,
-                ...(kind === "route.target_set"
+                ...(["route.target_set", "route.create"].includes(kind)
                     ? {
                         preparation_counts: expr(
-                            'inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes)} : {}',
+                            kind === "route.create"
+                                ? 'inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes), "prepare-upstream": "upstream_firewalls" in inputs.intent.preparation ? size(inputs.intent.preparation.upstream_firewalls) : 0, "verify": "verifications" in inputs.intent ? size(inputs.intent.verifications) : 0} : {}'
+                                : 'inputs.intent.effectful ? {"prepare-certificates": size(inputs.intent.preparation.certificates), "prepare-lan": size(inputs.intent.preparation.lan), "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe": size(inputs.intent.preparation.probes)} : {}',
                         ),
                     }
                     : {}),
@@ -251,14 +372,17 @@ function workloadMutationWorkflow(
         jobs: [{ name: "update", steps }],
     };
 }
-export function mutationWorkflow(mode: "forward" | "restore"): Fields {
+export function mutationWorkflow(
+    mode: "forward" | "restore" | "withdraw",
+): Fields {
     const steps = routeMutationSteps(
         mode,
         "inputs.intent.route_mutations",
-        mode,
+        mode === "withdraw" ? "forward" : mode,
         undefined,
         "inputs.parent_run_id",
         true,
+        mode === "withdraw",
     );
     for (const step of steps) {
         step.allowFailure = true;
@@ -276,7 +400,9 @@ export function mutationWorkflow(mode: "forward" | "restore"): Fields {
         },
     });
     return {
-        id: mode === "forward"
+        id: mode === "withdraw"
+            ? "ab396849-8327-40c1-bcc0-983a99ca412c"
+            : mode === "forward"
             ? "b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7"
             : "f11fa84e-418c-44cf-86d9-a84f46ef0146",
         name: `route-mutation-${mode}`,

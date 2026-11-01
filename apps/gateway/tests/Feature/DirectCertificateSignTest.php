@@ -162,7 +162,7 @@ it('reads the existing canonical admitted leaf containers for every issuing fami
     }
     $this->postJson($this->path, $this->body)->assertOk()->assertJsonPath('data.certificates.0.scope', 'route-31');
 })->with([
-    ['route.create', 'certificates'], ['route.target_set', 'route_target.preparation.certificates'], ['cluster.router_set', 'certificates'],
+    ['route.create', 'route_lifecycle.preparation.certificates'], ['route.target_set', 'route_target.preparation.certificates'], ['cluster.router_set', 'certificates'],
     ['analytics.enable', 'tracking.certificates'], ['node.role_add', '_role.certificates.leaves'],
     ['node.role_converge', '_role.certificates.leaves'], ['node.role_relocate', '_relocate.certificates.leaves'],
     ['node.remove', '_removal.restore_certificates'], ['instance.transfer', 'route_transfer.target.certificates'],
@@ -250,7 +250,7 @@ it('signs only the captured Route phase when one stable scope changes domain', f
     expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain)
         ->and($this->operation->fresh()->input)->toBe($input);
 })->with([['route.update', 'route_update', false], ['route.update', 'route_update', true],
-    ['route.target_set', 'route_target', false], ['route.target_set', 'route_target', true]]);
+    ['route.target_set', 'route_target', false], ['route.target_set', 'route_target', true], ['route.create', 'route_lifecycle', false], ['route.create', 'route_lifecycle', true], ['route.destroy', 'route_lifecycle', true]]);
 
 it('does not grant Route signing authority from the opposite phase or a flat fallback', function (string $kind, string $key, bool $missing): void {
     $prior = [...$this->leaf, 'domain' => 'before.orbit'];
@@ -267,4 +267,4 @@ it('does not grant Route signing authority from the opposite phase or a flat fal
         ->assertJsonPath('error.code', $missing ? 'certificate.intent_missing' : 'certificate.request_invalid');
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
 })->with([['route.update', 'route_update', false], ['route.update', 'route_update', true],
-    ['route.target_set', 'route_target', false], ['route.target_set', 'route_target', true]]);
+    ['route.target_set', 'route_target', false], ['route.target_set', 'route_target', true], ['route.create', 'route_lifecycle', false], ['route.create', 'route_lifecycle', true], ['route.destroy', 'route_lifecycle', true]]);

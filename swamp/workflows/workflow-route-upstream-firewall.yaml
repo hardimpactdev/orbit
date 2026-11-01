@@ -1,0 +1,140 @@
+id: d7eec9b6-54b9-47db-b509-6234b552fb35
+name: route-upstream-firewall
+description: Verify an admitted public Process allowance through the shared read-only
+  UFW policy.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: environment
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-assets-" + run.id }}
+      methodName: firewallAssets
+      inputs:
+        expected: ${{ inputs.intent.expected }}
+  - name: prepare-assets
+    target: orbit-node-209
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-prepare-assets-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "route-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - -m
+        - '0700'
+        - ${{ "/tmp/orbit-route-" + run.id }}
+  - name: copy-assets
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-copy-assets-" + run.id }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: verify
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-write-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/verify_upstream.py" }}
+        stdin: ${{ steps.assets.outputs.input_json }}
+        sudo: true
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: succeeded
+  - name: cleanup-assets
+    target: orbit-node-209
+    dependsOn:
+    - step: verify
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-cleanup-assets-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - ${{ "/tmp/orbit-route-" + run.id }}
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-upstream-ready
+      methodName: firewall
+      inputs:
+        ready: true
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded
