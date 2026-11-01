@@ -102,3 +102,11 @@ it('dispatches a registered issuer only at the bound numeric mint endpoint for c
         ->assertOk()->assertJsonPath('data.execution_secrets.git_read', InstanceGitHubReadTokens::reference($this->operation))->assertDontSee('private-instance-sentinel');
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])->postJson($path, ['run_id' => $this->run])->assertForbidden();
 });
+
+it('keeps anonymous repository reads when the configured App has no installation', function (): void {
+    Http::fake(['*/installation' => Http::response([], 404)]);
+    $result = app(InstanceGitHubReadTokens::class)->issue($this->operation, 209, $this->run);
+    expect($result)->toBe(['git_read' => InstanceGitHubReadTokens::reference($this->operation)])
+        ->and($this->socket->sent[0]['payload']['value'])->toBe('{"github_token":null}');
+    Http::assertSentCount(1);
+});
