@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, decision swamp-vault-secrets (vault.get, no secret inputs), F9 sync phases; DECISIONS round 2 (rendered .env pushed to vault after commit, vault.get from 209, no private-material fetch, no per-Node worker).
+  %% Target design: ADR 0244 task, R1-R4, decision swamp-vault-secrets (vault.get), orbit-gateway-renders-create-env (Gateway owns .env, no read-back), DECISIONS instance.sync_environment (vault after commit, @swamp/ssh from 209, no private-material fetch, no per-Node worker). docs/reference/environment-variables.md.
   %% status: draft
+  %% command: env:sync
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -9,26 +10,123 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Target Node<br/>reached over ssh
-  CLI->>GW: env:sync<br/>{instance: 42}
-  Note over GW: Lock env, render .env<br/>push to vault after commit
+  participant N as Instance Node<br/>reached over ssh
+  CLI->>GW: env:sync --instance=42<br/>--json
+  %%> Command:
+  %%> - `orbit env:sync --instance=42`
+  %%> - syntax: `env:sync --instance=SELECTOR [--json]`
+  %%> Input:
+  %%> - the Instance: a numeric Instance ID or the exact domain of its Route
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, render .env<br/>Instance 42 · task #5131
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, the Node of Instance 42
+  %%> - Instance 42 is active, on a Node with exactly one active `app-dev` or `app-prod` role
+  %%> - Instance 42 has stored configuration (`env.configuration_missing` otherwise)
+  %%> - a stored `{{instance.domain}}` needs a settled Route (`env.reference_unavailable` otherwise)
+  %%> - no other task holds Instance 42; the Gateway holds one lock per Instance and waits briefly for a busy one
+  %%> Renders .env:
+  %%> - every stored key in sorted order, as a quoted value
+  %%> - `{{instance.domain}}` from the Route, `{{instance.environment}}` from the Node role
+  %%> - `.env.testing` too, when Instance 42 owns its `DB` database
+  %%> Result:
+  %%> - task #5131 recorded with the full intent and the sha256 of each rendered file
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Push .env to the vault<br/>vault: env-5131, env-testing-5131
+  %%> Why:
+  %%> - `.env` holds secrets, which travel only through the vault (R3)
+  %%> What it does:
+  %%> - after the task commits, pushes the rendered files into Swamp's vault on Node 209
+  %%> Result:
+  %%> - the run reads them with `vault.get`; no step calls the Gateway back
   GW->>SW: Start run, full intent<br/>operation-instance-environment
-  GW-->>CLI: 202 Accepted<br/>operation #5131
-  SW->>N: Read key names, check<br/>@swamp/ssh · values stay on Node
-  N-->>SW: key names, write check
-  SW->>N: Write .env, .env.testing<br/>vault.get · @swamp/ssh from 209
-  opt production, file changed
-    SW->>N: Refresh runtime<br/>config cache, OPcache, Processes
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the account, the application directory, the file paths and the expected sha256 of each file
+  %%> - the key names Orbit wrote last time, which it may remove
+  %%> - production only: the release path and the Processes with `restart_on_deploy`
+  %%> - secrets only as vault key names
+  GW-->>CLI: 202 Accepted<br/>task #5131
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Check for foreign keys<br/>@swamp/ssh · key names only
+  %%> How:
+  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> What it does:
+  %%> - checks the account, the path, the file type and owner, without following a link
+  %%> - compares the key names of the current `.env` with the stored keys and the keys Orbit wrote last time
+  %%> - a missing file is fine
+  %%> Why:
+  %%> - a key that only the file holds would be lost; the step refuses instead (`env.sync_would_drop_keys`)
+  %%> Not returned:
+  %%> - no value leaves the Node; only the names of foreign keys, on failure
+  SW->>N: Write .env, .env.testing<br/>vault.get · temp file, rename
+  %%> What it does:
+  %%> - writes the rendered `.env` from the vault to a temporary file with mode `0600`, owned by the Instance account, then renames it over `.env`
+  %%> - writes `.env.testing` the same way, unless Git tracks it in the checkout
+  %%> - leaves a file that already matches in place
+  %%> Runs as:
+  %%> - the Instance account named in the intent, not root
+  %%> Not included:
+  %%> - renders nothing; the Gateway already rendered the files
+  SW->>N: Check the written file<br/>sha256 = rendered sha256
+  %%> What it does:
+  %%> - compares the sha256 of each file on the Node with the sha256 in the intent
+  %%> Why:
+  %%> - the sync only counts when the Node holds exactly what the Gateway rendered
+  %%> - this replaces `env.sync_unconfirmed`: a rerun checks and writes again
+  opt production Instance
+    SW->>N: Refresh the runtime<br/>config:cache · OPcache · Processes
+    %%> When:
+    %%> - on every production sync, also when `.env` did not change
+    %%> What it does:
+    %%> - rebuilds an existing config cache in a temporary path, checks it, then replaces the old one; an uncached release stays uncached
+    %%> - reloads the PHP-FPM pool to reset OPcache
+    %%> - restarts the running Processes that have `restart_on_deploy`
+    %%> Not included:
+    %%> - development Instances: they only get the file
   end
-  alt all steps succeed
-    SW-->>GW: Run succeeded<br/>key names, changed flag
-    Note over GW: Record owned keys<br/>clear refresh pending
-  else a key would drop
-    N--xSW: env.sync_would_drop_keys
-    SW--xGW: Run failed<br/>error_code, key names
-    Note over GW: Stored values stay<br/>task → failed
+  alt every file matches
+    N-->>SW: files match, refreshed
+    %%> Returns:
+    %%> - whether each file changed, and the runtime refresh status
+    %%> Not returned:
+    %%> - no values and no file content
+    SW-->>GW: Run succeeded<br/>terminal event · changed flags
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the run's outputs; Swamp never calls the Gateway
+    Note over GW: Record result<br/>owned keys · task succeeded
+    %%> Result:
+    %%> - the synced key names become the keys Orbit owns on Instance 42
+    %%> - task #5131 succeeds with `changed`, the testing status and the refresh status
+  else a step fails
+    N--xSW: exit ≠ 0 or foreign keys
+    %%> When:
+    %%> - SSH fails, the file is unsafe, a foreign key would drop, or a hash does not match
+    %%> - production: the config cache or the Process restart fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code, for example `env.sync_would_drop_keys` with the key names
+    Note over GW: Keep stored values<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - stored values and the owned-key list stay as they were
+    %%> - task #5131 fails
+    %%> On the Node:
+    %%> - a refused file stays unchanged; a failed cache build keeps the old cache
+    %%> - a file already written stays; there is no rollback
+    %%> Retry:
+    %%> - fix the cause, for example store or remove the foreign keys, then run `env:sync` again; it is a new task
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5131
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end

@@ -1,0 +1,78 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task (driver workflow) started by a Schedule, Recall swamp-owns-dependencies, R1-R3.
+  %% status: draft
+  %% command: none · maintenance-projects Schedule
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant GH as GitHub<br/>repository · PRs
+  Note over SW: Hourly Schedule fires<br/>maintenance-projects · :17:40
+  %%> When:
+  %%> - every hour at :17:40; the Gateway publishes the Schedule and its full inputs with `workflow.trigger.set`
+  %%> What it does:
+  %%> - selects which Projects need a detect, a routine or an observe now
+  %%> - picks observe for a Project with a maintenance task group that waits on a pull request or on capacity
+  %%> Not included:
+  %%> - no command: no person starts `project.observe` directly
+  SW-->>GW: Run succeeded<br/>terminal event · requests
+  %%> How the Gateway learns it:
+  %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+  %%> Returns:
+  %%> - one request per Project and mode, with a key such as `4-observe-2026-11-02T17:17`
+  Note over GW: Admit observe, mint token<br/>task #5152 · trigger: schedule
+  %%> Requirements:
+  %%> - Project 4 reads its repository through the GitHub App, with a default branch and a task check
+  %%> - no other `project.detect`, `project.routine` or `project.observe` task runs for Project 4
+  %%> - the request key wasn't admitted before
+  %%> What it does:
+  %%> - captures the Project and its task groups, with their watched PRs
+  %%> - mints a GitHub App token with `contents: read` and `pull_requests: read`, into the vault as `project-dependency-read-5152` (R3)
+  %%> Result:
+  %%> - task #5152 recorded, kind `project.observe`, driver `workflow`, on Node 209
+  %%> - no Node is a target; the work only reads GitHub
+  GW->>SW: Start run, full intent<br/>project-observe
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the captured Project and task groups
+  %%> - the vault key names of the token, never the token
+  SW->>GH: Read the watched PRs<br/>gh pr view · dependency-evidence
+  %%> What it does:
+  %%> - reads the number, state and head of each watched pull request of Project 4
+  %%> How:
+  %%> - `gh` reads the token with `vault.get`
+  Note over SW: Refresh the findings index<br/>orbit-gateway refresh
+  %%> What it does:
+  %%> - links the PR states to the Project's last findings in Swamp data
+  %%> - names task groups that waited for capacity and can start now
+  alt observation done
+    GH-->>SW: PR #57 merged
+    %%> Returns:
+    %%> - each PR's state: open, closed or merged
+    SW-->>GW: Run succeeded<br/>terminal event · observations
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event
+    Note over GW: Record PR states<br/>settle group #812 · task done
+    %%> Result:
+    %%> - task group #812 records PR #57 as merged
+    %%> - a maintenance group whose PR merged or closed moves to settling; the Gateway admits `tasks.maintenance_finish` to remove its workspace
+    %%> - a group that waited for capacity gets `tasks.provision`
+    %%> - task #5152 succeeds
+    %%> Not changed:
+    %%> - a group whose watched PR or settings changed after capture
+  else a read fails
+    GH--xSW: token refused, API error
+    %%> When:
+    %%> - GitHub refuses the token or doesn't answer
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the task failed<br/>groups unchanged · next hour
+    %%> Result:
+    %%> - task #5152 fails; no task group changes
+    %%> Retry:
+    %%> - the next hourly fire admits a new observe task with a new key
+  end
