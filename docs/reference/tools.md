@@ -30,6 +30,8 @@ Adoption and removal run on control Node 209 through official `@swamp/ssh`, usin
 
 Install, update and manager convergence use the same native query layer and Node/manager admission hold. Linux first use composes the admitted manager installer before package queries; macOS verifies the existing scope. Candidate selection and constraints remain separate from the package mutation. Tool writes do not invoke agent actions. Scan keeps its read-only agent boundary.
 
+When checking write before-state, reconciliation or post-state, the workflow validates the manager scope, complete package inventory and installed version. They do not apply removal-only Composer root or cask uninstall rules. An install that finds an unrecorded installed package returns `tool.package_already_installed`, including a Composer dependency or an installed cask. Candidate eligibility and version constraints still run in their own phase; adoption and removal keep their separate safety checks.
+
 Node and Instance callers still use the shared manager-only prerequisite lower. It remains until those parents replace their materialization calls. It cannot install, update, adopt or remove a Tool and creates no `tool.manager_converge` child Operation. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
