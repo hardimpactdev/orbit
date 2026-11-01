@@ -44,3 +44,11 @@ Fix-forward is allowed for these. They need no proof.
 | #2269 | Unused firewall inspection wrapper | None | Unreachable code |
 | #2264 | Route mutation helpers and Valkey ACL writer | 3 removed | Added a retirement procedure to the shape gate guide |
 | #2252 | PHP Instance create and destroy executors | 10 removed | Full Gateway suite red before the PR |
+
+## Proof receipts
+
+Lane 26 adds one row for each F10 receipt. The fault column says whether the proof failed because of the kind or the topology. A topology fault fixes the topology and bumps its version in the same PR.
+
+| Receipt | Kinds | Topology and version | Result | What the proof caught | Fault | Lesson |
+| --- | --- | --- | --- | --- | --- | --- |
+| None yet | | | | | | |

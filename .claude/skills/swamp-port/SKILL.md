@@ -5,7 +5,7 @@ description: Use when porting a legacy Orbit command (Gateway executor or orbit-
 
 # Port a kind to Swamp
 
-Port one family or parent kind per PR. The Gateway admits and projects; Swamp does the work. The [porting reference](../../../docs/swamp/porting.md) holds the template, the legacy-to-native table, the anti-patterns and the changelog. The [Swamp shape guide](../../../swamp/docs/swamp-shape.md) and [PLAN boundary decisions](../../../docs/swamp/porting.md#check-all-seven-boundary-decisions) are binding. Where this skill and the guide disagree, the guide wins; tell lane 26.
+Port one family or parent kind per PR. Every kind follows port, prove, improve (F12): port it with this skill, prove it on a proof topology from `swamp/proof/topologies/` (several kinds may share one proof), then record what the proof taught in this skill and in the topology. The Gateway admits and projects; Swamp does the work. The [porting reference](../../../docs/swamp/porting.md) holds the template, the legacy-to-native table, the anti-patterns and the changelog. The [Swamp shape guide](../../../swamp/docs/swamp-shape.md) and [PLAN boundary decisions](../../../docs/swamp/porting.md#check-all-seven-boundary-decisions) are binding. Where this skill and the guide disagree, the guide wins; tell lane 26.
 
 ## Before you write anything
 
@@ -45,6 +45,7 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 - State the measured p95, its sample, the run budget and `queueTimeout` in the PR body.
 - F10: a kind whose behavior changes attaches a receipt from `bin/swamp-proof <kind>`. It runs the kind on two disposable shark task VMs: a control VM with pinned official Swamp, a throwaway datastore and vault and the PR branch's `swamp/`, and a target VM reached over `@swamp/ssh`. It runs the F9 parity tests and checks the F8 budget. A proof through production serve or a 209 login is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration counts as a behavior change. A live-outage fix may merge first if it says so; the extensions lane proves it live after the load.
 - F10 fixture: add `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/README.md`, or `designs/swamp-proof-fixture-v0.md` on beast until it lands). Take `envelope` from a real Gateway admission, bind only environment values, use throwaway `secrets`, map F9 `phases` to steps with budgets, and point `parity` at the ported legacy tests.
+- F12 topology: the proof runs on a versioned topology (`app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router`, `database`). The receipt names the topology version. A topology fault fixes the topology and bumps its version in the same PR.
 
 ## Review a kind PR
 
@@ -52,4 +53,4 @@ Lane 26 reviews every kind PR against the [PR and review checklist](../../../doc
 
 ## Improve this skill
 
-After every merged PR that touches `swamp/`, run a short retro: what was slow, what the reviewer or conformance audit flagged, what broke live. Fold each lesson into the reference in a PR the same hour, add one row to its `## Changelog` with the PR number, op id or other source, and one row per PR to `docs/swamp/porting-retros.md`. When a lesson comes from a conformance finding, cite its canonical ID and update that row instead of adding a duplicate.
+After every merged PR that touches `swamp/`, run a short retro: what was slow, what the reviewer or conformance audit flagged, what broke live. For each proof receipt, record what the proof caught and whether the kind or the topology was at fault. Fold each lesson into the reference in a PR the same hour, add one row to its `## Changelog` with the PR number, op id or other source, and one row per PR to `docs/swamp/porting-retros.md`. When a lesson comes from a conformance finding, cite its canonical ID and update that row instead of adding a duplicate.

@@ -5,7 +5,7 @@ description: "Steps, template, native mapping and anti-patterns for porting a le
 
 # Port a kind to Swamp
 
-Start every kind PR from this page. Review every kind PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, native workflow and old executor deletion together. Agents load it through the [swamp-port skill](https://github.com/hardimpactdev/orbit/blob/main/.claude/skills/swamp-port/SKILL.md). Lane 26 owns this page and adds a lesson after every merged port; the per-PR detail is in [Swamp port retros](/swamp/porting-retros).
+Start every kind PR from this page. Review every kind PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, native workflow and old executor deletion together. Agents load it through the [swamp-port skill](https://github.com/hardimpactdev/orbit/blob/main/.claude/skills/swamp-port/SKILL.md). Lane 26 owns this page and adds a lesson after every merged port; the per-PR detail is in [Swamp port retros](/swamp/porting-retros). Every kind follows port, prove, improve (F12): port it with this page, [prove it](#prove-the-kind-f10) on a proof topology, then record what the proof taught here and in the topology.
 
 ## Translate a legacy command
 
@@ -130,6 +130,8 @@ A kind whose behavior changes merges only with a receipt from `bin/swamp-proof <
 
 A proof that loads `swamp/` into production serve or logs in to 209 is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior, even when the PR title says "retire" or "remove" (#2257, #2259). Only deletion, docs and test PRs fix forward. A PR that fixes a live user-facing outage may merge without a receipt if it says so; the extensions lane then proves it live right after the load.
 
+Each proof runs on a topology from the versioned library in `swamp/proof/topologies/`, named like task topologies: `app-dev`, `app-prod`, `app-prod-2`, each optionally `+ingress`, plus `router` and `database` (F12). A topology is a declarative definition plus a prebuilt task VM image from `task_vm.image_build`. One proof may cover several kinds that share a topology. Every receipt names the topology version. When a proof fails because of the topology, not the kind, the same PR fixes the topology and bumps its version. Lane 26 records each receipt in [Swamp port retros](/swamp/porting-retros#proof-receipts).
+
 Each kind adds `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). Copy `envelope` from a real Gateway admission and bind only environment values, such as `${proof.target.host_keys}`. List throwaway `secrets` for every vault key the run reads, never a real credential. Map each F9 `phases` entry to its native step and phase budget, and point `parity` at the ported legacy tests. `queue_timeout_seconds` equals the workflow's `queueTimeout`.
 
 ## Keep steps few
@@ -206,8 +208,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | Strict format checks on a third-party token | GitHub stateless tokens contain dots; the check refused a valid mint | Check only documented properties: length, scope, expiry |
 | A kind without a measured p95 and budget, or a non-default Swamp setting without a PLAN row | Runs wait for minutes, as op 6639 did; deviations hide from audit | [Set the time budget](#set-the-time-budget); record reason and removal condition in PLAN |
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault it reads; `vaults: []` when none is a convention |
-| A secret in `run:`, argv, inputs or `set -x`; a GitHub App or CA key in a vault | History and `ps` expose it; root-of-trust keys stay in the Gateway | `env` from `vault.get`, then stdin or a 0600 file; the mint and sign primitives |
-| A secret returned from a Node to the Gateway | e459 cannot mark `@swamp/ssh` output sensitive; legacy generates `APP_KEY` in the Gateway, and Nick kept it there | Generate Gateway-owned secrets at admission; Node-held keys stay on the Node (decision 3) |
+| A secret in `run:`, argv, inputs or `set -x`; a CA or GitHub App key in a vault; a secret returned from a Node | History and `ps` expose it; e459 cannot mark `@swamp/ssh` output sensitive | `env` from `vault.get`, then stdin or a 0600 file; generate Gateway-owned secrets at admission |
 | A failure reporter, Gateway re-read timer, binding loop or retry | Duplicates Swamp and stalls Operations | Native status and one history read per terminal delivery |
 | Redesigning the legacy sequence without a written reason | The legacy Gateway ran each kind reliably; a redesign loses edge cases | Keep the legacy phases, or give the reason in the PR |
 
@@ -240,7 +241,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | Lane 17 on #2281 | The F9 spec is the legacy code at `6291bb036`, never an intermediate Swamp port. Legacy `SweepTaskVmHosts.php:64-80` stops a host's work at its first failure; other hosts continue. |
 | #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
-| PLAN F10 (A, 2026-11-01) | `bin/swamp-proof` runs `swamp/proof/<kind>.json` on two shark task VMs with throwaway Swamp state; no production serve, no 209 login. Live-outage fixes get a live proof after merge. |
+| PLAN F10, F12 | Prove on two shark task VMs with throwaway Swamp state, never production serve or 209. Several kinds may share a proof. Receipts name the topology version. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
 | v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
