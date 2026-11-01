@@ -1,6 +1,8 @@
 id: aa946b88-1dfe-4010-a85d-bd9ddfe9110a
 name: operation-task-vm-sweep
 description: Sweep an immutable provider ownership scope on209; no Gateway callbacks.
+# Background maintenance: one host sweep at a time, so sweeps never fill 209's worker ahead of user work.
+concurrency: 1
 vaults:
 - orbit-control-inputs
 inputs:
@@ -179,4 +181,5 @@ jobs:
       expr: steps.format.outputs.ready == true
       severity: high
       message: Task VM sweep did not complete.
-queueTimeout: 60
+# Up to the 600 s run budget, so each host's sweep waits its turn behind the others.
+queueTimeout: 600

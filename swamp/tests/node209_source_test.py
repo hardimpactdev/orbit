@@ -31,7 +31,11 @@ class Node209SourceTest(unittest.TestCase):
     def test_no_unmeasured_top_level_queue_timeout_override(self):
         for path in (ROOT/'workflows').glob('*.yaml'):
             definition = yaml.safe_load(path.read_text())
-            if definition['name'] in ('operation-task-vm-sweep', 'task-vm-sweep-incus', 'task-vm-sweep-cloud',
+            if definition['name'] == 'operation-task-vm-sweep':
+                # Serialized by concurrency 1: each host's sweep may wait out the 600 s run budget of the one before it.
+                self.assertEqual(definition['queueTimeout'], 600)
+                self.assertEqual(definition['concurrency'], 1)
+            elif definition['name'] in ('task-vm-sweep-incus', 'task-vm-sweep-cloud',
                                       'task-vm-sweep-incus-cleanup', 'task-vm-sweep-cloud-cleanup'):
                 # Measured sweep budget; docs/swamp/porting.md F8 permits per-kind queue bounds.
                 self.assertEqual(definition['queueTimeout'], 60)

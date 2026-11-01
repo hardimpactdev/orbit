@@ -66,9 +66,10 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
+        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. Background maintenance, so every
+        // thirty minutes; Swamp runs one host sweep at a time. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
-        GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyTenMinutes()
+        GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyThirtyMinutes()
             ->when(static function (): bool {
                 $taskVms = TaskVmSettings::scheduled();
 
