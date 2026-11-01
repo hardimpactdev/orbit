@@ -82,6 +82,7 @@ RULES = [
     ('.github/*', ALL),
     ('bin/*', ALL),
     ('tools/*', ALL),
+    ('platform/*', ALL),
     ('.agents/*', ALL),
     ('.codex/*', ALL),
 ]
