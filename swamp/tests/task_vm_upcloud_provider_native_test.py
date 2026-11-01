@@ -171,7 +171,7 @@ class UpCloudProviderNative(NativeTestCase):
     def test_start_phase_timeout_fails_without_retrying_the_mutation(self):
         self.detail_states = ['maintenance']
         path = self.repo / 'workflows/workflow-task-vm-provider-upcloud.yaml'
-        path.write_text(path.read_text().replace('timeout --verbose 240 ', 'timeout --verbose 1 '))
+        path.write_text(path.read_text().replace('timeout 240 ', 'timeout 1 '))
         run, history = self.create(False)
         self.assertEqual(run['status'], 'failed')
         self.assertEqual(len(self.create_documents), 1)

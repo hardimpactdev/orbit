@@ -17,18 +17,19 @@
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py": "8a143374b933e0987c7b7e36cc6aac75854a7927acb8f0884a9e1e0fb5c8edf8",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_api.py": "fced77f41ca3d8d7cf7ca94d851fcf6c628f7ec731c80651a4fa8e28100d134e",
     "swamp/extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud_create.py": "787339420a97cadae46c1bc96998344be0406e511a0a3067a03f4f1d51cfcf6b",
-    "swamp/workflows/workflow-task-vm-provider-upcloud.yaml": "870b2121888d66e4b6d8b9880f9b411e81ec640748d7dcad2094b52eb97d810d",
-    "swamp/tests/task_vm_upcloud_provider_native_test.py": "901a39bf397e5c7d30764a093ffa46518b29e05d33ad92397cf40ee5452c6b50",
-    "swamp/tests/task_vm_upcloud_wait_test.py": "5ed9a02e2e1f028c58c890f190d544c1a103e19bbf9d6d4690e11279806cc40f",
+    "swamp/workflows/workflow-task-vm-provider-upcloud.yaml": "b34015c02d229d8da4bccb0c2499c817a087fbc72f7b2cd795a69571ed0b411b",
+    "swamp/tests/task_vm_upcloud_provider_native_test.py": "7612be846ca9fab088968a0b2d06e61d87cddadcd38c052ec4ab1b9cd9b7720a",
+    "swamp/tests/task_vm_upcloud_wait_test.py": "7803aae69e92572f094ab69cd68da6d1eec769569c1636e6a72c1f1045102f86",
     "apps/gateway/app/Domain/Operations/OperationRunBudgets.php": "44e94dad130e1853fa2af042716c753dc03b3edc0c7666c8e17952e8eb3d7494",
     "apps/gateway/tests/Feature/Infrastructure/Swamp/OperationRunBudgetTest.php": "df512c387c22d5df5316135e6fb883b1418fe7c8eb334f378673b59d39020d3c",
-    "swamp/tests/swamp_shape_gate_test.py": "7d15ed5fb4eb62f0ee0a53205662d5d21fd6d827e0faf40ddfc0654969ac370a"
+    "swamp/tests/swamp_shape_gate_test.py": "7d15ed5fb4eb62f0ee0a53205662d5d21fd6d827e0faf40ddfc0654969ac370a",
+    "swamp/tests/task_vm_upcloud_composition_native_test.py": "ac6d2aeaec84b90fcc5b60f9a4e819c2532918e8f08be91148584bd9f58e58a9"
   },
   "provider_native": {
     "test_file": "swamp/tests/task_vm_upcloud_provider_native_test.py",
     "tests": 9,
     "passed": 9,
-    "elapsed_seconds": 111.236,
+    "elapsed_seconds": 67.667,
     "cases": [
       "test_bad_start_state_fails_without_another_create_or_start",
       "test_create_and_lost_response_observation_never_duplicate_and_never_expose_bootstrap",
@@ -41,152 +42,152 @@
       "test_unknown_uuid_discovery_stop_delete_and_absence_are_native_steps"
     ],
     "successful_run_sample": 4,
-    "nearest_rank_p95_ms": 7364,
+    "nearest_rank_p95_ms": 4227,
     "runs": [
       {
-        "id": "8d6bc5ce-1a38-4124-81d2-79f192590aa6",
+        "id": "3981d233-ba9b-4634-b289-11748ee550e4",
         "status": "failed",
-        "duration": 2021
+        "duration": 1229
       },
       {
-        "id": "07c43a8c-addc-4bdc-9f21-8cbd1ff6d896",
+        "id": "bf99784f-2b4f-427b-9292-e5a283f7edaf",
         "status": "succeeded",
-        "duration": 4672
+        "duration": 1247
       },
       {
-        "id": "01bf8949-7664-4323-a147-9d8361796d10",
+        "id": "db14338c-54e0-4b4d-88ca-1623e592dbcb",
         "status": "succeeded",
-        "duration": 7364
+        "duration": 1327
       },
       {
-        "id": "16cc6db7-3406-4eed-9afd-993e0dc6d096",
+        "id": "d205d5b1-351d-44c0-8377-f2a85176eea1",
         "status": "failed",
-        "duration": 1381
+        "duration": 1002
       },
       {
-        "id": "acd44224-8070-4ae0-8935-d18684981da9",
+        "id": "744b56b5-7e40-46d8-88dc-e7ded0568f63",
         "status": "failed",
-        "duration": 509
+        "duration": 536
       },
       {
-        "id": "d45181bd-719e-4147-8f43-c4f2d4a551f4",
+        "id": "ec1c8cbe-ff6d-4c4c-8451-a9d26327b1bf",
         "status": "succeeded",
-        "duration": 1348
+        "duration": 1265
       },
       {
-        "id": "92883c2d-7627-4482-b05d-f08d5646c4eb",
+        "id": "3805c483-dd14-4f84-ab81-05c87a220791",
         "status": "succeeded",
-        "duration": 4314
+        "duration": 4227
       },
       {
-        "id": "adb909eb-5ecb-4465-b24b-a211e4826728",
+        "id": "73789c88-7c0f-4b77-bf9a-14fb9138020b",
         "status": "failed",
-        "duration": 1353
+        "duration": 1248
       },
       {
-        "id": "25cc9363-70b1-4526-aecf-47dd7f5b58ca",
+        "id": "e120049e-0cde-4f74-b4c9-e5cb27975922",
         "status": "failed",
-        "duration": 2473
+        "duration": 2111
       }
     ],
     "longest_successful_run_phases": {
       "fixture_only": true,
-      "id": "01bf8949-7664-4323-a147-9d8361796d10",
+      "id": "3805c483-dd14-4f84-ab81-05c87a220791",
       "status": "succeeded",
-      "startedAt": "2026-11-01T14:03:58.763Z",
-      "completedAt": "2026-11-01T14:04:06.127Z",
-      "duration": 7364,
+      "startedAt": "2026-11-01T14:59:17.849Z",
+      "completedAt": "2026-11-01T14:59:22.076Z",
+      "duration": 4227,
       "phases": [
         {
           "name": "input",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:03:58.830Z",
-          "completedAt": "2026-11-01T14:03:59.328Z",
-          "duration": 498
+          "startedAt": "2026-11-01T14:59:17.854Z",
+          "completedAt": "2026-11-01T14:59:17.901Z",
+          "duration": 47
         },
         {
           "name": "list",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:03:59.348Z",
-          "completedAt": "2026-11-01T14:04:01.027Z",
-          "duration": 1679
+          "startedAt": "2026-11-01T14:59:17.903Z",
+          "completedAt": "2026-11-01T14:59:18.242Z",
+          "duration": 339
         },
         {
           "name": "plans",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:03:59.348Z",
-          "completedAt": "2026-11-01T14:04:00.457Z",
-          "duration": 1109
+          "startedAt": "2026-11-01T14:59:17.903Z",
+          "completedAt": "2026-11-01T14:59:18.070Z",
+          "duration": 167
         },
         {
           "name": "choose",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:01.087Z",
-          "completedAt": "2026-11-01T14:04:01.287Z",
-          "duration": 200
+          "startedAt": "2026-11-01T14:59:18.246Z",
+          "completedAt": "2026-11-01T14:59:18.264Z",
+          "duration": 18
         },
         {
           "name": "create",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:01.336Z",
-          "completedAt": "2026-11-01T14:04:01.944Z",
-          "duration": 608
+          "startedAt": "2026-11-01T14:59:18.269Z",
+          "completedAt": "2026-11-01T14:59:18.414Z",
+          "duration": 145
         },
         {
           "name": "discover",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:02.244Z",
-          "completedAt": "2026-11-01T14:04:03.178Z",
-          "duration": 934
+          "startedAt": "2026-11-01T14:59:18.418Z",
+          "completedAt": "2026-11-01T14:59:18.553Z",
+          "duration": 135
         },
         {
           "name": "selected",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:03.268Z",
-          "completedAt": "2026-11-01T14:04:03.428Z",
-          "duration": 160
+          "startedAt": "2026-11-01T14:59:18.558Z",
+          "completedAt": "2026-11-01T14:59:18.575Z",
+          "duration": 17
         },
         {
           "name": "inspect",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:03.502Z",
-          "completedAt": "2026-11-01T14:04:04.183Z",
-          "duration": 681
+          "startedAt": "2026-11-01T14:59:18.580Z",
+          "completedAt": "2026-11-01T14:59:18.714Z",
+          "duration": 134
         },
         {
           "name": "observed",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:04.221Z",
-          "completedAt": "2026-11-01T14:04:04.358Z",
-          "duration": 137
+          "startedAt": "2026-11-01T14:59:18.722Z",
+          "completedAt": "2026-11-01T14:59:18.739Z",
+          "duration": 17
         },
         {
           "name": "start",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:04.378Z",
-          "completedAt": "2026-11-01T14:04:04.969Z",
-          "duration": 591
+          "startedAt": "2026-11-01T14:59:18.745Z",
+          "completedAt": "2026-11-01T14:59:18.884Z",
+          "duration": 139
         },
         {
           "name": "observe",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:05.043Z",
-          "completedAt": "2026-11-01T14:04:05.669Z",
-          "duration": 626
+          "startedAt": "2026-11-01T14:59:18.890Z",
+          "completedAt": "2026-11-01T14:59:22.031Z",
+          "duration": 3141
         },
         {
           "name": "provider",
           "status": "succeeded",
-          "startedAt": "2026-11-01T14:04:05.711Z",
-          "completedAt": "2026-11-01T14:04:06.022Z",
-          "duration": 311
+          "startedAt": "2026-11-01T14:59:22.038Z",
+          "completedAt": "2026-11-01T14:59:22.059Z",
+          "duration": 21
         }
       ]
     }
   },
   "unit": {
-    "tests": 5,
-    "passed": 5
+    "tests": 6,
+    "passed": 6
   },
   "deno": {
     "tests": 76,
@@ -210,13 +211,14 @@
     "real UpCloud API/provider latency",
     "F13 topology",
     "live uptake of this new explicit budget row",
-    "600-second aggregate SSH preparation cap"
+    "600-second aggregate SSH preparation cap",
+    "shared F1 phase/budget timeout text (projector pending)"
   ],
   "composition_native": {
     "test_file": "swamp/tests/task_vm_upcloud_composition_native_test.py",
     "tests": 9,
     "passed": 9,
-    "elapsed_seconds": 207.173
+    "elapsed_seconds": 189.084
   },
   "gateway_budget_suite": {
     "tests": 54,

@@ -2,12 +2,15 @@
 import importlib.util
 import io
 import os
+import shlex
 import sys
 import unittest
 import urllib.error
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import call, patch
+
+import yaml
 
 DIRECTORY = Path(__file__).resolve().parents[1] / 'extensions/behaviors/operations/task-vm-lifecycle/scripts'
 
@@ -66,3 +69,15 @@ class UpCloudStartWait(unittest.TestCase):
                 self.assertEqual(stderr.getvalue().strip(), 'task_vm.provider_server_missing' if status == 404 else 'task_vm.upcloud_failed')
                 request.assert_called_once_with('GET', 'server/owned')
                 sleep.assert_not_called()
+
+
+class UpCloudPhaseBounds(unittest.TestCase):
+    def test_every_provider_phase_exposes_a_literal_first_word_timeout_for_shared_f1(self):
+        workflow = yaml.safe_load((DIRECTORY.parents[4] / 'workflows/workflow-task-vm-provider-upcloud.yaml').read_text())
+        expected = {'list': 15, 'plans': 15, 'create': 45, 'discover': 15, 'inspect': 15, 'start': 15, 'observe': 240}
+        for step in workflow['jobs'][0]['steps']:
+            if step['name'] in expected:
+                with self.subTest(phase=step['name']):
+                    command = step['task']['inputs']['run'].strip()
+                    self.assertEqual(shlex.split(command)[:2], ['timeout', str(expected[step['name']])])
+                    self.assertEqual(len(command.splitlines()), 1)

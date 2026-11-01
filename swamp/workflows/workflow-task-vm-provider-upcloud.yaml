@@ -64,7 +64,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" list
+          timeout 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" list
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
@@ -83,7 +83,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" plans
+          timeout 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" plans
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
@@ -121,7 +121,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          exec timeout --verbose 45 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" create
+          timeout 45 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" create
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
@@ -143,7 +143,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
+          timeout 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
@@ -181,7 +181,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
+          timeout 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
@@ -217,7 +217,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          exec timeout --verbose 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" start
+          timeout 15 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" start
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
@@ -238,7 +238,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          exec timeout --verbose 240 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" wait-started
+          timeout 240 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" wait-started
         env:
           ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.wait_script }}
           ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
