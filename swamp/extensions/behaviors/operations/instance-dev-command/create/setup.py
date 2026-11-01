@@ -19,16 +19,13 @@ def setup(value):
         command_input(step)
         programs.append(step)
     completed = []
-    tails = {'stdout': '', 'stderr': ''}
     for step in programs:
         result = execute_command(step, step['timeout_seconds'])
-        for stream in tails:
-            tails[stream] = (tails[stream] + result[stream]).encode()[-4096:].decode('utf-8', errors='ignore')
         if result['exitCode']:
-            return {'ready': False, 'completed': completed, 'failed_command': step['name'], **result, **tails,
+            return {'ready': False, 'completed': completed, 'failed_command': step['name'], **result,
                     'error_code': 'operation.timed_out' if result['exitCode'] in (124, 137) else 'instance.setup_step_failed'}
         completed.append(step['name'])
-    return {'ready': True, 'completed': completed, 'exitCode': 0, **tails}
+    return {'ready': True, 'completed': completed, 'exitCode': 0, 'stderr': ''}
 
 
 if __name__ == '__main__':

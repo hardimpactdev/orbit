@@ -177,7 +177,18 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.setup_commands(['printf private-setup-sentinel; touch .git/first','test -f .git/first; touch .git/second'])
         history=self.run_create()
         self.assertEqual(history['status'],'succeeded');self.assertTrue((self.application/'.git/second').is_file())
-        self.assertIn('private-setup-sentinel',json.dumps(history))
+        self.assertNotIn('private-setup-sentinel',json.dumps(history))
+
+    def test_failed_setup_history_contains_only_redacted_stderr(self):
+        self.setup_commands(['printf unclassified-private-stdout; printf "%s\\npublic-error\\n" "$STORED" >&2; exit 7'])
+        history = self.run_create(False)
+        self.assertEqual(history['status'], 'failed')
+        raw = json.dumps(history)
+        self.assertNotIn('unclassified-private-stdout', raw)
+        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+        result = json.loads(steps['finish-setup']['outputs']['stdout'])
+        self.assertNotIn('stdout', result)
+        self.assertEqual(result['stderr'], '[REDACTED]\npublic-error\n')
 
     def test_active_create_does_not_repeat_setup_or_environment_write(self):
         self.input['intent']['already_active'] = True
@@ -284,6 +295,7 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
     test_full_create_keeps_environment_private_and_empty_vp_setup_valid=None
     test_empty_stored_environment_reaches_setup_for_unrouted_monorepo=None
     test_setup_commands_run_in_order_with_private_stdin=None
+    test_failed_setup_history_contains_only_redacted_stderr=None
     test_failed_setup_skips_later_command_and_fresh_root_converges=None
 
 

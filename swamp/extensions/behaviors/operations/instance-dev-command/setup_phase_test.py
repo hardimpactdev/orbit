@@ -62,17 +62,21 @@ class SetupPhase(unittest.TestCase):
         self.assertFalse((self.path / 'late').exists())
         self.assertFalse((self.path / 'after').exists())
 
-    def test_cli_retains_public_output_and_redacts_owned_environment(self):
+    def test_cli_keeps_only_failing_command_stderr(self):
         import json
         (self.path / '.env').write_text('APP_KEY="private-output-sentinel"\n')
         result = subprocess.run([sys.executable, '-B', str(SCRIPT)], input=json.dumps({'steps': [
-            self.step('private', 'printf "$APP_KEY"; printf public-error >&2')]}),
-            capture_output=True, text=True, check=True,
+            self.step('before', 'printf earlier-command-stderr >&2'),
+            self.step('private', 'printf "$APP_KEY"; printf public-error >&2; exit 7')]}),
+            capture_output=True, text=True, check=False,
             env=dict(os.environ, PYTHONPATH=str(LIBRARY)))
         self.assertNotIn('private-output-sentinel', result.stdout)
         output = json.loads(result.stdout)
-        self.assertTrue(output['ready'])
-        self.assertEqual(output['stdout'], '[REDACTED]')
+        self.assertFalse(output['ready'])
+        self.assertEqual(output['completed'], ['before'])
+        self.assertEqual(output['failed_command'], 'private')
+        self.assertNotIn('stdout', output)
+        self.assertNotIn('earlier-command-stderr', result.stdout)
         self.assertEqual(output['stderr'], 'public-error')
 
     def test_positive_integer_budgets_only_and_empty_list_is_noop(self):
@@ -80,7 +84,7 @@ class SetupPhase(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'instance.setup_identity_changed'):
                 phase.setup({'steps': [self.step('bad', 'touch after', value)]})
         self.assertFalse((self.path / 'after').exists())
-        self.assertEqual(phase.setup({'steps': []}), {'ready': True, 'completed': [], 'exitCode': 0, 'stdout': '', 'stderr': ''})
+        self.assertEqual(phase.setup({'steps': []}), {'ready': True, 'completed': [], 'exitCode': 0, 'stderr': ''})
 
 
 if __name__ == '__main__':
