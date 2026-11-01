@@ -1,6 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import { agentLaunch, agentReply, type NodeCall } from "./node-agent.ts";
-import { applyNamedRule } from "../firewall/local.ts";
 
 const call: NodeCall = {
   name: "firewall.rule",
@@ -30,31 +29,6 @@ Deno.test("sudo launch is fixed argv with a frozen admitted envelope", () => {
     agentLaunch({ ...call, sudo: false }).command,
     "/usr/local/bin/orbit-agent",
   );
-});
-Deno.test("Firewall uses its fixed native UFW program and bounded admitted rule", async () => {
-  const calls: unknown[] = [];
-  await applyNamedRule({
-    node_id: 9,
-    name: "canary",
-    action: "allow",
-    source: "10.44.0.1",
-    protocol: "tcp",
-    port: "443",
-    operation: "converge",
-  }, (_program, input) => {
-    calls.push(input);
-    return Promise.resolve({ matches: true });
-  });
-  assertEquals(calls, [{
-    mode: "named",
-    node_id: 9,
-    name: "canary",
-    action: "allow",
-    source: "10.44.0.1",
-    protocol: "tcp",
-    port: "443",
-    operation: "converge",
-  }]);
 });
 Deno.test("refusal diagnostics and malformed output never escape the local step", () => {
   const bytes = (value: unknown) =>

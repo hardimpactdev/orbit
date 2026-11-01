@@ -6,3 +6,4 @@ license: MIT
 description: Typed public UFW inspection and comparison; transport is official SSH.
 behaviors:
   - operations/firewall/inspection-result.ts
+  - operations/firewall/mutation-result.ts
