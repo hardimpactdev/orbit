@@ -106,6 +106,33 @@ it('returns one admitted Operation from the normal API and replays its idempoten
         ->and(array_filter($this->socket->sent, static fn (array $frame): bool => $frame['type'] === 'workflow.run'))->toHaveCount(1);
 });
 
+it('records committed reservations as failed when native start fails without claiming restoration', function (bool $existing, bool $uncertain): void {
+    $name = 'dispatch-failed-enrollment';
+    $node = $existing ? FleetFixtures::node($name, [RoleName::AppDev]) : null;
+    $node?->update(['tld' => 'existing.test', 'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
+    $before = $node?->fresh()?->getAttributes();
+    $accept = $this->socket->reply;
+    $this->socket->reply = static fn (array $request): array => $request['type'] === 'workflow.run'
+        ? ($uncertain ? [] : [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'forbidden']]])
+        : $accept($request);
+    expect(fn () => app(AdmitNodeEnrollmentOperationAction::class)->execute(new ProvisionNodeData(
+        name: $name, publicSshHost: '192.0.2.240', wireguardIp: '10.44.0.240',
+        roles: [RoleName::Metrics], expectedSshHostFingerprint: $existing ? null : 'SHA256:'.str_repeat('A', 43),
+    )))->toThrow(ResourceOperationException::class);
+    $operation = Operation::query()->where('kind', 'node.add')->sole();
+    $node = Node::query()->where('name', $name)->sole();
+    expect($operation->status->value)->toBe('failed')
+        ->and($operation->result ?? [])->not->toHaveKey('restored')
+        ->and($node->roles()->where('role', RoleName::Metrics)->sole()->status)->toBe(LifecycleStatus::Failed);
+    if ($existing) {
+        expect($node->getAttributes())->toBe($before)
+            ->and($node->roles()->where('role', RoleName::AppDev)->sole()->status)->toBe(LifecycleStatus::Active);
+    } else {
+        expect($node->status)->toBe(LifecycleStatus::Failed)
+            ->and($node->error_code)->toBe($operation->error_code);
+    }
+})->with([false, true])->with([false, true]);
+
 it('refuses an untrusted API caller before reserving a target or issuing a native run', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.250'])->postJson('/api/v1/nodes', [
         'name' => 'untrusted-native-enrollment', 'public_ssh_host' => '192.0.2.241',

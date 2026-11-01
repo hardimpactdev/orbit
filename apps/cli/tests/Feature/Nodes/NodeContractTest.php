@@ -77,11 +77,10 @@ describe('node contract', function () use ($addArguments): void {
 
     });
 
-    it('renders restored failure and cancellation as unsuccessful terminal Operations', function (string $case) use ($addArguments): void {
-        $fixture = 'nodes/node-add/'.$case;
+    it('renders restored failure and cancellation as unsuccessful terminal Operations', function (string $fixture) use ($addArguments): void {
         run_enrollment_contract($fixture, $addArguments, $fixture.'.human.txt', 1);
         run_enrollment_contract($fixture, [...$addArguments, '--json' => true], $fixture.'.json', 1);
-    })->with(['restored-failure', 'cancelled']);
+    })->with(['nodes/node-add/restored-failure', 'nodes/node-add/cancelled']);
 
     it('renders macOS enrollment refusals', function (): void {
         $fingerprint = 'SHA256:'.str_repeat('M', 43);

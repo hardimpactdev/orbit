@@ -44,6 +44,8 @@ A new Node needs a public SSH host and an approved SSH host key fingerprint, `--
 
 The Gateway reserves a new Node as `provisioning`. An existing Node keeps its recorded identity and settings during native work. One terminal transaction records the candidate identity, roles, settings, footprint and Route checkpoints after native readiness; a failed run records restoration from captured prior snapshots.
 
+If native submission fails after admission commits, the Operation retains the shared start error. Newly reserved Nodes and role assignments become failed records. Existing Node identity, settings and active roles stay unchanged. An uncertain start preserves the same reservation and does not claim restoration or permit an automatic resubmission.
+
 For Ubuntu, Swamp runs these steps in order:
 
 | Step | Work |

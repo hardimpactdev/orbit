@@ -22,6 +22,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationSecretValue;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteNodeMutationInput;
 use App\Domain\Routes\NativeRouteNodeRender;
 use App\Domain\Routes\RouteRenderContext;
@@ -30,6 +31,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -57,11 +59,51 @@ final readonly class AdmitNodeEnrollmentOperationAction
             return $existing;
         }
         app(DirectOperation::class)->writer('node.add');
+        $admitted = null;
         try {
-            return $this->lock->run($data->name, fn (): Operation => DB::transaction(fn (): Operation => $this->admit($data, $requestId)));
+            return $this->lock->run($data->name, function () use ($data, $requestId, &$admitted): Operation {
+                return DB::transaction(function () use ($data, $requestId, &$admitted): Operation {
+                    return $admitted = $this->admit($data, $requestId);
+                });
+            });
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
+        } catch (ResourceOperationException $exception) {
+            if ($admitted instanceof Operation) {
+                $this->recordStartFailure($admitted);
+            }
+            throw $exception;
         }
+    }
+
+    /** A failed submission is not a native restoration receipt. Preserve its reserved intent. */
+    private function recordStartFailure(Operation $admitted): void
+    {
+        DB::transaction(function () use ($admitted): void {
+            $operation = Operation::query()->lockForUpdate()->find($admitted->id);
+            if ($operation === null || $operation->status !== OperationStatus::Failed || $operation->result !== null) {
+                return;
+            }
+            $reservation = ValidatedData::object($operation->input['enrollment']);
+            $code = $operation->error_code ?? 'swamp.start_unavailable';
+            if ($reservation['existed'] === false) {
+                Node::query()->whereKey($operation->target_id)->where('status', LifecycleStatus::Provisioning)
+                    ->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'node-add-dispatch', 'error_code' => $code]);
+            }
+            $entries = $reservation['reserved_roles'];
+            if (! is_array($entries) || ! array_is_list($entries)) {
+                throw new \InvalidArgumentException('Enrollment reservations must be a list.');
+            }
+            foreach ($entries as $raw) {
+                $entry = ValidatedData::object($raw);
+                if ($entry['created'] !== true) {
+                    continue;
+                }
+                $assignment = NodeRole::query()->whereKey(ValidatedData::integer($entry['assignment_id']))
+                    ->where('node_id', $operation->target_id)->where('status', LifecycleStatus::Provisioning)->lockForUpdate()->first();
+                $assignment?->markConvergenceFailed('dispatch', $code);
+            }
+        });
     }
 
     private function admit(ProvisionNodeData $data, ?string $requestId): Operation
