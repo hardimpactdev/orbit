@@ -20,7 +20,7 @@ class UpCloudProviderNative(NativeTestCase):
         self.token, self.private = 'UPCloud_secret_fixture_3f31c', '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture-secret-host-key\n-----END OPENSSH PRIVATE KEY-----'
         self.exists, self.state, self.lost_create, self.foreign = False, 'stopped', False, False
         self.calls, self.create_documents = [], []
-        self.omit_list_labels, self.wrong_detail_uuid = False, False
+        self.omit_list_labels, self.wrong_detail_uuid, self.wrong_detail_image = False, False, False
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -51,6 +51,8 @@ class UpCloudProviderNative(NativeTestCase):
                         row.pop('labels')
                     return self.answer(200, {'servers': {'server': [row] if owner.exists else []}})
                 row = self.row()
+                if owner.wrong_detail_image:
+                    row['labels']['label'][1]['value'] = 'foreign-image'
                 if owner.wrong_detail_uuid:
                     row['uuid'] = '6651dd0d-fb0e-4689-9664-22de529dd200'
                 return self.answer(200, {'server': row}) if owner.exists else self.answer(404, {})

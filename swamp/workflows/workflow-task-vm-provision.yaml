@@ -53,6 +53,19 @@ jobs:
       type: assert
       expr: inputs.intent.eligible == true && inputs.intent.provider in ["incus","upcloud"]
       message: Provision requires its admitted provider and eligible VM
+  - name: provider-plan
+    target: orbit-node-209
+    dependsOn:
+    - step: eligible
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment-input'
+      behaviorName: ${{ "vm-provision-plan-"+run.id }}
+      methodName: plan
+      inputs:
+        provider: ${{ inputs.intent.provider }}
   - name: incus
     target: orbit-node-209
     task:
@@ -156,7 +169,7 @@ jobs:
         receipt: ${{ steps.enrollment.outputs.result }}
   - name: cloud-prefix-rollback
     target: orbit-node-209
-    guard: ${{ inputs.intent.provider != "upcloud" || steps.enrollment.status != "skipped" }}
+    guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: result
       condition:
@@ -166,7 +179,10 @@ jobs:
         type: completed
     - step: enrollment
       condition:
-        type: always
+        type: skipped
+    - step: provider-plan
+      condition:
+        type: succeeded
     task:
       type: workflow
       workflowIdOrName: task-vm-destroy
@@ -187,6 +203,6 @@ jobs:
             task_vm_id: ${{ inputs.intent.task_vm_id }}
             name: ${{ inputs.intent.name }}
             provider: upcloud
-            provider_id: null
+            provider_id: '${{ inputs.intent.provider == "upcloud" ? inputs.intent.provider_id : null }}'
             vm: null
             host_ssh_execution: null

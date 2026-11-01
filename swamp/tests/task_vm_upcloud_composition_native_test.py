@@ -129,6 +129,22 @@ class UpCloudCompositionNative(unittest.TestCase):
         self.assertFalse(self.cloud.exists)
         self.assertFalse(any('def restore(data)' in json.loads(line)['body'] for line in self.vm.events.read_text().splitlines()))
 
+    def test_rejected_replacement_uuid_is_not_deleted_by_prefix_compensation(self):
+        self.cloud.exists, self.cloud.state = True, 'started'
+        self.vm.intent['provider_id'] = '6651dd0d-fb0e-4689-9664-22de529dd200'
+        self.vm.run_root(False)
+        self.assertTrue(self.cloud.exists)
+        self.assertFalse(any(method in ('POST', 'DELETE') for method, _ in self.cloud.calls))
+
+    def test_created_vm_is_compensated_when_prefix_image_verification_fails(self):
+        self.cloud.wrong_detail_image = True
+        run = self.vm.run_root(False)
+        self.assertEqual(run['status'], 'failed')
+        self.assertEqual(len(self.cloud.create_documents), 1)
+        self.assertFalse(self.cloud.exists)
+        self.assertFalse(self.vm.events.exists())
+        self.assertEqual(sum(method == 'DELETE' for method, _ in self.cloud.calls), 1)
+
     def test_prefix_failure_cleans_unknown_uuid_without_guest_actions(self):
         self.cloud.state = 'maintenance'
         self.vm.run_root(False)
