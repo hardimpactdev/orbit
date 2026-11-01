@@ -50,12 +50,12 @@ return await fixture.methods.execute.execute(...args);
         self.assertEqual(state["fills"],1)
         self.assertEqual([p["status"] for p in state["posts"]],["running","running","succeeded"])
 
-    def test_engine_failure_before_fill_closes_existing_queued_root(self):
+    def test_engine_failure_before_fill_retains_native_failure_without_callback(self):
         self.state["engineRefused"] = True
         state = self.run_root(False)
-        self.assertEqual(state["operation"]["status"],"failed")
-        self.assertEqual(state["operation"]["result"],{})
-        self.assertEqual(state["operation"]["error_code"],"operation.native_failed")
+        self.assertEqual(state["operation"]["status"],"queued")
+        self.assertIsNone(state["operation"]["result"])
+        self.assertIsNone(state["operation"].get("error_code"))
         self.assertEqual(state["fills"],0)
 
     def test_lost_fill_reply_settles_failed_without_secret_or_archive_claim(self):

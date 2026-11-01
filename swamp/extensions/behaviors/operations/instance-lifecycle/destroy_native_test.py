@@ -68,10 +68,10 @@ fail: {...root.methods.fail, execute: (...args: Parameters<typeof root.methods.f
         state=self.read();self.assertEqual(state['status'],'failed')
         self.assertEqual(state['result']['failed_step'],'caddy')
         self.assertFalse(any(r.get('stage') in ['databases','finalize_sources'] for r in state['events']))
-    def test_engine_failure_before_first_callback_still_closes_the_operation(self):
+    def test_engine_failure_is_retained_without_a_step_callback(self):
         state=self.read();state['engineRefused']=True;self.save(state);self.run_destroy(success=False)
-        state=self.read();self.assertEqual(state['status'],'failed');self.assertEqual(state['error_code'],'operation.native_failed')
-        self.assertEqual([r['path'] for r in state['events'] if 'path'in r],['/api/v1/direct-operations/7/failure'])
+        state=self.read();self.assertEqual(state['status'],'queued');self.assertIsNone(state.get('error_code'))
+        self.assertEqual(state['events'],[])
 
     def test_foreign_database_uses_the_exact_selected_http_view_and_private_field(self):
         state=self.read();state['foreignDatabase']=True;self.save(state);self.run_destroy()

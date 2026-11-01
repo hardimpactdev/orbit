@@ -72,13 +72,13 @@ class RecipeDirectNative(NativeTestCase):
         self.assertEqual(state['operation']['error_code'],'operation.kind_unavailable')
         self.assertFalse(any(call.get('body',{}).get('status')=='running' for call in state['calls'] if call['method']=='POST'))
 
-    def test_failed_admission_reports_same_root_without_effects(self):
+    def test_failed_admission_has_no_step_side_failure_callback(self):
         self.state['operation']['input']['footprint']['schema_version']=2;self.save()
         self.run_workflow(success=False)
         state=self.read()
         self.assertEqual(state['effects'],[])
-        self.assertEqual(state['operation']['status'],'failed')
-        self.assertEqual(state['operation']['error_code'],'operation.native_failed')
+        self.assertEqual(state['operation']['status'],'queued')
+        self.assertIsNone(state['operation'].get('error_code'))
 
     def test_known_refusal_stops_later_effects(self):
         self.state['refusal']='php-build';self.save()
@@ -88,17 +88,17 @@ class RecipeDirectNative(NativeTestCase):
         self.assertNotIn('cli',state['effects'])
         self.assertEqual(state['operation']['error_code'],'node.recipe_failed')
 
-    def test_uncertain_effect_settles_failed_and_resume_never_reenters_effects(self):
+    def test_uncertain_effect_retains_native_failure_and_resume_never_reenters_effects(self):
         self.state['uncertain']='php-build';self.save()
         self.run_workflow(success=False)
-        self.assertEqual(self.read()['operation']['status'],'failed')
-        self.cli('workflow','resume','operation-fleet-recipe-direct','--run',self.run_id,success=False)
+        self.assertEqual(self.read()['operation']['status'],'running')
+        self.cli('workflow','resume','operation-fleet-recipe-direct','--run',self.run_id)
         state=self.read()
-        self.assertEqual(state['operation']['status'],'failed')
+        self.assertEqual(state['operation']['status'],'running')
         self.assertEqual(state['effects'].count('recipe-apply'),1)
         self.assertEqual(state['effects'].count('php-build'),1)
 
-    def test_terminal_unknown_effect_stays_failed_after_later_cancellation(self):
+    def test_later_cancellation_keeps_the_uncertain_effect_from_repeating(self):
         self.state['uncertain']='php-build';self.save()
         self.run_workflow(success=False)
         self.state=self.read();self.state['operation']['cancel_requested']=True;self.save()
@@ -106,7 +106,7 @@ class RecipeDirectNative(NativeTestCase):
         state=self.read()
         self.assertEqual(state['effects'].count('php-build'),1)
         self.assertNotIn('caddy',state['effects'])
-        self.assertEqual(state['operation']['status'],'failed')
+        self.assertEqual(state['operation']['status'],'cancelled')
 
     def test_lost_projection_does_not_repeat_completed_effects(self):
         self.state['loseProjection']=True;self.save()
@@ -138,7 +138,7 @@ class RecipeDirectNative(NativeTestCase):
         state=self.read()
         self.assertEqual(state['effects'].count('php-build'),1)
         self.assertNotIn('caddy',state['effects'])
-        self.assertEqual(state['operation']['error_code'],'operation.native_failed')
+        self.assertEqual(state['operation']['error_code'],'fleet.window_closed')
 
     def test_private_hash_stays_in_the_canonical_footprint_callback(self):
         secret=uuid.uuid4().hex+uuid.uuid4().hex

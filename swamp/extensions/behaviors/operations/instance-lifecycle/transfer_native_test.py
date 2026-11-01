@@ -65,7 +65,7 @@ class TransferNative(NativeTestCase):
         self.assertTrue(actual['rolled_back'])
         self.assertFalse(actual.get('cutover',False))
         self.assertNotIn('capture',[row['name'] for row in actual['effects']])
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
     def test_cancel_before_cutover_discards_destination_and_preserves_source(self):
         self.state['cancel_at']='materialize'
         actual=self.run_transfer(success=False)
@@ -83,7 +83,7 @@ class TransferNative(NativeTestCase):
         self.assertNotIn('discard-destination',[row['name'] for row in actual['effects']])
         self.assertNotIn('remove-source',[row['name'] for row in actual['effects']])
         self.assertNotIn('restore-runtime',[row['name'] for row in actual['effects']])
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
     def test_partial_source_pause_restores_before_destination_cleanup(self):
         self.state['fail_effect']='pause-runtime'
         actual=self.run_transfer(success=False)
@@ -121,12 +121,12 @@ class TransferNative(NativeTestCase):
         self.assertIn('sqlite-cleanup-source',names)
         self.assertIn('sqlite-cleanup-target',names)
         self.assertNotIn('materialize',names)
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
     def test_sqlite_cleanup_failure_does_not_suppress_other_cleanup_or_report_success(self):
         self.sqlite();self.state['fail_effect']='sqlite-cleanup-source'
         actual=self.run_transfer(success=False)
         names=[row['name'] for row in actual['effects']]
         self.assertIn('sqlite-cleanup-target',names)
-        self.assertEqual(actual['operation']['status'],'failed')
+        self.assertEqual(actual['operation']['status'],'running')
         self.assertFalse(actual['operation']['result'].get('recovered',False))
 if __name__=='__main__': unittest.main()

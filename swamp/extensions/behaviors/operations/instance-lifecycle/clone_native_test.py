@@ -54,7 +54,10 @@ class CloneNative(NativeTestCase):
         actual = json.loads(self.state_file.read_text())
         self.assertTrue(all('/direct-operations/7' in row['path'] for row in actual['requests']))
         runs = {row['body']['run_id'] for row in actual['callbacks'] if row['method'] == 'POST'}
-        self.assertEqual(len(runs), 1)
+        if runs:
+            self.assertEqual(len(runs), 1)
+        else:
+            self.assertFalse(success)
         return actual
 
     def test_clone_places_candidate_and_destination_in_one_native_root(self):
@@ -83,14 +86,14 @@ class CloneNative(NativeTestCase):
         self.assertEqual(actual['operation']['status'], 'failed')
         self.assertEqual(actual['operation']['result'], {'failed_step': 'candidate'})
 
-    def test_engine_failure_before_first_callback_settles_through_shared_reporter(self):
+    def test_engine_failure_does_not_report_through_a_gateway_callback(self):
         self.state['operation']['input'] = {}
         self.state['operation']['status'] = 'running'
         actual = self.run_clone(success=False)
         self.assertEqual(actual['effects'], [])
-        self.assertEqual(actual['operation']['status'], 'failed')
-        self.assertEqual(actual['operation']['error_code'], 'operation.native_failed')
-        self.assertEqual(actual['requests'][-1]['path'], '/api/v1/direct-operations/7/failure')
+        self.assertEqual(actual['operation']['status'], 'running')
+        self.assertIsNone(actual['operation'].get('error_code'))
+        self.assertFalse(any(row['method'] == 'POST' for row in actual['callbacks']))
 
     def test_cancelled_clone_settles_without_effects(self):
         self.state['operation']['cancel_requested'] = True

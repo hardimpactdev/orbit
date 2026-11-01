@@ -39,6 +39,7 @@ class HubNative(NativeTestCase):
         self.effects = 0
         self.ssh_effects = 0
         self.private_reads = 0
+        self.failure_reports = []
         self.mode = 'success'
         workflow = json.loads((ROOT / 'tests/fixtures/node-hub-ssh/workflow.yaml').read_text())
         workflow.pop('target'); workflow.pop('labels')
@@ -95,9 +96,8 @@ class HubNative(NativeTestCase):
                     return self.respond({})
                 owner.assertNotIn(owner.secrets[0], json.dumps(body))
                 if self.path.endswith('/failure'):
-                    owner.operation['status'] = 'failed'
-                    owner.operation['error_code'] = 'operation.native_failed'
-                    return self.respond({'data': owner.operation})
+                    owner.failure_reports.append(body)
+                    return self.respond({}, 404)
                 owner.operation['status'] = body['status']
                 owner.operation['result'] = body['result']
                 if body['status'] == 'running' and owner.mode == 'cancel_after_admit':
@@ -125,13 +125,15 @@ class HubNative(NativeTestCase):
         self.mode = 'private_failure'
         self.run_hub(success=False)
         self.assertEqual(self.effects, 0)
-        self.assertEqual(self.operation['status'], 'failed')
+        self.assertEqual(self.operation['status'], 'running')
+        self.assertEqual(self.failure_reports, [])
 
     def test_unknown_system_failure_strips_private_diagnostic(self):
         self.mode = 'unknown_system'
         self.run_hub(success=False)
         self.assertEqual(self.effects, 1)
-        self.assertEqual(self.operation['status'], 'failed')
+        self.assertEqual(self.operation['status'], 'running')
+        self.assertEqual(self.failure_reports, [])
 
     def test_gateway_placed_taskvm_destroy_hub_uses_pinned_ssh_in_the_shared_native_method(self):
         self.mode = 'ssh'

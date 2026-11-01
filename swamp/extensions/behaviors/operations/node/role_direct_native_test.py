@@ -163,7 +163,7 @@ class DirectRoleNative(NativeTestCase):
             owner.state['operation']['status'] = 'queued'
             owner.state['operation']['result'] = None
             self.run_workflow(success=False)
-            self.assertEqual(owner.state['operation']['status'], 'failed')
+            self.assertEqual(owner.state['operation']['status'], 'running')
             self.assertEqual(len(private_reads), 2)
             self.assertEqual(private_reads[-1], self.run_id)
             self.assertEqual(errors, [])
