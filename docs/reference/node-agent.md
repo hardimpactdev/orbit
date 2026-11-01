@@ -12,9 +12,6 @@ covers:
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 # Node agent
 
 The Gateway reuses its bounded TLS WebSocket transport to read [Swamp run output](/reference/tasks#swamp-run-output), with a separate read-only credential. This read contacts Swamp on Services directly; it sends no command to the Node agent or task VM. The observer keeps its existing message limits.
@@ -413,8 +410,6 @@ Retained Gateway enrollment and role callers serialize agent configuration under
 ### Recover a lost agent secret reply
 
 The frozen `agent.configure` command returns a public SHA-256 verifier. The Gateway stores it encrypted on the owning Node. The secret itself stays on the Node. If a configure response is lost before projection, keep the uncertain Operation open and run this operator command on the Gateway:
-
-<Flow kind="node.agent_rekey" src={flows["node.agent_rekey"]} />
 
 ```bash
 php artisan orbit:node-agent-rekey <node-id> <operation-id>

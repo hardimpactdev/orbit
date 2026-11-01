@@ -5,9 +5,6 @@ covers:
   - apps/cli/app/Commands/Database/**
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. `database:server` runs a MySQL, PostgreSQL or Valkey server as a Docker Node Process and keeps its admin password in the Gateway. [Database servers](/reference/database-servers) describes the servers.
 
 [Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd). Attachment commands require `--instance=SELECTOR`. An omitted or empty selector returns `database.instance_required` before the CLI sends a request.
@@ -41,8 +38,6 @@ Every command accepts `--json`, and every result includes the request ID. No out
 ## orbit database:create
 
 Register an existing database, or create a new one on a [Database server](/reference/database-servers#create-a-database-on-a-server). On a Valkey server, `--server` creates an [ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) instead. The Gateway encrypts the password before it writes the row.
-
-<Flow kind="database.create" src={flows["database.create"]} />
 
 ```bash
 orbit database:create <slug> --driver=DRIVER [--idempotency-key=KEY] [options]
@@ -117,8 +112,6 @@ orbit database:show <slug> [--json]
 ## orbit database:update
 
 Replace the supplied fields on one connection. The command requires at least one field option and accepts the same field options as `database:create`.
-
-<Flow kind="database.update" src={flows["database.update"]} />
 
 ```bash
 orbit database:update <slug> [options]
@@ -216,8 +209,6 @@ The Gateway refuses with `database.server_in_use` while a connection on the serv
 
 Add a user to a database on a MySQL or PostgreSQL [server](/reference/database-servers#add-a-user), for example a read-only user in production.
 
-<Flow kind="database_user.create" src={flows["database_user.create"]} />
-
 ```bash
 orbit database:user:create <slug> --username=USER [--read-only] [--replication] [--idempotency-key=KEY] [--json]
 ```
@@ -256,8 +247,6 @@ The table shows Username, Privileges, Replication, Created by, and Created. JSON
 ## orbit database:destroy
 
 Destroy one connection record.
-
-<Flow kind="database.destroy" src={flows["database.destroy"]} />
 
 ```bash
 orbit database:destroy <slug> [--force] [--idempotency-key=KEY] [--json]

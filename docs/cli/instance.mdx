@@ -11,9 +11,6 @@ covers:
   - packages/php-sdk/src/Responses/Instances/**
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/projects#project-types) decides whether it gets a Route.
 
 [Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/instance-cloning), [Instance transfer](/reference/instance-transfer), [Instance removal](/reference/instance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
@@ -86,8 +83,6 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 
 Create a development Instance on a Node with the active `app-dev` role. A Node with the active `app-prod` role returns `instance.candidate_required`, including a repeat for an existing production Instance. Create a production Instance with [`instance:clone`](#orbit-instanceclone).
 
-<Flow kind="instance.create" src={flows["instance.create"]} />
-
 ```bash
 orbit instance:create <project> <node> <name> [--idempotency-key=KEY] [options]
 ```
@@ -134,8 +129,6 @@ A failed setup step removes the new Instance after the teardown steps run. A mis
 ## orbit instance:rename
 
 Record a Git branch that is already checked out. Swamp reads the checkout on its Node and the Gateway records the branch after success. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or change Git HEAD.
-
-<Flow kind="instance.rename" src={flows["instance.rename"]} />
 
 ```bash
 orbit instance:rename <instance> --branch=BRANCH [--idempotency-key=KEY] [--json]
@@ -192,8 +185,6 @@ Authentication, access and missing-record errors retain the shared API error con
 ## orbit instance:register
 
 Adopt an existing Git checkout in place. Run it on the app-dev Node that holds the source.
-
-<Flow kind="instance.register" src={flows["instance.register"]} />
 
 ```bash
 orbit instance:register --project=ID [--idempotency-key=KEY] [options]
@@ -273,8 +264,6 @@ orbit instance:logs 12 --follow
 
 Remove an Instance with its Route, Processes, Schedules, and runtime. A development removal runs the teardown steps first and deletes the checkout. A production removal deletes its user, home, application data, and source state after runtime cleanup. See [Instance removal](/reference/instance-removal).
 
-<Flow kind="instance.destroy" src={flows["instance.destroy"]} />
-
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--idempotency-key=KEY] [--json]
 ```
@@ -306,8 +295,6 @@ Repeat the same command to resume an interrupted removal. A failed development t
 ## orbit instance:setup
 
 Run the Project setup steps for one development Instance. The command runs every step from the start of the list. A failed step leaves the Instance in place.
-
-<Flow kind="instance.run_steps" src={flows["instance.run_steps"]} />
 
 The Gateway returns an `instance.run_steps` Operation with status `202`. The CLI follows it to completion. `--json` returns the final Operation; `--idempotency-key` retries the same admission. Setup and teardown configuration remains Gateway data.
 
@@ -413,8 +400,6 @@ orbit instance:teardown-step:destroy <name> --project=<id> [--yes] [--json]
 ## orbit instance:clone
 
 Clone a candidate into a prepared production Instance. The candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions.
-
-<Flow kind="instance.clone" src={flows["instance.clone"]} />
 
 ```bash
 orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--idempotency-key=KEY] [options]
@@ -543,8 +528,6 @@ orbit instance:deploy-step:destroy <instance> <name> [--yes] [--json]
 
 Use `--commit=SHA` to pin a full 40 or 64 character lowercase commit SHA. The selected commit must be on the deployment branch's first-parent chain. This is still a manual deploy and pauses automatic deployment. See [pinned commits](/reference/deployments#pinned-commits-and-automatic-callers).
 
-<Flow kind="instance.deploy" src={flows["instance.deploy"]} />
-
 Deploy a production Instance or an app-dev `default` Instance. For production, the Gateway creates a fresh release, fetches the configured branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps. For a development default, it fetches the Project's default branch, checks out its newest commit in the default's checkout, and runs the Project's development deploy steps there. It refuses a checkout with uncommitted changes to tracked files. A failed required step leaves the new commit checked out, and the next scheduled tick retries. A best-effort failure reports a warning and the deployment continues. See [Instance releases](/reference/deployments#development-defaults).
 
 ```bash
@@ -609,8 +592,6 @@ The `instance` argument is the numeric Instance ID. Pass the original `request_k
 ## orbit instance:rollback
 
 Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback restarts active Instance Processes after PHP refresh, using the same opt-out as deployment. It reports restart failures and leaves the rollback release selected. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
-
-<Flow kind="instance.rollback" src={flows["instance.rollback"]} />
 
 ```bash
 orbit instance:rollback <instance> --release=NAME [--idempotency-key=KEY] [--json]
@@ -783,8 +764,6 @@ An app that is not on the Instance returns `websocket.attachment_missing`.
 
 Publish the tracking hosts that send an Instance's visits to the analytics role.
 
-<Flow kind="analytics.enable" src={flows["analytics.enable"]} />
-
 ```bash
 orbit instance:analytics:enable <instance> [--host=HOST]... [--json]
 ```
@@ -840,8 +819,6 @@ Plausible stops receiving visits for the Instance as soon as the hosts are gone.
 ## orbit instance:transfer
 
 Move an active development Instance to another `app-dev` Node. Both Nodes must belong to active Clusters. The transfer stops the source, copies it into an independent checkout, moves or replaces its Route, and deletes the old placement. See [Instance transfer](/reference/instance-transfer).
-
-<Flow kind="instance.transfer" src={flows["instance.transfer"]} />
 
 ```bash
 orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--idempotency-key=KEY] [--json]

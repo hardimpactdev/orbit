@@ -1,13 +1,39 @@
 #!/usr/bin/env python3
-"""Bundle docs/flows/*.mmd into docs/snippets/flows.jsx for the Flow component on command pages."""
+"""Write docs/flows-data.js: each command's flow charts, for docs/flow.js on the command pages.
+
+A command's charts are the kinds its Gateway route starts (`x-orbit-kinds` in docs/openapi.json, from
+#[StartsOperation]) that have a docs/flows/<kind>.mmd. Only commands with an `## orbit <command>` heading
+in docs/cli are listed. Without docs/openapi.json (build it with bin/build-api), no chart is attached.
+"""
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+
+def attachments(spec, headings, charts):
+    """Map each CLI command heading to the charted kinds its route starts."""
+    commands = {}
+    by_id = {command.replace(':', '-'): command for command in headings}
+    for methods in spec.get('paths', {}).values():
+        for operation in methods.values():
+            command = by_id.get(operation.get('operationId')) if isinstance(operation, dict) else None
+            kinds = [kind for kind in operation.get('x-orbit-kinds', []) if kind in charts] if command else []
+            if kinds:
+                commands.setdefault(command, []).extend(k for k in kinds if k not in commands.get(command, []))
+    return commands
+
+
 if __name__ == '__main__':
-    flows = {path.stem: path.read_text() for path in sorted((ROOT / 'docs/flows').glob('*.mmd'))}
-    (ROOT / 'docs/snippets/flows.jsx').write_text(
-        '// Built by bin/docs-flows from docs/flows/*.mmd. Do not edit.\n'
-        f'export const flows = {json.dumps(flows, indent=2, ensure_ascii=False)}\n'
+    charts = {path.stem: path.read_text() for path in sorted((ROOT / 'docs/flows').glob('*.mmd'))}
+    headings = {m for page in (ROOT / 'docs/cli').glob('*.mdx') for m in re.findall(r'^## orbit (\S+)$', page.read_text(), re.M)}
+    spec_path = ROOT / 'docs/openapi.json'
+    commands = attachments(json.loads(spec_path.read_text()) if spec_path.exists() else {}, headings, charts)
+    used = sorted({kind for kinds in commands.values() for kind in kinds})
+    data = {'commands': dict(sorted(commands.items())), 'charts': {kind: charts[kind] for kind in used}}
+    (ROOT / 'docs/flows-data.js').write_text(
+        '// Built by bin/docs-flows from docs/flows/*.mmd and docs/openapi.json. Do not edit.\n'
+        f'window.orbitFlows = {json.dumps(data, indent=1, ensure_ascii=False)}\n'
     )
+    print(f'docs/flows-data.js: {len(used)} of {len(charts)} charts on {len(commands)} command sections')

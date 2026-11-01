@@ -12,9 +12,6 @@ covers:
   - apps/gateway/app/Models/{Process,ProcessDefinition,ScheduleDefinition}.php
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 # Processes and schedules
 
 A Process is one long-running systemd service or Docker container that Orbit manages. It belongs to exactly one owner: an Instance or a managed Node. A Project can also hold Process and Schedule definitions. Production preparation copies them into each new production Instance. [`process`](/cli/process) lists the commands. [Schedules](/reference/schedules) describes Schedules themselves.
@@ -32,8 +29,6 @@ The official Docker container model puts environment values in command arguments
 Explicit stop passes its complete public control descriptor and pinned SSH target to `operation-process-stop`. Every step runs on Node 209. Official `@swamp/ssh` disables systemd boot start, stops the exact unit or container, and verifies the stopped state on the target Node as separate actions. Docker skips the systemd boot step. The shared terminal subscriber projects the result without a Gateway callback. Hibernation keeps its separate stop-only behavior and preserves boot policy.
 
 Gateway release Horizon handoff also runs entirely on Node 209. The Gateway captures its public rendered unit and the shared pinned SSH target before admission. Official `@swamp/ssh` copies the shipped one-action scripts, inspects and installs the unit, and either starts inactive Horizon or asks active Horizon to terminate gracefully. A successful termination does not wait for systemd to restart it. Native resume retains the copied scripts after failure. This handoff requires no Swamp worker or binary on the Gateway Node.
-
-<Flow kind="process.horizon_handoff" src={flows["process.horizon_handoff"]} />
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 

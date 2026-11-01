@@ -9,9 +9,6 @@ covers:
   - packages/php-sdk/src/Responses/Processes/**
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 A Process is one systemd service or Docker container that the Gateway manages for an Instance or a managed Node. The `process` family installs it, changes its desired state, reads its log, and removes it. It also records Project process definitions.
 
 [Processes and schedules](/reference/processes-and-schedules) describes owners, runtimes, environment, presets, locks, and definitions. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop and wake for development Processes.
@@ -49,8 +46,6 @@ Every command accepts `--json`, and every result includes the request ID. Lists 
 ## orbit process:create
 
 Install one systemd service or Docker container, stopped or started, or record a Project definition.
-
-<Flow kind="process.create" src={flows["process.create"]} />
 
 ```bash
 orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [--idempotency-key=KEY] [options]
@@ -145,8 +140,6 @@ orbit process:show <name> --project=ID [--json]
 
 Change only the supplied fields of an installed Process, keeping its ID, name, owner, and desired state. A running Process restarts in place; a stopped Process stays stopped. This is not destroy followed by create. It can interrupt a running service and discard a replaced Docker container's writable layer. It does not delete named volumes or require destructive consent. Back up and migrate container-layer data before updating a stateful container; see [Move data before removing an override](/reference/processes-and-schedules#move-data-before-removing-an-override).
 
-<Flow kind="process.update" src={flows["process.update"]} />
-
 ```bash
 orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--no-restart-on-deploy] [--user=NAME] [--idempotency-key=KEY] [--json]
 ```
@@ -193,8 +186,6 @@ orbit process:update queue --project=1 --for=production --command=/usr/bin/php -
 
 Start an installed Process and store the running desired state.
 
-<Flow kind="process.start" src={flows["process.start"]} />
-
 ```bash
 orbit process:start <process> [--idempotency-key=KEY] [--json]
 ```
@@ -205,8 +196,6 @@ A competing operation on the same Instance makes the command wait up to 30 secon
 
 Stop an installed Process and store the stopped desired state. A hibernation wake leaves a stopped Process stopped.
 
-<Flow kind="process.stop" src={flows["process.stop"]} />
-
 ```bash
 orbit process:stop <process> [--idempotency-key=KEY] [--json]
 ```
@@ -214,8 +203,6 @@ orbit process:stop <process> [--idempotency-key=KEY] [--json]
 ## orbit process:restart
 
 Restart an installed Process and store the running desired state.
-
-<Flow kind="process.restart" src={flows["process.restart"]} />
 
 ```bash
 orbit process:restart <process> [--idempotency-key=KEY] [--json]
@@ -267,8 +254,6 @@ orbit process:logs 41 --follow
 ## orbit process:destroy
 
 Stop and remove the unit or container of one Process, then delete its record. With `--project`, destroy one definition by name.
-
-<Flow kind="process.destroy" src={flows["process.destroy"]} />
 
 ```bash
 orbit process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]

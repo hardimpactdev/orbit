@@ -7,9 +7,6 @@ covers:
   - packages/php-sdk/src/Responses/Tools/**
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 The `tool` family manages packages on a Node. A Tool is one package that Orbit manages through one Tool Manager. The [Tools reference](/reference/tools) explains where Tools run, the supported managers, and the discovery, adoption, install, update, and removal rules.
 
 ## Commands
@@ -49,8 +46,6 @@ orbit tool:scan --node=ID [--json]
 
 Take ownership of one supported installed package. The Gateway checks its live state again and records intent without reinstalling or updating it.
 
-<Flow kind="tool.adopt" src={flows["tool.adopt"]} />
-
 ```bash
 orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--repository=JSON] [--yes] [--idempotency-key=KEY] [--json]
 ```
@@ -64,8 +59,6 @@ The Operation result includes the observed installed version and `outcome`. `app
 ## orbit tool:install
 
 Install one package on a Node.
-
-<Flow kind="tool.install" src={flows["tool.install"]} />
 
 ```bash
 orbit tool:install [package] --node=ID [--manager=MANAGER] [--constraint=CONSTRAINT] [--repository=JSON] [--idempotency-key=KEY] [--json]
@@ -111,8 +104,6 @@ orbit tool:show <tool> [--json]
 
 Update one Tool to the manager's current candidate.
 
-<Flow kind="tool.update" src={flows["tool.update"]} />
-
 ```bash
 orbit tool:update <tool> [--repository=JSON] [--idempotency-key=KEY] [--json]
 ```
@@ -122,8 +113,6 @@ The result is `applied` when the version changed and `unchanged` when it did not
 ## orbit tool:remove
 
 Remove one Tool and delete its record.
-
-<Flow kind="tool.remove" src={flows["tool.remove"]} />
 
 ```bash
 orbit tool:remove <tool> [--yes] [--idempotency-key=KEY] [--json]

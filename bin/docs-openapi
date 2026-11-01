@@ -205,8 +205,17 @@ def gateway_files(core, extension, recursive=True):
     return [f for root in roots for f in (root.rglob('*.php') if recursive else root.glob('*.php'))]
 
 
+def marker_kinds(marker_input, constants):
+    """The kinds a #[StartsOperation] marker starts: its first argument, then any kindWhenTrue values."""
+    first = marker_input.split(',', 1)[0].strip()
+    kinds = [first.strip("'") if first.startswith("'") else constants[first.removeprefix('OperationKinds::')]]
+    return kinds + re.findall(r"=>\s*'([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)'", marker_input)
+
+
 def load_controllers():
     ctrl = {}
+    constants = dict(re.findall(r"public const string (\w+) = '([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)';",
+                                (GW / 'app/Domain/Operations/OperationKinds.php').read_text()))
     for f in sorted(gateway_files('app/Http/Controllers/Api', 'Http/Controllers', recursive=False)):
         s = f.read_text()
         for m in re.finditer(r'public function (\w+)\((.*?)\)\s*:\s*([\w|\\]+)', s, re.S):
@@ -225,6 +234,7 @@ def load_controllers():
                 'starts_operation': marker,
                 'requires_key': bool(re.search(r'\brequiresKey:\s*true\b', marker_input)),
                 'binds_caller': bool(re.search(r'\bbindCaller:\s*true\b', marker_input)),
+                'kinds': marker_kinds(marker_input, constants) if marker else [],
             }
     return ctrl
 
@@ -2046,6 +2056,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': True, 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Permanent key bound to caller, Instance and full body; identical retry returns the original receipt.'})
     if starts_operation:
         op['x-orbit-operation'] = 'start'
+        # bin/docs-flows attaches each kind's flow chart to this command's docs section.
+        op['x-orbit-kinds'] = controllers[action]['kinds']
         op['parameters'].append({
             'name': 'Idempotency-Key', 'in': 'header', 'required': controllers.get(action, {}).get('requires_key', False),
             'schema': {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': '^[A-Za-z0-9._:-]+$'},

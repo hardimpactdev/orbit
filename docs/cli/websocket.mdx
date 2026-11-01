@@ -5,9 +5,6 @@ covers:
   - apps/cli/app/Commands/WebSocket/**
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 The `websocket` role runs one Reverb server. It serves the Gateway's own app, `gateway`, and one app for each name you create. An app has an app ID, a key, and a secret. The Gateway keeps the secret encrypted and never returns it. [Reverb apps](/reference/websocket-apps) describes the apps and the keys that an Instance gets.
 
 Put an app on an Instance with [`instance:websocket:add`](/cli/instance#orbit-instancewebsocketadd).
@@ -103,8 +100,6 @@ The `id` argument is the registry UUID in the normal Operation’s `input.regist
 ## orbit websocket:sync
 
 Record a sync Operation and wait for confirmation without restarting the serving processes.
-
-<Flow kind="websocket.sync" src={flows["websocket.sync"]} />
 
 ```bash
 orbit websocket:sync [--wait=60] [--operation-key=<key>] [--json]

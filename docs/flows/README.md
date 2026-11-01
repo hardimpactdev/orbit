@@ -1,6 +1,6 @@
 # Flow charts: one chart per Orbit operation kind
 
-Each Orbit operation kind has one sequence chart in `docs/flows/<kind>.mmd`. The chart states the intent of the kind: how the command flows between the CLI or MCP, the Gateway, Swamp, the target Node, and other Nodes. The command's docs page shows it with a step-detail panel.
+Each Orbit operation kind has one sequence chart in `docs/flows/<kind>.mmd`. The chart states the intent of the kind: how the command flows between the CLI or MCP, the Gateway, Swamp, the target Node, and other Nodes. The docs build shows it with a step-detail panel under each `orbit <command>` heading whose Gateway route starts the kind (`#[StartsOperation]`). A chart whose kind no CLI command starts, such as a child or internal kind, appears on no page.
 
 Read the kind's chart first. Any change to a command's flow starts by updating its chart to the ideal flow; the code follows the chart. A chart shows the **target design**, not old code where it differs. Name what differs in your report, not in the chart.
 

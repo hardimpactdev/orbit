@@ -8,9 +8,6 @@ covers:
   - apps/gateway/app/Domain/Nodes/{NodeBootstrapProjection,NodePhpPackagesInput,NodePhpPackagesProjection,bootstrap-direct-operations}.php
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 # Native Node bootstrap
 
 The Gateway records one Operation for each standalone bootstrap kind. It admits the Node, candidate account, pinned SSH endpoint and published observer artifact. Swamp performs the work and returns a bounded result. Node enrollment composes the same lower actions as native steps in its own root; it creates no child Operations.
@@ -52,8 +49,6 @@ The existing observer recovered the terminal result during normal Gateway releas
 ## Publish the approved 209 SSH key
 
 `POST /api/v1/nodes/{node}/ssh-access/converge` accepts an empty JSON object and returns one `node.ssh_access_converge` Operation with HTTP 202. The caller needs the normal directed access to the target Node. `Idempotency-Key` reuses the same admission. A matching active or successful publication also returns its existing Operation. The caller cannot select a key, endpoint, credential, command or worker.
-
-<Flow kind="node.ssh_access_converge" src={flows["node.ssh_access_converge"]} />
 
 The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. Every step runs on 209. The workflow `operation-node-ssh-access-converge` reads the shipped public authorized-key action and executes it with official `@swamp/ssh.script` and Python 3 as the authenticated managed account. The action retains existing keys and appends the approved 209 public key only when absent.
 

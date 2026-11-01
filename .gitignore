@@ -19,4 +19,4 @@ node_modules/
 /apps/web/src/api/schema.d.ts
 /docs/generated/context.json
 /docs/docs.json
-/docs/snippets/flows.jsx
+/docs/flows-data.js

@@ -1,12 +1,12 @@
-// Renders one docs/flows/<kind>.mmd chart with its step-detail panel.
+// Attaches each operation kind's flow chart under its `orbit <command>` heading, with a step-detail panel.
+// Mintlify loads every .js file in docs/ on every page. bin/docs-flows writes window.orbitFlows to
+// flows-data.js from docs/flows/*.mmd and the OpenAPI x-orbit-kinds of each command's route.
 // renderFlow is the migration dashboard's renderer, unchanged; the panel ports its FlowPage.
-// Mintlify snippets cannot import each other, so pages pass the chart source:
-//   <Flow kind="firewall.allow" src={flows['firewall.allow']} />
-export const Flow = ({ kind, src }) => {
+(() => {
   // Renders a Mermaid sequenceDiagram subset as a static lane chart in the pr-lens style.
   // Lane options are Mermaid comments, so the source stays valid Mermaid:
   //   %% lane GW icon=gateway pill=intent tone=blue
-  const renderFlow=(src, el)=>{
+  function renderFlow(src, el){
     const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const lanes=[],rows=[],frames=[],stack=[],meta={};let numbered=false;
     for(const raw of src.split('\n')){
@@ -106,61 +106,66 @@ export const Flow = ({ kind, src }) => {
     }
   }
 
-  // Renders `code` spans and "- " list lines in a step explanation.
-  const Info = ({ text }) => {
-    const inline = (line) => line.split(/(`[^`]+`)/).map((part, i) => (part.startsWith('`') ? <code key={i}>{part.slice(1, -1)}</code> : part))
-    const blocks = []
-    let list = []
-    const flush = () => { if (list.length) blocks.push(<ul key={blocks.length}>{list.map((l, i) => <li key={i}>{inline(l)}</li>)}</ul>); list = [] }
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+  // Renders `code` spans in one explanation line.
+  const inline = (parent, line) => { for (const part of line.split(/(`[^`]+`)/)) parent.append(part.startsWith('`') ? el('code', '', part.slice(1, -1)) : part); return parent }
+  // Renders "Heading:" lines, "- " list lines and plain lines of a step explanation.
+  function info(text) {
+    const box = el('div', 'flow-panel-info'); let list = null
     for (const line of text.split('\n')) {
-      if (line.startsWith('- ')) { list.push(line.slice(2)); continue }
-      flush()
-      if (/^[^\s`][^:`]{0,40}:$/.test(line.trim())) blocks.push(<div key={blocks.length} className="info-head">{line.trim().slice(0, -1)}</div>)
-      else if (line.trim()) blocks.push(<p key={blocks.length}>{inline(line)}</p>)
+      if (line.startsWith('- ')) { if (!list) box.append(list = el('ul')); list.append(inline(el('li'), line.slice(2))); continue }
+      list = null
+      if (/^[^\s`][^:`]{0,40}:$/.test(line.trim())) box.append(el('div', 'info-head', line.trim().slice(0, -1)))
+      else if (line.trim()) box.append(inline(el('p'), line))
     }
-    flush()
-    return <>{blocks}</>
+    return box
   }
 
-  const host = useRef(null)
-  const [steps, setSteps] = useState([])
-  const [selected, setSelected] = useState(null)
-  useEffect(() => { if (src && host.current) { setSteps(renderFlow(src, host.current)); setSelected(null) } }, [src])
-  // Mark the selected step in the chart.
-  useEffect(() => {
-    host.current?.querySelectorAll('.step').forEach((g) => g.classList.toggle('selected', Number(g.dataset.step) === selected))
-  }, [selected, steps])
-  if (!src) return <p>No chart for <code>{kind}</code> yet.</p>
-  const lanes = Object.fromEntries([...src.matchAll(/participant\s+(\w+)\s+as\s+([^<\n]+)/g)].map((m) => [m[1], m[2].trim()]))
-  const status = /%%\s*status:\s*reviewed/.test(src) ? 'reviewed' : 'draft'
-  const step = selected === null ? null : steps[selected]
-  const who = step ? (step.kind === 'msg' ? `${lanes[step.from] ?? step.from} → ${lanes[step.to] ?? step.to}` : (step.lanes ?? []).map((l) => lanes[l] ?? l).join(', ')) : ''
-  const move = (d) => setSelected((s) => (s === null ? 0 : Math.max(0, Math.min(steps.length - 1, s + d))))
-  const onClick = (e) => { const g = e.target.closest('.step'); setSelected(g ? Number(g.dataset.step) : null) }
-  const onKey = (e) => {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); move(1) }
-    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); move(-1) }
-    if (e.key === 'Escape') setSelected(null)
+  function chart(kind, src) {
+    const root = el('div', 'flow-doc not-prose'); root.tabIndex = 0
+    const status = /%%\s*status:\s*reviewed/.test(src) ? 'reviewed' : 'draft'
+    const head = el('div', 'flow-head')
+    head.append(el('strong', '', 'Flow'), el('code', '', kind), el('span', `flow-status ${status}`, status), el('span', 'flow-hint', 'Click a step for details · ↑ ↓ move'))
+    const host = el('div', 'flow flow-inline'), panel = el('div', 'flow-panel')
+    root.append(head, host, panel)
+    const steps = renderFlow(src, host)
+    const lanes = Object.fromEntries([...src.matchAll(/participant\s+(\w+)\s+as\s+([^<\n]+)/g)].map((m) => [m[1], m[2].trim()]))
+    let selected = null
+    const show = (i) => {
+      selected = i
+      host.querySelectorAll('.step').forEach((g) => g.classList.toggle('selected', Number(g.dataset.step) === i))
+      const step = i === null ? null : steps[i]
+      if (!step) { panel.replaceChildren(el('p', 'flow-muted', 'Click a step in the chart to see what it does and why. Use the arrow keys to move through the steps.')); return }
+      const who = step.kind === 'msg' ? `${lanes[step.from] ?? step.from} → ${lanes[step.to] ?? step.to}` : (step.lanes ?? []).map((l) => lanes[l] ?? l).join(', ')
+      panel.replaceChildren(el('div', 'flow-panel-num', `Step ${step.number ?? step.index + 1} of ${steps.length} · ${who}`), el('div', 'flow-panel-title', step.main))
+      if (step.detail) panel.append(el('div', 'flow-panel-detail', step.detail))
+      panel.append(step.info ? info(step.info) : el('p', 'flow-muted', 'No explanation written for this step yet.'))
+    }
+    host.addEventListener('click', (e) => { const g = e.target.closest('.step'); show(g ? Number(g.dataset.step) : null) })
+    root.addEventListener('keydown', (e) => {
+      const move = (d) => { e.preventDefault(); show(selected === null ? 0 : Math.max(0, Math.min(steps.length - 1, selected + d))) }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') move(1)
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') move(-1)
+      if (e.key === 'Escape') show(null)
+    })
+    show(null)
+    return root
   }
-  return (
-    <div className="flow-doc not-prose" tabIndex={0} onKeyDown={onKey}>
-      <div className="flow-head">
-        <strong>Flow</strong> <code>{kind}</code> <span className={`flow-status ${status}`}>{status}</span>
-        <span className="flow-hint">Click a step for details · ↑ ↓ move</span>
-      </div>
-      <div className="flow flow-inline" ref={host} onClick={onClick} />
-      <div className="flow-panel">
-        {step ? (
-          <>
-            <div className="flow-panel-num">Step {step.number ?? step.index + 1} of {steps.length} · {who}</div>
-            <div className="flow-panel-title">{step.main}</div>
-            {step.detail && <div className="flow-panel-detail">{step.detail}</div>}
-            {step.info ? <div className="flow-panel-info"><Info text={step.info} /></div> : <p className="flow-muted">No explanation written for this step yet.</p>}
-          </>
-        ) : (
-          <p className="flow-muted">Click a step in the chart to see what it does and why. Use the arrow keys to move through the steps.</p>
-        )}
-      </div>
-    </div>
-  )
-}
+
+  // Each `orbit <command>` heading gets the charts of the kinds its route starts, after its first paragraph.
+  function mount() {
+    const data = window.orbitFlows
+    if (!data) return
+    for (const h of document.querySelectorAll('.mdx-content h2')) {
+      const command = h.textContent.replace(/[\u200b\s]+/g, ' ').trim().match(/^orbit (\S+)$/)?.[1]
+      const kinds = data.commands[command]
+      if (!kinds || (h.nextElementSibling && h.nextElementSibling.classList.contains('flow-doc'))) continue
+      let at = h
+      if (at.nextElementSibling && /^(P|SPAN)$/.test(at.nextElementSibling.tagName)) at = at.nextElementSibling
+      if (at.nextElementSibling?.classList.contains('flow-doc')) continue
+      for (const kind of [...kinds].reverse()) at.after(chart(kind, data.charts[kind]))
+    }
+  }
+  new MutationObserver(mount).observe(document.documentElement, { childList: true, subtree: true })
+  mount()
+})()

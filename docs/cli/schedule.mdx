@@ -6,9 +6,6 @@ covers:
   - apps/cli/app/Commands/Concerns/RendersProjectRuntimeDefinitions.php
 ---
 
-import { Flow } from '/snippets/flow.jsx'
-import { flows } from '/snippets/flows.jsx'
-
 A Schedule runs one command on a native systemd timer for a Node or an Instance. The `schedule` family creates Schedules, runs them by hand, reads their logs, enables a stopped timer, and removes them. It also records Project Schedule definitions.
 
 [Schedules](/reference/schedules) describes the fields, the execution context, the host artifacts, and the error codes. [Processes and schedules](/reference/processes-and-schedules) describes Project definitions and their Instance copies.
@@ -45,8 +42,6 @@ Every command accepts `--json`. Output shows `desired_timer_state` apart from th
 ## orbit schedule:create
 
 Create one Schedule for a Node or an Instance, or record a Project Schedule definition.
-
-<Flow kind="schedule.create" src={flows["schedule.create"]} />
 
 ```bash
 orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=production) --calendar=CALENDAR --command=COMMAND [--idempotency-key=KEY] [options]
@@ -107,8 +102,6 @@ orbit schedule:update <name> --project=ID --for=production --calendar=CALENDAR -
 
 Start the Schedule's service once and return at once. The timer state does not change. A failed start returns `schedule.run_failed`.
 
-<Flow kind="schedule.run" src={flows["schedule.run"]} />
-
 ```bash
 orbit schedule:run <uuid> [--idempotency-key=KEY] [--json]
 ```
@@ -131,8 +124,6 @@ The Gateway returns at most 1 MiB and sets `truncated` when that limit removed o
 
 Enable and start the timer of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation installed stopped. `schedule` is the UUID of an installed Schedule.
 
-<Flow kind="schedule.enable" src={flows["schedule.enable"]} />
-
 ```bash
 orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
 ```
@@ -140,8 +131,6 @@ orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
 ## orbit schedule:destroy
 
 Remove one Schedule, or one definition by name.
-
-<Flow kind="schedule.destroy" src={flows["schedule.destroy"]} />
 
 ```bash
 orbit schedule:destroy <schedule> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]
