@@ -277,6 +277,32 @@ for (const builtin of ["isinstance", "len"]) Deno.test(`Incus poll rejects a sha
   const source = incusPoll.replace("def observe(", `def ${builtin}(*args):\n    subprocess.check_call(['/usr/bin/incus', 'start', 'vm'])\n    return True\n\ndef observe(`);
   assert((await phaseControls(incusFiles(source))).length > 0);
 });
+for (const [name, value, ssh] of [
+  ["bracket step", '${{ steps["input"].outputs.start_script }}', false],
+  ["history record", '${{ data.latest("input", "input").attributes.start_script }}', false],
+  ["dynamic producer output", '${{ steps.input.outputs[inputs.field] }}', false],
+  ["dynamic history field", '${{ data.latest("input", "input").attributes[inputs.field] }}', false],
+  ["bracket SSH argv", '${{ ["/usr/bin/python3", "-c", steps["input"].outputs.start_script] }}', true],
+  ["bracket output", '${{ steps.input.outputs["start_script"] }}', false],
+  ["escaped bracket output", '${{ steps.input.outputs["start_\\u0073cript"] }}', false],
+  ["joined bracket output", '${{ steps.input.outputs["start_" + "script"] }}', false],
+  ["concatenation", "${{ steps.input.outputs.start_script + '' }}", false],
+] as const) Deno.test(`body-key accounting rejects an additional ${name} use`, async () => {
+  const files = incusFiles();
+  const workflow = JSON.parse(files.get("workflows/incus.yaml")!);
+  workflow.jobs[0].steps.push({name: "hidden", task: {
+    type: "behavior", behaviorType: ssh ? "@swamp/ssh" : "command/shell",
+    behaviorName: "hidden", methodName: ssh ? "exec" : "execute",
+    inputs: ssh ? {argv: value} : {run: 'python3 -c "$SCRIPT"', env: {SCRIPT: value}},
+  }});
+  files.set("workflows/incus.yaml", JSON.stringify(workflow));
+  assert((await phaseControls(files)).length > 0);
+});
+Deno.test("Incus interval equal to or longer than the timeout is refused", async () => {
+  for (const seconds of [120, 121]) {
+    assert((await phaseControls(incusFiles(incusPoll.replace("time.sleep(1)", `time.sleep(${seconds})`)))).length > 0);
+  }
+});
 Deno.test("an additional shell use of an SSH script body invalidates its bound", async () => {
   const files = incusFiles();
   const workflow = JSON.parse(files.get("workflows/incus.yaml")!);

@@ -9,13 +9,95 @@ const object = (value: unknown): Record<string, unknown> =>
     : {};
 
 export type PhaseBound = { seconds: number; ssh: boolean };
-type Asset = { file: string; body: boolean };
+type Asset = { file: string; body: boolean; key: string };
+
+/** Count semantic body-key occurrences, including CEL string escapes/constant joins. */
+function bodyMentions(
+  value: unknown,
+  key: string,
+  producers: Set<string>,
+): number {
+  const words = (text: string) =>
+    text.split(/[^\w-]+/).filter((word) => word === key).length;
+  if (Array.isArray(value)) {
+    return value.reduce((n, item) => n + bodyMentions(item, key, producers), 0);
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).reduce(
+      (n, [name, item]) => n + words(name) + bodyMentions(item, key, producers),
+      0,
+    );
+  }
+  if (typeof value !== "string") return 0;
+  let count = 0;
+  const rest = value.replace(/\$\{\{([\s\S]*?)\}\}/g, (_match, expression) => {
+    const root = ts.createSourceFile(
+      "body-use.ts",
+      `const value = (${expression});`,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const literal = (node: ts.Node): string | undefined => {
+      if (ts.isStringLiteral(node)) return node.text;
+      if (ts.isParenthesizedExpression(node)) return literal(node.expression);
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.PlusToken
+      ) {
+        const left = literal(node.left), right = literal(node.right);
+        if (left !== undefined && right !== undefined) return left + right;
+      }
+      return undefined;
+    };
+    const field = (node: ts.Node): string | undefined => {
+      if (ts.isPropertyAccessExpression(node)) return node.name.text;
+      if (ts.isElementAccessExpression(node)) {
+        return literal(node.argumentExpression);
+      }
+      return undefined;
+    };
+    const visit = (node: ts.Node) => {
+      // An unresolved selector can choose any body field at runtime. Do not
+      // require that the key itself also appears as a source literal.
+      if (
+        ts.isElementAccessExpression(node) &&
+        literal(node.argumentExpression) === undefined
+      ) {
+        const base = node.expression, name = field(base);
+        if (
+          ts.isPropertyAccessExpression(base) ||
+          ts.isElementAccessExpression(base)
+        ) {
+          const owner = base.expression;
+          if (
+            name === "outputs" && producers.has(field(owner) ?? "") ||
+            name === "attributes" && ts.isCallExpression(owner) &&
+              owner.expression.getText(root).startsWith("data.")
+          ) {
+            count = Infinity;
+          }
+        }
+      }
+      const text = literal(node);
+      if (text !== undefined) {
+        count += words(text);
+        return;
+      }
+      if (ts.isIdentifier(node)) count += words(node.text);
+      ts.forEachChild(node, visit);
+    };
+    visit(root);
+    return "";
+  });
+  return count + words(rest);
+}
 
 function sshCalls(
   task: Record<string, unknown>,
   asset: (value: unknown) => Asset | undefined,
-): Map<string, number> {
-  const calls = new Map<string, number>();
+): { calls: Map<string, number>; accounted: Map<string, number> } {
+  const calls = new Map<string, number>(),
+    accounted = new Map<string, number>();
   const argv = object(task.inputs).argv;
   const expression =
     typeof argv === "string" && /^\$\{\{[\s\S]*\}\}$/.test(argv)
@@ -46,7 +128,8 @@ function sshCalls(
     };
     const start = declaration?.initializer;
     if (start) collect(start);
-    const bounds = new Map<string, number[]>();
+    const bounds = new Map<string, number[]>(),
+      credited = new Map<string, number>();
     const leaves = (node: ts.Expression): boolean => {
       if (ts.isParenthesizedExpression(node)) return leaves(node.expression);
       if (ts.isConditionalExpression(node)) {
@@ -96,6 +179,9 @@ function sshCalls(
         ts.forEachChild(part, inspect);
       };
       inspect(node);
+      if (valid && pure && script) {
+        credited.set(script.key, (credited.get(script.key) ?? 0) + 1);
+      }
       for (const element of elements) {
         const resolved = reference(element);
         if (resolved?.body) {
@@ -111,12 +197,15 @@ function sshCalls(
       return pure;
     };
     const valid = start && leaves(start);
+    if (valid) {
+      for (const [key, count] of credited) accounted.set(key, count);
+    }
     for (const file of refs.keys()) {
       const values = bounds.get(file);
       calls.set(file, valid && values?.length ? Math.min(...values) : 0);
     }
   }
-  return calls;
+  return { calls, accounted };
 }
 
 /** Resolve shipped script paths, never execute metadata or infer permission from a filename. */
@@ -169,7 +258,7 @@ export function boundedPhaseScripts(
           );
           if (/\.(?:py|sh)$/.test(path)) {
             const values = paths.get(key) ?? new Map<string, Asset>();
-            values.set(`${path}:${body}`, { file: path, body });
+            values.set(`${path}:${body}`, { file: path, body, key });
             paths.set(key, values);
           }
         }
@@ -188,6 +277,19 @@ export function boundedPhaseScripts(
       assets.set(type, fields);
     }
   }
+  // Treat every body-key occurrence as an invocation until a proved argv
+  // accounts for it. Brackets, history reads and concatenation cannot hide a use.
+  const bodyKeys = new Map<string, Set<string>>();
+  for (const fields of assets.values()) {
+    for (const [key, values] of fields) {
+      for (const value of values.values()) {
+        if (!value.body) continue;
+        const files = bodyKeys.get(key) ?? new Set<string>();
+        files.add(value.file);
+        bodyKeys.set(key, files);
+      }
+    }
+  }
   const calls = new Map<string, PhaseBound[]>();
   const record = (file: string, seconds = 0, ssh = false) => {
     if (sources.has(file)) {
@@ -202,6 +304,7 @@ export function boundedPhaseScripts(
     } catch {
       continue;
     }
+    const accounted = new Map<string, number>();
     for (
       const rawJob of Array.isArray(workflow.jobs) ? workflow.jobs : []
     ) {
@@ -232,23 +335,12 @@ export function boundedPhaseScripts(
           inputs = object(task.inputs);
         // SSH accepts a script body as one argv element. Parse the small CEL
         // array/conditional form as syntax, never evaluate expressions or metadata.
-        // Any script-body use outside argv is an unproved invocation path.
-        const otherInputs = { ...inputs };
-        delete otherInputs.argv;
-        for (
-          const match of JSON.stringify(otherInputs).matchAll(
-            /steps\.([\w-]+)\.outputs\.([\w-]+)/g,
-          )
-        ) {
-          const resolved = asset(
-            "${{ steps." + match[1] + ".outputs." + match[2] + " }}",
-          );
-          if (resolved?.body) {
-            record(resolved.file);
-          }
-        }
-        for (const [file, seconds] of sshCalls(task, asset)) {
+        const ssh = sshCalls(task, asset);
+        for (const [file, seconds] of ssh.calls) {
           record(file, seconds, true);
+        }
+        for (const [key, count] of ssh.accounted) {
+          accounted.set(key, (accounted.get(key) ?? 0) + count);
         }
         if (
           task.behaviorType !== "command/shell" ||
@@ -314,6 +406,27 @@ export function boundedPhaseScripts(
             );
           }
         }
+      }
+    }
+    for (const [key, files] of bodyKeys) {
+      const producers = new Set<string>();
+      for (const job of Array.isArray(workflow.jobs) ? workflow.jobs : []) {
+        const steps = object(job).steps;
+        for (const raw of Array.isArray(steps) ? steps : []) {
+          const step = object(raw), task = object(step.task);
+          if (
+            [
+              ...assets.get(String(task.behaviorType ?? task.modelType))?.get(
+                key,
+              )?.values() ?? [],
+            ].some((value) => value.body)
+          ) {
+            producers.add(String(step.name));
+          }
+        }
+      }
+      if (bodyMentions(workflow, key, producers) > (accounted.get(key) ?? 0)) {
+        for (const file of files) record(file);
       }
     }
   }
