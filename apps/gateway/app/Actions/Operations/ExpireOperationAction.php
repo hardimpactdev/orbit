@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -43,6 +44,10 @@ final readonly class ExpireOperationAction
                 'current_step' => null, 'failed_step' => $step, 'state' => $state,
                 'result' => [...($current->result ?? []), 'error_code' => 'operation.timed_out'],
             ]);
+            $projection = app(DirectOperation::class)->projection($current);
+            if ($projection instanceof DirectOperationTimeout) {
+                $projection->timedOut($current);
+            }
 
             return $current;
         });

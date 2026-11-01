@@ -8,6 +8,7 @@ use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
@@ -37,7 +38,12 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations): void
     {
         foreach (TaskVm::query()->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {
-            app(StartTaskVmDestroyAction::class)->execute($retired->id);
+            try {
+                app(StartTaskVmDestroyAction::class)->execute($retired->id);
+            } catch (ResourceOperationException $refused) {
+                // Admission refused this row; the next sweep asks again. Other rows and the host sweeps still run.
+                Log::warning('A destroying task VM was not readmitted.', ['task_vm_id' => $retired->id, 'error_code' => $refused->errorCode]);
+            }
         }
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host,$node]) {
             $operations->execute($node->id, 'incus');

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Nodes\NodeRemovalInput;
@@ -138,6 +139,23 @@ it('deletes Gateway records only after successful native terminal output', funct
         expect($node->fresh()->status)->toBe(LifecycleStatus::Failed);
     }
 })->with(['succeeded', 'failed', 'cancelled', 'interrupted']);
+
+it('keeps a removal whose budget expired as a failed Node record', function (): void {
+    $this->freezeSecond();
+    FleetFixtures::bind();
+    $node = FleetFixtures::node('removal-expired');
+    $node->update(['status' => LifecycleStatus::Removing]);
+    $snapshot = app(NodeRemovalPlan::class)->build($node, true);
+    $operation = Operation::query()->create(['kind' => 'node.remove', 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
+        'status' => 'running', 'sequence' => 1, 'started_at' => now(), 'state' => ['swamp_run_id' => '3a332a4f-0911-4e9d-9a18-09899b7b1864'],
+        'input' => ['_node_removal' => $snapshot, 'intent' => []]]);
+    $this->travel(2100)->seconds();
+
+    expect(app(ExpireOperationAction::class)->execute($operation)->error_code)->toBe('operation.timed_out')
+        ->and($node->fresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and($node->fresh()->error_code)->toBe('operation.timed_out')
+        ->and($node->fresh()->failed_step)->toBe('remove:operation');
+});
 
 it('refuses an active role claim before changing membership', function (): void {
     FleetFixtures::bind();

@@ -501,7 +501,11 @@ Orbit deleted the VM itself, so the Node removal does not probe the Node's addre
 
 The removal of other Instances moves a checkout within one filesystem only. [Instance removal](/reference/instance-removal) refuses a checkout on a mounted volume with `cross-device:`.
 
-Deletion clears the row's Pi token after the VM is gone. The Node goes before the row becomes `destroyed`, which also clears the token. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
+Deletion clears the row's Pi token after the VM is gone. The Node goes before the row becomes `destroyed`, which also clears the token. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it.
+
+When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. The task VM sweep admits a `destroying` row without a group again; that admission claims the Node as `removing` again. When admission refuses one row, the sweep logs its code and still admits the other rows and sweeps the hosts.
+
+A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
 Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, because destroy needs the settings. Node removal refuses live task VMs and configured hosts. Clear the host setting after draining it. Removing a host also deletes its destroyed VM rows.
 

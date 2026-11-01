@@ -50,6 +50,13 @@ final class OperationRunBudgets
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
+        // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
+        // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
+        // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
+        // workspace Route withdrawal, whose only fixed wait is the 31 s DNS grace. Replace with the 14-day p95 once
+        // both kinds have successful runs with a VM.
+        'tasks.cancel' => 3900,
+        'tasks.maintenance_finish' => 3900,
     ];
 
     public static function seconds(Operation $operation): int
