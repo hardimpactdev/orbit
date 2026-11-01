@@ -114,10 +114,14 @@ Every chart shows the whole flow of the command, start to end. Never leave out c
 
 ## Checks
 
-Run `bin/check-flows` from the repository root before you report. CI runs it too, and it also checks two lists:
+Run `bin/check-flows` from the repository root before you report. CI runs it in the Docs build. It checks the format above and two lists:
 
-- `pending.txt` names operation kinds that have no chart yet. Every other kind needs one. The list may only shrink.
-- `migrated.txt` names kinds whose Swamp workflow is native. Their chart step labels must equal the workflow's step names.
+- `pending.txt` names operation kinds that have no chart yet. Each kind leaves the list with its chart. The list may only shrink.
+- `migrated.txt` names kinds whose Swamp workflow follows its chart. The labels of the Swamp lane's calls and notes must equal the workflow's step names.
+
+The workflow of a kind is the one that names the kind in its `kind` input.
+
+`bin/check-operation-kinds`, in Generated contracts, requires a chart or a `pending.txt` line for every kind in the Gateway registry.
 
 ## Report
 

@@ -1,0 +1,1 @@
+# Kinds whose Swamp workflow step names must equal the Swamp steps in their chart.

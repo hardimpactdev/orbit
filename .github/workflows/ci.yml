@@ -123,6 +123,11 @@ jobs:
         run: |
           composer docs-build
           composer docs-lint
+      - name: Check flow charts
+        if: steps.scope.outputs.selected == 'true'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+        run: node bin/check-flows
 
   api-reference:
     name: Generated contracts
@@ -156,7 +161,7 @@ jobs:
           cp apps/gateway/.env.example apps/gateway/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
           bun install --cwd apps/web --frozen-lockfile
-      - name: Boot and validate Operation kinds and intended workflow grants
+      - name: Boot and validate Operation kinds, their flow charts, and intended workflow grants
         if: steps.scope.outputs.selected == 'true'
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-// Checks every docs/flows/*.mmd against the subset the renderer supports and the text limits.
-const { readdirSync, readFileSync } = require('node:fs')
-const dir = `${__dirname}/../docs/flows`
+// Checks every docs/flows/*.mmd against the subset the renderer supports and the text limits,
+// keeps pending.txt shrinking, and holds the kinds in migrated.txt to their Swamp workflow step names.
+const { existsSync, readdirSync, readFileSync } = require('node:fs')
+const { execFileSync } = require('node:child_process')
+const root = `${__dirname}/..`, dir = `${root}/docs/flows`
+const list = (text) => text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
 const ok = [/^sequenceDiagram$/, /^autonumber$/, /^%%/, /^participant \w+ as .+$/, /^(alt|loop|opt)\b/, /^else\b/, /^end$/,
   /^Note over [\w, ]+: .+$/, /^\w+\s*(-->>|->>|--x|-x)\s*\w+\s*:\s*.+$/]
 let bad = 0
@@ -18,5 +21,41 @@ for (const f of readdirSync(dir).filter((n) => n.endsWith('.mmd'))) {
   })
   if (errs.length) { bad++; console.log(`${f}\n  ${errs.join('\n  ')}`) }
 }
-console.log(bad ? `${bad} file(s) with problems` : 'all flows ok')
+
+// pending.txt names kinds without a chart. A kind leaves it when its chart lands; no kind joins it.
+const pending = list(readFileSync(`${dir}/pending.txt`, 'utf8'))
+const fail = (msg) => { bad++; console.log(msg) }
+for (const kind of pending) if (existsSync(`${dir}/${kind}.mmd`)) fail(`pending.txt: ${kind} has a chart; remove the line`)
+if (process.env.BASE) {
+  let before = null
+  try { before = execFileSync('git', ['show', `${process.env.BASE}:docs/flows/pending.txt`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch {}
+  if (before !== null) for (const kind of pending) if (!list(before).includes(kind)) fail(`pending.txt: ${kind} is new; the list may only shrink, so add its chart instead`)
+}
+
+// For a migrated kind, the Swamp lane's calls and notes are the workflow's steps, by the same names.
+const workflows = readdirSync(`${root}/swamp/workflows`).filter((n) => n.endsWith('.yaml')).map((n) => readFileSync(`${root}/swamp/workflows/${n}`, 'utf8'))
+const declares = (yaml, kind) => (yaml.match(/^ {4}kind: \{type: string, (?:const: ([\w.]+)|enum: \[([^\]]+)\])\}/m) ?? []).slice(1).some((v) => v?.split(/,\s*/).includes(kind))
+const stepNames = (yaml) => {
+  const names = []; let steps = null, item = null
+  for (const line of yaml.split('\n')) {
+    const indent = line.search(/\S/); if (indent < 0) continue
+    if (/^\s*steps:\s*$/.test(line)) { steps = indent; item = null; continue }
+    if (steps === null) continue
+    if (indent < steps || (indent === steps && !line.trimStart().startsWith('- '))) { steps = null; continue }
+    const m = line.match(/^(\s*)- name:\s*['"]?(.+?)['"]?\s*$/)
+    if (m && (item ?? m[1].length) === m[1].length) { item = m[1].length; names.push(m[2]) }
+  }
+  return names
+}
+for (const kind of list(readFileSync(`${dir}/migrated.txt`, 'utf8'))) {
+  const yaml = workflows.filter((w) => declares(w, kind))
+  if (yaml.length !== 1) { fail(`migrated.txt: ${kind} is declared by ${yaml.length} workflows, expected 1`); continue }
+  const src = readFileSync(`${dir}/${kind}.mmd`, 'utf8')
+  const swamp = src.match(/^\s*participant (\w+) as Swamp\b/m)?.[1]
+  const labels = [...src.matchAll(/^\s*(?:(\w+)\s*->>\s*\w+|Note over (\w+))\s*:\s*([^<\n]+)/gm)]
+    .filter((m) => (m[1] ?? m[2]) === swamp).map((m) => m[3].trim())
+  const names = stepNames(yaml[0])
+  if ([...labels].sort().join('\n') !== [...names].sort().join('\n')) fail(`${kind}: chart steps [${labels.join(', ')}] differ from workflow steps [${names.join(', ')}]`)
+}
+console.log(bad ? `${bad} problem(s)` : `all flows ok; ${pending.length} kinds pending`)
 process.exitCode = bad ? 1 : 0

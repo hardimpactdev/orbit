@@ -32,6 +32,10 @@ class BuildPlanTest(unittest.TestCase):
     def test_sdk_changes_build_both_consumers(self):
         self.assertEqual({'php', 'cli', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
 
+    def test_flow_charts_run_the_kind_coverage_and_step_name_checks(self):
+        self.assertEqual({'docs', 'api-reference'}, self.selected(['docs/flows/firewall.allow.mmd']))
+        self.assertEqual({'swamp', 'docs'}, self.selected(['swamp/workflows/workflow-operation-firewall-direct.yaml']))
+
     def test_docs_only_skips_code_builds(self):
         self.assertEqual({'docs'}, self.selected(['docs/reference/ci.md']))
         self.assertEqual({'docs'}, self.selected(['README.md']))
@@ -62,12 +66,12 @@ class BuildPlanTest(unittest.TestCase):
 
     def test_swamp_only_main_commit_is_a_gateway_release_because_the_release_loads_swamp(self):
         paths = ['swamp/workflows/example.yaml']
-        self.assertEqual({'swamp', 'web'}, self.selected(paths, True))
+        self.assertEqual({'swamp', 'docs', 'web'}, self.selected(paths, True))
         self.assertTrue(plan.select(paths, True)['gateway_release'])
 
     def test_mixed_change_keeps_gateway_artifacts_and_swamp_checks(self):
         paths = ['swamp/workflows/example.yaml', 'apps/gateway/app/Thing.php']
-        self.assertEqual({'swamp', 'php', 'gateway-static', 'api-reference', 'web'}, self.selected(paths, main=True))
+        self.assertEqual({'swamp', 'docs', 'php', 'gateway-static', 'api-reference', 'web'}, self.selected(paths, main=True))
         self.assertTrue(plan.select(paths, True)['gateway_release'])
 
     def test_shared_workflow_change_selects_swamp_checks(self):

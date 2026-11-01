@@ -21,6 +21,9 @@ def select(paths, main=False):
             jobs['swamp'] = True
             if path == 'swamp/config/gateway-workflow-grants.json':
                 jobs['api-reference'] = True
+            # bin/check-flows compares migrated charts with their workflow step names.
+            if path.startswith('swamp/workflows/'):
+                jobs['docs'] = True
             continue
         if '/' not in path and path.endswith(('.md', '.mdx')):
             jobs['docs'] = True
@@ -35,6 +38,9 @@ def select(paths, main=False):
             jobs['cli'] = jobs['api-reference'] = jobs['web'] = True
         if path.startswith(('docs/', 'apps/docs/')):
             jobs['docs'] = True
+        # bin/check-operation-kinds needs a chart or a pending.txt line for every kind.
+        if path.startswith('docs/flows/'):
+            jobs['api-reference'] = True
         if path.startswith('apps/gateway/'):
             jobs['api-reference'] = jobs['web'] = True
         if path.startswith('apps/web/'):
