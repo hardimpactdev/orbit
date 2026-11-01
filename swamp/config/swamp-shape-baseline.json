@@ -1312,7 +1312,7 @@
     {
       "file": "extensions/behaviors/operations/routes/firewall-program.ts",
       "rule": "inline-script",
-      "count": 260,
+      "count": 233,
       "evidence": []
     },
     {
