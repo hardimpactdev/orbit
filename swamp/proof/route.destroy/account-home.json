@@ -92,7 +92,7 @@
       "argv": [
         "python3",
         "-I",
-        "before_request.py"
+        "swamp/proof/route.destroy/before_request.py"
       ],
       "timeout_seconds": 60
     }
