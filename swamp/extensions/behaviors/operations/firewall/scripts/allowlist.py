@@ -165,10 +165,15 @@ def main():
         print(json.dumps(converge(intent)))
 
 
+def failure(error):
+    return {'error_code': str(error) if isinstance(error, RuntimeError) else 'firewall.input_invalid'}
+
+
 if __name__ == '__main__':
     try:
         main()
     except (RuntimeError, ValueError, KeyError, OSError) as error:
-        code = str(error) if isinstance(error, RuntimeError) else 'firewall.input_invalid'
-        print(json.dumps({'error_code': code}), file=sys.stderr)
+        # Exit 1 is the step's refusal outcome: stdout carries the public code, stderr the detail.
+        print(json.dumps(failure(error)))
+        print(json.dumps(failure(error)), file=sys.stderr)
         sys.exit(1)

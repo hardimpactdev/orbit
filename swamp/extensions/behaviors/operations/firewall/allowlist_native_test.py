@@ -43,7 +43,7 @@ if '__swamp_sudo_ok__' in command:
  command=shlex.split(command)[-1].split('exec </dev/null; ',1)[-1]
 args=shlex.split(command)
 if '-c' not in args:raise SystemExit('unexpected command')
-index=args.index('-c')
+index=len(args)-1-args[::-1].index('-c')
 namespace={'__name__':'native_fixture'}
 exec(args[index+1],namespace)
 sys.path.insert(0,str(Path.cwd()))
@@ -52,6 +52,9 @@ state=Path(os.environ['ALLOWLIST_STATE'])
 ufw=Ufw(json.loads(state.read_text())['rows'])
 namespace['command']=ufw.command
 try: print(json.dumps(namespace['converge'](json.loads(args[index+2]))))
+except RuntimeError as error:
+ print(json.dumps(namespace['failure'](error)))
+ raise SystemExit(1)
 finally: state.write_text(json.dumps({'rows':ufw.rows,'effects':ufw.effects}))
 ''')
         ssh.chmod(0o755)
@@ -83,6 +86,22 @@ finally: state.write_text(json.dumps({'rows':ufw.rows,'effects':ufw.effects}))
         removed = self.run_root()
         self.assertEqual(len(removed['rows']), 1)
         self.assertEqual(removed['rows'][0]['comment'], 'orbit:wireguard-members')
+
+
+    def test_refusal_projects_its_public_error_code_and_writes_nothing(self):
+        rows = json.loads(self.state.read_text())['rows']
+        rows.insert(0, {'to': '7297/tcp', 'source': '10.44.0.6', 'action': 'allow', 'comment': 'office'})
+        self.state.write_text(json.dumps({'rows': rows}))
+        result = self.cli('workflow', 'run', 'operation-firewall-direct', '--input', 'operation_id=17', '--input', 'node_id=9',
+                          '--input', 'kind=firewall.allowlist', '--input', 'intent=' + json.dumps(self.intent),
+                          '--input', 'execution_secrets={}', success=False)
+        history = json.loads(self.cli('workflow', 'history', 'get', json.loads(result.stdout)['id']).stdout)
+        steps = {step['name']: step for step in history['jobs'][0]['steps']}
+        self.assertEqual(steps['allowlist']['status'], 'succeeded')
+        self.assertEqual(steps['allowlist']['outputs']['exitCode'], 1)
+        self.assertEqual(steps['result']['status'], 'failed')
+        self.assertIn('firewall.rule_collision', json.dumps(steps['result']))
+        self.assertEqual(json.loads(self.state.read_text())['effects'], [])
 
 
 if __name__ == '__main__':

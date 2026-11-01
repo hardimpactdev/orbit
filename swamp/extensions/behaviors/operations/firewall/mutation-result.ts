@@ -81,11 +81,19 @@ export function result(raw: unknown) {
     if (args.intent.rule.action === "allowlist") {
         const step = z.object({
             status: z.literal("succeeded"),
-            outputs: z.object({ stdout: z.string(), exitCode: z.literal(0) }),
+            outputs: z.object({
+                stdout: z.string(),
+                exitCode: z.union([z.literal(0), z.literal(1)]),
+            }),
         }).parse(args.outcomes["allowlist"]);
-        return z.object({ backend: z.enum(["absent", "active"]) }).parse(
-            JSON.parse(step.outputs.stdout),
-        );
+        const body = JSON.parse(step.outputs.stdout);
+        if (step.outputs.exitCode === 1) {
+            throw new Error(
+                z.object({ error_code: z.string().regex(/^firewall\.[a-z_]+$/) })
+                    .parse(body).error_code,
+            );
+        }
+        return z.object({ backend: z.enum(["absent", "active"]) }).parse(body);
     }
     if (observe(args).legacy) throw new Error("firewall.remove_verify_failed");
     for (const [index, tuple] of args.intent.tuples.entries()) {
