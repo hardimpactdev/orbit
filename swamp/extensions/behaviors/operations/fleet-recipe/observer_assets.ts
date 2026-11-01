@@ -6,7 +6,7 @@ export const RoleConvergeIntent = z.object({
     node_id: z.number().int().positive(),
     assignment_id: z.number().int().positive(),
     role: z.enum(["database", "ingress", "websocket"]),
-    created: z.literal(false).optional(),
+    created: z.boolean(),
     prerequisites: z.object({
         packages: z.array(z.string()),
         releases: z.array(z.string()),
@@ -85,7 +85,7 @@ type Context = {
 /** Read and shape public assets only. All effects run in official SSH steps. */
 export const behavior = {
     type: "@nckrtl/node-role-converge-command",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         cli: {
             schema: CliInstallResult,

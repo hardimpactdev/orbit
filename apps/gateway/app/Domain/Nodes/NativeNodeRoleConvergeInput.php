@@ -21,7 +21,13 @@ final readonly class NativeNodeRoleConvergeInput
 
     public static function supports(Node $node, RoleName $role): bool
     {
-        return in_array($role, [RoleName::Database, RoleName::Ingress, RoleName::WebSocket], true) && $node->roles()->where('role', $role)->exists() && ! $node->roles()->where('role', '!=', $role)->exists();
+        return self::supportsContribution($node, $role) && $node->roles()->where('role', $role)->exists() && ! $node->roles()->where('role', '!=', $role)->exists();
+    }
+
+    /** Implemented forward contributions; owning parents validate role policy and required duties. */
+    public static function supportsContribution(Node $node, RoleName $role): bool
+    {
+        return $node->platform === 'linux' && in_array($role, [RoleName::Database, RoleName::Ingress, RoleName::WebSocket], true);
     }
 
     /** @param array<string,mixed> $snapshot
@@ -29,8 +35,14 @@ final readonly class NativeNodeRoleConvergeInput
      */
     public function capture(Node $node, NodeRole $assignment, array $snapshot): array
     {
-        if ($snapshot['metrics_fleet'] !== null || ! self::supports($node, $assignment->role) || $assignment->node_id !== $node->id || ! $assignment->exists) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'This native role factory requires an actual supported sole-role assignment.', 422);
+        if (! $node->exists || ! $assignment->exists || $assignment->node_id !== $node->id
+            || ! NodeRole::query()->whereKey($assignment->id)->where('node_id', $node->id)->where('role', $assignment->role)->exists()
+            || ($snapshot['schema_version'] ?? null) !== 1 || ($snapshot['node_id'] ?? null) !== $node->id || ($snapshot['assignment_id'] ?? null) !== $assignment->id
+            || ($snapshot['role'] ?? null) !== $assignment->role->value || ! is_bool($snapshot['created'] ?? null)) {
+            throw new ResourceOperationException('node.role_input_invalid', 'Role capture requires the actual recorded assignment and matching snapshot identity.', 422);
+        }
+        if ($snapshot['metrics_fleet'] !== null || ! self::supportsContribution($node, $assignment->role)) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This role or its Metrics fleet has no supported native contribution.', 422);
         }
         $footprint = ValidatedData::object($snapshot['footprint']);
         $entries = $footprint['artifacts'];
@@ -45,7 +57,7 @@ final readonly class NativeNodeRoleConvergeInput
         }
         $ssh = $this->ssh->forNode($node);
         $intent = ['schema_version' => 1, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
-            'created' => false, 'role' => $assignment->role->value, 'user' => $node->user,
+            'created' => $snapshot['created'], 'role' => $assignment->role->value, 'user' => $node->user,
             'agent_sha256' => $snapshot['agent_sha256'], 'prerequisites' => $snapshot['prerequisites'],
             'ssh' => $ssh,
             ...(in_array($assignment->role, [RoleName::Ingress, RoleName::WebSocket], true) ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),

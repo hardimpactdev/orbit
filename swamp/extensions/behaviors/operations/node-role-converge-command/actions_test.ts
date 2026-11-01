@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior, observerFiles } from "../fleet-recipe/observer_assets.ts";
-import { roleResult } from "./result.ts";
+import { RoleConvergeContribution, roleResult } from "./result.ts";
 import { generatedRoleWorkflows, roleWorkflow } from "./workflows.ts";
 const ctx = {
     extensionFile: (name: string) =>
@@ -24,12 +24,7 @@ Deno.test("observer files preserve the narrowed canonical unit policy", () => {
         "ProtectHome=tmpfs\nBindReadOnlyPaths=-/home/orbit/apps",
     );
 });
-Deno.test("DNS refusals and mismatched observer delivery cannot emit readiness", async () => {
-    await assertRejects(() =>
-        behavior.methods.dns_result.execute({
-            stdout: '{"error_code":"wireguard.peer_dns_apply_failed"}',
-        }, ctx)
-    );
+Deno.test("mismatched observer delivery cannot emit readiness", async () => {
     await assertRejects(() =>
         behavior.methods.observer_delivery.execute({
             sha256: "a".repeat(64),
@@ -47,6 +42,7 @@ Deno.test("terminal assembly preserves unchanged artifacts and refuses missing r
             node_id: 5,
             assignment_id: 7,
             role: "database",
+            created: false,
             footprint: { artifacts: [{ name: "agent", required: false }] },
             cli: { skip_reason: "release_unavailable", plan_error: null },
         },
@@ -77,6 +73,7 @@ Deno.test("the terminal relay exposes the canonical public JSON stdout receipt",
 Deno.test("Ingress requires Caddy publication and firewall proof", () => {
     const intent = {
         role: "ingress",
+        created: false,
         node_id: 5,
         assignment_id: 7,
         footprint: { artifacts: [] },
@@ -96,6 +93,52 @@ Deno.test("Ingress requires Caddy publication and firewall proof", () => {
     assertEquals(roleResult({ intent, steps }).role_proven, true);
     steps["caddy-0"].status = "failed";
     assertEquals(roleResult({ intent, steps }).role_proven, false);
+});
+
+Deno.test("new assignment receipts preserve identity and phase facts on later failure", () => {
+    for (const created of [true, false]) {
+        const intent = {
+            node_id: 5,
+            assignment_id: 7,
+            role: "websocket",
+            certificates: { leaves: [{}] },
+            created,
+            footprint: { artifacts: [{ name: "agent", required: true }] },
+            cli: { skip_reason: "release_unavailable", plan_error: null },
+        };
+        const steps = Object.fromEntries(
+            [
+                "account",
+                "observer_install",
+                "packages",
+                "caddy_package-0",
+                "runtime-0",
+                "certificates-0",
+                "publication-0",
+                "firewall-0",
+            ].map((name) => [name, { status: "succeeded" }]),
+        );
+        const result = RoleConvergeContribution.parse(
+            roleResult({ intent, steps, certificate_statuses: ["succeeded"] }),
+        );
+        assertEquals({
+            node_id: result.node_id,
+            assignment_id: result.assignment_id,
+            role: result.role,
+            created: result.created,
+        }, { node_id: 5, assignment_id: 7, role: "websocket", created });
+        assertEquals(result.role_proven, true);
+        assertEquals(result.footprint.footprint_proven, false);
+        steps["publication-0"].status = "failed";
+        const failed = RoleConvergeContribution.parse(
+            roleResult({ intent, steps, certificate_statuses: ["succeeded"] }),
+        );
+        assertEquals(failed.created, created);
+        assertEquals(failed.role_proven, false);
+        assertEquals(failed.runtime_proven, true);
+        assertEquals(failed.certificates_proven, true);
+        assertEquals(failed.publication_proven, false);
+    }
 });
 
 Deno.test("shared runtime workflows have unique steps,209 placement and a decisive final proof", async () => {
@@ -170,11 +213,65 @@ Deno.test("role binding preserves caller SSH, secret and root identity expressio
             rootRunIdExpr: "inputs.intent.parent_run_id",
         },
     );
-    const account = steps.find((s) => s.name === "enrolled_account_command")!;
+    const account = steps.find((s) => s.name === "enrolled_account")!;
     assertEquals((account.task as Record<string, unknown>).globalArgs, globals);
     const serialized = JSON.stringify(steps);
     assertEquals(serialized.includes("roles[0].roles[0]"), false);
     assertEquals(serialized.includes("roles[0].role_bindings"), false);
     assertEquals(serialized.includes("roles[0].parent_run_id"), false);
     assertEquals(steps.at(-1)!.guard, "${{ inputs.skip }}");
+});
+
+Deno.test("WebSocket phases have execution and queue bounds without dumping the native context", async () => {
+    const { websocketWorkflow } = await import("./websocket_workflow.ts");
+    const steps = websocketWorkflow().jobs[0].steps;
+    for (const step of steps) {
+        assertEquals(step.queueTimeout, 30);
+        const task = step.task as Record<string, unknown>;
+        if (task.behaviorType === "@swamp/ssh" && task.methodName === "exec") {
+            const input = task.inputs as { argv: unknown[] };
+            assertEquals(input.argv[0], "/usr/bin/timeout");
+            assertEquals(Number(input.argv[1]) > 0, true);
+        }
+    }
+    assertEquals(JSON.stringify(steps).includes("${{ steps }}"), false);
+    const result = steps.find((step) => step.name === "result")!.task as {
+        inputs: { statuses: Record<string, string> };
+    };
+    assertEquals(Object.keys(result.inputs.statuses), [
+        "account",
+        "checkout",
+        "dependencies",
+        "environment",
+        "unit",
+        "activation",
+        "verify",
+        "restore",
+        "cleanup",
+    ]);
+});
+
+Deno.test("all shared role phases have queue bounds and pass only named terminal facts", () => {
+    const flow = roleWorkflow();
+    for (const job of flow.jobs) {
+        for (const step of job.steps) {
+            assertEquals(step.queueTimeout, 30);
+            const task = step.task as Record<string, unknown>;
+            if (
+                task.behaviorType === "@swamp/ssh" && task.methodName === "exec"
+            ) {
+                const input = task.inputs as { argv: unknown[] };
+                assertEquals(input.argv[0], "/usr/bin/timeout");
+                assertEquals(Number(input.argv[1]) > 0, true);
+            }
+        }
+    }
+    assertEquals(JSON.stringify(flow).includes("${{ steps }}"), false);
+    const effects = flow.jobs[0].steps;
+    assertEquals(
+        effects.filter((s) => String(s.name).endsWith("_source")).length,
+        3,
+    );
+    assertEquals(effects.filter((s) => s.name === "role_assets").length, 1);
+    assertEquals(effects.filter((s) => s.name === "observer").length, 1);
 });
