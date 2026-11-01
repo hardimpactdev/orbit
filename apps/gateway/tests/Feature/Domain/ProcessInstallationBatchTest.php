@@ -8,16 +8,17 @@ use App\Domain\Processes\ProcessInstallationBatch;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
-use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $this->source = Node::query()->create(['name' => 'batch-source', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.11']);
-    $this->destination = Node::query()->create(['name' => 'batch-destination', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.12']);
+    $this->source = Node::query()->create(['name' => 'batch-source', 'wireguard_ip' => '10.44.0.11', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'source-public-pin', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.11']);
+    $this->destination = Node::query()->create(['name' => 'batch-destination', 'wireguard_ip' => '10.44.0.12', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'destination-public-pin', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.12']);
     $project = Project::query()->create(['name' => 'Batch', 'slug' => 'batch-proof', 'repository_url' => 'https://example.test/batch.git']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->source->id, 'name' => 'proof', 'checkout_path' => '/srv/source', 'status' => 'active', 'provisioning_step' => 'active']);
     $this->process = Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $this->instance->id, 'name' => 'batch-proof',
@@ -30,6 +31,10 @@ beforeEach(function (): void {
             throw new RuntimeException('Account discovery must not run in batch admission or private hydration.');
         }
     });
+    $this->socket = $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture']);
     $this->batch = app(ProcessInstallationBatch::class);
     $this->target = function (Node $node, string $checkout): ProcessTarget {
         $placed = clone $this->instance;
@@ -52,128 +57,50 @@ beforeEach(function (): void {
     };
 });
 
-it('captures two placements without account discovery, private bytes, children or record mutation', function (): void {
-    $captures = ($this->captures)();
-    $destination = $captures['destination_installations'];
-    $native = $this->batch->input($destination);
-    expect(json_encode($captures))->not->toContain('batch-private-value')
-        ->and($native[0]['input']['installation']['account_user'])->toBe('orbit')
-        ->and($destination['node_id'])->toBe($this->destination->id)
+it('publishes both prospective public definitions and distinct environment-only copies before cutover', function (): void {
+    $operation = ($this->operation)(($this->captures)());
+    $source = $this->batch->nativeInput($operation, 'source_installations');
+    $destination = $this->batch->nativeInput($operation, 'destination_installations');
+    expect($source['members'][0]['intent']['installation']['unit'])->toContain('/srv/source/app', ProcessOperationAdmission::AccountHomeToken)
+        ->and($destination['members'][0]['intent']['installation']['unit'])->toContain('/srv/destination/app', '/srv/destination/.env')
+        ->and(json_encode([$source, $destination]))->not->toContain('batch-private-value')
+        ->and($source['execution_secrets'])->not->toBe($destination['execution_secrets'])
+        ->and($this->socket->sent)->toHaveCount(2)
+        ->and($this->socket->sent[0]['payload']['value'])->toContain('batch-private-value')
+        ->and($this->socket->sent[0]['payload']['value'])->not->toContain('[Service]')
+        ->and($destination['members'][0]['intent']['ssh_execution']['target']['host_keys'])->toBe(['ssh-ed25519 destination-public-pin'])
+        ->and($this->instance->fresh()->node_id)->toBe($this->source->id)
         ->and($this->process->fresh()->working_directory)->toBe('/srv/source/app')
         ->and(Operation::query()->count())->toBe(0);
 });
 
-it('binds private material to current placement while the parent remains on the source Node', function (): void {
+it('refuses changed origin, membership, ownership, specification or destination before publishing copies', function (string $change): void {
     $operation = ($this->operation)(($this->captures)());
-    $source = $this->batch->material($operation, 'source_installations')->value;
-    expect($source[$this->process->id]['installation']['content'])->toContain(ProcessOperationAdmission::AccountHomeToken, '/srv/source/app')
-        ->and($source[$this->process->id]['installation']['environment'])->toContain('batch-private-value');
-    expect(fn () => $this->batch->material($operation, 'destination_installations'))->toThrow(ResourceOperationException::class);
-    DB::transaction(function (): void {
-        $relocated = $this->batch->placedProcess($this->process, '/srv/source', '/srv/destination');
-        $this->instance->update(['node_id' => $this->destination->id, 'checkout_path' => '/srv/destination']);
-        $this->process->update(['working_directory' => $relocated->working_directory, 'runtime_config' => $relocated->runtime_config]);
-    });
-    $destination = $this->batch->material($operation, 'destination_installations')->value;
-    expect($operation->node_id)->toBe($this->source->id)
-        ->and($destination[$this->process->id]['installation']['content'])->toContain('/srv/destination/app', '/srv/destination/.env');
-    expect(fn () => $this->batch->material($operation, 'source_installations'))->toThrow(ResourceOperationException::class);
-    DB::transaction(function (): void {
-        $restored = $this->batch->placedProcess($this->process->fresh(), '/srv/destination', '/srv/source');
-        $this->instance->update(['node_id' => $this->source->id, 'checkout_path' => '/srv/source']);
-        $this->process->update(['working_directory' => $restored->working_directory, 'runtime_config' => $restored->runtime_config]);
-    });
-    expect($this->batch->material($operation, 'source_installations')->value)->toBe($source);
-    expect(fn () => $this->batch->material($operation, 'destination_installations'))->toThrow(ResourceOperationException::class);
+    match ($change) {
+        'origin' => $this->instance->update(['checkout_path' => '/srv/changed']),
+        'owner' => $this->process->update(['owner_id' => $this->instance->id + 100]),
+        'member' => $this->process->replicate()->fill(['name' => 'new-member'])->save(),
+        'spec' => $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => ['PASSWORD' => 'changed']]]),
+        'destination' => $this->destination->update(['status' => 'removing']),
+        'descriptor' => $operation->input = array_replace_recursive($operation->input, ['process_installations' => ['destination_installations' => ['members' => [['input' => ['content_hash' => str_repeat('a', 64)]]]]]]),
+    };
+    expect(fn () => $this->batch->nativeInput($operation, 'destination_installations'))->toThrow(ResourceOperationException::class)
+        ->and($this->socket->sent)->toBe([]);
+})->with(['origin', 'owner', 'member', 'spec', 'destination', 'descriptor']);
+
+it('publishes Docker intent without its environment and preserves null defaults', function (): void {
+    $this->process->update(['runtime' => 'docker', 'working_directory' => null, 'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'], 'environment_file' => null, 'environment' => ['TOKEN' => 'docker-private']]]);
+    $native = $this->batch->nativeInput(($this->operation)(($this->captures)()), 'destination_installations');
+    expect($native['members'][0]['intent']['installation']['definition']['working_directory'])->toBeNull()
+        ->and($native['members'][0]['intent']['installation']['definition'])->not->toHaveKey('environment')
+        ->and(json_encode($native))->not->toContain('docker-private')
+        ->and(json_decode($this->socket->sent[0]['payload']['value'], true))->toBe(['TOKEN' => 'docker-private']);
 });
 
-it('refuses destination material when Instance placement moved without the Process records', function (): void {
+it('refuses foreign paths and undeclared selectors without effects', function (): void {
     $operation = ($this->operation)(($this->captures)());
-    $this->instance->update(['node_id' => $this->destination->id, 'checkout_path' => '/srv/destination']);
-    expect(fn () => $this->batch->material($operation, 'destination_installations'))->toThrow(ResourceOperationException::class);
-});
-
-it('refuses paths outside the captured checkout before writing placement', function (string $field, string $path): void {
-    $this->process->update($field === 'working_directory' ? [$field => $path] : ['runtime_config' => [...$this->process->runtime_config, $field => $path]]);
+    expect(fn () => $this->batch->nativeInput($operation, 'unknown'))->toThrow(ResourceOperationException::class);
+    $this->process->update(['working_directory' => '/srv/foreign']);
     expect(fn () => ($this->captures)())->toThrow(ResourceOperationException::class)
-        ->and($this->instance->fresh()->node_id)->toBe($this->source->id);
-})->with([['working_directory', '/srv/source-sibling/app'], ['environment_file', '/etc/private.env'], ['working_directory', '/srv/destination/app'], ['working_directory', '/srv/source/../foreign'], ['environment_file', '/srv/source//.env']]);
-
-it('refuses changed specifications or foreign Process ownership before returning material', function (string $change): void {
-    $operation = ($this->operation)(($this->captures)());
-    $this->process->update($change === 'owner' ? ['owner_id' => $this->instance->id + 100] : ['runtime_config' => [...$this->process->runtime_config, 'environment' => ['PASSWORD' => 'changed']]]);
-    expect(fn () => $this->batch->material($operation, 'source_installations'))->toThrow(ResourceOperationException::class);
-})->with(['owner', 'spec']);
-
-it('keeps captured membership and rejects an undeclared selector', function (): void {
-    $operation = ($this->operation)(($this->captures)());
-    $later = $this->process->replicate();
-    $later->name = 'later';
-    $later->save();
-    expect(array_keys($this->batch->material($operation, 'source_installations')->value))->toBe([$this->process->id]);
-    expect(fn () => $this->batch->material($operation, 'installations'))->toThrow(ResourceOperationException::class);
-});
-
-it('preserves null Docker defaults during relocation', function (): void {
-    $this->process->update(['runtime' => 'docker', 'working_directory' => null, 'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'], 'environment_file' => null]]);
-    $relocated = $this->batch->placedProcess($this->process, '/srv/source', '/srv/destination');
-    expect($relocated->working_directory)->toBeNull()->and($relocated->runtime_config['environment_file'])->toBeNull();
-});
-
-it('renders both captured installation placements before any transfer cutover', function (): void {
-    $sourceTarget = ($this->target)($this->source, '/srv/source');
-    $destinationTarget = ($this->target)($this->destination, '/srv/destination');
-    $captures = ($this->captures)();
-
-    $source = $this->batch->materialForCapture($this->instance, $sourceTarget, $captures['source_installations']);
-    $destination = $this->batch->materialForCapture($this->instance, $destinationTarget, $captures['destination_installations']);
-
-    expect($source->value[$this->process->id]['installation']['content'])->toContain('/srv/source/app', '/srv/source/.env')
-        ->and($destination->value[$this->process->id]['installation']['content'])->toContain('/srv/destination/app', '/srv/destination/.env', ProcessOperationAdmission::AccountHomeToken)
-        ->and($destination->value[$this->process->id]['installation']['environment'])->toContain('batch-private-value')
-        ->and($this->instance->fresh()->node_id)->toBe($this->source->id)
-        ->and($this->process->fresh()->working_directory)->toBe('/srv/source/app')
-        ->and(Operation::query()->count())->toBe(0);
-});
-
-it('refuses pre-run material after the captured origin placement changes', function (string $field): void {
-    $target = ($this->target)($this->destination, '/srv/destination');
-    $capture = $this->batch->capture($this->instance, $target);
-    $this->instance->update($field === 'node_id' ? ['node_id' => $this->destination->id] : ['checkout_path' => '/srv/elsewhere']);
-
-    expect(fn () => $this->batch->materialForCapture($this->instance->fresh(), $target, $capture))->toThrow(ResourceOperationException::class);
-})->with(['node_id', 'checkout_path']);
-
-it('refuses stale prospective input or changed Process material before vault publication', function (string $change): void {
-    $target = ($this->target)($this->destination, '/srv/destination');
-    $capture = $this->batch->capture($this->instance, $target);
-    if ($change === 'descriptor') {
-        $capture['members'][0]['input']['content_hash'] = str_repeat('a', 64);
-    } else {
-        $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => ['PASSWORD' => 'replaced']]]);
-    }
-
-    expect(fn () => $this->batch->materialForCapture($this->instance, $target, $capture))->toThrow(ResourceOperationException::class);
-})->with(['descriptor', 'material']);
-
-it('renders prospective Docker material without moving its owner or exposing the environment in public input', function (): void {
-    $this->process->update(['runtime' => 'docker', 'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'], 'environment' => ['PASSWORD' => 'docker-batch-private']]]);
-    $target = ($this->target)($this->destination, '/srv/destination');
-    $capture = $this->batch->capture($this->instance, $target);
-    $material = $this->batch->materialForCapture($this->instance, $target, $capture)->value[$this->process->id]['installation'];
-
-    expect($material['runtime'])->toBe('docker')
-        ->and($material['definition']['working_directory'])->toBe('/srv/destination/app')
-        ->and($material['definition']['environment']['PASSWORD'])->toBe('docker-batch-private')
-        ->and(json_encode($this->batch->input($capture)))->not->toContain('docker-batch-private')
-        ->and($this->instance->fresh()->node_id)->toBe($this->source->id)
-        ->and($this->process->fresh()->working_directory)->toBe('/srv/source/app');
-});
-
-it('refuses pre-run material for a destination that is no longer an active Linux Node', function (): void {
-    $target = ($this->target)($this->destination, '/srv/destination');
-    $capture = $this->batch->capture($this->instance, $target);
-    $this->destination->update(['status' => 'removing']);
-
-    expect(fn () => $this->batch->materialForCapture($this->instance, $target, $capture))->toThrow(ResourceOperationException::class);
+        ->and($this->socket->sent)->toBe([]);
 });

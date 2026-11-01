@@ -23,6 +23,15 @@ class TransferNative(NativeTestCase):
         module.write_text('import {transferHttp,transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime,fixtureSqlite} from "./transfer_native_fixture.ts";\n'+module.read_text().replace('transferRoot();','transferRoot((_ctx,args)=>transferHttp(args),transferEffects,fixtureTargetActions,fixtureRemovalActions,fixtureRuntime,fixtureSqlite);'))
         for file,kind in [('routes/publication.ts','@nckrtl/route-publication'),('certificates/mod.ts','@nckrtl/certificates')]:
             (self.repo/'extensions/behaviors/operations'/file).write_text('import {fixtureSharedBehavior} from "../instance-lifecycle/transfer_native_fixture.ts";\nexport const behavior = { ...fixtureSharedBehavior("'+kind+'"), type: "'+kind+'" };\n')
+        child = {'id': '689cad3b-d90c-49fe-bf2f-5ed0974a32ec', 'name': 'operation-process-create',
+                 'inputs': {'properties': {'node_id': {'type': 'integer'}}},
+                 'jobs': [{'name': 'install', 'steps': [{'name': 'install', 'task': {
+                     'type': 'behavior', 'behaviorType': '@nckrtl/fixture-transfer-process-install',
+                     'behaviorName': '${{ "transfer-install-" + run.id }}', 'methodName': 'apply',
+                     'inputs': {'node_id': '${{ inputs.node_id }}'}}}]}]}
+        (self.repo/'workflows/workflow-operation-process-create.yaml').write_text(yaml.safe_dump(child))
+        (self.repo/'extensions/behaviors/operations/instance-lifecycle/transfer_install_native_fixture.ts').write_text(
+            'import { fixtureProcessInstaller } from "./transfer_native_fixture.ts";\nexport const behavior = { ...fixtureProcessInstaller, type: "@nckrtl/fixture-transfer-process-install" };\n')
         target={'route_id' :1,'mode':'targets','binding_only':False,'noop':False,'recover_forward':False,
                 'prepared':[],'workloads':[],'staging_certificates':[],'live_certificates':[],
                 'certificates':[],'staging_removals':[],'node_ids':[9,17,209],
@@ -43,7 +52,7 @@ class TransferNative(NativeTestCase):
             'target':{'node_id':17,'target_instance_id':11,'base':'/srv/destination','target_user':'orbit','transport_user':'orbit','operation':pin,'state_dir':'/var/lib/orbit/app-instance-sqlite-seeds/target-11-'+pin,'environment':'development','relative_path':'data.sqlite'}}
     def run_transfer(self,success=True):
         self.state_file.write_text(json.dumps(self.state))
-        self.cli('workflow','run','operation-instance-transfer','--input','operation_id=7','--input','node_id=9','--input','kind=instance.transfer',success=success)
+        self.cli('workflow','run','operation-instance-transfer','--stdin', input=json.dumps({'operation_id':7,'node_id':9,'kind':'instance.transfer','intent':{'source_processes':[{'id':1,'node_id':9,'intent':{}}],'destination_processes':[{'id':1,'node_id':17,'intent':{}}]},'execution_secrets':{}}),success=success)
         return json.loads(self.state_file.read_text())
     def test_native_transfer_dag_validates(self):
         self.cli('workflow','validate','operation-instance-transfer')

@@ -50,11 +50,24 @@ final readonly class ProcessLifecycleInput
         if ($operation->target_type !== 'process' || $operation->target_id !== ($input['process_id'] ?? null)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Process intent does not match its target.', 422);
         }
+        $material = in_array($operation->kind, ['process.create', 'process.update'], true)
+            ? ValidatedData::object($this->secrets->resolve($operation, $operation->target_id, '', 'installation')->value) : null;
+
+        return $this->forRenderedInstallation($input, $material, $node, $environmentKey);
+    }
+
+    /** The owning parent validates its frozen placement before rendering these bytes.
+     * @param  array<string,mixed>  $input
+     * @param  array<string,mixed>|null  $material
+     * @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>}
+     */
+    public function forRenderedInstallation(array $input, ?array $material, Node $node, string $environmentKey): array
+    {
+        $processId = ValidatedData::integer($input['process_id']);
         $control = Arr::only($input, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
         $intent = ['control' => $control, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node)];
         $copies = [];
-        if (in_array($operation->kind, ['process.create', 'process.update'], true)) {
-            $material = ValidatedData::object($this->secrets->resolve($operation, $operation->target_id, '', 'installation')->value);
+        if ($material !== null) {
             $installation = Arr::only($input, ['process_id', 'runtime', 'name', 'desired', 'on_demand', 'directory', 'content_hash', 'activation_pending', 'spec', 'account_user', 'required_mount_paths']);
             $definition = $input['runtime'] === 'docker' ? ValidatedData::object($material['definition']) : [];
             $environment = $input['runtime'] === 'systemd'
@@ -64,8 +77,8 @@ final readonly class ProcessLifecycleInput
                 ? ['runtime' => $input['retired_runtime'], 'name' => $input['retired_name']] : null;
             if ($input['runtime'] === 'systemd') {
                 $installation['unit'] = $material['content'];
-                $installation['environment_path'] = '/etc/orbit/processes/'.$operation->target_id.'/'.hash('sha256', $environment).'.env';
-                $installation['has_environment'] = $environment !== '# Orbit Process '.$operation->target_id."\n";
+                $installation['environment_path'] = '/etc/orbit/processes/'.$processId.'/'.hash('sha256', $environment).'.env';
+                $installation['has_environment'] = $environment !== '# Orbit Process '.$processId."\n";
             } else {
                 $installation['definition'] = $definition;
                 $installation['has_environment'] = $environment !== '{}';

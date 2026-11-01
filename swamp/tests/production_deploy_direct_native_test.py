@@ -74,9 +74,6 @@ class ProductionDeployDirectNativeTest(NativeTestCase):
                                      'values': {'APP_ENV': 'production', 'TOKEN': secret},
                                      'owned_keys': [], 'testing': None},
             'definitions_material': {
-                'processes': {'14': {'installation': {'runtime': 'systemd',
-                                                     'content': secret + '-unit',
-                                                     'environment': 'TOKEN=' + secret}}},
                 'schedules': {schedule_id: {'command': secret + '-schedule'}},
             },
         }
@@ -192,7 +189,7 @@ class ProductionDeployDirectNativeTest(NativeTestCase):
                 references = [post['result'] for post in state['posts'] if post['status'] == 'running']
                 self.assertEqual([row['vp_environment']['status'] for row in references], ['checking', 'active'])
                 self.assertTrue(all(row['release'] == release for row in references))
-                self.assertGreaterEqual(state['private_after_activation'], 2)
+                self.assertEqual(state['private_after_activation'], 1)
                 self.assertEqual(state['cancel_requested'], cancel)
                 self.assertFalse(any('children' in path or 'operation-executor' in path
                                      for path in state['paths']))

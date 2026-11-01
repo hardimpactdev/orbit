@@ -1123,20 +1123,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_runtime.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_runtime.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/integrations/metrics_certificate_system.ts",
       "rule": "custom-control",
       "count": 4,
@@ -1836,18 +1822,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/process-installation.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/process-installation.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/process-system.ts",

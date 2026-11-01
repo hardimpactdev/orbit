@@ -213,7 +213,7 @@ final readonly class DirectOperation
         return app($this->definitions[$operation->kind]['projection']);
     }
 
-    /** The opt-in uses the existing public projection boundary; stored input may contain secrets.
+    /** Only native submission calls this boundary; stored input may contain secrets.
      * @return array<string,mixed>
      */
     public function workflowInputs(Operation $operation): array
@@ -221,7 +221,8 @@ final readonly class DirectOperation
         $definition = $this->definition($operation->kind);
         $input = [];
         if (($definition['workflow_inputs'] ?? false) === true) {
-            $input = $this->projection($operation)->input($operation);
+            $projection = $this->projection($operation);
+            $input = $projection instanceof DirectOperationWorkflowInput ? $projection->workflowInput($operation) : $projection->input($operation);
             $references = self::executionReferences($input['execution_secrets'] ?? []);
             $input['execution_secrets'] = $references === [] ? (object) [] : $references;
         }
