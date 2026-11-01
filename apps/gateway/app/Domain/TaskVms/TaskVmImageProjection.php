@@ -84,9 +84,6 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
             if (! $terminal && $status === OperationStatus::Running) {
                 $this->progress($build, $operation, ValidatedData::string($phase), $result);
             }
-            if (! $terminal && $status->terminal()) {
-                $this->finish($projected, $status, $code);
-            }
 
             return $projected;
         });
@@ -119,21 +116,47 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
         $build->forceFill(['steps' => $steps, 'current_step' => $step, 'current_program' => $program])->save();
     }
 
+    /** Project terminal changes, including shared-reader corrections after Gateway expiry. */
+    public function changed(Operation $operation): void
+    {
+        if ($operation->wasChanged('status') && in_array($operation->status, [OperationStatus::Succeeded, OperationStatus::Failed, OperationStatus::Cancelled], true)) {
+            $this->finish($operation, $operation->status, $operation->error_code);
+        }
+    }
+
     private function finish(Operation $operation, OperationStatus $status, ?string $errorCode): void
     {
-        $build = TaskVmImageBuild::query()->findOrFail(ValidatedData::integer($operation->input['build_id']));
+        $input = $operation->input;
+        if ($operation->kind !== 'task_vm.image_build' || $operation->target_type !== 'task_vm_image'
+            || ($input['build_id'] ?? null) !== $operation->target_id || ($input['host_node_id'] ?? null) !== $operation->node_id) {
+            return;
+        }
+        $build = TaskVmImageBuild::query()->whereKey($operation->target_id)->where('host_node_id', $operation->node_id)
+            ->where('attempt', $input['attempt'] ?? null)->where('recipe_identity', $input['identity'] ?? null)
+            ->where('recipe_generation', $input['generation'] ?? null)->first();
+        if ($build === null) {
+            return;
+        }
+        if ($status === OperationStatus::Succeeded && (($operation->result['ready'] ?? null) !== true
+            || ($operation->result['fingerprint'] ?? null) !== $build->image_fingerprint || $build->promoted_at === null)) {
+            return;
+        }
         $changed = TaskVmImageBuild::query()->whereKey($build->id)->where('attempt', $operation->input['attempt'])
-            ->where('state', TaskVmImageBuildState::Running)->whereNull('cleanup_started_at')
+            ->whereIn('state', $status === OperationStatus::Succeeded
+                ? [TaskVmImageBuildState::Running, TaskVmImageBuildState::Failed] : [TaskVmImageBuildState::Running])->whereNull('cleanup_started_at')
             ->update(['state' => $status === OperationStatus::Succeeded ? TaskVmImageBuildState::Succeeded : TaskVmImageBuildState::Failed]);
-        if ($changed === 1 && $status !== OperationStatus::Succeeded) {
+        if ($changed === 1) {
             $steps = $build->steps;
             foreach ($steps as &$entry) {
                 if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
-                    $entry['error'] = $errorCode ?? 'operation.cancelled';
+                    $entry['error'] = $status === OperationStatus::Succeeded ? null : ($errorCode ?? 'operation.cancelled');
                 }
             }
             unset($entry);
             $build->update(['steps' => $steps]);
+            if ($status === OperationStatus::Succeeded) {
+                return;
+            }
             DB::afterCommit(static fn () => app(RecipeMaintenanceAlerts::class)->halted(
                 "Image build [{$build->id}] failed on host [{$build->host_node_id}]. Inspect the Operation and native cleanup outcome, then start a fresh attempt.",
                 $build->id, incident: RecipeMaintenanceAlerts::imageIncident($build)));

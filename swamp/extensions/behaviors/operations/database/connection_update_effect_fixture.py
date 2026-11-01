@@ -53,7 +53,7 @@ def effect():
             intent['index']='3';material['password']='incorrect-fixture-password'
             assert action(False)=={'error_code':'database.server_command_failed'}
             print(json.dumps({'valid':True,'out_of_range':True,'wrong_password_refused':True,'configuration_unchanged':True}))
-        finally:docker('rm','--force',container,check=False)
+        finally:docker('rm','--force','--volumes',container,check=False)
 
 
 if __name__=='__main__':effect()

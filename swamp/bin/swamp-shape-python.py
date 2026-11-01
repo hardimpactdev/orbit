@@ -3,10 +3,14 @@ import ast
 import json
 import re
 import sys
-from urllib.parse import urlsplit
 
 from swamp_shape_host_tools import php_runtime_transaction
-from swamp_shape_polling import python_controls, shell_controls
+from swamp_shape_polling import (
+    external_origin,
+    python_controls,
+    shell_controls,
+    source_bindings,
+)
 
 SECRET = re.compile(r"secret|password|passwd|credential|private.?key|api.?key|token|identity", re.I)
 # Guide rule 6: these are existing per-host tool transactions, not workflow locks.
@@ -40,75 +44,13 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
             return f"{name(node.value)}.{node.attr}"
         return ""
 
-    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
-    phase_controls = python_controls(tree, phase_seconds)
+    parents, bound, statement = source_bindings(tree)
     bindings = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     bindings.setdefault(target.id, []).append(node.value)
-
-    def scope(node):
-        while node in parents and not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            node = parents[node]
-        return node
-
-    def bound(identifier, at):
-        current = scope(at)
-        while current is not None:
-            values = []
-            for part in ast.walk(current):
-                if isinstance(part, ast.Name) and part.id == identifier and isinstance(part.ctx, (ast.Store, ast.Del)) and scope(part) is current:
-                    parent = parents.get(part)
-                    if isinstance(parent, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and (getattr(parent, "target", None) is part or part in getattr(parent, "targets", [])):
-                        values.append((parent, parent.value if isinstance(parent, (ast.Assign, ast.AnnAssign)) else None))
-                    elif isinstance(parent, ast.withitem) and parent.optional_vars is part:
-                        values.append((parents[parent], parent.context_expr))
-                    else:
-                        # Loop, destructuring, deletion and other target forms are
-                        # writes too. They cannot establish literal FD/URL provenance.
-                        values.append((statement(part), None))
-                if isinstance(part, ast.ExceptHandler) and part.name == identifier and scope(part) is current:
-                    values.append((part, None))
-                if isinstance(part, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and part.name == identifier and part in parents and scope(parents[part]) is current:
-                    values.append((part, None))
-            if values:
-                # Function bodies may run after later module/closure rebindings.
-                # Only a syntactically immutable outer binding is provable here.
-                if current is not scope(at) and (len(values) != 1 or any(
-                    isinstance(part, (ast.Global, ast.Nonlocal)) and identifier in part.names
-                    for part in ast.walk(tree)
-                )):
-                    return None
-                # A unique binding is sufficient; repeated assignment needs a final
-                # unconditional binding that dominates the use, not a branch guess.
-                prior = [(part, value) for part, value in values if part.lineno <= at.lineno]
-                if not prior:
-                    return None
-                part, value = max(prior, key=lambda item: item[0].lineno)
-                if isinstance(part, (ast.AugAssign, ast.NamedExpr)):
-                    return None
-                parent = parents.get(part)
-                use = at
-                while use in parents and parents[use] is not parent:
-                    use = parents[use]
-                if part is use or (parent is not None and parents.get(use) is parent
-                    and any(isinstance(items, list) and part in items and use in items and items.index(part) < items.index(use)
-                            for _, items in ast.iter_fields(parent))):
-                    return value
-                return None
-            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                if any(arg.arg == identifier for arg in ast.walk(current.args) if isinstance(arg, ast.arg)):
-                    return None
-            if current not in parents:
-                return None
-            current = scope(parents[current])
-
-    def statement(node):
-        while node in parents and not isinstance(node, ast.stmt):
-            node = parents[node]
-        return node
 
     def checked_integer(identifier, at):
         for guard in ast.walk(tree):
@@ -153,13 +95,7 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
             return prefix(node.left, at, seen)
         return None
 
-    def external_origin(value):
-        # The slash fixes the complete authority before any dynamic suffix.
-        if not value or not re.match(r"https?://[^/]+/", value) or re.search(r"[\\\x00-\x20]", value):
-            return False
-        parsed = urlsplit(value)
-        return bool(parsed.hostname and not re.search(r"gateway", parsed.hostname, re.I)
-                    and not parsed.username and not parsed.password)
+    phase_controls = python_controls(tree, phase_seconds, bound, context)
 
     def lock_path(node, at, seen=frozenset()):
         if isinstance(node, ast.Name) and node.id not in seen:
@@ -207,13 +143,13 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
             method = string(keywords.get("method"), node)
             if method is None and "method" not in keywords:
                 method = "POST" if "data" in keywords else "GET"
-        elif call in ("requests.get", "requests.post", "requests.put", "requests.patch", "requests.delete", "requests.request", "urllib.request.urlopen"):
-            generic = call == "requests.request"
+        elif call in ("requests.get", "requests.post", "requests.put", "requests.patch", "requests.delete", "requests.request", "httpx.get", "httpx.post", "httpx.put", "httpx.patch", "httpx.delete", "httpx.request", "urllib.request.urlopen"):
+            generic = call in ("requests.request", "httpx.request")
             method = string(node.args[0], node) if generic and node.args else call.rsplit(".", 1)[1].upper()
             if call == "urllib.request.urlopen":
                 method = "GET"
             index = 1 if generic else 0
-            url_node = node.args[index] if len(node.args) > index else None
+            url_node = node.args[index] if len(node.args) > index else next((item.value for item in node.keywords if item.arg == "url"), None)
             url = string(url_node, node)
         else:
             return

@@ -29,13 +29,17 @@ class DoctorWorkflowNative(NativeTestCase):
         index.parent.mkdir(parents=True)
         index.write_text(json.dumps({'@swamp/ssh': json.loads((ROOT / 'extensions/models/upstream_extensions.json').read_text())['@swamp/ssh']}))
         self.state = self.repo / 'fixture-state.json'
-        self.state.write_text(json.dumps({'deny': None}))
+        self.state.write_text(json.dumps({'deny': None, 'hang': None}))
         fake = self.repo / 'fixture-ssh'
         fake.write_text('#!' + sys.executable + '\n' + r'''import json,shlex,sys
 from pathlib import Path
 if '-M' in sys.argv or '-O' in sys.argv:sys.exit(0)
 args=shlex.split(sys.argv[-1])
-if json.loads(Path(STATE).read_text())['deny'] and any('@10.44.0.9' in arg for arg in sys.argv):sys.exit(255)
+state=json.loads(Path(STATE).read_text())
+if state['deny'] and any('@10.44.0.9' in arg for arg in sys.argv):sys.exit(255)
+# A stopped task VM: the session never answers, so only the read bound can end it.
+if state.get('hang') and any('@10.44.0.9' in arg for arg in sys.argv):
+ import time;time.sleep(3600)
 if args[:3]==['sudo','-n','--']:args=args[3:]
 if args[:2]==['uname','-sm']:print('Linux x86_64')
 elif args[:2]==['df','-Pk']:print('Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 10000000 1000000 9000000 10% /')
@@ -88,6 +92,18 @@ else:raise RuntimeError('Unexpected native command '+repr(args))
         self.assertFalse(result['report']['healthy'])
         self.assertTrue(result['report']['nodes'][0]['healthy'])
         self.assertEqual(result['report']['nodes'][1]['families'][0]['status'], 'unverifiable')
+
+    def test_stalled_node_fails_within_its_read_bound_and_other_node_stays_healthy(self):
+        import time
+        self.native_timeout = 150
+        self.state.write_text(json.dumps({'deny': None, 'hang': 9}))
+        started = time.monotonic()
+        result, history = self.run_doctor()
+        self.assertLess(time.monotonic() - started, 140)
+        self.assertTrue(result['report']['nodes'][0]['healthy'])
+        self.assertEqual(result['report']['nodes'][1]['families'][0]['status'], 'unverifiable')
+        reads = next(j for j in history['jobs'] if j['name'] == 'reads')['steps']
+        self.assertEqual(sorted(s['status'] for s in reads), ['failed'] * 3 + ['succeeded'] * 3)
 
     def test_parked_and_unmanaged_nodes_do_not_dispatch(self):
         self.public['intent']['nodes'][0]['parked'] = True

@@ -11,7 +11,7 @@ Start every kind PR from this page. Review every kind PR against it and the [bin
 
 Porting happens in a production-equivalent dev topology, never against production.
 
-1. **Claim** the kind from the port queue (`port-queue-*.md` in `~/swamp-execution` on beast). Five topology slots exist, so at most five port lanes run at once.
+1. **Claim** the kind from `port-queue.md` in `~/swamp-execution` on beast; `port-queue-B.md` and `port-queue-C.md` feed it. Five topology slots exist, so at most five port lanes run at once.
 2. **Read the legacy code and tests** at `6291bb036` (F9), and write the parity tests first.
 3. **Start the topology** with `bin/swamp-proof up --topology <name>`.
 4. **Port** in your beast worktree with the [translation steps](#translate-a-legacy-command) and the template.
@@ -19,9 +19,11 @@ Porting happens in a production-equivalent dev topology, never against productio
 6. **Write the receipt** with the final run (`bin/swamp-proof receipt`) once parity passes within budget (F8). The PR carries it. Then run `bin/swamp-proof down`.
 7. **Review and merge.** Lane 26 reviews and records lessons, and the sub-orchestrator merges. One live check after the load confirms it landed.
 
-A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet. Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
+A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet.
 
-Never load `swamp/` into production serve or log in to 209 for a port. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior and needs a receipt, even when the title says "retire" or "remove" (#2257, #2259). Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so; a live check follows the load. Each kind keeps a proof file, `swamp/proof/<kind>.json` (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). It holds the `prepare` and `request` CLI calls, a partial expected `envelope`, budgets, F9 phases, parity tests, `queue_timeout_seconds` and the default `topology`. No secret appears in it or in argv.
+Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
+
+Never use production serve or a 209 login for a port. A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even under a "retire" or "remove" title (#2257, #2259). So does a Gateway change to a kind's admission, intent or workflow inputs, vault pushes, token minting, signing or terminal projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and lane 26 review. Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so. Each kind keeps a [proof file](#test-layout).
 
 ### Translate a legacy command
 
@@ -31,7 +33,7 @@ Use these steps in step 4 of the loop.
 2. **One legacy phase, one step.** Each legacy phase becomes one script-file step on one Node. A phase-order change needs a [documented reason](/swamp/porting-retros#documented-f9-deviations) in the PR body.
 3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature) and prefer an official model over a script. The PR names what you checked.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Secrets become `{vault, key}` descriptors under `execution_secrets`.
-5. **Refuse first, then print the result.** The action script checks preconditions before its first write. It prints one public JSON object and keeps a redacted output tail.
+5. **Refuse first, then print the result.** The script checks preconditions before its first write. It prints one public JSON object and keeps a redacted stderr tail.
 6. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
 7. **Delete the old path in the same PR.** Remove the executor, its tests, scripts and callbacks, and its `swamp-shape-baseline.json` rows.
 
@@ -96,7 +98,7 @@ jobs:
 
 `assets.read` is a family metadata method: resolve shipped files with `ctx.extensionFile`, record public paths with `ctx.writeResource`, and return their paths, plus the script body for `@swamp/ssh`. List scripts and imports under manifest-relative `additionalFiles`. Keep this method and the command on the same worker; never assume a checkout exists there. TypeScript shapes inputs and outputs; operational code lives in script files.
 
-F1 is pending; lane 16 owns it. When it lands, shipped scripts run through its shared wrapper, and its shared projector records `failed_step` and the last 4 KB of redacted stderr as `error.detail` for any failed step, including SSH, typed and `assert` steps. Until then, `REPLACE_F1_RUN` is a plain invocation of the shipped script from the asset paths. Add no family wrapper. Never print credentials, private keys or unredacted diagnostics. Scripts catch parser and HTTP errors and print safe text, because stderr becomes public detail (#2271).
+F1 is pending; lane 16 owns it. When it lands, shipped scripts run through its shared wrapper, and its shared projector records `failed_step` and the last 4 KB of redacted stderr as `error.detail` for any failed step. Until then, `REPLACE_F1_RUN` plainly invokes the shipped script. Add no family wrapper. Private stdout never goes into native history. F1 failure output is stderr only: redact the whole stderr, keep the last 4 KiB, re-redact the tail's start for split matches, and drop lines that still hold a partial secret prefix. Scripts catch parser and HTTP errors and print safe text, because stderr becomes public detail (#2271).
 
 On official e459 a `command/shell` step that exits nonzero keeps no outputs, so its stdout and `error_code` are lost. The action therefore sets `ignoreExitCode: true` and is the `terminal_result`; the `accepted` assert on its `exitCode` then fails the run. A kind with several effect steps instead adds a `result` step on `condition: always` that maps the first failed step to an `error_code`, as `instance.create` does.
 
@@ -122,19 +124,21 @@ Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOpera
 | --- | --- |
 | [ ] | Validate and record the complete immutable intent at admission. Use shared `StartSwampRun`; its builder sets Operation, kind and Node identity. Remove intent, private-material and status callbacks. |
 | [ ] | Push a changed Gateway-owned secret with `SwampCommandStep::executionCopy` and pass only `{vault, key}` descriptors; VM-created Pi credentials stay on the VM. Declare one fixed terminal selector; `projectTerminal` reads history once and calls the family projector. |
+| [ ] | Projection keeps an exact native terminal that met its budget, even after the Gateway expiry, and drops the `timed_out` mark. One history read; no timer, retry or second reader. |
 
 ## Set the time budget
 
 The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A port PR without one fails review.
 
-A phase script may wait for external state, such as a VM started, an image ready or DNS visible. It polls at a fixed interval under coreutils `timeout <phase budget>`, exits 0 on the target state, and exits nonzero with a readable F1 error on a bad state or timeout. The PR states its interval and budget, part of the kind budget. Never retry a failed action this way, wait on Gateway or Orbit state, or wait outside a phase script. The shape gate still flags polling loops, so such a PR passes only after lane 0b accepts this form, with no baseline row.
+A phase script may hold one fixed literal sleep shorter than a literal timeout, as the DNS grace does, or poll external state, such as a VM started, at a fixed interval under coreutils `timeout <phase budget>`. It exits nonzero with a readable F1 error unless the state is reached. The PR states the interval and budget. Never poll to retry an action, to wait on Gateway or Orbit state, or outside a phase script. The shape gate accepts it ([guide rule 6](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md), #2325): a literal timeout, a shorter fixed interval, an external GET that fails on HTTP errors, and no retried requests.
 
 | Item | Rule |
 | --- | --- |
 | Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live runs when they exist, otherwise native harness runs. State the sample size. |
-| Run budget | Set it from the measured p95 with headroom, not a guess. PLAN sets the `instance.create` policy: under 10 s, budget 60 s. That is a target, not measured proof. |
+| Run budget | Every kind gets a Gateway expiry; a measured p95 with headroom wins. Otherwise use 30 minutes until the first success, then the longest successful run times 1.5. `instance.create` has 60 s. |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
-| Phase timeout | Each phase script runs under coreutils `timeout <phase budget>`, inside `run:` or as the first `@swamp/ssh` `argv` items. |
+| No-run rows | Expire after 600 s but keep the lock until the exact native lookup by Operation id proves no run (L17-2300-OD1). Timeouts and transport errors prove nothing. |
+| Phase timeout | Each phase script runs under coreutils `timeout <phase budget>` and, when it fires, prints one stderr line naming the phase and budget. A remote read may use per-host `timeoutSec` (#2334). |
 | `queueTimeout` | Every step gets an explicit one (guide rule 6), never the serve's 600 s default. A workflow-level value reaches every step through the manual's resolution order. Keep it below the run budget. |
 
 ## Keep steps few
@@ -150,11 +154,10 @@ Put each test where its project's CI runs it.
 | Where | What it proves |
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
-| `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script file directly, plus shellcheck or ruff. |
+| `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script directly, with shellcheck or ruff. Real-Docker tests clean up with `docker rm --force --volumes` (#2358). |
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
-| Parity tests ported from the legacy feature tests | Every legacy case, including edge cases, gives the same public result natively. |
-| A generator drift test, when a generator writes the workflow | The committed YAML equals the generator output. Generate readable YAML, not JSON in YAML behind `deno-fmt-ignore`. |
-| `swamp/proof/<kind>.json` | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. |
+| Parity tests from the legacy feature tests, and a generator drift test when a generator writes the workflow | Each legacy case gives the same public result natively. Committed YAML equals readable generator output. |
+| `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or the v0 design on beast until it lands) | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. No secret appears in it or in argv. |
 
 ## Check all seven boundary decisions
 
@@ -202,8 +205,8 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body |
 | `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read `inputs`, literals or an earlier job's outputs, as [`database-destroy-actions`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-destroy-actions.yaml) does, or pass the list to a child, as [`database-clone-mysql`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-clone-mysql.yaml) does |
 | Reading failed or skipped outputs, all-pairs `always` edges, the whole `${{ steps }}` map in a result step, or an echo step after it | CEL fails with `No such key`; #2261 and #2253 grew dozens of edges | Read `"x" in steps && steps.x.status` for the steps you need; chain jobs on `succeeded` |
-| `data.query` or another unbounded data read in step inputs | Every write adds a record, until one dispatch frame passes 64 MiB and the worker loops (B7, #2310) | Write one stable record per channel and read `data.latest(name, spec)` |
-| A kind without a measured p95 and budget, or a non-default Swamp setting without a PLAN row | Runs wait for minutes, as op 6639 did; deviations hide from audit | [Set the time budget](#set-the-time-budget); record reason and removal condition in PLAN |
+| A step input that grows with history or fleet size: `data.query`, or `results: ${{ steps }}` over a fleet fan-out (#2334) | One dispatch frame can pass 64 MiB, and the worker loops (B7, #2310) | Read one stable record with `data.latest`; pass only the statuses you need |
+| A kind without a measured p95 and budget, a flat or borrowed budget (L17-PR-2324-01), or a non-default Swamp setting without a PLAN row | Runs wait for minutes, as op 6639 did; deviations hide from audit | [Set the time budget](#set-the-time-budget); record reason and removal condition in PLAN |
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault it reads; `vaults: []` when none is a convention |
 | A secret in `run:`, argv, inputs or `set -x`; a CA or GitHub App key in a vault; a secret returned from a Node | History and `ps` expose it; e459 cannot mark `@swamp/ssh` output sensitive; root-of-trust keys stay in the Gateway | `env` from `vault.get`, then stdin or a 0600 file; the mint and sign primitives; generate Gateway-owned secrets at admission; Node-held keys stay on the Node (decision 3) |
 | A failure reporter, Gateway re-read timer, binding loop or retry | Duplicates Swamp and stalls Operations | Native status and one history read per terminal delivery |
@@ -225,7 +228,7 @@ Check the completed port and report what the evidence proves.
 
 - [ ] Cover success and refusal. Check redacted failure detail, cancellation and interrupted projection.
 - [ ] Validate completed YAML with the pinned native runtime. Run focused native tests, script lint, and Gateway admission, identity and projection tests.
-- [ ] Separate source conformance from checks, served-source uptake and live/grant evidence. Cite this page in the review.
+- [ ] Separate source conformance from checks, served-source uptake and live evidence. Check guard-error semantics before alleging a silent skip (#2320). Cite this page.
 
 ## Changelog
 
@@ -233,17 +236,14 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 
 | Source, newest first | Lesson |
 | --- | --- |
-| Retro #2248, A ruling | Legacy polled UpCloud until the VM started; the one-shot observe is a regression. A bounded poll for external state inside a phase script is allowed under coreutils `timeout`. |
 | #2258, #2259 | At grant time, Swamp rejects a pattern with a quantified group holding `+` or `*`; use a flat alternation and run `bin/check-grant-patterns.ts` in `swamp/`. Name `forEach` models from `self._index`, with matching `@swamp/ssh` `globalArgs.name`. |
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2281, lanes 17 and 27 | F9 means the legacy code and tests at `6291bb036`: its sweep stops a host at the first failure. Over two steps per legacy call needs a reason; #2281 ran 22 for 6. |
-| #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
-| Lane 17 on #2201, #2208, #2210 | Five observation workflows and `database.clone` lacked `queueTimeout`. `node-removal` `assets.ts:125` rewrote a script, as #2281 did. A phase-order reason outside the PR body does not count. |
-| #2304, #2310, lane 17 | No step receives a Gateway macro such as `@orbit/ci-caches`; #2304 expands it through `GatewaySetupSteps` after checking the admitted digests. Read `data.latest`, not `data.query`. Every workflow sets `queueTimeout`. |
-| PLAN F10, F12, F13, F14 | Port inside a versioned dev topology through `bin/swamp-proof`; the PR carries the receipt, which names the topology version. Topologies are built from Node roles. |
-| #2304 (B) | Legacy edge cases include values the Gateway rewrites before execution, such as setup macros. A runner that discards child output makes every failure unreadable. |
-| PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
-| PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
-| v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
-| Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, per-phase window asserts and one `exec` per command gave up to about 20 steps per legacy call (#2253). |
+| #2273, #2358, lane 9 | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. Forced removal beats `--rm`, so real-Docker cleanup passes `--volumes` (moby 29.1.3). |
+| Lane 17 on #2201, #2208, #2210, #2304, #2310 | No step receives a Gateway macro; #2304 expands it through `GatewaySetupSteps` after checking admitted digests. Read `data.latest`, and set `queueTimeout` everywhere. #2210 rewrote a script. |
+| PLAN F9, F10, F12, F13, F14 | Port inside a versioned dev topology through `bin/swamp-proof`; the PR carries the receipt, which names the topology version. Topologies are built from Node roles. |
+| #2335 (B) | When the Gateway start contract changes, such as `StartSwampRun` marking an Operation `running` before its run starts (#1894), re-check every step-start status guard. A proof dates from everything the kind runs. |
+| #2304 (B), lane 17, A | Keep legacy exit-code and error-name cases or explain each change. Private stdout never enters native history; F1 output is a stderr tail, redacted before and after cutting. |
+| PLAN F8, F11, L17-PR-2324-01 (closed by #2348), OD1 | Every kind expires: measured budget, else 30 minutes, then the longest success times 1.5. No-run rows expire at 600 s but keep their lock until native lookup proves no run. |
+| Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, window asserts and one `exec` per command gave up to about 20 steps per legacy call (#2253). #2248's one-shot observe regressed legacy polling. |
 | #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |

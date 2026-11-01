@@ -17,6 +17,14 @@ These PRs change what a kind does. Each one needs an F10 re-proof.
 | #2251 | Cluster routers reach task VM web ports through vpn1 | About 17 steps for 1 call | None | 3 fixture cases | One `exec` per UFW command; op 6650 failed after merge in the "Frame too large" loop |
 | #2249 | `fleet.recipe` from 209 over `@swamp/ssh` | 127 step definitions for about 7 to 9 calls | None | Native tests; no live run | Asset, exec and decode triplets; six window asserts; one-line JSON YAML; `python3 -c` without `-I` |
 | #2248 | UpCloud TaskVM provision, enrollment and destroy | About 85 to 100 steps for about 12 to 15 calls | None | Scratch fixtures | One-shot observe where legacy polled; nonzero exit loses `error_code`; enrollment triplets |
+| #2317 | `queueTimeout: 60` on three observation workflows | Unchanged | queueTimeout only | A's recorded exception: no receipt, failure timing only | Maintain and Doctor still lacked `queueTimeout`; #2334 fixed Doctor, Maintain stays open (L17 2201-01) |
+| #2302 | Observation-context run flood stopped | Not a kind | None | Outage exception | Re-proof candidate under the corrected F10 scope, not a violation |
+| #2300 | Gateway expires native Operations from captured run budgets | Not a kind | Expiry policy | Pre-scope-rule; re-proof candidate | A late native terminal within budget must replace the `timed_out` mark (L17-PR-2300-01) |
+| #2348 | F8 budgets, late native terminal and no-run lock release (lane 16) | Not a kind | 600 s no-run, explicit wins, else 30 min then 1.5× longest success | Outage exception; live check after load | Closes L17-PR-2324-01. L17-PR-2300-01 stays open: an already timed-out Operation keeps `timed_out` when its on-time terminal arrives. The unwired F1 wrapper must drop partial-secret lines |
+| #2325 | Bounded external-state polls in phase scripts (lane 0b) | Not a kind | Gate rule | Gate tests | Python poll acceptance had no URL or HTTP failure check (L17-PR-2325-01), fixed in #2360 |
+| #2320 | F11 cancel of owned routed workspaces (C) | Inspect, withdraw, teardown, VM: the legacy order | Workflow `queueTimeout` 60 | Live-fix path: cancel groups 2195, 2199, 2201, 2203 | F9 reason and parity disposition pending from C |
+| #2335 | `instance.run_steps` setup guard (old shape) | Unchanged | None | Outage exception; live proof `instance:setup` 780 pending | A stale "running means replay" guard failed every run in 2 s (ops 6703, 6704) after the Gateway began marking Operations running before the native run starts (#1894) |
+| #2334 | Doctor reads bounded by `@swamp/ssh` per-host timeouts | Unchanged | Read bound 60 s; queueTimeout 60 | Outage exception | Result step takes `results: ${{ steps }}` over a fleet fan-out |
 | #2304 | `instance.create` setup macros and failure output | Unchanged (zero new steps) | None | Native regressions, 2 cases in 72 s; outage exception | Passed `@orbit/ci-caches` to Bash raw (op 6659, exit 127); merged 2.5 min after opening with no lane 26 review |
 | #2310 | Observation context read bounded to one record (B7) | Unchanged | None | Native tests; outage exception, live proof after load | `data.query` in step inputs grew to 847 records, 117 MB per dispatch; three touched workflows lack `queueTimeout` |
 | #2281 | `task_vm.sweep_host` on 209 | About 22 steps for about 6 calls | p95 2.57 s (n=7, harness), budget 300 s | None | Legacy parity tests in `6291bb036:apps/gateway/tests/Feature/TaskVms/TaskVmSweepTest.php` (about 23 cases) not run against the port; TypeScript rewrites a script; no phase `timeout` |
@@ -37,6 +45,10 @@ Fix-forward is allowed for these. They need no proof.
 
 | PR | Deleted | Baseline rows | Findings |
 | --- | --- | --- | --- |
+| #2358 | Test fixtures leaking anonymous Docker volumes (tests only) | None | Forced `rm` beat `--rm`; about 1,000 leaked volumes a day on beast until cleanup passed `--volumes` |
+| #2341 | Unused SQLite seed-abandon kind | None | Deletion, −129 net |
+| #2331 | Unreachable standalone certificate kinds (C) | None | Deletion, −911 net |
+| #2318 | Instance clone diagrams (lane 27, docs) | None | L17-PR-2318-01: the parity map cites `InstanceDatabaseCloneTest.php`, which tests database copy, not `instance:clone`. L17-PR-2318-02: "one SSH call per phase" ignores Gateway-only and multi-Node phases |
 | #2296 | Route-comment LAN write branches | One count lowered from 260 to 233 | Deletion, −90 net |
 | #2288 | Unused TypeScript Schedule removal; three Ruff allowances | 3 removed | None |
 | #2287 | `@nckrtl/certificates` dispatcher | One count lowered from 125 to 39 | Partial cleanup lowers a count rather than deleting the row |

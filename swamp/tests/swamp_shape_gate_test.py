@@ -1,4 +1,5 @@
 """Gate acceptance, ratchet and relocation tests in private disposable Git trees."""
+import importlib.util
 import json
 import os
 import re
@@ -6,7 +7,9 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 DENO = os.environ.get("DENO_BIN", "deno")
@@ -57,6 +60,66 @@ class ShapeGate(unittest.TestCase):
             source + "def change():\n    global ORIGIN\n    ORIGIN='https://gateway.orbit/api/v1/'\nchange()\nrequest('GET','private-material')\n",
         ]:
             self.assertTrue(any(row['rule'] == 'gateway-http' for row in scan(variant)), variant)
+
+    def test_httpx_gateway_reads_share_the_external_origin_boundary(self):
+        def scan(source):
+            result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        for client in ('requests', 'httpx'):
+            for host in ('gw.orbit', 'gateway.example', 'gateway-prod.example', '10.7.0.14', '127.1', 'localhost'):
+                source = f"import {client}\n{client}.get('https://{host}/api/v1/operations/5')\n"
+                self.assertTrue(any(row['rule'] == 'gateway-http' for row in scan(source)), source)
+            source = f"import {client} as client\nclient.get('https://api.provider.example/gateway-state')\n"
+            self.assertEqual(scan(source), [])
+            self.assertEqual(scan(source.replace("client.get('", "client.get(url='")), [])
+
+    def upcloud_module(self):
+        script = ROOT / 'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py'
+        spec = importlib.util.spec_from_file_location('upcloud_poll_fixture', script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_upcloud_poll_read_propagates_every_http_error(self):
+        module = self.upcloud_module()
+        with patch.dict(os.environ, {'ORBIT_UPCLOUD_TOKEN': 'fixture-token'}):
+            for code in (401, 403, 404, 429, 500, 503):
+                error = urllib.error.HTTPError('https://api.upcloud.com/1.3/server/example', code, 'fixture', {}, None)
+                with self.subTest(status=code), patch.object(module.urllib.request, 'build_opener') as opener:
+                    opener.return_value.open.side_effect = error
+                    with self.assertRaises(urllib.error.HTTPError) as caught:
+                        module.poll_read('server/example')
+                    self.assertIs(caught.exception, error)
+                    opener.return_value.open.assert_called_once()
+
+    def test_upcloud_tolerant_api_keeps_its_missing_resource_contract(self):
+        module = self.upcloud_module()
+        with patch.dict(os.environ, {'ORBIT_UPCLOUD_TOKEN': 'fixture-token'}), patch.object(module.urllib.request, 'build_opener') as opener:
+            error = urllib.error.HTTPError('https://api.upcloud.com/1.3/server/example', 404, 'fixture', {}, None)
+            opener.return_value.open.side_effect = error
+            self.assertEqual(module.api('GET', 'server/example'), {})
+            error.code = 500
+            with self.assertRaises(urllib.error.HTTPError):
+                module.api('GET', 'server/example')
+
+    def test_upcloud_poll_read_keeps_auth_redirect_refusal_and_bounded_response(self):
+        module = self.upcloud_module()
+        with patch.dict(os.environ, {'ORBIT_UPCLOUD_TOKEN': 'fixture-token'}), patch.object(module.urllib.request, 'build_opener') as opener:
+            response = MagicMock()
+            response.read.return_value = b'{"server":{"state":"started"}}'
+            opener.return_value.open.return_value.__enter__.return_value = response
+            self.assertEqual(module.poll_read('server/example'), {'server': {'state': 'started'}})
+            request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(request.get_method(), 'GET')
+            self.assertEqual(request.full_url, 'https://api.upcloud.com/1.3/server/example')
+            self.assertEqual(request.get_header('Authorization'), 'Bearer fixture-token')
+            self.assertEqual(opener.return_value.open.call_args.kwargs, {'timeout': 60})
+            handler = opener.call_args.args[0]()
+            self.assertIsNone(handler.redirect_request(None, None, 302, '', {}, 'https://example.invalid/'))
+            response.read.assert_called_once_with(1048577)
+            response.read.return_value = b'x' * 1048577
+            with self.assertRaisesRegex(ValueError, 'oversize'):
+                module.poll_read('server/example')
 
     def test_only_proven_named_host_tool_flocks_are_not_workflow_mutexes(self):
         def scan(source):

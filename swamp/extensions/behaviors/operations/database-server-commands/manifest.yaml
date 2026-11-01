@@ -60,6 +60,5 @@ additionalFiles:
   - scripts/sqlite_cleanup.py
   - scripts/sqlite_target_prepare.py
   - scripts/sqlite_target_install.py
-  - scripts/sqlite_target_cleanup.py
   - scripts/sqlite_verify_snapshot.py
   - scripts/sqlite_target_recover.py

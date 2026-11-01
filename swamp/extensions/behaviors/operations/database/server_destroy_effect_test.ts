@@ -149,7 +149,7 @@ Deno.test({
                 ]
             ) {
                 await new Deno.Command("docker", {
-                    args: ["rm", "--force", name],
+                    args: ["rm", "--force", "--volumes", name],
                     stdout: "null",
                     stderr: "null",
                 }).output();

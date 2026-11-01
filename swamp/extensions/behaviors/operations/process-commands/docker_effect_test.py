@@ -119,6 +119,7 @@ class DockerEffect(unittest.TestCase):
                     "container",
                     "rm",
                     "--force",
+                    "--volumes",
                     name,
                     name + "-candidate",
                     name + "-rollback-running",
