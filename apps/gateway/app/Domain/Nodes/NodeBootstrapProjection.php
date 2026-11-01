@@ -6,8 +6,11 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerName;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\ToolManagerRecord;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -38,6 +41,10 @@ final readonly class NodeBootstrapProjection implements DirectOperationProjectio
                         'ssh_host_fingerprint' => $result['host_key_fingerprint'] ?? null], static fn ($value): bool => $value !== null);
                 if ($changes !== []) {
                     Node::query()->findOrFail($operation->target_id)->update($changes);
+                }
+                // The host bootstrap installs through apt, so apt is a ready Tool Manager from here on (flows/tool.install.mmd).
+                if ($operation->kind === 'node.bootstrap_host') {
+                    ToolManagerRecord::query()->firstOrCreate(['node_id' => $operation->target_id, 'name' => ToolManagerName::Apt->value], ['status' => LifecycleStatus::Active]);
                 }
             }
 

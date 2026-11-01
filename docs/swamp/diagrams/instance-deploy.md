@@ -100,7 +100,7 @@ flowchart TD
   subgraph DEV["job development: 83 steps on 209"]
     S0["dev_assets<br/>render scripts, 1 step, 209"]
     S1["source: fetch, check, clean, checkout<br/>4 SSH + 4 check steps"]
-    S2["dev_manager: child workflow<br/>operation-tool-write-209 (vp manager)"]
+    S2["dev_manager: child workflow<br/>operation-tool-manager-setup (vp)"]
     S3["Vite+: vp_project, vp_resolve, vp_install, vp_verify<br/>3 SSH + 4 local steps"]
     S4["dev_app_0 .. dev_app_31<br/>32 SSH + 32 check steps,<br/>one pair per deploy step; unused pairs skip"]
     S5["dev_inspect<br/>1 SSH + 1 check step"]

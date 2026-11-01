@@ -64,7 +64,7 @@ final class InstanceDeploymentAvailability
             }
         }
         if (($intent['needs_vp'] ?? false) === true) {
-            $required = [...$required, 'instance.prepare_vp_environment', 'tool.manager_converge'];
+            $required[] = 'instance.prepare_vp_environment';
         }
         $definitions = OperationKinds::definitions();
         foreach ($required as $kind) {

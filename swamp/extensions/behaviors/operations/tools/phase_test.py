@@ -49,6 +49,8 @@ class Phase(unittest.TestCase):
         self.assertEqual(self.calls[2][3][-2:], ['--', 'curl'])
         self.assertIn('--no-remove', self.calls[2][3])
         self.assertEqual((result['facts'], self.code), (ready, 0))
+        # The setup reads only the manager, never a package.
+        self.assertTrue(all(args[0].get('manager_only') is True for name, _, args, _ in self.calls if name == 'QUERY'))
 
     def test_failed_setup_exits_nonzero(self):
         self.assertEqual(self.phase('setup', {'QUERY': {'scope': 'absent'}, 'apt-get': [{}, None]}, manager='vp', setup=['MANAGER', '']), {'facts': None})

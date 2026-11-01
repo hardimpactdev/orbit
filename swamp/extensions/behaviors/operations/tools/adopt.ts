@@ -2,13 +2,16 @@ import { z } from "npm:zod@4.4.3";
 import { Input, Kind, safeVersion, ToolRefusal, validateConstraint, verifyInstalled } from "./contract.ts";
 import { homebrewBlock } from "./adopt_homebrew.ts";
 
-export const AdoptInput = Input.omit({ materialize: true, intent_only: true }).extend({
+const AdoptFields = Input.omit({ materialize: true, intent_only: true }).extend({
     user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).refine((v) => v !== "root"),
     package: z.string().min(1).max(255),
-}).refine((v) =>
+});
+/** apt and Composer exist only on Linux, casks only on macOS. */
+export const platformSupports = (v: { platform: string; manager: string }) =>
     !(v.platform === "macos" && ["apt", "composer"].includes(v.manager)) &&
-    !(v.platform === "linux" && v.manager === "brew-cask")
-);
+    !(v.platform === "linux" && v.manager === "brew-cask");
+export const AdoptInput = AdoptFields.refine(platformSupports);
+export const ManagerFields = AdoptFields.pick({ manager: true, user: true, platform: true });
 export const Facts = z.object({
     error_code: z.literal("tool.version_probe_failed").optional(),
     scope: z.enum(["present", "absent", "conflict"]).default("present"),
@@ -37,7 +40,7 @@ export async function phaseAssets(kind: z.infer<typeof Kind>, input: BundleInput
         bound[name] = await compose(...file);
     }
     const bundle = {
-        input: { kind, manager: input.manager, package: input.package, user: input.user, platform: input.platform, manager_only: kind === "tool.manager_converge" },
+        input: { kind, manager: input.manager, package: input.package, user: input.user, platform: input.platform },
         repository: input.repository ? { ...input.repository, packages: input.repository_packages } : null,
         remove_repository: input.remove_repository, root: input.manager === "apt", setup_packages: input.setup?.packages ?? [],
         repository_body: await read("apt_repository.py"), ...bound,

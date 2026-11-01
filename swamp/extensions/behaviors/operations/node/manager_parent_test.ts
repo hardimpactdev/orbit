@@ -16,7 +16,7 @@ const input = (manager = "composer") => ({
     platform: "linux",
     architecture: "x86_64",
     user: "orbit",
-    materialize: manager === "apt" ? null : { user: "orbit" },
+    materialize: { user: "orbit" } as { user: string } | null,
   },
 });
 function fixture(reply?: Record<string, unknown>) {
@@ -76,7 +76,7 @@ Deno.test("parent manager action delegates to canonical policy without another O
 Deno.test("two managers in one parent run retain separate native outcomes", async () => {
   const f = fixture();
   await f.action(input("composer"), f.context);
-  await f.action(input("apt"), f.context);
+  await f.action(input("vp"), f.context);
   assertEquals(f.resources.size, 2);
   assertEquals(f.writes.every((w) => w.spec === "manager_outcome"), true);
   assertEquals(new Set(f.writes.map((w) => w.name)).size, 2);
@@ -106,10 +106,7 @@ Deno.test("parent manager adapter refuses another account, package intent or par
       },
       { ...input(), parent: { ...parent, kind: "node.remove" } },
       { ...input(), manager: { ...input().manager, manager: "brew" } },
-      {
-        ...input("apt"),
-        manager: { ...input("apt").manager, materialize: { user: "orbit" } },
-      },
+      { ...input(), manager: { ...input().manager, manager: "apt" } },
     ]
   ) {
     await assertRejects(

@@ -31,7 +31,6 @@ final readonly class NodeEnrollmentPlan
                 $steps[] = $this->child('add-macos-inspect', 'node.macos_inspect', $node->id);
             } else {
                 $steps[] = $this->child('add-network', 'node.network_converge', $node->id, ['roleless_operator' => $input['roleless_operator']]);
-                $steps[] = $this->child('add-apt', 'tool.manager_converge', $node->id, ['manager' => 'apt', 'image_provides_manager' => false]);
                 $roles = ValidatedData::stringList($intent['roles']);
                 if (in_array('vpn', $roles, true)) {
                     $roles = ['vpn', ...array_filter($roles, static fn (string $role): bool => $role !== 'vpn')];

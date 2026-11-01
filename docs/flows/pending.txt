@@ -68,7 +68,6 @@ tasks.provision
 tasks.publish
 tasks.script
 tasks.turn
-tool.manager_converge
 vault.setup
 vault.sync
 vault.teardown

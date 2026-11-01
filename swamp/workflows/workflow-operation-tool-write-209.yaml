@@ -1,6 +1,6 @@
 id: 3f4a442f-a80b-4d66-9ef8-5b1f4c462f7f
 name: operation-tool-write-209
-description: Tool install and update from 209 in the steps of flows/tool.install.mmd and tool.update.mmd, one shipped phase script per step through official SSH.
+description: Tool install and update from 209 in the steps of docs/flows/tool.install.mmd and tool.update.mmd, one shipped phase script per step through official SSH.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -8,7 +8,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [tool.install, tool.update, tool.manager_converge]}
+    kind: {type: string, enum: [tool.install, tool.update]}
     intent: {type: object}
     ssh: {type: object}
     execution_secrets: {type: object, additionalProperties: false}
@@ -28,26 +28,25 @@ jobs:
       behaviorName: '${{ "tw-assets-" + run.id }}'
       methodName: assets
       inputs: {input: '${{ inputs.intent }}'}
-  - name: setup_assets
-    target: orbit-node-209
-    guard: '${{ !("setup" in inputs.intent) || inputs.intent.setup == null }}'
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-tool-setup-assets'
-      behaviorName: '${{ "tw-setup-assets-" + run.id }}'
-      methodName: read
-      inputs: {setup: '${{ inputs.intent.setup }}'}
-  # Only when the Tool Manager is not ready yet: a Linux first use installs it at its pinned version.
+  # Only when the Tool Manager is not ready yet: the shared setup child, which the development deploy also runs.
   - name: Set up the Tool Manager
+    target: orbit-node-209
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.kind == "tool.update" || !("setup" in inputs.intent) || inputs.intent.setup == null || ("manager_ready" in inputs.intent && inputs.intent.manager_ready) }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-tool-manager-setup
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ inputs.intent }}', ssh: '${{ inputs.ssh }}', report: true}
+  - name: Add the signed apt source
     target: orbit-node-209
     dependsOn:
       - {step: assets, condition: {type: succeeded}}
-      - {step: setup_assets, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ inputs.intent.kind == "tool.update" || !("setup" in inputs.intent) || inputs.intent.setup == null || ("manager_ready" in inputs.intent && inputs.intent.manager_ready) }}'
-    task:
+      - {step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.kind != "tool.install" || !("repository_given" in inputs.intent) || !inputs.intent.repository_given || ("Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status == "succeeded" && steps["Set up the Tool Manager"].outputs["Set up the Tool Manager"].exitCode != 0) }}'
+    task: &source
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-setup-" + run.id }}'
+      behaviorName: '${{ "tw-source-" + run.id }}'
       methodName: exec
       globalArgs: &ssh
         name: '${{ "tw-ssh-" + run.id }}'
@@ -59,23 +58,6 @@ jobs:
           identitiesOnly: true
           hostKeys: '${{ inputs.ssh.target.host_keys }}'
         hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 905
-        argv: [timeout, '900', python3, -I, -c, '${{ steps.assets.outputs.driver }}', setup]
-        # The bundle, then the installers; the Vite+ installer exceeds one exec argument.
-        stdin: '${{ steps.assets.outputs.bundle + ("setup_assets" in steps && steps.setup_assets.status == "succeeded" ? "\x1e" + steps.setup_assets.outputs.manager_body + "\x1e" + (steps.setup_assets.outputs.apt_body == null ? "" : steps.setup_assets.outputs.apt_body) : "") }}'
-  - name: Add the signed apt source
-    target: orbit-node-209
-    dependsOn: [{step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: '${{ inputs.intent.kind != "tool.install" || !("repository_given" in inputs.intent) || !inputs.intent.repository_given || ("Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status == "succeeded" && steps["Set up the Tool Manager"].outputs.exitCode != 0) }}'
-    task: &source
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-source-" + run.id }}'
-      methodName: exec
-      globalArgs: *ssh
       inputs:
         hosts: name:target
         okExitCodes: any
@@ -93,7 +75,7 @@ jobs:
       - {step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
       - {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
       - {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ inputs.intent.kind == "tool.manager_converge" || ["Set up the Tool Manager", "Add the signed apt source", "Update the apt source"].exists(s, s in steps && steps[s].status == "succeeded" && steps[s].outputs.exitCode != 0) }}'
+    guard: '${{ ("Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status == "succeeded" && steps["Set up the Tool Manager"].outputs["Set up the Tool Manager"].exitCode != 0) || ["Add the signed apt source", "Update the apt source"].exists(s, s in steps && steps[s].status == "succeeded" && steps[s].outputs.exitCode != 0) }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -155,7 +137,7 @@ jobs:
       methodName: result
       inputs:
         input: '${{ inputs.intent }}'
-        setup: '${{ "Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status != "skipped" ? steps["Set up the Tool Manager"] : null }}'
+        setup: '${{ !("Set up the Tool Manager" in steps) ? {"status": "skipped"} : steps["Set up the Tool Manager"].status != "succeeded" ? {"status": steps["Set up the Tool Manager"].status} : {"status": "succeeded", "outputs": steps["Set up the Tool Manager"].outputs["Set up the Tool Manager"]} }}'
         source: '${{ "Add the signed apt source" in steps && steps["Add the signed apt source"].status != "skipped" ? steps["Add the signed apt source"] : ("Update the apt source" in steps && steps["Update the apt source"].status != "skipped" ? steps["Update the apt source"] : null) }}'
         check: '${{ "Check the candidate" in steps ? steps["Check the candidate"] : null }}'
         decision: '${{ "decide" in steps ? steps.decide : null }}'

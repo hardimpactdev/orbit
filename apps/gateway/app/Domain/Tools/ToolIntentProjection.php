@@ -85,7 +85,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             $record ??= ToolManagerRecord::query()->create(['node_id' => $operation->node_id, 'name' => $input['manager'], 'status' => LifecycleStatus::Provisioning]);
             $record->update(['status' => LifecycleStatus::Active, 'installed_version' => $version, 'failed_step' => null, 'error_code' => null]);
         }
-        $managerFailed = in_array($verb, ['install', 'manager_converge'], true) && $status === OperationStatus::Failed
+        $managerFailed = $verb === 'install' && $status === OperationStatus::Failed
             && in_array($operation->error_code, ['tool.manager_provision_failed', 'tool.manager_unavailable'], true);
         if ($managerFailed) {
             $record ??= ToolManagerRecord::query()->create(['node_id' => $operation->node_id, 'name' => $input['manager'], 'status' => LifecycleStatus::Provisioning]);
@@ -95,9 +95,6 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             $record->update(['status' => LifecycleStatus::Failed,
                 'failed_step' => $absent ? 'manager-absent' : ($conflict ? 'manager-conflict' : 'materialize'),
                 'error_code' => $absent ? 'node.tool_manager_absent' : ($conflict ? 'node.tool_manager_conflict' : 'node.tool_manager_materialization_failed')]);
-        }
-        if ($verb === 'manager_converge') {
-            return;
         }
         $toolId = $input['tool_id'] ?? null;
         $tool = is_int($toolId) ? Tool::query()->find($toolId) : null;

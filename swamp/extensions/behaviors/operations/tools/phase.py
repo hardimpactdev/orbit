@@ -62,9 +62,9 @@ def setup(manager_body, apt_body):
 
 def set_up():
     """Set up the Tool Manager: read it, and on a Linux first use install it at its pinned version, then read it again."""
-    facts = script("query")
+    facts = script("query", manager_only=True)
     if SETUP and isinstance(facts, dict) and facts.get("scope") == "absent":
-        facts = script("query") if setup(*SETUP) else None
+        facts = script("query", manager_only=True) if setup(*SETUP) else None
     return {"facts": facts}, isinstance(facts, dict) and facts.get("scope", "present") == "present" and "manager_version" in facts
 
 

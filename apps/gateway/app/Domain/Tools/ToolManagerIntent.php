@@ -15,9 +15,9 @@ final readonly class ToolManagerIntent
     public function __construct(private VpToolManager $vp) {}
 
     /** @return array<string, mixed>|null */
-    public function nativeInput(Node $node, ToolManagerName $manager, bool $imageProvidesManager = false): ?array
+    public function nativeInput(Node $node, ToolManagerName $manager): ?array
     {
-        if ($node->platform !== 'linux' || $imageProvidesManager || $manager === ToolManagerName::Apt) {
+        if ($node->platform !== 'linux' || $manager === ToolManagerName::Apt) {
             return null;
         }
         $recipe = new RecipeLoader()->source();
@@ -52,9 +52,9 @@ final readonly class ToolManagerIntent
     }
 
     /** @return array<string, mixed> */
-    public function input(Node $node, ToolManagerName $manager, bool $imageProvidesManager = false): array
+    public function input(Node $node, ToolManagerName $manager): array
     {
-        if ($node->platform !== 'linux' || $imageProvidesManager) {
+        if ($node->platform !== 'linux') {
             return [];
         }
         $command = match ($manager) {
