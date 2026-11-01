@@ -9,6 +9,7 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NativeDatabaseRoleConvergeInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
@@ -23,10 +24,12 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -59,8 +62,9 @@ final readonly class AdmitNodeRoleOperationAction
             if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
+            $native = $converge && NativeDatabaseRoleConvergeInput::supports($node, $role);
             if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
-                || ! app(NodeRolePlacement::class)->allows($node)) {
+                || (! $native && ! app(NodeRolePlacement::class)->allows($node))) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);
             }
             if (! $this->roles->definition($role)->mutable) {
@@ -101,11 +105,27 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new ResourceOperationException('operation.kind_unavailable', 'An applicable footprint contribution has no native action.', 422);
             }
             $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
+            $native = $native && $metrics === null;
+            if (! $native && ! app(NodeRolePlacement::class)->allows($node)) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'This role set requires its existing Node worker.', 422);
+            }
             $metricsOwner = $metrics === null ? $node->id : ValidatedData::integer($metrics['metrics_node_id']);
             $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
             $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
+            $nativeInput = $native ? app(NativeDatabaseRoleConvergeInput::class)->capture($node, $assignment, $snapshot) : null;
+            $executionSecrets = [];
+            if ($nativeInput !== null) {
+                $private = ['observer' => new OperationSecretValue($node->agent_secret_hash)];
+                foreach ($private as $name => $value) {
+                    $executionSecrets[$name] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+                        'node-role-'.$operation->id.'-'.$name,
+                        ValidatedData::string($value->value));
+                }
+            }
             $this->store->change($operation, ['input' => [...$operation->input, '_role' => $snapshot,
+                ...($nativeInput === null ? [] : ['native_role' => $nativeInput['intent'], 'execution_secrets' => $executionSecrets]),
                 'participant_node_ids' => array_values(array_unique([$node->id,
+                    ...($nativeInput['participant_node_ids'] ?? []),
                     ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
                     ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
                     ...NodeRoleMetricsInput::participants($metrics),

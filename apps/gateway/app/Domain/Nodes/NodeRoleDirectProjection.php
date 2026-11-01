@@ -11,7 +11,9 @@ use App\Domain\Fleet\NodeCliState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -19,10 +21,18 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Role assignment and footprint state only. The original native root owns every effect. */
-final readonly class NodeRoleDirectProjection implements DirectOperationProjection, DirectOperationPublicView
+final readonly class NodeRoleDirectProjection implements DirectOperationProjection, DirectOperationPublicView, NativeOperationProjection
 {
+    public function native(Operation $operation): bool
+    {
+        return isset($operation->input['native_role']);
+    }
+
     public function input(Operation $operation): array
     {
+        if (isset($operation->input['native_role'])) {
+            return ['intent' => $operation->input['native_role'], 'execution_secrets' => $operation->input['execution_secrets'] ?? []];
+        }
         $snapshot = $this->snapshot($operation);
         if (isset($operation->state['role_footprint'])) {
             $snapshot['footprint'] = $operation->state['role_footprint'];
@@ -37,16 +47,24 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
+        if (isset($operation->input['native_role'])) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Native Database convergence has no execution callback.', 403);
+        }
         app(NodeRolePublicationInput::class)->assertPublicParticipant($operation, $callerNodeId);
     }
 
     public function publicInput(Operation $operation, int $callerNodeId): array
     {
+        $this->assertPublicParticipant($operation, $callerNodeId);
+
         return app(NodeRolePublicationInput::class)->publicInput($operation, $callerNodeId);
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if (isset($operation->input['native_role']) && ! in_array($data['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+            throw new ResourceOperationException('operation.result_invalid', 'Native Database convergence projects terminal results only.', 422);
+        }
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $result = ValidatedData::object($data['result'] ?? []);
         $snapshot = $this->snapshot($operation);

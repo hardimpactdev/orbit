@@ -7,6 +7,7 @@ namespace App\Http\Requests\Operations;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -39,6 +40,12 @@ class DirectOperationRequest extends OperationPeerRequest
     {
         $peer = $this->peerNodeId();
         $operation = $this->route('operation');
+        if ($operation instanceof Operation) {
+            $projection = app(DirectOperation::class)->projection($operation);
+            if ($projection instanceof NativeOperationProjection && $projection->native($operation)) {
+                throw new ResourceOperationException('operation.executor_forbidden', 'This Operation accepts only its native terminal result.', 403);
+            }
+        }
         if ($operation instanceof Operation && $operation->node_id !== $peer) {
             $projection = app(DirectOperation::class)->projection($operation);
             $participants = $operation->input['participant_node_ids'] ?? [];
