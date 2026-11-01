@@ -448,7 +448,7 @@ jobs:
         - -B
         - -c
         - "import json\nimport sys\nimport urllib.request\nfrom pathlib import Path\nvalue=json.load(sys.stdin)\ntoken=Path('/home/orbit/.pi/agent/orbit-token').read_text().strip()\n\
-          request=urllib.request.Request('http://127.0.0.1:'+str(value['pi_port'])+'/capabilities',headers={'Authorization':'Bearer\
+          request=urllib.request.Request(value['pi_url'].rstrip('/')+'/capabilities',headers={'Authorization':'Bearer\
           \ '+token})\ntry:\n    with urllib.request.urlopen(request,timeout=10) as response:\n        if response.status!=200:raise\
           \ ValueError('not ready')\nexcept Exception:\n    print('task_vm.resume_failed',file=sys.stderr)\n    raise SystemExit(1)\n\
           print(json.dumps({'pi_ready':True}))\n"

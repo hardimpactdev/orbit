@@ -10,11 +10,13 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\AgentView\WebSocketClient;
-use Tests\Support\FakeRoutePublicationSocket;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\DatabaseServer;
 use App\Models\Node;
+use App\Models\Schedule;
 use App\Models\TaskVm;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
@@ -89,3 +91,15 @@ it('refuses identity drift and unpublished UpCloud before effects', function (st
         expect(fn () => app(TaskVmDestroyIntent::class)->owned($operation))->toThrow(ResourceOperationException::class);
     }
 })->with(['upcloud', 'drift']);
+
+it('refuses protected guest resources before any provider deletion', function (string $resource): void {
+    if ($resource === 'schedule') {
+        Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->vm->node_id,
+            'host_node_id' => $this->vm->node_id, 'name' => 'retained', 'calendar' => 'daily', 'command' => 'true',
+            'timeout_seconds' => 60, 'desired_timer_state' => 'disabled', 'status' => 'active']);
+    } else {
+        DatabaseServer::query()->create(['node_id' => $this->vm->node_id, 'slug' => 'retained', 'driver' => 'mysql', 'tag' => '8.4', 'root_password' => 'fixture', 'status' => 'active', 'port' => 3306]);
+    }
+    expect(fn () => app(TaskVmDestroyIntent::class)->capture($this->vm->fresh()))->toThrow(ResourceOperationException::class);
+    expect($this->vm->fresh()->state)->toBe(TaskVmState::Failed)->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
+})->with(['schedule', 'database']);

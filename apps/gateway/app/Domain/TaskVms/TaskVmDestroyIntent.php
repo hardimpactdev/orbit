@@ -6,7 +6,9 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
+use App\Domain\Nodes\NodeRemovalPolicy;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskFinalReview;
@@ -91,6 +93,15 @@ final readonly class TaskVmDestroyIntent
 
     private function available(TaskVm $vm): void
     {
+        if (Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
+            ->where(static fn ($q) => $q->where(static fn ($q) => $q->where('target_type', 'node')->where('target_id', $vm->node_id))
+                ->when($vm->group_id !== null, static fn ($q) => $q->orWhere(static fn ($q) => $q->where('target_type', 'task_group')->where('target_id', $vm->group_id))))->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'The guest Node or task group Operation must settle before deleting this VM.', 409);
+        }
+        if ($vm->node instanceof Node) {
+            app(NodeRemovalPolicy::class)->protected($vm->node, Node::query()->findOrFail($vm->host_node_id));
+            app(NodeRemovalPolicy::class)->resources($vm->node, offline: true);
+        }
         if ($vm->node_id !== null && (Instance::query()->where('node_id', $vm->node_id)->exists()
             || Route::query()->where(static fn ($q) => $q->where('node_id', $vm->node_id)->orWhere('generation_basis_node_id', $vm->node_id)
                 ->orWhere('transition_node_id', $vm->node_id)->orWhereHas('targets.instance', static fn ($q) => $q->where('node_id', $vm->node_id)))->exists())) {

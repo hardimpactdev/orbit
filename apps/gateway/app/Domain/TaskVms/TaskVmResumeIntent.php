@@ -40,7 +40,7 @@ final readonly class TaskVmResumeIntent
             'node' => ['node_id' => $guest->id, 'wireguard_ip' => $guest->wireguard_ip],
             'ssh_identity' => $this->ssh->identity(),
             'ssh_execution' => $guest->ssh_host_key === null && $vm->provider === TaskVmProviderKind::Incus ? null : $this->ssh->forNode($guest),
-            'runtime_json' => json_encode(['pi_sha256' => $this->settings->piArtifactSha256, 'pi_port' => $this->pi->port()], JSON_THROW_ON_ERROR),
+            'runtime_json' => json_encode(['pi_sha256' => $this->settings->piArtifactSha256, 'pi_port' => $this->pi->port(), 'pi_url' => $this->pi->baseUrl($guest)], JSON_THROW_ON_ERROR),
             ...$provider];
     }
 

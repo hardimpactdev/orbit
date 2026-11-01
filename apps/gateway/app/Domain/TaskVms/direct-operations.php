@@ -3,11 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmDestroyProjection;
-use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
-use App\Domain\TaskVms\TaskVmIncusProjection;
-use App\Domain\TaskVms\TaskVmLifecycleIntentProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;

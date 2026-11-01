@@ -18,7 +18,7 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         target = self.repo / 'extensions/behaviors/operations/certificates/scripts/role_paths.py'
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(source, target)
-        self.state.write_text(json.dumps({'status':'Running','exists':True}))
+        self.state.write_text(json.dumps({'status':'Running','exists':True,'volumes':['tvm-42-topology-seed','tvm-43-topology-seed']}))
         for name in ('task-vm-destroy','operation-task-vm-destroy','node-role-remove','operation-node-remove'):
             value = yaml.safe_load((ROOT / ('workflows/workflow-' + name + '.yaml')).read_text())
             if 'target' in value:
@@ -75,6 +75,7 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         self.assertTrue(receipt['removal']['offline'])
         self.assertEqual(receipt['removal']['roles_shed'],['app-dev'])
         self.assertFalse(json.loads(self.state.read_text())['exists'])
+        self.assertEqual(json.loads(self.state.read_text())['volumes'],['tvm-43-topology-seed'])
         calls=[json.loads(line) for line in self.calls.read_text().splitlines()]
         revoked=next(i for i,call in enumerate(calls) if call.get('model_revoked'))
         deleted=next(i for i,call in enumerate(calls) if 'delete' in call.get('argv',[]))
@@ -82,7 +83,7 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         self.assertTrue(all('/usr/bin/incus' in call['argv'] for call in calls if 'argv' in call))
 
     def test_absence_still_requires_model_and_node_cleanup(self):
-        self.state.write_text(json.dumps({'status':'Stopped','exists':False}))
+        self.state.write_text(json.dumps({'status':'Stopped','exists':False,'volumes':['tvm-42-topology-seed','tvm-43-topology-seed']}))
         _,history=self.destroy()
         receipt=json.loads(history['jobs'][0]['steps'][-1]['outputs']['stdout'])
         self.assertTrue(receipt['provider']['absent'])
@@ -90,7 +91,7 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         calls=self.calls.read_text()
         self.assertIn('model_revoked',calls)
         self.assertNotIn('"stop"',calls)
-        self.assertNotIn('"delete"',calls)
+        self.assertEqual(json.loads(self.state.read_text())['volumes'],['tvm-43-topology-seed'])
 
     def test_foreign_model_proof_blocks_provider_delete(self):
         self.fixture('task-vm-model-revoke','printf \'%s\\n\' \'{"task_vm_id":43,"revoked":true}\'')

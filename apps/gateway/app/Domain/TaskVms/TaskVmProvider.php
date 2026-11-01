@@ -17,5 +17,4 @@ interface TaskVmProvider
 
     /** True when cloud-init completed without errors; false while the guest is still booting. */
     public function bootstrapReady(TaskVm $vm): bool;
-
 }

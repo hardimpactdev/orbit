@@ -34,6 +34,11 @@ with calls.open('a') as output:output.write(json.dumps({'argv':args,'stdin':body
 if Path(BLOCK).exists():raise SystemExit(255)
 if '/usr/bin/incus' in args:
     value=json.loads(state.read_text());idx=args.index('/usr/bin/incus');action=args[idx+3]
+    if action=='storage':
+        if 'list' in args: print(json.dumps([{'name':name,'type':'custom'} for name in value.get('volumes',[])]))
+        elif 'delete' in args:
+            value['volumes']=[name for name in value.get('volumes',[]) if name!=args[-1]];state.write_text(json.dumps(value))
+        raise SystemExit(0)
     if action=='exec':
         if '/usr/bin/cat' in args:print('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG')
         raise SystemExit(0)
@@ -71,7 +76,7 @@ raise SystemExit(result.returncode)
                         task["globalArgs"]["sshBinary"] = str(fake)
             (self.repo / "workflows" / filename).write_text(yaml.safe_dump(workflow, sort_keys=False))
         ssh = {"control_node_id": 209, "identity_file": "/run/credentials/orbit-node-worker.service/proxy-ssh-identity", "public_key": "ssh-ed25519 PUBLIC", "target": {"name": "target", "host": "192.0.2.42", "user": "orbit", "port": 22, "host_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}}
-        self.provider = {"task_vm_id": 42, "name": "tvm-42", "provider": "incus", "provider_id": None, "vm": {"project": "tasks", "name": "tvm-42"}, "host_ssh_execution": ssh}
+        self.provider = {"task_vm_id": 42, "name": "tvm-42", "provider": "incus", "provider_id": None, "vm": {"project": "tasks", "name": "tvm-42", "pool":"tasks"}, "host_ssh_execution": ssh}
         self.envelope = {"operation_id": 7002, "node_id": 99, "kind": "task_vm.resume", "intent": self.provider, "execution_secrets": {}, "action": "start"}
         self.ssh = ssh
 

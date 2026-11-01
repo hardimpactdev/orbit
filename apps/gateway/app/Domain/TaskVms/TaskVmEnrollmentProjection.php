@@ -6,24 +6,17 @@ namespace App\Domain\TaskVms;
 
 use App\Actions\Nodes\RecordNodeSshHostKeyAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationPrivateBindings;
-use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\DirectOperationPublicView;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\HostKey;
 use App\Models\Node;
-use App\Models\Operation;
 use App\Models\Process;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
 
 /** Projects native enrollment results. Swamp owns execution and readiness decisions. */
-final readonly class TaskVmEnrollmentProjection 
+final readonly class TaskVmEnrollmentProjection
 {
     /** Shared with provision roots. Native result fields are observations, never target selectors.
      * @param  array<string,mixed>  $intent

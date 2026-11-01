@@ -10,6 +10,7 @@ const Intent = z.object({
     removal: z.record(z.string(), z.unknown()).nullable(),
 }).passthrough().superRefine((v, ctx) => {
     if (
+        !v.provider_input.vm?.pool ||
         v.task_vm_id !== v.provider_input.task_vm_id ||
         v.provider_input.provider !== "incus" ||
         (v.guest_node_id !== null &&
@@ -27,6 +28,16 @@ const Revocation = z.object({ task_vm_id: Id, revoked: z.literal(true) })
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+export function seedPresent(raw: unknown, stdout: string): boolean {
+    const intent = Intent.parse(raw);
+    const rows = z.array(
+        z.object({ name: z.string(), type: z.string() }).passthrough(),
+    ).parse(JSON.parse(stdout));
+    return rows.some((row) =>
+        row.type === "custom" &&
+        row.name === intent.provider_input.name + "-topology-seed"
+    );
+}
 export function destroyRevocation(raw: unknown, stdout: string) {
     const intent = Intent.parse(raw);
     if (
@@ -44,9 +55,13 @@ export function destroyTerminal(
     raw: unknown,
     providerRaw: unknown,
     removalStdout: string,
+    seedStdout: string,
 ) {
     const intent = Intent.parse(raw);
     const provider = ProviderReceipt.parse(providerRaw);
+    if (seedPresent(raw, seedStdout)) {
+        throw new Error("task_vm.destroy_incomplete");
+    }
     if (
         provider.task_vm_id !== intent.task_vm_id ||
         provider.provider !== "incus" ||
@@ -79,7 +94,14 @@ export const behavior = {
             schema: z.object({
                 model_required: z.boolean(),
                 node_present: z.boolean(),
+                seed_observe_argv: z.array(z.string()),
+                seed_delete_argv: z.array(z.string()),
             }),
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
+        seed: {
+            schema: z.object({ present: z.boolean() }),
             lifetime: "infinite",
             garbageCollection: 10,
         },
@@ -95,6 +117,23 @@ export const behavior = {
         },
     },
     methods: {
+        seed: {
+            description:
+                "Decode the exact same-VM custom seed volume observation",
+            arguments: z.object({ intent: Intent, stdout: z.string() }),
+            async execute(
+                args: { intent: unknown; stdout: string },
+                ctx: Context,
+            ) {
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("seed", "seed", {
+                            present: seedPresent(args.intent, args.stdout),
+                        }),
+                    ],
+                };
+            },
+        },
         plan: {
             description: "Read the admitted Incus destruction scope",
             arguments: z.object({ intent: Intent }),
@@ -107,6 +146,34 @@ export const behavior = {
                         await ctx.writeResource("plan", "plan", {
                             model_required: args.intent.model_key_required,
                             node_present: args.intent.guest_node_id !== null,
+                            seed_observe_argv: [
+                                "/usr/bin/sudo",
+                                "-n",
+                                "--",
+                                "/usr/bin/incus",
+                                "--project",
+                                args.intent.provider_input.vm!.project,
+                                "storage",
+                                "volume",
+                                "list",
+                                args.intent.provider_input.vm!.pool!,
+                                "--format",
+                                "json",
+                            ],
+                            seed_delete_argv: [
+                                "/usr/bin/sudo",
+                                "-n",
+                                "--",
+                                "/usr/bin/incus",
+                                "--project",
+                                args.intent.provider_input.vm!.project,
+                                "storage",
+                                "volume",
+                                "delete",
+                                args.intent.provider_input.vm!.pool!,
+                                args.intent.provider_input.name +
+                                "-topology-seed",
+                            ],
                         }),
                     ],
                 };
@@ -138,12 +205,14 @@ export const behavior = {
                 intent: Intent,
                 provider: ProviderReceipt,
                 removal_stdout: z.string(),
+                seed_stdout: z.string(),
             }),
             async execute(
                 args: {
                     intent: unknown;
                     provider: unknown;
                     removal_stdout: string;
+                    seed_stdout: string;
                 },
                 ctx: Context,
             ) {
@@ -156,6 +225,7 @@ export const behavior = {
                                 args.intent,
                                 args.provider,
                                 args.removal_stdout,
+                                args.seed_stdout,
                             ),
                         ),
                     ],

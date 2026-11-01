@@ -19,7 +19,11 @@ export const ProviderInput = z.object({
     provider: z.enum(["incus", "upcloud"]),
     name: Name,
     provider_id: z.uuid().nullable(),
-    vm: z.object({ project: Name, name: Name }).strict().nullable(),
+    vm: z.object({
+        project: Name,
+        name: Name,
+        pool: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/).optional(),
+    }).strict().nullable(),
     host_ssh_execution: Ssh.nullable(),
 }).strict().superRefine((v, ctx) => {
     if (

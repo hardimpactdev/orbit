@@ -58,7 +58,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
             'process_unit' => $installation['content'],
             'models_json' => json_encode(ValidatedData::object($public['runtime'])['models'], JSON_THROW_ON_ERROR),
             'certificate_json' => json_encode(['certificate' => ValidatedData::object($public['agent'])['certificate']], JSON_THROW_ON_ERROR),
-            'runtime_json' => json_encode(['pi_sha256' => $this->settings->piArtifactSha256, 'pi_port' => $this->pi->port()], JSON_THROW_ON_ERROR),
+            'runtime_json' => json_encode(['pi_sha256' => $this->settings->piArtifactSha256, 'pi_port' => $this->pi->port(), 'pi_url' => $this->pi->baseUrl($guest)], JSON_THROW_ON_ERROR),
             'execution_secrets' => [...$model['execution_secrets'],
                 'pi_token' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token ?? throw new \LogicException('The VM has no Pi token.'))],
         ];
