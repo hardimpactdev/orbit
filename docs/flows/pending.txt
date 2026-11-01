@@ -1,7 +1,3 @@
-analytics.disable
-analytics.update
-cluster.router_set
-cluster.router_unset
 conn.gateway_sessions_revoke
 conn.pairing_create
 conn.pairing_revoke
@@ -33,14 +29,12 @@ node.bootstrap_install
 node.bootstrap_probe
 node.bootstrap_verify
 node.macos_inspect
-node.network_converge
 node.prepare_php_packages
 node.remove
 node.role_add
 node.role_converge
 node.role_relocate
 node.role_remove
-node.wireguard_hub_converge
 node.worker_known_hosts
 observation.maintain
 process.install_instance_definitions
@@ -79,6 +73,3 @@ tool.manager_converge
 vault.setup
 vault.sync
 vault.teardown
-websocket.app_create
-websocket.app_destroy
-websocket.app_rotate
