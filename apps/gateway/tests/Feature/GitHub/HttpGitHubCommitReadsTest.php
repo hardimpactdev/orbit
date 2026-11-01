@@ -193,3 +193,34 @@ describe('HttpGitHubApi commit comparison', function (): void {
             ->toThrow(GitHubApiException::class);
     });
 });
+
+describe('HttpGitHubApi file blobs', function (): void {
+    it('finds the blob SHA of a file from its directory listing', function (): void {
+        $commit = str_repeat('a', 40);
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/contents/apps/web?ref='.$commit => Http::response([
+            ['path' => 'apps/web/.env', 'type' => 'file', 'sha' => str_repeat('2', 40)],
+            ['path' => 'apps/web/.env.example', 'type' => 'file', 'sha' => str_repeat('1', 40)],
+        ])]);
+
+        expect(app(GitHubApi::class)->fileBlob('ghs_read', $this->repository, $commit, 'apps/web/.env.example'))->toBe(str_repeat('1', 40));
+        Http::assertSent(static fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer ghs_read'));
+    });
+
+    it('returns null for an absent file, a missing directory, or a non-file entry', function (array $listing, int $status): void {
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/contents/*' => Http::response($listing, $status)]);
+
+        expect(app(GitHubApi::class)->fileBlob('ghs_read', $this->repository, str_repeat('a', 40), '.env.example'))->toBeNull();
+    })->with([
+        'absent' => [[['path' => 'README.md', 'type' => 'file', 'sha' => str_repeat('3', 40)]], 200],
+        'missing directory' => [['message' => 'Not Found'], 404],
+        'symlink' => [[['path' => '.env.example', 'type' => 'symlink', 'sha' => str_repeat('3', 40)]], 200],
+    ]);
+
+    it('decodes a blob and refuses one over 128 KiB', function (): void {
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/git/blobs/'.str_repeat('1', 40) => Http::response(['size' => 14, 'encoding' => 'base64', 'content' => "QVBQX05BTUU9\nU2hvcAo=\n"]),
+            'https://api.github.com/repos/hardimpactdev/orbit/git/blobs/'.str_repeat('2', 40) => Http::response(['size' => 131073, 'encoding' => 'base64', 'content' => ''])]);
+
+        expect(app(GitHubApi::class)->blobContents('ghs_read', $this->repository, str_repeat('1', 40)))->toBe("APP_NAME=Shop\n")
+            ->and(fn () => app(GitHubApi::class)->blobContents('ghs_read', $this->repository, str_repeat('2', 40)))->toThrow(GitHubApiException::class);
+    });
+});

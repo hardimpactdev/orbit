@@ -109,6 +109,45 @@ it('reads the fresh deployment branch head rather than cached policy state', fun
     $this->assertDatabaseCount('operations', 0);
 });
 
+it('refreshes the Project environment template when it reads the default branch head', function (): void {
+    $github = policy_source($this);
+    $this->fixture->instance->update(['deployment_branch' => 'main']);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->twice()->andReturn($this->sha);
+    app()->instance(RemoteBranchHeads::class, $heads);
+    $github->shouldReceive('repositoryReadToken')->once()->andReturn('contents-token');
+    $github->shouldReceive('fileBlob')->once()->with('contents-token', Mockery::any(), $this->sha, '.env.example')->andReturn(str_repeat('1', 40));
+    $github->shouldReceive('blobContents')->once()->andReturn("APP_NAME=Shop\n");
+
+    $this->getJson($this->url.'/deployment-source/head')->assertOk()->assertJsonPath('data.head', $this->sha);
+    $this->getJson($this->url.'/deployment-source/head')->assertOk()->assertJsonPath('data.head', $this->sha);
+
+    expect($this->fixture->instance->project->environmentTemplate()->sole()->checked_head)->toBe($this->sha);
+});
+
+it('leaves the template alone for a deployment branch other than the default branch', function (): void {
+    $github = policy_source($this);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->once()->andReturn($this->sha);
+    app()->instance(RemoteBranchHeads::class, $heads);
+
+    $this->getJson($this->url.'/deployment-source/head')->assertOk();
+
+    $github->shouldNotHaveReceived('fileBlob');
+    expect($this->fixture->instance->project->environmentTemplate()->exists())->toBeFalse();
+});
+
+it('still returns the head when the template refresh cannot read GitHub', function (): void {
+    $github = policy_source($this);
+    $this->fixture->instance->update(['deployment_branch' => 'main']);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->once()->andReturn($this->sha);
+    app()->instance(RemoteBranchHeads::class, $heads);
+    $github->shouldReceive('repositoryReadToken')->once()->andThrow(new GitHubApiException('unavailable'));
+
+    $this->getJson($this->url.'/deployment-source/head')->assertOk()->assertJsonPath('data.head', $this->sha);
+});
+
 it('walks first parents with strict ancestry evidence and excludes the merge side', function (): void {
     $github = policy_source($this);
     $side = str_repeat('d', 40);

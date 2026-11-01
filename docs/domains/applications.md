@@ -232,6 +232,34 @@ Laravel cannot boot without `APP_KEY`, and a fresh `.env.example` often has an e
 
 A symlinked file or cache directory, two `APP_URL` lines, or an unclear cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. Orbit validates both files and the cache directories before it changes either file or its permissions. Each file replacement is atomic. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
 
+## Project environment template
+
+The Gateway keeps one environment template per Project. It builds the template from the committed `.env.example` of the Project's application directory on the default branch. The template follows each new default-branch head.
+
+### When the Gateway checks
+
+The [automatic deploy policy](/reference/deployments#swamp-policy-contracts) reads `instance:deployment-source:head` on a schedule. The Gateway checks the template on each such read of the default branch. Orbit adds no webhook and no other poller.
+
+A Project needs GitHub App source access. It also needs an Instance whose head the policy reads.
+
+### What a check costs
+
+A head that the Gateway already checked costs nothing. A new head costs one GitHub read: the git blob SHA of `.env.example`. The Gateway downloads the file only when the blob changed.
+
+### How the template changes
+
+A changed `.env.example` updates the template by these rules:
+
+- A new key takes its example value.
+- A key with its old example value takes the new example value.
+- An edited value stays. A value that differs from its example is an Orbit or operator edit.
+- A key that `.env.example` dropped stays in the template, marked removed.
+- The template records the commit and blob that it now matches.
+
+Existing Instances keep their stored environment. Nothing marks them. The new template applies at the next `instance:create`.
+
+A refresh failure never fails the head read. An invalid `.env.example` leaves the template unchanged until a later head.
+
 ## Production Instances
 
 `instance:create` refuses an `app-prod` Node with `instance.candidate_required`, including a repeat for a production Instance that already exists. A production Instance always starts as a [clone](/reference/instance-cloning) of a development or production Instance. Its first [deployment](/reference/deployments) creates its first release.

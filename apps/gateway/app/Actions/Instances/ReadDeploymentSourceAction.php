@@ -16,20 +16,33 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Models\Instance;
+use Throwable;
 
 final readonly class ReadDeploymentSourceAction
 {
     private const int CandidateLimit = 20;
 
-    public function __construct(private RemoteBranchHeads $heads, private GitHubAppStore $store, private GitHubApi $github) {}
+    public function __construct(private RemoteBranchHeads $heads, private GitHubAppStore $store, private GitHubApi $github, private ProjectEnvironmentTemplateRefresh $templates) {}
 
     public function head(Instance $instance): DeploymentSourceHeadData
     {
-        return new DeploymentSourceHeadData($this->heads->head($instance->project, $this->branch($instance)));
+        $branch = $this->branch($instance);
+        $head = $this->heads->head($instance->project, $branch);
+        if ($branch === $instance->project->default_branch) {
+            // The automatic deploy policy reads this head on a schedule; it is the Gateway's default-branch signal.
+            try {
+                $this->templates->observe($instance->project, $head);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return new DeploymentSourceHeadData($head);
     }
 
     public function commits(Instance $instance, string $base): DeploymentSourceCommitsData

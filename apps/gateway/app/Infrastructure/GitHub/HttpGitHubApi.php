@@ -598,6 +598,44 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $commits;
     }
 
+    public function fileBlob(#[SensitiveParameter] string $token, GitHubRepository $repository, string $commit, string $path): ?string
+    {
+        $directory = dirname($path) === '.' ? '' : dirname($path);
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->get($this->repositoryPath($repository).'/contents/'.implode('/', array_map(rawurlencode(...), array_filter(explode('/', $directory), static fn (string $part): bool => $part !== ''))), ['ref' => $commit]));
+        if ($response->status() === 404) {
+            return null;
+        }
+        $rows = $response->json();
+        if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows)) {
+            throw GitHubApiException::unavailable();
+        }
+        foreach ($rows as $row) {
+            if (is_array($row) && ($row['path'] ?? null) === $path) {
+                return ($row['type'] ?? null) === 'file' ? ($this->sha($row['sha'] ?? null) ?? throw GitHubApiException::unavailable()) : null;
+            }
+        }
+
+        return null;
+    }
+
+    public function blobContents(#[SensitiveParameter] string $token, GitHubRepository $repository, string $blob): string
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->get($this->repositoryPath($repository).'/git/blobs/'.rawurlencode($blob)));
+        $size = $response->json('size');
+        $content = $response->json('content');
+        if (! $response->successful() || ! is_int($size) || $size > 131072 || ! is_string($content) || $response->json('encoding') !== 'base64') {
+            throw GitHubApiException::unavailable();
+        }
+        $decoded = base64_decode($content, true);
+        if ($decoded === false || strlen($decoded) !== $size) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return $decoded;
+    }
+
     /** One commit per page keeps the response small; the relation fields do not depend on paging. */
     public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison
     {

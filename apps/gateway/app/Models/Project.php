@@ -12,6 +12,7 @@ use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use SensitiveParameter;
 
 /**
@@ -30,6 +31,7 @@ use SensitiveParameter;
  * @property bool $review_and_merge
  * @property string|null $merge_check
  * @property-read Collection<int, Task> $tasks
+ * @property-read ProjectEnvironmentTemplate|null $environmentTemplate
  */
 final class Project extends Model
 {
@@ -94,6 +96,12 @@ final class Project extends Model
     public function updates(): HasMany
     {
         return $this->hasMany(ProjectUpdate::class);
+    }
+
+    /** @return HasOne<ProjectEnvironmentTemplate, $this> */
+    public function environmentTemplate(): HasOne
+    {
+        return $this->hasOne(ProjectEnvironmentTemplate::class);
     }
 
     /** @return HasMany<Task, $this> */
