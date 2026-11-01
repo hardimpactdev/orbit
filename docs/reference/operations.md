@@ -29,7 +29,11 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Native run budgets
 
-The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The Gateway does not re-read the Project. Pre-plan creates and other kinds use 300 seconds until measured budgets replace that default; clients cannot choose the captured budget. A never-started admission uses `created_at` instead, so attempts `0` and a missing native run binding do not leave it queued forever. Startup recovery includes these rows, even when cancellation was already requested.
+The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The Gateway does not re-read the Project.
+
+By default, pre-plan creates and every other kind use 300 seconds, and clients cannot choose the captured budget. Long-running kinds have a fixed budget in the same table: the 14-day p95 of successful runs, rounded up to the next five minutes. For example, `task_vm.image_build` has 2,400 seconds and `node.converge` 3,900 seconds. A kind without a successful run carries a provisional value that the code marks.
+
+If an admission never started, the budget runs from `created_at` instead, so attempts `0` and a missing native run binding do not leave it queued forever. Startup recovery includes these rows, even when cancellation was already requested.
 
 The existing shared observer projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads apply the same deadline if the observer is unavailable. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. It retains the generic target hold until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation. If a start times out before it binds a run, an operator must investigate before releasing the hold.
 
