@@ -13,7 +13,7 @@ from native_harness import NativeTestCase
 class EnvironmentNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations')
+        self.copy_behaviors('automatic-deploy', 'operations')
         root = self.repo / 'extensions/behaviors/operations/instance-environment/mod.ts'
         root.write_text('import {fixtureHttp, fixtureSync, fixtureRefresh} from "./fixtures/native.ts";\n' + root.read_text().replace(
             'export const behavior = environmentRoot();',

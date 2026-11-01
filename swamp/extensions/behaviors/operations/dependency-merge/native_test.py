@@ -12,7 +12,7 @@ from native_harness import NativeTestCase
 
 class DependencyMergeNativeTest(NativeTestCase):
     def prepare(self, boundary):
-        self.copy_behaviors("automatic-deploy", "operation-runner", "operations/_lib", "operations/dependency-merge", "_lib")
+        self.copy_behaviors("automatic-deploy", "operations/_lib", "operations/dependency-merge", "_lib")
         (self.repo / "extensions/behaviors/native_host_method.ts").write_text((ROOT / "extensions/behaviors/native_host_method.ts").read_text())
         self.secrets = (secrets.token_urlsafe(32),)
         self.native_env["DEPENDENCY_MERGE_TEST_TOKEN"] = self.secrets[0]

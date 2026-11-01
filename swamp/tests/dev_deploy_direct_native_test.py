@@ -17,7 +17,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
     native_timeout = 90
 
     def test_native_parent_uses_http_private_binding_and_leaves_no_private_artifacts(self):
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib',
+        self.copy_behaviors('automatic-deploy', 'operations/_lib',
                             'operations/instance-deploy', 'operations/tools',
                             'operations/php', 'operations/processes-schedules')
         for family, name in [('operations/node', 'system_command.ts'), ('node-worker', 'command.ts')]:

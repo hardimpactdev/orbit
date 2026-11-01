@@ -22,6 +22,17 @@ export const Globals = z.object({
     ),
 });
 
+export type Context = {
+    globalArgs: z.infer<typeof Globals>;
+    signal?: AbortSignal;
+    readResource(name: string): Promise<Record<string, unknown> | null>;
+    writeResource(
+        spec: string,
+        name: string,
+        value: Record<string, unknown>,
+    ): Promise<{ name: string }>;
+};
+
 const Outcome = z.object({
     id: z.number().int().positive(),
     kind: z.string(),

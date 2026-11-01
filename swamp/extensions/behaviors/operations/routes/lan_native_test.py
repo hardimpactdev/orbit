@@ -12,7 +12,7 @@ from native_harness import NativeTestCase
 class LanNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/routes')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/routes')
         module = self.repo / 'extensions/behaviors/operations/routes/publication.ts'
         module.write_text('import {fixtureHttp,fixtureLan} from "./lan_native_fixture.ts";\n' + module.read_text().replace('export const behavior = publication();', 'export const behavior = publication(() => fixtureHttp, undefined, undefined, undefined, fixtureLan);'))
         source = ROOT / 'workflows/workflow-operation-route-lan-remove.yaml'

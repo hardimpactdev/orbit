@@ -240,15 +240,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operation-runner/mod.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET claimable"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -740,14 +731,6 @@
     },
     {
       "file": "extensions/behaviors/operations/integrations/mod.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setInterval"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/mod.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": [
@@ -942,14 +925,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/execution.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setInterval"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/firewall_native_program.ts",
       "rule": "inline-script",
       "count": 160,
@@ -996,22 +971,6 @@
         "/usr/bin/python3",
         "/usr/bin/sudo",
         "/usr/bin/systemctl"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/mod.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setInterval"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {
@@ -1131,12 +1090,6 @@
     {
       "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
       "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/test-fixture.ts",
-      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },
@@ -1557,12 +1510,6 @@
         "/usr/bin/true",
         "sudo"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/images.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/task-vms/provider_incus.ts",

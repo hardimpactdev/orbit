@@ -468,9 +468,9 @@ The Gateway stores a random nonce and the original creation time privately on ea
 
 ## Discover work for executor workers
 
-`GET /api/v1/operation-executor/claimable` is a read for the active configured Services peer with Gateway access. Listed worker peers cannot use this endpoint. Its `data.kinds` contains one `{kind, claimable, oldest_at}` entry per registered Swamp kind, including zero counts and null timestamps. It exposes no Operation IDs or inputs and changes no lease or Operation. `oldest_at` is the earliest admission timestamp among the candidates, in ISO 8601 UTC.
+The Gateway admits a native workflow directly through [the shared start contract](#direct-swamp-starts). The former `/api/v1/operation-executor` routes and their Swamp discovery, claim, heartbeat and child-operation client are removed. Native workflow dependencies, child workflows and terminal projection own execution; workers do not discover queued Gateway Operations.
 
-The read and claim paths use one shared candidate selector. It counts queued Operations, running Operations whose 120-second lease has expired, and waiting parents whose exact recorded children are terminal and verified. Discovery does not write assistance flags; claim flags an invalid waiting parent and continues to other candidates. A live worker's own claim replay is not new claimable work. Services uses this summary to start each kind's workflow on its placed worker; that same authenticated Node claims, heartbeats, runs and completes the Operation. Discovery never claims work on behalf of another Node.
+Conn's scheduled session-cleanup admission remains a separate family-owned caller. Removing the executor client does not remove that maintenance method or convert the remaining direct-operation clients. Those families keep their current execution sequence until their complete intent and result paths move together, following [the porting reference](/swamp/porting).
 
 
 ### Cancel child plans

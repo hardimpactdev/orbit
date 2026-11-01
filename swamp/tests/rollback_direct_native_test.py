@@ -18,7 +18,7 @@ class RollbackDirectNativeTest(NativeTestCase):
     native_timeout = 90
 
     def test_retained_release_current_release_and_post_activation_cancellation(self):
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib',
+        self.copy_behaviors('automatic-deploy', 'operations/_lib',
                             'operations/instance-deploy', 'operations/tools',
                             'operations/php', 'operations/processes-schedules')
         for family, name in [('operations/node', 'system_command.ts'), ('node-worker', 'command.ts')]:

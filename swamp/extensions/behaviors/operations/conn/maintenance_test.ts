@@ -4,6 +4,7 @@ import {
   assertRejects,
 } from "jsr:@std/assert@1.0.19";
 import type { Http } from "../../automatic-deploy/gateway.ts";
+import { integrations } from "../integrations/mod.ts";
 import { maintainConn } from "./maintenance.ts";
 
 Deno.test("Conn maintenance admits pending registered environments, keeps active cleanup, and uses a stable bounded key", async () => {
@@ -48,17 +49,34 @@ Deno.test("Conn maintenance admits pending registered environments, keeps active
     }
     keys.push(key!);
     return path.includes("/busy/")
-      ? { status: 409, body: { error: { code: "operation.target_busy" } } }
+      ? {
+        status: 409,
+        body: { error: { code: "operation.target_busy" } },
+      }
       : {
         status: 202,
-        body: { data: { id: 91, kind: "conn.gateway_sessions_revoke" } },
+        body: {
+          data: { id: 91, kind: "conn.gateway_sessions_revoke" },
+        },
       };
   };
-  assertEquals(await maintainConn(http, "tick-1"), { admitted: [91], busy: 1 });
-  assertEquals(await maintainConn(http, "tick-2"), { admitted: [91], busy: 1 });
+  const method = integrations(() => http).methods.maintenance;
+  const context = {
+    globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "/test/ca" },
+    readResource: () => Promise.reject(new Error("Unexpected executor read")),
+    writeResource: () => Promise.reject(new Error("Unexpected executor write")),
+  };
+  assertEquals(await method.execute({ tick: "tick-1" }, context), {
+    admitted: [91],
+    busy: 1,
+  });
+  assertEquals(await method.execute({ tick: "tick-2" }, context), {
+    admitted: [91],
+    busy: 1,
+  });
   assertEquals(keys[0], keys[2]);
   revision++;
-  await maintainConn(http, "tick-3");
+  await method.execute({ tick: "tick-3" }, context);
   assertEquals(keys[0] === keys[4], false);
   assertMatch(keys[0], /^conn\.cleanup:[a-f0-9]{64}$/);
   assertEquals(
@@ -84,7 +102,9 @@ Deno.test("Conn maintenance observes an already clean revision and refuses admis
   assertEquals(
     await maintainConn(
       (method) =>
-        Promise.resolve(method === "GET" ? list : { status: 204, body: null }),
+        Promise.resolve(
+          method === "GET" ? list : { status: 204, body: null },
+        ),
       "tick",
     ),
     { admitted: [], busy: 0 },

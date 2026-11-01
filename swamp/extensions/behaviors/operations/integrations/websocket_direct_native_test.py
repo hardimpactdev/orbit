@@ -12,7 +12,7 @@ from native_harness import NativeTestCase
 class WebSocketDirectNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib')
         target = self.repo / 'extensions/behaviors/operations/integrations'
         target.mkdir()
         for name in ['websocket_direct.ts', 'websocket_direct_native_fixture.ts']:

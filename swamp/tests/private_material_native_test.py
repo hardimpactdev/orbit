@@ -12,7 +12,7 @@ class SharedPrivateMaterialNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib')
         (self.repo/'extensions/behaviors/private_material').mkdir()
         shutil.copy(ROOT/'tests/fixtures/private-material/mod.ts', self.repo/'extensions/behaviors/private_material/mod.ts')
         shutil.copy(ROOT/'tests/fixtures/private-material/workflow.yaml', self.repo/'workflows/workflow-private-material-proof.yaml')

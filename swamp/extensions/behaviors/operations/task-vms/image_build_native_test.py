@@ -18,7 +18,7 @@ class ImageBuildNative(NativeTestCase):
         artifact_text = 'image-artifact-' + uuid.uuid4().hex
         self.native_env['ORBIT_TEST_PI_ARTIFACT'] = artifact_text
         self.secrets = (artifact_text,)
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/task-vms', 'operations/node')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/task-vms', 'operations/node')
         module = self.repo / 'extensions/behaviors/operations/task-vms/image_build_direct.ts'
         module.write_text('import {fixtureHttp, fixtureHost, fixtureGuest, fixtureCleanup} from "./image_build_native_fixture.ts";\n' + module.read_text().replace('...imageBuildDirect()', '...imageBuildDirect(() => fixtureHttp, fixtureHost, fixtureGuest, fixtureCleanup)'))
         fake=self.repo/'ssh'

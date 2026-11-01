@@ -16,7 +16,7 @@ class CacheNative(NativeTestCase):
         token = "cache-private-" + uuid.uuid4().hex
         self.native_env["ORBIT_CACHE_TEST_TOKEN"] = token
         self.secrets = (token,)
-        self.copy_behaviors("automatic-deploy", "operation-runner", "operations/task-vms", "operations/_lib")
+        self.copy_behaviors("automatic-deploy", "operations/task-vms", "operations/_lib")
         module = self.repo / "extensions/behaviors/operations/task-vms/cache_fill_direct.ts"
         source = module.read_text().replace("export const behavior = cacheFillDirect();", """
 const fixture = cacheFillDirect(() => fixtureHttp, fixtureAction);

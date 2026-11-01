@@ -15,7 +15,7 @@ from native_harness import NativeTestCase
 class UpCloudImageNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/task-vms')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/task-vms')
         artifact = 'pinned-image-' + uuid.uuid4().hex
         private = '-----BEGIN OPENSSH PRIVATE KEY-----\n' + uuid.uuid4().hex + '\n-----END OPENSSH PRIVATE KEY-----\n'
         token = 'ucat_' + uuid.uuid4().hex

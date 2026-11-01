@@ -18,7 +18,7 @@ class VaultDirectNative(NativeTestCase):
         self.secret = 'private-sentinel-' + uuid.uuid4().hex
         self.secrets = (self.secret,)
         self.native_env['ORBIT_PRIVATE_TEST_SENTINEL'] = self.secret
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/vault')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/vault')
         p = self.repo/'extensions/behaviors/operations/vault/mod.ts'
         p.write_text('import {fixtureHttp, fixtureVault} from "./native_fixture.ts";\n'+p.read_text().replace('...vaultDirect()', '...vaultDirect(() => fixtureHttp, fixtureVault)'))
         self.workflow = self.repo/'workflows/workflow-operation-vault-direct.yaml'

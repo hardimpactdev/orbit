@@ -14,7 +14,7 @@ from native_harness import NativeTestCase
 class ImageReaperNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'node-worker', 'operation-runner',
+        self.copy_behaviors('automatic-deploy', 'node-worker',
                             'operations/_lib', 'operations/node', 'operations/task-vms')
         module = self.repo / 'extensions/behaviors/operations/task-vms/image_reaper.ts'
         module.write_text('import { fixtureHttp, fixtureSystem, fixtureIdentity } from "./image_reaper_native_fixture.ts";\n' + module.read_text().replace('...imageReaper()', '...imageReaper(() => fixtureHttp, fixtureSystem, fixtureIdentity)'))

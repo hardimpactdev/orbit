@@ -12,7 +12,7 @@ from native_harness import NativeTestCase
 class ProcessStartNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules', 'operations/routes','operations/instance-lifecycle')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/processes-schedules', 'operations/routes','operations/instance-lifecycle')
         shutil.copytree(ROOT/'extensions/behaviors/operations',self.repo/'extensions/behaviors/operations',dirs_exist_ok=True)
         helper = self.repo/'extensions/behaviors/operations/node/system_command.ts'
         helper.parent.mkdir(parents=True, exist_ok=True)
