@@ -12,6 +12,16 @@ sys.path.insert(0, str(ROOT / 'tests'))
 from native_harness import NativeTestCase
 
 
+class ImageBuildWorkerWait(unittest.TestCase):
+    def test_every_image_step_has_a_bounded_worker_wait(self):
+        workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-task-vm-image-build.yaml').read_text())
+        self.assertEqual(workflow.get('queueTimeout'), 30)
+        for job in workflow['jobs']:
+            for step in job['steps']:
+                wait = step.get('queueTimeout', job.get('queueTimeout', workflow['queueTimeout']))
+                self.assertGreater(wait, 0)
+
+
 class ImageBuildNative(NativeTestCase):
     def setUp(self):
         super().setUp()
@@ -73,8 +83,11 @@ if check:print('active')
         return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
     def test_full_dag_fetches_pinned_private_artifact_and_promotes_only_after_smoke_and_seed(self):
-        self.run_workflow()
+        run = self.run_workflow()
         saved = self.read()
+        history = json.loads(self.cli('workflow', 'history', 'get', run).stdout)
+        completion = next(step for job in history['jobs'] if job['name'] == 'build' for step in job['steps'] if step['name'] == 'complete')
+        self.assertEqual(json.loads(completion['outputs']['stdout'])['ready'], True)
         self.assertTrue(saved['artifactDelivered'])
         self.assertTrue(any(call['name']=='ssh.enable' for call in saved['guest']))
         self.assertTrue(any(call['name']=='ssh.check' for call in saved['guest']))

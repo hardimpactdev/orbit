@@ -42,6 +42,7 @@ return ['task_vm.hub_converge' => [
     'private_material' => ['github_token' => 'task_vm.package_cache_github'],
 ], 'task_vm.image_build' => [
     'workflow' => 'operation-task-vm-image-build',
+    'terminal_result' => ['job' => 'build', 'step' => 'complete'],
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'task_vm_image_writer',
     'projection' => TaskVmImageProjection::class,

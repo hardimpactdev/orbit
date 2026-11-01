@@ -6,19 +6,23 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
@@ -133,7 +137,7 @@ it('records one immutable Swamp image Operation and reuses unchanged intent', fu
     expect($operation->input['recipe'])->toBeString();
     expect($operation->input['gateway_public_key'])->toBe(app(SwampSshExecutionInput::class)->identity()['public_key']);
     expect($operation->state['swamp_run_id'])->toBe('878a384f-8b8a-4066-bd17-dcad8eac3e86');
-    expect($operation->lock_key)->toBeNull();
+    expect($operation->lock_key)->toBe('task_vm_image:'.$first->id);
     expect($operation->parent_operation_id)->toBeNull();
     expect($operation->input['generation'])->toBe($first->recipe_generation);
 });
@@ -238,8 +242,7 @@ it('rejects a stale sweep claim when a fresh image attempt wins first', function
     $operation = nativeImageOperation();
     $build = TaskVmImageBuild::query()->sole();
     $old = $build->builder_vm_name;
-    $operation->update(['status' => OperationStatus::Failed]);
-    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    app(TaskVmImageProjection::class)->apply($operation, [...nativeImageResult(['error_code' => 'operation.native_failed'], 'failed'), 'error_code' => 'operation.native_failed']);
     DB::table('task_vm_image_builds')->where('id', $build->id)->update(['updated_at' => now()->subHours(25)]);
     app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id);
     expect($build->fresh()->attempt)->toBe(2);
@@ -277,7 +280,6 @@ it('records failure on the owning build when its Operation terminates outside th
     ]]);
 
     if ($status === 'timeout') {
-        $operation->update(['lock_key' => OperationStore::lockKey('task_vm_image', $build->id)]);
         $this->travel(OperationRunBudgets::seconds($operation) + 1)->seconds();
         app(ExpireOperationAction::class)->execute($operation);
     } else {
@@ -308,7 +310,7 @@ it('never fails a newer build attempt from a stale terminal image Operation', fu
 it('starts a fresh image attempt after a successful sweep proves claimed cleanup finished', function (string $path): void {
     $operation = nativeImageOperation();
     $build = TaskVmImageBuild::query()->sole();
-    app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'error_code' => 'operation.native_failed']);
+    app(TaskVmImageProjection::class)->apply($operation, [...nativeImageResult(['error_code' => 'operation.native_failed'], 'failed'), 'error_code' => 'operation.native_failed']);
     TaskVmImageBuild::query()->whereKey($build->id)->update(['updated_at' => now()->subHours(25)]);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
@@ -355,4 +357,55 @@ it('records an exact successful terminal replacement on the same failed image at
     expect($build->fresh()->attempt)->toBe(1);
     expect(app(RecipeImageBuilds::class)->reconcile(retry: true)[0]->attempt)->toBe(1);
     $this->assertDatabaseCount('operations', 1);
+});
+
+it('refuses image retry after expiry until exact native terminal history releases admission', function (): void {
+    $this->freezeSecond();
+    $operation = nativeImageOperation();
+    $build = TaskVmImageBuild::query()->sole();
+    $this->travel(OperationRunBudgets::seconds($operation) + 1)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($operation);
+
+    expect(fn () => app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect($build->fresh()->attempt)->toBe(1);
+    $this->assertDatabaseCount('operations', 1);
+    $startSocket = app(WebSocketClient::class);
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-task-vm-image-build', 'status' => 'cancelled',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+    ]]]];
+    app()->instance(WebSocketClient::class, $history);
+    config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+
+    $settled = app(SwampCommandStep::class)->projectTerminal($expired,
+        ['id' => $operation->state['swamp_run_id']], ['job' => 'build', 'step' => 'complete']);
+
+    expect($settled->lock_key)->toBeNull()->and($settled->error_code)->toBe('operation.timed_out');
+    expect($settled->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
+    app()->instance(WebSocketClient::class, $startSocket);
+    expect(app(TaskVmImageBuildChain::class)->resume($build->hostNode, $build->id)->attempt)->toBe(2);
+    $this->assertDatabaseCount('operations', 2);
+});
+
+it('projects the native image completion output through the shared success reader', function (): void {
+    $operation = nativeImageOperation();
+    $fingerprint = str_repeat('c', 64);
+    TaskVmImageBuild::query()->sole()->update(['image_fingerprint' => $fingerprint, 'promoted_at' => now()]);
+    $history = new FakeRoutePublicationSocket;
+    $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-task-vm-image-build', 'status' => 'succeeded',
+        'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(),
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'jobs' => [['name' => 'build', 'steps' => [['name' => 'complete', 'outputs' => ['stdout' => json_encode(['ready' => true, 'fingerprint' => $fingerprint], JSON_THROW_ON_ERROR)]]]]],
+    ]]]];
+    app()->instance(WebSocketClient::class, $history);
+    config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+
+    $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $operation->state['swamp_run_id']],
+        app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)->and($projected->lock_key)->toBeNull();
+    expect(TaskVmImageBuild::query()->sole()->state)->toBe(TaskVmImageBuildState::Succeeded);
 });
