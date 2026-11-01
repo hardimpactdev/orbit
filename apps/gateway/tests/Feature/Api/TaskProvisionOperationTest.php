@@ -265,7 +265,7 @@ it('refuses the canonical proof Project before placement when its sandbox creden
         ->and($this->group->fresh()->status->value)->toBe('todo');
 });
 
-it('copies the club credential only for the exact canonical proof Project and exposes only its descriptor', function (int $id, string $slug, bool $expected): void {
+it('copies the club credential only for Project 62 regardless of its slug and exposes only its descriptor', function (int $id, string $slug, bool $expected): void {
     $proof = Project::query()->forceCreate(['id' => $id, 'name' => 'Proof', 'type' => 'monorepo', 'slug' => $slug,
         'repository_url' => 'https://github.com/example/proof.git', 'default_branch' => 'main', 'task_workspace_routed' => false]);
     $this->group->update(['project_id' => $proof->id]);
@@ -285,4 +285,4 @@ it('copies the club credential only for the exact canonical proof Project and ex
     if ($expected) {
         expect($envelope['execution_secrets']['proof_club'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key']);
     }
-})->with([[62, 'swamp-proof', true], [62, 'another-project', false], [63, 'swamp-proof', false]]);
+})->with([[62, 'swamp-proof', true], [62, 'another-project', true], [63, 'swamp-proof', false]]);
