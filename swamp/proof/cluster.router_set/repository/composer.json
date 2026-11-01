@@ -1,0 +1,5 @@
+{
+  "name": "orbit/router-proof",
+  "type": "project",
+  "require": {"php": "^8.4"}
+}

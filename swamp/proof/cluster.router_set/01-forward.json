@@ -1,0 +1,173 @@
+{
+  "kind": "cluster.router_set",
+  "workflow": "operation-cluster-router",
+  "topology": [
+    "app-dev+ingress",
+    "spare+router",
+    "spare-2+router"
+  ],
+  "budget_seconds": 2700,
+  "queue_timeout_seconds": 600,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "node:show",
+        "${topology.app-dev.node_id}",
+        "--json"
+      ],
+      "capture": {
+        "cluster_id": "$.cluster_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "cluster:router:set",
+        "${capture.cluster_id}",
+        "${topology.spare.node_id}",
+        "--idempotency-key=proof-router-forward-baseline-${proof.run}",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "project:create",
+        "proof-router-forward-${proof.run}",
+        "symfony-app",
+        "${proof.repo.url}",
+        "--default-branch=main",
+        "--json"
+      ],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:create",
+        "${capture.project_id}",
+        "${topology.app-dev.node_id}",
+        "proof-router-forward-${proof.run}",
+        "--domain=proof-router-forward-${proof.run}.test",
+        "--idempotency-key=proof-router-forward-instance-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "instance_id": "$.result.instance_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:show",
+        "${capture.instance_id}",
+        "--json"
+      ],
+      "capture": {
+        "route_id": "$.route.id",
+        "domain": "$.domain"
+      }
+    }
+  ],
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/cluster.router_set/before_request.py",
+        "01-forward",
+        "${capture.cluster_id}",
+        "${capture.route_id}",
+        "${capture.domain}",
+        "${topology.spare.node_id}",
+        "${topology.spare-2.node_id}",
+        "spare",
+        "spare-2",
+        "${topology.gateway.node_id}",
+        "${topology.app-dev.node_id}"
+      ],
+      "timeout_seconds": 300
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "cluster:router:set",
+      "${capture.cluster_id}",
+      "${topology.spare-2.node_id}",
+      "--idempotency-key=proof-router-forward-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "cluster_id": "${capture.cluster_id}",
+    "node_id": "${topology.spare-2.node_id}",
+    "old_node_id": "${topology.spare.node_id}",
+    "cluster_router": {
+      "cluster_id": "${capture.cluster_id}",
+      "noop": false,
+      "candidate": {
+        "node_id": "${topology.spare-2.node_id}"
+      },
+      "old_nodes": [
+        {
+          "node_id": "${topology.spare.node_id}"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "router",
+      "step": "result",
+      "match": {
+        "stdout": "${match.nonempty_string}"
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "router-baseline",
+      "job": "router",
+      "step": "prepare",
+      "budget_seconds": 1000
+    },
+    {
+      "name": "publication-and-selection",
+      "job": "router",
+      "step": "forward",
+      "budget_seconds": 1500
+    },
+    {
+      "name": "old-router-retirement",
+      "job": "router",
+      "step": "retire-0",
+      "budget_seconds": 100
+    },
+    {
+      "name": "terminal-summary",
+      "job": "router",
+      "step": "result",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/cluster.router_set/parity.py",
+      "01-forward"
+    ],
+    "cases": [
+      "forward-selected",
+      "normal-terminal-projection",
+      "caddy-and-dns-readback",
+      "admitted-certificate-root"
+    ]
+  }
+}
