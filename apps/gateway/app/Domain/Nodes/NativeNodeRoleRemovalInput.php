@@ -64,11 +64,17 @@ final readonly class NativeNodeRoleRemovalInput
      * @param  list<array<string,mixed>>  $before
      * @return array<string,mixed>
      */
-    public function capture(Node $node, NodeRole $assignment, array $before, bool $machineDeleted = false): array
+    public function capture(Node $node, NodeRole $assignment, array $before, bool $machineDeleted = false, ?NodeRole $desiredAssignment = null): array
     {
         if ($assignment->node_id !== $node->id || $assignment->status !== LifecycleStatus::Removing
             || ! app(RoleRegistry::class)->definition($assignment->role)->mutable) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Removal requires its claimed mutable role assignment.', 422);
+        }
+        if ($desiredAssignment !== null && (! $desiredAssignment->exists || $desiredAssignment->id !== $assignment->id
+            || $desiredAssignment->node_id === $node->id || $desiredAssignment->role !== $assignment->role
+            || ! NodeRole::query()->whereKey($desiredAssignment->id)->where('node_id', $desiredAssignment->node_id)
+                ->where('role', $assignment->role)->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Provisioning])->exists())) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Source cleanup requires the actual transferred role assignment.', 422);
         }
         $plan = ['firewall' => app(NodeRoleFirewallInput::class)->remove($node, $assignment->role),
             'runtime' => app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role),
@@ -108,11 +114,13 @@ final readonly class NativeNodeRoleRemovalInput
                 }
                 $target = $member->node;
                 $connection = app(SwampSshExecutionInput::class)->forNode($target);
-                foreach (['prometheus-node-exporter.service', 'orbit-cadvisor.service', 'orbit-fpm-exporter.service'] as $unit) {
-                    $unitsForFleet[] = ['ssh' => $connection, 'input' => ['unit' => $unit]];
+                if ($desiredAssignment === null) {
+                    foreach (['prometheus-node-exporter.service', 'orbit-cadvisor.service', 'orbit-fpm-exporter.service'] as $unit) {
+                        $unitsForFleet[] = ['ssh' => $connection, 'input' => ['unit' => $unit]];
+                    }
+                    $footprints[] = ['ssh' => $connection, 'input' => ['node_id' => $target->id, 'group' => 'exporter']];
+                    $reloads[] = ['ssh' => $connection, 'input' => []];
                 }
-                $footprints[] = ['ssh' => $connection, 'input' => ['node_id' => $target->id, 'group' => 'exporter']];
-                $reloads[] = ['ssh' => $connection, 'input' => []];
                 $catalog = app(NodeFirewallRuleCatalog::class);
                 $rules = [$catalog->metricsExporter($target, $node), $catalog->metricsCadvisor($target, $node)];
                 foreach (['caddy', 'fpm'] as $kind) {
