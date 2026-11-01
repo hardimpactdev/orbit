@@ -776,7 +776,7 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 ## Native role additions
 
-Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses the same target DAG. VPN and Router retain their protected-role policy.
+Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses its role convergence DAG. VPN and Router retain their protected-role policy.
 
 The Gateway validates the Node and records its assignment, runtime intent, public certificate plan and exact participants. Swamp performs the baseline, runtime, certificate and publication work in one native DAG. Role additions and Node convergence generate their footprint stages from one template. Agent actions, child Operations and polled execution are absent. The frozen agent continues to provide observations.
 
@@ -795,3 +795,9 @@ Relocation converges and publishes the target before it withdraws the source. Th
 The owning parent admits role snapshots and private bindings. Inside its private material source, `NodeRoleRuntimeSource::resolveRoleMaterial($snapshot, $nodeId)` validates the assignment, Node, pin and runtime reference before rendering existing credential types. It returns an `OperationSecretValue`; aggregate its in-memory value and redaction strings without serializing protected bytes. The standalone source retains its own Operation ownership and field binding checks.
 
 After checking its admitted publication participant, the parent uses `NodeRolePublicationInput::forPlan($plan, $node)` for fresh Caddy, PHP and private DNS input. The lower renders only duties in that immutable plan. Role removal, relocation source, role, Metrics and proxy metadata stay in the owning public view. These internal lower APIs create no Operation and grant no new private endpoint authority.
+
+## Native Database role convergence
+
+Existing Database-only assignments use `operation-node-role-converge-209` when no serving Metrics fleet needs reconciliation. The admitted public intent includes the canonical209 SSH descriptor and full target pins. Account lookup, observer binary delivery, OS prerequisites, peer DNS repair, observer configuration and service, and CLI installation are native steps through official SSH. The observer configuration contains no worker stanza or token. The Gateway records state only from the terminal run result. Failed prerequisites fail the role; footprint and CLI failures remain explicit follow-ups.
+
+Other role sets keep their current workflow and dependencies. That child receives the original root run ID for existing callbacks. Native Database admissions cannot use the retained callback execution path. Cancellation sends one request to Swamp’s native cancellation endpoint; only the terminal run settles the Operation. An unconfirmed cancellation remains an explicit error and does not invent a terminal state. This partial switch does not provide enrollment restoration or change hub, peer, Metrics or Tool kinds.

@@ -252,7 +252,7 @@ export function footprintWorkflow(
       }),
     }],
   });
-  return {
+  const workflow = {
     id: role
       ? relocateRole
         ? "48ce785a-7429-463e-a776-7b5a59bb2961"
@@ -292,6 +292,12 @@ export function footprintWorkflow(
 
     jobs,
   };
+  if (convergeRole) {
+    const retained = JSON.parse(JSON.stringify(workflow).replaceAll("run.id", "(has(inputs.parent_run_id) ? inputs.parent_run_id : run.id)")) as typeof workflow;
+    Object.assign(retained.inputs.properties, { parent_run_id: { type: "string", format: "uuid" } });
+    return retained;
+  }
+  return workflow;
 }
 
 export function generatedFootprintWorkflows() {

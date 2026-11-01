@@ -94,7 +94,7 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
             throw new ResourceOperationException('operation.execution_forbidden', 'The private fleet material requires its actual admitted Metrics assignment.', 422);
         }
         $node = Node::query()->findOrFail($ownerNodeId);
-        $address = $candidate === null ? $node->wireguard_ip : $candidate->wireguardIp;
+        $address = $candidate->wireguardIp ?? $node->wireguard_ip;
         $eligible = $node->status === LifecycleStatus::Active || ($candidate !== null
             && in_array($node->status, [LifecycleStatus::Provisioning, LifecycleStatus::Failed], true));
         if (! $eligible || $address !== $plan['metrics_address'] || ($candidate !== null && $candidate->platform !== 'linux')) {

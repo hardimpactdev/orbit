@@ -78,7 +78,7 @@ final readonly class NodeRoleDirectInput
     public static function bound(Operation $operation): array
     {
         $snapshot = ValidatedData::object($operation->input['_role'] ?? []);
-        if (! in_array($operation->kind, ['node.role_add', 'node.role_converge'], true) || $operation->target_type !== 'node'
+        if (isset($operation->input['native_role']) || ! in_array($operation->kind, ['node.role_add', 'node.role_converge'], true) || $operation->target_type !== 'node'
             || $operation->node_id === null || $operation->target_id !== $operation->node_id
             || $operation->status->terminal()
             || ($snapshot['node_id'] ?? null) !== $operation->node_id

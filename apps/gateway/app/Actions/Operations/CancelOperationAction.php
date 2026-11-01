@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
@@ -31,6 +34,14 @@ final readonly class CancelOperationAction
             }
         });
 
-        return $operation->refresh();
+        $operation->refresh();
+        if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
+            $projection = app(DirectOperation::class)->projection($operation);
+            if ($projection instanceof NativeOperationProjection && $projection->native($operation)) {
+                app(CancelSwampRun::class)->execute($operation);
+            }
+        }
+
+        return $operation;
     }
 }
