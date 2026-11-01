@@ -32,6 +32,10 @@ def setup(value):
 
 
 if __name__ == '__main__':
-    result = setup(json.load(sys.stdin))
+    value = json.load(sys.stdin)
+    if len(sys.argv) > 1 and sys.argv[1]:
+        for step in value['steps']:
+            step['vp_home'] = sys.argv[1]
+    result = setup(value)
     print(json.dumps(result))
     sys.exit(0 if result['ready'] else 124 if result['error_code'] == 'operation.timed_out' else 1)

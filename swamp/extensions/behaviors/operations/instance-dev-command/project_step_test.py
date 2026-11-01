@@ -77,17 +77,24 @@ class ProjectStep(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             binary.write_text('#!/bin/sh\nprintf runtime-ok')
             binary.chmod(0o755)
-            (root / '.env').write_text('APP_KEY="private-runtime-sentinel"\n')
+            application = root / 'apps/site'
+            application.mkdir(parents=True)
+            (application / '.env').write_text('APP_KEY="private-runtime-sentinel"\n')
+            selected = root / 'selected-vp'
+            (selected / 'bin').mkdir(parents=True)
+            selected_binary = selected / 'bin/vp'
+            selected_binary.write_text('#!/bin/sh\nprintf selected-runtime-ok')
+            selected_binary.chmod(0o755)
             account = SimpleNamespace(pw_dir=str(home), pw_name='fixture', pw_uid=os.geteuid(), pw_gid=os.getegid())
-            command = 'test "$APP_KEY" = private-runtime-sentinel; test -n "$VP_HOME"; vp; printf "$APP_KEY"'
+            command = 'test "$APP_KEY" = private-runtime-sentinel; test "$PWD" = '+str(root)+'; vp; cat apps/site/.env'
             value = {'command': command, 'sha256': hashlib.sha256(command.encode()).hexdigest(),
-                     'directory': str(root), 'instance_id': 17, 'instance_name': 'proof', 'seed_path': '', 'seed_commit': ''}
+                     'directory': str(root), 'environment_directory': str(application), 'vp_home': str(selected), 'instance_id': 17, 'instance_name': 'proof', 'seed_path': '', 'seed_commit': ''}
             exists = Path.exists
             with patch.object(runner.pwd, 'getpwuid', return_value=account), patch.object(
                     Path, 'exists', lambda p: False if str(p) == '/opt/orbit/vite-plus/bin/vp' else exists(p)):
                 result = runner.execute_command(value)
             self.assertEqual(result['exitCode'], 0)
-            self.assertEqual(result['stdout'], 'runtime-ok[REDACTED]')
+            self.assertEqual(result['stdout'], 'selected-runtime-okAPP_KEY="[REDACTED]"\n')
             self.assertNotIn('private-runtime-sentinel', json.dumps(result))
 
 

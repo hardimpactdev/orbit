@@ -3,7 +3,10 @@ import { inspectDestroySources } from "../instance-lifecycle/destroy_inspection.
 import { destroyResult, requireActions } from "./required.ts";
 import { createResult, Step } from "./result.ts";
 import { createAssets } from "./create_assets.ts";
-import { classifyProvisioningProfile } from "../instance-lifecycle/source_profile.ts";
+import {
+    classifyProvisioningProfile,
+    ProvisioningRefusal,
+} from "../instance-lifecycle/source_profile.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 const Observation = z.object({ stdout: z.string() }).passthrough();
 type Context = {
@@ -36,8 +39,7 @@ export const behavior = {
         create_assets: {
             schema: z.object({
                 directory: z.string(),
-                prepare: z.string(),
-                source: z.string(),
+                intent_json: z.string(),
             }),
             lifetime: "1d",
             garbageCollection: 10,
@@ -47,11 +49,15 @@ export const behavior = {
         create_assets: {
             description:
                 "Resolve the unchanged create phase scripts and their delivery directory",
-            arguments: z.object({}).strict(),
-            execute: async (_args: Record<string, never>, ctx: Context) => {
-                const value = await createAssets((path) =>
-                    ctx.extensionFile(path)
-                );
+            arguments: z.object({ intent: ObjectValue }).strict(),
+            execute: async (
+                args: { intent: Record<string, unknown> },
+                ctx: Context,
+            ) => {
+                const value = {
+                    ...await createAssets((path) => ctx.extensionFile(path)),
+                    intent_json: JSON.stringify(args.intent),
+                };
                 await ctx.writeResource("create_assets", "create", value);
                 return value;
             },
@@ -66,34 +72,56 @@ export const behavior = {
             execute: async (
                 args: {
                     intent: Record<string, unknown>;
-                    observation: { stdout: string };
+                    observation: { stdout: string; exitCode?: number };
                 },
                 ctx: Context,
             ) => {
+                const raw = ObjectValue.parse(
+                    JSON.parse(args.observation.stdout),
+                );
+                if (args.observation.exitCode !== 0) {
+                    const value = {
+                        ready: false,
+                        error_code: z.string().regex(
+                            /^(?:instance|env|app-dev)\.[a-z_]+$/,
+                        ).parse(raw.error_code),
+                    };
+                    await ctx.writeResource("result", "source", value);
+                    return value;
+                }
                 const observed = z.object({
                     branch: z.string(),
                     commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
                     profile: z.unknown().optional(),
                     php_version: z.string().nullable().optional(),
                     laravel: z.boolean().optional(),
+                    template: z.string().max(131072),
                 }).parse(JSON.parse(args.observation.stdout));
-                const value = {
-                    branch: observed.branch,
-                    commit: observed.commit,
-                    ...(args.intent.retained_source != null
-                        ? {
-                            php_version: observed.php_version ?? null,
-                            laravel: observed.laravel ?? false,
-                        }
-                        : classifyProvisioningProfile(observed.profile, {
-                            project_type: z.string().parse(
-                                args.intent.project_type,
-                            ),
-                            php_versions: z.array(z.string()).min(1).parse(
-                                args.intent.php_versions,
-                            ),
-                        })),
-                };
+                let value: Record<string, unknown>;
+                try {
+                    value = {
+                        ready: true,
+                        branch: observed.branch,
+                        commit: observed.commit,
+                        template: observed.template,
+                        ...(args.intent.retained_source != null
+                            ? {
+                                php_version: observed.php_version ?? null,
+                                laravel: observed.laravel ?? false,
+                            }
+                            : classifyProvisioningProfile(observed.profile, {
+                                project_type: z.string().parse(
+                                    args.intent.project_type,
+                                ),
+                                php_versions: z.array(z.string()).min(1).parse(
+                                    args.intent.php_versions,
+                                ),
+                            })),
+                    };
+                } catch (error) {
+                    if (!(error instanceof ProvisioningRefusal)) throw error;
+                    value = { ready: false, error_code: error.code };
+                }
                 await ctx.writeResource("result", "source", value);
                 return value;
             },

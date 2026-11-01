@@ -19,6 +19,10 @@ Deno.test("create requires real source/environment and handles no VP or setup wo
         "env-capture": done({ keys: ["APP_ENV"] }),
         "vp-requirements": done({ ready: true, runtime: null }),
         "vp-result": done({ ready: true, runtime: null }),
+        "finish-setup": done({
+            exitCode: 0,
+            stdout: JSON.stringify({ ready: true, completed: [] }),
+        }),
     };
     assertEquals(createResult(intent, steps).ready, true);
     assertEquals(
@@ -35,20 +39,23 @@ Deno.test("create requires real source/environment and handles no VP or setup wo
     );
 });
 Deno.test("create requires every ordered setup action and actual VP verification", () => {
-    const intent = { instance_id: 7, setup_commands: [{}] };
+    const intent = { instance_id: 7, setup_commands: [{ name: "setup" }] };
     const steps = {
         "source-result": done(),
         "env-write": done(),
         "env-capture": done(),
         "vp-requirements": done({ runtime: {} }),
         "vp-result": done({ ready: true }),
-        "finish-setup-0-0": done({ exitCode: 0 }),
+        "finish-setup": done({
+            exitCode: 0,
+            stdout: JSON.stringify({ ready: true, completed: ["setup"] }),
+        }),
     };
     assertEquals(createResult(intent, steps).ready, true);
     assertEquals(
         createResult(intent, {
             ...steps,
-            "finish-setup-0-0": { status: "skipped" },
+            "finish-setup": { status: "skipped" },
         }).ready,
         false,
     );
@@ -60,7 +67,7 @@ Deno.test("create requires every ordered setup action and actual VP verification
     assertEquals(
         createResult(intent, {
             ...steps,
-            "finish-setup-0-0": done({ exitCode: 127 }),
+            "finish-setup": done({ exitCode: 127 }),
         }).ready,
         false,
     );
@@ -116,15 +123,45 @@ Deno.test("VP preparation uses stock CLI environment installation and discrete o
 
 Deno.test("create retains the typed source branch collision refusal", () => {
     const result = createResult({ instance_id: 782, setup_commands: [] }, {
-        "source-branch-available": done({
-            available: false,
+        "create-prepare": done({
+            exitCode: 1,
+            stdout: JSON.stringify({
+                ready: false,
+                error_code: "instance.branch_in_use",
+            }),
             error_code: "instance.branch_in_use",
         }),
-        "source-branch-accepted": { status: "failed" },
+        "create-prepare-accepted": { status: "failed" },
     });
     assertEquals(result.ready, false);
     assertEquals(
         JSON.parse(result.stdout).error_code,
         "instance.branch_in_use",
     );
+});
+
+Deno.test("create retains structured setup timeout and failed command", () => {
+    const result = createResult({
+        instance_id: 7,
+        setup_commands: [{ name: "slow" }],
+    }, {
+        "source-result": done({ ready: true }),
+        "env-write": done(),
+        "env-capture": done(),
+        "vp-requirements": done({ runtime: null }),
+        "vp-result": done({ ready: true }),
+        "finish-setup": done({
+            exitCode: 124,
+            stdout: JSON.stringify({
+                ready: false,
+                completed: [],
+                failed_command: "slow",
+                error_code: "operation.timed_out",
+            }),
+        }),
+    });
+    const publicResult = JSON.parse(result.stdout);
+    assertEquals(publicResult.error_code, "operation.timed_out");
+    assertEquals(publicResult.failed_command, "slow");
+    assertEquals(result.ready, false);
 });

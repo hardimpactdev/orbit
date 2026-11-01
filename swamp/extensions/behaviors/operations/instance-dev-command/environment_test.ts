@@ -38,3 +38,19 @@ Deno.test("canonical rendering resolves environment and refuses unavailable doma
         })
     );
 });
+
+Deno.test("create uses only the retry-stable Gateway framework key and renders testing separately", () => {
+    const material = {
+        values: {},
+        name: "Fixture",
+        framework_key: "base64:gateway-owned-synthetic-key",
+    };
+    const result = assemble("APP_KEY=\nPUBLIC=committed\n", material, {
+        laravel: true,
+    });
+    assertEquals(result.values.APP_KEY, material.framework_key);
+    assertEquals(result.testing_content.includes('APP_ENV="testing"'), true);
+    assertThrows(() =>
+        assemble("", { ...material, framework_key: null }, { laravel: true })
+    );
+});

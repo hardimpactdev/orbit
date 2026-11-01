@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Instances\Environment\InstanceEnvironmentImporter;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
@@ -12,6 +14,7 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Crypt;
 
 /** Public execution input plus native vault copies; never a Node call or phase callback. */
 final readonly class NativeDevelopmentInstanceInput
@@ -30,22 +33,37 @@ final readonly class NativeDevelopmentInstanceInput
         $plan = ValidatedData::object($input['direct_provisioning']);
         $ssh = $input['ssh_execution'];
         $values = app(InstanceEnvironmentStore::class)->values($instance);
-        $material = new OperationSecretValue(['values' => (object) $values, 'name' => $instance->project->name, 'framework_key' => null]);
+        $state = $operation->state ?? [];
+        $captured = $state['create_environment'] ?? null;
+        $materialState = is_string($captured) ? ValidatedData::object(json_decode(Crypt::decryptString($captured), true, flags: JSON_THROW_ON_ERROR)) : null;
+        if ($materialState === null) {
+            $previous = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
+                ->where('target_id', $instance->id)->where('id', '<', $operation->id)->latest('id')->first();
+            $previousCaptured = $previous?->state['create_environment'] ?? null;
+            $previousMaterial = is_string($previousCaptured) ? ValidatedData::object(json_decode(Crypt::decryptString($previousCaptured), true, flags: JSON_THROW_ON_ERROR)) : [];
+            $materialState = ['values' => (object) $values, 'name' => $instance->project->name,
+                'framework_key' => ($values['APP_KEY'] ?? '') !== '' ? $values['APP_KEY'] : ($previousMaterial['framework_key'] ?? LaravelApplicationKey::generate())];
+            $operation->forceFill(['state' => [...$state, 'create_environment' => Crypt::encryptString(json_encode($materialState, JSON_THROW_ON_ERROR))]])->saveQuietly();
+        }
+        $materialState['values'] = (object) ValidatedData::stringMap((array) $materialState['values']);
+        $material = new OperationSecretValue($materialState);
         $base = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, json_encode($material->value, JSON_THROW_ON_ERROR));
         $programs = ValidatedData::object(app(NativeInstanceProvisioningSetup::class)->resolve($operation, $instance->id, '', 'setup_programs')->value);
         $copies = ['git_read' => InstanceGitHubReadTokens::reference($operation), 'environment' => $base];
         $commands = [];
+        $ordered = [];
         foreach (InstanceLifecycleInput::members(['members' => $programs['steps']]) as $index => $raw) {
             $step = ValidatedData::object($raw);
-            $field = 'setup_'.$index;
             $sha = hash('sha256', ValidatedData::string($step['command']));
-            $commands[] = ['index' => $index, 'name' => $step['name'], 'command_digest' => $sha, 'timeout_seconds' => $step['timeout_seconds'], 'secret_field' => $field];
-            $copies[$field] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-create-'.$operation->id.'-setup-'.$index, json_encode([
-                'command' => $step['command'], 'sha256' => $sha, 'directory' => $plan['checkout'], 'instance_id' => $instance->id, 'instance_name' => $instance->name,
+            $commands[] = ['index' => $index, 'name' => $step['name'], 'command_digest' => $sha, 'timeout_seconds' => $step['timeout_seconds']];
+            $ordered[] = ['name' => $step['name'], 'timeout_seconds' => $step['timeout_seconds'],
+                'command' => $step['command'], 'sha256' => $sha, 'directory' => $plan['checkout'], 'environment_directory' => $plan['application'], 'instance_id' => $instance->id, 'instance_name' => $instance->name,
                 'seed_path' => ($input['seed_path'] ?? null) !== $plan['checkout'] ? ($input['seed_path'] ?? '') : '',
                 'seed_commit' => ($input['seed_path'] ?? null) !== $plan['checkout'] ? ($input['seed_commit'] ?? '') : '',
-            ], JSON_THROW_ON_ERROR));
+            ];
         }
+        $copies['setup'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-create-'.$operation->id,
+            json_encode(['steps' => $ordered], JSON_THROW_ON_ERROR));
 
         return ['intent' => [...$plan, 'ssh_execution' => $ssh,
             'setup_commands' => $commands, 'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
@@ -53,5 +71,21 @@ final readonly class NativeDevelopmentInstanceInput
             'environment_output' => self::environmentOutput($operation),
             'execution_references_json' => json_encode(['git_read' => InstanceGitHubReadTokens::reference($operation)], JSON_THROW_ON_ERROR)],
             'execution_secrets' => $copies];
+    }
+
+    /** @return array<string,string> Gateway-owned values plus the committed public template. */
+    public function environmentValues(Operation $operation, string $template, bool $laravel): array
+    {
+        $material = ValidatedData::object(json_decode(Crypt::decryptString(ValidatedData::string(($operation->state ?? [])['create_environment'] ?? null)), true, flags: JSON_THROW_ON_ERROR));
+        $values = [...app(InstanceEnvironmentImporter::class)->parse($template),
+            ...ValidatedData::stringMap((array) $material['values'])];
+        $values['APP_NAME'] ??= ValidatedData::string($material['name']);
+        $values['APP_ENV'] ??= 'development';
+        $values['APP_DEBUG'] ??= 'true';
+        if ($laravel && ($values['APP_KEY'] ?? '') === '') {
+            $values['APP_KEY'] = ValidatedData::string($material['framework_key']);
+        }
+
+        return $values;
     }
 }

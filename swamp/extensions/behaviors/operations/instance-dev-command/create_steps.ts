@@ -43,29 +43,41 @@ export function createPreparationSteps(input = "inputs"): Fields[] {
             },
         },
     });
-    first.metadata("phase-assets", "create_assets", {});
+    first.metadata("phase-assets", "create_assets", { intent: e(intent) });
+    first.sshAction("phase-copy", "copy", {
+        src: e(first.output("phase-assets") + ".directory"),
+        dst: e('"/tmp/orbit-create-phase-" + run.id'),
+        direction: "to",
+        recursive: true,
+    });
     first.sshAction("prepare", "exec", {
+        okExitCodes: "any",
         argv: [
             "/usr/bin/timeout",
             "--kill-after=1s",
             e("string(" + intent + ".phase_plan.prepare.seconds) + 's'"),
             "/usr/bin/python3",
             "-B",
-            "-c",
-            e(first.output("phase-assets") + ".prepare"),
-            e("toJSON(" + intent + ")"),
+            e('"/tmp/orbit-create-phase-" + run.id + "/create/prepare.py"'),
+            e(first.output("phase-assets") + ".intent_json"),
         ],
     });
+    first.add("prepare-accepted", {
+        type: "assert",
+        expr: 'steps["create-prepare"].outputs.exitCode == 0',
+        severity: "high",
+        message: "Instance preparation refused.",
+    });
     first.sshAction("source", "exec", {
+        okExitCodes: "any",
         argv: [
             "/usr/bin/timeout",
             "--kill-after=1s",
             e("string(" + intent + ".phase_plan.source.seconds) + 's'"),
             "/usr/bin/python3",
             "-B",
-            "-c",
-            e(first.output("phase-assets") + ".source"),
-            e("toJSON(" + intent + ")"),
+            e('"/tmp/orbit-create-phase-" + run.id + "/create/source.py"'),
+            e(first.output("phase-assets") + ".intent_json"),
         ],
         stdin: e(
             "vault.get(" + input + ".execution_secrets.git_read.vault," +
@@ -77,19 +89,15 @@ export function createPreparationSteps(input = "inputs"): Fields[] {
         intent: e(intent),
         observation: e(first.output("source")),
     });
-    const env = instanceActions("env", ssh, "source-result"), o = env.output;
-    const remote = '"/tmp/orbit-instance-" + run.id + "/template"';
-    env.script("template", "template", {
-        application: e(intent + ".application"),
-        destination: e(remote),
+    source.add("accepted", {
+        type: "assert",
+        expr: 'steps["source-result"].outputs.ready == true',
+        severity: "high",
+        message: "Instance source refused.",
     });
-    env.sshAction("copy", "copy", {
-        src: e(remote),
-        dst: e(remote),
-        direction: "from",
-    });
+    const env = instanceActions("env", ssh, "source-accepted");
     env.metadata("capture", "capture", {
-        path: e(remote),
+        template: e('steps["source-result"].outputs.template'),
         env: {
             ORBIT_ENVIRONMENT: e(
                 "vault.get(" + input + ".execution_secrets.environment.vault," +
@@ -100,20 +108,14 @@ export function createPreparationSteps(input = "inputs"): Fields[] {
         reference: e(intent + ".environment_output"),
         directory: e(intent + ".application"),
     }, "@nckrtl/instance-create-environment");
-    env.metadata("write-assets", "read", {
-        action: "write_environment",
-        input: {},
-    });
-    env.sshAction("scripts-copy", "copy", {
-        src: e(o("write-assets") + ".script_file"),
-        dst: e('"/tmp/orbit-instance-" + run.id + "/write_environment.py"'),
-        direction: "to",
-    });
     env.sshAction("write", "exec", {
         argv: [
+            "/usr/bin/timeout",
+            "--kill-after=1s",
+            e("string(" + intent + ".phase_plan.environment.seconds) + 's'"),
             "/usr/bin/python3",
             "-B",
-            e('"/tmp/orbit-instance-" + run.id + "/write_environment.py"'),
+            e('"/tmp/orbit-create-phase-" + run.id + "/create/environment.py"'),
         ],
         stdin: e(
             "vault.get(" + intent + ".environment_output.vault," + intent +
@@ -135,13 +137,6 @@ export function createCompletionSteps(input = "inputs"): Fields[] {
         severity: "high",
         message: "Instance preparation did not finish.",
     });
-    end.metadata("setup-assets", "create_assets", {});
-    end.sshAction("setup-copy", "copy", {
-        src: e(end.output("setup-assets") + ".directory"),
-        dst: e('"/tmp/orbit-create-phase-" + run.id'),
-        direction: "to",
-        recursive: true,
-    });
     end.metadata(
         "environment-library",
         "environment_script",
@@ -157,17 +152,16 @@ export function createCompletionSteps(input = "inputs"): Fields[] {
     });
     end.sshAction("setup", "exec", {
         argv: [
+            "/usr/bin/timeout",
+            "--kill-after=1s",
+            e("string(" + intent + ".phase_plan.setup.seconds + 1) + 's'"),
             "/usr/bin/python3",
             "-B",
             e('"/tmp/orbit-create-phase-"+run.id+"/create/setup.py"'),
+            e('steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store'),
         ],
         okExitCodes: "any",
         timeoutSec: e(intent + ".phase_plan.setup.seconds + 2"),
-        env: {
-            VP_HOME: e(
-                'steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store',
-            ),
-        },
         stdin: e(
             "vault.get(" + input + ".execution_secrets.setup.vault," + input +
                 ".execution_secrets.setup.key)",

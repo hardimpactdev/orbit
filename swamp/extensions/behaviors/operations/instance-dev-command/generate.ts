@@ -34,6 +34,7 @@ export function workflow(kind: "create" | "destroy") {
         description: "Development Instance " + kind +
             " from209 through separately placed official SSH actions.",
         vaults: ["orbit-control-inputs"],
+        ...(kind === "create" ? { queueTimeout: 15 } : {}),
         inputs: {
             type: "object",
             properties: {

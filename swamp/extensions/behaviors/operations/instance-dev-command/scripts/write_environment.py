@@ -6,13 +6,20 @@ import tempfile
 from pathlib import Path
 
 
-def publish(value):
+def validate_target(value, filename='.env'):
     directory = Path(value['directory'])
-    target = directory / '.env'
+    if filename not in ('.env', '.env.testing'):
+        raise ValueError('env.configuration_invalid')
+    target = directory / filename
     if directory.is_symlink() or not directory.is_dir() or directory.stat().st_uid != os.geteuid():
         raise ValueError('instance.source_ownership_mismatch')
     if target.is_symlink() or target.exists() and (not target.is_file() or target.stat().st_uid != os.geteuid()):
         raise ValueError('env.sync_failed')
+    return directory, target
+
+
+def publish(value, filename='.env'):
+    directory, target = validate_target(value, filename)
     content = value['content'].encode()
     if len(content) > 131072:
         raise ValueError('env.configuration_invalid')

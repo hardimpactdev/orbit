@@ -16,7 +16,7 @@ class InstanceDevelopmentNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('operations/instance-dev-command','operations/instance-vp-command','operations/instance-source-command')
+        self.copy_behaviors('operations/instance-dev-command','operations/instance-vp-command','operations/instance-source-command','operations/task-repository')
         for family, files in {'instance-lifecycle':['source_profile.ts','source_identity.ts','destroy_inspection.ts','destroy_path.ts','destroy_refusal.ts'], 'instance-deploy':['vp_requirements.ts','dotenv.ts'], 'tools':['constraints.ts','composer-constraints.json'], 'node-bootstrap':['tool_setup_assets.ts']}.items():
             target=self.repo/'extensions/behaviors/operations'/family
             target.mkdir(parents=True,exist_ok=True)
@@ -31,7 +31,7 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.git('init', '--initial-branch=main')
         self.git('config', 'user.email', 'fixture@example.test'); self.git('config', 'user.name', 'Fixture')
         self.git('remote', 'add', 'origin', 'https://github.com/example/project.git')
-        (self.application / '.env.example').write_text('TEMPLATE="template-private-sentinel"\n')
+        (self.application / '.env.example').write_text('TEMPLATE="template-public-sentinel"\n')
         (self.application / 'package.json').write_text('{"name":"fixture"}')
         self.git('add', '.'); self.git('commit', '-qm', 'fixture')
         commit = self.git('rev-parse', 'HEAD').strip()
@@ -44,7 +44,7 @@ class InstanceDevelopmentNative(NativeTestCase):
         scp = self.repo / 'scp'
         scp.write_text('#!'+sys.executable+'\n'+SCP.replace('CONTROL',repr(str(self.control))).replace('HOST',repr(str(self.host)))); scp.chmod(0o700)
         self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-create.yaml').read_text())
-        self.workflow = json.loads(json.dumps(self.workflow).replace('/tmp/orbit-instance-',str(self.control)+'/stage-').replace('/tmp/orbit-source-',str(self.control)+'/source-'))
+        self.workflow = json.loads(json.dumps(self.workflow).replace('/tmp/orbit-instance-',str(self.control)+'/stage-').replace('/tmp/orbit-source-',str(self.control)+'/source-').replace('/tmp/orbit-create-phase-',str(self.control)+'/phase-'))
         for job in self.workflow['jobs']:
             job.pop('target')
             for step in job['steps']:
@@ -57,7 +57,8 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.cli('vault','put','orbit-control-inputs','environment',json.dumps({'values':{'STORED':'stored-private-sentinel'},'name':'Fixture','framework_key':None}))
         self.cli('vault','put','orbit-control-inputs','git',json.dumps({'github_token':None}))
         ssh = {'identity_file':str(self.identity),'target':{'host':'node.invalid','port':22,'user':pwd.getpwuid(os.geteuid()).pw_name,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
-        self.input = {'operation_id':71,'node_id':9,'kind':'instance.create','execution_secrets':{'environment':{'vault':'orbit-control-inputs','key':'environment'},'git_read':{'vault':'orbit-control-inputs','key':'git'}},'intent':{'instance_id':17,'instance_name':'proof','already_active':False,'ssh_execution':ssh,'source':{'root':str(self.host/'apps'),'checkout':str(self.application),'user':ssh['target']['user'],'repository':'https://github.com/example/project.git','prepare_id':'admitted-prepare','seed_repository':None},'resolve':{'instance_name':'proof','default_branch':'main','branch_override':'main','seed_commit':None,'network':True,'protocols':['https']},'checkout':str(self.application),'application':str(self.application),'project_type':'node-package','entry_point':'artisan','php_versions':['8.4'],'skip_profile':False,'retained_source':{'branch':'main','commit':commit,'php_version':None,'laravel':False},'setup_commands':[],'vp_setup':None,'environment_output':{'vault':'orbit-control-inputs','key':'instance-create-environment-result-71'},'execution_references_json':'{}'}}
+        self.cli('vault','put','orbit-control-inputs','setup',json.dumps({'steps':[]}))
+        self.input = {'operation_id':71,'node_id':9,'kind':'instance.create','execution_secrets':{'setup':{'vault':'orbit-control-inputs','key':'setup'},'environment':{'vault':'orbit-control-inputs','key':'environment'},'git_read':{'vault':'orbit-control-inputs','key':'git'}},'intent':{'instance_id':17,'instance_name':'proof','already_active':False,'ssh_execution':ssh,'source':{'root':str(self.host/'apps'),'checkout':str(self.application),'user':ssh['target']['user'],'repository':'https://github.com/example/project.git','prepare_id':'admitted-prepare','seed_repository':None},'resolve':{'instance_name':'proof','default_branch':'main','branch_override':'main','seed_commit':None,'network':True,'protocols':['https']},'checkout':str(self.application),'application':str(self.application),'project_type':'node-package','entry_point':'artisan','php_versions':['8.4'],'skip_profile':False,'retained_source':{'branch':'main','commit':commit,'php_version':None,'laravel':False},'phase_plan':{'prepare':{'seconds':10},'source':{'seconds':30},'environment':{'seconds':30},'runtime':{'seconds':240},'setup':{'seconds':1}},'setup_commands':[],'vp_setup':None,'environment_output':{'vault':'orbit-control-inputs','key':'instance-create-environment-result-71'},'execution_references_json':'{}'}}
 
     def git(self,*args):
         return subprocess.run(['git','-C',str(self.application),*args],check=True,capture_output=True,text=True).stdout
@@ -67,7 +68,7 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.run_id=run['id']
         history=json.loads(self.cli('workflow','history','get',self.run_id).stdout)
         raw=json.dumps(history)
-        self.assertNotIn('template-private-sentinel',raw);self.assertNotIn('stored-private-sentinel',raw)
+        self.assertNotIn('stored-private-sentinel',raw)
         return history
 
     def test_full_create_keeps_environment_private_and_empty_vp_setup_valid(self):
@@ -94,8 +95,9 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.failure.touch()
         history = self.run_create(False)
         steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
-        self.assertEqual(steps['source-checkout']['status'], 'failed')
-        self.assertEqual(steps['source-result']['status'], 'skipped')
+        self.assertEqual(steps['create-source']['status'], 'succeeded')
+        self.assertEqual(steps['create-source']['outputs']['exitCode'], 128)
+        self.assertEqual(steps['source-result']['status'], 'failed')
         self.assertNotIn('No such key', json.dumps(history))
         result = json.loads(steps['finish-result']['outputs']['stdout'])
         self.assertFalse(result['ready'])
@@ -111,7 +113,7 @@ class InstanceDevelopmentNative(NativeTestCase):
         history = self.run_create(False)
         steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
         self.assertEqual(steps['create-mint']['status'], 'failed')
-        self.assertEqual(steps['source-checkout']['status'], 'skipped')
+        self.assertEqual(steps['create-source']['status'], 'skipped')
         self.assertNotIn('No such key', json.dumps(history))
         self.assertFalse((self.application / '.env').exists())
 
@@ -140,22 +142,36 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.input['intent'].update(checkout=str(target), application=str(target))
         history = self.run_create(False)
         steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
-        self.assertEqual(steps['source-branch-accepted']['status'], 'failed')
-        self.assertEqual(steps['source-prepare-assets']['status'], 'skipped')
+        self.assertEqual(steps['create-prepare-accepted']['status'], 'failed')
+        self.assertEqual(steps['create-source']['status'], 'skipped')
         result = json.loads(steps['finish-result']['outputs']['stdout'])
         self.assertEqual(result['error_code'], 'instance.branch_in_use')
         self.assertFalse(target.exists())
         self.assertEqual(self.git('rev-parse', 'HEAD').strip(), commit)
         self.assertFalse((seed / '.env').exists())
 
+    def test_unsupported_profile_retains_exact_legacy_refusal(self):
+        (self.application/'composer.json').write_text('{"require":{"php":"^99.0"}}')
+        self.git('add','composer.json'); self.git('commit','-qm','unsupported PHP fixture')
+        self.input['intent']['retained_source']=None
+        self.input['intent']['resolve']['network']=False
+        history=self.run_create(False)
+        steps={step['name']:step for job in history['jobs'] for step in job['steps']}
+        result=json.loads(steps['finish-result']['outputs']['stdout'])
+        self.assertEqual(result['error_code'],'app-dev.php_version_unsupported')
+        self.assertEqual(steps['env-capture']['status'],'skipped')
+        self.assertFalse((self.application/'.env').exists())
+
     def setup_commands(self, commands):
         import hashlib
+        records=[]
         for index,command in enumerate(commands):
-            field='setup_'+str(index)
             digest=hashlib.sha256(command.encode()).hexdigest()
-            self.input['intent']['setup_commands'].append({'index':index,'name':'step-'+str(index),'command_digest':digest,'timeout_seconds':30,'secret_field':field})
-            self.input['execution_secrets'][field]={'vault':'orbit-control-inputs','key':field}
-            self.cli('vault','put','orbit-control-inputs',field,json.dumps({'command':command,'sha256':digest,'directory':str(self.application),'instance_id':17,'instance_name':'proof','seed_path':'','seed_commit':''}))
+            name='step-'+str(index)
+            self.input['intent']['setup_commands'].append({'index':index,'name':name,'command_digest':digest,'timeout_seconds':30})
+            records.append({'command':command,'sha256':digest,'directory':str(self.application),'instance_id':17,'instance_name':'proof','seed_path':'','seed_commit':'','name':name,'timeout_seconds':30})
+        self.input['intent']['phase_plan']['setup']['seconds']=max(1,len(records)*30)
+        self.cli('vault','put','orbit-control-inputs','setup',json.dumps({'steps':records}))
 
     def test_setup_commands_run_in_order_with_private_stdin(self):
         self.setup_commands(['printf private-setup-sentinel; touch .git/first','test -f .git/first; touch .git/second'])
@@ -274,7 +290,7 @@ class InstanceDestroyNative(InstanceDevelopmentNative):
 SSH = '''import os,shlex,subprocess,sys
 if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv: sys.exit(0)
 command=sys.argv[-1].replace(CONTROL,HOST)
-if os.path.isfile(FAILURE) and 'checkout' in shlex.split(command):
+if os.path.isfile(FAILURE) and '/create/source.py' in command:
     sys.stderr.write('fixture source checkout failure\\n');sys.exit(128)
 body=sys.stdin.buffer.read().replace(CONTROL.encode(),HOST.encode())
 if 'sudo' in command or b'Install only the admitted' in body: raise AssertionError('Unadmitted installer in no-VP fixture')
@@ -290,8 +306,7 @@ def local(value):
 source,destination=map(local,(source,destination))
 src,dst=pathlib.Path(source),pathlib.Path(destination)
 if src.is_dir():
-    dst.mkdir(parents=True,exist_ok=True)
-    target=dst/src.name if not source.endswith('/.') else dst
+    target=dst/src.name if dst.is_dir() and not source.endswith('/.') else dst
     shutil.copytree(src,target,dirs_exist_ok=True)
 else:
     if dst.is_dir(): dst=dst/src.name

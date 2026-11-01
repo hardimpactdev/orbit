@@ -11,6 +11,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -54,10 +55,23 @@ it('records one native root with source environment and setup steps before any N
         ->and($operation->input['participant_node_ids'])->toBe([$this->node->id])
         ->and($operation->input['direct_provisioning']['setup']['execution']['user'])->toBe('orbit')
         ->and($operation->input['direct_provisioning'])->not->toHaveKey('agent_sha256')
-        ->and($this->socket->sent)->toHaveCount(2)
-        ->and($this->socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
+        ->and($this->socket->sent)->toHaveCount(3)
+        ->and($this->socket->sent[2]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
         ->and(Route::query()->count())->toBe(0);
     Queue::assertNothingPushed();
+});
+
+it('captures the server phase budget once from stored setup timeouts and rejects a client budget', function (): void {
+    $step = ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'position' => 0,
+        'name' => 'prepare', 'command' => 'true', 'timeout_seconds' => 47]);
+    $this->postJson('/api/v1/instances', [...$this->payload, 'run_budget_seconds' => 1])->assertUnprocessable();
+    $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
+    $input = Operation::query()->findOrFail($id)->input;
+    $plan = $input['direct_provisioning']['phase_plan'];
+    expect($plan['source']['seconds'])->toBe(30)->and($plan['environment']['seconds'])->toBe(30)
+        ->and($plan['setup']['seconds'])->toBe(47)->and($input['run_budget_seconds'])->toBeGreaterThan(107);
+    $step->update(['timeout_seconds' => 1]);
+    expect(Operation::query()->findOrFail($id)->input['run_budget_seconds'])->toBe($input['run_budget_seconds']);
 });
 
 it('freezes the selected default source seed in the first native admission', function (): void {

@@ -3,6 +3,7 @@ name: operation-instance-create
 description: Development Instance create from209 through separately placed official SSH actions.
 vaults:
   - orbit-control-inputs
+queueTimeout: 15
 inputs:
   type: object
   properties:
@@ -46,6 +47,7 @@ jobs:
     steps:
       - name: prepare-admitted
         target: orbit-node-209
+        queueTimeout: 15
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: assert
@@ -63,6 +65,7 @@ jobs:
             run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
             env:
               ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-" + run.id }}'
+        queueTimeout: 15
         dependsOn:
           - step: prepare-admitted
             condition:
@@ -83,6 +86,7 @@ jobs:
           methodName: paths
           inputs:
             intent: '${{ inputs.intent }}'
+        queueTimeout: 15
       - name: create-mint
         target: orbit-node-209
         dependsOn:
@@ -104,18 +108,40 @@ jobs:
               ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
-      - name: source-worktrees
+        queueTimeout: 15
+      - name: create-phase-assets
         target: orbit-node-209
-        guard: >-
-          ${{ steps.exists(key, steps[key].status == "failed") || (!(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null)
-          || (inputs.intent.retained_source != null)) }}
+        dependsOn:
+          - step: create-mint
+            condition:
+              type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-create-3-" + run.id }}'
+          methodName: create_assets
+          inputs:
+            intent: '${{ inputs.intent }}'
+        queueTimeout: 15
+      - name: create-phase-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: create-phase-assets
+            condition:
+              type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-0-" + run.id }}'
-          methodName: exec
+          behaviorName: '${{ "ids-create-4-" + run.id }}'
+          methodName: copy
           globalArgs: &ref_2
-            name: '${{ "source-" + run.id }}'
+            name: '${{ "id-create-" + run.id }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -128,662 +154,100 @@ jobs:
                   hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
             hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-C'
-              - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
-              - worktree
-              - list
-              - '--porcelain'
-        dependsOn:
-          - step: create-mint
-            condition:
-              type: succeeded
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-      - name: source-branch-available
-        target: orbit-node-209
-        dependsOn:
-          - step: source-worktrees
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-1-" + run.id }}'
-          methodName: branchAvailable
-          inputs:
-            resolve: '${{ inputs.intent.resolve }}'
-            checkout: '${{ inputs.intent.source.checkout }}'
-            worktrees: >-
-              ${{ inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null && !(inputs.intent.retained_source != null) ?
-              steps["source-worktrees"].outputs : {"stdout":""} }}
-      - name: source-branch-accepted
-        target: orbit-node-209
-        dependsOn:
-          - step: source-branch-available
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: assert
-          expr: 'steps["source-branch-available"].outputs.available'
-          severity: high
-          message: instance.branch_in_use
-      - name: source-prepare-assets
-        target: orbit-node-209
-        dependsOn:
-          - step: source-branch-accepted
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-3-" + run.id }}'
-          methodName: read
-          inputs:
-            action: prepare_directory
-            input: '${{ inputs.intent }}'
-      - name: source-prepare-read
-        target: orbit-node-209
-        dependsOn:
-          - step: source-prepare-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-4-" + run.id }}'
-          methodName: script
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-prepare-assets"].outputs.script_body }}'
-      - name: source-prepared
-        target: orbit-node-209
-        dependsOn:
-          - step: source-prepare-read
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-5-" + run.id }}'
-          methodName: decode
-          inputs:
-            observation: '${{ steps["source-prepare-read"].outputs }}'
-      - name: source-init
-        target: orbit-node-209
-        dependsOn:
-          - step: source-prepared
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: >-
-          ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || (inputs.intent.source.seed_repository != null &&
-          inputs.intent.resolve.seed_commit != null)) }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-6-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - init
-              - '--quiet'
-      - name: source-worktree
-        target: orbit-node-209
-        dependsOn:
-          - step: source-init
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: >-
-          ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || !(inputs.intent.source.seed_repository != null
-          && inputs.intent.resolve.seed_commit != null)) }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-7-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-C'
-              - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
-              - worktree
-              - add
-              - '--no-checkout'
-              - '--detach'
-              - '--'
-              - '${{ inputs.intent.source.checkout }}'
-              - '${{ inputs.intent.resolve.seed_commit == null ? "HEAD" : inputs.intent.resolve.seed_commit }}'
-      - name: source-origin-assets
-        target: orbit-node-209
-        dependsOn:
-          - step: source-worktree
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-8-" + run.id }}'
-          methodName: read
-          inputs:
-            action: origin
-            input:
-              checkout: '${{ inputs.intent.source.checkout }}'
-              allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
-      - name: source-origin-read
-        target: orbit-node-209
-        dependsOn:
-          - step: source-origin-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-9-" + run.id }}'
-          methodName: script
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-origin-assets"].outputs.script_body }}'
-      - name: source-origin-proof
-        target: orbit-node-209
-        dependsOn:
-          - step: source-origin-read
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-10-" + run.id }}'
-          methodName: origin
-          inputs:
-            expected: '${{ inputs.intent.source.repository }}'
-            observation: '${{ steps["source-origin-read"].outputs }}'
-            allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
-      - name: source-origin-configure
-        target: orbit-node-209
-        dependsOn:
-          - step: source-origin-proof
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") || (steps["source-origin-read"].outputs.stdout != "") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-11-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - config
-              - remote.origin.url
-              - '${{ inputs.intent.source.repository }}'
-      - name: source-git-directory
-        target: orbit-node-209
-        dependsOn:
-          - step: source-origin-configure
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-12-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - rev-parse
-              - '--absolute-git-dir'
-      - name: source-marker-assets
-        target: orbit-node-209
-        dependsOn:
-          - step: source-git-directory
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-13-" + run.id }}'
-          methodName: read
-          inputs:
-            action: mark_source
-            input:
-              checkout: '${{ inputs.intent.source.checkout }}'
-              prepare_id: '${{ inputs.intent.source.prepare_id }}'
-              git_directory: '${{ steps["source-git-directory"].outputs.stdout }}'
-      - name: source-marker-read
-        target: orbit-node-209
-        dependsOn:
-          - step: source-marker-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-14-" + run.id }}'
-          methodName: script
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-marker-assets"].outputs.script_body }}'
-      - name: source-paths
-        target: orbit-node-209
-        dependsOn:
-          - step: source-marker-read
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-15-" + run.id }}'
-          methodName: paths
-          inputs:
-            intent: '${{ inputs.intent }}'
-      - name: source-scripts-directory
-        target: orbit-node-209
-        dependsOn:
-          - step: source-paths
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-16-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/mkdir
-              - '-p'
-              - '${{ "/tmp/orbit-source-" + run.id + "-source" }}'
-      - name: source-scripts-copy
-        target: orbit-node-209
-        dependsOn:
-          - step: source-scripts-directory
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "source-copy-" + run.id }}'
-          methodName: copy
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            src: '${{ steps["source-paths"].outputs.directory }}'
-            dst: '${{ "/tmp/orbit-source-" + run.id + "-source/" }}'
-            recursive: true
+            src: '${{ steps["create-phase-assets"].outputs.directory }}'
+            dst: '${{ "/tmp/orbit-create-phase-" + run.id }}'
             direction: to
-      - name: source-fetch
+            recursive: true
+        queueTimeout: 15
+      - name: create-prepare
         target: orbit-node-209
         dependsOn:
-          - step: source-scripts-copy
+          - step: create-phase-copy
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") || (!inputs.intent.resolve.network || (inputs.intent.retained_source != null)) }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-18-" + run.id }}'
+          behaviorName: '${{ "ids-create-5-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
             hosts: 'name:target'
+            okExitCodes: any
             argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.prepare.seconds) + ''s'' }}'
               - /usr/bin/python3
               - '-B'
-              - '${{ "/tmp/orbit-source-" + run.id + "-source/scripts/fetch.py" }}'
-              - '${{ inputs.intent.source.checkout }}'
-              - '${{ inputs.intent.source.repository }}'
-            stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key) }}'
-      - name: source-refs
+              - '${{ "/tmp/orbit-create-phase-" + run.id + "/create/prepare.py" }}'
+              - '${{ steps["create-phase-assets"].outputs.intent_json }}'
+        queueTimeout: 15
+      - name: create-prepare-accepted
         target: orbit-node-209
         dependsOn:
-          - step: source-fetch
+          - step: create-prepare
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
+        task:
+          type: assert
+          expr: 'steps["create-prepare"].outputs.exitCode == 0'
+          severity: high
+          message: Instance preparation refused.
+        queueTimeout: 15
+      - name: create-source
+        target: orbit-node-209
+        dependsOn:
+          - step: create-prepare-accepted
+            condition:
+              type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-19-" + run.id }}'
+          behaviorName: '${{ "ids-create-7-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
             hosts: 'name:target'
+            okExitCodes: any
             argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - for-each-ref
-              - '--format=%(refname)'
-              - refs/heads
-              - refs/remotes/origin
-      - name: source-selected
-        target: orbit-node-209
-        dependsOn:
-          - step: source-refs
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-20-" + run.id }}'
-          methodName: select
-          inputs:
-            resolve: '${{ inputs.intent.resolve }}'
-            refs: '${{ steps["source-refs"].outputs }}'
-      - name: source-checkout
-        target: orbit-node-209
-        dependsOn:
-          - step: source-selected
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") || (inputs.intent.retained_source != null) }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-21-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - checkout
-              - '--quiet'
-              - '--no-track'
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.source.seconds) + ''s'' }}'
+              - /usr/bin/python3
               - '-B'
-              - '${{ steps["source-selected"].outputs.branch }}'
-              - '${{ steps["source-selected"].outputs.reference }}'
-      - name: source-commit
-        target: orbit-node-209
-        dependsOn:
-          - step: source-checkout
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-22-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - rev-parse
-              - '--verify'
-              - 'HEAD^{commit}'
-      - name: source-profile-assets
-        target: orbit-node-209
-        dependsOn:
-          - step: source-commit
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-23-" + run.id }}'
-          methodName: read
-          inputs:
-            action: profile
-            input: '${{ inputs.intent }}'
-      - name: source-profile-read
-        target: orbit-node-209
-        dependsOn:
-          - step: source-profile-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-24-" + run.id }}'
-          methodName: script
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-profile-assets"].outputs.script_body }}'
+              - '${{ "/tmp/orbit-create-phase-" + run.id + "/create/source.py" }}'
+              - '${{ steps["create-phase-assets"].outputs.intent_json }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key) }}'
+        queueTimeout: 15
       - name: source-result
         target: orbit-node-209
         dependsOn:
-          - step: source-profile-read
+          - step: create-source
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: succeeded
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-25-" + run.id }}'
-          methodName: provisioningResult
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-source-0-" + run.id }}'
+          methodName: source_result
           inputs:
             intent: '${{ inputs.intent }}'
-            profile: '${{ steps["source-profile-read"].outputs }}'
-            branch: '${{ steps["source-selected"].outputs.branch }}'
-            commit: '${{ steps["source-commit"].outputs }}'
-      - name: env-template-asset
+            observation: '${{ steps["create-source"].outputs }}'
+        queueTimeout: 15
+      - name: source-accepted
         target: orbit-node-209
         dependsOn:
           - step: source-result
@@ -793,19 +257,37 @@ jobs:
             condition:
               type: succeeded
         task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-env-0-" + run.id }}'
-          methodName: read
-          inputs:
-            action: template
-            input:
-              application: '${{ inputs.intent.application }}'
-              destination: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
-      - name: env-template
+          type: assert
+          expr: 'steps["source-result"].outputs.ready == true'
+          severity: high
+          message: Instance source refused.
+        queueTimeout: 15
+      - name: env-capture
         target: orbit-node-209
         dependsOn:
-          - step: env-template-asset
+          - step: source-accepted
+            condition:
+              type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-create-environment'
+          behaviorName: '${{ "idm-env-0-" + run.id }}'
+          methodName: capture
+          inputs:
+            template: '${{ steps["source-result"].outputs.template }}'
+            env:
+              ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
+            profile: '${{ steps["source-result"].outputs }}'
+            reference: '${{ inputs.intent.environment_output }}'
+            directory: '${{ inputs.intent.application }}'
+        queueTimeout: 15
+      - name: env-write
+        target: orbit-node-209
+        dependsOn:
+          - step: env-capture
             condition:
               type: succeeded
           - step: prepare-admitted
@@ -815,8 +297,8 @@ jobs:
           type: behavior
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-env-1-" + run.id }}'
-          methodName: script
-          globalArgs: &ref_3
+          methodName: exec
+          globalArgs:
             name: '${{ "id-env-" + run.id }}'
             transport:
               kind: ssh
@@ -830,108 +312,15 @@ jobs:
                   hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
             hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["env-template-asset"].outputs.script_body }}'
-      - name: env-copy
-        target: orbit-node-209
-        dependsOn:
-          - step: env-template
-            condition:
-              type: succeeded
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-env-2-" + run.id }}'
-          methodName: copy
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            src: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
-            dst: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
-            direction: from
-      - name: env-capture
-        target: orbit-node-209
-        dependsOn:
-          - step: env-copy
-            condition:
-              type: succeeded
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-create-environment'
-          behaviorName: '${{ "idm-env-3-" + run.id }}'
-          methodName: capture
-          inputs:
-            path: '${{ "/tmp/orbit-instance-" + run.id + "/template" }}'
-            env:
-              ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
-            profile: '${{ steps["source-result"].outputs }}'
-            reference: '${{ inputs.intent.environment_output }}'
-            directory: '${{ inputs.intent.application }}'
-      - name: env-write-assets
-        target: orbit-node-209
-        dependsOn:
-          - step: env-capture
-            condition:
-              type: succeeded
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-env-4-" + run.id }}'
-          methodName: read
-          inputs:
-            action: write_environment
-            input: {}
-      - name: env-scripts-copy
-        target: orbit-node-209
-        dependsOn:
-          - step: env-write-assets
-            condition:
-              type: succeeded
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-env-5-" + run.id }}'
-          methodName: copy
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            src: '${{ steps["env-write-assets"].outputs.script_file }}'
-            dst: '${{ "/tmp/orbit-instance-" + run.id + "/write_environment.py" }}'
-            direction: to
-      - name: env-write
-        target: orbit-node-209
-        dependsOn:
-          - step: env-scripts-copy
-            condition:
-              type: succeeded
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-env-6-" + run.id }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
             argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.environment.seconds) + ''s'' }}'
               - /usr/bin/python3
               - '-B'
-              - '${{ "/tmp/orbit-instance-" + run.id + "/write_environment.py" }}'
+              - '${{ "/tmp/orbit-create-phase-" + run.id + "/create/environment.py" }}'
             stdin: '${{ vault.get(inputs.intent.environment_output.vault,inputs.intent.environment_output.key) }}'
+        queueTimeout: 15
   - name: vp-capture
     target: orbit-node-209
     dependsOn:
@@ -941,6 +330,7 @@ jobs:
     steps:
       - name: vp-capture-admitted
         target: orbit-node-209
+        queueTimeout: 15
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: assert
@@ -958,6 +348,7 @@ jobs:
             run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
             env:
               ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-"+run.id }}'
+        queueTimeout: 15
         dependsOn:
           - step: vp-capture-admitted
             condition:
@@ -981,6 +372,7 @@ jobs:
             input:
               application: '${{ inputs.intent.application }}'
               destination: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+        queueTimeout: 15
       - name: vp-project
         target: orbit-node-209
         dependsOn:
@@ -994,8 +386,8 @@ jobs:
           type: behavior
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-vp-2-" + run.id }}'
-          methodName: script
-          globalArgs: &ref_4
+          methodName: exec
+          globalArgs: &ref_3
             name: '${{ "id-vp-" + run.id }}'
             transport:
               kind: ssh
@@ -1009,8 +401,15 @@ jobs:
                   hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
             hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["vp-project-asset"].outputs.script_body }}'
+            argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.runtime.seconds) + ''s'' }}'
+              - /usr/bin/python3
+              - '-c'
+              - '${{ steps["vp-project-asset"].outputs.script_body }}'
+            timeoutSec: '${{ inputs.intent.phase_plan.runtime.seconds + 2 }}'
+        queueTimeout: 15
       - name: vp-private-copy
         target: orbit-node-209
         dependsOn:
@@ -1025,12 +424,14 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-vp-3-" + run.id }}'
           methodName: copy
-          globalArgs: *ref_4
+          globalArgs: *ref_3
           inputs:
             hosts: 'name:target'
             src: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
             dst: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
             direction: from
+            timeoutSec: '${{ inputs.intent.phase_plan.runtime.seconds + 2 }}'
+        queueTimeout: 15
       - name: vp-requirements
         target: orbit-node-209
         dependsOn:
@@ -1047,6 +448,7 @@ jobs:
           methodName: capture
           inputs:
             path: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+        queueTimeout: 15
   - name: vp-install
     target: orbit-node-209
     dependsOn:
@@ -1056,6 +458,7 @@ jobs:
     steps:
       - name: vp-install-admitted
         target: orbit-node-209
+        queueTimeout: 15
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: assert
@@ -1076,6 +479,7 @@ jobs:
           in: >-
             ${{ inputs.intent.already_active ? [] : (inputs.intent.already_active ? [] : (steps["vp-requirements"].outputs.manager_required ?
             (steps["vp-requirements"].outputs.runtime == null ? [] : [steps["vp-requirements"].outputs.runtime]) : [])) }}
+        queueTimeout: 15
         dependsOn:
           - step: vp-install-admitted
             condition:
@@ -1093,8 +497,8 @@ jobs:
           type: behavior
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-vp-1-" + run.id + "-" + string(self._index) }}'
-          methodName: script
-          globalArgs: &ref_5
+          methodName: exec
+          globalArgs: &ref_4
             name: '${{ "id-vp-" + run.id }}'
             transport:
               kind: ssh
@@ -1108,10 +512,17 @@ jobs:
                   hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
             hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["vp-manager-assets-0"].outputs.manager_body }}'
             sudo: true
+            argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.runtime.seconds) + ''s'' }}'
+              - /usr/bin/python3
+              - '-c'
+              - '${{ steps["vp-manager-assets-0"].outputs.manager_body }}'
+            timeoutSec: '${{ inputs.intent.phase_plan.runtime.seconds + 2 }}'
         forEach: *ref_0
+        queueTimeout: 15
       - name: vp-manager-ready
         target: orbit-node-209
         dependsOn:
@@ -1131,6 +542,7 @@ jobs:
             steps["vp-manager-0"].status == "succeeded")
           severity: high
           message: The admitted VP manager was not prepared.
+        queueTimeout: 15
       - name: vp-cli
         target: orbit-node-209
         dependsOn:
@@ -1145,19 +557,24 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-vp-3-" + run.id + "-" + string(self._index) }}'
           methodName: exec
-          globalArgs: *ref_5
+          globalArgs: *ref_4
           inputs:
             hosts: 'name:target'
             argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.runtime.seconds) + ''s'' }}'
               - '${{ self.runtime.store+"/bin/vp" }}'
               - '--version'
-            env: &ref_7
+            env: &ref_6
               VP_HOME: '${{ self.runtime.store }}'
+            timeoutSec: '${{ inputs.intent.phase_plan.runtime.seconds + 2 }}'
         forEach: &ref_1
           item: runtime
           in: >-
             ${{ inputs.intent.already_active ? [] : (inputs.intent.already_active ? [] : (inputs.intent.already_active ? [] : (inputs.intent.already_active ? []
             : (inputs.intent.already_active ? [] : (steps["vp-requirements"].outputs.runtime == null ? [] : [steps["vp-requirements"].outputs.runtime]))))) }}
+        queueTimeout: 15
       - name: vp-cli-ready
         target: orbit-node-209
         dependsOn:
@@ -1176,6 +593,7 @@ jobs:
             runtime: '${{ self.runtime }}'
             observation: '${{ steps["vp-cli-0"].outputs }}'
         forEach: *ref_1
+        queueTimeout: 15
       - name: vp-install
         target: orbit-node-209
         dependsOn:
@@ -1190,10 +608,13 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-vp-5-" + run.id + "-" + string(self._index) }}'
           methodName: exec
-          globalArgs: *ref_5
+          globalArgs: *ref_4
           inputs:
             hosts: 'name:target'
             argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.runtime.seconds) + ''s'' }}'
               - '${{ self.runtime.store+"/bin/vp" }}'
               - '-C'
               - '${{ inputs.intent.application }}'
@@ -1204,8 +625,10 @@ jobs:
                 ${{
                 self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)
                 }}
-            env: *ref_7
+            env: *ref_6
+            timeoutSec: '${{ inputs.intent.phase_plan.runtime.seconds + 2 }}'
         forEach: *ref_1
+        queueTimeout: 15
       - name: vp-inventory
         target: orbit-node-209
         dependsOn:
@@ -1220,18 +643,23 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-vp-6-" + run.id + "-" + string(self._index) }}'
           methodName: exec
-          globalArgs: *ref_5
+          globalArgs: *ref_4
           inputs:
             hosts: 'name:target'
             argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.runtime.seconds) + ''s'' }}'
               - '${{ self.runtime.store+"/bin/vp" }}'
               - '-C'
               - '${{ inputs.intent.application }}'
               - env
               - list
               - '--json'
-            env: *ref_7
+            env: *ref_6
+            timeoutSec: '${{ inputs.intent.phase_plan.runtime.seconds + 2 }}'
         forEach: *ref_1
+        queueTimeout: 15
       - name: vp-verify
         target: orbit-node-209
         dependsOn:
@@ -1250,6 +678,7 @@ jobs:
             runtime: '${{ self.runtime }}'
             inventory: '${{ steps["vp-inventory-0"].outputs }}'
         forEach: *ref_1
+        queueTimeout: 15
       - name: vp-result
         target: orbit-node-209
         dependsOn:
@@ -1288,6 +717,7 @@ jobs:
           inputs:
             name: vp
             steps: '${{ steps }}'
+        queueTimeout: 15
   - name: create
     target: orbit-node-209
     dependsOn:
@@ -1300,6 +730,7 @@ jobs:
     steps:
       - name: create-admitted
         target: orbit-node-209
+        queueTimeout: 15
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: assert
@@ -1313,11 +744,12 @@ jobs:
           expr: '"vp-result" in steps && steps["vp-result"].status == "succeeded" && steps["vp-result"].outputs.ready == true'
           severity: high
           message: Instance preparation did not finish.
+        queueTimeout: 15
         dependsOn:
           - step: create-admitted
             condition:
               type: succeeded
-      - name: finish-setup-assets
+      - name: finish-environment-library
         target: orbit-node-209
         dependsOn:
           - step: finish-prepared
@@ -1328,16 +760,15 @@ jobs:
               type: succeeded
         task:
           type: behavior
-          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorType: '@nckrtl/task-repository-assets'
           behaviorName: '${{ "idm-finish-1-" + run.id }}'
-          methodName: read
-          inputs:
-            action: run_project_step
-            input: {}
-      - name: finish-setup-copy
+          methodName: environment_script
+          inputs: {}
+        queueTimeout: 15
+      - name: finish-environment-library-copy
         target: orbit-node-209
         dependsOn:
-          - step: finish-setup-assets
+          - step: finish-environment-library
             condition:
               type: succeeded
           - step: create-admitted
@@ -1348,7 +779,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "ids-finish-2-" + run.id }}'
           methodName: copy
-          globalArgs: &ref_6
+          globalArgs: &ref_5
             name: '${{ "id-finish-" + run.id }}'
             transport:
               kind: ssh
@@ -1362,13 +793,14 @@ jobs:
                   hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
             hosts: 'name:target'
-            src: '${{ steps["finish-setup-assets"].outputs.script_file }}'
-            dst: '${{ "/tmp/orbit-instance-" + run.id + "/run_project_step.py" }}'
+            src: '${{ steps["finish-environment-library"].outputs.script_file }}'
+            dst: '${{ "/tmp/orbit-create-phase-" + run.id + "/scripts/project_environment.py" }}'
             direction: to
-      - name: finish-setup-0
+        queueTimeout: 15
+      - name: finish-setup
         target: orbit-node-209
         dependsOn:
-          - step: finish-setup-copy
+          - step: finish-environment-library-copy
             condition:
               type: succeeded
           - step: create-admitted
@@ -1377,1069 +809,47 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-3-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-finish-3-" + run.id }}'
           methodName: exec
-          globalArgs: *ref_6
+          globalArgs: *ref_5
           inputs:
             hosts: 'name:target'
             argv:
+              - /usr/bin/timeout
+              - '--kill-after=1s'
+              - '${{ string(inputs.intent.phase_plan.setup.seconds + 1) + ''s'' }}'
               - /usr/bin/python3
               - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
+              - '${{ "/tmp/orbit-create-phase-"+run.id+"/create/setup.py" }}'
+              - '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
             okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==0)) }}'
-      - name: finish-setup-1
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-0
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-4-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-0-0" in steps && steps["finish-setup-0-0"].status == "succeeded" && steps["finish-setup-0-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==1)) }}'
-      - name: finish-setup-2
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-1
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-5-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-1-0" in steps && steps["finish-setup-1-0"].status == "succeeded" && steps["finish-setup-1-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==2)) }}'
-      - name: finish-setup-3
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-2
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-6-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-2-0" in steps && steps["finish-setup-2-0"].status == "succeeded" && steps["finish-setup-2-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==3)) }}'
-      - name: finish-setup-4
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-3
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-7-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-3-0" in steps && steps["finish-setup-3-0"].status == "succeeded" && steps["finish-setup-3-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==4)) }}'
-      - name: finish-setup-5
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-4
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-8-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-4-0" in steps && steps["finish-setup-4-0"].status == "succeeded" && steps["finish-setup-4-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==5)) }}'
-      - name: finish-setup-6
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-5
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-9-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-5-0" in steps && steps["finish-setup-5-0"].status == "succeeded" && steps["finish-setup-5-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==6)) }}'
-      - name: finish-setup-7
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-6
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-10-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-6-0" in steps && steps["finish-setup-6-0"].status == "succeeded" && steps["finish-setup-6-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==7)) }}'
-      - name: finish-setup-8
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-7
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-11-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-7-0" in steps && steps["finish-setup-7-0"].status == "succeeded" && steps["finish-setup-7-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==8)) }}'
-      - name: finish-setup-9
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-8
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-12-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-8-0" in steps && steps["finish-setup-8-0"].status == "succeeded" && steps["finish-setup-8-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==9)) }}'
-      - name: finish-setup-10
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-9
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-13-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-9-0" in steps && steps["finish-setup-9-0"].status == "succeeded" && steps["finish-setup-9-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==10)) }}'
-      - name: finish-setup-11
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-10
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-14-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-10-0" in steps && steps["finish-setup-10-0"].status == "succeeded" && steps["finish-setup-10-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==11)) }}'
-      - name: finish-setup-12
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-11
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-15-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-11-0" in steps && steps["finish-setup-11-0"].status == "succeeded" && steps["finish-setup-11-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==12)) }}'
-      - name: finish-setup-13
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-12
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-16-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-12-0" in steps && steps["finish-setup-12-0"].status == "succeeded" && steps["finish-setup-12-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==13)) }}'
-      - name: finish-setup-14
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-13
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-17-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-13-0" in steps && steps["finish-setup-13-0"].status == "succeeded" && steps["finish-setup-13-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==14)) }}'
-      - name: finish-setup-15
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-14
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-18-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-14-0" in steps && steps["finish-setup-14-0"].status == "succeeded" && steps["finish-setup-14-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==15)) }}'
-      - name: finish-setup-16
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-15
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-19-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-15-0" in steps && steps["finish-setup-15-0"].status == "succeeded" && steps["finish-setup-15-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==16)) }}'
-      - name: finish-setup-17
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-16
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-20-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-16-0" in steps && steps["finish-setup-16-0"].status == "succeeded" && steps["finish-setup-16-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==17)) }}'
-      - name: finish-setup-18
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-17
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-21-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-17-0" in steps && steps["finish-setup-17-0"].status == "succeeded" && steps["finish-setup-17-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==18)) }}'
-      - name: finish-setup-19
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-18
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-22-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-18-0" in steps && steps["finish-setup-18-0"].status == "succeeded" && steps["finish-setup-18-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==19)) }}'
-      - name: finish-setup-20
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-19
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-23-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-19-0" in steps && steps["finish-setup-19-0"].status == "succeeded" && steps["finish-setup-19-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==20)) }}'
-      - name: finish-setup-21
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-20
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-24-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-20-0" in steps && steps["finish-setup-20-0"].status == "succeeded" && steps["finish-setup-20-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==21)) }}'
-      - name: finish-setup-22
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-21
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-25-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-21-0" in steps && steps["finish-setup-21-0"].status == "succeeded" && steps["finish-setup-21-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==22)) }}'
-      - name: finish-setup-23
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-22
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-26-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-22-0" in steps && steps["finish-setup-22-0"].status == "succeeded" && steps["finish-setup-22-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==23)) }}'
-      - name: finish-setup-24
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-23
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-27-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-23-0" in steps && steps["finish-setup-23-0"].status == "succeeded" && steps["finish-setup-23-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==24)) }}'
-      - name: finish-setup-25
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-24
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-28-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-24-0" in steps && steps["finish-setup-24-0"].status == "succeeded" && steps["finish-setup-24-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==25)) }}'
-      - name: finish-setup-26
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-25
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-29-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-25-0" in steps && steps["finish-setup-25-0"].status == "succeeded" && steps["finish-setup-25-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==26)) }}'
-      - name: finish-setup-27
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-26
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-30-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-26-0" in steps && steps["finish-setup-26-0"].status == "succeeded" && steps["finish-setup-26-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==27)) }}'
-      - name: finish-setup-28
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-27
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-31-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-27-0" in steps && steps["finish-setup-27-0"].status == "succeeded" && steps["finish-setup-27-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==28)) }}'
-      - name: finish-setup-29
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-28
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-32-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-28-0" in steps && steps["finish-setup-28-0"].status == "succeeded" && steps["finish-setup-28-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==29)) }}'
-      - name: finish-setup-30
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-29
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-33-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-29-0" in steps && steps["finish-setup-29-0"].status == "succeeded" && steps["finish-setup-29-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==30)) }}'
-      - name: finish-setup-31
-        target: orbit-node-209
-        dependsOn:
-          - step: finish-setup-30
-            condition:
-              type: succeeded
-          - step: create-admitted
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-finish-34-" + run.id + "-" + string(self._index) }}'
-          methodName: exec
-          globalArgs: *ref_6
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-instance-"+run.id+"/run_project_step.py" }}'
-            timeoutSec: '${{ self.command.timeout_seconds }}'
-            okExitCodes: any
-            env:
-              VP_HOME: '${{ steps["vp-result"].outputs.runtime == null ? "" : steps["vp-result"].outputs.runtime.store }}'
-            stdin: '${{ vault.get(inputs.execution_secrets[self.command.secret_field].vault,inputs.execution_secrets[self.command.secret_field].key) }}'
-        guard: '${{ !("finish-setup-30-0" in steps && steps["finish-setup-30-0"].status == "succeeded" && steps["finish-setup-30-0"].outputs.exitCode == 0) }}'
-        forEach:
-          item: command
-          in: '${{ inputs.intent.already_active ? [] : (inputs.intent.setup_commands.filter(command,command.index==31)) }}'
+            timeoutSec: '${{ inputs.intent.phase_plan.setup.seconds + 2 }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.setup.vault,inputs.execution_secrets.setup.key) }}'
+        queueTimeout: 15
       - name: finish-result
         target: orbit-node-209
         dependsOn:
           - step: finish-prepared
             condition:
               type: always
-          - step: finish-setup-assets
+          - step: finish-environment-library
             condition:
               type: always
-          - step: finish-setup-copy
+          - step: finish-environment-library-copy
             condition:
               type: always
-          - step: finish-setup-0
-            condition:
-              type: always
-          - step: finish-setup-1
-            condition:
-              type: always
-          - step: finish-setup-2
-            condition:
-              type: always
-          - step: finish-setup-3
-            condition:
-              type: always
-          - step: finish-setup-4
-            condition:
-              type: always
-          - step: finish-setup-5
-            condition:
-              type: always
-          - step: finish-setup-6
-            condition:
-              type: always
-          - step: finish-setup-7
-            condition:
-              type: always
-          - step: finish-setup-8
-            condition:
-              type: always
-          - step: finish-setup-9
-            condition:
-              type: always
-          - step: finish-setup-10
-            condition:
-              type: always
-          - step: finish-setup-11
-            condition:
-              type: always
-          - step: finish-setup-12
-            condition:
-              type: always
-          - step: finish-setup-13
-            condition:
-              type: always
-          - step: finish-setup-14
-            condition:
-              type: always
-          - step: finish-setup-15
-            condition:
-              type: always
-          - step: finish-setup-16
-            condition:
-              type: always
-          - step: finish-setup-17
-            condition:
-              type: always
-          - step: finish-setup-18
-            condition:
-              type: always
-          - step: finish-setup-19
-            condition:
-              type: always
-          - step: finish-setup-20
-            condition:
-              type: always
-          - step: finish-setup-21
-            condition:
-              type: always
-          - step: finish-setup-22
-            condition:
-              type: always
-          - step: finish-setup-23
-            condition:
-              type: always
-          - step: finish-setup-24
-            condition:
-              type: always
-          - step: finish-setup-25
-            condition:
-              type: always
-          - step: finish-setup-26
-            condition:
-              type: always
-          - step: finish-setup-27
-            condition:
-              type: always
-          - step: finish-setup-28
-            condition:
-              type: always
-          - step: finish-setup-29
-            condition:
-              type: always
-          - step: finish-setup-30
-            condition:
-              type: always
-          - step: finish-setup-31
+          - step: finish-setup
             condition:
               type: always
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-finish-35-" + run.id }}'
+          behaviorName: '${{ "idm-finish-4-" + run.id }}'
           methodName: create_result
           inputs:
             intent: '${{ inputs.intent }}'
             steps: '${{ steps }}'
+        queueTimeout: 15
       - name: accepted
         target: orbit-node-209
         dependsOn:
@@ -2451,3 +861,4 @@ jobs:
           expr: 'steps["finish-result"].outputs.ready == true'
           severity: high
           message: The development Instance action did not complete.
+        queueTimeout: 15

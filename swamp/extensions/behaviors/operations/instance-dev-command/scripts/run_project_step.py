@@ -21,15 +21,24 @@ def command_input(value):
     if directory.is_symlink() or not directory.is_dir() or directory.stat().st_uid != os.geteuid():
         raise ValueError('instance.source_ownership_mismatch')
     account = pwd.getpwuid(os.geteuid())
-    environment = dict(load_project_environment(directory),
+    environment_directory = Path(value.get('environment_directory', directory))
+    if not environment_directory.is_relative_to(directory) or any(
+            path.is_symlink() for path in (environment_directory, *environment_directory.parents)
+            if path == directory or directory in path.parents):
+        raise ValueError('instance.source_ownership_mismatch')
+    environment = dict(load_project_environment(environment_directory),
                        HOME=account.pw_dir, USER=account.pw_name, LOGNAME=account.pw_name,
                        PATH='/usr/local/bin:/usr/bin:/bin',
                        ORBIT_INSTANCE_ID=str(value['instance_id']), ORBIT_INSTANCE_NAME=value['instance_name'],
                        ORBIT_SEED_PATH=value['seed_path'], ORBIT_SEED_COMMIT=value['seed_commit'])
-    for candidate in [Path('/opt/orbit/vite-plus'), Path(account.pw_dir) / '.vite-plus',
-                      Path(account.pw_dir) / '.local/share/vite-plus']:
+    requested = value.get('vp_home')
+    candidates = [Path(requested)] if requested else [Path('/opt/orbit/vite-plus'), Path(account.pw_dir) / '.vite-plus',
+                                                     Path(account.pw_dir) / '.local/share/vite-plus']
+    for candidate in candidates:
         binary = candidate / 'bin/vp'
         if not binary.exists():
+            if requested:
+                raise ValueError('tool.vp_scope_conflict')
             continue
         for path in [candidate, binary]:
             info = path.lstat()

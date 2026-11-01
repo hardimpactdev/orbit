@@ -2,6 +2,7 @@
 import json
 import os
 import pwd
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -56,4 +57,11 @@ def prepare(value):
 
 
 if __name__ == "__main__":
-    print(json.dumps(prepare(json.loads(sys.argv[1]))))
+    try:
+        print(json.dumps(prepare(json.loads(sys.argv[1]))))
+    except ValueError as error:
+        code = str(error)
+        if not re.fullmatch(r"(?:instance|env|app-dev)\.[a-z_]+", code):
+            code = "instance.create_source_failed"
+        print(json.dumps({"ready": False, "error_code": code}))
+        sys.exit(1)

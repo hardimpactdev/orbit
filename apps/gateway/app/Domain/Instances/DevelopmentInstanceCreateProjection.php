@@ -11,7 +11,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\VpEnvironment;
-use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -47,10 +46,9 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                         'selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel'],
                         ...(($operation->input['seed_commit'] ?? null) !== null ? ['source_layout' => InstanceSourceLayout::Worktree] : [])]);
                     if (isset($result['environment_seeded_keys'])) {
-                        $reference = NativeDevelopmentInstanceInput::environmentOutput($operation);
-                        $private = ValidatedData::object(json_decode(app(SwampVaultExecutionCopy::class)->readSecret($reference['vault'], $reference['key']), true, flags: JSON_THROW_ON_ERROR));
                         $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance->refresh(), true, createOperationId: $operation->id);
-                        $values = ValidatedData::stringMap($private['values']);
+                        $values = app(NativeDevelopmentInstanceInput::class)->environmentValues($operation,
+                            ValidatedData::string($result['environment_template']), $source['laravel'] === true);
                         app(InstanceEnvironmentStore::class)->putMany($context, $values, 'create');
                         if (isset($result['environment_keys'])) {
                             $keys = ValidatedData::stringList($result['environment_keys']);

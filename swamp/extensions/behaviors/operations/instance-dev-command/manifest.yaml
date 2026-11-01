@@ -17,3 +17,4 @@ additionalFiles:
   - create/setup.py
   - create/prepare.py
   - create/source.py
+  - create/environment.py

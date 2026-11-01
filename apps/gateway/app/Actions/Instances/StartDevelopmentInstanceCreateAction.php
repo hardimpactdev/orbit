@@ -29,6 +29,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -113,6 +114,10 @@ final readonly class StartDevelopmentInstanceCreateAction
             ];
             $input['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode($node);
             $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
+            $phases = ValidatedData::object($input['direct_provisioning']['phase_plan']);
+            $input['run_budget_seconds'] = array_sum(array_map(static fn (string $phase): int => ValidatedData::integer(ValidatedData::object($phases[$phase])['seconds']),
+                ['prepare', 'source', 'environment', 'runtime', 'setup', 'finish']))
+                + ValidatedData::integer($phases['queue_allowance_seconds']) + ValidatedData::integer($phases['kill_allowance_seconds']);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
         });

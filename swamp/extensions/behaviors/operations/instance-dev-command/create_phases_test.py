@@ -1,8 +1,10 @@
 """Legacy source cases executed against real Git, without an agent or live Node."""
 import importlib.util
+import json
 import os
 import pwd
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -90,6 +92,43 @@ class LegacyCreatePhases(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'instance.source_invalid'):
             module('prepare').prepare(self.value)
         self.assertFalse(self.target.exists())
+
+    def test_environment_refuses_unsafe_testing_file_before_replacing_environment(self):
+        # Both output targets belong to this phase; validate both before either write.
+        sys.path.insert(0, str(Path(__file__).parent / 'scripts'))
+        (self.seed / '.env').write_text('ORIGINAL=keep\n')
+        outside = self.root / 'outside'
+        outside.write_text('FOREIGN=keep\n')
+        (self.seed / '.env.testing').symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, 'env.sync_failed'):
+            module('environment').environment({'directory': str(self.seed), 'content': 'NEW=value\n',
+                                               'testing_content': 'NEW=testing\n', 'keys': ['NEW']})
+        self.assertEqual((self.seed / '.env').read_text(), 'ORIGINAL=keep\n')
+        self.assertEqual(outside.read_text(), 'FOREIGN=keep\n')
+
+    def test_nested_application_symlink_refuses_before_environment_effect(self):
+        outside = self.root / 'outside'
+        (outside / 'site').mkdir(parents=True)
+        (outside / 'site/.env').write_text('PRIVATE=keep\n')
+        (self.seed / 'linked').symlink_to(outside, target_is_directory=True)
+        self.git('add', 'linked')
+        self.git('commit', '-qm', 'unsafe nested application')
+        self.value['resolve']['seed_commit'] = self.git('rev-parse', 'HEAD')
+        self.value['application'] = str(self.target / 'linked/site')
+        with self.assertRaisesRegex(ValueError, 'env.import_invalid'):
+            self.create()
+        self.assertEqual((outside / 'site/.env').read_text(), 'PRIVATE=keep\n')
+
+    def test_only_the_committed_public_template_leaves_the_source_phase(self):
+        (self.seed / '.env.example').write_text('PUBLIC=" committed "\n\n')
+        self.git('add', '.env.example')
+        self.git('commit', '-qm', 'public template')
+        self.value['resolve']['seed_commit'] = self.git('rev-parse', 'HEAD')
+        (self.seed / '.env').write_text('PRIVATE=never-return-node-value\n')
+        result = self.create()
+        self.assertEqual(result['template'], 'PUBLIC=" committed "\n\n')
+        self.assertNotIn('never-return-node-value', json.dumps(result))
+        self.assertFalse((self.target / '.env').exists())
 
 
 if __name__ == '__main__':

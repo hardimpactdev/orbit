@@ -49,6 +49,36 @@ export function createPhaseSteps(input = "inputs"): {
         const steps = job.steps as Fields[];
         for (const step of steps) {
             step.queueTimeout = 15;
+            const task = step.task as Fields;
+            if (
+                String(job.name).startsWith("vp-") &&
+                task.behaviorType === "@swamp/ssh"
+            ) {
+                const args = task.inputs as Fields;
+                const bound = [
+                    "/usr/bin/timeout",
+                    "--kill-after=1s",
+                    e(
+                        "string(" + intent +
+                            ".phase_plan.runtime.seconds) + 's'",
+                    ),
+                ];
+                if (task.methodName === "exec") {
+                    args.argv = [...bound, ...(args.argv as unknown[])];
+                }
+                if (task.methodName === "script") {
+                    args.argv = [
+                        ...bound,
+                        "/usr/bin/python3",
+                        "-c",
+                        args.script,
+                    ];
+                    delete args.interpreter;
+                    delete args.script;
+                    task.methodName = "exec";
+                }
+                args.timeoutSec = e(intent + ".phase_plan.runtime.seconds + 2");
+            }
             if (step.name === "finish-result" || step.name === "accepted") {
                 continue;
             }
