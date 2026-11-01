@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0243/0244 + decisions agent-observer-swamp-acts, single-swamp-node, R2, R4.
+  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4, agent-observer-swamp-acts, single-swamp-node. docs/reference/node-provisioning.md#converge-the-orbit-footprint.
   %% status: draft
+  %% command: node:converge
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,25 +11,121 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: node:converge 12<br/>--force (optional)
-  Note over GW: Render desired footprint<br/>Caddyfile, DNS, PHP, digests
-  Note over GW: Record task, lock Node<br/>task #5132 · node-converge:12
-  GW->>SW: Start run, full intent<br/>operation-node-converge-direct
-  GW-->>CLI: 202 Accepted<br/>operation #5132
-  SW->>N: Install pinned observer<br/>curl, sha256 check, install
-  SW->>N: Apply changed artifacts<br/>Caddy, DNS, PHP, tmpfiles, residue
-  SW->>N: Configure the observer<br/>same key, read-only, restart
-  alt every artifact applied
-    N-->>SW: digest per artifact
-    SW-->>GW: Run succeeded<br/>terminal event · artifacts
-    Note over GW: Record footprint digests<br/>NodeFootprint for Node 12
-  else an artifact fails
-    N--xSW: step exits ≠ 0
-    SW->>N: Restore DNS, clean up<br/>DNS backup, rm staged binary
-    SW--xGW: Run failed<br/>failed_artifact, error_code
-    Note over GW: Record finished artifacts<br/>next converge retries the rest
+  CLI->>GW: node:converge 12<br/>--force
+  %%> Command:
+  %%> - `orbit node:converge 12 --force`
+  %%> - syntax: `<node> [--force] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node, by id or exact name
+  %%> - `--force` re-applies every part, not only the parts whose digest changed
+  %%> What it does:
+  %%> - re-applies Orbit's own files on Node 12: the Node agent, the private DNS client policy, and the files of its active roles
+  %%> - never changes an Instance, a Process, a Schedule or a role assignment, so it is safe on a Node that owns Instances
+  %%> Who can call it:
+  %%> - the `orbit` CLI, the MCP tool, and the fleet rollout send the same request
+  Note over GW: Render the footprint<br/>task #5132 · digest per part
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active, managed Linux Node
+  %%> - no other converge or Node agent rekey runs for Node 12; the Gateway holds one lock per Node
+  %%> Builds:
+  %%> - the pinned `orbit-agent` release and its SHA-256
+  %%> - the Node agent configuration, Orbit root certificate and unit
+  %%> - the private DNS client policy, when Node 12 is a peer with roles
+  %%> - the files of each active role, through the shared role steps
+  %%> - one digest per part, from the Gateway's own code and pins; no SSH
+  %%> Result:
+  %%> - task #5132 recorded with the full intent and the parts to apply
+  %%> - unchanged parts are left out, unless `--force`
+  GW->>SW: Start run, full intent<br/>operation-node-converge
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the parts to apply, with their files and digests
+  %%> - the agent's verifier hash, to check the existing key; never the key
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5132
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Install the Node agent<br/>pinned orbit-agent · sha256
+  %%> What it does:
+  %%> - compares the installed binary with the pin; a match skips the rest of this step
+  %%> - otherwise downloads the release, checks its SHA-256, and swaps it in, keeping `orbit-agent.previous`
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors (fetch, file) over SSH from 209
+  %%> - no `orbit-agent command …`; the agent only observes and runs no actions
+  SW->>N: Configure the Node agent<br/>config, CA, unit · same key
+  %%> What it does:
+  %%> - writes `config.toml`, `ca.pem` and the `orbit-agent.service` unit in `/etc/orbit/agent`
+  %%> - restarts the agent only when the binary or one of these files changed
+  %%> Keeps the key:
+  %%> - checks that `/etc/orbit/agent/secret` matches the recorded verifier; it never writes a new key
+  %%> - a missing or mismatched key fails this step; `orbit:node-agent-rekey` issues a new one
+  %%> How:
+  %%> - official `@swamp/cfgmgmt/file` and `@swamp/cfgmgmt/systemd` behaviors over SSH from 209
+  opt Node 12 is a DNS peer
+    SW->>N: Apply private DNS policy<br/>resolver for .orbit domains
+    %%> When:
+    %%> - Node 12 is an active managed peer with roles; not the `vpn` Node and not the Gateway's Node
+    %%> What it does:
+    %%> - sends the private `.orbit` domains to the Orbit DNS server, with the split DNS policy
+    %%> - no WireGuard tunnel restart
+  end
+  opt Node 12 has active roles
+    SW->>N: Re-apply role files<br/>shared role converge steps
+    %%> What it does:
+    %%> - runs the same steps that role converge (`node.role_converge`) runs for each active role, only for parts whose digest changed
+    %%> Per role:
+    %%> - a Caddy role or Caddy sites: Caddy package floor, then the Caddyfile; validates it first and reloads Caddy gracefully
+    %%> - `app-dev`, `app-prod`: the managed PHP-FPM module; a graceful reload of valid running masters
+    %%> - `app-dev`: the `/etc/tmpfiles.d/orbit.conf` rule for `/tmp/orbit-*` and `/dev/shm/orbit-*`; restarts nothing
+    %%> - `vpn`: the private DNS listener, records and catalog; restarts dnsmasq or the listener only for a change, and restores the last good copy when the new one fails its check
+    %%> Not included:
+    %%> - adding or removing a role, and Metrics exporters; those have their own commands
+  end
+  SW->>N: Check the footprint<br/>agent active · files match
+  %%> What it does:
+  %%> - checks that `orbit-agent` is active and runs the pinned binary
+  %%> - reads each applied file back and compares it with its digest
+  %%> - checks that Caddy, PHP-FPM and DNS answer when they were changed
+  %%> Why:
+  %%> - a part only counts as applied when the Node shows it
+  alt every part is applied
+    N-->>SW: digest per part
+    %%> Returns:
+    %%> - the check passed for every part
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record footprint digests<br/>Node 12 · task succeeded
+    %%> Result:
+    %%> - the digest of each applied part, and Node 12's footprint digest
+    %%> - the fleet rollout sees Node 12 as up to date
+    %%> - task #5132 succeeds
+  else a part fails
+    N--xSW: exit ≠ 0 or no match
+    %%> When:
+    %%> - a download doesn't match its pin, the Node agent's key doesn't match, Caddy refuses the Caddyfile, or a check fails
+    SW--xGW: Run failed<br/>error_code, failed part
+    %%> The Gateway reads:
+    %%> - which part failed and its error code, and which parts finished before it
+    Note over GW: Record finished parts<br/>task failed · rerun retries rest
+    %%> Result:
+    %%> - the digests of the finished parts are recorded; the failed part keeps its old digest
+    %%> - task #5132 fails
+    %%> On the Node:
+    %%> - finished parts stay; there is no rollback, except the DNS listener's restore of its last good copy
+    %%> - the running Node agent keeps its key, so it keeps reporting
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it applies only the parts that are still different
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #OP
+    CLI->>GW: operation:show #5132
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
