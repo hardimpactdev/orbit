@@ -51,8 +51,8 @@ final readonly class ReadNativeRunFailure
                         default => null,
                     };
 
-                    return $status === null ? null : ['status' => $status, 'failure' => app(NativeStepFailure::class)->fromRun($run),
-                        'finished_at' => $this->completionTime($run['completedAt'] ?? null)];
+                    return $status === null ? null : ['status' => $status, 'failure' => app(NativeStepFailure::class)->fromRun($run, $operation),
+                        'finished_at' => NativeRunTimestamp::parse($run['completedAt'] ?? null)?->toIso8601String()];
                 }
             }
         } catch (Throwable) {
@@ -62,15 +62,5 @@ final readonly class ReadNativeRunFailure
         }
 
         return null;
-    }
-
-    private function completionTime(mixed $value): ?string
-    {
-        if (! is_string($value) || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})\z/D', $value) !== 1) {
-            return null;
-        }
-        $parsed = date_parse($value);
-
-        return $parsed['error_count'] === 0 && $parsed['warning_count'] === 0 ? $value : null;
     }
 }

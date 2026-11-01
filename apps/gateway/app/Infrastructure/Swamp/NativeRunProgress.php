@@ -15,7 +15,8 @@ final readonly class NativeRunProgress
     public function apply(int $operationId, string $runId, array $event): void
     {
         if (! in_array($event['kind'] ?? null, ['step_started', 'step_completed', 'step_failed', 'step_skipped'], true)
-            || ! is_string($event['stepId'] ?? null) || ! is_string($event['jobId'] ?? null) || ! is_int($event['seq'] ?? null)) {
+            || ! is_string($event['stepId'] ?? null) || ! is_string($event['jobId'] ?? null) || ! is_int($event['seq'] ?? null)
+            || (isset($event['forEachIndex']) && (! is_int($event['forEachIndex']) || $event['forEachIndex'] < 0))) {
             return;
         }
         DB::transaction(function () use ($operationId, $runId, $event): void {
@@ -31,12 +32,11 @@ final readonly class NativeRunProgress
             }
             $active = $this->active($progress['active'] ?? null);
             $parent = is_string($event['parentRunId'] ?? null) ? $event['parentRunId'] : $runId;
-            $key = hash('sha256', $parent.'|'.$event['jobId'].'|'.$event['stepId']);
+            $index = is_int($event['forEachIndex'] ?? null) ? (string) $event['forEachIndex'] : '';
+            $key = hash('sha256', $parent.'|'.$event['jobId'].'|'.$event['stepId'].'|'.$index);
             if ($event['kind'] === 'step_started') {
                 $started = $event['startedAt'] ?? null;
-                if (! is_string($started) || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})\z/D', $started) !== 1) {
-                    $started = null;
-                }
+                $started = is_string($started) && NativeRunTimestamp::parse($started) !== null ? $started : null;
                 $active[$key] = ['step' => mb_strcut($event['stepId'], 0, 255), 'started_at' => $started, 'observed_at' => now()->toISOString()];
             } else {
                 unset($active[$key]);
@@ -44,7 +44,7 @@ final readonly class NativeRunProgress
             if ($event['kind'] === 'step_failed' && ($event['allowedFailure'] ?? false) !== true && ! isset($state['native_failure'])) {
                 $state['native_failure'] = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [[
                     'name' => $event['stepId'], 'status' => 'failed', 'error' => $event['error'] ?? null,
-                ]]]]]);
+                ]]]]], $operation);
             }
             $state['native_progress'] = ['run' => $runId, 'seq' => $event['seq'], 'active' => $active];
             $current = $active === [] ? null : end($active);

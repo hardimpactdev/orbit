@@ -764,6 +764,39 @@ it('retains redacted step failure events while terminal history is unavailable',
     expect(json_encode($operation->fresh()->state))->not->toContain('private-event-password');
 });
 
+it('does not publish an allowed failure as the Operations causal step error', function (): void {
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $socket->push(nativeSubscriberAttached($request), ['type' => 'event', 'id' => $request['id'], 'event' => [
+        'seq' => 6, 'kind' => 'step_failed', 'jobId' => 'prepare', 'stepId' => 'optional', 'allowedFailure' => true, 'error' => 'Optional failure.',
+    ]]);
+
+    $subscriber->pass();
+
+    expect($operation->fresh()->failed_step)->toBeNull();
+    expect(OperationData::fromModel($operation->fresh())->toArray()['error'])->toBeNull();
+});
+
+it('keeps separate progress for simultaneous forEach iterations of one step', function (): void {
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $frame = static fn (int $seq, string $kind, int $index): array => ['type' => 'event', 'id' => $request['id'], 'event' => [
+        'seq' => $seq, 'kind' => $kind, 'jobId' => 'parallel', 'stepId' => 'inspect', 'forEachIndex' => $index,
+    ]];
+    $socket->push(nativeSubscriberAttached($request), $frame(2, 'step_started', 0), $frame(3, 'step_started', 1), $frame(4, 'step_completed', 0));
+
+    $subscriber->pass();
+
+    expect($operation->fresh()->current_step)->toBe('inspect')
+        ->and($operation->fresh()->state['native_progress']['active'])->toHaveCount(1);
+});
+
 it('keeps observing live steps after another root queues terminal history', function (): void {
     Bus::fake([ProjectSwampTerminal::class]);
     $completed = nativeSubscriberOperation();

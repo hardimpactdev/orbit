@@ -323,6 +323,20 @@ it('projects a native validation failure without stderr and ignores later cascad
     expect(json_encode($result->state))->not->toContain('private-native-token');
 });
 
+it('excludes allowed failures from the causal native diagnostic', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'optional', 'status' => 'failed', 'allowedFailure' => true, 'error' => 'Optional probe failure.'],
+        ['name' => 'required', 'status' => 'failed', 'error' => 'Required failure.'],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('required');
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe('Required failure.');
+});
+
 it('keeps the native error when stderr was recorded but empty', function (): void {
     $this->history['status'] = 'failed';
     $this->history['jobs'][0]['steps'] = [
@@ -400,4 +414,16 @@ it('drops a partial first stderr line before projecting the complete diagnostic 
     expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe("Readable failure.\n");
     expect(json_encode($result->state))->not->toContain('private-suffix');
     expect(json_encode($result->state))->not->toContain('never-expose-stdout');
+});
+
+it('keeps the final diagnostic bytes when a UTF8 character straddles the tail boundary', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'validate', 'status' => 'failed', 'outputs' => ['stderr' => str_repeat('界', 2000)."\n".str_repeat('a', 4090).'END!']],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe(str_repeat('a', 4090).'END!');
 });

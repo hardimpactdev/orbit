@@ -49,7 +49,7 @@ The shared observer projects live step names from native run events without read
 
 A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
 
-The shared F1 script helper redacts the whole captured stderr before retaining its last 4 KiB, drops a truncated first line whose identifying prefix may be missing, and redacts the retained text again. Failed-command stdout is suppressed. The helper does not itself wire a family workflow or change native placement.
+The shared extractor redacts known Instance and Process environment values, configured Swamp credentials and credential-shaped text before retaining the last 4 KiB. It drops a truncated first line whose identifying prefix may be missing, then redacts the retained text again. Budget expiry omits `error.stderr_recorded`, because that result makes no claim about native stderr. Native family scripts still own safe output preservation; this projection does not change their placement or execution.
 
 ## Native public participants
 
