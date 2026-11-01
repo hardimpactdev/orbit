@@ -9,7 +9,7 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Nodes\ManagedNodeEligibility;
-use App\Domain\Nodes\NativeDatabaseRoleConvergeInput;
+use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
@@ -62,7 +62,7 @@ final readonly class AdmitNodeRoleOperationAction
             if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
-            $native = $converge && NativeDatabaseRoleConvergeInput::supports($node, $role);
+            $native = $converge && NativeNodeRoleConvergeInput::supports($node, $role);
             if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
                 || (! $native && ! app(NodeRolePlacement::class)->allows($node))) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);
@@ -112,7 +112,7 @@ final readonly class AdmitNodeRoleOperationAction
             $metricsOwner = $metrics === null ? $node->id : ValidatedData::integer($metrics['metrics_node_id']);
             $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
             $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
-            $nativeInput = $native ? app(NativeDatabaseRoleConvergeInput::class)->capture($node, $assignment, $snapshot) : null;
+            $nativeInput = $native ? app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot) : null;
             $executionSecrets = [];
             if ($nativeInput !== null) {
                 $private = ['observer' => new OperationSecretValue($node->agent_secret_hash)];

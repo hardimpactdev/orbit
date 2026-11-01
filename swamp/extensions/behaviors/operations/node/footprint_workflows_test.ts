@@ -24,16 +24,12 @@ Deno.test("checked-in footprint DAGs match their single template", async () => {
   for (const { path, text } of generatedFootprintWorkflows()) {
     assertEquals(await Deno.readTextFile(path), text);
     const role = !path.pathname.endsWith("node-converge-direct.yaml");
-    const convergeRole = path.pathname.endsWith(
-      "node-role-converge-direct.yaml",
-    );
     assertEquals(
       parse(text),
       path.pathname.endsWith("node-role-remove-direct.yaml")
         ? roleRemovalWorkflow()
         : footprintWorkflow(
           role,
-          convergeRole,
           path.pathname.endsWith("node-role-relocate-direct.yaml"),
         ),
     );

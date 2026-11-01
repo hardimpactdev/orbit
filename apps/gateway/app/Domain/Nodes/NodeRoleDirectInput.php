@@ -27,11 +27,6 @@ final readonly class NodeRoleDirectInput
         private NodeRoleFirewallInput $firewall, private NodeConvergeInput $footprint,
         private CliConvergePlan $cli, private NodeRoleRuntimeInput $runtime, private ToolManagerIntent $managers) {}
 
-    public static function supports(RoleName $role): bool
-    {
-        return true;
-    }
-
     /** @return array<string,mixed> */
     public function capture(Node $node, NodeRole $assignment, bool $created): array
     {

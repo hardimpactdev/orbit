@@ -1,4 +1,4 @@
-"""Database-only native root, using the official SSH extension's binary seam."""
+"""Database and Ingress native roles, using the official SSH extension's binary seam."""
 import hashlib
 import json
 import os
@@ -15,7 +15,11 @@ class DatabaseRoleNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('operations/node-role-converge-command','operations/node-role-command','operations/node-bootstrap','operations/fleet','operations/node','operations/_lib')
-        shutil.copy(ROOT/'workflows/workflow-operation-node-role-converge-direct.yaml',self.repo/'workflows')
+        shutil.copy(ROOT/'workflows/workflow-operation-node-role-add-direct.yaml',self.repo/'workflows')
+        routes=self.repo/'extensions/behaviors/operations/routes'
+        routes.mkdir()
+        for name in ['caddy-input.ts']:
+            shutil.copy(ROOT/'extensions/behaviors/operations/routes'/name,routes)
         self.cli('extension','pull','@swamp/ssh@2026.10.23.1')
         self.audit=self.repo/'calls.jsonl'
         self.failure=self.repo/'fail'
@@ -23,8 +27,15 @@ class DatabaseRoleNative(NativeTestCase):
         binary.write_text('#!'+sys.executable+'\n'+'''import ast,json,sys
 from pathlib import Path
 if '-M' in sys.argv or '-O' in sys.argv:raise SystemExit(0)
-if 'systemctl' in sys.argv[-1]:print('{}');raise SystemExit(0)
+def finish(action,result):
+ with Path(AUDIT).open('a') as stream:stream.write(json.dumps({'action':action})+'\\n')
+ if Path(FAILURE).exists() and Path(FAILURE).read_text()==action:raise SystemExit(1)
+ print(json.dumps(result));raise SystemExit(0)
+if 'caddy validate' in sys.argv[-1]:finish('caddy_validate',{})
+if 'systemctl' in sys.argv[-1]:finish('service',{})
+if 'ufw' in sys.argv[-1]:finish('firewall_prune' if '--force' in sys.argv[-1] else 'firewall',{})
 body=sys.stdin.read()
+if '/etc/caddy/Caddyfile' in sys.argv[-1]:finish('caddy_write',{})
 if 'Verify the existing observer identity' in sys.argv[-1]:
  import os
  if body!=os.environ['ORBIT_TEST_OBSERVER_DIGEST']:raise SystemExit(1)
@@ -43,7 +54,9 @@ elif 'ROLE_INPUT' in body:
  for node in tree.body:
   if isinstance(node,ast.Assign) and isinstance(node.targets[0],ast.Name) and node.targets[0].id=='ROLE_INPUT' and isinstance(node.value,ast.Call):data=json.loads(ast.literal_eval(node.value.args[0]))
  if 'user' in data and len(data)==1:action='account';result={'user':'orbit','group':'orbit','home':'/home/orbit'}
+ elif 'release' in data:action='caddy_package';result={'caddy_installed':True}
  else:action='file';result={'ready':True,'changed':False}
+elif 'Typed UFW ownership' in body:action='firewall';result={'matches':True}
 elif 'def repair_dns' in body:action='dns';result={}
 elif 'def install' in body:action='cli';result={'installed':None,'configured':True}
 else:raise SystemExit('Unrecognized fixture action')
@@ -54,7 +67,7 @@ print(json.dumps(result))
         binary.chmod(0o700)
         identity=self.repo/'identity';identity.write_text('synthetic fixture only')
         source=(ROOT/'extensions/behaviors/operations/node-role-converge-command/workflows.ts').as_uri()
-        program='import {databaseWorkflow,dispatcherWorkflow} from '+json.dumps(source)+';console.log(JSON.stringify([databaseWorkflow(),dispatcherWorkflow()]));'
+        program='import {roleWorkflow,dispatcherWorkflow} from '+json.dumps(source)+';console.log(JSON.stringify([roleWorkflow(),dispatcherWorkflow()]));'
         result=subprocess.run([os.environ.get('DENO_BIN','/tmp/lane4-deno-2.9.8/deno'),'eval',program],check=True,capture_output=True,text=True)
         for flow in json.loads(result.stdout):
             flow.pop('target',None)
@@ -64,8 +77,16 @@ print(json.dumps(result))
                     task=step['task']
                     if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
             (self.repo/'workflows'/('workflow-'+flow['name']+'.yaml')).write_text(yaml.safe_dump(flow,sort_keys=False))
+        caddy=yaml.safe_load((ROOT/'workflows/workflow-operation-route-caddy.yaml').read_text())
+        for job in caddy['jobs']:
+            job.pop('target');self.assertNotIn('labels',job)
+            for step in job['steps']:
+                self.assertEqual(step.pop('target'),'orbit-node-209');self.assertNotIn('labels',step)
+                task=step['task']
+                if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
+        (self.repo/'workflows/workflow-operation-route-caddy.yaml').write_text(yaml.safe_dump(caddy,sort_keys=False))
         self.input={'operation_id':7,'node_id':5,'kind':'node.role_converge','execution_secrets':{},'intent':{
-          'assignment_id':17,'node_id':5,'user':'orbit','agent_sha256':'a'*64,'prerequisites':{'packages':['docker.io'],'releases':['resolute']},
+          'role':'database','assignment_id':17,'node_id':5,'user':'orbit','agent_sha256':'a'*64,'prerequisites':{'packages':['docker.io'],'releases':['resolute']},
           'ssh':{'identity_file':str(identity),'target':{'host':'dev.invalid','user':'orbit','port':22,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}},
           'footprint':{'artifacts':[{'name':'agent','required':True}],'payloads':{'agent':{'url':'https://example.invalid/agent','configuration':'gateway_url="https://gateway.orbit"','certificate':'fixture','unit':'# Managed by Orbit: agent\nProtectHome=yes','apps_root':None,'checkouts':[]}},'network':None},
           'cli':{'user':'orbit','release':None,'profile':'','skip_reason':'release_unavailable','plan_error':None}}}
@@ -106,7 +127,7 @@ print(json.dumps(result))
         self.assertIn('dns',calls);self.assertIn('cli',calls)
 
     def test_retained_role_receives_the_original_root_identity_without_native_effects(self):
-        path=self.repo/'workflows/workflow-operation-node-role-converge-direct.yaml'
+        path=self.repo/'workflows/workflow-operation-node-role-add-direct.yaml'
         flow=yaml.safe_load(path.read_text())
         forwarded=flow['jobs'][0]['steps'][0]['task']['inputs']['run_id']
         flow.pop('target',None);flow.pop('labels',None)
@@ -125,3 +146,33 @@ export const behavior={type:"@nckrtl/role-retained-fixture",version:"2026.11.01.
         self.input['intent']['footprint']['payloads']['agent']['checkouts']=['/srv/first','/srv/second']
         _,result=self.run_role()
         self.assertTrue(result['footprint']['footprint_proven'])
+
+    def ingress(self):
+        intent=self.input['intent'];intent['role']='ingress'
+        content='# Managed by Orbit: Node Caddy build\n{ admin off }\n'
+        intent.update(caddy_package={'release':'2.11.1','minimum_version':'2.11.1','amd64_sha512':'c'*128},firewall={'desired':[['ufw','allow','in','on','orbit','to','10.44.0.5','comment','orbit:wireguard-members']], 'remove':[['ufw','--force','delete','allow','22/tcp','comment','orbit:public-ssh-recovery']]},caddy={
+            'node_id':5,'user':'orbit','control_node_id':209,'host_keys':intent['ssh']['target']['host_keys'],
+            'connection':{'nodeHost':'dev.invalid','nodeUser':'orbit','nodePort':22,'nodeIdentityFile':intent['ssh']['identity_file'],'become':True},
+            'caddy':{'content':content,'version':hashlib.sha256(content.encode()).hexdigest()[:32],'listen_addresses':['10.44.0.5'],'unserved':False}})
+        intent['footprint']['artifacts'] += [{'name':name,'required':True} for name in ['caddy-package','caddy']]
+
+    def test_ingress_publication_precedes_firewall_and_proves_footprint(self):
+        self.ingress()
+        _,result=self.run_role()
+        self.assertTrue(result['role_proven']);self.assertTrue(result['footprint']['footprint_proven'])
+        actions=[json.loads(line)['action'] for line in self.audit.read_text().splitlines()]
+        self.assertLess(actions.index('caddy_package'),actions.index('packages'))
+        self.assertLess(actions.index('caddy_validate'),actions.index('firewall'))
+
+    def test_ingress_mandatory_failures_do_not_prove_role_or_run_later_effects(self):
+        self.ingress()
+        for failure in ['caddy_package','caddy_validate','firewall','firewall_prune']:
+            with self.subTest(failure=failure):
+                self.audit.unlink(missing_ok=True);self.failure.write_text(failure)
+                _,result=self.run_role(False)
+                self.assertFalse(result['role_proven'])
+                actions=[json.loads(line)['action'] for line in self.audit.read_text().splitlines()]
+                if failure=='caddy_package':
+                    self.assertNotIn('packages',actions);self.assertEqual(result['failed_step'],'caddy-package')
+                if failure not in ['firewall','firewall_prune']:self.assertNotIn('firewall',actions)
+                if failure=='firewall':self.assertNotIn('firewall_prune',actions)

@@ -3,7 +3,7 @@ name: "@nckrtl/node-role-converge-command"
 version: 2026.11.01.1
 visibility: private
 license: MIT
-description: Native Database role actions and terminal results.
+description: Native Node role actions and terminal results.
 behaviors:
   - operations/node-role-converge-command/assets.ts
   - operations/node-role-converge-command/result.ts
