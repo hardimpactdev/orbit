@@ -6,7 +6,6 @@ use App\Actions\DatabaseConnections\PrepareSqliteIntentAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -45,7 +44,7 @@ it('serves exact SQLite descriptors and fresh cancellation only to admitted sour
     $this->getJson($path.'?run_id='.$run)->assertConflict();
     $this->assertDatabaseCount('operations', 1);
     $this->assertDatabaseCount('database_execution_intents', 0);
-})->with(['database.sqlite_seed', 'database.sqlite_seed_abandon']);
+})->with(['database.sqlite_seed']);
 
 it('refuses an admitted participant without an owned SQLite descriptor', function (): void {
     $run = '9ccecfdf-17d0-4d05-99da-2efac74cdf34';
@@ -56,20 +55,6 @@ it('refuses an admitted participant without an owned SQLite descriptor', functio
     $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
 
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$run)->assertForbidden();
-});
-
-it('derives abandon only from the exact recorded transfer seed attempt', function (): void {
-    $prepare = app(PrepareSqliteIntentAction::class);
-    $source = new SqliteSeedPlacement($this->instance->id, 'development', $this->instance->checkout_path, 'orbit', $this->dbNode);
-    $target = new SqliteSeedPlacement($this->instance->id, 'development', $this->instance->checkout_path, 'orbit', $this->gateway, 'transfer-attempt');
-    $input = $prepare->seed($source, $target, $this->instance->checkout_path.'/database.sqlite');
-    $seed = new Operation(['kind' => 'database.sqlite_seed', 'node_id' => $this->gateway->id,
-        'target_type' => 'instance', 'target_id' => $this->instance->id, 'input' => $input]);
-
-    expect($prepare->abandon($this->instance, $seed))->toBe($input);
-    $seed->input = [...$input, 'target' => [...$input['target'], 'operation' => str_repeat('f', 64)]];
-    expect(fn () => $prepare->abandon($this->instance, $seed))->toThrow(ResourceOperationException::class);
-    $this->assertDatabaseCount('operations', 0);
 });
 
 it('starts standalone SQLite work with full public SSH intent and no execution copy', function (string $kind): void {
@@ -96,4 +81,4 @@ it('starts standalone SQLite work with full public SSH intent and no execution c
     $this->dbNode->update(['user' => 'later_account']);
     expect($public['intent']['source_ssh']['user'])->toBe('orbit');
     expect(app(DirectOperation::class)->definition($kind)['terminal_result'])->toBe(['job' => 'sqlite', 'step' => 'result']);
-})->with(['database.sqlite_export', 'database.sqlite_seed', 'database.sqlite_seed_abandon']);
+})->with(['database.sqlite_export', 'database.sqlite_seed']);

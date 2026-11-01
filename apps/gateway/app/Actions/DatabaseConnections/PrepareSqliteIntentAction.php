@@ -6,9 +6,6 @@ namespace App\Actions\DatabaseConnections;
 
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Instance;
-use App\Models\Operation;
-use App\Support\ValidatedData;
 
 /** Records safe placement descriptors. Swamp owns all snapshot and cleanup steps. */
 final readonly class PrepareSqliteIntentAction
@@ -58,31 +55,6 @@ final readonly class PrepareSqliteIntentAction
                 'relative_path' => $transfer ? substr($sourcePath, strlen($source->basePath) + 1) : 'database.sqlite',
             ],
         ];
-    }
-
-    /** Derive abandon from this Instance's recorded seed, never caller-supplied cleanup paths.
-     * @return array<string, mixed>
-     */
-    public function abandon(Instance $target, Operation $seed): array
-    {
-        $input = $seed->input;
-        $source = ValidatedData::object($input['source'] ?? []);
-        $destination = ValidatedData::object($input['target'] ?? []);
-        if ($seed->kind !== 'database.sqlite_seed' || $seed->target_type !== 'instance' || $seed->target_id !== $target->id
-            || ($input['owner_instance_id'] ?? null) !== $target->id
-            || ($input['source_instance_id'] ?? null) !== $target->id
-            || ($destination['target_instance_id'] ?? null) !== $target->id
-            || ($destination['environment'] ?? null) !== 'development'
-            || ($source['variant'] ?? null) !== 'seed'
-            || ($source['operation'] ?? null) !== ($destination['operation'] ?? null)
-            || ! is_string($source['operation'] ?? null)
-            || preg_match('/\A[0-9a-f]{64}\z/D', $source['operation']) !== 1
-            || ($destination['node_id'] ?? null) !== $seed->node_id
-            || ($source['node_id'] ?? null) === $seed->node_id) {
-            throw new ResourceOperationException('sqlite.seed_abandon_forbidden', 'The recorded seed is not this Instance transfer attempt.', 409);
-        }
-
-        return array_intersect_key($input, array_flip(['owner_instance_id', 'source_instance_id', 'participant_node_ids', 'source', 'target']));
     }
 
     private function path(string $path): bool
