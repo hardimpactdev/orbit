@@ -31,3 +31,4 @@ jobs:
         captured_at: ${{ inputs.captured_at }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent }}
+queueTimeout: 60
