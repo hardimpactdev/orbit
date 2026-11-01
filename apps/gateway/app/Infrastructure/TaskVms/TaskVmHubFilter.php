@@ -4,29 +4,25 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\TaskVms\TaskVmException;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
+use App\Models\Operation;
 
+/** Captures public hub intent; the native209 workflow performs every host effect. */
 final readonly class TaskVmHubFilter
 {
-    public function __construct(private AgentCommandRunner $agents) {}
+    public function __construct(private StartOperationAction $operations, private TaskVmHubPolicy $policy) {}
 
-    /** @param array{range: string, dns: string, gateway: string, pi_port: int, reverb: string, model: string, routers: list<string>} $input */
-    public function prepare(Node $node, array $input): void
+    /** @param array{range:string,dns:string,gateway:string,pi_port:int,reverb:string,model:string,routers:list<string>} $input */
+    public function prepare(Node $node, array $input): Operation
     {
-        try {
-            $result = $this->agents->run($node, 'firewall.task-vm-hub', $input);
-        } catch (AgentCommandRefused $error) {
-            if ($error->errorCode !== 'task_vm.setup_failed') {
-                throw $error;
-            }
-            $reason = is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage();
-            throw new TaskVmException('task_vm.setup_failed', "Task VM hub setup failed on Node [{$node->name}]: {$reason}");
-        }
-        if (($result['ready'] ?? null) !== true) {
-            throw new TaskVmException('task_vm.setup_failed', "Task VM hub setup did not confirm readiness on Node [{$node->name}].");
-        }
+        $rule = $this->policy->controlRule() ?? throw new TaskVmException('task_vm.fleet_unavailable', 'The active209 SSH control Node is required.');
+        $intent = ['policy' => $input, 'node_id' => $node->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
+            'source' => $rule->shape->source, 'range' => $input['range'], 'nft' => $this->policy->render($input, $rule),
+            'unit' => TaskVmHubPolicy::Unit, 'control_rule' => array_slice($rule->arguments, 1)];
+
+        return $this->operations->execute('task_vm.hub_converge', 'node_firewall', $node->id, $node->id, ['intent' => $intent], 'operator', null);
     }
 }
