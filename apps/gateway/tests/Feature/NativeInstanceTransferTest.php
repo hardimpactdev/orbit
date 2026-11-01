@@ -277,7 +277,25 @@ it('omits Process installation descriptors from unrelated Route participants', f
     $this->transfer->update(['source_router_node_id' => $router->id]);
     $operation = native_transfer_operation($this);
     $public = app(NativeInstanceTransferProjection::class)->publicInput($operation, $router->id);
-    expect($public['process_runtime'])->toBe(['node_id' => $router->id, 'field' => null, 'members' => [], 'ports' => []]);
+    expect($public['process_runtime'])->toBe(['node_id' => $router->id, 'members' => [], 'ports' => []]);
     expect(fn () => app(ProcessInstallationBatch::class)->nativeInput($operation, 'unknown'))
         ->toThrow(ResourceOperationException::class);
+});
+
+it('keeps root and participant public reads effect-free before and after cutover', function (): void {
+    $this->destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    native_transfer_process($this);
+    $operation = native_transfer_operation($this);
+    $projection = app(NativeInstanceTransferProjection::class);
+    $socket = app(WebSocketClient::class);
+    $before = $socket->sent;
+    foreach ([false, true] as $cutover) {
+        if ($cutover) {
+            $projection->apply($operation, native_transfer_result('cutover'));
+        }
+        expect($projection->input($operation))->toHaveKeys(['direct_transfer', 'process_runtime'])
+            ->and($projection->publicInput($operation, $this->destination->id))->toHaveKeys(['direct_transfer', 'process_runtime'])
+            ->and(json_encode($projection->input($operation)))->not->toContain('transfer-private-value', 'execution_secrets');
+    }
+    expect($socket->sent)->toBe($before);
 });

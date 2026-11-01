@@ -7,8 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\DirectOperationPublicView;
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Tools\VpEnvironment;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -17,7 +16,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records bounded native facts. All sequencing, runtime checks and effects belong to Swamp. */
-final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationPublicView
+final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
     public function __construct(
         private DirectOperation $direct,
@@ -27,7 +26,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         private InstanceVpEnvironmentMaterial $vp,
     ) {}
 
-    public function input(Operation $operation): array
+    public function workflowInput(Operation $operation): array
     {
         $input = $this->intent->admitted($operation);
         $processes = ValidatedData::object($input['deployment'])['variant'] === 'production'
@@ -36,17 +35,8 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         return ['intent' => [...$input, 'process_members' => $processes['members']], 'execution_secrets' => $processes['execution_secrets']];
     }
 
-    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    public function input(Operation $operation): array
     {
-        if ($operation->node_id !== $callerNodeId) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The Node is not the deployment participant.', 403);
-        }
-    }
-
-    public function publicInput(Operation $operation, int $callerNodeId): array
-    {
-        $this->assertPublicParticipant($operation, $callerNodeId);
-
         return $this->intent->admitted($operation);
     }
 
@@ -111,6 +101,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $definitions = ValidatedData::object($payload['runtime_definitions'] ?? []);
                 $definitions['processes'] = array_map(static function (mixed $member): array {
                     $member = ValidatedData::object($member);
+
                     return ['process_id' => ValidatedData::integer($member['process_id']), 'ready' => false, 'error_code' => 'operation.native_failed'];
                 }, $members);
                 $payload['runtime_definitions'] = $definitions;

@@ -170,6 +170,7 @@ export function transferRoot(
     globalArguments: Globals,
     files: { archive: archiveFile, snapshot: snapshotFile },
     resources: {
+      restoration: { schema: z.object({ ready: z.literal(true), restore: z.boolean() }).strict(), lifetime: "workflow", garbageCollection: 1 },
       sqliteSnapshot: {
         schema: SnapshotRef.nullable(),
         lifetime: "workflow",
@@ -295,20 +296,20 @@ export function transferRoot(
           }
           if (args.phase === "restore") {
             if (plan.cutover) {
-              return { ready: true, restore: false };
+              return output(ctx, "restoration", "restoration", { ready: true, restore: false });
             }
             let paused: unknown;
             try {
               paused = await ctx.readResource("paused");
             } catch {
-              return { ready: true, restore: false };
+              return output(ctx, "restoration", "restoration", { ready: true, restore: false });
             }
-            if (!paused) return { ready: true, restore: false };
+            if (!paused) return output(ctx, "restoration", "restoration", { ready: true, restore: false });
             z.object({ attempted: z.literal(true) }).strict().parse(
               paused,
             );
             await runtime.prepare(batch);
-            return { ready: true, restore: true };
+            return output(ctx, "restoration", "restoration", { ready: true, restore: true });
           } else if (args.phase === "pause") {
             if (plan.cutover) {
               throw new Error("instance.transfer_already_cutover");
@@ -336,6 +337,7 @@ export function transferRoot(
         arguments: Effect.extend({
           phase: z.enum([
             "export",
+            "install",
             "cleanup-source",
             "cleanup-target",
           ]),

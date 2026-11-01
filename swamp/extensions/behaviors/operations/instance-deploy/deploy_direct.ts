@@ -84,6 +84,8 @@ type Ports = {
 export function deployDirect(ports: Ports = {}) {
   const now = ports.now ?? Date.now;
   const rollback = rollbackDirect(ports.rollback);
+  const production = { ...ports.production, http: ports.http, now, source: ports.source,
+    inspectRunner: ports.inspectRunner, run: ports.run };
   return {
     type: "@nckrtl/instance-deploy-direct",
     version: "2026.11.01.1",
@@ -198,28 +200,14 @@ export function deployDirect(ports: Ports = {}) {
           "Prepare the production release before native Process children",
         arguments: Args,
         execute: (raw: z.infer<typeof Args>, ctx: Context) =>
-          runProductionDeploy(raw, ctx, {
-            ...ports.production,
-            http: ports.http,
-            now,
-            source: ports.source,
-            inspectRunner: ports.inspectRunner,
-            run: ports.run,
-          }, "prepare"),
+          runProductionDeploy(raw, ctx, production, "prepare"),
       },
       finishProduction: {
         description:
           "Continue production deployment after native Process children succeeded",
         arguments: Args,
         execute: (raw: z.infer<typeof Args>, ctx: Context) =>
-          runProductionDeploy(raw, ctx, {
-            ...ports.production,
-            http: ports.http,
-            now,
-            source: ports.source,
-            inspectRunner: ports.inspectRunner,
-            run: ports.run,
-          }, "finish"),
+          runProductionDeploy(raw, ctx, production, "finish"),
       },
       run: {
         description:

@@ -246,7 +246,7 @@ async function fixture() {
       return Promise.resolve();
     },
   };
-  const execute = async () => {
+  const execute = async (segment?: "prepare" | "finish") => {
     const trace = async (
       name: string,
       input: Record<string, unknown>,
@@ -330,10 +330,12 @@ async function fixture() {
           >,
       },
     });
+    if (segment === "finish") return await model.methods.finishProduction.execute(args, ctx);
     const prepared = await model.methods.prepareProduction.execute(
       args,
       ctx,
     );
+    if (segment === "prepare") return prepared;
     if (!("ready" in prepared)) return prepared;
     return await model.methods.finishProduction.execute(args, ctx);
   };
@@ -728,4 +730,21 @@ Deno.test("an active same-root pointer without its immutable journal cannot beco
   assertEquals(f.calls, []);
   assertEquals(await f.failure(), { status: "held" });
   assertEquals(f.posts, []);
+});
+
+
+Deno.test("production retains its execution owner across native Process installation", async () => {
+  const f = await fixture();
+  assertEquals(await f.execute("prepare"), { ready: true });
+  assertEquals(f.resources.get("activeExecution"), { operation_id: f.args.operation_id, run_id: f.args.run_id, active: true });
+  const calls = f.calls.length;
+  const foreign = { ...f.args, operation_id: 999, run_id: "57183972-fd25-4bf8-9ec7-aeaa12b4a880" };
+  const model = deployDirect({ http: () => async () => ({ status: 200, body: { data: {
+    id: foreign.operation_id, kind: foreign.kind, node_id: foreign.node_id, status: "running", cancel_requested: false, input: f.input,
+  } } }) });
+  await assertRejects(() => model.methods.prepareProduction.execute(foreign, f.ctx), Error, "deployment.target_busy");
+  assertEquals(await model.methods.failure.execute(foreign, f.ctx), { status: "held" });
+  assertEquals(f.calls.length, calls);
+  assertEquals(await f.execute("finish"), { status: "succeeded" });
+  assertEquals(f.resources.get("activeExecution"), { operation_id: f.args.operation_id, run_id: f.args.run_id, active: false });
 });

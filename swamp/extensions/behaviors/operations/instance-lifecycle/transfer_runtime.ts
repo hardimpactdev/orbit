@@ -15,8 +15,6 @@ const Member = z.object({
 );
 export const TransferRuntime = z.object({
   node_id: z.number().int().positive(),
-  field: z.enum(["source_installations", "destination_installations"])
-    .nullable(),
   members: z.array(Member).max(4096),
   ports: z.array(z.number().int().min(1024).max(65535)).max(2),
 }).strict().refine((v) =>

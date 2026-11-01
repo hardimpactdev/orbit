@@ -142,8 +142,10 @@ it('admits the real dev writer with only a native start and no Gateway step exec
         ->and(InstanceDeployment::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
     app(StartSwampRun::class)->start($operation);
     expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-deploy-direct')
-        ->and($socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $operation->id,
-            'kind' => 'instance.deploy', 'node_id' => $instance->node_id]);
+        ->and($socket->sent[0]['payload']['inputs'])->toMatchArray(['operation_id' => $operation->id,
+            'kind' => 'instance.deploy', 'node_id' => $instance->node_id])
+        ->and($socket->sent[0]['payload']['inputs']['intent']['deployment']['variant'])->toBe('development')
+        ->and($socket->sent[0]['payload']['inputs']['intent']['process_members'])->toBe([]);
 });
 
 it('uses the sole native declaration even when a retired writer flag is set', function (): void {

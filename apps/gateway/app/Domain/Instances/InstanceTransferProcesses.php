@@ -78,7 +78,7 @@ final readonly class InstanceTransferProcesses
             ? 'source_installations' : 'destination_installations';
         $batch = $plans[$field] ?? null;
         if (! is_array($batch) || ($batch['node_id'] ?? null) !== $nodeId) {
-            return ['node_id' => $nodeId, 'field' => null, 'members' => [], 'ports' => []];
+            return ['node_id' => $nodeId, 'members' => [], 'ports' => []];
         }
         $ports = [];
         foreach ($this->batches->input($batch) as $member) {
@@ -90,7 +90,7 @@ final readonly class InstanceTransferProcesses
             }
         }
 
-        return ['node_id' => $nodeId, 'field' => $field, 'members' => $this->batches->input($batch), 'ports' => array_values(array_unique($ports))];
+        return ['node_id' => $nodeId, 'members' => $this->batches->input($batch), 'ports' => array_values(array_unique($ports))];
     }
 
     private function reservePort(string $table, int $instanceId, int $nodeId, int $preferred): int

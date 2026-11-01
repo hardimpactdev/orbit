@@ -9,7 +9,6 @@ const digest = "a".repeat(64);
 function batch(desired: "running" | "stopped" = "running"): TransferRuntime {
   return TransferRuntime.parse({
     node_id: 17,
-    field: "destination_installations",
     ports: [],
     members: [{
       id: 4,
@@ -105,4 +104,13 @@ Deno.test("transfer rejects forged and duplicate Process batch identities before
   const duplicate = batch();
   duplicate.members.push(duplicate.members[0]);
   assertThrows(() => TransferRuntime.parse(duplicate));
+});
+
+
+Deno.test("transfer retains SQLite installation while removing the local Process install phase", async () => {
+  const { transferRoot } = await import("./transfer_root.ts");
+  const root = transferRoot();
+  const args = { operation_id: 1, node_id: 9, target_node_id: 13, kind: "instance.transfer", run_id: "57183972-fd25-4bf8-9ec7-aeaa12b4a880", phase: "install" };
+  assertEquals(root.methods.sqlite.arguments.parse(args).phase, "install");
+  assertThrows(() => root.methods.runtime.arguments.parse(args));
 });

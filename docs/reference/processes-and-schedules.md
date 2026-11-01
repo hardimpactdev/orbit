@@ -46,13 +46,13 @@ Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessDat
 
 Only environment bytes use native execution copies. Each key includes the parent Operation ID and the member Process ID, so members cannot overwrite each other's environment. Public unit content, container definitions, hashes and SSH targets remain workflow inputs. Admission still refuses changed definitions or foreign member ownership before publishing that member's environment.
 
-The shared terminal reader projects the parent result into the captured set. Success marks the set active and records the admitted activation generation. Failure or interruption marks the captured set failed and retains applied files for normal convergence. Cancellation preserves the records. No rollback runs. Restart, deploy and transfer installers keep their separate paths until converted.
+The shared terminal reader projects the parent result into the captured set. Success marks the set active and records the admitted activation generation. Failure or interruption marks the captured set failed and retains applied files for normal convergence. Cancellation preserves the records. No rollback runs. Restart controls keep their separate paths. Deploy and transfer installation use the native children below.
 
 ### Deploy and transfer installation
 
 Deploy and transfer compose the existing Process-create workflow as native children on Node 209. Each member supplies its public unit or container definition, desired state, content or specification hash, and pinned SSH target at root submission. Only environment bytes enter execution copies. Copy keys include the parent Operation, placement Node and member Process, so source and destination cannot overwrite each other.
 
-Production deployment pauses after PHP refresh, installs the captured Processes, then continues Schedule installation and restart-on-deploy. Transfer installs the prospective destination after its existing cutover and publication steps. Its existing recovery branch installs the captured source through the same native children. There is no Process installation private-material callback, local installer loop, or member Operation in either path. Other deployment and transfer phases retain their separate execution paths.
+Production deployment pauses after PHP refresh, installs the captured Processes, then continues Schedule installation and restart-on-deploy. Transfer installs the prospective destination after its existing cutover and publication steps. Its existing recovery branch installs the captured source through the same native children. There is no Process installation private-material callback, local installer loop, or member Operation in either path. Other deployment and transfer phases retain their separate execution paths. Only native submission publishes execution copies. Public reads keep the existing intent view and perform no effects.
 
 Transfer validates both captured placements before native submission while the Instance still belongs to its origin. A changed origin, member ownership, member set or specification refuses submission. Public definitions use the existing renderers and account placeholders; official SSH resolves the account on the target. Native failure retains applied state for forward convergence.
 
@@ -270,7 +270,7 @@ Some shared paths still have other callers:
 | Path | Remaining caller |
 | --- | --- |
 | Per-Node `operation-process-control` | Start/restart. Create/update/destroy use the Node209 convergence and removal workflows. |
-| Native `processAction` and Process installer | Instance transfer, deployment, rollback, definition installation, Node role and Analytics work. Transfer retirement still uses the local remove action. |
+| Native `processAction` and local Process installer | Retained control, restart and retirement phases, TaskVM enrollment, Node role and Analytics callers. Deploy and transfer installation use Process-create children on 209. |
 | Gateway `bootstrapCollector` and agent unit stage/activate | AI-router collector convergence. |
 | Gateway synchronous removal and agent `process.remove` | AI-router teardown/rename and Node-role dependent cleanup. |
 | Agent release/status/control/log commands | Runtime reads, admission and hibernation. |
@@ -346,7 +346,7 @@ Instance Process restart executes as member steps in one native parent. `process
 
 Instance transfer captures a Process installation batch for each admitted placement. Capture uses supplied Process targets without discovering accounts or checking ports. Working-directory and environment-file paths within the original checkout move with that checkout. Paths outside it are refused; null values stay null. Swamp resolves the admitted system user to fill certificate-path templates before installation.
 
-The parent binds `source_installations` and `destination_installations` to their owning Nodes. Material resolution checks current Instance placement, Process ownership, captured membership and specification before returning the existing installation material keyed by Process ID. The root remains on its source Node after placement changes.
+The parent binds `source_installations` and `destination_installations` to their owning Nodes. Native submission checks current Instance placement, Process ownership, captured membership and specification before rendering public definitions and publishing per-placement environment copies. The root remains on its source Node after placement changes.
 
 Protected Process values resolve only for their recorded Process target. Schedule commands use their owning Instance or Node ID as the secret reference, with the Schedule UUID retained in the admitted input. Resolution verifies both the actual owner relation and the recorded Node before reading command contents.
 

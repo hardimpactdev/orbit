@@ -713,7 +713,10 @@ export async function runProductionDeploy(
   ) {
     throw new Error("deployment.execution_unconfirmed");
   }
-  if (segment === "prepare" && error_code === null) return { ready: true };
+  if (segment === "prepare" && error_code === null) {
+    await saveDeploymentExecution(ctx, args, true);
+    return { ready: true };
+  }
   state.outcome = {
     status: error_code === null
       ? "succeeded"
