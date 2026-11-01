@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\CreateRouteAction;
-use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -13,6 +12,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\PublicRouteEdgeProjector;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
@@ -490,14 +490,8 @@ it('keeps publication=public without artifacts for a Node-scoped Route, inactive
         ->and($edge->calls)
         ->toBe([]);
 
-    $published = app(PublishPublicRouteAction::class)->execute($active, RoutePublication::Public);
-
-    expect($published->id)
-        ->toBe($active->id)
-        ->and($published->publication)
-        ->toBe(RoutePublication::Public)
-        ->and($edge->calls)
-        ->toBe([]);
+    expect(app(PublicRouteEligibility::class)->canStartActivation($active))->toBeFalse()
+        ->and($active->fresh()->publication)->toBe(RoutePublication::Public);
 
     [$cluster, , , , , $clusterRoute] = route_public_topology(
         $this->orbitApp,
@@ -505,9 +499,8 @@ it('keeps publication=public without artifacts for a Node-scoped Route, inactive
         name: 'inactive-public',
     );
     $cluster->update(['state' => ClusterState::Inactive]);
-    $inactiveCluster = app(PublishPublicRouteAction::class)->execute($clusterRoute, RoutePublication::Public);
-
-    expect($inactiveCluster->publication)
+    expect(app(PublicRouteEligibility::class)->canStartActivation($clusterRoute->refresh()))->toBeFalse()
+        ->and($clusterRoute->publication)
         ->toBe(RoutePublication::Public)
         ->and($edge->calls)
         ->toBe([]);
@@ -522,7 +515,8 @@ it('keeps publication=public without artifacts for a Node-scoped Route, inactive
         'status' => RouteStatus::Pending,
     ]);
 
-    expect($missing->publication)->toBe(RoutePublication::Public)->and($edge->calls)->toBe([]);
+    expect(app(PublicRouteEligibility::class)->canStartActivation($missing))->toBeFalse()
+        ->and($missing->publication)->toBe(RoutePublication::Public)->and($edge->calls)->toBe([]);
 });
 
 it('creates and shows a public Route without a Node public-IP field', function (): void {
