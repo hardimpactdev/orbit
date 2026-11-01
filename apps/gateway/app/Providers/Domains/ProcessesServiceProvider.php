@@ -6,7 +6,6 @@ namespace App\Providers\Domains;
 
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessInstanceMaterial;
 use App\Domain\Processes\ProcessOperationSecrets;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -36,7 +35,6 @@ final class ProcessesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([ProcessInstanceMaterial::class], OperationSecretSource::class);
         $this->app->bind(ProcessOperationSecrets::class);
         $this->app->tag([ProcessOperationSecrets::class], OperationSecretSource::class);
         $this->app->bind(

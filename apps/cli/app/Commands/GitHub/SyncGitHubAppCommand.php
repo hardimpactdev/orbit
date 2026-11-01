@@ -11,10 +11,12 @@ use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class SyncGitHubAppCommand extends GitHubCommand
 {
+    #[\Override]
     protected $signature = 'github:app:sync
         {--idempotency-key= : Reuse this key for the same refresh request}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Record a native workflow request to refresh the GitHub App installations.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
