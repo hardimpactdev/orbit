@@ -219,18 +219,20 @@ export function bootstrapCommandSteps(
     mac.push(
         ssh(
             name + "_mac_observer",
-            "script",
+            "exec",
             {
-                interpreter: "sh",
                 sudo: false,
-                script: expr(
+                argv: [
+                    "/usr/bin/env",
+                    expr('"OBSERVER_URL=" + ' + artifact + ".url"),
+                    expr('"OBSERVER_SHA256=" + ' + artifact + ".sha256"),
+                    "/bin/sh",
+                    "-s",
+                ],
+                stdin: expr(
                     'steps["' + name +
                         '_mac_observer_assets"].outputs.script_body',
                 ),
-                env: {
-                    OBSERVER_URL: expr(artifact + ".url"),
-                    OBSERVER_SHA256: expr(artifact + ".sha256"),
-                },
             },
             name + "_mac_observer_assets",
             true,

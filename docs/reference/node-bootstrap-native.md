@@ -69,6 +69,8 @@ Core workflow dependencies, vault expressions, method outputs and the existing t
 
 `@nckrtl/node-bootstrap-command.observer({url,sha256})` reads the existing action that delivers the observer and verifies its checksum. It takes only the admitted artifact. The owning parent executes its returned `script_body` through official SSH and owns the account, files, service activation and terminal contribution. This metadata method creates no bootstrap admission.
 
+The macOS enrollment observer step passes its public artifact URL and checksum as fixed `env` arguments to official SSH `exec`. It sends the canonical shell asset through `stdin`, so delivery does not depend on SSH environment forwarding. The existing account and WireGuard tunnel stay in place.
+
 `authorizedKeySteps` re-exports the canonical helper already on main. Its behavior is `@nckrtl/node-ssh-access`. Normal role prerequisites use209's own approved identity and full target pins. The Gateway identity execution copy remains restricted to its separate first-key operation. Core dependencies and official SSH script/output handling fit these actions; official cfgmgmt connection schemas lack the admitted full host-key list, so the exports use official SSH for that contract.
 ## Record a trusted first host key
 

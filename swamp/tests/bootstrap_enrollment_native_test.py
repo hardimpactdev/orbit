@@ -43,7 +43,7 @@ class EnrollmentBootstrapNative(NativeTestCase):
             + sys.executable
             + "\n"
             + """
-import ast,json,sys
+import ast,json,shlex,sys
 from pathlib import Path
 argv=sys.argv[1:]
 body=sys.stdin.read()
@@ -58,7 +58,13 @@ elif '/usr/bin/id' in command: print('orbit')
 elif '/usr/bin/printenv' in command: print('/Users/orbit')
 elif '/sbin/ifconfig' in command: print('utun2: flags=1\\n  inet 10.44.0.14 netmask 0xffffff00')
 elif '/usr/bin/shasum' in command: print('a'*64+'  observer')
-elif 'OBSERVER_SHA256' in body: print(json.dumps({'installed':True,'changed':False}))
+elif 'OBSERVER_SHA256' in body:
+    argv=shlex.split(command)
+    expected=['/usr/bin/env','OBSERVER_URL=https://example.test/observer','OBSERVER_SHA256='+'a'*64,'/bin/sh','-s']
+    if argv != expected:
+        print('Observer artifact values did not arrive as explicit command arguments',file=sys.stderr)
+        raise SystemExit(2)
+    print(json.dumps({'installed':True,'changed':False}))
 else:
     tree=ast.parse(body)
     assignment=next(node for node in tree.body if isinstance(node,ast.Assign)
@@ -231,6 +237,9 @@ else:
         calls = [json.loads(row) for row in self.calls.read_text().splitlines()]
         self.assertFalse(any("BOOTSTRAP_INPUT" in row["stdin"] for row in calls))
         self.assertTrue(all("sudo" not in row["argv"][-1] for row in calls))
+        observer = next(row for row in calls if "OBSERVER_SHA256" in row["stdin"])
+        self.assertNotIn("SendEnv=OBSERVER_URL", observer["argv"])
+        self.assertNotIn("SendEnv=OBSERVER_SHA256", observer["argv"])
 
     def test_fingerprint_mismatch_stops_before_any_mutation(self):
         self.input["bootstrap"]["target"]["fingerprint"] = "SHA256:" + "A" * 43

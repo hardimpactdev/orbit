@@ -111,9 +111,16 @@ if '-M' in args or '-O' in args: raise SystemExit(0)
 argv=shlex.split(args[-1]);body=sys.stdin.read()
 with Path(AUDIT).open('a') as stream:stream.write(json.dumps({'argv':argv,'body':body})+'\\n')
 if argv[:3]==['sudo','-n','--']:argv=argv[3:]
-if argv[:1]==['uname']:print('Linux x86_64')
+if argv[:1]==['uname']:print('Darwin arm64' if Path(MAC).exists() else 'Linux x86_64')
 elif argv==['cat','/etc/os-release']:print('ID=ubuntu\\nVERSION_CODENAME=resolute')
 elif argv[:1]==['cat']:print(PUBLIC_KEY)
+elif argv==['/usr/bin/id','-un']:print('orbit')
+elif argv==['/usr/bin/printenv','HOME']:print('/Users/orbit')
+elif argv==['/sbin/ifconfig']:print('utun2: flags=1\\n  inet 10.44.0.73 netmask 0xffffff00')
+elif argv[:3]==['/usr/bin/shasum','-a','256']:print('a'*64+'  observer')
+elif 'OBSERVER_SHA256' in body:
+    assert argv==['/usr/bin/env','OBSERVER_URL=https://artifact.invalid/observer','OBSERVER_SHA256='+'a'*64,'/bin/sh','-s']
+    print(json.dumps({'installed':True,'changed':False}))
 elif 'observer_digest' in args[-1]:print(json.dumps({'observer_ready':True,'observer_digest':'b'*64}))
 elif 'BOOTSTRAP_INPUT = json.loads(' in body:
     tree=ast.parse(body)
@@ -126,7 +133,9 @@ elif 'Storage root must already exist' in body:print(json.dumps({'ready':True,'c
 else:
     result=subprocess.run(argv,input=body,text=True,capture_output=True)
     sys.stdout.write(result.stdout);sys.stderr.write(result.stderr);raise SystemExit(result.returncode)
-""".replace("AUDIT", repr(str(self.audit))).replace("PUBLIC_KEY", repr(public_key))
+""".replace("AUDIT", repr(str(self.audit)))
+            .replace("PUBLIC_KEY", repr(public_key))
+            .replace("MAC", repr(str(self.repo / "mac")))
         )
         program = """
 import {enrollmentPrerequisiteSteps} from './extensions/behaviors/operations/node-bootstrap/enrollment_prerequisite_steps.ts';
@@ -214,3 +223,29 @@ console.log(JSON.stringify([admitted,...steps]));
         run = self.run_prerequisites()
         self.assertEqual(run["status"], "succeeded")
         self.assertFalse(self.audit.exists())
+
+    def test_macos_prefix_uses_the_existing_account_without_linux_tools_or_firewall(
+        self,
+    ):
+        (self.repo / "mac").touch()
+        self.enrollment.update(mode="macos", tools=None, network=None)
+        self.enrollment["bootstrap"].update(
+            platform="macos",
+            expected_architecture="arm64",
+            artifacts={
+                "macos-aarch64": {
+                    "url": "https://artifact.invalid/observer",
+                    "sha256": "a" * 64,
+                }
+            },
+        )
+        self.enrollment["bootstrap"]["target"]["user"] = "orbit"
+        run = self.run_prerequisites()
+        self.assertEqual(run["status"], "succeeded")
+        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertTrue(any("OBSERVER_SHA256" in call["body"] for call in calls))
+        self.assertFalse(any("BOOTSTRAP_INPUT" in call["body"] for call in calls))
+        self.assertFalse(any("orbit-firewall.lock" in call["body"] for call in calls))
+        self.assertFalse(
+            any("install_apt.py" in " ".join(call["argv"]) for call in calls)
+        )
