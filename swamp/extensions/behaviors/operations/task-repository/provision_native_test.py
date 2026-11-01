@@ -248,6 +248,15 @@ export const model = {
         self.assertNotIn(secret, self.checkout.joinpath(".git/config").read_text())
         self.assertEqual(self.checkout.joinpath("code").read_text(), "fixture\n")
 
+    def test_cloud_provider_descriptors_stay_in_vm_child_and_out_of_source_child(self):
+        self.inputs["execution_secrets"] = {
+            "bootstrap": {"vault": "orbit-control-inputs", "key": "task-vm-provider-bootstrap-10"},
+            "upcloud": {"vault": "orbit-control-inputs", "key": "task-vm-upcloud-token"},
+        }
+        history, steps = self.execute_provision()
+        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(sorted(steps["vm"]["outputs"]["result"]["vm_copy_keys"]), ["bootstrap", "upcloud"])
+
     def test_monorepo_skips_irrelevant_composer_profile_and_preserves_empty_setup_seed(
         self,
     ):

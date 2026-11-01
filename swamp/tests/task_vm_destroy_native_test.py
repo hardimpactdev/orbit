@@ -54,7 +54,7 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         self.envelope = {'operation_id':7009,'node_id':99,'kind':'task_vm.destroy',
                          'intent':{'task_vm_id':42,'guest_node_id':142,'provider':'incus','provider_input':self.provider,
                                    'model_key_required':True,'model_intent':{'task_vm_id':42},'removal':removal},
-                         'execution_secrets':{}}
+                         'execution_secrets': {field: {'vault': 'orbit-control-inputs', 'key': key} for field, key in {'model_key': 'task-vm-model-key-42', 'model_router_management': 'model-router-management-node-6', 'model_router_anchor': 'model-router-anchor-node-6'}.items()}}
 
     def fixture(self, name, command):
         value={'id':str(uuid.uuid4()),'name':name,'inputs':{'type':'object','additionalProperties':True},

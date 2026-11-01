@@ -31,7 +31,7 @@ export const ProviderInput = z.object({
         (v.provider === "incus"
             ? v.vm?.name !== v.name || !v.host_ssh_execution ||
                 v.provider_id !== null
-            : !v.provider_id || v.vm !== null || v.host_ssh_execution !== null)
+            : v.vm !== null || v.host_ssh_execution !== null)
     ) {
         ctx.addIssue({
             code: "custom",
@@ -158,5 +158,43 @@ export function receipt(
         running: observed.state === "started",
         absent: observed.state === "absent",
         settled: true,
+    });
+}
+
+export function discoverProvider(raw: unknown, stdout: string) {
+    const intent = ProviderInput.parse(raw);
+    if (intent.provider !== "upcloud" || intent.provider_id !== null) {
+        return intent;
+    }
+    const rows = z.object({
+        servers: z.object({
+            server: z.array(
+                z.object({
+                    uuid: z.uuid(),
+                    title: z.string(),
+                    labels: z.object({
+                        label: z.array(
+                            z.object({ key: z.string(), value: z.string() }),
+                        ),
+                    }).optional(),
+                }).passthrough(),
+            ),
+        }),
+    }).parse(JSON.parse(stdout)).servers.server.filter((v) =>
+        v.title === intent.name
+    );
+    if (
+        rows.length > 1 ||
+        rows.some((row) =>
+            row.labels &&
+            !row.labels.label.some((v) =>
+                v.key === "orbit-task-vm" &&
+                v.value === String(intent.task_vm_id)
+            )
+        )
+    ) throw new Error("task_vm.provider_identity_invalid");
+    return ProviderInput.parse({
+        ...intent,
+        provider_id: rows[0]?.uuid ?? null,
     });
 }

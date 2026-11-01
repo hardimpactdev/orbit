@@ -27,12 +27,10 @@ final readonly class TaskVmDestroyIntent
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array
     {
-        if ($vm->provider !== TaskVmProviderKind::Incus) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'UpCloud destruction requires its native cleanup follow-up.', 503);
-        }
         $this->preserved($vm);
         $this->available($vm);
-        $host = Node::query()->findOrFail($vm->host_node_id);
+        $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : Node::query()->where('status', LifecycleStatus::Active)
+            ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
         if ($host->status !== LifecycleStatus::Active || $vm->name !== 'tvm-'.$vm->id) {
             throw new ResourceOperationException('task_vm.destroy_refused', 'Destroy requires its exact VM and active Incus host.', 409);
         }
@@ -55,7 +53,7 @@ final readonly class TaskVmDestroyIntent
             'group_id' => $vm->group_id, 'name' => $vm->name, 'wireguard_ip' => $vm->wireguard_ip,
             'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'model_key_required' => $vm->model_key !== null,
             'model_intent' => $model['intent'] ?? null, 'node_removal' => $snapshot, 'removal' => $removal['intent'] ?? null,
-            ...$provider, 'execution_secrets' => $model['execution_secrets'] ?? []];
+            ...$provider, 'execution_secrets' => [...$provider['execution_secrets'], ...($model['execution_secrets'] ?? [])]];
     }
 
     public function owned(Operation $operation, bool $lock = false): TaskVm
@@ -64,7 +62,7 @@ final readonly class TaskVmDestroyIntent
         $input = $operation->input;
         if ($operation->kind !== 'task_vm.destroy' || $operation->target_type !== 'task_vm'
             || ($input['task_vm_id'] ?? null) !== $vm->id || ($input['node_id'] ?? null) !== $operation->node_id
-            || $vm->host_node_id !== $operation->node_id || ($input['guest_node_id'] ?? null) !== $vm->node_id
+            || ($vm->provider === TaskVmProviderKind::Incus && $vm->host_node_id !== $operation->node_id) || ($input['guest_node_id'] ?? null) !== $vm->node_id
             || ($input['group_id'] ?? null) !== $vm->group_id || ($input['name'] ?? null) !== $vm->name
             || ($input['wireguard_ip'] ?? null) !== $vm->wireguard_ip || ($input['provider'] ?? null) !== $vm->provider->value
             || ($input['provider_id'] ?? null) !== $vm->provider_id || ($input['model_key_required'] ?? null) !== ($vm->model_key !== null)) {
@@ -99,7 +97,7 @@ final readonly class TaskVmDestroyIntent
             throw new ResourceOperationException('operation.target_busy', 'The guest Node or task group Operation must settle before deleting this VM.', 409);
         }
         if ($vm->node instanceof Node) {
-            app(NodeRemovalPolicy::class)->protected($vm->node, Node::query()->findOrFail($vm->host_node_id));
+            app(NodeRemovalPolicy::class)->protected($vm->node, $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole());
             app(NodeRemovalPolicy::class)->resources($vm->node, offline: true);
         }
         if ($vm->node_id !== null && (Instance::query()->where('node_id', $vm->node_id)->exists()
