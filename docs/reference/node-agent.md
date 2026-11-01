@@ -438,7 +438,7 @@ The subscriber runs next to PHP-FPM on the Gateway machine. `gateway.converge-ag
 | --- | --- |
 | Command | `/usr/bin/php8.5 artisan orbit:agent-view`, as the `orbit` user in the Gateway checkout |
 | Unit | `/etc/systemd/system/orbit-agent-view.service`, with `Restart=always` and `RestartSec=2` |
-| Installed by | `orbit:bootstrap` and `orbit:gateway-web` |
+| Installed by | The Gateway runtime handoff |
 | Connection | One WebSocket to Reverb for all Nodes, verifying `reverb.orbit` against the Orbit root CA |
 | Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every managed Linux Node |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed with the Reverb app secret |

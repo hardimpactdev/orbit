@@ -18,7 +18,7 @@ This guide helps an operator keep Gateway state safe during a source update and 
 
 ## Gateway request logs
 
-Gateway web convergence checks the checkout with `gateway.check-checkout` before installing Caddy. It then calls `gateway.prepare-checkout` to grant access. The agent resolves the managed release link, checks every path before mutation, and keeps public-file symlinks untouched. An in-place checkout gives Caddy traversal through its ancestors and read access only to its public tree; the environment stays mode `0600`. A prepared release keeps its read-only tree unchanged: convergence adjusts only its base and releases directories and the shared environment. Failed permission changes restore prior ownership and modes, and failed recovery is reported explicitly.
+The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any checkout, certificate, PHP-FPM, Caddy, or service change. Its native parent workflow is not installed. Normal Gateway releases use the [runtime handoff](#runtime-handoff).
 
 The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request.
 
@@ -633,7 +633,7 @@ orbit gateway:release:auto:disable
 
 `gateway.converge-release-units` renders and installs the fixed release units and host retention files through `AgentCommandRunner`. The Gateway supplies the stable application path, account, Orbit home, and retention limits. The agent preserves operator logrotate masks, removes only temporary masks it created during package installation, and never starts a release service during convergence. Requested records use `gateway.start-release-run`; `gateway.inspect-release-run` reports their systemd state while PHP checks whether the record was claimed.
 
-The Gateway runs releases in systemd units, never in PHP-FPM or the scheduler. `orbit:gateway-web` and every [runtime handoff](#runtime-handoff) install them. The handoff writes the units and enables the timer, but it never starts or restarts a release unit, so the release that runs the handoff keeps running.
+The Gateway runs releases in systemd units, never in PHP-FPM or the scheduler. The [runtime handoff](#runtime-handoff) installs them. The handoff writes the units and enables the timer, but it never starts or restarts a release unit, so the release that runs the handoff keeps running.
 
 | Unit | Runs |
 | --- | --- |
@@ -821,7 +821,7 @@ php /home/orbit/adopt-tmp/apps/gateway/artisan gateway:release:handoff
 
 ### After adoption
 
-The release directories are read-only, and `bin/bootstrap` refuses to run in a release. `orbit:gateway-web` converges the release link: it keeps `/home/orbit` and `/home/orbit/releases` traversable for Caddy and the shared env file at mode `0600`, and leaves the releases themselves unchanged.
+The release directories are read-only, and `bin/bootstrap` refuses to run in a release. The manual `orbit:gateway-web` command is unavailable and makes no permission changes. The release path keeps the shared environment private and leaves prepared release trees unchanged.
 
 ## Recover a failed update
 

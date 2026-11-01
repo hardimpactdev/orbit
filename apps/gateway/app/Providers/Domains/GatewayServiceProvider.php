@@ -4,26 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Domain\AgentView\AgentViewConverger;
-use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
-use App\Domain\Gateway\GatewayWebConverger;
-use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
-use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
 use App\Infrastructure\Files\ProtectedFileWriter;
-use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
-use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
-use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
-use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
-use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
-use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
-use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -45,33 +32,6 @@ final class GatewayServiceProvider extends ServiceProvider
                 processes: app(ProcessRunner::class),
                 agents: app(AgentCommandRunner::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-            ),
-        );
-        $this->app->singleton(
-            GatewayWebConverger::class,
-            static fn (): GatewayWebConverger => new NativeGatewayWebConverger(
-                certificates: app(GatewayCertificateIssuer::class),
-                fpmRenderer: app(GatewayFpmConfigRenderer::class),
-                checkout: new GatewayCheckoutAccessConverger(
-                    agents: app(AgentCommandRunner::class),
-                    checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
-                ),
-                webDirectory: new GatewayWebDirectoryConverger(
-                    agents: app(AgentCommandRunner::class),
-                    webRoot: Config::string('orbit.gateway_web'),
-                ),
-                certificatePublisher: new NativeGatewayCertificatePublisher(
-                    agents: app(AgentCommandRunner::class),
-                    orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-                ),
-                fpm: app(NativeGatewayFpmConverger::class),
-                builds: app(NodeCaddyBuilds::class),
-                caddyInstaller: new NativeGatewayCaddyInstaller(app(AgentCommandRunner::class)),
-                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-                checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
-                hibernator: app(RuntimeHibernatorConverger::class),
-                agentView: app(AgentViewConverger::class),
-                releaseUnits: app(GatewayReleaseUnitConverger::class),
             ),
         );
         $this->app->singleton(

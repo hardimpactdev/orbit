@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
-use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\RoleName;
@@ -55,7 +54,6 @@ describe('production wiring', function (): void {
         foreach ([AgentViewConverger::class, GatewayReleaseUnitConverger::class, RuntimeHibernatorConverger::class] as $unit) {
             $this->app->instance($unit, $units);
         }
-        $this->app->forgetInstance(GatewayWebConverger::class);
         $this->gateway = Node::query()->create([
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,
@@ -64,6 +62,7 @@ describe('production wiring', function (): void {
             'user' => 'orbit',
             'wireguard_ip' => '10.44.0.2',
         ]);
+        $this->gateway->forceFill(['architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key'])->save();
         $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     });
 
@@ -71,19 +70,10 @@ describe('production wiring', function (): void {
         new Filesystem()->deleteDirectory($this->home);
     });
 
-    it('installs and runs the Documents hook before the reload in Gateway web convergence', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('gateway.check-checkout', ['changed' => false])->answer('gateway.prepare-checkout', ['changed' => false])->answer('gateway.prepare-web-directory', ['changed' => false])->answer('gateway.publish-certificate', ['changed' => false])->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('caddy.order-after-vpn', ['changed' => false])->answer('gateway.converge-fpm', ['changed' => true, 'activated' => true]);
-        app()->instance(AgentCommandRunner::class, $agents);
-        app(GatewayWebConverger::class)->converge($this->gateway, 'gateway.orbit', '10.44.0.2');
-
-        expect(collect($agents->calls)->last()['input']['hooks'][0]['command'])->toBe('documents.prepare-cleanup');
-        expect($agents->commands())->toBe(['gateway.check-checkout', 'caddy.install-package', 'caddy.order-after-vpn', 'gateway.prepare-checkout', 'gateway.prepare-web-directory', 'gateway.publish-certificate', 'gateway.converge-fpm']);
-    });
-
     it('installs and runs the Documents hook before the reload in the release handoff', function (): void {
         $agents = new FakeAgentCommandRunner()->answer('gateway.converge-fpm', ['changed' => true, 'activated' => true]);
         app()->instance(AgentCommandRunner::class, $agents);
-        config(['swamp.run_token' => 'fixture-token']);
+        config(['swamp.run_token' => 'fixture-token', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/root.pem']);
         app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
         $result = app(GatewayRuntimeHandoff::class)->serve();
 

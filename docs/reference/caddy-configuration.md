@@ -144,7 +144,7 @@ The `websocket` role runs the read-only `caddy.check-addresses` command before i
 
 ### When a build runs
 
-A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AI router, Gateway web convergence, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, and `analytics` all do this. No publisher requests a build inside a database transaction.
+A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AI router, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, and `analytics` all do this. No publisher requests a build inside a database transaction.
 
 A command that adds a site publishes the site's certificate before the build, because `caddy validate` loads every certificate file the Caddyfile names. A command that removes a site builds first and removes the certificate afterwards. A certificate step that replaces a certificate that a live site uses reloads Caddy itself under the [Node lock](#how-a-build-is-pushed), because a build with an unchanged render does not reload.
 
@@ -152,7 +152,7 @@ The shared `caddy.install-certificate` and `caddy.remove-certificate` commands o
 
 Publication validates the key match before it changes the live pair, then swaps the complete directory atomically under the Caddy publication lock. The same lock covers reload and rollback. Matching bytes cause no reload, and an inactive Caddy service stays inactive. A failed reload restores the previous directory and reloads the prior certificate; failed recovery has its own refusal and retains the prior pair. Removal accepts only an owned pair or an absent directory, and runs after the Gateway withdraws its site.
 
-Gateway web convergence publishes its certificate through `gateway.publish-certificate`. The Gateway sends the leaf, private key, and public CA through the agent's protected input. The agent verifies the CA chain and key match before changing the live certificate. It owns the fixed version directories and current link under `/etc/caddy`, and holds the Caddy publication lock through the switch and reload. Matching bytes leave the current version unchanged. Failed activation restores the prior link and active service; failed recovery is reported explicitly. Previous certificate versions remain available.
+The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any certificate or Caddy change. Normal releases use the [Gateway runtime handoff](/reference/gateway-recovery#runtime-handoff).
 
 Metrics convergence publishes the `metrics.orbit` certificate through `metrics.certificate`. The agent keeps each publication in its own version directory under `/etc/caddy/orbit-metrics-cert-versions`, and the `orbit-metrics-cert-current` link selects one. It holds the Caddy publication lock through the switch, the reload, and any rollback. It reads the Caddy service state as the shared certificate commands do, and refuses before a change when it cannot read that state.
 
@@ -222,7 +222,7 @@ The command that requested the build fails with its own error code:
 | `analytics` role | `analytics.caddy_publication_failed` |
 | AI router collector | `ai_router.caddy_publication_failed` |
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
-| Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
+| Manual Gateway web convergence | `gateway.web_unavailable` before any host change |
 
 A role convergence fails with `node_role.convergence_failed`, and a role removal fails with `node_role.remove_failed`. The error response carries the step's own code as `details.error_code` next to `details.step`, and `orbit node:role:list` shows it. For example, an `ingress` removal that stops in the build has `details.step` `remove:caddy-config` and `details.error_code` `ingress.caddy_config_failed`. A package or prerequisite step keeps its own code, such as `ingress.prerequisite_failed`.
 
