@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Architecture",
+      "order": 41,
+      "pages": ["swamp/diagrams/database-update"]
+    }
+  ]
+}
