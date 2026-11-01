@@ -11,12 +11,12 @@ Start every kind PR from this page. Review every kind PR against it and the [bin
 
 Work through these steps in order before you fill the template.
 
-1. **Find the legacy path.** List its Gateway action, `direct-operations.php` entry, agent actions and tests. Note each effect and the Node it changes.
-2. **Group the effects.** An action group is a set of commands with one Node, one resume point and one guard. All git commands of a checkout are one group. Each group becomes one step.
-3. **Map each group to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature). Prefer an official model (`@swamp/ssh`, `@swamp/cfgmgmt`) over a script. Record what you checked for the PR body.
+1. **Start from the legacy sequence (F9).** The pre-Swamp Gateway action is the spec. Read it at the migration baseline with `git show 6291bb036:<path>`. Note each phase and the Node it changes.
+2. **One legacy phase, one step.** Each legacy phase becomes one action group: one script-file step on one Node. It keeps the phase's legacy edge cases.
+3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature). Prefer an official model (`@swamp/ssh`, `@swamp/cfgmgmt`) over a script. Record what you checked for the PR body.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Every secret becomes a `{vault, key}` descriptor under `execution_secrets`.
-5. **Order refusals before effects.** A read step and a typed decision step feed a native `assert` step. It refuses before the first write, as the #2266 branch check does.
-6. **Write the result and budget.** One result step prints one public JSON object, with the failed step and an `error_code` on failure. Set the [time budget](#set-the-time-budget).
+5. **Refuse first, then print the result.** The action script checks preconditions before its first write. It prints one public JSON object.
+6. **Set the [time budget](#set-the-time-budget).**
 7. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
 8. **Delete the old path in the same PR.** Remove the executor, its tests, scripts and callbacks, and its `swamp-shape-baseline.json` rows.
 
@@ -24,7 +24,7 @@ Work through these steps in order before you fill the template.
 
 Replace every `REPLACE_*` token, generate a new workflow UUID, and define the family's public intent schema. This example runs an action group on 209. For an effect on another Node, replace `command/shell` with official `@swamp/ssh` from 209, using the approved identity file and stored full host keys; see [Node execution](/reference/swamp-command-steps#node-execution-through-official-ssh). Use one selector in the effective placement: `target` only, and no `labels` at any inherited scope.
 
-Copy shape from the smallest clean reference that fits. [`firewall.inspect`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-inspect.yaml) is one pinned SSH read and a typed result. [`schedule.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-schedule-create.yaml) uses `@swamp/cfgmgmt` with `forEach`. [`instance.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-create.yaml) shows shipped scripts, guards and an `assert` refusal. The guide's Template section still names `node.bootstrap_probe`, but do not copy its placement; it sets both selectors.
+Copy shape from the smallest clean reference that fits. [`firewall.inspect`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-inspect.yaml) is one pinned SSH read and a typed result. [`schedule.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-schedule-create.yaml) uses `@swamp/cfgmgmt` with `forEach`. [`instance.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-create.yaml) is the multi-step reference for shipped scripts, guards and a result step; do not copy its step count. The guide's Template section still names `node.bootstrap_probe`, but do not copy its placement; it sets both selectors.
 
 ```yaml
 id: REPLACE_WORKFLOW_UUID
@@ -78,36 +78,26 @@ jobs:
           behaviorName: '${{ "action-" + run.id }}'
           methodName: execute
           inputs:
+            ignoreExitCode: true
             run: REPLACE_F1_RUN
             env:
               ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_START_TAG: '${{ inputs.intent.start_tag }}'
               ORBIT_PUBLIC_VALUE: '${{ inputs.intent.public_value }}'
               ORBIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}'
-      - name: result
-        target: orbit-node-209
-        dependsOn: [{step: action, condition: {type: always}}]
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/REPLACE_KIND-result'
-          behaviorName: '${{ "result-" + run.id }}'
-          methodName: result
-          inputs: {intent: '${{ inputs.intent }}', steps: '${{ steps }}'}
       - name: accepted
         target: orbit-node-209
-        dependsOn: [{step: result, condition: {type: succeeded}}]
-        task: {type: assert, expr: 'steps.result.outputs.ready == true', severity: high, message: REPLACE_KIND did not complete.}
+        dependsOn: [{step: action, condition: {type: succeeded}}]
+        task: {type: assert, expr: 'steps.action.outputs.exitCode == 0', severity: high, message: REPLACE_KIND did not complete.}
 ```
 
 `assets.read` is a family metadata method: resolve shipped files with `ctx.extensionFile`, record public paths with `ctx.writeResource`, and return their paths. List scripts and imports under manifest-relative `additionalFiles`. Keep this method and the command on the same worker; never assume a checkout exists there. TypeScript shapes inputs and outputs; operational code lives in script files.
 
 F1 is pending; lane 16 owns it. When it lands, shipped scripts run through its shared wrapper, and its shared projector records `failed_step` and the last 4 KB of redacted stderr as `error.detail` for any failed step, including SSH, typed and `assert` steps. Until then, `REPLACE_F1_RUN` is a plain invocation of the shipped script from the asset paths. Add no family wrapper. Never print credentials, private keys or unredacted diagnostics.
 
-The `result` step runs even after a failure. It maps the decision output or the first failed step to a public `error_code` and prints one JSON object with `ready`. It is the `terminal_result`; the trailing `assert` then fails the run. Without it, a refusal projects only `operation.native_failed`.
+On official e459 a `command/shell` step that exits nonzero keeps no outputs, so its stdout and `error_code` are lost. The action therefore sets `ignoreExitCode: true` and is the `terminal_result`; the `accepted` assert on its `exitCode` then fails the run. A kind with several effect steps instead adds a `result` step on `condition: always` that maps the first failed step to an `error_code`, as `instance.create` does.
 
-One script file owns one action group, such as all git commands for a checkout. It runs as a placed `command/shell` step on 209, or through `@swamp/ssh` `script` for another Node. Split steps only for a resume point, a different Node or a guard. Each group is idempotent for the admitted `operation_id` and start tag. Use native dependencies, guards, resume, concurrency and per-behavior method locks; Swamp has no step retry setting. Required apt/UFW host locks remain allowed when named. Add no poller, supervisor, receipt protocol or agent action.
-
-A script that refuses prints a public `error_code` and exits nonzero. Scripts pass secrets to tools on stdin or in protected config files, never argv or tracing. Remove unused credential fields and vault declarations; declare every required vault in parents and children. Check actual principal, resource and key grants separately from names in YAML.
+One script file owns one action group, such as all git commands for a checkout. It runs as a placed `command/shell` step on 209, or through `@swamp/ssh` `script` for another Node. It is idempotent for the admitted `operation_id` and start tag. It refuses with a public `error_code` and a nonzero exit. It passes secrets to tools on stdin or in protected config files, never argv or tracing. Use native guards, resume, concurrency and method locks; Swamp has no step retry setting. Named apt and UFW host locks are allowed. Declare every vault the run reads, in parents and children, and check the actual grants.
 
 ## Fill the Gateway declaration
 
@@ -118,7 +108,7 @@ Add these fields to the family's existing registration and return the full input
 'REPLACE_KIND' => [
     // Keep its existing admission, workflow and projector registration.
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'execute', 'step' => 'result'],
+    'terminal_result' => ['job' => 'execute', 'step' => 'action'],
 ],
 // Only when the run reads a Gateway-owned secret:
 //  'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^REPLACE_KEY_PATTERN$']],
@@ -131,8 +121,7 @@ Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOpera
 | Done | Gateway checklist |
 | --- | --- |
 | [ ] | Validate and record the complete immutable intent at admission. Use shared `StartSwampRun`; its builder sets Operation, kind and Node identity. Remove intent, private-material and status callbacks. |
-| [ ] | Use shared `SwampCommandStep::executionCopy` when a Gateway-owned secret changes. Pass only `{vault, key}` descriptors. Keep values out of persisted inputs and public outputs. |
-| [ ] | Keep VM-created Pi/provider credentials on the VM. Consume them there through official SSH. |
+| [ ] | Use shared `SwampCommandStep::executionCopy` when a Gateway-owned secret changes. Pass only `{vault, key}` descriptors. VM-created Pi and provider credentials stay on the VM. |
 | [ ] | Declare one fixed terminal selector. The shared `projectTerminal` reads the run's history once and calls the family projector, which settles from native status and public outputs. |
 
 ## Set the time budget
@@ -146,7 +135,16 @@ The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A 
 | Timeout at start | Pending: lane 16 adds the shared field, and the extensions lane tests native expiry. Until then, state the budget in the PR body. Add no family timer. |
 | Expiry | Pending, as above. The intended result is a failed Operation with `operation.timed_out` plus F1 detail. |
 | `queueTimeout` | Set it per kind in the workflow so a step fails fast when no worker is free. Keep it below the run budget. F8 replaces the guide's inherit-600 s rule. |
-| Step count | One step per action group, not per command. Each placed step adds scheduling and SSH overhead. |
+
+## Keep steps few
+
+Step count is the dominant cost of a run: op 6639 took 957 s for 4.6 s of SSH work. Until the extensions lane reports the cause, one script per Node per phase does the reads, precondition checks, writes and result JSON. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. The PR names the resume point, Node change or guard each extra step serves.
+
+Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. This follows PLAN F9 and "How a kind converts" item 2; guide rule 3 still says one action per step and needs a matching update.
+
+## Fan out over computed data
+
+Official e459 expands `forEach` before the outputs of steps in the same job exist, so a `forEach.in` that reads them fails with `No such key`. The manual does not say when `in` is evaluated. Read `inputs`, literals, or outputs of a step in an earlier job that this job `dependsOn`, as [`workflow-database-destroy-actions.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-destroy-actions.yaml) does. When that does not fit, pass the list as inputs to a `type: workflow` child whose `forEach` reads them; [`workflow-database-clone-mysql.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-clone-mysql.yaml) passes step output into child inputs.
 
 ## Test layout
 
@@ -159,6 +157,7 @@ Put each test where its project's CI runs it.
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts` | Typed decision and result behaviors, with Deno. |
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
 | `swamp/tests` script tests | Each shipped script file directly, plus shellcheck or ruff. |
+| Parity tests ported from the legacy feature tests | Every legacy case, including edge cases, gives the same public result natively. |
 | A generator drift test, when a generator writes the workflow | The committed YAML equals the generator output. |
 
 ## Check all seven boundary decisions
@@ -188,15 +187,13 @@ Use the native feature in the right column. Custom code is allowed only where th
 | Lock file, `flock`, family busy hold | Per-behavior method lock on one shared `behaviorName`, `concurrency`, or the generic admission `lock_key`. Named apt and UFW tool locks stay | [Method locking](https://swamp-club.com/manual/reference/behavior-definitions#per-behavior-method-locking), [Concurrency](https://swamp-club.com/manual/reference/workflows#concurrency) |
 | "Already done" receipt or marker file | `guard` on public state or prior outputs | [Guard](https://swamp-club.com/manual/reference/workflows#guard) |
 | Best-effort cleanup or compensation in code | A visible step that depends with `condition: failed` or `always`, or `allowFailure` | [Trigger conditions](https://swamp-club.com/manual/reference/workflows#trigger-conditions), [allowFailure](https://swamp-club.com/manual/reference/workflows#allowfailure) |
-| Loop over items in one program | `forEach` with a `behaviorName` unique per run and item (`self.<item>` or `self._index`) | [forEach](https://swamp-club.com/manual/reference/workflows#foreach) |
+| Child Operation, or a loop over items in one program | `type: workflow` child; `forEach` over `inputs` with a `behaviorName` unique per run and item | [forEach](https://swamp-club.com/manual/reference/workflows#foreach-1), [Child workflows](https://swamp-club.com/manual/reference/workflows#workflow-workflow) |
 | One program for many Nodes, or a call to another Node's agent | Placed steps in one run, each through `@swamp/ssh` from 209 | [Placement](https://swamp-club.com/manual/reference/workflows#target-2), [`@swamp/ssh`](https://github.com/swamp-club/swamp-extensions/tree/main/ssh) |
-| Child Operation | `type: workflow` child step | [Child workflows](https://swamp-club.com/manual/reference/workflows#workflow-workflow) |
-| Precondition refusal deep inside a script | Read step, typed decision, `assert` step before the first write | [Assert](https://swamp-club.com/manual/reference/workflows#assert-assert) |
+| Precondition refusal after a write | Check first in the same script and exit with an `error_code`; an `assert` step only for another Node's read | [Assert](https://swamp-club.com/manual/reference/workflows#assert-assert) |
 | Custom timeout or process supervisor | `command/shell` `timeout` input, `@swamp/ssh` `timeoutSec`, native cancel | [Behavior definitions](https://swamp-club.com/manual/reference/behavior-definitions) |
 | Script in a TypeScript string | Script file in manifest `additionalFiles`, resolved with `context.extensionFile`, or YAML `run: \|` | [additionalFiles](https://swamp-club.com/manual/reference/extensions/manifest#additionalfiles) |
 | File, package, unit or firewall writes over SSH | `@swamp/cfgmgmt` `file`, `systemd`, `firewall`, `exec`, behind a host-key pin preflight as [`firewall.direct`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-direct.yaml) does; else `@swamp/ssh` | [`@swamp/cfgmgmt`](https://github.com/swamp-club/swamp-extensions/tree/main/cfgmgmt) |
-| Progress or result callback to the Gateway | Step outputs; the Gateway projects the terminal event plus one history read | [Data access](https://swamp-club.com/manual/reference/data#cel-access) |
-| Host timer that POSTs admissions | Native schedule with full intent through `SwampSchedulePublisher` | [Schedules](https://swamp-club.com/manual/reference/workflows#triggerschedule) |
+| Progress, result or admission POSTs to the Gateway | Step outputs and terminal projection; native schedules with full intent through `SwampSchedulePublisher` | [Data access](https://swamp-club.com/manual/reference/data#cel-access), [Schedules](https://swamp-club.com/manual/reference/workflows#triggerschedule) |
 | Cancel flag polled by steps | Native `swamp workflow cancel`; steps honour `context.signal` | [Cancellation](https://swamp-club.com/manual/reference/workflows#execution-cancellation) |
 
 ## Anti-patterns
@@ -207,22 +204,23 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | --- | --- | --- |
 | `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `target: orbit-node-209`, then `@swamp/ssh` |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |
-| A many-action TypeScript behavior, an agent command port, or a spawn wrapper | Swamp cannot show, guard or resume the actions | One step per action group in native `command/shell` or `@swamp/ssh` |
+| A many-action TypeScript behavior, an agent action call or port, or a spawn wrapper | Swamp cannot show, guard or resume the actions; the agent only observes | One step per action group in native `command/shell` or `@swamp/ssh` |
+| `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read an earlier job's outputs, or fan out in a child workflow |
 | Dereferencing outputs of a failed or skipped step | CEL fails with `No such key` and hides the first error | Depend on `or [succeeded, skipped]` and guard on prior failure |
 | Strict format checks on a third-party token | GitHub stateless tokens contain dots; the check refused a valid mint | Check only documented properties: length, scope, expiry |
 | A kind without a measured p95 and run budget | Runs can wait for minutes, as op 6639 did | [Set the time budget](#set-the-time-budget) |
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault it reads; `vaults: []` when none is a convention |
 | A secret in `run:`, argv, inputs or `set -x`; a GitHub App or CA key in a vault | History and `ps` expose it; root-of-trust keys stay in the Gateway | `env` from `vault.get`, then stdin or a 0600 file; the mint and sign primitives |
 | A failure reporter, Gateway re-read timer, binding loop or retry | Duplicates Swamp and stalls Operations | Native status and one history read per terminal delivery |
+| Redesigning the legacy sequence without a written reason | The legacy Gateway ran each kind reliably; a redesign loses edge cases | Keep the legacy phases, or give the reason in the PR |
 | A non-default Swamp setting without a PLAN row | Hides a deviation from audit | Record reason and removal condition in PLAN |
-| New orbit-agent action calls | The agent only observes | Steps run the system commands |
 
 ## PR and review checklist
 
 Continue ports in the approved shape while live admission proof is pending. Use this checklist for every kind PR and its review.
 
 - [ ] Follow the [translation steps](#translate-a-legacy-command) and avoid every [anti-pattern](#anti-patterns).
-- [ ] Name the core feature and official extension checked.
+- [ ] Keep the legacy phase order, or state the reason for each change. Name the core feature and official extension checked.
 - [ ] Use defaults. Record each deviation's measured reason and removal condition in PLAN.
 - [ ] Delete the old executor, embedded scripts, callbacks, and CLI, SDK and docs paths only it used, in the same PR. Leave `apps/agent` alone.
 - [ ] Report Orbit app/test net lines and Swamp lines separately.
@@ -241,9 +239,11 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 
 | Source, newest first | Lesson |
 | --- | --- |
+| #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
+| PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, legacy edge cases carried over, legacy feature tests as parity tests. |
+| Lane 5 and v2 review on e459 | `forEach` fails over same-job step outputs; a later job works. A nonzero `command/shell` exit drops all outputs; use `ignoreExitCode` plus an `assert`. |
 | PLAN F8 | Every kind declares a measured p95, a run budget passed as the Swamp run timeout, and a per-kind `queueTimeout`; one step per action group, not per command. |
 | v1 manual and reference check | Swamp has no step retry key. `command/shell` takes `workingDir` and `timeout`. Copy placement from `firewall.inspect`; `node.bootstrap_probe` sets both selectors. |
-| #2266 instance create | Refuse a precondition (`instance.branch_in_use`) with a read, a typed decision and an `assert` before the first write. |
-| #2266 instance create | Accept documented third-party token formats; GitHub stateless tokens contain dots. |
+| #2266 instance create | Refuse a precondition such as `instance.branch_in_use` before the first write, inside the action script since #2273. Accept documented token formats; GitHub stateless tokens contain dots. |
 | #2266 instance create | Op 6636 had no readable error: later steps read skipped outputs, and the failed step left no stderr. Guard on prior failure, read no skipped outputs, and use the F1 output. |
 | Conformance ledger, 384 findings to 2026-11-01 | Placement, shared model names, embedded scripts, many-action behaviors, Gateway callbacks and vault lists are the most frequent defects. |
