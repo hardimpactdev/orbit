@@ -33,6 +33,7 @@ export const Operation = z.object({
     "succeeded",
     "failed",
     "cancelled",
+    "interrupted",
   ]),
   error_code: z.string().nullable(),
 }).passthrough();

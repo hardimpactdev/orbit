@@ -192,7 +192,7 @@ Deno.test("unreadable review evidence raises assistance, while observed divergen
   }
 });
 
-for (const status of ["failed", "cancelled"]) {
+for (const status of ["failed", "cancelled", "interrupted"]) {
   Deno.test(`terminal park ${status} retries the same stage with a fresh epoch`, async () => {
     const f = fixture();
     await parkForReview("tg-1.publish.c1", f.read(), f.deps);

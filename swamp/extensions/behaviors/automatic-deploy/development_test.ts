@@ -108,7 +108,7 @@ function fixture() {
       return Promise.resolve({ name });
     },
   };
-  const run = () => tickDevelopment(http, ctx, admissions, now);
+  const run = (at = now) => tickDevelopment(http, ctx, admissions, at);
   return {
     instance,
     listed,
@@ -204,6 +204,26 @@ Deno.test("terminal work without history cannot authorize a new effect", async (
     100,
   );
 });
+Deno.test("interrupted development deploys settle, back off and re-admit the head", async () => {
+  const f = fixture();
+  await f.run();
+  Object.assign(f.operation, {
+    status: "interrupted",
+    error_code: "operation.native_failed",
+    result: { deployment_id: 1 },
+  });
+  f.history.push(failed(1));
+  await f.run();
+  assertEquals(f.memory.get("development-7")?.pending, null);
+  assertEquals(f.memory.get("development-7")?.result, "failed");
+  await f.run();
+  assertEquals(f.memory.get("development-7")?.result, "backing_off");
+  assertEquals(f.starts.length, 1);
+  await f.run("2026-10-31T05:10:00.000Z");
+  assertEquals(f.starts.length, 2);
+  assertEquals(f.starts[0] === f.starts[1], false);
+});
+
 Deno.test("a definite start failure releases pending intent for the next scheduled admission", async () => {
   for (const code of ["swamp.start_refused", "swamp.start_unavailable"]) {
     for (const lost of [false, true]) {
