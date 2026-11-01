@@ -387,6 +387,21 @@ final readonly class InstanceEnvironmentStore
         }
     }
 
+    /**
+     * Development create stores its rendered values at admission, before the Instance has a source.
+     *
+     * @param  array<string, string>  $values
+     */
+    public function seedForCreate(Instance $instance, #[\SensitiveParameter] array $values): void
+    {
+        DB::transaction(function () use ($instance, $values): void {
+            $this->validator->validate($values);
+            foreach ($values as $key => $value) {
+                InstanceEnvironmentValue::query()->updateOrCreate(['instance_id' => $instance->id, 'env_key' => $key], ['env_value' => $value]);
+            }
+        });
+    }
+
     /** @return array<string, string> */
     public function values(Instance $instance): array
     {

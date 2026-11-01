@@ -174,6 +174,39 @@ Legacy phase to Swamp steps. "Steps" counts declared steps in the workflow on ma
 
 Totals: legacy about ten Node calls plus one per setup command, inside one Gateway request. Swamp declares 91 steps: 58 SSH, 25 local on 209 and 8 asserts.
 
+## F9 rebuild
+
+The rebuild keeps the legacy phases and runs each as one shipped script in one native step, all placed on Node 209: 8 steps instead of 91. The Gateway mints the GitHub read token and renders `.env` at admission, as the legacy Gateway did, so no step calls back and nothing about `.env` returns from the Node.
+
+```mermaid
+flowchart TD
+  G["Gateway admission: Project facts, rendered .env, Process records;<br/>after commit: token, .env and setup list to the vault"] --> A
+  A["assets (209): read the phase scripts once"] --> P
+  P["prepare (SSH): refuse before any write<br/>account, path, branch in use, origin, marker"] --> S
+  S["source (SSH): worktree or init, fetch, admitted branch;<br/>prints only the commit"] --> E
+  E["environment (SSH): write the rendered .env"] --> U
+  U["setup (SSH): the whole setup list, first failure stops"] --> R
+  R["processes (child per Process): shared process create, started"] --> F
+  F["finish (209, always): the commit, or the first unfinished phase"] --> X["accepted (assert)"]
+  X --> T["Gateway: one history read, project the commit"]
+```
+
+| Phase | Legacy action | Native step | Node |
+| --- | --- | --- | --- |
+| Prepare | Admission, reserve; agent branch and ownership checks | Gateway admission, `prepare` (`create/prepare.py`) | Gateway, app-dev |
+| Source | Token mint; `prepare`/`inspect`/`resolve-development-source` | Token at run start, `source` (`create/source.py`) | Gateway, app-dev |
+| Environment | `inspect-development-profile`, `write-development-url` | Project facts and render at admission, `environment` (`scripts/write_environment.py`) | Gateway, app-dev |
+| Setup | `ProjectLifecycleRunner`, one agent call per command | `setup` (`create/setup.py` runs `scripts/run_project_step.py` per command) | app-dev |
+| Processes | not in legacy create | `processes`, one `operation-process-create` child per development Process | app-dev |
+| Route | Caddy and DNS | Not in this rebuild; web Projects stay refused at admission | |
+| Finish | Activate; remove a failed new Instance | `finish`, `accepted`, terminal projection | 209, Gateway |
+
+Documented F9 deviations:
+
+- The Vite+ project runtime preparation (16 steps on main) is gone. Legacy create only exported the account's existing Vite+ store as `VP_HOME`, and setup does the same.
+- Development Processes start after setup (Nick, 2026-11-01); legacy create started none.
+- A failed create keeps its reserved Instance, as on main, instead of the legacy removal.
+
 ## Failures and time
 
 Operation 6639 ran on Instance 780 (`firewall-allowlist`, Project 46, beast). The run took 957.4 s and failed at `env-capture`. The 15 SSH steps that lane 11 matched to their method spent 4.6 s in the method and 539.9 s as steps. Across 31 matched steps, 453 s passed before a worker took the step, 160 s inside the worker and 309 s after it.

@@ -175,19 +175,30 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
             $code = ValidatedData::nullableString($data['error_code'] ?? null);
             $result = $status === OperationStatus::Succeeded ? ['ready' => true] : ($code === null ? [] : ['error_code' => $code]);
             $projected = $this->direct->project($operation, $data, $result);
-            if (! $terminal && $status->terminal() && $status !== OperationStatus::Cancelled) {
-                foreach (self::members($operation) as $member) {
-                    $outcome = match ($status) {
-                        OperationStatus::Succeeded => OperationOutcome::succeeded(['ready' => true, 'state' => $member['input']['desired'] === 'running' ? 'active' : 'inactive']),
-                        OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
-                        OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
-                        default => throw new \LogicException('A terminal Process installation status is required.'),
-                    };
-                    $this->completion->complete(self::member($operation, $member), $outcome);
-                }
+            if (! $terminal) {
+                $this->completeMembers($operation, $status, $code, $result);
             }
 
             return $projected;
         });
+    }
+
+    /** Record each admitted member from its parent's terminal status; a cancelled parent leaves them as they are.
+     * @param  array<string,mixed>  $result
+     */
+    public function completeMembers(Operation $operation, OperationStatus $status, ?string $code, array $result): void
+    {
+        if (! $status->terminal() || $status === OperationStatus::Cancelled) {
+            return;
+        }
+        foreach (self::members($operation) as $member) {
+            $outcome = match ($status) {
+                OperationStatus::Succeeded => OperationOutcome::succeeded(['ready' => true, 'state' => $member['input']['desired'] === 'running' ? 'active' : 'inactive']),
+                OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
+                OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
+                default => throw new \LogicException('A terminal Process installation status is required.'),
+            };
+            $this->completion->complete(self::member($operation, $member), $outcome);
+        }
     }
 }

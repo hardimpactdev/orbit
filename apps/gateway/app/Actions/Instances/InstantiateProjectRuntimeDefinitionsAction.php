@@ -81,6 +81,25 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         });
     }
 
+    /**
+     * Record a new development Instance's Processes from the Project's development definitions, inside the
+     * create admission transaction. Create installs and starts them after its setup steps.
+     */
+    public function captureForDevelopment(Instance $instance): void
+    {
+        if ($instance->placedOnAppProd() || $instance->runtime_definitions_captured_at !== null) {
+            return;
+        }
+        $target = $this->processTargets->forPreparation($instance);
+        $definitions = ProcessDefinition::query()->where('project_id', $instance->project_id)
+            ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
+            ->filter(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true));
+        foreach ($definitions as $definition) {
+            $this->captureProcess($instance, $definition, $target, DesiredProcessState::Running);
+        }
+        $instance->update(['runtime_definitions_captured_at' => now()]);
+    }
+
     private function assertProductionTarget(Instance $instance): void
     {
         if ($instance->placedOnAppProd()) {
@@ -104,6 +123,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         #[SensitiveParameter]
         ProcessDefinition $definition,
         ProcessTarget $target,
+        DesiredProcessState $desired = DesiredProcessState::Stopped,
     ): void {
         $data = $this->processData($instance, $definition);
         $attributes = $this->processSpecifications->attributes($data, $target);
@@ -127,7 +147,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 'source_definition_id' => $definition->id,
                 'name' => $definition->name,
                 ...$attributes,
-                'desired_state' => DesiredProcessState::Stopped,
+                'desired_state' => $desired,
                 'status' => LifecycleStatus::Provisioning,
             ]);
         } catch (UniqueConstraintViolationException $exception) {

@@ -8,11 +8,13 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\GitHubInstallationSecretSource;
 use App\Domain\Operations\OperationSecretSource;
+use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Infrastructure\GitHub\CachedGitHubApi;
 use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\SourceControl\GitProjectSourceReader;
 use App\Infrastructure\SourceControl\GitRemoteBranchHeads;
 use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use Illuminate\Support\ServiceProvider;
@@ -22,6 +24,7 @@ final class SourceControlServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
+        ProjectSourceReader::class => GitProjectSourceReader::class,
     ];
 
     public function register(): void

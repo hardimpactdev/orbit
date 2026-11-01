@@ -1,0 +1,105 @@
+{
+  "kind": "instance.create",
+  "workflow": "operation-instance-create",
+  "topology": "minimal",
+  "budget_seconds": 100,
+  "queue_timeout_seconds": 10,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-create",
+        "name": "Proof create",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/octocat/Hello-World.git",
+        "default_branch": "master"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/setup-steps",
+      "operation": false,
+      "body": {
+        "name": "marker",
+        "command": "printf proof-private-setup-output; touch .git/orbit-proof-setup",
+        "timeout_seconds": 10
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/process-definitions",
+      "operation": false,
+      "body": {
+        "name": "dev-server",
+        "environments": [
+          "development"
+        ],
+        "spec": {
+          "runtime": "systemd",
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "http.server",
+            "8765"
+          ],
+          "restart_policy": "on-failure"
+        }
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances",
+    "body": {
+      "project_id": "${project.id}",
+      "node_id": "${node.target}",
+      "name": "p-${proof.run}"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "prepare",
+      "job": "create",
+      "step": "prepare",
+      "budget_seconds": 10
+    },
+    {
+      "name": "source",
+      "job": "create",
+      "step": "source",
+      "budget_seconds": 20
+    },
+    {
+      "name": "environment",
+      "job": "create",
+      "step": "environment",
+      "budget_seconds": 10
+    },
+    {
+      "name": "setup",
+      "job": "create",
+      "step": "setup",
+      "budget_seconds": 15
+    },
+    {
+      "name": "processes",
+      "job": "create",
+      "step": "processes-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "finish",
+      "job": "create",
+      "step": "finish",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/instance.create/parity.py"
+}

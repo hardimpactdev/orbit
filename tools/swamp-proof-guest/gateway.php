@@ -26,7 +26,7 @@ $app = require getcwd().'/bootstrap/app.php';
 $app->make(ConsoleKernel::class)->bootstrap();
 $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
 
-function node(string $name, string $address, string $hostKey, array $roles = [], ?int $id = null): Node
+function node(string $name, string $address, string $hostKey, array $roles = [], ?int $id = null, array $settings = []): Node
 {
     $bytes = base64_decode($hostKey, true);
     $node = (new Node)->forceFill([...($id === null ? [] : ['id' => $id]),
@@ -34,6 +34,7 @@ function node(string $name, string $address, string $hostKey, array $roles = [],
         'public_ssh_host' => $address, 'public_ssh_port' => 22, 'wireguard_ip' => $address,
         'wireguard_public_key' => base64_encode(random_bytes(32)), 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $hostKey,
         'ssh_host_fingerprint' => 'SHA256:'.rtrim(base64_encode(hash('sha256', $bytes, true)), '='), 'status' => 'active',
+        ...($settings === [] ? [] : ['settings' => $settings]),
     ]);
     $node->save();
     foreach ($roles as $role) {
@@ -54,7 +55,8 @@ if ($argv[1] === 'seed') {
         // The Gateway hard-codes Node 209 as the Swamp Node; here this VM carries gateway and swamp together (F14).
         node('gateway', $input['gateway'], $input['gateway_host_key'], ['gateway', 'swamp'], 209),
         node('operator', $input['operator'], $unused),
-        node($input['target']['key'], $input['target']['address'], $input['target']['host_key']),
+        node($input['target']['key'], $input['target']['address'], $input['target']['host_key'],
+            $input['target']['roles'] ?? [], settings: $input['target']['settings'] ?? []),
     ]);
     app(GatewayServingHost::class)->remember($gateway);
     $operator->accessibleNodes()->attach([$gateway->id, $target->id]);
@@ -72,6 +74,11 @@ $kernel = $app->make(HttpKernel::class);
 $response = $kernel->handle($request);
 $kernel->terminate($request, $response);
 $body = json_decode((string) $response->getContent(), true);
+// A record request (a Project, a setup step) starts no Operation; its reply is the result.
+if (($input['operation'] ?? true) === false) {
+    echo json_encode(['http_status' => $response->getStatusCode(), 'response' => $body]), PHP_EOL;
+    exit($response->isSuccessful() ? 0 : 1);
+}
 $id = $body['data']['operation']['id'] ?? $body['data']['id'] ?? null;
 $admitted = microtime(true);
 if (! is_int($id)) {

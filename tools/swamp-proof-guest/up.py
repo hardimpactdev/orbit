@@ -117,7 +117,8 @@ def target():
         if time.monotonic() > deadline:
             raise RuntimeError('target SSH with sudo is not reachable from the Swamp host')
         time.sleep(2)
-    return {'key': node['key'], 'address': node['address'], 'host_key_type': host_key[0], 'host_key': host_key[1]}
+    return {'key': node['key'], 'address': node['address'], 'host_key_type': host_key[0], 'host_key': host_key[1],
+            'roles': node.get('roles', []), 'settings': node.get('settings', {})}
 
 
 def grants(manifest):

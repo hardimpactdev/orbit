@@ -10,7 +10,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.01.2",
+    version: "2026.11.01.4",
     resources: {
         assets: {
             schema: z.object({
@@ -28,8 +28,6 @@ export const behavior = {
             arguments: z.object({
                 action: z.enum([
                     "inspect_source",
-                    "template",
-                    "write_environment",
                     "finalize_source",
                     "verify_source",
                     "run_project_step",
@@ -43,11 +41,7 @@ export const behavior = {
                 let source = await Deno.readTextFile(
                     ctx.extensionFile("scripts/" + args.action + ".py"),
                 );
-                if (
-                    !["write_environment", "run_project_step"].includes(
-                        args.action,
-                    )
-                ) {
+                if (args.action !== "run_project_step") {
                     source = source.replace(
                         "json.load(sys.stdin)",
                         "json.loads(" +
@@ -203,21 +197,51 @@ export const behavior = {
                 return value;
             },
         },
+        create_assets: {
+            description:
+                "Read the shipped create phase scripts once for official SSH argv, with the public intent as JSON",
+            arguments: z.object({ intent: ObjectValue }),
+            execute: async (
+                args: { intent: Record<string, unknown> },
+                ctx: Context,
+            ) => {
+                const read = (path: string) =>
+                    Deno.readTextFile(ctx.extensionFile(path));
+                const value = {
+                    intent_json: JSON.stringify(args.intent),
+                    prepare: await read("create/prepare.py"),
+                    source: await read("create/source.py"),
+                    environment: await read("scripts/write_environment.py"),
+                    setup: await read("create/setup.py"),
+                    runner: await read("scripts/run_project_step.py"),
+                };
+                await ctx.writeResource("result", "create-assets", value);
+                return value;
+            },
+        },
         create_result: {
             description:
-                "Publish bounded source/environment/runtime facts from completed native actions",
+                "Map the create phase steps to one public terminal receipt",
             arguments: z.object({
                 intent: ObjectValue,
-                steps: z.record(z.string(), Step),
+                prepare: Step.nullable(),
+                source: Step.nullable(),
+                environment: Step.nullable(),
+                setup: Step.nullable(),
+                processes: z.array(z.string()),
             }),
             execute: async (
                 args: {
                     intent: Record<string, unknown>;
-                    steps: Record<string, z.infer<typeof Step>>;
+                    prepare: z.infer<typeof Step> | null;
+                    source: z.infer<typeof Step> | null;
+                    environment: z.infer<typeof Step> | null;
+                    setup: z.infer<typeof Step> | null;
+                    processes: string[];
                 },
                 ctx: Context,
             ) => {
-                const value = createResult(args.intent, args.steps);
+                const value = createResult(args.intent, args);
                 await ctx.writeResource("result", "create", value);
                 return value;
             },

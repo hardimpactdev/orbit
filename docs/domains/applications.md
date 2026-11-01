@@ -38,7 +38,7 @@ orbit instance:create <project> <node> default
 orbit instance:create <project> <node> feature-one --branch=release
 ```
 
-The Gateway returns HTTP 202 with one native Operation. The current create root supports development checkouts without a Route, database work, Task VM placement, or Process and Schedule definitions. A web-serving Project, custom domain, database server or automatic database copy returns `operation.kind_unavailable` before reservation. Swamp prepares source, classifies it, imports the committed environment template, writes protected environment files, checks an existing Vite+ runtime, and runs setup as steps of that root. It runs local commands as the recorded Node account. The frozen agent performs no action.
+The Gateway returns HTTP 202 with one native Operation. The current create root supports development checkouts without a Route, database work or Task VM placement. A web-serving Project, custom domain, database server or automatic database copy returns `operation.kind_unavailable` before reservation. At admission the Gateway renders the Instance's `.env` from the [Project environment template](#project-environment-template) and stores it. Swamp prepares the source, writes that `.env`, runs setup and starts the [development Processes](/reference/processes-and-schedules#project-definitions) as steps of that root, and returns the checked-out commit. It runs local commands as the recorded Node account. The frozen agent performs no action.
 
 Swamp clones the repository to `<apps-root>/<project-slug>/<name>` using the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from recorded Node settings. The branch is a separate choice.
 
@@ -198,7 +198,7 @@ Project inference, source relocation, linked worktrees, `--setup`, and domain re
 
 Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and an [SSR port](/reference/assigned-ssr-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` or `symfony-app` Instance gets one Route. Other Project types get no Route.
 
-After source resolution, the native root classifies the application, stores its public branch and commit, imports the committed environment template, writes the protected environment, checks any existing Vite+ runtime, and runs the Project setup list. The Instance becomes active only after setup succeeds. A `monorepo` skips single-application metadata classification and records no PHP version.
+The PHP version and whether the application is Laravel are Project facts, read with the template from the default branch when the Project is added or its source changes. A `monorepo` records no PHP version. The native root checks out the admitted branch, writes the rendered `.env`, runs the Project setup list, and then creates and starts the Project's development Processes. The Instance becomes active only after every step succeeds; a failed step keeps the Instance and marks it failed.
 
 An identical create for an active Instance with completed first setup skips source and setup effects. If a later explicit setup failed, create returns `instance.setup_step_failed`; use `instance:setup`. A failed initial setup keeps the source and resolved identity for an identical create retry. There is no automatic teardown or removal child.
 
@@ -234,7 +234,7 @@ A symlinked file or cache directory, two `APP_URL` lines, or an unclear cached v
 
 ## Project environment template
 
-The Gateway keeps one environment template per Project. It builds the template from the committed `.env.example` of the Project's application directory on the default branch. The template follows each new default-branch head.
+The Gateway keeps one environment template per Project. It builds the template from the committed `.env.example` of the Project's application directory on the default branch. It records the template when the Project is added or its source changes, with any source access, and the template then follows each new default-branch head.
 
 ### When the Gateway checks
 
@@ -256,7 +256,7 @@ A changed `.env.example` updates the template by these rules:
 - A key that `.env.example` dropped stays in the template, marked removed.
 - The template records the commit and blob that it now matches.
 
-Existing Instances keep their stored environment. Nothing marks them. The new template applies at the next `instance:create`.
+Existing Instances keep their stored environment. Nothing marks them. The new template applies at the next `instance:create`, which renders the template, the Instance's stored values, `APP_NAME`, `APP_ENV`, `APP_DEBUG` and, for a Laravel application, a new `APP_KEY`. A retry keeps the values the first admission stored.
 
 A refresh failure never fails the head read. An invalid `.env.example` leaves the template unchanged until a later head.
 

@@ -64,6 +64,21 @@ final readonly class ProjectEnvironmentTemplateRefresh
         $this->record($project, $head, $path, $blob, $example);
     }
 
+    /**
+     * Record a `.env.example` the Gateway already read at a head, whatever the Project's source access; the Project
+     * source facts capture uses it when a Project is added or its source changes. An unreadable file keeps the template.
+     */
+    public function recordRead(Project $project, string $head, ?string $blob, string $contents): void
+    {
+        try {
+            $example = self::parse($contents);
+        } catch (Throwable $exception) {
+            report($exception);
+            $example = null;
+        }
+        $this->record($project, $head, self::path($project), $blob, $example);
+    }
+
     /** The repository-relative `.env.example` of the Project's application directory. */
     public static function path(Project $project): string
     {

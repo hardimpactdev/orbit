@@ -90,8 +90,18 @@ def main():
     # Earlier attempts may have left target state behind; the fixture names what a clean start is.
     for argv in fixture.get('clean_target', []):
         on_target(up['target']['key'], argv)
-    for index, request in enumerate(bind(fixture.get('prepare', []), context)):
+    for index, raw in enumerate(fixture.get('prepare', [])):
+        request = bind(raw, context)
         reply = gateway({**request, 'caller': operator, 'key': f'proof-{run_id}-prepare-{index}'}, fixture['budget_seconds'])
+        if request.get('operation', True) is False:
+            # A record request; `bind` names its reply so later requests can use `${<bind>.id}`.
+            receipt['prepare'].append({'path': request['path'], 'http_status': reply.get('http_status')})
+            if not 200 <= (reply.get('http_status') or 0) < 300:
+                receipt.update(proof_pass=False, error='prepare failed', prepare_reply=reply)
+                return receipt
+            if 'bind' in request:
+                context[request['bind'] + '.id'] = reply['response']['data']['id']
+            continue
         receipt['prepare'].append({'path': request['path'], 'status': reply.get('operation', {}).get('status'),
                                    'error_code': reply.get('operation', {}).get('error_code'), 'seconds': reply.get('terminal_seconds')})
         if reply.get('operation', {}).get('status') != 'succeeded':
@@ -119,7 +129,8 @@ def main():
     outputs_file.write_text(json.dumps(outputs))
     parity = run(['python3', '-I', str(SOURCE / fixture['parity'])], check=False, cwd=SOURCE, timeout=120,
                  env={'PATH': '/usr/sbin:/usr/bin:/bin', 'PROOF_OUTPUTS': str(outputs_file), 'PROOF_RESULT': json.dumps(operation.get('result')),
-                      'PROOF_TARGET': up['target']['key'], 'PROOF_RUN': run_id, 'PROOF_NODES': json.dumps(up['nodes'])})
+                      'PROOF_TARGET': up['target']['key'], 'PROOF_RUN': run_id, 'PROOF_NODES': json.dumps(up['nodes']),
+                      'PROOF_OPERATION': json.dumps(operation)})
     receipt['parity'] = {'exit': parity.returncode, 'output': (parity.stdout + parity.stderr)[-2000:]}
     expected = fixture['expect']['status']
     receipt['proof_pass'] = (operation.get('status') == expected and str(history.get('status', '')).lower() == expected

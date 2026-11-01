@@ -49,8 +49,10 @@ final readonly class CreateProjectAction
             $this->branches->verify($repositoryUrl, $defaultBranch, $data->sourceAccess);
         }
 
+        $source = app(CaptureProjectSourceFactsAction::class)->read($repositoryUrl, $data->sourceAccess, $defaultBranch, $root, $data->type);
+
         for ($attempt = 0; ; $attempt++) {
-            $candidate = new Project([
+            $candidate = new Project([...$source['facts'],
                 'code' => $data->code,
                 'slug' => $data->slug,
                 'name' => $data->name,
@@ -97,6 +99,7 @@ final readonly class CreateProjectAction
         }
 
         $project = $project->refresh();
+        app(CaptureProjectSourceFactsAction::class)->recordTemplate($project, $source);
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::ProjectCreated,

@@ -54,10 +54,20 @@ it('records one native root with source environment and setup steps before any N
         ->and($operation->input['participant_node_ids'])->toBe([$this->node->id])
         ->and($operation->input['direct_provisioning']['setup']['execution']['user'])->toBe('orbit')
         ->and($operation->input['direct_provisioning'])->not->toHaveKey('agent_sha256')
-        ->and($this->socket->sent)->toHaveCount(2)
-        ->and($this->socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
+        ->and($operation->input['run_budget_seconds'])->toBe(90)
+        ->and(array_column(array_column($this->socket->sent, 'payload'), 'key'))->toBe(['instance-git-operation-'.$operation->id,
+            'instance-create-environment-input-'.$operation->id, 'instance-create-'.$operation->id])
+        ->and($this->socket->sent[3]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
         ->and(Route::query()->count())->toBe(0);
     Queue::assertNothingPushed();
+});
+
+it('budgets the run as 60 seconds of create work, the admitted setup timeouts and 30 seconds for Processes', function (): void {
+    App\Models\ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'position' => 0,
+        'name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 300]);
+    $this->withHeader('Idempotency-Key', 'native-create-budget');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    expect(Operation::query()->sole()->input['run_budget_seconds'])->toBe(390);
 });
 
 it('freezes the selected default source seed in the first native admission', function (): void {
@@ -103,4 +113,59 @@ it('rejects a managed checkout overlap before starting a native root', function 
         'name' => 'existing', 'checkout_path' => '/srv/apps/native-create/proof/nested', 'status' => 'active']);
     $this->postJson('/api/v1/instances', $this->payload)->assertConflict()->assertJsonPath('error.code', 'instance.path_taken');
     expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(0);
+});
+
+it('creates the development Processes after setup and records them from the terminal result', function (string $status): void {
+    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/python3', '-m', 'http.server', '8765'], 'restart_policy' => 'on-failure']]);
+    $this->project->processDefinitions()->create(['name' => 'production-only', 'environments' => ['production'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    $this->withHeader('Idempotency-Key', 'native-create-processes-'.$status);
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $operation = Operation::query()->sole();
+    $process = App\Models\Process::query()->sole();
+    $start = collect($this->socket->sent)->firstWhere('payload.workflowIdOrName', 'operation-instance-create');
+    $inputs = $start['payload']['inputs'];
+    expect($process->name)->toBe('dev-server')->and($process->desired_state->value)->toBe('running')
+        ->and($operation->input['members'])->toHaveCount(1)
+        ->and($inputs['intent']['processes'][0])->toMatchArray(['index' => 0, 'id' => $process->id])
+        ->and($inputs['intent']['processes'][0]['intent']['control']['name'])->toBe('orbit-process-'.$process->id.'-dev-server.service')
+        ->and($inputs['intent']['processes'][0]['intent']['installation']['unit'])->toContain('http.server');
+
+    $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    app(App\Domain\Instances\DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        'status' => $status, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => $status === 'failed' ? 'instance.create_processes_failed' : null,
+        'result' => ['instance_id' => $operation->target_id, 'ready' => $status === 'succeeded', 'commit' => str_repeat('a', 40),
+            ...($status === 'failed' ? ['failed_step' => 'processes'] : [])]]);
+    expect($process->refresh()->status->value)->toBe($status === 'succeeded' ? 'active' : 'failed')
+        ->and(Instance::query()->sole()->status)->toBe($status === 'succeeded' ? InstanceState::Active : InstanceState::SourceResolved);
+})->with(['succeeded', 'failed']);
+
+it('records no environment or Process for an already active Instance, which runs no phase', function (): void {
+    $this->withHeader('Idempotency-Key', 'native-create-active-first');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    $instance = Instance::query()->sole();
+    $instance->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'starting_commit' => str_repeat('a', 40)]);
+    App\Models\InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->delete();
+    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    Operation::query()->update(['status' => 'succeeded']);
+
+    $this->withHeader('Idempotency-Key', 'native-create-active-again');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $operation = Operation::query()->latest('id')->first();
+    expect($operation->input['direct_provisioning']['already_active'])->toBeTrue()
+        ->and($operation->input['members'])->toBe([])->and($operation->input['environment_keys'])->toBe([])
+        ->and(App\Models\Process::query()->count())->toBe(0)
+        ->and(App\Models\InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->count())->toBe(0);
+});
+
+it('refuses create before reservation for a Project whose source profile is unsupported', function (): void {
+    $this->project->update(['source_profile_error' => 'app-dev.php_version_unsupported', 'source_facts_captured_at' => now()]);
+    $this->withHeader('Idempotency-Key', 'native-create-unsupported');
+    $this->postJson('/api/v1/instances', $this->payload)->assertStatus(422)->assertJsonPath('error.code', 'app-dev.php_version_unsupported');
+    expect(Instance::query()->count())->toBe(0);
 });

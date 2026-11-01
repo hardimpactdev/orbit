@@ -11,7 +11,7 @@ import yaml
 from native_harness import ROOT, NativeTestCase
 
 
-class InstanceDevelopmentNative(NativeTestCase):
+class InstanceNativeFixture(NativeTestCase):
     native_timeout = 180
 
     def setUp(self):
@@ -44,20 +44,20 @@ class InstanceDevelopmentNative(NativeTestCase):
         scp = self.repo / 'scp'
         scp.write_text('#!'+sys.executable+'\n'+SCP.replace('CONTROL',repr(str(self.control))).replace('HOST',repr(str(self.host)))); scp.chmod(0o700)
         self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-create.yaml').read_text())
-        self.workflow = json.loads(json.dumps(self.workflow).replace('/tmp/orbit-instance-',str(self.control)+'/stage-').replace('/tmp/orbit-source-',str(self.control)+'/source-'))
+        self.workflow.pop('target')
         for job in self.workflow['jobs']:
-            job.pop('target')
             for step in job['steps']:
                 step.pop('target')
                 task = step['task']
                 if task.get('behaviorType') == '@swamp/ssh': task['globalArgs'].update(sshBinary=str(binary), scpBinary=str(scp))
-                if step['name'] == 'create-mint': task['inputs']['run'] = 'true'
         (self.repo / 'workflows/workflow-create.yaml').write_text(yaml.safe_dump(self.workflow,sort_keys=False))
         self.cli('vault','create','local_encryption','orbit-control-inputs')
-        self.cli('vault','put','orbit-control-inputs','environment',json.dumps({'values':{'STORED':'stored-private-sentinel'},'name':'Fixture','framework_key':None}))
-        self.cli('vault','put','orbit-control-inputs','git',json.dumps({'github_token':None}))
+        self.environment('STORED="stored-private-sentinel"\n')
+        self.cli('vault','put','orbit-control-inputs','instance-git-operation-71',json.dumps({'github_token':None}))
+        self.setup_commands([])
         ssh = {'identity_file':str(self.identity),'target':{'host':'node.invalid','port':22,'user':pwd.getpwuid(os.geteuid()).pw_name,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
-        self.input = {'operation_id':71,'node_id':9,'kind':'instance.create','execution_secrets':{'environment':{'vault':'orbit-control-inputs','key':'environment'},'git_read':{'vault':'orbit-control-inputs','key':'git'}},'intent':{'instance_id':17,'instance_name':'proof','already_active':False,'ssh_execution':ssh,'source':{'root':str(self.host/'apps'),'checkout':str(self.application),'user':ssh['target']['user'],'repository':'https://github.com/example/project.git','prepare_id':'admitted-prepare','seed_repository':None},'resolve':{'instance_name':'proof','default_branch':'main','branch_override':'main','seed_commit':None,'network':True,'protocols':['https']},'checkout':str(self.application),'application':str(self.application),'project_type':'node-package','entry_point':'artisan','php_versions':['8.4'],'skip_profile':False,'retained_source':{'branch':'main','commit':commit,'php_version':None,'laravel':False},'setup_commands':[],'vp_setup':None,'environment_output':{'vault':'orbit-control-inputs','key':'instance-create-environment-result-71'},'execution_references_json':'{}'}}
+        secrets = {'environment':{'vault':'orbit-control-inputs','key':'instance-create-environment-input-71'},'git_read':{'vault':'orbit-control-inputs','key':'instance-git-operation-71'},'setup':{'vault':'orbit-control-inputs','key':'instance-create-71'}}
+        self.input = {'operation_id':71,'node_id':9,'kind':'instance.create','execution_secrets':secrets,'intent':{'instance_id':17,'instance_name':'proof','already_active':False,'ssh_execution':ssh,'source':{'root':str(self.host/'apps'),'checkout':str(self.application),'user':ssh['target']['user'],'repository':'https://github.com/example/project.git','prepare_id':'admitted-prepare','seed_repository':None},'resolve':{'branch':'main','default_branch':'main','seed_commit':None,'network':True,'protocols':['https']},'checkout':str(self.application),'application':str(self.application),'project_type':'node-package','entry_point':'artisan','php_versions':['8.4'],'skip_profile':False,'retained_source':{'commit':commit},'processes':[]}}
 
     def git(self,*args):
         return subprocess.run(['git','-C',str(self.application),*args],check=True,capture_output=True,text=True).stdout
@@ -67,52 +67,50 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.run_id=run['id']
         history=json.loads(self.cli('workflow','history','get',self.run_id).stdout)
         raw=json.dumps(history)
-        self.assertNotIn('template-private-sentinel',raw);self.assertNotIn('stored-private-sentinel',raw)
+        for private in ('stored-private-sentinel','private-setup-sentinel'): self.assertNotIn(private,raw)
+        self.steps={step['name']:step for job in history['jobs'] for step in job['steps']}
+        self.assertNotIn('No such key',raw)
         return history
 
-    def test_full_create_keeps_environment_private_and_empty_vp_setup_valid(self):
+    def result(self):
+        return json.loads(self.steps['finish']['outputs']['stdout'])
+
+    def environment(self, content, directory=None, checkout=None):
+        checkout = checkout or self.application
+        self.cli('vault','put','orbit-control-inputs','instance-create-environment-input-71',json.dumps({'directory':str(directory or checkout),'checkout':str(checkout),'content':content}))
+
+    def setup_commands(self, commands):
+        import hashlib
+        steps=[{'name':'step-'+str(index),'command':command,'sha256':hashlib.sha256(command.encode()).hexdigest(),'timeout_seconds':30,'directory':str(self.application),'instance_id':17,'instance_name':'proof','seed_path':'','seed_commit':''} for index,command in enumerate(commands)]
+        self.cli('vault','put','orbit-control-inputs','instance-create-71',json.dumps({'steps':steps}))
+
+
+class InstanceDevelopmentNative(InstanceNativeFixture):
+    def test_full_create_writes_the_rendered_environment_and_returns_only_the_commit(self):
         history=self.run_create()
         self.assertEqual(history['status'],'succeeded')
-        result=json.loads(next(step for step in next(job for job in history['jobs'] if job['name']=='create')['steps'] if step['name']=='finish-result')['outputs']['stdout'])
-        self.assertTrue(result['ready']);self.assertEqual(result['source']['branch'],'main')
-        self.assertIn('stored-private-sentinel',(self.application/'.env').read_text())
+        self.assertEqual([self.steps[name]['status'] for name in ['assets','prepare','source','environment','setup','finish','accepted']],['succeeded']*7)
+        self.assertEqual(self.result(),{'instance_id':17,'ready':True,'name_converted_from':None,'commit':self.git('rev-parse','HEAD').strip()})
+        self.assertEqual((self.application/'.env').read_text(),'STORED="stored-private-sentinel"\n')
 
-    def test_empty_stored_environment_reaches_setup_for_unrouted_monorepo(self):
-        self.cli('vault','put','orbit-control-inputs','environment',json.dumps({'values':{},'name':'Monorepo fixture','framework_key':None}))
-        self.input['intent'].update(project_type='monorepo',skip_profile=True)
-        self.setup_commands(['touch .git/empty-environment-setup'])
+    def test_nested_application_gets_its_env_and_setup_runs_at_the_checkout_root(self):
+        nested=self.application/'apps/site'; nested.mkdir(parents=True)
+        self.environment('NESTED="yes"\n', nested)
+        self.setup_commands(['test -d apps/site && touch .git/root-setup'])
         history=self.run_create()
         self.assertEqual(history['status'],'succeeded')
-        self.assertTrue((self.application/'.git/empty-environment-setup').is_file())
-        result=json.loads(next(step for step in next(job for job in history['jobs'] if job['name']=='create')['steps'] if step['name']=='finish-result')['outputs']['stdout'])
-        self.assertTrue(result['ready']);self.assertEqual(result['source']['branch'],'main')
-        self.assertNotIn('STORED',(self.application/'.env').read_text())
+        self.assertEqual((nested/'.env').read_text(),'NESTED="yes"\n')
+        self.assertFalse((self.application/'.env').exists())
+        self.assertTrue((self.application/'.git/root-setup').is_file())
 
-    def test_failed_source_never_dereferences_skipped_commit_or_reports_ready(self):
-        self.input['intent']['retained_source'] = None
-        self.input['intent']['resolve']['network'] = False
-        self.failure.touch()
+    def test_changed_source_identity_skips_later_phases_and_reports_source(self):
+        self.input['intent']['retained_source']['commit'] = 'b'*40
         history = self.run_create(False)
-        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
-        self.assertEqual(steps['source-checkout']['status'], 'failed')
-        self.assertEqual(steps['source-result']['status'], 'skipped')
-        self.assertNotIn('No such key', json.dumps(history))
-        result = json.loads(steps['finish-result']['outputs']['stdout'])
+        self.assertEqual(history['status'],'failed')
+        self.assertEqual([self.steps[name]['status'] for name in ['environment','setup']],['skipped']*2)
+        result = self.result()
         self.assertFalse(result['ready'])
-        self.assertEqual(result['failed_step'], 'source')
-
-    def test_failed_mint_skips_source_without_missing_output_errors(self):
-        self.input['intent']['retained_source'] = None
-        for job in self.workflow['jobs']:
-            for step in job['steps']:
-                if step['name'] == 'create-mint':
-                    step['task']['inputs']['run'] = 'exit 1'
-        (self.repo / 'workflows/workflow-create.yaml').write_text(yaml.safe_dump(self.workflow, sort_keys=False))
-        history = self.run_create(False)
-        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
-        self.assertEqual(steps['create-mint']['status'], 'failed')
-        self.assertEqual(steps['source-checkout']['status'], 'skipped')
-        self.assertNotIn('No such key', json.dumps(history))
+        self.assertEqual((result['failed_step'],result['error_code']),('source','instance.source_identity_changed'))
         self.assertFalse((self.application / '.env').exists())
 
     def test_new_branch_uses_captured_seed_commit_without_moving_default(self):
@@ -121,10 +119,12 @@ class InstanceDevelopmentNative(NativeTestCase):
         target = seed.with_name('fresh-branch')
         self.input['intent']['retained_source'] = None
         self.input['intent']['source'].update(checkout=str(target), seed_repository=str(seed))
-        self.input['intent']['resolve'].update(branch_override='fresh-branch', seed_commit=commit, network=False)
+        self.input['intent']['resolve'].update(branch='fresh-branch', seed_commit=commit, network=False)
         self.input['intent'].update(checkout=str(target), application=str(target))
+        self.environment('NEW="branch"\n', checkout=target)
         history = self.run_create()
         self.assertEqual(history['status'], 'succeeded')
+        self.assertEqual((target / '.env').read_text(), 'NEW="branch"\n')
         result = subprocess.run(['git', '-C', str(target), 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True, check=True)
         self.assertEqual(result.stdout.strip(), 'fresh-branch')
         self.assertEqual(self.git('rev-parse', 'HEAD').strip(), commit)
@@ -138,30 +138,17 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.input['intent']['source'].update(checkout=str(target), seed_repository=str(seed))
         self.input['intent']['resolve']['seed_commit'] = commit
         self.input['intent'].update(checkout=str(target), application=str(target))
-        history = self.run_create(False)
-        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
-        self.assertEqual(steps['source-branch-accepted']['status'], 'failed')
-        self.assertEqual(steps['source-prepare-assets']['status'], 'skipped')
-        result = json.loads(steps['finish-result']['outputs']['stdout'])
-        self.assertEqual(result['error_code'], 'instance.branch_in_use')
+        self.run_create(False)
+        self.assertEqual(self.steps['source']['status'], 'skipped')
+        self.assertEqual((self.result()['failed_step'], self.result()['error_code']), ('prepare', 'instance.branch_in_use'))
         self.assertFalse(target.exists())
         self.assertEqual(self.git('rev-parse', 'HEAD').strip(), commit)
         self.assertFalse((seed / '.env').exists())
 
-    def setup_commands(self, commands):
-        import hashlib
-        for index,command in enumerate(commands):
-            field='setup_'+str(index)
-            digest=hashlib.sha256(command.encode()).hexdigest()
-            self.input['intent']['setup_commands'].append({'index':index,'name':'step-'+str(index),'command_digest':digest,'timeout_seconds':30,'secret_field':field})
-            self.input['execution_secrets'][field]={'vault':'orbit-control-inputs','key':field}
-            self.cli('vault','put','orbit-control-inputs',field,json.dumps({'command':command,'sha256':digest,'directory':str(self.application),'instance_id':17,'instance_name':'proof','seed_path':'','seed_commit':''}))
-
-    def test_setup_commands_run_in_order_with_private_stdin(self):
+    def test_setup_commands_run_in_order_with_private_stdin_and_no_stdout(self):
         self.setup_commands(['printf private-setup-sentinel; touch .git/first','test -f .git/first; touch .git/second'])
         history=self.run_create()
         self.assertEqual(history['status'],'succeeded');self.assertTrue((self.application/'.git/second').is_file())
-        self.assertIn('private-setup-sentinel',json.dumps(history))
 
     def test_active_create_does_not_repeat_setup_or_environment_write(self):
         self.input['intent']['already_active'] = True
@@ -169,6 +156,7 @@ class InstanceDevelopmentNative(NativeTestCase):
         (self.application/'.env').write_text('preserve-active')
         history = self.run_create()
         self.assertEqual(history['status'], 'succeeded')
+        self.assertEqual(self.result(), {'ready':True,'instance_id':17,'already_active':True})
         self.assertFalse((self.application/'.git/should-not-run').exists())
         self.assertEqual((self.application/'.env').read_text(), 'preserve-active')
 
@@ -176,15 +164,14 @@ class InstanceDevelopmentNative(NativeTestCase):
         self.setup_commands(['test -f .git/allow','touch .git/second','touch .git/third'])
         history=self.run_create(False)
         self.assertEqual(history['status'],'failed');self.assertFalse((self.application/'.git/second').exists());self.assertFalse((self.application/'.git/third').exists())
+        self.assertEqual(self.result()['failed_step'],'setup');self.assertEqual(self.result()['error_code'],'instance.setup_step_failed');self.assertEqual(self.result()['failed_command'],'step-0')
         (self.application/'.git/allow').touch()
-        self.input['operation_id']=72
-        self.input['intent']['environment_output']['key']='instance-create-environment-result-72'
         history=self.run_create()
         self.assertEqual(history['status'],'succeeded')
-        self.assertTrue((self.application/'.git/second').exists())
+        self.assertTrue((self.application/'.git/third').exists())
 
 
-class InstanceDestroyNative(InstanceDevelopmentNative):
+class InstanceDestroyNative(InstanceNativeFixture):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('operations/routes/mutation-command')
@@ -278,7 +265,7 @@ if os.path.isfile(FAILURE) and 'checkout' in shlex.split(command):
     sys.stderr.write('fixture source checkout failure\\n');sys.exit(128)
 body=sys.stdin.buffer.read().replace(CONTROL.encode(),HOST.encode())
 if 'sudo' in command or b'Install only the admitted' in body: raise AssertionError('Unadmitted installer in no-VP fixture')
-if command.startswith('test ') or command.startswith('mkdir ') or command.startswith('chmod ') or command.startswith('rm ') or command.startswith('python') or '/usr/bin/' in command or command.startswith('sh ') or command.startswith('/bin/'):
+if command.startswith('test ') or command.startswith("'timeout' ") or command.startswith('mkdir ') or command.startswith('chmod ') or command.startswith('rm ') or command.startswith('python') or '/usr/bin/' in command or command.startswith('sh ') or command.startswith('/bin/'):
     result=subprocess.run(['/bin/sh','-c',command],input=body);sys.exit(result.returncode)
 raise AssertionError('Unexpected SSH action: '+command)
 '''

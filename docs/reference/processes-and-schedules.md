@@ -286,7 +286,7 @@ A Project holds Process definitions and Schedule definitions. A definition has a
 | Field | Contract |
 | --- | --- |
 | `name` | 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. A Schedule definition name also allows no two hyphens in a row. |
-| `environments` | Must include `production` for the definition to have an effect. Production preparation copies only definitions that include it. |
+| `environments` | `production`, `development` or both; Schedule definitions accept only `production`. Production preparation copies definitions that include `production`. A development `instance:create` creates and starts definitions that include `development`, after its setup steps. |
 | `spec` | For a Process: the runtime fields above, without owner, start, user, or environment file. For a Schedule: `command`, `calendar`, and `timeout_seconds`, with the limits of a Schedule. |
 
 A Schedule definition has no host Node, so the Gateway does not run `systemd-analyze calendar` when it stores one. The host Node checks the calendar when production preparation installs the copy.
@@ -334,7 +334,7 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 
 Node Process units reference immutable root-owned `0600` EnvironmentFiles. Managed environment values travel only through the admitted private-material callback and protected stdin. The public unit contains the environment file path.
 
-The `vp-dev` preset applies only to development Instance Processes. Runtime definitions are copied only to production Instances.
+The `vp-dev` preset applies only to development Instance Processes. Process definitions with `development` are copied to each new development Instance; Schedule definitions are copied only to production Instances.
 
 ### A Node Process can name its account
 

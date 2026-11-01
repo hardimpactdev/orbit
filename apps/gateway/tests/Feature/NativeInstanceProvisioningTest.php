@@ -34,7 +34,9 @@ beforeEach(function (): void {
     $this->input = ['instance_id' => $this->instance->id, 'project_id' => $this->project->id, 'checkout' => $this->instance->checkout_path,
         'user' => 'orbit', 'group' => 'orbit', 'source_root' => '/srv/apps', 'prepare_id' => $this->instance->source_prepare_id,
         'repository' => $this->project->repository_url, 'repository_identity' => $this->project->repository_identity,
-        'seed_repository' => null, 'seed_commit' => null, 'branch_override' => null, 'default_branch' => 'main'];
+        'seed_repository' => null, 'seed_commit' => null, 'branch_override' => null, 'default_branch' => 'main', 'members' => []];
+    $this->input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
+    $this->input += ['php_version' => null, 'laravel' => false, 'environment_keys' => ['APP_NAME', 'MODE']];
 });
 
 it('records a complete immutable development source and setup plan without executing a Node command', function (): void {
@@ -45,8 +47,7 @@ it('records a complete immutable development source and setup plan without execu
     expect($plan)->toMatchArray(['instance_id' => $this->instance->id, 'node_id' => $this->node->id,
         'node_user' => 'orbit', 'user' => 'orbit', 'environment' => 'development', 'already_active' => false,
         'platform' => 'linux', 'architecture' => 'x86_64'])
-        ->and($plan['vp_materialize']['user'])->toBe('orbit')
-        ->and($plan['vp_materialize']['architecture'])->toBe('amd64')
+        ->and($plan)->not->toHaveKey('vp_materialize')
         ->and($plan['source'])->toMatchArray(['prepare_id' => $this->instance->source_prepare_id, 'checkout' => $this->instance->checkout_path])
         ->and($plan['setup']['execution']['user'])->toBe('orbit')
         ->and($plan['setup']['steps'][0])->toBe(['name' => 'prepare', 'command_digest' => hash('sha256', 'printf private-setup-program'), 'timeout_seconds' => 30])
@@ -60,7 +61,8 @@ it('retains resolved source identity for an explicit retry after native setup fa
         'failed_step' => 'setup', 'error_code' => 'instance.provisioning_failed']);
     $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance->refresh(), $this->input);
 
-    expect($plan['retained_source'])->toBe(['branch' => 'proof', 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false])
+    expect($plan['retained_source'])->toBe(['commit' => str_repeat('a', 40)])
+        ->and($plan['resolve']['branch'])->toBe('proof')
         ->and($plan['already_active'])->toBeFalse();
 });
 
@@ -127,11 +129,10 @@ it('freezes development clone placement without inspecting either Node', functio
         ->and($plan['resolve']['require_branch'])->toBeTrue()->and($plan)->not->toHaveKey('setup');
 });
 
-it('refuses runtime definition installation before create reserves an Instance', function (): void {
+it('admits development Process definitions, which create starts after its setup steps', function (): void {
     $this->project->processDefinitions()->create(['name' => 'worker', 'environments' => ['development'], 'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
 
-    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project, $this->node, false))
-        ->toThrow(ResourceOperationException::class, 'native publication');
+    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project, $this->node, false))->not->toThrow(ResourceOperationException::class);
 });
 
 it('refuses an unavailable create before reserving a new Instance', function (): void {
@@ -143,36 +144,43 @@ it('refuses an unavailable create before reserving a new Instance', function ():
     expect(Instance::query()->count())->toBe($before);
 });
 
-it('projects source and environment from the bound native terminal only and is idempotent', function (): void {
+it('projects the checked-out commit beside the admitted branch, profile and environment keys, idempotently', function (): void {
     $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
     $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $request): array => [['type' => 'vault.read-secret', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => '{"values":{"APP_NAME":"Private project","MODE":"development"}}']]]];
-    config(['swamp.run_token' => 'fixture.token']);
-    app()->instance(WebSocketClient::class, $socket);
-    $result = ['instance_id' => $this->instance->id, 'ready' => true, 'source' => ['branch' => 'proof', 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false], 'environment_seeded_keys' => ['APP_NAME', 'MODE'], 'environment_keys' => ['APP_NAME', 'MODE'], 'vp_environment' => null];
-    $data = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result];
+    $data = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null,
+        'result' => ['instance_id' => $this->instance->id, 'ready' => true, 'commit' => str_repeat('a', 40)]];
     $projection = app(DevelopmentInstanceCreateProjection::class);
     $projection->apply($operation, $data);
     expect($this->instance->refresh()->status)->toBe(InstanceState::Active)
+        ->and($this->instance->branch)->toBe('proof')
         ->and($this->instance->starting_commit)->toBe(str_repeat('a', 40))
+        ->and($this->instance->source_is_laravel)->toBeFalse()
         ->and($this->instance->first_setup_pending)->toBeFalse()
         ->and($this->instance->environment_owned_keys)->toBe(['APP_NAME', 'MODE'])
         ->and($operation->refresh()->status->value)->toBe('succeeded');
     $projection->apply($operation, $data);
-    expect($socket->sent)->toHaveCount(1);
+    expect($this->instance->refresh()->status)->toBe(InstanceState::Active);
 });
 
-it('retains source and VP pins after setup failure for a fresh normal admission', function (): void {
+it('retains source after setup failure for a fresh normal admission', function (): void {
     $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
     $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
-    $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '0.3.3', 'node_version' => '24.22.0', 'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null];
-    app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.create_setup_failed', 'result' => ['ready' => false, 'source' => ['branch' => 'proof', 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false], 'vp_environment' => $runtime, 'failed_step' => 'setup']]);
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.setup_step_failed', 'result' => ['ready' => false, 'commit' => str_repeat('a', 40), 'failed_step' => 'setup']]);
     expect($this->instance->refresh()->status)->toBe(InstanceState::SourceResolved)
         ->and($this->instance->first_setup_pending)->toBeTrue()
-        ->and($this->instance->getAttribute('vp_environment')['status'])->toBe('active');
+        ->and($this->instance->failed_step)->toBe('setup')
+        ->and($this->instance->environment_owned_keys)->toBe(['APP_NAME', 'MODE']);
     $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
     expect($plan['retained_source']['commit'])->toBe(str_repeat('a', 40));
+});
+
+it('keeps no environment ownership when create fails before writing .env', function (): void {
+    $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'instance.branch_in_use', 'result' => ['ready' => false, 'failed_step' => 'prepare']]);
+    expect($this->instance->refresh()->status)->toBe(InstanceState::Reserved)
+        ->and($this->instance->failed_step)->toBe('prepare')
+        ->and($this->instance->environment_owned_keys)->toBeNull();
 });
 
 it('refuses incomplete success without activating the Instance', function (): void {
@@ -182,7 +190,7 @@ it('refuses incomplete success without activating the Instance', function (): vo
     expect($this->instance->refresh()->status)->toBe(InstanceState::Reserved);
 });
 
-it('captures checkout scope and admitted seed values in the private command copy', function (): void {
+it('captures checkout scope and admitted seed values in the one private setup list copy', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'position' => 0,
         'name' => 'prepare', 'command' => 'printf private-command', 'timeout_seconds' => 30]);
     $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
@@ -196,14 +204,28 @@ it('captures checkout scope and admitted seed values in the private command copy
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'synthetic-token']);
     $public = app(NativeDevelopmentInstanceInput::class)->create($operation);
-    $command = json_decode($socket->sent[1]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
-    expect($command)->toMatchArray(['directory' => $plan['checkout'], 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40)])
+    $setup = json_decode($socket->sent[2]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
+    expect($socket->sent[2]['payload']['key'])->toBe('instance-create-'.$operation->id)
+        ->and($public['execution_secrets']['setup'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-'.$operation->id])
+        ->and($setup['steps'])->toHaveCount(1)
+        ->and($setup['steps'][0])->toMatchArray(['name' => 'prepare', 'command' => 'printf private-command', 'sha256' => hash('sha256', 'printf private-command'),
+            'timeout_seconds' => 30, 'directory' => $plan['checkout'], 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40)])
         ->and(json_encode($public))->not->toContain('private-command');
 });
 
-it('serializes an empty stored environment as a native map before source resolution', function (): void {
-    $this->project->update(['type' => 'monorepo', 'root' => 'public']);
-    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
+it('renders .env at admission from the Project template and pushes exactly that file at run start', function (): void {
+    $this->project->update(['type' => 'monorepo', 'root' => 'apps/site/public', 'is_laravel' => true]);
+    app(App\Domain\Projects\ProjectEnvironmentTemplateRefresh::class)->recordRead($this->project, str_repeat('c', 40), null, "TEMPLATE=\"from template\"\nAPP_ENV=local\nGONE=1\n");
+    app(App\Domain\Projects\ProjectEnvironmentTemplateRefresh::class)->recordRead($this->project, str_repeat('d', 40), null, "TEMPLATE=\"from template\"\nAPP_ENV=local\n");
+    $environment = app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->admit($this->instance->refresh(), $this->project->refresh());
+    $stored = app(App\Domain\Instances\Environment\InstanceEnvironmentStore::class)->values($this->instance);
+    expect($environment)->toBe(['APP_DEBUG', 'APP_ENV', 'APP_KEY', 'APP_NAME', 'TEMPLATE'])
+        ->and($stored['APP_ENV'])->toBe('local')->and($stored['APP_KEY'])->toStartWith('base64:');
+    $again = app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->admit($this->instance, $this->project);
+    expect(app(App\Domain\Instances\Environment\InstanceEnvironmentStore::class)->values($this->instance)['APP_KEY'])->toBe($stored['APP_KEY'])
+        ->and($again)->toBe($environment);
+
+    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance->refresh(), $this->input);
     $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id,
         'node_id' => $this->node->id, 'status' => 'queued', 'input' => [...$this->input, 'ssh_execution' => [], 'direct_provisioning' => $plan]]);
     $socket = new FakeRoutePublicationSocket;
@@ -213,9 +235,17 @@ it('serializes an empty stored environment as a native map before source resolut
 
     $public = app(NativeDevelopmentInstanceInput::class)->create($operation);
 
-    $material = json_decode($socket->sent[0]['payload']['value'], flags: JSON_THROW_ON_ERROR);
-    expect($material->values)->toBeInstanceOf(stdClass::class);
-    expect(get_object_vars($material->values))->toBe([]);
-    expect($public['intent']['skip_profile'])->toBeTrue();
-    expect($public['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-environment-input-'.$operation->id]);
+    $file = json_decode($socket->sent[1]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
+    expect($socket->sent[1]['payload']['key'])->toBe('instance-create-environment-input-'.$operation->id)
+        ->and($file['directory'])->toBe($this->instance->checkout_path.'/apps/site')
+        ->and($file['checkout'])->toBe($this->instance->checkout_path)
+        ->and($file['content'])->toBe(app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->content($this->instance))
+        ->and($file['content'])->toContain('TEMPLATE="from template"')
+        ->and(json_encode($public))->not->toContain($stored['APP_KEY'])
+        ->and(json_encode($public))->not->toContain('from template');
+});
+
+it('serializes an empty stored environment and empty template as defaults only', function (): void {
+    $environment = app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->admit($this->instance, $this->project);
+    expect($environment)->toBe(['APP_DEBUG', 'APP_ENV', 'APP_NAME']);
 });

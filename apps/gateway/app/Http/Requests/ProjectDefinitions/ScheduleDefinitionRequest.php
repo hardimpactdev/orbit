@@ -30,7 +30,7 @@ final class ScheduleDefinitionRequest extends FormRequest
                 'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D',
             ],
             'environments' => ['required', 'array', 'list', 'min:1', 'max:2'],
-            'environments.*' => ['required', 'string', 'distinct:strict', Rule::enum(DefinitionEnvironment::class)],
+            'environments.*' => ['required', 'string', 'distinct:strict', Rule::enum(DefinitionEnvironment::class)->only(DefinitionEnvironment::Production)],
             'spec' => ['required', 'array'],
             'spec.command' => ['required', 'string', 'max:4096', 'not_regex:/[\x00\r\n]/'],
             'spec.calendar' => ['required', 'string', 'max:255', 'regex:/\A[\x20-\x7E]+\z/D'],

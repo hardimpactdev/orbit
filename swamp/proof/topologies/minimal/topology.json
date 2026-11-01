@@ -1,8 +1,9 @@
 {
   "name": "minimal",
-  "version": 1,
+  "version": 2,
   "gateway": "task-vm",
   "network": {"name": "oeproof", "gateway": "10.231.0.1", "prefix": 24},
   "operator": {"address": "10.231.0.2"},
-  "nodes": [{"key": "target", "address": "10.231.0.10", "memory": "2GiB"}]
+  "nodes": [{"key": "target", "address": "10.231.0.10", "memory": "2GiB",
+             "roles": ["app-dev"], "settings": {"apps": {"path": "/home/orbit/apps"}}}]
 }

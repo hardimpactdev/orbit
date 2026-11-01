@@ -9,6 +9,7 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,6 +31,10 @@ use SensitiveParameter;
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
  * @property string|null $merge_check
+ * @property string|null $php_version
+ * @property bool|null $is_laravel
+ * @property string|null $source_profile_error
+ * @property CarbonImmutable|null $source_facts_captured_at
  * @property-read Collection<int, Task> $tasks
  * @property-read ProjectEnvironmentTemplate|null $environmentTemplate
  */
@@ -45,7 +50,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
 
     /** @var list<string> */
     #[\Override]
@@ -162,6 +167,8 @@ final class Project extends Model
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',
             'review_and_merge' => 'boolean',
+            'is_laravel' => 'boolean',
+            'source_facts_captured_at' => 'immutable_datetime',
         ];
     }
 }

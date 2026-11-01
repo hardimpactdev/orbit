@@ -28,6 +28,8 @@ final class ProjectData extends Data
         public bool $taskWorkspaceRouted,
         public bool $reviewAndMerge = false,
         public ?string $mergeCheck = null,
+        public ?string $phpVersion = null,
+        public ?bool $isLaravel = null,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -46,6 +48,8 @@ final class ProjectData extends Data
             taskWorkspaceRouted: $project->task_workspace_routed,
             reviewAndMerge: $project->review_and_merge,
             mergeCheck: $project->mergeCheckName(),
+            phpVersion: $project->php_version,
+            isLaravel: $project->is_laravel,
         );
     }
 }

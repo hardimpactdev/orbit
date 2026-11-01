@@ -437,6 +437,16 @@ it('records each definition command name against the App', function (
     'schedule destroy' => ['DELETE', 'schedule-definitions/hourly', null, 'project:schedule-definition:destroy'],
 ]);
 
+it('accepts development Process definitions and keeps Schedule definitions production-only', function (): void {
+    $process = runtime_definition_process_payload('dev-server', '/usr/bin/sleep');
+    $process['environments'] = ['development', 'production'];
+    $this->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", $process)
+        ->assertCreated()->assertJsonPath('data.environments', ['development', 'production']);
+    $schedule = runtime_definition_schedule_payload('nightly', '/usr/bin/true');
+    $schedule['environments'] = ['development'];
+    $this->postJson("/api/v1/projects/{$this->orbitApp->id}/schedule-definitions", $schedule)->assertUnprocessable();
+});
+
 function runtime_definition_app(string $slug): Project
 {
     return Project::query()->create([

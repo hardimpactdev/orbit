@@ -7,6 +7,7 @@ namespace Tests;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\Config;
 use Tests\Support\HostPathGuardedProcessRunner;
 use Tests\Support\LocalTaskGitAgent;
 use Tests\Support\TestDatabaseGuard;
+use Tests\Support\FakeProjectSourceReader;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -65,6 +67,9 @@ abstract class TestCase extends BaseTestCase
             rtrim(Config::string('orbit.home'), '/').'/task-vm-git/'.bin2hex(random_bytes(4)),
             ['https', 'file'],
         ));
+
+        // Project source facts read committed files; tests that need them set a FakeProjectSourceReader's files.
+        $app->instance(ProjectSourceReader::class, new FakeProjectSourceReader);
 
         return $app;
     }

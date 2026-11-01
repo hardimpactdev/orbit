@@ -13,6 +13,7 @@ These PRs change what a kind does. Each one needs an F10 re-proof unless its row
 
 | PR | Ported or changed | Swamp lines | Steps per legacy call | Budget | Pre-F10 evidence | Findings |
 | --- | --- | --- | --- | --- | --- | --- |
+| pilot `instance.create` | F9 rebuild: 8 steps (prepare, source, environment, setup, processes, finish); Gateway mints the token and renders `.env` at admission; run returns only the commit; development Processes after setup (pilot) | +1,026 / −3,153 | 6 phase steps for about 10 legacy calls plus one per setup command | 60 s + setup timeouts + 30 s; `queueTimeout` 10; measured 8.4 s phases, 24.7 s with one Process | Receipts on minimal@2 at e28cdeec | An unused `vp_materialize` in the create intent needed the agent delivery manifest. Two reviews: setup timeout, one mint rule, profile refusal as a fact, already-active writes nothing |
 | #2383 | Route publication capture kept below the native frame limit: affected groups only, equal artifacts stored once, numeric references (lane 8, B7) | +374 / −117 | Unchanged | None | Outage exception on B's independent review PASS | Op 6725 admitted 3,487,500 bytes; the 126-site regression fell to 9,394 bytes. The sparse `before` weakens the `caddy.current_config_missing` guard (lane 8 fix PR) |
 | #2370 | F1 setup runner normalizes UTF-8 before one-pass redaction and keeps whole lines within 4 KiB (B) | +152 / −16 | Unchanged | None | Outage exception; held create and destroy | The second tail pass still reprocesses markers (bounded); an oversize newest line keeps nothing |
 | #2364 | `env:sync` CLI follows its Operation (B) | None | Not a kind | None | CLI and SDK tests | No receipt needed: no admission or projection change |
@@ -107,4 +108,4 @@ Lane 26 adds one row for each receipt from the topology loop ([F13](/swamp/porti
 
 | Receipt | Kinds | Topology and version | Result | What the proof caught | Fault | Lesson |
 | --- | --- | --- | --- | --- | --- | --- |
-| None yet | | | | | | |
+| `evidence/proof/instance.create/20261101T214907Z-minimal.json`, `…setup-failure/20261101T214919Z-minimal.json` | `instance.create` (success with a development Process; setup failure) | minimal@2 | Pass: 24.7 s and 8.5 s, up to receipt 414 s | An unused `vp_materialize` in the create intent needed the agent delivery manifest (HTTP 500) | Kind | Compute only what the workflow reads; the minimal topology finds hidden build-output dependencies |

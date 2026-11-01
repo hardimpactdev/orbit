@@ -53,6 +53,22 @@ final readonly class UpdateProjectAction
 
     public function execute(Project $project, UpdateProjectData $data): Project
     {
+        // A changed source refreshes the facts a development create needs; the read happens before any change commits.
+        $facts = app(CaptureProjectSourceFactsAction::class);
+        $read = $data->typeProvided || $data->sourceAccessProvided || $data->hasReconcilableChanges() ? $facts->read(
+            $data->repositoryUrlProvided && is_string($data->repositoryUrl) ? $data->repositoryUrl : $project->repository_url,
+            $data->sourceAccessProvided && $data->sourceAccess instanceof ProjectSourceAccess ? $data->sourceAccess : $project->source_access,
+            $data->defaultBranchProvided && is_string($data->defaultBranch) ? $data->defaultBranch : (string) $project->default_branch,
+            $data->rootProvided ? $data->root : $project->root,
+            $data->typeProvided && $data->type instanceof ProjectType ? $data->type : $project->type,
+        ) : null;
+        $project = $this->update($project, $data);
+
+        return $read === null ? $project : $facts->record($project, $read);
+    }
+
+    private function update(Project $project, UpdateProjectData $data): Project
+    {
         if (! $data->hasChanges()) {
             throw new ResourceOperationException(
                 errorCode: 'project.update_required',

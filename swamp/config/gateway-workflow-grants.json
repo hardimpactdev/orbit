@@ -5,7 +5,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^project-dependency-read-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^project-dependency-auth-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-(?:git-operation-[1-9][0-9]*|destroy-[1-9][0-9]*-teardown-[0-9]+)$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^(?:instance-git-operation-[1-9][0-9]*|instance-git-operation-[1-9][0-9]*-setup-[0-9]+|instance-create-environment-input-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*-setup-[0-9]+|instance-create-environment-result-[1-9][0-9]*|instance-create-environment-result-[1-9][0-9]*-setup-[0-9]+|instance-create-[1-9][0-9]*|instance-create-[1-9][0-9]*-setup-[0-9]+)$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^(?:instance-git-operation-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*|instance-create-[1-9][0-9]*)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^recipe-operation-[1-9][0-9]*-observer$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-git-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
