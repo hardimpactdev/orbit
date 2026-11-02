@@ -1,0 +1,19 @@
+---
+title: "orbit metrics:exporter:disable"
+sidebarTitle: "metrics:exporter:disable"
+description: "Store a `disabled` exporter preference for one Node."
+---
+
+```bash
+orbit metrics:exporter:disable <node> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or name. |
+
+The command fails with `metrics.exporter_node_inactive` for a Node that is not active. It fails with `node.role_conflict` for the Metrics Node.
+
+## How it works
+
+<div className="flow-at" data-chart="metrics/exporter-disable"></div>

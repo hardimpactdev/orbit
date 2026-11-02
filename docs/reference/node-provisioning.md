@@ -327,7 +327,7 @@ When the package sources do not resolve, the bootstrap fails. Unlike a Node with
 
 The `DNS =` line is in `/etc/wireguard/orbit.conf`, and `wg-quick` applies it when the tunnel starts. The Gateway deletes an existing `/etc/wireguard/orbit.dns-link`.
 
-A later `node:add` without `--role` keeps this setup. To call the Gateway API from the Node, grant it access with [`node:access:add`](/cli/node#orbit-nodeaccessadd). The Gateway identifies the caller by its WireGuard address.
+A later `node:add` without `--role` keeps this setup. To call the Gateway API from the Node, grant it access with [`node:access:add`](/cli/node/access-add). The Gateway identifies the caller by its WireGuard address.
 
 On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Adding the first role closes public SSH and moves the Node to managed DNS in the same operation. macOS refuses every role with `node.platform_unsupported` before SSH.
 
@@ -341,7 +341,7 @@ Doctor checks a Node without roles like any other Node when the Gateway has a pi
 
 An iPad or iPhone can join WireGuard as an unmanaged peer. The operator owns its tunnel. It has no pinned SSH host key and no role. Orbit runs nothing on it. The `ipados` platform records this, so the Node is not mistaken for a Linux machine.
 
-Set the platform with [`node:platform`](/cli/node#orbit-nodeplatform). The command takes `linux`, `macos`, or `ipados`, and accepts only a Node with no pinned SSH host key and no role. It changes the stored platform and nothing else. `node:add` does not accept `ipados`. Keep the architecture the machine reports, such as `arm64`.
+Set the platform with [`node:platform`](/cli/node/platform). The command takes `linux`, `macos`, or `ipados`, and accepts only a Node with no pinned SSH host key and no role. It changes the stored platform and nothing else. `node:add` does not accept `ipados`. Keep the architecture the machine reports, such as `arm64`.
 
 The Gateway treats an `ipados` Node as a peer it never contacts. It reuses the platform gates that macOS and unmanaged Nodes already have.
 
@@ -537,7 +537,7 @@ Not every role can be added the same way.
 | `vpn` | Yes, as a singleton | No |
 | `ingress`, `analytics`, `ci-runner` | No | Yes |
 | `swamp` | No | Yes, as a singleton |
-| `router` | No | No. Use [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset). |
+| `router` | No | No. Use [`cluster:router:set`](/cli/cluster/router-set). |
 
 ## Package sources
 
@@ -660,9 +660,9 @@ The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. An 
 
 ## WireGuard hub
 
-The Node with the `vpn` role holds the WireGuard hub: its private key, address, listen port, and the list of peers. When a peer changes, the Gateway renders the hub configuration and installs it there. [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) sets or replaces an unmanaged Node's public key and runs this projection without configuring the peer machine. It refuses managed Nodes, Gateway Nodes, and keys that collide with another Node or the hub, including concurrent assignments. A successful projection preserves non-target peers.
+The Node with the `vpn` role holds the WireGuard hub: its private key, address, listen port, and the list of peers. When a peer changes, the Gateway renders the hub configuration and installs it there. [`node:wireguard-key`](/cli/node/wireguard-key) sets or replaces an unmanaged Node's public key and runs this projection without configuring the peer machine. It refuses managed Nodes, Gateway Nodes, and keys that collide with another Node or the hub, including concurrent assignments. A successful projection preserves non-target peers.
 
-Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node#orbit-nodewireguard-key) explains how to restore an authorized management path and replay the desired key.
+Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node/wireguard-key) explains how to restore an authorized management path and replay the desired key.
 
 The Gateway runs the [Node agent](/reference/node-agent#commands)'s `wireguard.project-hub` on the `vpn` Node, with the configuration and its private key in the protected input. When the `vpn` and `gateway` roles share a machine, the runner starts it as a local process; otherwise it reaches the `vpn` Node over SSH to its WireGuard address. The command writes a root-only candidate, validates it with `wg-quick strip`, keeps the live file as a backup, and swaps the candidate in. Then it live-syncs a running `wg-quick@orbit` with `wg syncconf`, or enables and starts a stopped one. When activation fails, it puts the backup and the previous enabled and active state back.
 

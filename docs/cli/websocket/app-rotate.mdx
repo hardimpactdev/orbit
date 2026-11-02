@@ -1,0 +1,17 @@
+---
+title: "orbit websocket:app:rotate"
+sidebarTitle: "websocket:app:rotate"
+description: "Rotate one app's secret and close its sockets with code `4201`. Reverb applies rotation on its existing 30-second reconciliation and then accepts only the new secret. Other apps keep their connections."
+---
+
+```bash
+orbit websocket:app:rotate <name> [--force] [--operation-key=<key>] [--json]
+```
+
+The `name` argument identifies the app. `--force` confirms rotation without prompting. `--operation-key` retries the same saved rotation. The reserved `gateway` app cannot be rotated through this command.
+
+Rotation updates the attached Instances' stored environment in the same transaction. The Operation’s `input.app.instance_rollout` lists those Instances. Run environment synchronization and reload their applications separately. An offline Instance cannot delay revocation.
+
+## How it works
+
+<div className="flow-at" data-chart="websocket/app-rotate"></div>

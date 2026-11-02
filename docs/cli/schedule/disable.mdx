@@ -1,0 +1,13 @@
+---
+title: "orbit schedule:disable"
+sidebarTitle: "schedule:disable"
+description: "Remove the trigger of one Schedule, so its calendar starts no new fire. The Schedule and its workflow stay; `schedule:enable` sets the trigger again. A fire that already started finishes and is still recorded. The command is idempotent. A per-minute production scheduler keeps its Node timer and returns `schedule.state_invalid`."
+---
+
+```bash
+orbit schedule:disable <schedule> [--idempotency-key=KEY] [--json]
+```
+
+## How it works
+
+<div className="flow-at" data-chart="schedule/disable"></div>

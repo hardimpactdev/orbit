@@ -1,0 +1,23 @@
+---
+title: "orbit github:app:destroy"
+sidebarTitle: "github:app:destroy"
+description: "Delete the App ID, slug, and private key from the Gateway. Orbit then reads every repository without a credential and cannot publish task pull requests."
+---
+
+```bash
+orbit github:app:destroy [--yes] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Confirm without a prompt. Required for noninteractive and JSON calls. |
+
+The command prints the GitHub page where you delete the App registration. GitHub offers no API for that step.
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `github.app_missing` | The Gateway has no GitHub App. |
+| `input.confirmation_required` | `--yes` is missing with `--json` or without a terminal. |
+| `input.cancelled` | The prompt was declined. |

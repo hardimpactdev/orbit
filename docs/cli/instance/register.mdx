@@ -1,0 +1,35 @@
+---
+title: "orbit instance:register"
+sidebarTitle: "instance:register"
+description: "Adopt an existing Git checkout in place. Run it on the app-dev Node that holds the source."
+---
+
+```bash
+orbit instance:register --project=ID [--idempotency-key=KEY] [options]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--path=PATH` | the current directory | Checkout already at `<apps-root>/<project-slug>/<name>`. |
+| `--project=ID` | required | Existing numeric Project ID, with no Route. |
+| `--name=NAME` | directory name | Instance name; an explicit Project default branch name becomes `default`. |
+| `--root=PATH` | the Project root | Valid relative root override. |
+| `--yes` | off | Confirm source ownership transfer without prompting. |
+| `--include-worktrees` | off | Currently unavailable. |
+| `--domain=HOST` | none | Currently unavailable. |
+| `--setup` | off | Currently unavailable. |
+
+The CLI refuses a directory outside Git and an origin with credentials before sending a request. Swamp independently checks the source and adopts it in place. Admission returns an Operation; its successful native result activates the Instance. Registration never creates a Project. Run [`project:create`](/cli/project/create) first.
+
+Project inference, relocation, linked worktrees, setup, domain requests and web-serving Projects return `operation.kind_unavailable` before reservation. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
+
+In a terminal, the CLI asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`.
+
+```bash
+cd /fast/apps/acme/feature
+orbit instance:register --project=12 --name=feature --yes --json
+```
+
+## How it works
+
+<div className="flow-at" data-chart="instance/register"></div>

@@ -1,0 +1,11 @@
+---
+title: "orbit project:document:search"
+sidebarTitle: "project:document:search"
+description: "Find entries whose name or path contains the query. Columns are ID, KIND, PATH, REVISION, SIZE, and ARCHIVED."
+---
+
+```bash
+orbit project:document:search <project> <query> [--state=active|archived|all] [--kind=folder|file] [--cursor=CURSOR] [--limit=50] [--json]
+```
+
+`query` is a name or path substring. The options work as for `project:document:list`.

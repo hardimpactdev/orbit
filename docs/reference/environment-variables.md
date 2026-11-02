@@ -196,7 +196,7 @@ A production [deployment](/reference/deployments) synchronizes the stored config
 
 ## Synchronize during a domain change
 
-A development [Instance rename](/cli/instance#orbit-instancerename) updates Laravel `.env` and cached `app.url` through Route convergence, and records the stored APP_URL only after that operation succeeds. If a failed replacement remains, requesting the original domain is not a rollback or a no-op: it returns `route.domain_change_conflict` without another branch or environment mutation. Retry the pending destination to finish the replacement.
+A development [Instance rename](/cli/instance/rename) updates Laravel `.env` and cached `app.url` through Route convergence, and records the stored APP_URL only after that operation succeeds. If a failed replacement remains, requesting the original domain is not a rollback or a no-op: it returns `route.domain_change_conflict` without another branch or environment mutation. Retry the pending destination to finish the replacement.
 
 A domain change of a production Route rewrites the production `.env` inside the Route operation. It uses the same checks and writer as synchronization. It resolves `{{instance.domain}}` against the new Route, although the public operations refuse an Instance while its Route changes. Stored values stay the same, so a placeholder `APP_URL` changes and a literal `APP_KEY` does not.
 
@@ -210,7 +210,7 @@ When a step fails before the new slug is published, the Gateway restores the sto
 
 ## Inspect the projection with Doctor
 
-Environment synchronization and deployment own configuration projection and validation. [Doctor](/cli/doctor#what-each-family-checks) does not read `.env` files or framework caches.
+Environment synchronization and deployment own configuration projection and validation. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not read `.env` files or framework caches.
 
 ## Storage and recovery
 

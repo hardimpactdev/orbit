@@ -1,0 +1,25 @@
+---
+title: "orbit github:app:show"
+sidebarTitle: "github:app:show"
+description: "Show the App name, slug, App ID, owner, GitHub URL, and one row for each installation."
+---
+
+```bash
+orbit github:app:show [--json]
+```
+
+| Installation field | Meaning |
+| --- | --- |
+| `account` | GitHub account or organization that installed the App. |
+| `type` | `user` or `organization`. |
+| `repositories` | `all` or `selected`. |
+| `suspended` | Whether the account suspended the installation. |
+
+The Gateway returns stored public state. `status` distinguishes registered, pending, failed and cancelled registration. `installations_status` is unknown, current, or stale, and `observed_at` preserves the native observation time. Run `github:app:sync` to refresh it. The result never contains the private key or a token.
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `github.app_missing` | The Gateway has no GitHub App. |
+| `github.unavailable` | The Gateway could not reach `api.github.com`, or GitHub refused the App credential. |

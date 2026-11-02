@@ -1,0 +1,23 @@
+---
+title: "orbit cluster:router:unset"
+sidebarTitle: "cluster:router:unset"
+description: "Clear the Router from a Cluster that is inactive or has no TLD."
+---
+
+```bash
+orbit cluster:router:unset <cluster> [--force] [--idempotency-key=KEY]
+```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Skip the confirmation prompt. Required in non-interactive and `--json` calls. |
+
+<Warning>
+The Gateway refuses to clear the Router while the Cluster owns a Route (`cluster.routes_require_router`) or while the Cluster is active with a TLD (`cluster.active_router_required`). Deactivate the Cluster or remove its TLD first.
+</Warning>
+
+## How it works
+
+<div className="flow-at" data-chart="cluster/router-unset"></div>

@@ -13,7 +13,14 @@
       "group": "Fleet",
       "order": 7,
       "pages": [
-        "cli/analytics"
+        {
+          "group": "analytics",
+          "pages": [
+            "cli/analytics/index",
+            "cli/analytics/update",
+            "cli/analytics/credentials"
+          ]
+        }
       ]
     }
   ]

@@ -1,0 +1,53 @@
+---
+title: "orbit instance:create"
+sidebarTitle: "instance:create"
+---
+
+Create a development Instance on a Node with the active `app-dev` role. A Node with the active `app-prod` role returns `instance.candidate_required`, including a repeat for an existing production Instance. Create a production Instance with [`instance:clone`](/cli/instance/clone).
+
+```bash
+orbit instance:create <project> <node> <name> [--idempotency-key=KEY] [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
+| `node` | yes | Numeric Node ID. |
+| `name` | yes | Instance name. `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, creates the `default` Instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--root=PATH` | the Project root | Relative web-root override for this Instance. |
+| `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. A domain that another Route owns, or a reserved name such as `gateway.orbit`, returns `route.domain_conflict`. |
+| `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
+| `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before the setup steps run. Only for an Instance that this create makes; an Instance that finished setup returns `instance.database_server_existing`. See [database on a server](/domains/applications#database-on-a-server). Needs access to the Gateway too. |
+
+Development placement and branch selection follow the requested name.
+
+| Creation input | Managed placement | Selected branch |
+| --- | --- | --- |
+| `default` or the default branch name, without `--branch` | `<node-apps-root>/<project-slug>/default` | The Project `default_branch`. |
+| Another name without `--branch` | `<node-apps-root>/<project-slug>/<name>` | The matching origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. |
+| Any name with `--branch` | The placement for the requested name | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. It need not match the Instance name. |
+
+```bash
+orbit instance:create 4 7 default
+orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test
+orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
+```
+
+When the name equals the Project default branch, Orbit creates the `default` Instance, and `--branch` keeps its meaning as the `branch_override`. The final Operation result carries `name_converted_from` with the requested name, or null when no conversion was needed. See [A default-branch name means default](/domains/applications#a-default-branch-name-means-default).
+
+A requested origin branch keeps its existing selection behavior. Orbit does not reset an existing local branch to the default commit. A missing fetched `default_branch` when required returns `instance.branch_resolution_failed`, not a different fallback branch. An invalid Git branch name returns `validation.failed` before source changes.
+
+A create that fails before activation removes its owned resources and Instance row without teardown. The response keeps the original error code. Once cleanup completes, a new create can select a different branch. If an interruption or incomplete cleanup leaves a pre-activation Instance, an identical retry resumes it; a retry that changes the root or `--branch` returns `instance.placement_conflict`. Incomplete cleanup reports `details.cleanup = "incomplete"` and a recovery command. An identical retry finishes a started cleanup first, without `--force`, and then creates the Instance. [`instance:destroy`](/cli/instance/destroy) accepts `reserved`, `checkout_prepared`, and `source_resolved` for [pre-activation removal](/reference/instance-removal#pre-activation-removal).
+
+<Note>
+The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful create response also means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
+</Note>
+
+A failed setup step removes the new Instance after the teardown steps run. A missing or non-executable setup command returns `instance.setup_step_unavailable` with `outcome: missing`, naming the step, Node, and exit 127 or 126. That classification and diagnostic survive rollback, including an incomplete or unconfirmed cleanup annotation. Other command failures return `instance.setup_step_failed`. See [Instance setup and teardown](/reference/instance-setup#run-setup).
+
+## How it works
+
+<div className="flow-at" data-chart="instance/create"></div>

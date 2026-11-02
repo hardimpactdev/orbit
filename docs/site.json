@@ -315,7 +315,7 @@
     },
     {
       "source": "/decisions/0091-rename-a-node-without-changing-wireguard-identity",
-      "destination": "/cli/node#orbit-noderename"
+      "destination": "/cli/node/rename"
     },
     {
       "source": "/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
@@ -619,7 +619,7 @@
     },
     {
       "source": "/decisions/0095-relocate-relocatable-singleton-roles",
-      "destination": "/cli/node#orbit-noderolerelocate"
+      "destination": "/cli/node/role-relocate"
     },
     {
       "source": "/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
@@ -751,7 +751,7 @@
     },
     {
       "source": "/cli/workspace",
-      "destination": "/cli/instance#orbit-instanceregister"
+      "destination": "/cli/instance/register"
     },
     {
       "source": "/decisions/0017-optional-cluster-placement-and-tld-precedence",

@@ -1,0 +1,25 @@
+---
+title: "websocket"
+sidebarTitle: "Overview"
+description: "Manage Reverb apps and track live changes without restarting Reverb."
+covers:
+  - apps/cli/app/Commands/WebSocket/**
+---
+
+The `websocket` role runs one Reverb server. It serves the Gateway's own app, `gateway`, and one app for each name you create. An app has an app ID, a key, and a secret. The Gateway keeps the secret encrypted and never returns it. [Reverb apps](/reference/websocket-apps) describes the apps and the keys that an Instance gets.
+
+Put an app on an Instance with [`instance:websocket:add`](/cli/instance/websocket-add).
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`websocket:app:create`](/cli/websocket/app-create) | Create a Reverb app. |
+| [`websocket:app:list`](/cli/websocket/app-list) | List the apps. |
+| [`websocket:app:show`](/cli/websocket/app-show) | Show one app and the Instances that use it. |
+| [`websocket:app:destroy`](/cli/websocket/app-destroy) | Remove an app that no Instance uses. |
+| [`websocket:app:rotate`](/cli/websocket/app-rotate) | Rotate one app’s secret. |
+| [`websocket:operation:show`](/cli/websocket/operation-show) | Check application of a saved change. |
+| [`websocket:sync`](/cli/websocket/sync) | Wait for all serving processes to apply the registry. |
+
+Every command accepts `--json`. Changes return a normal Operation ID and the CLI follows its progress. The Gateway records the registry intent and returns HTTP 202. Reverb applies it through its existing 30-second reconciliation. A saved change can remain pending. A later mutation that replaces its result makes it superseded. Use `operation:show` with the numeric Operation ID to follow it, or `websocket:sync` to wait for the current registry. Neither command restarts Reverb.

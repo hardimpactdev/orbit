@@ -221,7 +221,7 @@ The Gateway validates the request and the access grant, checks that the Instance
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `rollback.release_not_retained` | 422 | The Instance does not retain the release. [`instance:release:list`](/cli/instance#orbit-instancereleaselist) lists the releases it retains. A queued deploy stays queued |
+| `rollback.release_not_retained` | 422 | The Instance does not retain the release. [`instance:release:list`](/cli/instance/release-list) lists the releases it retains. A queued deploy stays queued |
 | `deployment_config.unavailable` | 409 | The Instance is not a production Instance |
 | `operation.target_busy` | 409 | Another operation holds the Instance |
 | `operation.queue_unavailable` | 503 | The Gateway has no queue |
@@ -480,13 +480,13 @@ The Gateway cancels the deploy and creates the rollback in one database transact
 
 ## Inspect release placement with Doctor
 
-Native deployment and rollback own release-layout and selection validation. Their results carry the outcome. [Doctor](/cli/doctor#what-each-family-checks) does not repeat release, Git, `.env`, web-root or source checks.
+Native deployment and rollback own release-layout and selection validation. Their results carry the outcome. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat release, Git, `.env`, web-root or source checks.
 
 ## Retained releases
 
 When preparing a candidate, Orbit keeps the selected release's Node and package-manager references, even when its build fails. Retained releases keep those references for rollback too. Release cleanup drops references only for releases it takes out of the retained set; a release kept for running processes keeps its runtimes.
 
-A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance#orbit-instancerollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
+A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance/rollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
 
 The `release-layout` marker is owned by root and records the original layout. Validation authenticates that marker and the selected release without requiring `initial` to remain.
 

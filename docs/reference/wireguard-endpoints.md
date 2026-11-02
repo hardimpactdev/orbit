@@ -40,7 +40,7 @@ The selected value must pass the same check before the Gateway renders the peer 
 
 ## Peer key changes
 
-[`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) changes an unmanaged peer's desired public key and reconverges the hub. It preserves the peer's WireGuard address and endpoint override, and does not replace the stored Gateway endpoint. Use it for peer key recovery, not to repair an invalid endpoint. Peer key assignments share collision protection with native provisioning, so no two Nodes can claim the same key through those paths.
+[`node:wireguard-key`](/cli/node/wireguard-key) changes an unmanaged peer's desired public key and reconverges the hub. It preserves the peer's WireGuard address and endpoint override, and does not replace the stored Gateway endpoint. Use it for peer key recovery, not to repair an invalid endpoint. Peer key assignments share collision protection with native provisioning, so no two Nodes can claim the same key through those paths.
 
 ## Native peer convergence
 

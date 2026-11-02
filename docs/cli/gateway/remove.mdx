@@ -1,0 +1,33 @@
+---
+title: "orbit gateway:remove"
+sidebarTitle: "gateway:remove"
+description: "Remove a profile and delete its pinned certificate file. The operating-system trust store stays unchanged."
+---
+
+```bash
+orbit gateway:remove <name> [--force] [--yes] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Allow removal of the active profile. The active selection is then cleared. |
+| `--yes` | Confirm without a prompt. Required with `--json` and without a terminal. |
+
+```bash
+orbit gateway:remove staging
+orbit gateway:remove default --force --yes
+```
+
+The CLI checks the name and the active profile before it asks for consent. The prompt defaults to No. `--force` allows the removal but does not give consent.
+
+A refusal changes nothing. JSON returns `profile` with the removed name.
+
+## Errors
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.profile_not_found` | No profile has this name. |
+| `gateway.profile_active` | The profile is active and `--force` is missing. |
+| `input.confirmation_required` | `--yes` is missing with `--json` or without a terminal. |
+| `input.cancelled` | The prompt was declined or interrupted. |
+| `gateway.config_invalid` | The configuration file is invalid, or the profile is removed but the CLI could not delete its certificate file. |

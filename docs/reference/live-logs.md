@@ -14,7 +14,7 @@ covers:
 
 A live log stream shows new lines of one Instance log or one Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance or Process.
 
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance#orbit-instancelogs) and [`orbit process:logs`](/cli/process#orbit-processlogs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs` and `GET /api/v1/processes/{process}/logs`, read over SSH.
+The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs` and `GET /api/v1/processes/{process}/logs`, read over SSH.
 
 ## How a stream works
 

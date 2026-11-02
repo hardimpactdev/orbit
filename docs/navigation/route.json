@@ -5,7 +5,19 @@
       "group": "Applications",
       "order": 2,
       "pages": [
-        "cli/route"
+        {
+          "group": "route",
+          "pages": [
+            "cli/route/index",
+            "cli/route/create",
+            "cli/route/list",
+            "cli/route/show",
+            "cli/route/update",
+            "cli/route/target-set",
+            "cli/route/target-unset",
+            "cli/route/destroy"
+          ]
+        }
       ]
     }
   ]

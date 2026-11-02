@@ -5,7 +5,21 @@
       "group": "Applications",
       "order": 7,
       "pages": [
-        "cli/process"
+        {
+          "group": "process",
+          "pages": [
+            "cli/process/index",
+            "cli/process/create",
+            "cli/process/list",
+            "cli/process/show",
+            "cli/process/update",
+            "cli/process/start",
+            "cli/process/stop",
+            "cli/process/restart",
+            "cli/process/logs",
+            "cli/process/destroy"
+          ]
+        }
       ]
     }
   ]

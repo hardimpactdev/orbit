@@ -1,0 +1,30 @@
+---
+title: "orbit node:metrics"
+sidebarTitle: "node:metrics"
+description: "Show one metrics snapshot of an active Node: CPU per core, memory, swap, load, uptime, pressure, and disks."
+---
+
+```bash
+orbit node:metrics <node> [--json]
+```
+
+The Gateway reads the snapshot from the [Metrics role](/reference/metrics#read-node-metrics) through Grafana. It runs four queries for the Node's exporter: one for memory, swap, load, and uptime, and one each for cores, pressure, and disks. Only the first decides whether the Node has metrics. The Gateway stores no sample.
+
+| Field | Meaning |
+| --- | --- |
+| `cores` | The busy ratio of each core, from 0 to 1. |
+| `memory`, `swap` | Used and total bytes. |
+| `load` | The 1, 5, and 15-minute load averages. |
+| `uptime_seconds` | Time since boot. |
+| `pressure` | The `some` `avg10` value for CPU, memory, and I/O. `0` when the kernel has no pressure data. |
+| `disks` | Mount, used bytes, and total bytes. Pseudo filesystems such as `tmpfs` and `proc` are left out. `/` comes first. |
+
+Human output shows bytes and durations in readable units. JSON keeps the raw numbers.
+
+## Errors
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `node.metrics_unavailable` | 422 | The Node is not active or has no WireGuard address. |
+| `metrics.assignment_missing` | 409 | No Node has the Metrics role. |
+| `node.metrics_unreachable` | 502 | Grafana could not answer, or Prometheus has no samples for the Node yet. |

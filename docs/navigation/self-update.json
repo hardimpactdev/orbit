@@ -13,7 +13,13 @@
       "group": "Operations",
       "order": 2,
       "pages": [
-        "cli/self-update"
+        {
+          "group": "self-update",
+          "pages": [
+            "cli/self-update/index",
+            "cli/self-update/self-update"
+          ]
+        }
       ]
     }
   ]

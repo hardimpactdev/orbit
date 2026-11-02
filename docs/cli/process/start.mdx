@@ -1,0 +1,15 @@
+---
+title: "orbit process:start"
+sidebarTitle: "process:start"
+description: "Start an installed Process and store the running desired state."
+---
+
+```bash
+orbit process:start <process> [--idempotency-key=KEY] [--json]
+```
+
+A competing operation on the same Instance makes the command wait up to 30 seconds and then return `process.operation_busy`. A competing operation on the same Process returns `process.runtime_lock_failed`.
+
+## How it works
+
+<div className="flow-at" data-chart="process/start"></div>

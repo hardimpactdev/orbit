@@ -5,7 +5,42 @@
       "group": "Applications",
       "order": 0,
       "pages": [
-        "cli/project"
+        {
+          "group": "project",
+          "pages": [
+            "cli/project/index",
+            "cli/project/create",
+            "cli/project/list",
+            "cli/project/show",
+            "cli/project/update",
+            "cli/project/review-and-merge-enable",
+            "cli/project/review-and-merge-disable",
+            "cli/project/destroy",
+            "cli/project/dev-deploy-step-list",
+            "cli/project/dev-deploy-step-create",
+            "cli/project/dev-deploy-step-update",
+            "cli/project/dev-deploy-step-destroy",
+            "cli/project/excluded-node-add",
+            "cli/project/excluded-node-list",
+            "cli/project/excluded-node-remove",
+            "cli/project/document-list",
+            "cli/project/document-search",
+            "cli/project/document-show",
+            "cli/project/document-create",
+            "cli/project/document-update",
+            "cli/project/document-read",
+            "cli/project/document-upload",
+            "cli/project/document-write",
+            "cli/project/document-download",
+            "cli/project/document-versions",
+            "cli/project/document-restore-version",
+            "cli/project/document-archive",
+            "cli/project/document-restore",
+            "cli/project/document-remove",
+            "cli/project/document-storage-show",
+            "cli/project/document-storage-update"
+          ]
+        }
       ]
     }
   ]

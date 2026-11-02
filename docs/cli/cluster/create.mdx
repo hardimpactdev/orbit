@@ -1,0 +1,23 @@
+---
+title: "orbit cluster:create"
+sidebarTitle: "cluster:create"
+description: "Create a Cluster in the `inactive` state."
+---
+
+```bash
+orbit cluster:create <name> [--tld=TLD]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Unique Cluster name. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. It cannot equal, be an ancestor of, or be a descendant of `orbit` or the configured VPN domain. Comparisons ignore case and the VPN domain’s optional root dot, and use DNS label boundaries. An active Cluster with this TLD owns generated development Route domains for its members. |
+
+```bash
+orbit cluster:create lab --tld=test
+```
+
+The CLI refuses a TLD that is not one lowercase DNS label with `cluster.tld_invalid` before it sends a request. [Placement and TLDs](/cli/cluster#placement-and-tlds) lists the ownership rules.

@@ -1,0 +1,44 @@
+---
+title: "orbit instance:rollback"
+sidebarTitle: "instance:rollback"
+description: "Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback restarts active Instance Processes after PHP refresh, using the same opt-out as deployment. It reports restart failures and leaves the rollback release selected. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files."
+---
+
+```bash
+orbit instance:rollback <instance> --release=NAME [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--release=NAME` | Retained release name from `instance:release:list`. |
+| `--idempotency-key=KEY` | Retry the same operation start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key) for its form and conflict rules. |
+
+The command starts an `instance.rollback` [operation](/reference/operations) and follows it until it ends, as [`instance:deploy`](/cli/instance/deploy) does: over Reverb, or every `poll_after_seconds` without it. Human output shows a progress tree of the steps `Find retained release`, `Activate release`, `Refresh PHP cache` for an Instance that serves PHP, and `Restart Processes`. New output of the running step prints above the tree, labeled and escaped. The final lines add the failed step, the error code, the selected release when available, the operation ID, and the request ID. `--json` prints nothing while it follows, then the final operation document with every step.
+
+A rollback wins over a deploy of the same Instance that no worker has started: the deploy ends `cancelled` with `operation.superseded`, and the rollback starts. A deploy that a worker has started keeps the Instance, also while it waits to resume after a lost worker, and the rollback returns `operation.target_busy` with the deploy's operation ID. [One operation at a time](/reference/deployments#one-operation-at-a-time) gives the rules.
+
+Pressing Ctrl-C stops following, not the rollback. The CLI prints the command that shows the operation and exits nonzero. It sends no cancel request; [`operation:cancel`](/cli/operation/cancel) stops a rollback before its `activation` step. Once the release is selected, the rollback finishes PHP refresh and Process restarts.
+
+| Outcome | Exit status |
+| --- | --- |
+| The operation succeeded. | `0` |
+| The operation failed or was cancelled. | Nonzero. The command names the failed step and the selected release when the result includes one. |
+| The Gateway refused the request, such as `operation.target_busy` while a deploy runs, or `rollback.release_not_retained` for a release the Instance does not retain. | Nonzero, with the one-line error envelope. Nothing changes. |
+| You pressed Ctrl-C. | `130`. The operation keeps running. |
+
+```bash
+orbit instance:release:list 15
+orbit instance:rollback 15 --release=20260914T101500Z
+```
+
+<Warning>
+Orbit selects the older code only. You own any data or application recovery that the switch needs.
+</Warning>
+
+## How it works
+
+<div className="flow-at" data-chart="instance/rollback"></div>

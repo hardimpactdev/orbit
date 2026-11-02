@@ -26,7 +26,7 @@ Environment synchronization returns an Operation. On production, its `result` ho
 
 The generated clone response types include required `data.warnings: string[]` for both creation and retry. These hints from the Gateway name environment keys to review; they do not change app settings. The schema update adds no clone UI; [Instance cloning](/reference/instance-cloning) describes the operator workflow.
 
-The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node#orbit-nodewireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
+The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node/wireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
 
 The generated API schema includes `GET /api/v1/task-groups/{group}/agents/{session}` and its `TaskAgentSnapshot` response, the [thread read](/reference/tasks#read-a-thread). The task page's Agents section reads the agent stream, not this operation.
 

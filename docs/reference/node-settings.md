@@ -14,7 +14,7 @@ covers:
 
 # Node settings
 
-A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
+A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or `node:settings`. [`node`](/cli/node/settings) lists the commands. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
 A settings change that touches the apps root records a `node.settings` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.settings.mmd) shows both paths.
 
@@ -117,7 +117,7 @@ Verify the stored settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `ga
 
 The apps root is `apps.path`, or `<managed-user-home>/apps` when the path is not set. The Gateway computes the default each time and does not store it.
 
-A new development Instance checkout is `<apps-root>/<project-slug>/<instance-name>`. The Gateway stores that path on the Instance. A later change to `apps.path` never moves, rewrites, or deletes an existing checkout. [Doctor](/cli/doctor#what-each-family-checks) accepts a development checkout under the apps root or under the managed user's home.
+A new development Instance checkout is `<apps-root>/<project-slug>/<instance-name>`. The Gateway stores that path on the Instance. A later change to `apps.path` never moves, rewrites, or deletes an existing checkout. [Doctor](/cli/doctor/doctor#what-each-family-checks) accepts a development checkout under the apps root or under the managed user's home.
 
 ## Validation
 

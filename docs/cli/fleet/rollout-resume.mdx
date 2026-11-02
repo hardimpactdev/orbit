@@ -1,0 +1,19 @@
+---
+title: "orbit fleet:rollout:resume"
+sidebarTitle: "fleet:rollout:resume"
+description: "Resume the halted rollout. The Gateway runs it in `orbit-fleet-converge.service`; the command returns at once."
+---
+
+```bash
+orbit fleet:rollout:resume [--skip=<node>] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--skip=<node>` | A Node ID or name to leave out of this rollout, usually the Node it halted on. The next desired state visits it again |
+
+Without `--skip`, the rollout visits the failed Node again first. The command fails with `fleet.rollout_not_halted` when no rollout is halted, and with `fleet.node_not_in_rollout` when `--skip` names a Node outside it.
+
+```bash
+orbit fleet:rollout:resume --skip=shark
+```

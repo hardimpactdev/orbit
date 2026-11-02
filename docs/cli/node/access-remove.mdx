@@ -1,0 +1,11 @@
+---
+title: "orbit node:access:remove"
+sidebarTitle: "node:access:remove"
+description: "Remove one access grant."
+---
+
+```bash
+orbit node:access:remove <consumer> <serving> [--force] [--json]
+```
+
+Removing a grant to the Gateway Node also revokes Grafana access that depends on it. The CLI warns when you removed your own access to the Gateway Node.

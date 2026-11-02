@@ -1,0 +1,27 @@
+---
+title: "orbit metrics:disable"
+sidebarTitle: "metrics:disable"
+description: "Disable the Metrics role. The data stays unless you purge it."
+---
+
+```bash
+orbit metrics:disable [--force] [--purge-data] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Skip the confirmation. Required without a terminal, with `--json`, and with `--purge-data`. |
+| `--purge-data` | Also delete the Prometheus and Grafana volumes and the stored Grafana passwords. |
+
+```bash
+orbit metrics:disable
+orbit metrics:disable --force --purge-data
+```
+
+In a terminal, the command shows a preview and asks for confirmation. The default answer is No. A decline, Ctrl-C, or EOF fails with `input.cancelled` and changes nothing. Without `--force`, a call that cannot prompt fails with `metrics.force_required`. `--purge-data` without `--force` fails the same way in every mode.
+
+The CLI follows the accepted native Operation. Terminal success confirms runtime and publication removal. Failure keeps the assignment and credentials for native recovery. [Disable and purge](/reference/metrics#disable-and-purge) lists what the command removes and what it keeps.
+
+## How it works
+
+<div className="flow-at" data-chart="metrics/disable"></div>

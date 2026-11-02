@@ -17,7 +17,7 @@ Each command is one noun family and one last segment. The last segment is a verb
 
 `process:create` and `process:update` accept `--no-restart-on-deploy` to opt out of a production deploy restart. This option is separate from `--restart`, which sets the runtime restart policy.
 
-`process:create --user` selects the account for a Node systemd Process; it does not add a command or family action. [Processes](/cli/process#orbit-processcreate) lists the accepted combinations.
+`process:create --user` selects the account for a Node systemd Process; it does not add a command or family action. [Processes](/cli/process/create) lists the accepted combinations.
 
 `database:create --locale` selects a builtin locale on a PostgreSQL server. `instance:database:add --network` selects the connection network. These options keep the existing command names; see [Database commands](/cli/database).
 
@@ -91,7 +91,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 
 | Family | Actions | Result |
 | --- | --- | --- |
-| `cluster` | `activate`, `deactivate` | The CLI turns a Cluster's private domains and LAN ingress on or off; see [cluster](/cli/cluster#orbit-clusteractivate). |
+| `cluster` | `activate`, `deactivate` | The CLI turns a Cluster's private domains and LAN ingress on or off; see [cluster](/cli/cluster/activate). |
 | `database` | `close`, `describe`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections), or closes a Valkey server [adopted earlier](/reference/database-servers#close-an-adopted-server) with `database:server:close`. `database:server:create` creates new servers only. |
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |
@@ -99,7 +99,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `firewall` | `allow`, `deny`, `inspect` | The CLI writes an allow or deny firewall rule. Inspection records a fresh native snapshot. |
 | `fleet` | `resume`, `status` | The CLI shows the [fleet rollout](/reference/gateway-recovery#fleet-rollout) with `fleet:rollout:status`, or resumes a halted one with `fleet:rollout:resume`. |
 | `gateway` | `deploy`, `resume`, `rollback`, `smoke`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy, roll back, and smoke-test the Gateway itself, and resume paused automatic releases. |
-| `github` | `sync` | The CLI records an Operation to refresh the [GitHub App installations](/cli/github#orbit-githubappsync). |
+| `github` | `sync` | The CLI records an Operation to refresh the [GitHub App installations](/cli/github/app-sync). |
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `resolve`, `rollback`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs and runs setup. Rename records the checked-out branch and can move its Route. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `ai-router` | `setup`, `teardown`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
@@ -140,10 +140,10 @@ The Gateway lives in `apps/gateway`, and it records each route name as the Activ
 
 Some routes have no CLI command. `instance:deploy:automatic` is the [trusted automatic deploy contract](/reference/deployments#pinned-commits-and-automatic-callers) for Swamp and other authorized Gateway peers through API/MCP. CLI deploys use `instance:deploy`, preserve manual identity, and pause automation.
 
-`instance:dependencies:show` and `project:dependencies:show` read Swamp-owned [dependency results](/reference/instance-dependencies) for the API and SDK. They have no matching CLI command. `tasks:agent-stream` is a server-sent event stream for the web task board. `tasks:insights` returns the [task insights](/reference/tasks#task-insights) that the web task board shows. Its JSON read, `tasks:agent:show`, has the [CLI command](/cli/tasks#orbit-tasksagentshow) of the same name. `instance:resolve` resolves a Route target for API clients; the CLI has no bare `instance:resolve` command. The `conn:` routes serve Conn devices and T3 servers, as [Conn layer](/reference/conn) describes, and have no CLI commands.
+`instance:dependencies:show` and `project:dependencies:show` read Swamp-owned [dependency results](/reference/instance-dependencies) for the API and SDK. They have no matching CLI command. `tasks:agent-stream` is a server-sent event stream for the web task board. `tasks:insights` returns the [task insights](/reference/tasks#task-insights) that the web task board shows. Its JSON read, `tasks:agent:show`, has the [CLI command](/cli/tasks/agent-show) of the same name. `instance:resolve` resolves a Route target for API clients; the CLI has no bare `instance:resolve` command. The `conn:` routes serve Conn devices and T3 servers, as [Conn layer](/reference/conn) describes, and have no CLI commands.
 
 
-[`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`. [`node:platform`](/cli/node#orbit-nodeplatform) follows the same rule. Its endpoint is `PATCH /api/v1/nodes/{node}/platform`.
+[`node:wireguard-key`](/cli/node/wireguard-key) uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`. [`node:platform`](/cli/node/platform) follows the same rule. Its endpoint is `PATCH /api/v1/nodes/{node}/platform`.
 
 ## Why it works this way
 

@@ -171,7 +171,7 @@ bin/deploy-verify --sha SHA [--up-url URL] [--status-url URL] [--dry-run] [--fix
 
 `--dry-run` exits `0` and does not claim a live pass. `--fixture` evaluates the recorded `/up` body, gateway status, and `APP_VERSION` `2f214816deae` marker shape from 2026-10-01. A fixture pass is not a live pass. The JSON says `source` is `fixture` or `live`.
 
-Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail certificate verification. That file is the Gateway profile `ca_path` after [`orbit gateway:trust`](/cli/gateway#orbit-gatewaytrust). An unreachable result from this machine is not a reason to change the live checks.
+Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail certificate verification. That file is the Gateway profile `ca_path` after [`orbit gateway:trust`](/cli/gateway/trust). An unreachable result from this machine is not a reason to change the live checks.
 
 `instance:rollback` is not part of this command. A rollback selects one retained production release and does not undo deploy steps, environment writes, or database files. See [Roll back](/reference/deployments#roll-back).
 
@@ -206,7 +206,7 @@ Run it as the Gateway account from the release under test. It then uses that rel
 
 A restarted scheduler starts its first tick on the next full minute, so a release does not pass `--wait-for-tick`. It [confirms the first tick afterwards](/reference/gateway-recovery#post-release-tick-confirmation). `tasks_tick` runs `artisan schedule:list` with only `HOME`, `PATH`, and `LANG`, as the release's own artisan commands do. With `--wait-for-tick`, it reads `orbit tasks:status --json` every 2 seconds until the total limit, and passes once `last_tick_at` is at or after `--since`, or no more than `--tick-within` seconds before the run. It keeps polling while another poll interval fits, without reserving a full read limit. A read cut short by the total limit counts as `tick_stale`, with the last seen tick in `detail.last_tick_at`, not as `timeout`.
 
-All checks run at the same time. Each has its own time limit, and `--timeout` bounds the whole run, so a release waits at most that long. A check that does not finish in time is `timeout`. The [`tasks:status`](/cli/tasks#orbit-tasksstatus) tick record comes from the Gateway clock, so compare it on the Gateway host.
+All checks run at the same time. Each has its own time limit, and `--timeout` bounds the whole run, so a release waits at most that long. A check that does not finish in time is `timeout`. The [`tasks:status`](/cli/tasks/status) tick record comes from the Gateway clock, so compare it on the Gateway host.
 
 | Option | Default | Meaning |
 | --- | --- | --- |

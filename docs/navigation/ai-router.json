@@ -13,7 +13,20 @@
       "group": "Operations",
       "order": 9,
       "pages": [
-        "cli/ai-router"
+        {
+          "group": "ai-router",
+          "pages": [
+            "cli/ai-router/index",
+            "cli/ai-router/setup",
+            "cli/ai-router/teardown",
+            "cli/ai-router/status",
+            "cli/ai-router/provider-list",
+            "cli/ai-router/provider-show",
+            "cli/ai-router/account-enable",
+            "cli/ai-router/account-disable",
+            "cli/ai-router/model-list"
+          ]
+        }
       ]
     }
   ]

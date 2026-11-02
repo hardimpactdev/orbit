@@ -1,0 +1,92 @@
+---
+title: "instance"
+sidebarTitle: "Overview"
+description: "Create, register, reconcile a renamed branch or domain, set up, clone, deploy, roll back, and remove Instances."
+covers:
+  - apps/cli/app/Commands/Instances/**
+  - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,RenameInstanceAction}.php
+  - apps/gateway/app/Data/Instances/{CreateInstanceData,RenameInstanceData}.php
+  - apps/gateway/app/Http/Requests/Instances/{StoreInstanceRequest,RenameInstanceRequest}.php
+  - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
+  - packages/php-sdk/src/Requests/Instances/ListInstancesRequest.php
+  - packages/php-sdk/src/Responses/Instances/**
+---
+
+An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/projects#project-types) decides whether it gets a Route.
+
+[Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/instance-cloning), [Instance transfer](/reference/instance-transfer), [Instance removal](/reference/instance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
+
+## Commands
+
+Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, these name its checkout and the last commit that deployed there. Read them before creating a linked worktree for `instance:register`; use that commit rather than a newer `origin/main`. Human tables keep their existing columns.
+
+Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress.
+
+Placement commands create, adopt, inspect, and remove an Instance on one Node.
+
+`instance:create`, `instance:register`, `instance:rename`, `instance:clone`, `instance:transfer`, and `instance:destroy` return an Operation. The Gateway validates and records intent, then Swamp executes it. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
+
+| Command | Result |
+| --- | --- |
+| [`instance:create`](/cli/instance/create) | Create a development Instance on an app-dev Node and run its Project setup steps. |
+| [`instance:register`](/cli/instance/register) | Adopt the current Git checkout or worktree as a managed Instance. |
+| [`instance:setup`](/cli/instance/setup) | Run the Project setup steps for one development Instance. |
+| [`instance:setup-step:create`](/cli/instance/setup-step-create) | Record one named setup step on a Project. |
+| [`instance:setup-step:list`](/cli/instance/setup-step-list) | List a Project's setup steps. |
+| [`instance:setup-step:update`](/cli/instance/setup-step-update) | Change one named setup step. |
+| [`instance:setup-step:destroy`](/cli/instance/setup-step-destroy) | Remove one named setup step. |
+| [`instance:teardown-step:create`](/cli/instance/teardown-step-create) | Record one named teardown step on a Project. |
+| [`instance:teardown-step:list`](/cli/instance/teardown-step-list) | List a Project's teardown steps. |
+| [`instance:teardown-step:update`](/cli/instance/teardown-step-update) | Change one named teardown step. |
+| [`instance:teardown-step:destroy`](/cli/instance/teardown-step-destroy) | Remove one named teardown step. |
+| [`instance:list`](/cli/instance/list) | List Instances. |
+| [`instance:show`](/cli/instance/show) | Show one Instance with its Route, source, and deploy steps. |
+| [`instance:rename`](/cli/instance/rename) | Record an already checked-out development branch. |
+| [`instance:transfer`](/cli/instance/transfer) | Move a development Instance to another Node. |
+| [`instance:destroy`](/cli/instance/destroy) | Remove an Instance and its owned Processes, Schedules, and Route. |
+| [`instance:logs`](/cli/instance/logs) | Return the application log tail, or follow new lines. |
+
+Release commands prepare and operate a production Instance.
+
+| Command | Result |
+| --- | --- |
+| [`instance:clone`](/cli/instance/clone) | Clone a candidate into a prepared production Instance. |
+| [`instance:deploy:automatic:resolve`](/cli/instance/deploy-automatic-resolve) | Resolve a lost automatic admission and fence late requests. |
+| [`instance:update`](/cli/instance/update) | Change the deployment branch or shared paths of a production Instance. |
+| [`instance:auto-deploy:enable`](/cli/instance/auto-deploy-enable) | Deploy each new green commit of a production Instance's branch automatically. |
+| [`instance:auto-deploy:disable`](/cli/instance/auto-deploy-disable) | Stop automatic deployment of a production Instance. |
+| [`instance:deploy-step:create`](/cli/instance/deploy-step-create) | Record one named deploy step. |
+| [`instance:deploy-step:list`](/cli/instance/deploy-step-list) | List deploy steps in phase and placement order. |
+| [`instance:deploy-step:update`](/cli/instance/deploy-step-update) | Change one named deploy step. |
+| [`instance:deploy-step:destroy`](/cli/instance/deploy-step-destroy) | Remove one named deploy step. |
+| [`instance:deploy`](/cli/instance/deploy) | Deploy the configured branch as a fresh release. |
+| [`instance:release:list`](/cli/instance/release-list) | List retained releases and the current selection. |
+| [`instance:rollback`](/cli/instance/rollback) | Select one retained release. |
+| [`instance:deployment:list`](/cli/instance/deployment-list) | List recorded deployment history, newest first. |
+| [`instance:deployment:show`](/cli/instance/deployment-show) | Show one recorded deployment, its phases and steps, and its log. |
+
+Attachment commands write a registered Database connection or a [Reverb app](/cli/websocket) into stored Instance configuration. When input is invalid, they report the first error and send no request.
+
+| Command | Result |
+| --- | --- |
+| [`instance:database:add`](/cli/instance/database-add) | Add a Database connection and write prefixed stored environment keys. |
+| [`instance:database:remove`](/cli/instance/database-remove) | Remove a Database connection and clear those keys. |
+| [`instance:websocket:add`](/cli/instance/websocket-add) | Add a Reverb app and write its stored environment keys. |
+| [`instance:websocket:remove`](/cli/instance/websocket-remove) | Remove the Reverb app and clear those keys. |
+
+Analytics commands publish the tracking hosts that send visits to the [analytics role](/reference/analytics).
+
+| Command | Result |
+| --- | --- |
+| [`instance:analytics:enable`](/cli/instance/analytics-enable) | Publish the tracking hosts of an Instance. |
+| [`instance:analytics:show`](/cli/instance/analytics-show) | Show the tracking hosts, their DNS records, and the script tag. |
+| [`instance:analytics:disable`](/cli/instance/analytics-disable) | Remove every tracking host. |
+
+## Related
+
+- [`project`](/cli/project) owns the repository and source defaults that an Instance inherits.
+- [`route`](/cli/route) shows and changes the domain of an Instance.
+- [`env`](/cli/env) imports, updates, and synchronizes the stored environment that deployments render.
+- [`process`](/cli/process) and [`schedule`](/cli/schedule) run services and timers on an Instance.
+- [`database`](/cli/database) registers the connections that `instance:database:add` attaches.
+- [`analytics`](/cli/analytics) pins the Plausible version that the tracking hosts send visits to.

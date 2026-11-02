@@ -1,0 +1,9 @@
+---
+title: "orbit project:dev-deploy-step:update"
+sidebarTitle: "project:dev-deploy-step:update"
+description: "Change a named step. Omitted fields keep their stored values. A required-only update is supported. JSON for create, update, and remove returns `name`, `command`, `timeout_seconds`, `required`, and `request_id`."
+---
+
+```bash
+orbit project:dev-deploy-step:update cache --project=4 --required=false [--command=COMMAND] [--timeout=SECONDS] [--before=NAME | --after=NAME] [--json]
+```

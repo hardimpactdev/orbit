@@ -604,7 +604,7 @@ Doctor reads current host facts through official `@swamp/ssh` from Node209. The 
 
 On managed Linux Nodes, Doctor checks `orbit-agent.service` and the freshness of the Gateway's cached continuous observation at result comparison time. It reports `node.agent_missing`, `node.agent_inactive`, or `node.agent_view_stale`. Provisioning owns agent binary, secret and configuration verification; Doctor does not duplicate it. The agent remains an observer.
 
-See [Doctor](/cli/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
+See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
 
 ## Checks
 

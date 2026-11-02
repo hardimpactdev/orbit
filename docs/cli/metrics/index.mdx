@@ -1,0 +1,30 @@
+---
+title: "metrics"
+sidebarTitle: "Overview"
+description: "Enable the Prometheus and Grafana role on one Node, select which Nodes run an exporter, read the Grafana credential, and disable or purge the role."
+covers:
+  - apps/cli/app/Commands/Metrics/**
+  - packages/php-sdk/src/Requests/Metrics/**
+  - packages/php-sdk/src/Responses/Metrics/**
+---
+
+The `metrics` family enables the Metrics role, reports its status, selects exporter Nodes, shows the Grafana credential, and disables the role. The [Metrics reference](/reference/metrics) explains what the role runs, which Nodes it selects, and who may open Grafana.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`metrics:enable`](/cli/metrics/enable) | Enable Metrics on one Node. |
+| [`metrics:status`](/cli/metrics/status) | Show the assignment, container health, and exporter state. |
+| [`metrics:credentials`](/cli/metrics/credentials) | Read the stored Grafana credential or admit a reset. |
+| [`metrics:exporter:enable`](/cli/metrics/exporter-enable) | Select one Node as an exporter. |
+| [`metrics:exporter:disable`](/cli/metrics/exporter-disable) | Exclude one Node from exporter selection. |
+| [`metrics:disable`](/cli/metrics/disable) | Disable Metrics, and optionally delete its data. |
+
+Every command accepts `--json`. A `node` argument is a numeric Node ID or a Node name. Every command needs exactly one active Gateway Node. The caller must be the Gateway Node or hold an access grant to it. Otherwise the command fails with `node_access.required`.
+
+## Related
+
+- [`node`](/cli/node) owns separate role relocation and Node removal workflows.
+- [`doctor`](/cli/doctor) checks the exporter firewall rules on selected Nodes.
+- [`firewall`](/cli/firewall) adds operator rules beside the role's `orbit:` rules.

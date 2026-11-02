@@ -1,0 +1,31 @@
+---
+title: "orbit node:role:remove"
+sidebarTitle: "node:role:remove"
+description: "Remove one role from a Node."
+---
+
+```bash
+orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Confirm the removal and its dependent cleanup. |
+| `--purge-data` | Also delete role data. For `metrics`, the Prometheus and Grafana volumes and the stored credentials. For `websocket`, the Reverb checkout. |
+| `--offline` | Remove the role from a Node the Gateway cannot reach. |
+
+```bash
+orbit node:role:remove beast database --force
+```
+
+`app-dev` cannot be removed while the Node owns Instances, and no role can be removed while a Route depends on it. Removing the last role restores public SSH first, as [Public SSH](/reference/node-provisioning#public-ssh) describes.
+
+The command removes a role that is `active` or `failed`. Each removal step is safe to repeat over what a failed convergence left. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` and returns the step's own code in `details.error_code`. Run the same command again.
+
+When two removals of one role run together, the second waits for the role lock. If the first finished meanwhile, the second fails with `node_role.already_removed` (HTTP 409). A role the Node never had returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
+
+Use `--idempotency-key=KEY` to retry the same native role admission.
+
+## How it works
+
+<div className="flow-at" data-chart="node/role-remove"></div>

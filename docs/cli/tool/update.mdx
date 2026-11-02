@@ -1,0 +1,15 @@
+---
+title: "orbit tool:update"
+sidebarTitle: "tool:update"
+description: "Update one Tool to the manager's current candidate."
+---
+
+```bash
+orbit tool:update <tool> [--repository=JSON] [--idempotency-key=KEY] [--json]
+```
+
+The result is `applied` when the version changed and `unchanged` when it did not. It is `blocked_by_constraint` when the candidate falls outside the stored constraint. The Tool then stays as it is.
+
+## How it works
+
+<div className="flow-at" data-chart="tool/update"></div>

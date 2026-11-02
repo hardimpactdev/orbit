@@ -1,0 +1,15 @@
+---
+title: "orbit ai-router:account:disable"
+sidebarTitle: "ai-router:account:disable"
+description: "Disable one CLIProxyAPI account."
+---
+
+```bash
+orbit ai-router:account:disable <account> [--json]
+```
+
+| Argument or option | Required | Meaning |
+| --- | --- | --- |
+| `account` | yes | Account ID from `ai-router:provider:show`: the auth file's `auth_index`, or its name when it has none. Only letters, digits, `.`, `_`, and `-` are accepted. |
+
+The command changes the account in CLIProxyAPI and rewrites the snapshot from cache. It fetches no quota.

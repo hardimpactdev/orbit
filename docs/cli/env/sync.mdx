@@ -1,0 +1,27 @@
+---
+title: "orbit env:sync"
+sidebarTitle: "env:sync"
+description: "Replace the Instance's `.env` with the complete stored configuration. Edits to stored keys disappear. A key that exists only in the file stops the sync with `env.sync_would_drop_keys`, unless Orbit wrote or detached that key itself. To keep such keys, store them with `env:update`, or run `env:import` (with `--replace` when the file's other keys are already stored). Otherwise remove them from the file."
+---
+
+```bash
+orbit env:sync --instance=SELECTOR [--json]
+```
+
+```bash
+orbit env:sync --instance=12
+```
+
+The Gateway answers at once with the started Operation. The CLI follows it until it ends and prints the outcome, the failed step and error code if any, the Operation ID, and the request ID. With `--json`, it prints only the final Operation, whose `result` holds the [synchronization result](/reference/environment-variables#operations). The command exits nonzero unless the Operation succeeds. Ctrl-C stops following; the Operation keeps running, and `orbit operation:show ID` shows it.
+
+<Note>
+On production Instances, every sync refreshes the selected PHP runtime without a deploy, even when `.env` is unchanged. If the current release has `bootstrap/cache/config.php`, Orbit runs `php artisan config:cache` there as the Instance user before resetting FPM's opcache. An uncached release stays uncached. The Operation result reports whether config and opcache were refreshed, or why refresh was skipped: no current release, or no selected PHP version. Development Instances keep the file-only behavior, and their result reports `skipped_development`.
+
+Orbit builds cached config at a temporary path, verifies it, then atomically replaces the old cache. After a successful refresh, Orbit restarts running Instance Processes that have `restart_on_deploy` enabled and reports their IDs. A build failure keeps the old cache, stops the opcache reset, and fails the Operation with `env.config_cache_refresh_failed`. Fix the reported problem and repeat `env:sync`. A Process restart failure fails the Operation with `env.runtime_refresh_failed`; the result does not list the Processes already restarted. Deploys and Route-domain transitions do not run this env-sync refresh.
+</Note>
+
+An Operation that fails with `env.sync_unconfirmed` could not confirm the write, so the file may have changed. Run the command again: it checks the file and either keeps the matching file or writes it.
+
+## How it works
+
+<div className="flow-at" data-chart="env/sync"></div>

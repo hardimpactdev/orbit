@@ -1,0 +1,11 @@
+---
+title: "orbit gateway:release:list"
+sidebarTitle: "gateway:release:list"
+description: "List the 50 newest release records, newest first, including queued and running ones."
+---
+
+```bash
+orbit gateway:release:list [--json]
+```
+
+The table shows the record id, the release, the trigger, the outcome, the error code, the duration, and the start time. JSON returns `releases` with every record field, and `request_id`.

@@ -297,7 +297,7 @@ Sites in a replaced file stop serving after that build. Move a hand-placed site 
 
 ## Check a Node with Doctor
 
-The native Caddy publication validates its candidate before selecting it. Use the publication result or the read-only Caddy build diff for configuration comparison. [Doctor](/cli/doctor#what-each-family-checks) checks role-service liveness, not rendered Caddy content, certificate files or PHP pools.
+The native Caddy publication validates its candidate before selecting it. Use the publication result or the read-only Caddy build diff for configuration comparison. [Doctor](/cli/doctor/doctor#what-each-family-checks) checks role-service liveness, not rendered Caddy content, certificate files or PHP pools.
 
 ## Why it works this way
 

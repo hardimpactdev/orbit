@@ -1,0 +1,24 @@
+---
+title: "orbit schedule:destroy"
+sidebarTitle: "schedule:destroy"
+description: "Remove one Schedule, or one definition by name."
+---
+
+```bash
+orbit schedule:destroy <schedule> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project=ID` | Select a definition by name. |
+| `--yes` | Confirm without a prompt. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. A declined prompt, Ctrl-C, or EOF returns `input.cancelled`. |
+
+<Warning>
+Destroy removes the trigger first, then the Schedule's workflow and record. A fire that already started runs to its end and is still recorded. When Swamp does not confirm, the Schedule stays `removing`; run `schedule:destroy` again.
+</Warning>
+
+Destroying a definition leaves every existing Instance copy in place.
+
+## How it works
+
+<div className="flow-at" data-chart="schedule/destroy"></div>

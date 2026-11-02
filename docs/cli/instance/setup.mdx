@@ -1,0 +1,23 @@
+---
+title: "orbit instance:setup"
+sidebarTitle: "instance:setup"
+description: "Run the Project setup steps for one development Instance. The command runs every step from the start of the list. A failed step leaves the Instance in place."
+---
+
+The Gateway returns an `instance.run_steps` Operation with status `202`. The CLI follows it to completion. `--json` returns the final Operation; `--idempotency-key` retries the same admission. Setup and teardown configuration remains Gateway data.
+
+```bash
+orbit instance:setup <instance> [--idempotency-key=<key>] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |
+
+```bash
+orbit instance:setup 12
+```
+
+## How it works
+
+<div className="flow-at" data-chart="instance/setup"></div>

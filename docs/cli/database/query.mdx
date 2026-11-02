@@ -1,0 +1,33 @@
+---
+title: "orbit database:query"
+sidebarTitle: "database:query"
+---
+
+Run one SQL statement against a registered connection. Without `--write`, the Gateway refuses a statement whose leading verb writes. That check reads only the leading verb; see [Inspect a registered connection](/reference/database-connections#inspect-a-registered-connection). The Gateway refuses SQL that is not sent against a stored slug.
+
+```bash
+orbit database:query <slug> <sql> [--write] [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+| `sql` | yes | One SQL statement of at most 16384 characters. |
+
+| Option | Meaning |
+| --- | --- |
+| `--write` | Allow a write statement. Omission returns `database.write_required` for write SQL. |
+
+A stacked statement returns `database.sql_multiple_statements`. SQLite runs on the linked Node and returns `database.sqlite_node_required` without one. Read queries return at most 500 rows and set `truncated` when more exist. With `--write`, the command follows an Operation and returns its affected row count; it does not return result rows. `--write` is permission, not proof that rows changed.
+
+Human output shows the write permission, the reported row count, and a truncation warning after the rows. It shows SQL null as `NULL` and an empty string as `""`. JSON keeps `write`, `row_count`, `truncated`, and the exact cell values.
+
+```bash
+orbit database:query app "SELECT id, email FROM users"
+orbit database:query app "DELETE FROM users WHERE id = 1" --write
+```
+
+## How it works
+
+<div className="flow-at" data-chart="database/read"></div>
+<div className="flow-at" data-chart="database/write"></div>

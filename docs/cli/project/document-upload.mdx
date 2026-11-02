@@ -1,0 +1,12 @@
+---
+title: "orbit project:document:upload"
+sidebarTitle: "project:document:upload"
+description: "Write local bytes as a new version of a file."
+---
+
+```bash
+orbit project:document:upload <project> <entry> --from=PATH|- [--media-type=TYPE] --expected-revision=N [--json]
+orbit project:document:upload acme 12 --from=spec.pdf --expected-revision=3
+```
+
+`--from=-` reads stdin. The CLI checks the local size before sending, and the server checks it again.

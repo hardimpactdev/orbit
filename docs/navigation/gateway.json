@@ -5,7 +5,25 @@
       "group": "Fleet",
       "order": 0,
       "pages": [
-        "cli/gateway"
+        {
+          "group": "gateway",
+          "pages": [
+            "cli/gateway/index",
+            "cli/gateway/add",
+            "cli/gateway/use",
+            "cli/gateway/status",
+            "cli/gateway/trust",
+            "cli/gateway/remove",
+            "cli/gateway/release-list",
+            "cli/gateway/release-show",
+            "cli/gateway/release-deploy",
+            "cli/gateway/release-rollback",
+            "cli/gateway/release-smoke",
+            "cli/gateway/release-auto-status",
+            "cli/gateway/release-auto-enable",
+            "cli/gateway/release-auto-resume"
+          ]
+        }
       ]
     }
   ]

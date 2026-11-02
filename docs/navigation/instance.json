@@ -5,7 +5,50 @@
       "group": "Applications",
       "order": 1,
       "pages": [
-        "cli/instance"
+        {
+          "group": "instance",
+          "pages": [
+            "cli/instance/index",
+            "cli/instance/create",
+            "cli/instance/rename",
+            "cli/instance/register",
+            "cli/instance/list",
+            "cli/instance/show",
+            "cli/instance/logs",
+            "cli/instance/destroy",
+            "cli/instance/setup",
+            "cli/instance/setup-step-create",
+            "cli/instance/setup-step-list",
+            "cli/instance/setup-step-update",
+            "cli/instance/setup-step-destroy",
+            "cli/instance/teardown-step-create",
+            "cli/instance/teardown-step-list",
+            "cli/instance/teardown-step-update",
+            "cli/instance/teardown-step-destroy",
+            "cli/instance/clone",
+            "cli/instance/update",
+            "cli/instance/auto-deploy-enable",
+            "cli/instance/auto-deploy-disable",
+            "cli/instance/deploy-step-create",
+            "cli/instance/deploy-step-list",
+            "cli/instance/deploy-step-update",
+            "cli/instance/deploy-step-destroy",
+            "cli/instance/deploy",
+            "cli/instance/release-list",
+            "cli/instance/deploy-automatic-resolve",
+            "cli/instance/rollback",
+            "cli/instance/deployment-list",
+            "cli/instance/deployment-show",
+            "cli/instance/database-add",
+            "cli/instance/database-remove",
+            "cli/instance/websocket-add",
+            "cli/instance/websocket-remove",
+            "cli/instance/analytics-enable",
+            "cli/instance/analytics-show",
+            "cli/instance/analytics-disable",
+            "cli/instance/transfer"
+          ]
+        }
       ]
     }
   ]

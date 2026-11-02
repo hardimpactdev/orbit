@@ -1,0 +1,32 @@
+---
+title: "orbit database:server:create"
+sidebarTitle: "database:server:create"
+description: "Run a MySQL, PostgreSQL or Valkey server as a Docker Node Process. Orbit generates the admin password and keeps it only in the Gateway."
+---
+
+```bash
+orbit database:server:create <slug> --node=NODE [--driver=DRIVER] [--tag=TAG] [--port=PORT] [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Lowercase kebab name of at most 63 characters. |
+
+| Option | Meaning |
+| --- | --- |
+| `--node=NODE` | Numeric Node ID or Node name. Required. |
+| `--driver=DRIVER` | `mysql`, `pgsql` or `redis`. A `redis` server runs Valkey. Defaults to `mysql`. |
+| `--tag=TAG` | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. Defaults to `8.4` for mysql, `18` for pgsql and `8.1` for redis. |
+| `--port=PORT` | Port to publish on WireGuard and, when present, LAN. Defaults to `3306` for mysql, `5432` for pgsql and `6379` for redis. |
+
+```bash
+orbit database:server:create beast-mysql --node=beast
+orbit database:server:create beast-valkey --node=beast --driver=redis
+orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434
+```
+
+Run the same command again to continue a failed create, or to [repair](/reference/database-servers#repair-a-valkey-server) an active Valkey server whose ACL differs from its records. [Database servers](/reference/database-servers#create-a-server) describes the steps, retry, and errors.
+
+## How it works
+
+<div className="flow-at" data-chart="database/server-create"></div>

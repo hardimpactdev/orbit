@@ -1,0 +1,66 @@
+sequenceDiagram
+  %% Future design (Nick 2026-11-02): today's half-built smoke is removed; build this later as a feature. Target design proposal: smoke as steps of the automatic-deploy fire (instance.auto_deploy), repo-owned Pest tests in GitHub Actions (Recall production-smoke-repo-owned-github-actions). Replaces instance.smoke plus its control, failure, rollback, redeploy and repair endpoints. docs/reference/deployments.md#production-smoke.
+  %% status: draft
+  %% command: instance:auto-deploy · Production smoke
+  %% kind: instance.smoke
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane GH icon=server pill=tests tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-prod Node<br/>Node 12 over ssh
+  participant GH as GitHub Actions<br/>smoke workflow
+  Note over SW: Fire found green commit<br/>auto-deploy-42 · a1b2c3d
+  %%> When:
+  %%> - an automatic-deploy fire of Instance 42 found a newer green commit
+  %%> - only when the Project opts in to smoke
+  %%> Inputs:
+  %%> - the smoke workflow file and ref, the Route URL `https://shop.com`
+  %%> - a vault key name for a GitHub token with Actions write; the Gateway keeps it fresh
+  SW->>N: Deploy the pinned commit<br/>deploy-42 · prepare … check
+  %%> What it does:
+  %%> - the same steps as `instance:deploy`; the previous release stays on the Node
+  SW->>GH: Start the smoke tests<br/>workflow_dispatch · commit, URL
+  %%> What it does:
+  %%> - starts the repository's smoke workflow against `https://shop.com`
+  %%> - sends the commit and the deployment id; nothing else
+  %%> What runs there:
+  %%> - the repository's own Pest browser tests, owned by the repository
+  loop every 15 s, up to 10 min
+    SW->>GH: Read run and JUnit<br/>run status · smoke.xml artifact
+    %%> What it does:
+    %%> - finds the run by its name `Smoke <deployment> <commit>`
+    %%> - when it ends, reads the JUnit report from its artifact
+  end
+  alt tests passed
+    SW-->>GW: Fire ended<br/>deployed · smoke passed
+    %%> Result:
+    %%> - the release stays live
+    Note over GW: Record deployment<br/>smoke passed · run link
+    %%> Result:
+    %%> - history row with the smoke result and the GitHub run link
+  else tests failed
+    SW->>N: Roll back to previous<br/>switch current · reload
+    %%> When:
+    %%> - only when JUnit has real failures or errors; a red run without them is "unknown"
+    %%> What it does:
+    %%> - switches `current` back to the previous release; the same steps as `instance:rollback`
+    SW-->>GW: Fire ended<br/>smoke failed · rolled back
+    Note over GW: Block commit, pause, alert<br/>failed tests · run link
+    %%> Result:
+    %%> - commit `a1b2c3d` is blocked; it never deploys automatically again
+    %%> - auto-deploy pauses until you enable it again
+    %%> - an alert names the failed tests and links the run
+    %%> Optional:
+    %%> - the Gateway creates a repair task with the failure, when tasks are on
+  else no clear result
+    SW-->>GW: Fire ended<br/>smoke unknown
+    %%> When:
+    %%> - no run found, no JUnit, or 10 minutes passed
+    Note over GW: Keep release, pause, alert<br/>smoke unknown
+    %%> Result:
+    %%> - the release stays live; Orbit never rolls back without proof of failure
+    %%> - auto-deploy pauses, and an alert asks you to check
+  end

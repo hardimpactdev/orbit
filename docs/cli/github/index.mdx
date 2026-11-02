@@ -1,0 +1,25 @@
+---
+title: "github"
+sidebarTitle: "Overview"
+description: "Register the Gateway's GitHub App, install it on a GitHub account, show it, or remove it from the Gateway."
+covers:
+  - apps/cli/app/Commands/GitHub/**
+---
+
+The `github` family manages the Gateway's own GitHub App. Orbit uses the App to read private `github.com` repositories and to publish task pull requests. The [GitHub App reference](/reference/github-app) explains registration, installations, and the short-lived tokens.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`github:app:install`](/cli/github/app-install) | Register the App when the Gateway has none, then install it on a GitHub account or organization. |
+| [`github:app:sync`](/cli/github/app-sync) | Admit a native refresh of App installation observations. |
+| [`github:app:show`](/cli/github/app-show) | Show the App and the accounts that installed it. |
+| [`github:app:destroy`](/cli/github/app-destroy) | Delete the App's stored credentials from the Gateway. |
+
+Every command accepts `--json`.
+
+## Related
+
+- [`project`](/cli/project) creates a Project from a repository. The Gateway reads the repository to resolve its default branch.
+- [`instance`](/cli/instance) clones and deploys Project source on a Node.

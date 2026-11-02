@@ -1,0 +1,11 @@
+---
+title: "orbit database:user:list"
+sidebarTitle: "database:user:list"
+description: "List the users Orbit created for a connection, each with its privileges and who created it."
+---
+
+```bash
+orbit database:user:list <slug> [--json]
+```
+
+The table shows Username, Privileges, Replication, Created by, and Created. JSON includes the recorded `replication` boolean. `Created by` is the calling Node's name, since the Gateway authorizes every command as a Node.

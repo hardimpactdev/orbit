@@ -1,0 +1,19 @@
+---
+title: "orbit project:document:list"
+sidebarTitle: "project:document:list"
+---
+
+List the direct children of a folder, or of the root. Columns are ID, KIND, NAME, REVISION, SIZE, and ARCHIVED. [Project Documents](/reference/project-documents#cli-contract) owns the full command contract.
+
+```bash
+orbit project:document:list <project> [--parent=ID] [--state=active|archived|all] [--kind=folder|file] [--cursor=CURSOR] [--limit=50] [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `project` | Project ID or slug. Every `project:document` command takes it first. |
+| `--parent=ID` | Folder to list. The root by default. |
+| `--state=active\|archived\|all` | Archive state. Default `active`. |
+| `--kind=folder\|file` | Show only one kind. |
+| `--cursor=CURSOR` | Page cursor from the previous page. |
+| `--limit=N` | Page size. Default 50. |

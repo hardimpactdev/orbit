@@ -1,0 +1,41 @@
+---
+title: "tool"
+sidebarTitle: "Overview"
+description: "Discover installed packages, adopt one installed package, and install, update, show, and remove one package through apt, Vite+, Composer, or Homebrew."
+covers:
+  - apps/cli/app/Commands/Tools/**
+  - packages/php-sdk/src/Requests/Tools/**
+  - packages/php-sdk/src/Responses/Tools/**
+---
+
+The `tool` family manages packages on a Node. A Tool is one package that Orbit manages through one Tool Manager. The [Tools reference](/reference/tools) explains where Tools run, the supported managers, and the discovery, adoption, install, update, and removal rules.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`tool:manager:list`](/cli/tool/manager-list) | List the managers a Node supports and their state. |
+| [`tool:scan`](/cli/tool/scan) | Discover installed apt, Homebrew and Vite+ packages without taking ownership. |
+| [`tool:adopt`](/cli/tool/adopt) | Register one supported installed package without changing it. |
+| [`tool:install`](/cli/tool/install) | Install one package, and install its manager first when needed. |
+| [`tool:list`](/cli/tool/list) | List the Tools on a Node. |
+| [`tool:show`](/cli/tool/show) | Show one Tool. |
+| [`tool:update`](/cli/tool/update) | Update one Tool within its constraint. |
+| [`tool:remove`](/cli/tool/remove) | Remove one Tool and delete its record. |
+
+Every command accepts `--json`. Install, adopt, update, and remove follow a Swamp Operation. Human output shows its steps; JSON output is the final Operation receipt. These writes accept `--idempotency-key=KEY` to replay a start after a lost reply. Scan remains a direct read. `--node` takes a positive numeric Node ID. The CLI refuses any other value with `tool.node_id_invalid`.
+
+## Related
+
+- [`node`](/cli/node) adds the Nodes that run the managers.
+- [`doctor`](/cli/doctor) reports Tool drift without changing packages.
+
+## Signed apt repository input
+
+`tool:install`, `tool:adopt`, and `tool:update` accept `--repository='<JSON object>'`. The fields and Rex preview definition are in [Signed apt repositories](/reference/tools#signed-apt-repositories). The Gateway validates the same object through API and MCP input. Install and adoption can share an existing name with an identical definition. Update replaces the shared definition under the same name; omitting the option keeps it.
+
+```bash
+orbit tool:install rex --node=NODE_ID --manager=apt --repository='{"name":"rex","uris":["https://pkgs.superlogical.com/rex/apt"],"suites":["preview"],"components":["main"],"architectures":["amd64"],"signing_key":{"url":"https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg","fingerprint":"E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}'
+```
+
+To change suites later, pass the full definition with `"suites":["stable"]` to `orbit tool:update TOOL_ID --repository='<JSON object>'`. Stable must have a published InRelease. Tool reads and apt scan rows return the stored repository definition. Removal deletes its source and key only after the last Tool using it is removed.

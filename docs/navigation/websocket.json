@@ -5,7 +5,19 @@
       "group": "Applications",
       "order": 5,
       "pages": [
-        "cli/websocket"
+        {
+          "group": "websocket",
+          "pages": [
+            "cli/websocket/index",
+            "cli/websocket/app-create",
+            "cli/websocket/app-list",
+            "cli/websocket/app-show",
+            "cli/websocket/app-destroy",
+            "cli/websocket/app-rotate",
+            "cli/websocket/operation-show",
+            "cli/websocket/sync"
+          ]
+        }
       ]
     }
   ]

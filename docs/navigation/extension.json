@@ -5,7 +5,15 @@
       "group": "Operations",
       "order": 6,
       "pages": [
-        "cli/extension"
+        {
+          "group": "extension",
+          "pages": [
+            "cli/extension/index",
+            "cli/extension/list",
+            "cli/extension/enable",
+            "cli/extension/disable"
+          ]
+        }
       ]
     }
   ]

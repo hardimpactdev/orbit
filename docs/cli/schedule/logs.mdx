@@ -1,0 +1,15 @@
+---
+title: "orbit schedule:logs"
+sidebarTitle: "schedule:logs"
+description: "Return the newest complete lines of the Schedule's service journal. `schedule` is the UUID of an installed Schedule."
+---
+
+```bash
+orbit schedule:logs <schedule> [--lines=COUNT] [--json]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--lines=COUNT` | `100` | 1 through 1,000 lines. |
+
+The Gateway returns at most 1 MiB and sets `truncated` when that limit removed older lines.

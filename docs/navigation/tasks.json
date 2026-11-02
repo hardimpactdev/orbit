@@ -13,7 +13,37 @@
       "group": "Operations",
       "order": 8,
       "pages": [
-        "cli/tasks"
+        {
+          "group": "tasks",
+          "pages": [
+            "cli/tasks/index",
+            "cli/tasks/status",
+            "cli/tasks/list",
+            "cli/tasks/show",
+            "cli/tasks/create",
+            "cli/tasks/update",
+            "cli/tasks/cancel",
+            "cli/tasks/complete",
+            "cli/tasks/subtask-create",
+            "cli/tasks/subtask-update",
+            "cli/tasks/subtask-destroy",
+            "cli/tasks/subtask-cancel",
+            "cli/tasks/group-comment-create",
+            "cli/tasks/group-comment-list",
+            "cli/tasks/comment-create",
+            "cli/tasks/comment-list",
+            "cli/tasks/question-list",
+            "cli/tasks/question-close",
+            "cli/tasks/agents",
+            "cli/tasks/agent-show",
+            "cli/tasks/provision",
+            "cli/tasks/turn",
+            "cli/tasks/check",
+            "cli/tasks/analyze",
+            "cli/tasks/publish",
+            "cli/tasks/park"
+          ]
+        }
       ]
     }
   ]

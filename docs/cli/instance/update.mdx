@@ -1,0 +1,26 @@
+---
+title: "orbit instance:update"
+sidebarTitle: "instance:update"
+---
+
+Change the deployment branch or shared paths of a production Instance. The Gateway stores these settings. It does not change deploy steps or start a deployment. Supply at least one option. Automatic deployment has its own commands: [`instance:auto-deploy:enable`](/cli/instance/auto-deploy-enable) and [`instance:auto-deploy:disable`](/cli/instance/auto-deploy-disable).
+
+The human result shows the stored deployment branch, the effective shared paths when changed, and the currently selected source branch. API, MCP, and CLI JSON responses include `deployment_branch`, the stored override for future deployments. A null override uses `selected_branch`. `selected_branch` describes the source checkout and does not change when you update deployment settings. Use `instance:show` to verify the stored setting before deploying.
+
+```bash
+orbit instance:update <instance> [--branch=BRANCH] [--shared-paths=JSON] [--json]
+orbit instance:update 71 --shared-paths='["storage","var/uploads"]'
+orbit instance:update 71 --shared-paths='[]'
+orbit instance:update 71 --shared-paths=null
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
+| `--shared-paths=JSON` | Replace the shared directory list. Use `[]` to disable sharing, or `null` to restore the Project-type default. Omit it to leave the setting unchanged. |
+
+The Gateway refuses a development Instance with a bounded conflict before it stores any setting. [Shared paths](/reference/deployments#shared-paths) describes defaults, seeding, public storage, and path rules.

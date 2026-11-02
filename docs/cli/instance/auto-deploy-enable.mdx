@@ -1,0 +1,17 @@
+---
+title: "orbit instance:auto-deploy:enable"
+sidebarTitle: "instance:auto-deploy:enable"
+---
+
+Deploy each new commit of the deployment branch that passed the Project's `merge_check` automatically. Automatic deployment keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not an `instance:update` option. Enabling also resumes automatic deployment after a manual deployment or a rollback paused it. See [Automatic deployments](/reference/deployments#automatic-deployments).
+
+```bash
+orbit instance:auto-deploy:enable <instance> [--json]
+orbit instance:auto-deploy:enable 71
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |
+
+The Gateway refuses a development Instance with a bounded conflict. It refuses with `instance.auto_deploy_gate_unreadable` when the Project has a `merge_check` that the Gateway GitHub App cannot read: the Project reads through the GitHub CLI or is not on `github.com`. Without a `merge_check`, the Gateway accepts it, and the result warns that every commit deploys without a check.

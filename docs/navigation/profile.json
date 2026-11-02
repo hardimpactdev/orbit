@@ -5,7 +5,13 @@
       "group": "Operations",
       "order": 1,
       "pages": [
-        "cli/profile"
+        {
+          "group": "profile",
+          "pages": [
+            "cli/profile/index",
+            "cli/profile/profile"
+          ]
+        }
       ]
     }
   ]

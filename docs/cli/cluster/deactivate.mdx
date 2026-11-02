@@ -1,0 +1,15 @@
+---
+title: "orbit cluster:deactivate"
+sidebarTitle: "cluster:deactivate"
+description: "Deactivate a Cluster. Its private domains and LAN ingress stop. The Cluster, its members, and its Router stay."
+---
+
+```bash
+orbit cluster:deactivate <cluster> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `cluster` | yes | Numeric Cluster ID. |
+
+Deactivating an inactive Cluster changes nothing. Generated domains of the affected Routes fall back to their member Node TLDs, as the Gateway republishes DNS and Router projections before it stores the change.

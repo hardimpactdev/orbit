@@ -1,0 +1,30 @@
+---
+title: "orbit env:update"
+sidebarTitle: "env:update"
+description: "Add or replace one stored value."
+---
+
+```bash
+orbit env:update --instance=SELECTOR --key=KEY --value=VALUE [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--key=KEY` | 1 to 255 characters that start with a letter or underscore. |
+| `--value=VALUE` | The exact string, at most 65,536 bytes. |
+
+Quote the value for your shell, so Orbit receives the string you mean.
+
+| Value | Write it as |
+| --- | --- |
+| Empty | `--value=''` |
+| Text with spaces or shell characters | `--value='hello world $1'` |
+| A placeholder | `--value='https://{{instance.domain}}'` |
+| `false` or `0` | `--value=false` stores the string `false`. |
+
+```bash
+orbit env:update --instance=12 --key=MAIL_MAILER --value=log
+orbit env:update --instance=12 --key=APP_URL --value='https://{{instance.domain}}'
+```
+
+`{{instance.domain}}` resolves to the Route domain, and `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`, when the Gateway renders the file. Any other placeholder returns `env.configuration_invalid` with the key and the rule.

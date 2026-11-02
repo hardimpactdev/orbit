@@ -1,0 +1,21 @@
+---
+title: "orbit operation:list"
+sidebarTitle: "operation:list"
+description: "List the 50 newest operations on Nodes you can access, newest first."
+---
+
+```bash
+orbit operation:list [--status=STATUS] [--kind=KIND] [--instance=ID] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--status=STATUS` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled`. |
+| `--kind=KIND` | An operation kind, such as `instance.deploy`. |
+| `--instance=ID` | Only operations on this Instance. |
+
+The table shows ID, Kind, Target, Status, By, and Started. JSON returns the list of parent records.
+
+```bash
+orbit operation:list --status=running
+```

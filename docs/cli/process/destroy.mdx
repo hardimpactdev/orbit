@@ -1,0 +1,25 @@
+---
+title: "orbit process:destroy"
+sidebarTitle: "process:destroy"
+description: "Stop and remove the unit or container of one Process, then delete its record. With `--project`, destroy one definition by name."
+---
+
+```bash
+orbit process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project=ID` | Select a definition by name. |
+| `--yes` | Confirm without a prompt. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. A declined prompt, Ctrl-C, or EOF returns `input.cancelled`. |
+
+```bash
+orbit process:destroy 41 --yes
+orbit process:destroy queue --project=1 --yes
+```
+
+Destroying a definition leaves every existing Instance copy in place.
+
+## How it works
+
+<div className="flow-at" data-chart="process/destroy"></div>

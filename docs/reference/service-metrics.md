@@ -92,7 +92,7 @@ Explicit native Operations retain failed step history for recovery. The Gateway 
 
 ### Doctor
 
-[Doctor](/cli/doctor#what-each-family-checks) checks registered Process and role-service liveness. The native Metrics family owns exporter, scrape and firewall configuration validation.
+[Doctor](/cli/doctor/doctor#what-each-family-checks) checks registered Process and role-service liveness. The native Metrics family owns exporter, scrape and firewall configuration validation.
 
 ## Why it works this way
 

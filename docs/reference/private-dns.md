@@ -224,7 +224,7 @@ orbit doctor --node=4 --family=node
 
 `orbit:node-dns-check` is read-only. It runs uncached A queries through the peer's normal resolved policy. It succeeds only when the private name resolves on `orbit` and the public name resolves on another link or a global resolver. The output shows both answers and links. It refuses names that do not fit the private and public scopes. This verifies provider selection without stopping VPN DNS. `orbit node:converge app-prod --force` also applies the peer policy through the `peer-dns` footprint artifact.
 
-DNS repair does not replace a WireGuard key. The separate [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) command only changes an unmanaged peer's desired public key and reconverges the hub; it refuses managed peers and leaves the peer's resolver policy unchanged. Use DNS repair for resolver faults, not key recovery.
+DNS repair does not replace a WireGuard key. The separate [`node:wireguard-key`](/cli/node/wireguard-key) command only changes an unmanaged peer's desired public key and reconverges the hub; it refuses managed peers and leaves the peer's resolver policy unchanged. Use DNS repair for resolver faults, not key recovery.
 
 The command refuses a missing or inactive Node, a [Node without roles](/reference/node-provisioning#nodes-without-roles), and the Node that holds `vpn`, before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
 

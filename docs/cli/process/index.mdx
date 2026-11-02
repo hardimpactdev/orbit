@@ -1,0 +1,52 @@
+---
+title: "process"
+sidebarTitle: "Overview"
+description: "Install, update, start, stop, inspect, and remove systemd services and Docker containers owned by an Instance or a Node, and record Project-owned process definitions."
+covers:
+  - apps/cli/app/Commands/Processes/**
+  - apps/cli/app/Commands/Concerns/{FollowsLogs,SelectsAppDefinitionTarget}.php
+  - apps/cli/app/Support/Logs/**
+  - packages/php-sdk/src/Requests/Processes/{CreateProcessRequest,UpdateProcessRequest}.php
+  - packages/php-sdk/src/Responses/Processes/**
+---
+
+A Process is one systemd service or Docker container that the Gateway manages for an Instance or a managed Node. The `process` family installs it, changes its desired state, reads its log, and removes it. It also records Project process definitions.
+
+[Processes and schedules](/reference/processes-and-schedules) describes owners, runtimes, environment, presets, locks, and definitions. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop and wake for development Processes.
+
+Installed writes return and follow an Operation. `--json` prints the final Operation and its steps. Use `--idempotency-key` to retry the same admission. Project definition writes keep their existing responses.
+
+## Choose the owner
+
+`process:create` and `process:list` need exactly one selector. The CLI refuses two selectors, and `--for` without `--project`, before it sends a request.
+
+| Selector | Owner | Result |
+| --- | --- | --- |
+| `--instance=ID` | Instance | The Gateway derives the Node and the runtime user from the Instance. |
+| `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed user. A systemd Process can set `--user`. Shared services such as a Docker database use this owner. |
+| `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Process. |
+
+`process:show`, `process:update`, and `process:destroy` with `--project` select a definition by name. `process:update`, `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without `--project` take the numeric Process ID from `process:list`. An installed Process update uses that record's owner; it takes no `--instance` or `--node` selector.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`process:create`](/cli/process/create) | Install one Process or record one Project process definition. |
+| [`process:list`](/cli/process/list) | List the Processes of one Instance or Node, or the definitions of one Project. |
+| [`process:show`](/cli/process/show) | Show one Project process definition. |
+| [`process:update`](/cli/process/update) | Update an installed Process specification in place, or one Project process definition. |
+| [`process:start`](/cli/process/start) | Start one Process and store the running desired state. |
+| [`process:stop`](/cli/process/stop) | Stop one Process and store the stopped desired state. |
+| [`process:restart`](/cli/process/restart) | Restart one Process. |
+| [`process:logs`](/cli/process/logs) | Return a log tail, or follow new lines. |
+| [`process:destroy`](/cli/process/destroy) | Remove one Process and its unit or container, or one definition. |
+
+Every command accepts `--json`, and every result includes the request ID. Lists and details show the lifecycle status, failed step, and error code. JSON lists also carry `cpu` and `memory_bytes`, which are null when no sample exists. JSON also carries `user`, null when the Process uses the derived account. Definition lists omit the command. Environment values show as `[REDACTED]`. `process:destroy` asks for confirmation, and the default is No.
+
+## Related
+
+- [`schedule`](/cli/schedule) records recurring commands. Process commands do not operate on Schedules.
+- [`instance:destroy`](/cli/instance/destroy) removes every Process of the Instance. Node Processes stay.
+- [`doctor`](/cli/doctor) with `--family=process` compares desired and observed state.
+- [`database:server:create`](/cli/database/server-create) runs a MySQL server as a Docker Node Process.

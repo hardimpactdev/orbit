@@ -1,0 +1,16 @@
+---
+title: "orbit github:app:sync"
+sidebarTitle: "github:app:sync"
+description: "Refresh installation observations in one native Swamp workflow. The command returns its queued Operation without waiting."
+---
+
+```bash
+orbit github:app:sync [--idempotency-key=KEY] [--json]
+orbit operation:show OPERATION_ID
+```
+
+Reuse the same key after an uncertain admission. Swamp reads installations using a short-lived App JWT minted by the Gateway; the private signing key stays on the Gateway.
+
+## How it works
+
+<div className="flow-at" data-chart="github/app-sync"></div>

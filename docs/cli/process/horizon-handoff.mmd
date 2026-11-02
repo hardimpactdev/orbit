@@ -1,0 +1,88 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task (automatic, Gateway release serve phase), R1-R4, single-swamp-node, docs/reference/gateway-recovery.md#runtime-handoff; DECISIONS round 2 bug fix (terminate only when active, start only when not active; one test per branch); rule 7 (graceful handoff).
+  %% status: draft
+  %% command: gateway:release:handoff
+  %% kind: process.horizon_handoff
+  autonumber
+  %% lane GW icon=gateway pill=caller tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>release runner
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Gateway Node<br/>Node 3 over ssh
+  Note over GW: Release handoff, serve<br/>release 812 · phase serve
+  %%> Command:
+  %%> - `php artisan gateway:release:handoff --phase=serve`
+  %%> - syntax: run by the Gateway release runner, not by the `orbit` CLI
+  %%> When:
+  %%> - in every Gateway release, after the switch to release 812
+  %%> - Horizon was drained before the switch, so it is normally not active here
+  %%> Who starts it:
+  %%> - the release runner on the Gateway Node; no CLI or MCP call
+  Note over GW: Render the Horizon unit<br/>Process 418 · task #5153
+  %%> Requirements:
+  %%> - Process 418 is the `horizon` Process of the Gateway Node, Node 3
+  %%> - no other change runs on Process 418; the Gateway holds one lock
+  %%> Renders:
+  %%> - the systemd unit `orbit-process-418-horizon.service` and its hash
+  %%> - command `php artisan horizon`, directory `/home/orbit/orbit/apps/gateway`, user `orbit`
+  %%> Result:
+  %%> - task #5153 recorded with the full intent; nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-process-horizon-handoff
+  %%> What it does:
+  %%> - starts one run on Swamp serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - Node 3's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the unit content, its hash, the command, directory and user
+  SW->>N: Inspect the unit<br/>@swamp/cfgmgmt/systemd check
+  %%> What it does:
+  %%> - observes current state and unit-file drift for the rerun guards
+  opt unit content or boot policy differs
+    SW->>N: Write and enable unit<br/>@swamp/cfgmgmt/systemd apply
+    %%> What it does:
+    %%> - writes the unit, reloads systemd and enables it without changing running state
+  end
+  alt Horizon is active
+    SW->>N: Hand off to new release<br/>SSH exec · horizon:terminate
+    %%> What it does:
+    %%> - asks Horizon to finish its jobs and exit; systemd brings it back
+    %%> Result:
+    %%> - termination accepted; the handoff does not wait for current jobs to finish
+  else Horizon is not active
+    SW->>N: Start Horizon<br/>@swamp/cfgmgmt/systemd apply
+    %%> What it does:
+    %%> - converges the inactive unit to running
+    SW->>N: Check Horizon runs<br/>@swamp/cfgmgmt/systemd check
+    %%> Result:
+    %%> - the newly started unit is active and enabled
+  end
+  SW->>SW: Accept Horizon<br/>native assert
+  %%> What it does:
+  %%> - accepts graceful termination or the checked started state
+  alt Horizon is active
+    N-->>SW: active
+    %%> Returns:
+    %%> - the unit is active
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>Process 418 active · unit hash
+    %%> Result:
+    %%> - Process 418 active, with the stored unit hash
+    %%> - task #5153 succeeds; the release handoff goes on
+  else a step fails
+    N--xSW: exit ≠ 0 or not active
+    %%> When:
+    %%> - the systemd action or handoff command fails, or the started Horizon unit is not active
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark Process 418 failed<br/>handoff fails · rerun is safe
+    %%> Result:
+    %%> - Process 418 marked failed; task #5153 fails
+    %%> - the release handoff reports the failure; the release failure rules apply
+    %%> On the Node:
+    %%> - a published unit stays; a rerun converges
+    %%> Retry:
+    %%> - run the handoff again after a fix; an unchanged unit is skipped, and Horizon starts only when it is not active
+  end

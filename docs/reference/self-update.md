@@ -67,7 +67,7 @@ The example shows one asset of each list. The Gateway returns Linux x86_64 and m
 
 ### Where it is served
 
-`GET /api/v1/gateway/desired-fleet-state` returns the state to any active WireGuard peer: a managed Node or an operator machine. It needs no [Node access](/cli/node#orbit-nodeaccessadd), because every managed Node reads it to update itself. Any other caller gets `peer.identity_unknown` (HTTP 403). The MCP tool is `gateway-desired-fleet-state`.
+`GET /api/v1/gateway/desired-fleet-state` returns the state to any active WireGuard peer: a managed Node or an operator machine. It needs no [Node access](/cli/node/access-add), because every managed Node reads it to update itself. Any other caller gets `peer.identity_unknown` (HTTP 403). The MCP tool is `gateway-desired-fleet-state`.
 
 `gateway:status` returns the same object as `desired_fleet_state` to an active WireGuard peer, from the cache only. It is null until the state is resolved, and always null for any other caller. `gateway:status` still needs no WireGuard identity, and it never waits for Git or GitHub, because release verification calls it.
 

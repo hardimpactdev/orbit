@@ -171,7 +171,7 @@ Swamp reads the checkout locally on its Node. Symbolic `HEAD` must already name 
 
 A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch preserves the existing override. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
 
-A request containing `domain` returns `operation.kind_unavailable` before admission. Native Route replacement is not available through rename. A repeated idempotency key returns the same Operation. Another lifecycle owner returns `instance.lifecycle_busy`. [instance:rename](/cli/instance#orbit-instancerename) lists the inputs, output, and refusal codes.
+A request containing `domain` returns `operation.kind_unavailable` before admission. Native Route replacement is not available through rename. A repeated idempotency key returns the same Operation. Another lifecycle owner returns `instance.lifecycle_busy`. [instance:rename](/cli/instance/rename) lists the inputs, output, and refusal codes.
 
 ## Register an existing checkout
 
@@ -188,11 +188,11 @@ Native registration also classifies the application metadata and records its PHP
 
 Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
 
-The CLI refuses a directory outside Git and an unsafe origin before sending a request. Swamp independently checks the source's path, owner, Git layout, origin, branch and content digest. It never uses the CLI's inspection as proof. Registration creates no Project. Use [`project:create`](/cli/project#orbit-projectcreate) first, then supply its ID.
+The CLI refuses a directory outside Git and an unsafe origin before sending a request. Swamp independently checks the source's path, owner, Git layout, origin, branch and content digest. It never uses the CLI's inspection as proof. Registration creates no Project. Use [`project:create`](/cli/project/create) first, then supply its ID.
 
 The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override.
 
-Project inference, source relocation, linked worktrees, `--setup`, and domain requests return `operation.kind_unavailable` before reservation. Projects that serve web traffic also return that refusal. No legacy executor runs those combinations. [instance:register](/cli/instance#orbit-instanceregister) lists the options.
+Project inference, source relocation, linked worktrees, `--setup`, and domain requests return `operation.kind_unavailable` before reservation. Projects that serve web traffic also return that refusal. No legacy executor runs those combinations. [instance:register](/cli/instance/register) lists the options.
 
 ## Provision the application endpoint
 

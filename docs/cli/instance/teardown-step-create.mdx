@@ -1,0 +1,13 @@
+---
+title: "orbit instance:teardown-step:create"
+sidebarTitle: "instance:teardown-step:create"
+description: "Record one named teardown step on a Project. The arguments match `instance:setup-step:create`."
+---
+
+```bash
+orbit instance:teardown-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--rebalance=<name>=<seconds>]... [--json]
+```
+
+```bash
+orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f database/database.sqlite'
+```

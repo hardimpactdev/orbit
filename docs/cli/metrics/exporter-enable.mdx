@@ -1,0 +1,19 @@
+---
+title: "orbit metrics:exporter:enable"
+sidebarTitle: "metrics:exporter:enable"
+description: "Store an `enabled` exporter preference for one Node."
+---
+
+```bash
+orbit metrics:exporter:enable <node> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or name. |
+
+The command fails with `metrics.exporter_node_inactive` for a Node that is not active. It fails with `metrics.exporter_node_ineligible` for a Node that the Gateway does not manage over SSH. It checks both before it stores the preference.
+
+## How it works
+
+<div className="flow-at" data-chart="metrics/exporter-enable"></div>

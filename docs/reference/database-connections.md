@@ -201,7 +201,7 @@ Before selecting LAN on an existing server, retry `database:server:create` to pu
 
 ## Inspect attachments with Doctor
 
-Connection admission and the owning native database operations validate database intent. [Doctor](/cli/doctor#what-each-family-checks) does not repeat attachment, environment or credential checks.
+Connection admission and the owning native database operations validate database intent. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat attachment, environment or credential checks.
 
 ## Why it works this way
 

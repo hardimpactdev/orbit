@@ -1,0 +1,19 @@
+---
+title: "orbit instance:deployment:list"
+sidebarTitle: "instance:deployment:list"
+description: "List the deployment history the Gateway recorded for a production Instance, newest first. The Gateway writes one row when a worker starts a deploy or rollback operation and fills it in when the run finishes, and keeps the last 50 rows per Instance."
+---
+
+```bash
+orbit instance:deployment:list <instance> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |
+
+The table shows Started, Release, Branch, Commit, By, Duration, and Status. `By` is the calling Node's name, since the Gateway authorizes every command as a Node. A row still running when read shows `running` and an empty Finished, Duration, and Release until the run completes.
+
+```bash
+orbit instance:deployment:list 15
+```

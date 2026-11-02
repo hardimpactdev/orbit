@@ -1,0 +1,22 @@
+---
+title: "orbit project:dev-deploy-step:create"
+sidebarTitle: "project:dev-deploy-step:create"
+---
+
+Record a named step without starting a deployment. Human step results show control characters as visible escapes and preserve literal text such as `<error>` tags; JSON preserves the stored command unchanged. [Development deploy steps](/reference/deployments#development-deploy-steps) owns the limits, placement rules, and required-versus-best-effort behavior.
+
+```bash
+orbit project:dev-deploy-step:create <name> --project=ID --command=COMMAND [--timeout=300] [--required=true|false] [--before=NAME | --after=NAME] [--json]
+orbit project:dev-deploy-step:create install --project=4 --command="composer install --no-interaction"
+```
+
+`name` is the step name, unique within the Project.
+
+| Option | Meaning |
+| --- | --- |
+| `--project=ID` | Required numeric Project ID. |
+| `--command=COMMAND` | Required shell command for create; replacement command for update. |
+| `--timeout=SECONDS` | Step timeout, default 300 on create. |
+| `--required=true\|false` | Whether failure prevents activation. Defaults to true on create. |
+| `--before=NAME` | Place before another step in this list. |
+| `--after=NAME` | Place after another step in this list. Cannot be combined with `--before`. |

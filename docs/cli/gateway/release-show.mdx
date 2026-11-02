@@ -1,0 +1,15 @@
+---
+title: "orbit gateway:release:show"
+sidebarTitle: "gateway:release:show"
+description: "Show one release record."
+---
+
+```bash
+orbit gateway:release:show [<release>] [--json]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `release` | A record id of one to six digits, or a hex SHA of 7 to 40 characters for the newest record of that commit. In a terminal, an omitted value opens a list of the records. |
+
+JSON returns the record. `gateway.release_not_found` means no record matches, and `gateway.release_id_invalid` means the selector has another form.

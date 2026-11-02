@@ -1,0 +1,23 @@
+---
+title: "orbit websocket:app:create"
+sidebarTitle: "websocket:app:create"
+description: "Create a Reverb app. The Gateway generates its app ID, key, and secret."
+---
+
+```bash
+orbit websocket:app:create <name> [--operation-key=<key>] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Lowercase kebab name of at most 63 characters. `gateway` is the Gateway's own app. |
+
+```bash
+orbit websocket:app:create hauzer
+```
+
+The CLI refuses a name that is not a lowercase slug of at most 63 characters with `websocket.name_invalid`. The Gateway refuses a taken name or `gateway` with `validation.failed`. Reverb loads the app while existing connections stay open. Without a serving process, the change stays pending until a fresh process loads it. Reuse `--operation-key` when retrying the same request after a lost response.
+
+## How it works
+
+<div className="flow-at" data-chart="websocket/app-create"></div>

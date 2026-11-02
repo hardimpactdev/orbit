@@ -97,9 +97,9 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, and `digest()` |
 | `App\Domain\Routes\ContributedPrivateHostnames` | Route and analytics hostname checks, and private DNS publication | `hostnames()` returns each reserved hostname with its current address, or `null` when it must not be published |
 | `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `command()` and `input()` |
-| `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process#orbit-processdestroy) | `assertRemovable()` |
-| `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database#orbit-databaseupdate) | `validate()` and `afterCommit()` |
-| `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database#orbit-databasedestroy) | `assertRemovable()` |
+| `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process/destroy) | `assertRemovable()` |
+| `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database/update) | `validate()` and `afterCommit()` |
+| `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database/destroy) | `assertRemovable()` |
 | `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 

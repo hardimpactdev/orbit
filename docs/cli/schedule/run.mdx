@@ -1,0 +1,13 @@
+---
+title: "orbit schedule:run"
+sidebarTitle: "schedule:run"
+description: "Run the Schedule once now, as a task, and follow it until it ends. The calendar does not change. A failed command returns `schedule.run_failed`; a missing user, directory or command copy returns `schedule.target_unavailable`."
+---
+
+```bash
+orbit schedule:run <uuid> [--idempotency-key=KEY] [--json]
+```
+
+## How it works
+
+<div className="flow-at" data-chart="schedule/run"></div>

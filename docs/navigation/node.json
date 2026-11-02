@@ -5,7 +5,33 @@
       "group": "Fleet",
       "order": 1,
       "pages": [
-        "cli/node"
+        {
+          "group": "node",
+          "pages": [
+            "cli/node/index",
+            "cli/node/add",
+            "cli/node/list",
+            "cli/node/show",
+            "cli/node/metrics",
+            "cli/node/converge",
+            "cli/node/rename",
+            "cli/node/settings",
+            "cli/node/wireguard-key",
+            "cli/node/platform",
+            "cli/node/role-add",
+            "cli/node/role-list",
+            "cli/node/role-relocate",
+            "cli/node/role-remove",
+            "cli/node/access-add",
+            "cli/node/access-remove",
+            "cli/node/remove",
+            "cli/node/excluded-project-add",
+            "cli/node/excluded-project-list",
+            "cli/node/excluded-project-remove",
+            "cli/node/network-converge",
+            "cli/node/wireguard-hub-converge"
+          ]
+        }
       ]
     }
   ]

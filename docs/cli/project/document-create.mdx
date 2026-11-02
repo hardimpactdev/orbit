@@ -1,0 +1,19 @@
+---
+title: "orbit project:document:create"
+sidebarTitle: "project:document:create"
+description: "Create a folder or a file."
+---
+
+```bash
+orbit project:document:create <project> <name> --kind=folder|file [--parent=ID] [--from=PATH|-] [--content=TEXT] [--media-type=TYPE] [--json]
+orbit project:document:create acme notes --kind=folder
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `name` | Name of the new entry. |
+| `--kind=folder\|file` | Required. |
+| `--parent=ID` | Folder to create it in. The root by default. |
+| `--from=PATH` | File body from a local file. `-` reads stdin. |
+| `--content=TEXT` | File body as exact inline text. Do not combine it with `--from`. |
+| `--media-type=TYPE` | Media type of the file body. |

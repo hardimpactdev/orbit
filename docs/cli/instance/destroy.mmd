@@ -1,0 +1,182 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
+  %% status: draft
+  %% command: instance:destroy
+  %% kind: instance.destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-dev Node<br/>reached over ssh
+  CLI->>GW: instance:destroy 42<br/>Instance id · --yes --force
+  %%> Command:
+  %%> - `orbit instance:destroy 42 --yes`
+  %%> - syntax: `<instance> [--yes] [--force] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Instance's id, as `instance:list` shows it
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI asks first; the default is No
+  %%> - without a terminal, or with `--json`, `--yes` is required
+  %%> With `--force`:
+  %%> - also deletes dirty or unpublished source, and a checkout with its linked worktrees
+  %%> - it never waives the source identity checks, and it is not consent
+  Note over GW: Validate, capture the set<br/>Instance 42 · task #5132
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, which runs Instance 42
+  %%> - Instance 42 is a development Instance; production removal is not charted here
+  %%> - no other lifecycle change and no unfinished transfer holds Instance 42
+  %%> Captures:
+  %%> - the source: path, owner, origin, branch, linked worktrees
+  %%> - what Instance 42 owns: Processes, Schedules, Route, SQLite files, server databases
+  %%> - the Project teardown steps
+  %%> Result:
+  %%> - Instance 42 is marked removing, with the captured set
+  %%> - task #5132 recorded with the full intent
+  GW->>SW: Remove Schedule triggers<br/>workflow trigger removal
+  %%> What it does:
+  %%> - removes the native Swamp schedule trigger of each Schedule of Instance 42
+  %%> - there is no Node work here; Schedules install nothing on Nodes
+  %%> Why first:
+  %%> - no new fire starts against a checkout that is being removed
+  %%> Running fire:
+  %%> - a fire that already started runs to its end, within its own timeout, and is still recorded
+  opt not forced, private repo
+    GW->>SW: Push the token<br/>vault: github-token
+    %%> Why:
+    %%> - a normal removal checks that the work is pushed, which needs a fetch from origin
+    %%> - only the Gateway holds the GitHub App key
+    %%> What it does:
+    %%> - mints a read token for this one repository, valid 1 hour, and pushes it into Swamp's vault
+    %%> Not needed:
+    %%> - with `--force`, or for a public repository
+  end
+  GW->>SW: Start run, full intent<br/>operation-instance-destroy
+  %%> What it does:
+  %%> - starts one run of `operation-instance-destroy` on Swamp serve (Node 209)
+  %%> Inputs:
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the captured set, the teardown steps, the Node's managed user
+  %%> - secrets only as vault key names
+  GW-->>CLI: 202 Accepted<br/>task #5132
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  Note over SW: Read the scripts<br/>instance-dev-command assets
+  %%> What it does:
+  %%> - reads the shipped destroy phase scripts and the teardown runner on 209, to send them over SSH in argv
+  SW->>N: Verify the source<br/>@swamp/ssh · owner, origin, inode
+  %%> What it does:
+  %%> - checks that the checkout and its linked worktrees are the ones captured at admission
+  %%> - same path, owner, origin and filesystem identity
+  %%> Refuses:
+  %%> - another checkout, owner or Node, also with `--force`
+  %%> - a symlink in place of the checkout
+  opt not forced
+    SW->>N: Check work is pushed<br/>vault.get token · fetch, compare
+    %%> What it does:
+    %%> - fetches origin with the vault token and compares
+    %%> Refuses:
+    %%> - dirty source
+    %%> - a `HEAD` that no origin branch or tag contains
+    %%> - linked worktrees on the checkout
+    %%> Result of a refusal:
+    %%> - the run stops here and nothing changes
+  end
+  SW->>N: Stop, remove Processes<br/>systemd units · containers
+  %%> What it does:
+  %%> - stops each Process of Instance 42 and removes its unit or container
+  %%> Why before teardown:
+  %%> - nothing still writes to the application while teardown runs
+  %%> Not included:
+  %%> - Processes of other Instances on Node 12
+  SW->>N: Run teardown steps<br/>@swamp/ssh · own timeout each
+  %%> What it does:
+  %%> - runs the Project's teardown steps in order, as the Node's managed user, from the repository root
+  %%> Limits:
+  %%> - each step has its own timeout
+  %%> Failure:
+  %%> - a failed step fails the run; the next `instance:destroy` runs the whole list again
+  SW->>N: Remove SQLite files<br/>owned files only
+  %%> What it does:
+  %%> - deletes the SQLite files that Instance 42 owns
+  %%> Not included:
+  %%> - databases on a Database server; the next step drops them
+  SW->>N: Drop owned databases<br/>Database server · SQL
+  %%> What it does:
+  %%> - drops each database and user that Instance 42 owns on a Database server, one canonical server child per server
+  %%> How:
+  %%> - the server child reads each server's admitted password from the vault; the Gateway copies it at run start
+  %%> Not included:
+  %%> - registered external databases; their records go with the Instance, nothing on their host changes
+  SW->>N: Withdraw the Route<br/>Caddy site, PHP pool, cert
+  %%> What it does:
+  %%> - removes the Caddy site of Instance 42 and reloads Caddy; no restart
+  %%> - removes its PHP pool and its certificate
+  %%> Keeps:
+  %%> - every other site, pool and certificate on Node 12
+  Note over SW: Remove DNS records<br/>Node 1 over @swamp/ssh
+  %%> What it does:
+  %%> - removes the private DNS records of Instance 42's Routes, then waits the 31-second grace
+  %%> How:
+  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
+  SW->>N: Remove the source<br/>worktrees first, checkout last
+  %%> What it does:
+  %%> - removes linked worktrees, then the checkout itself
+  %%> - deletes only the paths whose identity it verified
+  %%> Runs as:
+  %%> - the Node's own user, not root
+  SW->>N: Check it is gone<br/>path, units, containers absent
+  %%> What it does:
+  %%> - checks that the checkout, its removal quarantine, the Process units and containers are absent
+  %%> - the Route's own steps already confirmed its Caddy site is gone
+  %%> Why:
+  %%> - Instance 42 only counts as removed when the Node shows it
+  Note over SW: Report the result<br/>removed · failed_step · error_code
+  %%> What it does:
+  %%> - maps the first failed step to its error code and keeps the source capture for a rerun
+  Note over SW: Fail on an error<br/>assert · exit code 0
+  %%> What it does:
+  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
+  alt all steps pass
+    N-->>SW: Instance 42 absent
+    %%> Returns:
+    %%> - the check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Delete Instance, records<br/>task succeeded
+    %%> Result:
+    %%> - Instance 42 is deleted, with its Processes, Schedules and Route records
+    %%> - owned database records are deleted
+    %%> - closed transfer history stays, without its Instance link
+    %%> - task #5132 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0 or refusal
+    %%> When:
+    %%> - a source check refuses, a teardown step fails, or something is still there
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep Instance, mark failed<br/>rerun the same destroy
+    %%> Result:
+    %%> - Instance 42 and its records stay, marked removal failed
+    %%> - task #5132 fails
+    %%> On the Node:
+    %%> - what was already removed stays removed; no rollback
+    %%> - the Schedule triggers stay removed
+    %%> Retry:
+    %%> - run `instance:destroy 42` again; it is a new task and converges the same captured set
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5132
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
