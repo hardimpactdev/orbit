@@ -159,4 +159,4 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: 'Check the footprint', condition: {type: succeeded}}]
     task: {type: assert, severity: high, message: The agent does not run the pinned binary with the recorded key.,
-      expr: 'steps["Check the footprint"].outputs.stdout == inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" + inputs.intent.verifier_hash + "  /etc/orbit/agent/secret"'}
+      expr: 'steps["Check the footprint"].outputs.stdout in [inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" + inputs.intent.verifier_hash + "  /etc/orbit/agent/secret", inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" + inputs.intent.verifier_hash + "  /etc/orbit/agent/secret\n"]'}
