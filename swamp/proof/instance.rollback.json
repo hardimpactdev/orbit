@@ -1,0 +1,58 @@
+{
+  "kind": "instance.rollback",
+  "workflow": "operation-instance-rollback",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "before_node": {
+    "peer": [
+      [
+        "sh",
+        "-c",
+        "set -e; id orbit-app-9001 >/dev/null 2>&1 || useradd -m -s /bin/bash orbit-app-9001; H=/home/orbit-app-9001; for r in r1 r2; do mkdir -p $H/releases/$r/public; echo $r > $H/releases/$r/public/index.html; done; ln -sfn releases/r2 $H/current; touch $H/.env; chown -R orbit-app-9001:orbit-app-9001 $H; rm -f /run/orbit-proof-fpm-reloaded; printf '[Unit]\\nDescription=Proof dedicated PHP-FPM\\n[Service]\\nExecStart=/usr/bin/sleep infinity\\nExecReload=/usr/bin/touch /run/orbit-proof-fpm-reloaded\\n[Install]\\nWantedBy=multi-user.target\\n' > /etc/systemd/system/orbit-orbit-app-9001-php8.5-fpm.service; systemctl daemon-reload; systemctl enable --now orbit-orbit-app-9001-php8.5-fpm.service"
+      ]
+    ]
+  },
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"replace_roles\": {\"${node.peer}\": [\"app-prod\"]}, \"projects\": [{\"id\": 9001, \"name\": \"Proof rollback\", \"slug\": \"proof-rollback\", \"type\": \"laravel-app\", \"repository_url\": \"https://github.com/laravel/laravel.git\", \"default_branch\": \"12.x\", \"root\": \"public\"}], \"instances\": [{\"id\": 9001, \"project_id\": 9001, \"node_id\": ${node.peer}, \"name\": \"production\", \"source_layout\": \"release\", \"checkout_path\": \"/home/orbit-app-9001/releases/r2\", \"production_user\": \"orbit-app-9001\", \"production_home\": \"/home/orbit-app-9001\", \"root\": \"public\", \"branch\": \"12.x\", \"selected_php_version\": \"8.5\", \"production_php_service\": \"orbit-orbit-app-9001-php8.5-fpm.service\", \"production_php_pool\": \"orbit-orbit-app-9001\", \"production_php_socket\": \"/run/php/orbit-app-9001.sock\", \"source_is_laravel\": true, \"provisioning_step\": \"active\", \"status\": \"active\"}], \"deployments\": [{\"instance_id\": 9001, \"kind\": \"deploy\", \"branch\": \"12.x\", \"release\": \"r1\", \"selected_release\": \"r1\", \"commit\": \"1111111111111111111111111111111111111111\", \"status\": \"succeeded\", \"started_at\": \"2026-11-01 10:00:00\", \"finished_at\": \"2026-11-01 10:01:00\", \"triggered_by\": \"swamp:auto-deploy\"}, {\"instance_id\": 9001, \"kind\": \"deploy\", \"branch\": \"12.x\", \"release\": \"r2\", \"selected_release\": \"r2\", \"commit\": \"2222222222222222222222222222222222222222\", \"status\": \"succeeded\", \"started_at\": \"2026-11-02 10:00:00\", \"finished_at\": \"2026-11-02 10:01:00\", \"triggered_by\": \"swamp:auto-deploy\"}]}"
+    ]
+  ],
+  "prepare": [],
+  "request": {
+    "method": "POST",
+    "path": "instances/9001/rollback",
+    "body": {
+      "release": "r1"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Activate release",
+      "job": "rollback",
+      "step": "Activate release-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Refresh PHP cache",
+      "job": "rollback",
+      "step": "Refresh PHP cache",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check the selection",
+      "job": "rollback",
+      "step": "Check the selection",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/instance.rollback/parity.py"
+}

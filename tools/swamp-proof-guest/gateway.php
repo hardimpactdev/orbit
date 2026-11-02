@@ -14,7 +14,7 @@ declare(strict_types=1);
  *   caddyfile stdin {node}: the Node's complete Caddyfile from the Gateway's own Caddy build renderer.
  *   fixture  stdin {roles: {node_id: [role]}, replace_roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
- *            instances: [attributes], task_vms: [attributes], operations: [attributes],
+ *            instances: [attributes], deployments: [attributes], task_vms: [attributes], operations: [attributes],
  *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}],
  *            instance_updates: [{id, attributes}], node_updates: [{id, attributes}], websocket?: node_id, analytics_tracking: [{instance_id, domain, timezone?}]}: the records a kind fixture
  *            needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet, a Project under the fixed
@@ -43,6 +43,7 @@ use App\Infrastructure\WebSocket\WebSocketEnvironmentRenderer;
 use App\Infrastructure\WebSocket\WebSocketServiceUnitRenderer;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
@@ -157,6 +158,10 @@ if ($argv[1] === 'fixture') {
     }
     foreach ($input['instances'] ?? [] as $instance) {
         (new Instance)->forceFill($instance)->save();
+    }
+    // A production Instance's deployment history, from which the Gateway knows the releases it retains.
+    foreach ($input['deployments'] ?? [] as $deployment) {
+        (new InstanceDeployment)->forceFill($deployment)->save();
     }
     foreach ($holds as [$group, $instance]) {
         $group->forceFill(['taskable_type' => 'instance', 'taskable_id' => $instance])->save();
