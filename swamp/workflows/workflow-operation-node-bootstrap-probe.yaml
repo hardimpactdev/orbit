@@ -54,11 +54,11 @@ inputs:
 jobs:
 - name: bootstrap
   labels:
-    node: ${{ string(inputs.node_id) }}
+    role: swamp
   steps:
   - name: inspect-platform
     labels: &id001
-      node: ${{ string(inputs.node_id) }}
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
