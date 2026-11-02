@@ -452,7 +452,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.11.02.3",
+  version: "2026.11.02.4",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
@@ -526,7 +526,7 @@ export const behavior = {
         if (state?.status !== "active") throw new Error(`${args.workItem} has no active run in ${ctx.globalArgs.factory}`);
         const handle = await ctx.writeResource("preapproval", preapprovalName(args.workItem, args.gateId, args.stage, args.cycle), {
           workItem: args.workItem, gateId: args.gateId, stage: args.stage, cycle: args.cycle, actor: args.actor,
-          note: args.note ?? null, createdAt: new Date().toISOString(), appliedAt: null,
+          note: args.note || null, createdAt: new Date().toISOString(), appliedAt: null,
         });
         return { dataHandles: [handle] };
       },

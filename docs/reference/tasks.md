@@ -766,7 +766,7 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 ### Start and plan a group
 
-Serve runs remote-only, so the operator calls two placed workflows:
+Serve runs remote-only, so the operator calls placed workflows:
 
 ```sh
 swamp workflow run group-start --input workItem=tg-<group> --server wss://swamp.orbit
@@ -774,6 +774,7 @@ swamp workflow run group-plan --input-file plan.yaml --server wss://swamp.orbit
 ```
 
 - `group-start` starts the group's work item and its first run at once.
+- `group-approve` approves one human gate (`gateId`, `stage`, `cycle`) and wakes the group.
 - `group-plan` takes `workItem`, `plan` and `actor` at the plan stage.
 - It records the complete typed plan and its exact consent in one call.
 - It then wakes the group, which applies the consent and starts analysis.
