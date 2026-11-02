@@ -9,6 +9,7 @@ use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -41,7 +42,7 @@ afterEach(function (): void {
     unlink($this->manifest);
 });
 
-it('admits a pending development binding and starts exactly one native target root without effects', function (): void {
+it('records a pending development binding at once, with no run', function (): void {
     $node = Node::query()->create(['name' => 'target-dev', 'public_ssh_host' => '192.0.2.19', 'wireguard_ip' => '10.44.0.19', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Binding', 'slug' => 'binding', 'repository_url' => 'https://example.test/binding.git', 'root' => 'public']);
@@ -50,21 +51,17 @@ it('admits a pending development binding and starts exactly one native target ro
 
     $operation = app(AdmitRouteOperationAction::class)->setTarget($route, $instance->id);
 
+    // An unpublished Route has no site to move, so the change is record-only (R1).
     expect($operation->kind)->toBe('route.target_set')
-        ->and($operation->input['participant_node_ids'])->toBe([$node->id, 209])
+        ->and($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result)->toBe(['ready' => true, 'route_id' => $route->id])
         ->and($operation->input['route_target']['binding_only'])->toBeTrue()
         ->and($operation->input['route_target']['effectful'])->toBeFalse()
-        ->and($operation->input['route_target']['workloads'])->toBe([])
         ->and($route->fresh()->status)->toBe(RouteStatus::Pending)
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$instance->id])
         ->and(Operation::query()->count())->toBe(1)
-        ->and($this->socket->sent)->toHaveCount(1)
-        ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-target-set')
-        ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
-        ->and($operation->state)->not->toHaveKeys(['route_plan', 'executor_runs', 'steps']);
-    expect($operation->input)->not->toHaveKeys(['environment_fields', 'private_bindings'])
-        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_target'])
-        ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) []);
+        ->and($this->socket->sent)->toHaveCount(0)
+        ->and($operation->state ?? [])->not->toHaveKey('swamp_run_id');
 });
 
 it('admits an entire production pool without committing its cutover before the native root runs', function (): void {

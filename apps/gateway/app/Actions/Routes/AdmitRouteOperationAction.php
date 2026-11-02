@@ -212,13 +212,17 @@ final readonly class AdmitRouteOperationAction
             $accessNodes = [$proxy->node_id, $ingress->node_id];
         }
 
-        $operation = $this->operations->execute($kind, 'route', $route->id, $nodeId,
-            ['route_id' => $route->id, 'node_ids' => $nodes,
-                'public_process' => $route->isCustomProxy() && $route->cluster_id !== null,
-                'access_node_ids' => $accessNodes,
-                'caller_node_id' => $caller?->id, ...app(NativeRouteAdmission::class)->capture($kind, $route, $input, $nodeId), 'target_instance_ids' => $proposedIds,
-                'previous_target_instance_ids' => $previousIds, 'removed_instance_ids' => $removedIds, 'instance_placements' => $placements,
-                'detached_instances' => $input['detached_instances'] ?? $this->targets->detachedInstances($removedIds)], 'operator', $requestId);
+        $operationInput = ['route_id' => $route->id, 'node_ids' => $nodes,
+            'public_process' => $route->isCustomProxy() && $route->cluster_id !== null,
+            'access_node_ids' => $accessNodes,
+            'caller_node_id' => $caller?->id, ...app(NativeRouteAdmission::class)->capture($kind, $route, $input, $nodeId), 'target_instance_ids' => $proposedIds,
+            'previous_target_instance_ids' => $previousIds, 'removed_instance_ids' => $removedIds, 'instance_placements' => $placements,
+            'detached_instances' => $input['detached_instances'] ?? $this->targets->detachedInstances($removedIds)];
+        // R1: a create retry or target change that no Node sees ends at once, with no run.
+        $intent = $operationInput['route_lifecycle'] ?? $operationInput['route_target'] ?? null;
+        $operation = in_array($kind, ['route.create', 'route.target_set'], true) && is_array($intent) && $intent['effectful'] === false
+            ? $this->operations->record($kind, 'route', $route->id, $nodeId, $operationInput, ['ready' => true, 'route_id' => $route->id], 'operator', $requestId)
+            : $this->operations->execute($kind, 'route', $route->id, $nodeId, $operationInput, 'operator', $requestId);
 
         return $operation->refresh();
     }

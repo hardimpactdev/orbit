@@ -106,8 +106,8 @@ it('announces an admitted target change only after its transaction commits', fun
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated
         && $event->id === $this->route->id && count($event->data['targets']) === ($mode === 'set' ? 1 : 0));
     expect(Event::dispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated))->toHaveCount(1);
-    // Setting a target starts its Route run after commit; clearing it is record-only (R1) and starts none.
-    expect($mode === 'set' ? $changed->fresh()->status->value : Operation::query()->count())->toBe($mode === 'set' ? 'running' : 0)
+    // Both are record-only here (R1): the Route's sites are not published, so setting its target moves no site.
+    expect($mode === 'set' ? $changed->fresh()->status->value : Operation::query()->count())->toBe($mode === 'set' ? 'succeeded' : 0)
         ->and($this->route->targets()->pluck('instance_id')->all())->toBe($mode === 'set' ? [$this->instance->id] : [])
         ->and($this->agents->calls)->toBe([]);
 })->with(['set', 'unset']);

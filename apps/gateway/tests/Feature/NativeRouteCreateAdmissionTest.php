@@ -232,3 +232,22 @@ it('publishes private DNS only when the records change, so a domain inside the T
         expect($plan['dns'][0]['records'])->toBe('full records');
     }
 })->with(['new record' => [true], 'records unchanged' => [false]]);
+
+it('ends an identical retry of an active Route at once, with no run', function (): void {
+    [$instance, $node] = native_create_admission_fixture();
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'retry.private.test'])->assertAccepted();
+    $route = Route::query()->sole();
+    $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+
+    $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'retry.private.test'])->assertAccepted();
+
+    // The retry changes nothing on a Node, so no run starts and the Operation has already succeeded (R1).
+    $retry = Operation::query()->latest('id')->firstOrFail();
+    expect(Operation::query()->count())->toBe(2)
+        ->and($retry->input['route_lifecycle']['effectful'])->toBeFalse()
+        ->and($retry->status)->toBe(OperationStatus::Succeeded)
+        ->and($retry->result)->toBe(['ready' => true, 'route_id' => $route->id])
+        ->and($this->socket->sent)->toHaveCount(1)
+        ->and($route->fresh()->status)->toBe(RouteStatus::Active);
+});
