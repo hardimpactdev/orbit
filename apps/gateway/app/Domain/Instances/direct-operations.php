@@ -54,10 +54,6 @@ return [
         'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment',
             'environment_material' => 'instance.deployment', 'definitions_material' => 'instance.deployment'],
     ],
-    'instance.run_steps' => [
-        'workflow' => 'operation-instance-setup-direct',
-        'writer_config' => 'swamp.direct_writers',
-        'writer_state' => 'instance_step_writer',
-        'projection' => InstanceSetupProjection::class,
-    ],
+    'instance.run_steps' => ['workflow' => 'operation-instance-setup-direct', 'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'setup', 'step' => 'Report the result'], 'projection' => InstanceSetupProjection::class],
 ];

@@ -522,14 +522,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-deploy/setup_direct.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/instance-deploy/vp_local_python.ts",
       "rule": "custom-control",
       "count": 5,

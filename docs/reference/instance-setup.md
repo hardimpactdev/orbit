@@ -94,7 +94,9 @@ The checkout's `.git/config` is not trusted. The operator writes it, and so does
 
 ## Run setup
 
-Swamp executes explicit Project setup as an `instance.run_steps` Operation. The Gateway keeps list configuration, validates its immutable digest and target, and records proven receipts. `instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. Creation and removal keep their native lifecycle runner and rollback policy.
+Swamp executes explicit Project setup as an `instance.run_steps` Operation ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/instance.run_steps.mmd)). The Gateway keeps list configuration and validates its immutable digest and target. When the run starts, it passes every command in order, the account and the checkout as run inputs. The run reaches the Node over official `@swamp/ssh` from the swamp role's workers, runs the list as the account with `sudo -u` through the same runner as `instance:create`, and returns only the outcome, the failed step and its redacted stderr tail. No step reads the Gateway.
+
+`instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. Creation and removal keep their native lifecycle runner and rollback policy.
 
 Client migration: older MCP, SDK and CLI clients expect a synchronous setup result. Update them to follow the returned Operation. Development creation and removal compose the configured commands directly in their native parents. They do not start a child Operation.
 
@@ -115,7 +117,7 @@ Setup steps receive two variables:
 | `ORBIT_SEED_PATH` | The checkout of `default` on the same Node. |
 | `ORBIT_SEED_COMMIT` | The last commit that [deployed](/reference/deployments#development-defaults) in that checkout. |
 
-Development create captures these values for its run. The retained explicit setup path reads them before each step. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
+Development create captures these values for its run. Explicit setup captures them when its run starts. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
 
 When the default has not deployed at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. When Orbit registers an Instance, it records a seed only if the adopted source commit matches the default's deployed commit. It never pairs an older source with newer seed dependencies.
 
@@ -145,7 +147,7 @@ orbit instance:setup <instance>
 
 ## Deadlines
 
-Explicit `instance:setup` returns after admitting the Operation. A list has 550 seconds of forward work from its first claim. Before each command, the Gateway records a bound budget receipt from server time. The command timeout is the smaller of its stored timeout and the remaining budget, with five seconds reserved for command cleanup. Restarting Swamp does not reset that budget.
+Explicit `instance:setup` returns after admitting the Operation. Each command runs within its stored timeout, and the whole list within 540 seconds, the most its timeouts may add up to.
 
 Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts, plus 30 seconds for the Process step; the setup phase stops at 540 seconds. A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
 

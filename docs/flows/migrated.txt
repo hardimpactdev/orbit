@@ -7,3 +7,4 @@ process.stop
 process.update
 schedule.run
 instance.sync_environment
+instance.run_steps

@@ -46,32 +46,38 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Check the checkout<br/>@swamp/ssh · owned, on branch
+  Note over SW: Read the scripts<br/>instance-dev-command assets
+  %%> What it does:
+  %%> - reads the shipped `setup.py` and `run_project_step.py` on 209, the same runner `instance:create` uses
+  SW->>N: Check the checkout<br/>@swamp/ssh · sudo -u · test -O
   %%> How:
   %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
   %%> What it does:
-  %%> - checks that the checkout of Instance 42 exists and is the one Orbit owns
-  %%> - checks that the Instance account exists
+  %%> - checks, as the Instance account, that the checkout of Instance 42 is a real directory the account owns
   %%> Why:
   %%> - the commands run only in the checkout the intent names
-  loop each setup step, in order
-    SW->>N: Run setup step<br/>sudo -u · timeout · bash -eu
-    %%> What it does:
-    %%> - runs one step's command with `bash -eu` from the repository root of the checkout
-    %%> - with `VP_HOME`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` set
-    %%> Typical steps:
-    %%> - `composer install`
-    %%> - `vp install`
-    %%> - `php artisan migrate`
-    %%> Runs as:
-    %%> - the Instance account from the intent, with `sudo -u`; not root
-    %%> Limits:
-    %%> - `timeout` stops the step's whole process group at its own timeout, so no command keeps running after it
-    %%> Progress:
-    %%> - each step shows under its own name
-    %%> Not kept:
-    %%> - command text and stdout; only the exit code and a redacted stderr tail
-  end
+  SW->>N: Run the setup steps<br/>sudo -u · timeout · bash -eu
+  %%> What it does:
+  %%> - runs each step's command in order with `bash -eu` from the repository root of the checkout, and stops at the first failure
+  %%> - with `VP_HOME`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` set
+  %%> Typical steps:
+  %%> - `composer install`
+  %%> - `vp install`
+  %%> - `php artisan migrate`
+  %%> Runs as:
+  %%> - the Instance account from the intent, with `sudo -u`; not root
+  %%> Limits:
+  %%> - `timeout` stops the step's whole process group at its own timeout, so no command keeps running after it
+  %%> Progress:
+  %%> - one native step for the whole list; the result names the failed step
+  %%> Not kept:
+  %%> - command text and stdout; only the exit code and a redacted stderr tail
+  Note over SW: Report the result<br/>outcome · failed_step · error_code
+  %%> What it does:
+  %%> - maps the runner's result to the public outcome: succeeded, failed, missing, deadline or unconfirmed
+  Note over SW: Fail on an error<br/>assert · exit code 0
+  %%> What it does:
+  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
   alt every step exits 0
     N-->>SW: exit 0 for each step
     %%> Returns:
