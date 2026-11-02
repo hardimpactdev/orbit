@@ -28,7 +28,9 @@ if mode == 'role':
     check('proof-unrelated' in run('ufw', 'status').stdout, 'the unrelated firewall rule remains')
 elif mode == 'ci':
     check(run('incus', 'project', 'show', 'orbit-ci').returncode == 0, 'the drained CI project is retained')
-    check('orbit:public-ssh-recovery' in run('ufw', 'status').stdout, 'last-role removal keeps public SSH access')
+    rules = run('ufw', 'status').stdout
+    check('orbit:public-ssh-recovery' in rules, 'last-role removal keeps public SSH access')
+    check('orbit-ci-runners' not in rules, 'the CI forwarding rule is removed')
 elif mode == 'online':
     check(operation['result'].get('removed') is True and operation['result'].get('offline') is False, 'online removal is projected')
     check(run('test', '-e', '/usr/local/bin/orbit-agent').returncode == 1, 'observer binary is absent')

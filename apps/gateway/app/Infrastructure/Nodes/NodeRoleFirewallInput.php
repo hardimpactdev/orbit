@@ -34,7 +34,7 @@ final readonly class NodeRoleFirewallInput
                 throw new \LogicException('Native rule replacement requires its owning transition.');
             }
 
-            return ['ufw', ...($delete ? ['--force', 'delete'] : []), ...array_slice($rule->arguments, 2)];
+            return $delete ? $rule->removalArguments() : ['ufw', ...array_slice($rule->arguments, 2)];
         };
 
         return ['desired' => array_map(static fn (UfwManagedRule $rule): array => $arguments($rule, false), $desired),

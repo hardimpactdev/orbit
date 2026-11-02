@@ -103,7 +103,7 @@ final readonly class NodeRemovalInput
             $after = app(NodeFirewallRuleCatalog::class)->routerLanIngress($member);
             foreach ($prior as $rule) {
                 if (! array_any($after, static fn ($desired): bool => $desired->shape->matches($rule->shape))) {
-                    $routerRules[] = ['ssh' => $ssh->forNode($member), 'input' => ['argv' => ['ufw', '--force', 'delete', ...array_slice($rule->arguments, 2)]]];
+                    $routerRules[] = ['ssh' => $ssh->forNode($member), 'input' => ['argv' => $rule->removalArguments()]];
                 }
             }
         }

@@ -1,7 +1,7 @@
 {
   "workflow": "operation-node-role-remove-direct",
   "topology": "minimal",
-  "clean": true,
+  "clean": false,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "prepare": [],
@@ -32,7 +32,7 @@
       [
         "sh",
         "-c",
-        "set -eu; mkdir -p /srv/proof-retained; echo keep > /srv/proof-retained/user-data; if ! command -v incus >/dev/null; then apt-get update; apt-get install -y incus; fi; incus project create orbit-ci"
+        "set -eu; mkdir -p /srv/proof-retained; echo keep > /srv/proof-retained/user-data; if ! command -v incus >/dev/null; then apt-get update; apt-get install -y incus; fi; if ! incus project show orbit-ci >/dev/null 2>&1; then incus project create orbit-ci; fi; ufw route allow in on orbitci0 comment orbit-ci-runners"
       ]
     ]
   },

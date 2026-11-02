@@ -282,3 +282,18 @@ it('runs standalone role removal with captured native intent and projects its en
         expect($role->fresh()->status)->toBe(LifecycleStatus::Failed);
     }
 })->with([true, false]);
+
+it('captures routed CI firewall removal with route before delete', function (): void {
+    FleetFixtures::bind();
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 fixture-bootstrap-public');
+    app()->instance(SshKeyProvider::class, $keys);
+    $this->markAsGateway(FleetFixtures::node('removal-ci-gateway'));
+    $node = FleetFixtures::node('removal-ci', [RoleName::CiRunner]);
+    $node->update(['wireguard_public_key' => null]);
+
+    $capture = app(NodeRemovalInput::class)->capture(app(NodeRemovalPlan::class)->build($node, false));
+
+    $firewall = $capture['intent']['roles'][0]['firewall'];
+    expect($firewall[0]['input']['argv'])->toBe(['ufw', '--force', 'route', 'delete', 'allow', 'in', 'on', 'orbitci0', 'comment', 'orbit-ci-runners']);
+});

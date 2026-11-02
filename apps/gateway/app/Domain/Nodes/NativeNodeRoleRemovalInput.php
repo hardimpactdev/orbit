@@ -89,7 +89,7 @@ final readonly class NativeNodeRoleRemovalInput
         $wanted = array_column(RouteExecutionProof::objects(ValidatedData::object($plan['firewall'])['remove']), 'comment');
         foreach (app(NodeFirewallRuleCatalog::class)->ownedByRole($node, $assignment->role) as $rule) {
             if (in_array($rule->shape->comment, $wanted, true)) {
-                $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => ['ufw', '--force', 'delete', ...array_slice($rule->arguments, 2)]]];
+                $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => $rule->removalArguments()]];
             }
         }
         $unitsForFleet = [];
@@ -112,7 +112,7 @@ final readonly class NativeNodeRoleRemovalInput
             $catalog = app(NodeFirewallRuleCatalog::class);
             $gateway = app(MetricsGatewayResolver::class)->resolve();
             foreach ([$catalog->metricsGrafanaUpstream($node, ValidatedData::string($gateway->wireguard_ip)), $catalog->metricsGrafanaIsolation($node)] as $rule) {
-                $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => ['ufw', '--force', 'delete', ...array_slice($rule->arguments, 2)]]];
+                $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => $rule->removalArguments()]];
             }
             foreach (app(MetricsExporterProjection::class)->for($node) as $member) {
                 if (! $member->selection->selected) {
@@ -137,7 +137,7 @@ final readonly class NativeNodeRoleRemovalInput
                     }
                 }
                 foreach ($rules as $rule) {
-                    $firewall[] = ['ssh' => $connection, 'input' => ['argv' => ['ufw', '--force', 'delete', ...array_slice($rule->arguments, 2)]]];
+                    $firewall[] = ['ssh' => $connection, 'input' => ['argv' => $rule->removalArguments()]];
                 }
             }
         }

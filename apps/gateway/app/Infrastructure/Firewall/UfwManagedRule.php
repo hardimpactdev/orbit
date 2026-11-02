@@ -12,4 +12,12 @@ final readonly class UfwManagedRule
         public array $arguments,
         public bool $replacePort = false,
     ) {}
+
+    /** @return non-empty-list<string> */
+    public function removalArguments(): array
+    {
+        $routed = $this->arguments[2] === 'route';
+
+        return ['ufw', '--force', ...($routed ? ['route'] : []), 'delete', ...array_slice($this->arguments, $routed ? 3 : 2)];
+    }
 }
