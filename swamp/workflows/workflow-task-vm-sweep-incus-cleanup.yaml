@@ -39,7 +39,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "swp-remove-" + string(inputs.ssh_execution.target.host) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("swp-remove-" + string(inputs.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: script
       inputs:
         hosts: name:target
@@ -47,7 +47,7 @@ jobs:
         sudo: true
         script: ${{ steps["assets-"+string(self._index)].outputs.script_body }}
       globalArgs:
-        name: '${{ "swp-remove-" + string(inputs.ssh_execution.target.host) + "-" + string(self._index) }}'
+        name: '${{ ("swp-remove-" + string(inputs.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}

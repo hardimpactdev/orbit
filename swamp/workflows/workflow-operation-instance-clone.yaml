@@ -100,10 +100,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: &ref_2
-            name: '${{ "icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
+            name: '${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
@@ -135,7 +135,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-3-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("icl-3-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -160,7 +160,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-4-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("icl-4-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -185,7 +185,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-5-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("icl-5-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -224,7 +224,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-7-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("icl-7-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_2
           inputs:
@@ -257,10 +257,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-0-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: &ref_3
-            name: '${{ "src-0-" + string(inputs.intent.ssh_execution.target.host) }}'
+            name: '${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -353,7 +353,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-4-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-4-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -392,7 +392,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-6-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-6-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -422,7 +422,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-7-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-7-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -473,7 +473,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-9-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-9-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -512,7 +512,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-11-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-11-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -541,7 +541,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-12-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-12-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -590,7 +590,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-14-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-14-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -627,7 +627,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-16-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-16-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -649,7 +649,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "source-copy-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("source-copy-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: copy
           globalArgs: *ref_3
           inputs:
@@ -671,7 +671,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-18-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-18-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -696,7 +696,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-19-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-19-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -744,7 +744,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-21-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-21-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -776,7 +776,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-22-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-22-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -823,7 +823,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-24-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("src-24-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -859,10 +859,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-35-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("icl-35-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs:
-            name: '${{ "icl-35-" + string(inputs.intent.ssh_execution.target.host) }}'
+            name: '${{ ("icl-35-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -924,10 +924,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone-2-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: &ref_4
-            name: '${{ "ids-clone-2-" + string(inputs.intent.ssh_execution.target.host) }}'
+            name: '${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -951,7 +951,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: copy
           globalArgs: *ref_4
           inputs:
@@ -1002,10 +1002,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: script
           globalArgs: &ref_5
-            name: '${{ "ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
+            name: '${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -1047,7 +1047,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1084,7 +1084,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone-5-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-5-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1111,7 +1111,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone-6-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-6-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:

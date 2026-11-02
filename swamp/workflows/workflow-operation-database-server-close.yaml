@@ -30,7 +30,7 @@ jobs:
   - name: directory
     <<: *placed
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-close-" + string(inputs.intent.ssh.host) }}', methodName: exec, globalArgs: {name: '${{ "database-close-" + string(inputs.intent.ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("database-close-" + string(inputs.intent.ssh.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("database-close-" + string(inputs.intent.ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
         hosts: name:server
         argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) }}']

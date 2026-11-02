@@ -53,10 +53,10 @@ jobs:
     task: &observe
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-lan-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-lan-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh
-        name: '${{ "route-lan-" + string(inputs.intent.connection.nodeHost) }}'
+        name: '${{ ("route-lan-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.connection.nodeUser }}'
@@ -84,7 +84,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-lan-" + string(inputs.intent.connection.nodeHost) + "-" + self.rule.model_name + "-" + string(self._index) }}'
+      behaviorName: '${{ ("route-lan-" + string(inputs.intent.connection.nodeHost) + "-" + self.rule.model_name + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs: {hosts: 'name:target', argv: '${{ ["/usr/sbin/ufw"] + (self.rule.ensure == "absent" ? ["delete"] : []) + ["allow", "from", self.rule.source, "to", "any", "port", string(self.rule.port), "proto", self.rule.protocol] }}', sudo: true}

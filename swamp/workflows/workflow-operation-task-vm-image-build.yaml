@@ -199,10 +199,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "image-ssh-" + string(inputs.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("image-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ "image-ssh-" + string(inputs.ssh_execution.target.host) }}'
+        name: '${{ ("image-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -295,7 +295,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "image-ssh-" + string(inputs.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("image-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:

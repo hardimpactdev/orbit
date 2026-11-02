@@ -115,9 +115,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs: &id002
-        name: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -151,7 +151,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs: *id002
       methodName: copy
       inputs:
@@ -183,9 +183,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs:
-        name: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -224,9 +224,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs:
-        name: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -300,9 +300,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs:
-        name: '${{ "database-read-" + string(inputs.intent.ssh.host) }}'
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}

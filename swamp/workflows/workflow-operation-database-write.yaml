@@ -94,10 +94,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-write-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-write-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ "database-write-" + string(inputs.intent.ssh.host) }}'
+        name: '${{ ("database-write-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -170,7 +170,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-write-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-write-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:

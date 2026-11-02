@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 /** The two direct roots share native action assembly, never an execution engine. */
 import { stringify } from "jsr:@std/yaml@1.0.5";
 const expr = (s: string) => "${{ " + s + " }}";
@@ -54,16 +55,16 @@ function steps() {
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expr(
-                (connection === "inputs.intent.hub_ssh"
+                dotless((connection === "inputs.intent.hub_ssh"
                     ? '"network-hub-"'
-                    : '"network-peer-"') + " + string(" + connection + ".target.host)",
+                    : '"network-peer-"') + " + string(" + connection + ".target.host)"),
             ),
             methodName: method,
             globalArgs: {
                 name: expr(
-                    (connection === "inputs.intent.hub_ssh"
+                    dotless((connection === "inputs.intent.hub_ssh"
                         ? '"network-hub-"'
-                        : '"network-peer-"') + " + string(" + connection + ".target.host)",
+                        : '"network-peer-"') + " + string(" + connection + ".target.host)"),
                 ),
                 transport: {
                     kind: "ssh",

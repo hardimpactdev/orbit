@@ -55,10 +55,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-readiness-" + string(self.part.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-readiness-" + string(self.part.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "route-readiness-" + string(self.part.connection.nodeHost) }}'
+        name: '${{ ("route-readiness-" + string(self.part.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ self.part.connection.nodeUser }}

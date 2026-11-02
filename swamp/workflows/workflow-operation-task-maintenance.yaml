@@ -66,10 +66,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -95,10 +95,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
-        name: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -152,10 +152,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -200,10 +200,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}

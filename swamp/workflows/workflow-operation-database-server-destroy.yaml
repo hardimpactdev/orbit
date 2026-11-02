@@ -77,9 +77,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-server-destroy-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs: &id002
-        name: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
+        name: '${{ ("database-server-destroy-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -114,7 +114,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
+      behaviorName: '${{ ("database-server-destroy-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs: *id002
       methodName: copy
       inputs:
@@ -162,10 +162,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbdi-" + string(inputs.intent.ssh.host) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("dbdi-" + string(inputs.intent.ssh.host) + "-" + string(self._index)).split(".").join("-") }}'
       globalArgs:
         <<: *id002
-        name: '${{ "dbdi-" + string(inputs.intent.ssh.host) + "-" + string(self._index) }}'
+        name: '${{ ("dbdi-" + string(inputs.intent.ssh.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:server

@@ -86,10 +86,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ "vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host) }}'
+        name: '${{ ("vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ steps.ssh.outputs.result.ssh_execution.target.user }}
@@ -137,7 +137,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:

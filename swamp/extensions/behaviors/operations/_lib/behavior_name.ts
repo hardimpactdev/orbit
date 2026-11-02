@@ -1,6 +1,9 @@
 // A behavior is named after its target, never its run (docs/flows/README.md):
 // `<family>-<SSH address or cfgmgmt nodeHost>`, the fan-out index when items share that target,
 // and a fixed `<family>` for a local step.
+/** Swamp names allow no dots, so an address becomes `10-44-0-2`. */
+export const dotless = (name: string) => `(${name}).split(".").join("-")`;
+
 export function behaviorName(
     family: string,
     globalArgs: unknown,
@@ -17,9 +20,9 @@ export function behaviorName(
         ...extra,
         ...(each && !target?.includes("self.") ? ["string(self._index)"] : []),
     ];
-    return "${{ " +
-        (parts.length
-            ? JSON.stringify(family + "-") + " + " + parts.join(' + "-" + ')
-            : JSON.stringify(family)) +
-        " }}";
+    if (!parts.length) return "${{ " + JSON.stringify(family) + " }}";
+    const name = JSON.stringify(family + "-") + " + " + parts.join(' + "-" + ');
+    return parts.every((part) => part === "string(self._index)")
+        ? "${{ " + name + " }}"
+        : "${{ " + dotless(name) + " }}";
 }

@@ -33,10 +33,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-plan-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tr-plan-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh
-        name: '${{ "tr-plan-" + string(inputs.ssh.target.host) }}'
+        name: '${{ ("tr-plan-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.ssh.target.user }}'
@@ -68,7 +68,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-remove-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tr-remove-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -82,7 +82,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-check-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tr-check-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -101,7 +101,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-source-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tr-source-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:

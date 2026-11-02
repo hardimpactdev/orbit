@@ -64,7 +64,7 @@
           "task": {
             "type": "behavior",
             "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.snapshot.hub_id) }}",
+            "behaviorName": '${{ ("wireguard-hub-" + string(steps.admit.outputs.snapshot.hub_id)).split(".").join("-") }}',
             "methodName": "publish",
             "inputs": {
               "operation_id": "${{ inputs.operation_id }}",

@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 /** Shared same-root CSR -> control signer -> fixed-pair publication jobs. */
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
@@ -47,7 +48,7 @@ export function roleCertificateJobs(
     const connection =
         `${plan}.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh`;
     const ssh = {
-        name: expr('"role-certificate-" + ' + key("self.leaf")),
+        name: expr(dotless('"role-certificate-" + ' + key("self.leaf"))),
         transport: {
             kind: "ssh",
             user: expr(connection + ".target.user"),

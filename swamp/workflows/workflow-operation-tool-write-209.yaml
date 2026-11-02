@@ -46,10 +46,10 @@ jobs:
     task: &source
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-source-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tw-source-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh
-        name: '${{ "tw-source-" + string(inputs.ssh.target.host) }}'
+        name: '${{ ("tw-source-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.ssh.target.user }}'
@@ -79,7 +79,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-check-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tw-check-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -106,7 +106,7 @@ jobs:
     task: &write
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-write-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tw-write-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:

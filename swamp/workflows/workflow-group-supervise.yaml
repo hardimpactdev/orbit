@@ -18,7 +18,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/orbit-group-run'
-          behaviorName: '${{ "orbit-group-" + inputs.workItem }}'
+          behaviorName: '${{ ("orbit-group-" + inputs.workItem).split(".").join("-") }}'
           methodName: ensure
           globalArgs:
             factory: '${{ inputs.factory }}'
@@ -32,7 +32,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/orbit-group-run'
-          behaviorName: '${{ "orbit-group-recovery-" + inputs.workItem }}'
+          behaviorName: '${{ ("orbit-group-recovery-" + inputs.workItem).split(".").join("-") }}'
           methodName: recover
           globalArgs:
             factory: '${{ inputs.factory }}'

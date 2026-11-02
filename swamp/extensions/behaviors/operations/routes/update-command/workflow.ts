@@ -1,3 +1,4 @@
+import { dotless } from "../../_lib/behavior_name.ts";
 import { nodeCertificateGroups } from "../../certificates/batch_steps.ts";
 import { routeMutationSteps } from "../mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
@@ -99,12 +100,12 @@ export function removalWorkflow(): Fields {
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expr(
-                '"route-readiness-" + string(self.part.connection.nodeHost)',
+                dotless('"route-readiness-" + string(self.part.connection.nodeHost)'),
             ),
             methodName: "exec",
             globalArgs: {
                 name: expr(
-                    '"route-readiness-" + string(self.part.connection.nodeHost)',
+                    dotless('"route-readiness-" + string(self.part.connection.nodeHost)'),
                 ),
                 transport: {
                     kind: "ssh",

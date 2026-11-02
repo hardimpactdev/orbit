@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 import {
     roleActionSteps,
     rolePackageSteps,
@@ -31,10 +32,10 @@ const envelope = {
 };
 export function sshGlobals(intent = "inputs.intent") {
     return {
-        name: expr(
+        name: expr(dotless(
             '"cluster-router-ssh-" + string(' + intent +
                 ".connection.nodeHost)",
-        ),
+        )),
         transport: {
             kind: "ssh",
             user: expr(intent + ".connection.nodeUser"),
@@ -317,12 +318,12 @@ export function probeWorkflow(): Fields {
                     type: "behavior",
                     behaviorType: "@swamp/ssh",
                     behaviorName: expr(
-                        '"cluster-router-probe-" + string(inputs.intent.connection.nodeHost)',
+                        dotless('"cluster-router-probe-" + string(inputs.intent.connection.nodeHost)'),
                     ),
                     methodName: "exec",
                     globalArgs: {
                         ...sshGlobals(),
-                        name: expr('"cluster-router-probe-" + string(inputs.intent.connection.nodeHost)'),
+                        name: expr(dotless('"cluster-router-probe-" + string(inputs.intent.connection.nodeHost)')),
                     },
                     inputs: {
                         hosts: "name:target",

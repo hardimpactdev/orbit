@@ -26,9 +26,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tm-setup-" + string(inputs.ssh.target.host) }}'
+      behaviorName: '${{ ("tm-setup-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: {name: '${{ "tm-setup-" + string(inputs.ssh.target.host) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true, hostKeys: '${{ inputs.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}
+      globalArgs: {name: '${{ ("tm-setup-" + string(inputs.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true, hostKeys: '${{ inputs.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}
       inputs:
         hosts: name:target
         okExitCodes: any

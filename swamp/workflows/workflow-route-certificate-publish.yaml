@@ -78,10 +78,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + inputs.parent_run_id + "-" + string(inputs.intent.node_id) }}
+        name: '${{ ("route-ssh-" + inputs.parent_run_id + "-" + string(inputs.intent.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -109,7 +109,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -163,7 +163,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -215,7 +215,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -236,7 +236,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -257,7 +257,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -278,7 +278,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:

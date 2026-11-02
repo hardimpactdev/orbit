@@ -77,8 +77,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbss-" + string(inputs.intent.source_ssh.host) }}'
-      globalArgs: {name: '${{ "dbss-" + string(inputs.intent.source_ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ ("dbss-" + string(inputs.intent.source_ssh.host)).split(".").join("-") }}'
+      globalArgs: {name: '${{ ("dbss-" + string(inputs.intent.source_ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.source_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.source_ssh.host_keys }}'}}]}
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.intent.outputs.source_path }}', dst: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', direction: from}
@@ -116,8 +116,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbst-" + string(inputs.intent.target_ssh.host) }}'
-      globalArgs: {name: '${{ "dbst-" + string(inputs.intent.target_ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ ("dbst-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}'
+      globalArgs: {name: '${{ ("dbst-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', dst: '${{ steps.prepared.outputs.incoming }}', direction: to}

@@ -92,10 +92,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -144,10 +144,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -197,10 +197,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -249,10 +249,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -301,10 +301,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -347,10 +347,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -382,10 +382,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -417,10 +417,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -452,10 +452,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -501,10 +501,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -562,10 +562,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -625,10 +625,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+      behaviorName: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+        name: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.hub_ssh_execution.target.user }}
@@ -668,10 +668,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -715,10 +715,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -749,10 +749,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -798,10 +798,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -869,10 +869,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-private-" + string(inputs.guest.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-private-" + string(inputs.guest.ssh_execution.target.host) }}'
+        name: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.guest.ssh_execution.target.user }}
@@ -898,10 +898,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-private-" + string(inputs.guest.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-private-" + string(inputs.guest.ssh_execution.target.host) }}'
+        name: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.guest.ssh_execution.target.user }}
@@ -986,10 +986,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-private-" + string(inputs.guest.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-private-" + string(inputs.guest.ssh_execution.target.host) }}'
+        name: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.guest.ssh_execution.target.user }}
@@ -1091,10 +1091,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+      behaviorName: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: ${{ "wireguard-hub-"+string(inputs.intent.hub_input.hub_id) }}
+        name: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.hub_ssh_execution.target.user }}
@@ -1144,10 +1144,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
@@ -1200,10 +1200,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host) }}'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host) }}'
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.user

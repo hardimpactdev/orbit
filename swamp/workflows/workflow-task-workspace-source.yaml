@@ -177,7 +177,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -185,7 +185,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -208,7 +208,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
@@ -216,7 +216,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -238,7 +238,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
@@ -246,7 +246,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -271,7 +271,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -279,7 +279,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -306,7 +306,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -314,7 +314,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -340,7 +340,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -348,7 +348,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -373,7 +373,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -381,7 +381,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -423,7 +423,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -431,7 +431,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index) }}'
+        name: '${{ ("tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -536,7 +536,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -544,7 +544,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ "tp-ssh-" + string(inputs.workspace.ssh_execution.target.host) }}'
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh

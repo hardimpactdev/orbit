@@ -66,10 +66,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ "route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost) }}'
+        name: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -97,7 +97,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-copy-assets-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-ssh-copy-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -111,7 +111,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-write-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-ssh-write-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -136,7 +136,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-cleanup-assets-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-ssh-cleanup-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:

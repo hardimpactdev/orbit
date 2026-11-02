@@ -31,7 +31,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/systemd'
-          behaviorName: '${{ "schedule-enable-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("schedule-enable-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}

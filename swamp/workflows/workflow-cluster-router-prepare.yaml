@@ -45,10 +45,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "cluster-router-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: '${{ "cluster-router-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+        name: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -95,10 +95,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "cluster-router-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: '${{ "cluster-router-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+        name: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -134,10 +134,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "cluster-router-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: '${{ "cluster-router-ssh-" + string(inputs.intent.connection.nodeHost) }}'
+        name: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}

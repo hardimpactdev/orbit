@@ -52,10 +52,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "irw-served-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("irw-served-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: '${{ "irw-served-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("irw-served-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -119,10 +119,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "irw-dev-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("irw-dev-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: '${{ "irw-dev-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("irw-dev-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -195,10 +195,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "irw-prod-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("irw-prod-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: script
       globalArgs:
-        name: '${{ "irw-prod-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("irw-prod-source-command-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -255,10 +255,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "irw-runtime-identity-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("irw-runtime-identity-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "irw-runtime-identity-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("irw-runtime-identity-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -297,7 +297,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ "irw-runtime-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("irw-runtime-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.connection.nodeHost }}
@@ -360,10 +360,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "irw-runtime-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("irw-runtime-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "irw-runtime-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("irw-runtime-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -408,10 +408,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "irw-runtime-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("irw-runtime-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "irw-runtime-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("irw-runtime-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}

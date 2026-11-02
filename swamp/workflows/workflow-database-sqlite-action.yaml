@@ -28,8 +28,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}'
-      globalArgs: {name: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}'
+      globalArgs: {name: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-sqlite-action-" + run.id }}']}
@@ -40,8 +40,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}'
-      globalArgs: {name: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}'
+      globalArgs: {name: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-sqlite-action-" + run.id }}', direction: to, recursive: true}
@@ -53,8 +53,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}'
-      globalArgs: {name: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}'
+      globalArgs: {name: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: '${{ steps.assets.outputs.argv }}', okExitCodes: [0, 1]}
@@ -80,8 +80,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}'
-      globalArgs: {name: '${{ "dbsi-" + string(steps.assets.outputs.ssh.host) }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}'
+      globalArgs: {name: '${{ ("dbsi-" + string(steps.assets.outputs.ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-sqlite-action-" + run.id }}']}

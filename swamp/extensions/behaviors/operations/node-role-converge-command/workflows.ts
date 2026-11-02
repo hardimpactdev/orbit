@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 import { roleFirewallSteps } from "./firewall_steps.ts";
 import {
     roleActionSteps,
@@ -58,7 +59,7 @@ function select(group: Fields[], item: string, list: string): Fields[] {
 export function roleWorkflow() {
     const ssh = "inputs.intent.ssh";
     const globals = {
-        name: ex('"role-converge-" + string(' + ssh + ".target.host)"),
+        name: ex(dotless('"role-converge-" + string(' + ssh + ".target.host)")),
         transport: {
             kind: "ssh",
             user: ex(ssh + ".target.user"),

@@ -19,7 +19,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/production-smoke'
-          behaviorName: '${{ "production-smoke-" + string(inputs.projectId) }}'
+          behaviorName: '${{ ("production-smoke-" + string(inputs.projectId)).split(".").join("-") }}'
           methodName: tick
           globalArgs:
             projectId: '${{ inputs.projectId }}'

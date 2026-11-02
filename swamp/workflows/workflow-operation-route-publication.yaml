@@ -35,10 +35,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ "route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost) }}'
+        name: '${{ ("route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -60,7 +60,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-dns-root-read-catalog-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-dns-root-read-catalog-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:

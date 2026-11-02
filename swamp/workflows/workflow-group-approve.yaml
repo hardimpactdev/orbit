@@ -38,7 +38,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/orbit-group-run'
-          behaviorName: '${{ "orbit-group-" + inputs.workItem }}'
+          behaviorName: '${{ ("orbit-group-" + inputs.workItem).split(".").join("-") }}'
           methodName: wake
           globalArgs:
             factory: orbit-groups

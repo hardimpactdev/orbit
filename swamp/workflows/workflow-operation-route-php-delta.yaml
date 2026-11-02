@@ -107,10 +107,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-read-account-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-ssh-read-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ "route-ssh-read-account-" + string(inputs.intent.connection.nodeHost) }}'
+        name: '${{ ("route-ssh-read-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -155,7 +155,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-read-current-" + string(inputs.intent.connection.nodeHost) }}'
+      behaviorName: '${{ ("route-ssh-read-current-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -217,10 +217,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -251,10 +251,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -285,10 +285,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+      behaviorName: '${{ ("route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
+        name: '${{ ("route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}

@@ -36,7 +36,8 @@ Deno.test("Database SSH child names fit OpenSSH temporary control sockets with u
                 if (task.behaviorType !== "@swamp/ssh") continue;
                 assertEquals(
                     prefixes.some((prefix) =>
-                        (task.behaviorName ?? "").startsWith('${{ "' + prefix + '" + string(')
+                        (task.behaviorName ?? "").startsWith('${{ ("' + prefix + '" + string(') &&
+                        (task.behaviorName ?? "").endsWith(').split(".").join("-") }}')
                     ),
                     true,
                     task.behaviorName,
@@ -49,7 +50,7 @@ Deno.test("Database SSH child names fit OpenSSH temporary control sockets with u
         // Official safeFleetDir budgets the final path, so keep the full name short.
         for (const prefix of prefixes) {
             for (const base of ["/tmp/swamp-ssh", "/run/user/1000/swamp-ssh"]) {
-                const directory = base + "/" + prefix + "255.255.255.255";
+                const directory = base + "/" + prefix + "255-255-255-255";
                 const temporary = directory +
                     "/afebf7b4834a.sock.HBR1rp5mk66BeRYl";
                 assertEquals(

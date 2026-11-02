@@ -45,8 +45,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbmq-" + string(inputs.intent.target_ssh.host) }}'
-      globalArgs: &id001 {name: '${{ "dbmq-" + string(inputs.intent.target_ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ ("dbmq-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}'
+      globalArgs: &id001 {name: '${{ ("dbmq-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-dbc-mysql-" + run.id }}']}
@@ -58,7 +58,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbmq-" + string(inputs.intent.target_ssh.host) }}'
+      behaviorName: '${{ ("dbmq-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}'
       globalArgs: *id001
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-dbc-mysql-" + run.id }}', direction: to, recursive: true}
@@ -70,7 +70,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbmq-" + string(inputs.intent.target_ssh.host) }}'
+      behaviorName: '${{ ("dbmq-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-mysql-" + run.id + "/mysql_clone_probe.py" }}', '${{
@@ -103,7 +103,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbmq-" + string(inputs.intent.target_ssh.host) }}'
+      behaviorName: '${{ ("dbmq-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-mysql-" + run.id + "/mysql_clone_copy.py" }}', '${{
@@ -123,7 +123,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "dbmq-" + string(inputs.intent.target_ssh.host) }}'
+      behaviorName: '${{ ("dbmq-" + string(inputs.intent.target_ssh.host)).split(".").join("-") }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-dbc-mysql-" + run.id }}']}

@@ -80,10 +80,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -113,7 +113,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -133,10 +133,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
-        name: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -167,7 +167,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -207,7 +207,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -238,7 +238,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -269,10 +269,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -366,7 +366,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:

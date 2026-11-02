@@ -42,10 +42,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-prepare-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("ic-prepare-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: &ssh
-            name: '${{ "ic-prepare-" + string(inputs.intent.ssh_execution.target.host) }}'
+            name: '${{ ("ic-prepare-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -66,7 +66,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-source-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("ic-source-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ssh
           inputs:
@@ -83,7 +83,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-environment-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("ic-environment-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ssh
           inputs:
@@ -101,7 +101,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-setup-" + string(inputs.intent.ssh_execution.target.host) }}'
+          behaviorName: '${{ ("ic-setup-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ssh
           inputs:

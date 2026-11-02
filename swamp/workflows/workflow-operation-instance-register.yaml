@@ -51,10 +51,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-filesystem-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: script
       globalArgs: &id001
-        name: '${{ "reg-filesystem-" + string(inputs.intent.ssh_execution.target.host) }}'
+        name: '${{ ("reg-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -78,7 +78,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-top-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-top-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -102,7 +102,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-common-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-common-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-worktrees-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-worktrees-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -166,7 +166,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-origin-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-origin-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: script
       globalArgs: *id001
       inputs:
@@ -182,7 +182,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-branch-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-branch-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -206,7 +206,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-commit-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-commit-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -231,7 +231,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-default-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-default-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -293,7 +293,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "reg-protect-environment-" + string(inputs.intent.ssh_execution.target.host) }}'
+      behaviorName: '${{ ("reg-protect-environment-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: script
       globalArgs: *id001
       inputs:
