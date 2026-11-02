@@ -1,6 +1,6 @@
 type Fields = Record<string, unknown>;
 const expr = (source: string) => "${{ " + source + " }}";
-const placement = { target: "orbit-node-209" };
+const placement = { labels: { role: "swamp" } };
 
 /** Native per-rule actions use canonical arguments and UFW idempotence. */
 export function roleFirewallSteps(

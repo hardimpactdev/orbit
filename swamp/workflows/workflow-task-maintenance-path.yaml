@@ -21,10 +21,10 @@ inputs:
   - remote_assets
 jobs:
 - name: inspect
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: inspect-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -51,7 +51,7 @@ jobs:
         stdin: ${{ inputs.place_json }}
         timeoutSec: 3600
   - name: before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -65,7 +65,7 @@ jobs:
       condition:
         type: succeeded
   - name: audit-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -86,7 +86,7 @@ jobs:
       condition:
         type: succeeded
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -101,10 +101,10 @@ jobs:
       condition:
         type: succeeded
 - name: target_releases
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: release-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -123,10 +123,10 @@ jobs:
     condition:
       type: succeeded
 - name: update
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: target-age
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -136,7 +136,7 @@ jobs:
         place: ${{ inputs.place }}
         changed: ${{ steps.plan.outputs.release_targets }}
         readings: ${{ steps }}
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-fetch
     task:
@@ -156,7 +156,7 @@ jobs:
     - step: target-age
       condition:
         type: succeeded
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-catalog
     task:
@@ -174,7 +174,7 @@ jobs:
     - step: expo-fetch
       condition:
         type: succeeded
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-validate
     task:
@@ -190,7 +190,7 @@ jobs:
     - step: expo-catalog
       condition:
         type: succeeded
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-cleanup
     task:
@@ -210,7 +210,7 @@ jobs:
         type: always
     allowFailure: true
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -235,7 +235,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.plan.outputs.prepare == null }}
   - name: manifest
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -260,7 +260,7 @@ jobs:
         - type: skipped
     guard: ${{ inputs.place.mode != "package" }}
   - name: update
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -284,7 +284,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: inspect-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -304,7 +304,7 @@ jobs:
       condition:
         type: succeeded
   - name: after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -318,7 +318,7 @@ jobs:
       condition:
         type: succeeded
   - name: audit-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -339,7 +339,7 @@ jobs:
       condition:
         type: succeeded
   - name: verify
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -359,10 +359,10 @@ jobs:
     condition:
       type: succeeded
 - name: changed_releases
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: release-changed-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -381,10 +381,10 @@ jobs:
     condition:
       type: succeeded
 - name: finalize
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: age-verified
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -396,7 +396,7 @@ jobs:
         readings: ${{ steps }}
         prefix: release-changed
   - name: restore-plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -412,7 +412,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: restore-ranges
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -445,7 +445,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: synchronize-lock
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -478,7 +478,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: inspect-restored
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -510,7 +510,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: restored
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -525,7 +525,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: synchronized
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -541,7 +541,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

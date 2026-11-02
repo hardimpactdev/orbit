@@ -15,10 +15,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: process
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: 'Resolve check assets'
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
@@ -26,7 +26,7 @@ jobs:
       methodName: lifecycle
       inputs: {control: '${{ inputs.intent.control }}'}
   - name: 'Make the asset directory'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Resolve check assets', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -38,7 +38,7 @@ jobs:
               inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {name: prepare, hosts: [target], argv: [/usr/bin/mkdir, -m, '0700', -p, '${{ "/tmp/orbit-process-" + run.id }}'], sudo: false}
   - name: 'Copy check assets'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Make the asset directory', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -49,7 +49,7 @@ jobs:
       inputs: {name: scripts, direction: to, hosts: [target], src: '${{ steps["Resolve check assets"].outputs.scripts_directory }}', dst: '${{ "/tmp/orbit-process-" + run.id }}',
         recursive: true}
   - name: 'Inspect the Process'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Copy check assets', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -60,7 +60,7 @@ jobs:
       inputs: {name: inspect, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, '${{
             "/tmp/orbit-process-" + run.id + "/scripts" + "/inspect.py" }}'], sudo: true}
   - name: 'Read the observation'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Inspect the Process', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -69,7 +69,7 @@ jobs:
       methodName: decode
       inputs: {stdout: '${{ steps["Inspect the Process"].outputs.stdout }}'}
   - name: 'Disable it'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || !steps["Read the observation"].outputs.present }}
     task:
@@ -81,7 +81,7 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', enabled: false}
       inputs: {}
   - name: 'Stop it'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Disable it', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || !steps["Read the observation"].outputs.present }}
     task:
@@ -93,7 +93,7 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "systemctl stop " + inputs.intent.control.name }}'}
       inputs: {}
   - name: 'Clear failures'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Stop it', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || steps["Read the observation"].outputs.state != "failed" }}
     task:
@@ -106,7 +106,7 @@ jobs:
           }}'}
       inputs: {}
   - name: 'Remove the unit'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Stop it', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Clear failures', condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || steps.exists(key, steps[key].status == "failed") }}
@@ -120,7 +120,7 @@ jobs:
           }}', ensure: absent}
       inputs: {}
   - name: 'Remove env files'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Remove the unit', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" }}
     task:
@@ -133,7 +133,7 @@ jobs:
           }}', ensure: absent}
       inputs: {}
   - name: 'Remove the dev environment'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Remove the unit', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.vite == null }}
     task:
@@ -146,7 +146,7 @@ jobs:
           : "/unused" }}', ensure: absent}
       inputs: {}
   - name: 'Reload systemd'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Remove the unit', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" }}
     task:
@@ -158,7 +158,7 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: systemctl daemon-reload}
       inputs: {}
   - name: 'Stop the container'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Read the observation', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "docker" || !steps["Read the observation"].outputs.present }}
     task:
@@ -171,7 +171,7 @@ jobs:
           stop " + inputs.intent.control.name }}'}
       inputs: {}
   - name: 'Remove the container'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Stop the container', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "docker" }}
     task:
@@ -184,7 +184,7 @@ jobs:
           rm " + inputs.intent.control.name }}'}
       inputs: {}
   - name: 'Clean up'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Reload systemd', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Remove env files', condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}, {step: 'Remove the dev environment', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Remove the container',
         condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
@@ -197,7 +197,7 @@ jobs:
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
       inputs: {name: cleanup, hosts: [target], argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-process-" + run.id }}'], sudo: true}
   - name: 'Report the result'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Clean up', condition: {type: succeeded}}]
     guard: ${{ steps.exists(key, steps[key].status == "failed") }}
     task:

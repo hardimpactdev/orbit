@@ -100,10 +100,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: model
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: anchor-ensure
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -160,7 +160,7 @@ jobs:
           ORBIT_MODEL_ANCHOR: ${{ vault.get(inputs.execution_secrets.model_router_anchor.vault,
             inputs.execution_secrets.model_router_anchor.key) }}
   - name: anchor-access
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -204,7 +204,7 @@ jobs:
       condition:
         type: succeeded
   - name: anonymous-before
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -245,7 +245,7 @@ jobs:
       condition:
         type: succeeded
   - name: key-issue
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -307,7 +307,7 @@ jobs:
       condition:
         type: succeeded
   - name: key-access
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -351,7 +351,7 @@ jobs:
       condition:
         type: succeeded
   - name: anchor-after
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -395,7 +395,7 @@ jobs:
       condition:
         type: succeeded
   - name: anonymous-after
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -436,7 +436,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior

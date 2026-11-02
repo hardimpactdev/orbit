@@ -18,7 +18,7 @@ class RouteUpstreamFirewallNative(RouteLanFixture):
         flow = yaml.safe_load((ROOT / name).read_text())
         for job in flow["jobs"]:
             for step in job["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
         flow = json.loads(json.dumps(flow).replace("/usr/sbin/ufw", fake))
         (self.repo / name).write_text(yaml.safe_dump(flow, sort_keys=False))
         self.value = {
@@ -115,7 +115,7 @@ class RouteHttpProbeNative(NativeTestCase):
             (ROOT / "workflows/workflow-cluster-router-probe.yaml").read_text()
         )
         for step in flow["jobs"][0]["steps"]:
-            step.pop("target", None)
+            step.pop("target", None); step.pop("labels", None)
         (self.repo / "workflows/workflow-cluster-router-probe.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)
         )
@@ -125,7 +125,7 @@ class RouteHttpProbeNative(NativeTestCase):
             )
             for job in root["jobs"]:
                 for step in job["steps"]:
-                    step.pop("target", None)
+                    step.pop("target", None); step.pop("labels", None)
             (self.repo / f"workflows/workflow-{self.workflow_name}.yaml").write_text(
                 yaml.safe_dump(root, sort_keys=False)
             )
@@ -166,7 +166,7 @@ class RouteVerificationRootNative(RouteHttpProbeNative):
             (ROOT / "workflows/workflow-operation-route-verification.yaml").read_text()
         )
         for step in root["jobs"][0]["steps"]:
-            step.pop("target", None)
+            step.pop("target", None); step.pop("labels", None)
         (self.repo / "workflows/workflow-operation-route-verification.yaml").write_text(
             yaml.safe_dump(root, sort_keys=False)
         )

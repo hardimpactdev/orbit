@@ -7,10 +7,10 @@ vaults:
 - orbit-control-inputs
 jobs:
 - name: checks
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -18,7 +18,7 @@ jobs:
       methodName: assets
       inputs: {}
   - name: read-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -42,7 +42,7 @@ jobs:
       condition:
         type: succeeded
   - name: ci-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -57,7 +57,7 @@ jobs:
       condition:
         type: succeeded
   - name: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
@@ -92,7 +92,7 @@ jobs:
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
   - name: copy_assets-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
@@ -112,7 +112,7 @@ jobs:
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
   - name: snapshot-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
@@ -134,7 +134,7 @@ jobs:
       != "succeeded" }}
     allowFailure: true
   - name: observed-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
@@ -151,7 +151,7 @@ jobs:
       condition:
         type: always
   - name: cleanup_remote-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
@@ -174,7 +174,7 @@ jobs:
       != "succeeded" }}
     allowFailure: true
   - name: settle-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -188,7 +188,7 @@ jobs:
       condition:
         type: succeeded
   - name: revoke_read-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
@@ -210,7 +210,7 @@ jobs:
     guard: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs.pending }}
     allowFailure: true
   - name: collect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -226,7 +226,7 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

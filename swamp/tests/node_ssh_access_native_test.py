@@ -52,10 +52,10 @@ print(json.dumps({'authorized':True,'changed':True}))
         fixture.chmod(0o700)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-node-ssh-access-converge.yaml').read_text())
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             self.assertEqual(job.pop('labels'), {'node': '209'})
             for step in job['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 self.assertEqual(step.pop('labels'), {'node': '209'})
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     step['task']['globalArgs']['sshBinary'] = str(fixture)

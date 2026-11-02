@@ -96,10 +96,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: read
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     task:
       type: behavior
@@ -109,7 +109,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     task:
@@ -121,7 +121,7 @@ jobs:
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -138,7 +138,7 @@ jobs:
         - 0
         - 1
   - name: copy
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     dependsOn:
@@ -161,7 +161,7 @@ jobs:
         direction: to
         recursive: true
   - name: prepared
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     dependsOn:
     - step: copy
@@ -173,7 +173,7 @@ jobs:
       severity: high
       message: Database read command files unavailable.
   - name: sql
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     dependsOn:
@@ -189,7 +189,7 @@ jobs:
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -214,7 +214,7 @@ jobs:
           }}
     guard: ${{ inputs.intent.driver == "sqlite" }}
   - name: sqlite
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     dependsOn:
@@ -230,7 +230,7 @@ jobs:
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -256,7 +256,7 @@ jobs:
           }}
     guard: ${{ inputs.intent.driver != "sqlite" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -289,7 +289,7 @@ jobs:
           ? steps.sqlite.outputs.exitCode : -1) : (has(steps.sql.outputs) && has(steps.sql.outputs.exitCode) ? steps.sql.outputs.exitCode
           : -1) }}'
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ steps.result.outputs.exitCode != 0 }}
     allowFailure: true
     writes: true
@@ -306,7 +306,7 @@ jobs:
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -324,7 +324,7 @@ jobs:
         - 0
         - 1
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

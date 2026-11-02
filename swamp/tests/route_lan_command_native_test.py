@@ -110,7 +110,7 @@ else:raise SystemExit(9)
             )
             for job in workflow["jobs"]:
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
             (self.repo / f"workflows/workflow-{name}.yaml").write_text(
                 yaml.safe_dump(workflow, sort_keys=False)

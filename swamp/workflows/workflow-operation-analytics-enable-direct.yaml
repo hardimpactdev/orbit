@@ -77,7 +77,7 @@ jobs:
 - name: prepare
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-site'
@@ -93,7 +93,7 @@ jobs:
       type: succeeded
   steps:
   - name: site
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -113,7 +113,7 @@ jobs:
       type: succeeded
   steps:
   - name: certificates
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: route-certificate-publish
@@ -142,7 +142,7 @@ jobs:
       type: succeeded
   steps:
   - name: router
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -162,7 +162,7 @@ jobs:
       type: succeeded
   steps:
   - name: probes
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: cluster-router-probe
@@ -182,7 +182,7 @@ jobs:
       type: succeeded
   steps:
   - name: ingress
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -202,7 +202,7 @@ jobs:
       type: succeeded
   steps:
   - name: dns
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: route-dns-publish
@@ -222,7 +222,7 @@ jobs:
       type: succeeded
   steps:
   - name: grace
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: route-dns-grace
@@ -235,7 +235,7 @@ jobs:
       type: succeeded
   steps:
   - name: retire
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -255,7 +255,7 @@ jobs:
       type: succeeded
   steps:
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: route-certificate-remove
@@ -277,7 +277,7 @@ jobs:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-site'

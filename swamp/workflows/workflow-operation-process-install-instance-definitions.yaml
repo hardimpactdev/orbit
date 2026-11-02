@@ -37,10 +37,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: instance
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: members
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach: {item: member, in: '${{ inputs.intent.members }}'}
         task:
           type: workflow
@@ -52,7 +52,7 @@ jobs:
             intent: ${{ self.member.intent }}
             execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: members, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task:
           type: behavior

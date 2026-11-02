@@ -22,7 +22,6 @@ jobs:
   - name: source
     steps:
       - name: input
-        target: '${{ "orbit-node-" + string(inputs.intent.target_node_id) }}'
         labels: {node: '${{ string(inputs.intent.target_node_id) }}'}
         task:
           type: behavior
@@ -33,7 +32,6 @@ jobs:
             retired: '${{ inputs.intent.retired }}'
       - name: remove
         dependsOn: [{step: input, condition: {type: succeeded}}]
-        target: '${{ "orbit-node-" + string(inputs.intent.target_node_id) }}'
         labels: {node: '${{ string(inputs.intent.target_node_id) }}'}
         writes: true
         task:

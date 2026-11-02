@@ -31,7 +31,7 @@ jobs:
 - name: publication
   steps:
   - name: read-records
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -56,7 +56,7 @@ jobs:
         - /usr/bin/cat
         - /etc/dnsmasq.d/orbit-records.conf
   - name: read-catalog
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -74,7 +74,7 @@ jobs:
       condition:
         type: succeeded
   - name: publish
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: read-records
       condition:
@@ -102,7 +102,7 @@ jobs:
           - *id002
           - ${{ inputs.intent.after }}
   - name: restore
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: read-records
       condition:
@@ -132,7 +132,7 @@ jobs:
           - ${{ inputs.intent.after }}
     guard: ${{ steps.publish.status != "failed" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: publish
       condition:

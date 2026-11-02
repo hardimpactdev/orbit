@@ -45,10 +45,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provision
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: vm_inputs
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -58,7 +58,7 @@ jobs:
         execution_secrets: ${{ inputs.execution_secrets }}
     dependsOn: []
   - name: vm
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provision
@@ -73,7 +73,7 @@ jobs:
       condition:
         type: succeeded
   - name: guest
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -87,7 +87,7 @@ jobs:
       condition:
         type: succeeded
   - name: source
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: guest
       condition:
@@ -104,7 +104,7 @@ jobs:
           : {} }}'
         workspace: ${{ steps.guest.outputs.workspace }}
   - name: proof_club
-    target: orbit-node-209
+    labels: {role: swamp}
     queueTimeout: 10
     guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || !has(inputs.execution_secrets.proof_club) }}
     dependsOn:
@@ -144,7 +144,7 @@ jobs:
         - ${{ inputs.intent.workspace.user }}
         stdin: ${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}
   - name: shape_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -167,7 +167,7 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -184,7 +184,7 @@ jobs:
       condition:
         type: succeeded
   - name: outcome
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

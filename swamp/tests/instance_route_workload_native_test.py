@@ -75,7 +75,7 @@ raise SystemExit(result.returncode)
         raw = (ROOT / "workflows/workflow-instance-route-workload.yaml").read_text()
         workflow = yaml.safe_load(raw)
         for step in workflow["jobs"][0]["steps"]:
-            self.assertEqual(step.pop("target"), "orbit-node-209")
+            self.assertEqual(step.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", step)
             if step["name"] == "runtime-pool":
                 step["task"]["globalArgs"]["path"] = str(self.pool)

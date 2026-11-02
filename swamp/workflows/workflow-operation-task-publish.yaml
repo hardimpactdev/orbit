@@ -47,13 +47,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publish
-  target: orbit-node-209
-  labels: &id001
-    node: '209'
+  labels: {role: swamp}
   steps:
   - name: prepare
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -63,8 +60,7 @@ jobs:
         intent: ${{ inputs.intent }}
         node_id: ${{ inputs.node_id }}
   - name: prepare_remote
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -93,8 +89,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy_assets
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -112,8 +107,7 @@ jobs:
       condition:
         type: succeeded
   - name: snapshot_before
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -132,8 +126,7 @@ jobs:
       condition:
         type: succeeded
   - name: verify_before
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -147,8 +140,7 @@ jobs:
       condition:
         type: succeeded
   - name: export
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -168,8 +160,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.verify_before.outputs.admitted }}
   - name: export_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -182,8 +173,7 @@ jobs:
       condition:
         type: succeeded
   - name: prepare_local
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -201,8 +191,7 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.export_result.outputs.exported) || !steps.export_result.outputs.exported }}
   - name: copy_bundle
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -219,8 +208,7 @@ jobs:
       condition:
         type: succeeded
   - name: import
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -239,8 +227,7 @@ jobs:
       condition:
         type: succeeded
   - name: import_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -253,8 +240,7 @@ jobs:
       condition:
         type: succeeded
   - name: remote_tip
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -275,8 +261,7 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
   - name: tip
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -289,8 +274,7 @@ jobs:
       condition:
         type: succeeded
   - name: push
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -311,8 +295,7 @@ jobs:
         type: succeeded
     guard: ${{ has(steps.tip.outputs.error_code) || steps.tip.outputs.commit == inputs.intent.commit }}
   - name: push_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -328,8 +311,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: snapshot_after
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -348,8 +330,7 @@ jobs:
       condition:
         type: succeeded
   - name: verify_after
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -363,8 +344,7 @@ jobs:
       condition:
         type: succeeded
   - name: read_pull
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -386,8 +366,7 @@ jobs:
     guard: ${{ inputs.intent.pull_request == null || !steps.verify_after.outputs.admitted || !(steps.tip.outputs.commit == inputs.intent.commit || (has(steps.push_result.outputs.pushed)
       && steps.push_result.outputs.pushed)) }}
   - name: write_pull
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -408,8 +387,7 @@ jobs:
       condition:
         type: succeeded
   - name: revoke
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -433,8 +411,7 @@ jobs:
       condition:
         type: always
   - name: cleanup_remote
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -454,8 +431,7 @@ jobs:
       condition:
         type: always
   - name: cleanup_local
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -473,8 +449,7 @@ jobs:
       condition:
         type: always
   - name: shape_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -564,8 +539,7 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -582,8 +556,7 @@ jobs:
       condition:
         type: succeeded
   - name: outcome
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

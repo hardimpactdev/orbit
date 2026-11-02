@@ -31,7 +31,7 @@ jobs:
 - name: dns
   steps:
   - name: read-records
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -56,7 +56,7 @@ jobs:
         - /usr/bin/cat
         - /etc/dnsmasq.d/orbit-records.conf
   - name: read-catalog
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -74,7 +74,7 @@ jobs:
       condition:
         type: succeeded
   - name: compose
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: read-catalog
       condition:
@@ -92,7 +92,7 @@ jobs:
           records: ${{ steps["read-records"].outputs.stdout }}
           catalog: ${{ steps["read-catalog"].outputs.stdout }}
   - name: catalog-directory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -113,7 +113,7 @@ jobs:
       condition:
         type: succeeded
   - name: records
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -139,7 +139,7 @@ jobs:
       condition:
         type: succeeded
   - name: catalog
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -165,7 +165,7 @@ jobs:
       condition:
         type: succeeded
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -183,7 +183,7 @@ jobs:
       condition:
         type: succeeded
   - name: restart-backend
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -202,7 +202,7 @@ jobs:
       condition:
         type: succeeded
   - name: listener
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -222,7 +222,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

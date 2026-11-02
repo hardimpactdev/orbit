@@ -30,10 +30,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: clone
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
@@ -41,17 +41,17 @@ jobs:
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: target_dir
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "dbtq-" + run.id }}
-      globalArgs: &id001 {name: '${{ "dbtq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+      globalArgs: &id001 {name: '${{ "dbtq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-dbc-target-" + run.id }}']}
   - name: target_files
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: succeeded}}
     - {step: target_dir, condition: {type: succeeded}}
@@ -63,7 +63,7 @@ jobs:
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-dbc-target-" + run.id }}', direction: to, recursive: true}
   - name: local_copy
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: target_files, condition: {type: succeeded}}
     guard: ${{ steps.assets.status != "succeeded" || inputs.intent.variant != "sqlite_local" }}
@@ -77,7 +77,7 @@ jobs:
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_local.py" }}', '${{ steps.assets.outputs.intent_json
             }}'], okExitCodes: [0, 1]}
   - name: source_dir
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: succeeded}}
     guard: ${{ steps.assets.status != "succeeded" || inputs.intent.variant != "sqlite_remote" }}
@@ -85,12 +85,12 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "dbsq-" + run.id }}
-      globalArgs: &id002 {name: '${{ "dbsq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+      globalArgs: &id002 {name: '${{ "dbsq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.source_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.source_ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-dbc-source-" + run.id }}']}
   - name: source_files
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: source_dir, condition: {type: succeeded}}
     - {step: assets, condition: {type: succeeded}}
@@ -103,7 +103,7 @@ jobs:
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-dbc-source-" + run.id }}', direction: to, recursive: true}
   - name: export
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: source_files, condition: {type: succeeded}}
     guard: ${{ steps.assets.status != "succeeded" || inputs.intent.variant != "sqlite_remote" }}
@@ -117,7 +117,7 @@ jobs:
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-source-" + run.id + "/sqlite_clone_export.py" }}', '${{ steps.assets.outputs.intent_json
             }}'], okExitCodes: [0, 1]}
   - name: snapshot
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: export, condition: {type: succeeded}}
     guard: ${{ steps.assets.status != "succeeded" || inputs.intent.variant != "sqlite_remote" }}
@@ -128,7 +128,7 @@ jobs:
       methodName: snapshot
       inputs: {stdout: '${{ steps.export.outputs.stdout }}', exit_code: '${{ steps.export.outputs.exitCode }}'}
   - name: transfer_dir
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: snapshot, condition: {type: succeeded}}
     task:
@@ -140,7 +140,7 @@ jobs:
 
           mkdir -p -- /tmp/orbit-dbc-transfer-${{ run.id }}'}
   - name: download
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: snapshot, condition: {type: succeeded}}
     - {step: transfer_dir, condition: {type: succeeded}}
@@ -153,7 +153,7 @@ jobs:
       inputs: {hosts: 'name:server', src: '${{ inputs.intent.source.directory + "/snapshot.sqlite" }}', dst: '${{ "/tmp/orbit-dbc-transfer-" + run.id + "/snapshot.sqlite"
           }}', direction: from}
   - name: prepare_target
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: target_files, condition: {type: succeeded}}
     - {step: download, condition: {type: succeeded}}
@@ -167,7 +167,7 @@ jobs:
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_prepare.py" }}', '${{ steps.assets.outputs.intent_json
             }}'], okExitCodes: [0, 1]}
   - name: target_checked
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepare_target, condition: {type: succeeded}}
     guard: ${{ steps.assets.status != "succeeded" || inputs.intent.variant != "sqlite_remote" }}
@@ -177,7 +177,7 @@ jobs:
       severity: high
       message: Clone target is unavailable.
   - name: upload
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: target_checked, condition: {type: succeeded}}
     - {step: download, condition: {type: succeeded}}
@@ -189,7 +189,7 @@ jobs:
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ "/tmp/orbit-dbc-transfer-" + run.id + "/snapshot.sqlite" }}', dst: '${{ inputs.intent.target.incoming }}', direction: to}
   - name: install
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: upload, condition: {type: succeeded}}
     - {step: snapshot, condition: {type: succeeded}}
@@ -204,7 +204,7 @@ jobs:
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_install.py" }}', '${{ steps.assets.outputs.intent_json
             }}', '${{ steps.snapshot.outputs.json }}'], okExitCodes: [0, 1]}
   - name: cleanup_source
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: always}}
     - {step: target_dir, condition: {type: always}}
@@ -231,7 +231,7 @@ jobs:
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-source-" + run.id + "/sqlite_clone_cleanup_source.py" }}', '${{ steps.assets.outputs.intent_json
             }}'], okExitCodes: [0, 1]}
   - name: cleanup_incoming
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: always}}
     - {step: target_dir, condition: {type: always}}
@@ -258,7 +258,7 @@ jobs:
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_cleanup_target.py" }}', '${{ steps.assets.outputs.intent_json
             }}'], okExitCodes: [0, 1]}
   - name: cleanup_transfer
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: always}}
     - {step: target_dir, condition: {type: always}}
@@ -282,7 +282,7 @@ jobs:
       methodName: execute
       inputs: {run: 'rm -rf -- /tmp/orbit-dbc-transfer-${{ run.id }}'}
   - name: cleanup_source_scripts
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: cleanup_source, condition: {type: always}}
     guard: ${{ steps.assets.status != "succeeded" || inputs.intent.variant != "sqlite_remote" }}
@@ -295,7 +295,7 @@ jobs:
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-dbc-source-" + run.id }}']}
   - name: cleanup_target_scripts
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: cleanup_incoming, condition: {type: always}}
     - {step: local_copy, condition: {type: always}}
@@ -308,7 +308,7 @@ jobs:
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-dbc-target-" + run.id }}']}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: always}}
     - {step: target_dir, condition: {type: always}}
@@ -337,7 +337,7 @@ jobs:
       inputs: {expected: '${{ inputs.intent.variant == "sqlite_local" ? ["local_copy","cleanup_transfer","cleanup_target_scripts"] : ["install","cleanup_source","cleanup_incoming","cleanup_transfer","cleanup_source_scripts","cleanup_target_scripts"]
           }}', steps: '${{ steps }}'}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: result, condition: {type: succeeded}}
     task:

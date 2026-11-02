@@ -47,7 +47,7 @@ jobs:
 - name: readiness
   steps:
   - name: reachable
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications }}
@@ -74,7 +74,7 @@ jobs:
         argv:
         - /usr/bin/true
   - name: selection
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: reachable
       condition:
@@ -90,7 +90,7 @@ jobs:
 - name: update
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: workload
       in: ${{ steps.selection.outputs.intent.workloads }}
@@ -110,7 +110,7 @@ jobs:
           plan: ${{ self.workload.prepare }}
         execution_secrets: {}
   - name: forward
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare
       condition:
@@ -128,7 +128,7 @@ jobs:
         execution_secrets: ${{ inputs.execution_secrets }}
         parent_run_id: ${{ run.id }}
   - name: retire
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: workload
       in: ${{ steps.selection.outputs.intent.workloads }}
@@ -156,7 +156,7 @@ jobs:
           plan: ${{ self.workload.selected }}
         execution_secrets: {}
   - name: restore-workload
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: workload
       in: ${{ steps.selection.outputs.intent.workloads }}
@@ -189,7 +189,7 @@ jobs:
           plan: ${{ self.workload.restore }}
         execution_secrets: {}
   - name: restore
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare
       condition:
@@ -218,7 +218,7 @@ jobs:
         execution_secrets: ${{ inputs.execution_secrets }}
         parent_run_id: ${{ run.id }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare
       condition:
@@ -250,7 +250,7 @@ jobs:
         admitted: ${{ steps.selection.outputs.admitted }}
         retained_on_nodes: ${{ steps.selection.outputs.retained_on_nodes }}
   - name: complete
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

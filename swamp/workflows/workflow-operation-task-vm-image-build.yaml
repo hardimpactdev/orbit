@@ -3,7 +3,7 @@ name: operation-task-vm-image-build
 tags: {}
 jobs:
 - name: admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: intent
     writes: true
@@ -22,7 +22,7 @@ jobs:
   - job: admission
     condition:
       type: succeeded
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: reset
     writes: true
@@ -191,7 +191,7 @@ jobs:
       condition:
         type: succeeded
   - name: ssh-enable
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare
       condition:
@@ -287,7 +287,7 @@ jobs:
       condition:
         type: succeeded
   - name: ssh-smoke
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: smoke
       condition:
@@ -429,7 +429,7 @@ jobs:
   - job: build
     condition:
       type: always
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: cleanup
     writes: true

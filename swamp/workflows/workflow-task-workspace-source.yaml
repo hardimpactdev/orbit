@@ -46,7 +46,7 @@ jobs:
 - name: source
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -56,7 +56,7 @@ jobs:
         intent: ${{ inputs.intent }}
     dependsOn: []
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-workspace
@@ -71,7 +71,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: control
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -89,7 +89,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: clone_private
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -120,7 +120,7 @@ jobs:
     guard: ${{ !has(inputs.execution_secrets.git_authorization) }}
     allowFailure: true
   - name: clone_public
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -143,7 +143,7 @@ jobs:
     guard: ${{ has(inputs.execution_secrets.git_authorization) }}
     allowFailure: true
   - name: bundle
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -173,7 +173,7 @@ jobs:
         - type: skipped
     allowFailure: true
   - name: prepare_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -204,7 +204,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: copy_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -234,7 +234,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: copy_bundle
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -267,7 +267,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: import
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -302,7 +302,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: origin
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -336,7 +336,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: branch
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -369,7 +369,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: observe
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -404,7 +404,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: profile
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -419,7 +419,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: setup-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -458,7 +458,7 @@ jobs:
       in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -514,7 +514,7 @@ jobs:
       condition:
         type: always
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -532,7 +532,7 @@ jobs:
         type: always
     allowFailure: true
   - name: cleanup_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -562,7 +562,7 @@ jobs:
       condition:
         type: always
     allowFailure: true
-  target: orbit-node-209
+  labels: {role: swamp}
 name: task-workspace-source
 vaults:
 - orbit-control-inputs

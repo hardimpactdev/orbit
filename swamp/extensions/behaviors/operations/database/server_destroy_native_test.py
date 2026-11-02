@@ -57,9 +57,9 @@ print(json.dumps(result));sys.exit(code)
         child=yaml.safe_load((ROOT/'workflows/workflow-database-server-remove-container.yaml').read_text())
         for workflow in (self.workflow,child):
             for job in workflow['jobs']:
-                self.assertEqual(job.pop('target'),'orbit-node-209');self.assertNotIn('labels',job)
+                self.assertEqual(job.pop('labels'),{'role': 'swamp'});self.assertNotIn('labels',job)
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'),'orbit-node-209');self.assertNotIn('labels',step)
+                    self.assertEqual(step.pop('labels'),{'role': 'swamp'});self.assertNotIn('labels',step)
                     if step['task'].get('behaviorType')=='@swamp/ssh':
                         globals=step['task']['globalArgs'];globals['sshBinary']=str(fake);globals['scpBinary']=str(scp);globals['transport']['identityFile']=str(identity)
         (self.repo/'workflows/workflow-database-server-remove-container.yaml').write_text(yaml.safe_dump(child,sort_keys=False))

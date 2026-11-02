@@ -43,10 +43,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: destroy
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: vm
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-destroy
@@ -57,7 +57,7 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

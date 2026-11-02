@@ -48,10 +48,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: check
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -62,7 +62,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         operation_id: ${{ inputs.operation_id }}
   - name: prepare_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -91,7 +91,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -109,7 +109,7 @@ jobs:
       condition:
         type: succeeded
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -128,7 +128,7 @@ jobs:
       condition:
         type: succeeded
   - name: validation
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -141,7 +141,7 @@ jobs:
       condition:
         type: succeeded
   - name: original
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -161,7 +161,7 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.validation.outputs.valid) || !steps.validation.outputs.valid }}
   - name: setup-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -189,7 +189,7 @@ jobs:
     guard: ${{ self._index > 0 && (!("setup-" + string(self._index - 1) in steps) || !("outputs" in steps["setup-" + string(self._index - 1)]) || steps["setup-"
       + string(self._index - 1)].outputs.exitCode != 0) }}
   - name: setup_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -210,7 +210,7 @@ jobs:
       condition:
         type: always
   - name: before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -229,7 +229,7 @@ jobs:
       condition:
         type: succeeded
   - name: project
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -252,7 +252,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.setup_result.outputs.passed || inputs.intent.command == null }}
   - name: diff
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -275,7 +275,7 @@ jobs:
       condition:
         type: succeeded
   - name: base_prepare-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -302,7 +302,7 @@ jobs:
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
       != 0) }}
   - name: base_ready-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id002
     task:
       type: behavior
@@ -322,7 +322,7 @@ jobs:
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
       != 0) }}
   - name: base-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -356,7 +356,7 @@ jobs:
       != 0) || !("base_ready-" + string(self._index) in steps) || !("outputs" in steps["base_ready-" + string(self._index)]) || !("checkout_path" in steps["base_ready-"
       + string(self._index)].outputs) }}
   - name: deliverable-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -384,7 +384,7 @@ jobs:
     concurrency: 1
     guard: ${{ !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
   - name: after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -409,7 +409,7 @@ jobs:
       condition:
         type: succeeded
   - name: changed
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -430,7 +430,7 @@ jobs:
       condition:
         type: succeeded
   - name: local
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -444,7 +444,7 @@ jobs:
       condition:
         type: succeeded
   - name: commit
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -465,7 +465,7 @@ jobs:
         type: succeeded
     guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
   - name: candidate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -483,7 +483,7 @@ jobs:
       condition:
         type: succeeded
   - name: export
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -504,7 +504,7 @@ jobs:
     guard: ${{ has(steps.candidate.outputs.result.error_code) || inputs.intent.check_name == null || steps.candidate.outputs.result.outcome != "passed"
       || steps.candidate.outputs.result.commit == null }}
   - name: prepare_local
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -521,7 +521,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy_bundle
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -538,7 +538,7 @@ jobs:
       condition:
         type: succeeded
   - name: import
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -557,7 +557,7 @@ jobs:
       condition:
         type: succeeded
   - name: import_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -570,7 +570,7 @@ jobs:
       condition:
         type: succeeded
   - name: mint_github
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -591,7 +591,7 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
   - name: mint_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -604,7 +604,7 @@ jobs:
       condition:
         type: succeeded
   - name: push
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -625,7 +625,7 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
   - name: revoke_write
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -645,7 +645,7 @@ jobs:
     guard: ${{ !steps.finish.outputs.minted }}
     allowFailure: true
   - name: pushed_snapshot
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -664,7 +664,7 @@ jobs:
       condition:
         type: succeeded
   - name: finish
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -696,7 +696,7 @@ jobs:
       condition:
         type: always
   - name: pending
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
@@ -715,7 +715,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.finish.outputs.pending }}
   - name: revoke_unused_read
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -735,7 +735,7 @@ jobs:
     guard: ${{ steps.finish.outputs.pending || !steps.finish.outputs.minted }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -755,7 +755,7 @@ jobs:
       condition:
         type: succeeded
   - name: outcome
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -772,7 +772,7 @@ jobs:
       condition:
         type: succeeded
   - name: cleanup_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -792,7 +792,7 @@ jobs:
         type: always
     allowFailure: true
   - name: cleanup_local
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

@@ -60,7 +60,7 @@ jobs:
 - name: pairing
   steps:
   - name: issue
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-pairing'

@@ -90,10 +90,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: read-current
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -121,7 +121,7 @@ jobs:
           set -eu
           if sudo /usr/bin/test -f /etc/caddy/Caddyfile; then sudo /usr/bin/cat /etc/caddy/Caddyfile; fi
   - name: compose
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -144,7 +144,7 @@ jobs:
       condition:
         type: succeeded
   - name: apply-config
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -169,7 +169,7 @@ jobs:
       condition:
         type: succeeded
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -188,7 +188,7 @@ jobs:
       condition:
         type: succeeded
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -207,14 +207,14 @@ jobs:
       condition:
         type: succeeded
 - name: completion
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

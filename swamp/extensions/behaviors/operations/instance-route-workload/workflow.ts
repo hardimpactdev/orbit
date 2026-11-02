@@ -1,6 +1,6 @@
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
-const placement = { target: "orbit-node-209" };
+const placement = { labels: { role: "swamp" } };
 const failed = 'steps.exists(key, steps[key].status == "failed")';
 /** One captured workload phase, using native singleton branches and official actions. */
 export function workloadWorkflow(): Fields {

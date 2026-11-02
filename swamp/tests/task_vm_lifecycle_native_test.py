@@ -84,16 +84,16 @@ raise SystemExit(result.returncode)
         for filename in ("workflow-task-vm-provider-power.yaml", "workflow-operation-task-vm-resume.yaml", "workflow-operation-task-park.yaml", "workflow-task-vm-ssh-prepare.yaml"):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", job)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
                     task = step["task"]
                     if task.get("behaviorType") == "@swamp/ssh":
                         task["globalArgs"]["sshBinary"] = str(fake)
             (self.repo / "workflows" / filename).write_text(yaml.safe_dump(workflow, sort_keys=False))
-        ssh = {"control_node_id": 209, "identity_file": "/run/credentials/orbit-node-worker.service/proxy-ssh-identity", "public_key": "ssh-ed25519 PUBLIC", "target": {"name": "target", "host": "192.0.2.42", "user": "orbit", "port": 22, "host_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}}
+        ssh = {"control_node_id": 209, "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity", "public_key": "ssh-ed25519 PUBLIC", "target": {"name": "target", "host": "192.0.2.42", "user": "orbit", "port": 22, "host_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}}
         self.provider = {"task_vm_id": 42, "name": "tvm-42", "provider": "incus", "provider_id": None, "vm": {"project": "tasks", "name": "tvm-42", "pool":"tasks"}, "host_ssh_execution": ssh}
         self.envelope = {"operation_id": 7002, "node_id": 99, "kind": "task_vm.resume", "intent": self.provider, "execution_secrets": {}, "action": "start"}
         self.ssh = ssh

@@ -16,7 +16,7 @@ jobs:
   - name: group
     steps:
       - name: start
-        labels: { pool: migration, node: "209" }
+        labels: {role: swamp}
         task:
           type: model_method
           modelIdOrName: orbit-groups

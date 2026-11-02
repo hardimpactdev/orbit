@@ -1,7 +1,7 @@
 import { stringify } from "jsr:@std/yaml@1.0.12";
 type Fields = Record<string, unknown>;
 const ex = (source: string) => "${{ " + source + " }}";
-const placed = { target: "orbit-node-209" };
+const placed = { labels: { role: "swamp" } };
 const settled = {
     type: "or",
     conditions: [{ type: "succeeded" }, { type: "skipped" }],
@@ -182,7 +182,7 @@ function workflow(
             "Public input, native209 actions and typed terminal output; no Gateway callbacks.",
         vaults: [],
         inputs,
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         concurrency: 1,
         jobs,
     };

@@ -17,12 +17,12 @@ Deno.test("Database workflows use exactly one Node 209 selector per job and step
         for (const job of workflow.jobs) {
             for (const scope of [job, ...job.steps]) {
                 const location = `${file.name}/${job.name}/${scope.name}`;
-                assertEquals(scope.target, "orbit-node-209", location);
+                assertEquals(scope.labels, { role: "swamp" }, location);
                 assertEquals(
                     ["target", "labels", "platform"].filter((key) =>
                         key in scope
                     ),
-                    ["target"],
+                    ["labels"],
                     location,
                 );
             }

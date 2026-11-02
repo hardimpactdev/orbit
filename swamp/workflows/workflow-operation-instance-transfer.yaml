@@ -46,10 +46,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: transfer
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: destination-ready-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: []
         guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
         task:
@@ -64,7 +64,7 @@ jobs:
               root: '${{ inputs.intent.destination.root }}'
               destination: true
       - name: destination-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destination-ready-assets
             condition:
@@ -94,7 +94,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["destination-ready-assets"].outputs.script_body }}'
       - name: source-filesystem-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destination-ready
             condition:
@@ -111,7 +111,7 @@ jobs:
               path: '${{ inputs.intent.source.source }}'
               destination: false
       - name: source-filesystem
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-filesystem-assets
             condition:
@@ -139,7 +139,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-filesystem-assets"].outputs.script_body }}'
       - name: top
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-filesystem
             condition:
@@ -164,7 +164,7 @@ jobs:
               - rev-parse
               - '--show-toplevel'
       - name: git-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: top
             condition:
@@ -189,7 +189,7 @@ jobs:
               - rev-parse
               - '--absolute-git-dir'
       - name: common
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: git-directory
             condition:
@@ -215,7 +215,7 @@ jobs:
               - '--path-format=absolute'
               - '--git-common-dir'
       - name: origin-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: common
             condition:
@@ -231,7 +231,7 @@ jobs:
             input:
               checkout: '${{ inputs.intent.source.source }}'
       - name: origin
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: origin-assets
             condition:
@@ -248,7 +248,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["origin-assets"].outputs.script_body }}'
       - name: source-proof
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: origin
             condition:
@@ -268,7 +268,7 @@ jobs:
             common: '${{ steps["common"].outputs }}'
             filesystem: '${{ steps["source-filesystem"].outputs }}'
       - name: pause
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-proof
             condition:
@@ -287,7 +287,7 @@ jobs:
             intent: '${{ self.member.stop_intent }}'
             execution_secrets: {}
       - name: archive-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-proof
             condition:
@@ -309,7 +309,7 @@ jobs:
               git_directory: '${{ steps["source-proof"].outputs.git_directory }}'
               archive: '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
       - name: archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: archive-assets
             condition:
@@ -326,7 +326,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["archive-assets"].outputs.script_body }}'
       - name: download
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: archive
             condition:
@@ -344,7 +344,7 @@ jobs:
             dst: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
             direction: from
       - name: upload
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: download
             condition:
@@ -364,7 +364,7 @@ jobs:
             mode: '0600'
             atomic: true
       - name: install-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: upload
             condition:
@@ -381,7 +381,7 @@ jobs:
               path: '${{ inputs.intent.destination.destination }}'
               archive: '${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}'
       - name: install
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: install-assets
             condition:
@@ -398,7 +398,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["install-assets"].outputs.script_body }}'
       - name: destination-proof
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: install
             condition:
@@ -412,7 +412,7 @@ jobs:
           inputs:
             observation: '${{ steps["install"].outputs }}'
       - name: standalone
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destination-proof
             condition:
@@ -434,7 +434,7 @@ jobs:
               - core.bare
               - 'false'
       - name: worktree-config
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: standalone
             condition:
@@ -459,7 +459,7 @@ jobs:
               - 0
               - 5
       - name: environment-permissions-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: worktree-config
             condition:
@@ -475,7 +475,7 @@ jobs:
             input:
               application: '${{ inputs.intent.destination.application }}'
       - name: environment-permissions
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions-assets
             condition:
@@ -492,7 +492,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["environment-permissions-assets"].outputs.script_body }}'
       - name: workloads
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions
             condition:
@@ -511,7 +511,7 @@ jobs:
             intent: '${{ self.workload }}'
             execution_secrets: {}
       - name: activate
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions
             condition:
@@ -536,7 +536,7 @@ jobs:
               {"environment":inputs.execution_secrets[self.member.secret_field]}
               : {} }}
       - name: forward
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions
             condition:
@@ -560,7 +560,7 @@ jobs:
             execution_secrets: '${{ inputs.execution_secrets }}'
             parent_run_id: '${{ run.id }}'
       - name: restore
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: forward
             condition:
@@ -581,7 +581,7 @@ jobs:
             execution_secrets: '${{ inputs.execution_secrets }}'
             parent_run_id: '${{ run.id }}'
       - name: restore-source-runtime
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: restore
             condition:
@@ -605,7 +605,7 @@ jobs:
               {"environment":inputs.execution_secrets[self.member.secret_field]}
               : {} }}
       - name: discard-destination-runtime
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: restore
             condition:
@@ -634,7 +634,7 @@ jobs:
             intent: '${{ self.member.control_intent }}'
             execution_secrets: {}
       - name: discard-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: restore
             condition:
@@ -664,7 +664,7 @@ jobs:
             input:
               proof: '${{ steps["destination-proof"].outputs }}'
       - name: discard
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: discard-assets
             condition:
@@ -689,7 +689,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["discard-assets"].outputs.script_body }}'
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: discard
             condition:
@@ -709,7 +709,7 @@ jobs:
             transfer_id: '${{ inputs.intent.transfer_id }}'
             outcomes: '${{ steps }}'
       - name: retire-runtime
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: result
             condition:
@@ -731,7 +731,7 @@ jobs:
             intent: '${{ self.member.control_intent }}'
             execution_secrets: {}
       - name: retire-source-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: result
             condition:
@@ -755,7 +755,7 @@ jobs:
             input:
               proof: '${{ steps["source-proof"].outputs }}'
       - name: retire-source
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: retire-source-assets
             condition:
@@ -777,7 +777,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["retire-source-assets"].outputs.script_body }}'
       - name: prune-worktree
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: retire-source
             condition:
@@ -803,7 +803,7 @@ jobs:
               - worktree
               - prune
       - name: remove-source-archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: prune-worktree
             condition:
@@ -825,7 +825,7 @@ jobs:
               - '--'
               - '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
       - name: remove-destination-archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-source-archive
             condition:
@@ -845,7 +845,7 @@ jobs:
               - '--'
               - '${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}'
       - name: remove-local-archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-destination-archive
             condition:
@@ -863,7 +863,7 @@ jobs:
             env:
               ARCHIVE: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
       - name: complete
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-local-archive
             condition:

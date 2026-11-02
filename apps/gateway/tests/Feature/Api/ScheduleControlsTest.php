@@ -223,7 +223,7 @@ it('starts native enable with public 209 SSH inputs without invoking the PHP run
     expect($payload['inputs']['intent']['schedule'])->toBe(['id' => $this->schedule->id]);
     expect($payload['inputs']['intent']['ssh_execution']['target']['host'])->toBe($this->node->wireguard_ip);
     expect($payload['inputs']['intent']['ssh_execution']['control_node_id'])->toBe(209);
-    expect($payload['inputs']['intent']['ssh_execution']['identity_file'])->toBe('/run/credentials/orbit-node-worker.service/proxy-ssh-identity');
+    expect($payload['inputs']['intent']['ssh_execution']['identity_file'])->toBe('/etc/orbit/swamp-role-worker/ssh-identity');
     expect((array) $payload['inputs']['execution_secrets'])->toBe([]);
     expect(json_encode($payload))->not->toContain('private-command');
     config(['dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);

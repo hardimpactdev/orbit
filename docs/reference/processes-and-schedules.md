@@ -383,7 +383,7 @@ Schedule enable, manual run and destroy use their [direct Schedule workflow](/re
 
 When you destroy a Process, the kind uses the direct default for every Node and existing owning admission. It has no Gateway runtime lease, target hold, polled removal descriptor or public PHP execution branch. Native removal receives the admitted unit or container identity and, for Vite, the exact Instance environment path. The Gateway deletes the record only after native success. A refused removal keeps the record with its error. Retained synchronous Instance and Analytics helpers stay until their owning callers convert.
 
-The control workflow targets `orbit-node-209`; its admitted Node ID remains the SSH target and Operation owner.
+The control workflow runs on the swamp role's workers (`labels: {role: swamp}`); its admitted Node ID remains the SSH target and Operation owner.
 
 ### Native Process create
 

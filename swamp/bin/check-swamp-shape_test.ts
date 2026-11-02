@@ -826,8 +826,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
       name: "grace",
       steps: [{
         name: "wait-private-dns-ttl",
-        target: "orbit-node-209",
-        labels: { node: "209" },
+        labels: { role: "swamp" },
         task: {
           type: "behavior",
           behaviorType: "command/shell",
@@ -841,21 +840,9 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   const source = JSON.stringify(workflow);
   assertEquals(analyzeYaml(file, source).findings, []);
   const labelsOnly = JSON.parse(source);
-  delete labelsOnly.jobs[0].steps[0].target;
-  assertEquals(analyzeYaml(file, JSON.stringify(labelsOnly)).findings, []);
-  const roleOnly = structuredClone(labelsOnly);
-  roleOnly.jobs[0].steps[0].labels = { role: "swamp" };
-  assertEquals(analyzeYaml(file, JSON.stringify(roleOnly)).findings, []);
-  for (const labels of [{ role: "other" }, { role: "swamp", node: "209" }]) {
-    const changed = structuredClone(labelsOnly);
-    changed.jobs[0].steps[0].labels = labels;
-    assert(analyzeYaml(file, JSON.stringify(changed)).findings.some((f) => f.rule === "custom-control"));
-  }
-  const roleAndTarget = structuredClone(roleOnly);
-  roleAndTarget.jobs[0].steps[0].target = "orbit-node-209";
-  assert(analyzeYaml(file, JSON.stringify(roleAndTarget)).findings.some((f) => f.rule === "custom-control"));
   const targetOnly = JSON.parse(source);
   delete targetOnly.jobs[0].steps[0].labels;
+  targetOnly.jobs[0].steps[0].target = "orbit-node-209";
   assertEquals(analyzeYaml(file, JSON.stringify(targetOnly)).findings, []);
   const rejected = (path: string, source: string) =>
     assert(
@@ -867,7 +854,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   const unplaced = structuredClone(labelsOnly);
   delete unplaced.jobs[0].steps[0].labels;
   rejected(file, JSON.stringify(unplaced));
-  for (const labels of [{ node: "18" }, { node: 209 }, {}]) {
+  for (const labels of [{ node: "18" }, { node: 209 }, { node: "209" }, { role: "swamp", node: "209" }, {}]) {
     const changed = structuredClone(labelsOnly);
     changed.jobs[0].steps[0].labels = labels;
     rejected(file, JSON.stringify(changed));
@@ -881,7 +868,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
     placement.target = "orbit-node-18";
     rejected(file, JSON.stringify(changed));
     placement.target = "orbit-node-209";
-    assertEquals(analyzeYaml(file, JSON.stringify(changed)).findings, []);
+    rejected(file, JSON.stringify(changed));
   }
   for (const path of [
     "workflows/other.yaml",
@@ -891,10 +878,9 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   for (const [from, to] of [
     ['"name":"grace"', '"name":"other"'],
     ['"name":"wait-private-dns-ttl"', '"name":"other"'],
-    ['"target":"orbit-node-209"', '"target":"orbit-node-210"'],
-    ['"node":"209"', '"node":"210"'],
-    ['"node":"209"', '"node":209'],
-    ['"node":"209"', '"node":"209","other":"value"'],
+    ['"role":"swamp"', '"role":"other"'],
+    ['"role":"swamp"', '"role":"swamp","other":"value"'],
+    ['"labels":{"role":"swamp"}', '"target":"orbit-node-210"'],
     ['"type":"behavior"', '"type":"model_method"'],
     ['"behaviorType":"command/shell"', '"behaviorType":"@example/shell"'],
     ['"behaviorName":"route-dns-grace"', '"behaviorName":"other"'],

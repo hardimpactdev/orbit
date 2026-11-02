@@ -24,10 +24,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: remove
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: server-${{ self.server.server_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: {item: server, in: '${{ inputs.intent.servers }}'}
     task:
       type: workflow
@@ -40,7 +40,7 @@ jobs:
         intent: ${{ self.server.intent }}
         execution_secrets: {database_destroy: '${{ inputs.execution_secrets["server_" + string(self.server.server_id)] }}'}
   - name: sqlite-${{ self.database.connection_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: {item: database, in: '${{ inputs.intent.sqlite }}'}
     task:
       type: workflow
@@ -51,11 +51,11 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ self.database }}
 - name: result
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: remove, condition: {type: always}}]
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     task:
       type: behavior
@@ -66,7 +66,7 @@ jobs:
         expected: '${{ inputs.intent.servers.map(s, "server-" + string(s.server_id)) + inputs.intent.sqlite.map(s, "sqlite-" + string(s.connection_id)) }}'
         steps: ${{ steps }}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     dependsOn: [{step: result, condition: {type: succeeded}}]
     task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Owned database removal did not complete.}

@@ -30,10 +30,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: prepare
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -42,7 +42,7 @@ jobs:
         intent: ${{ inputs.intent }}
       behaviorName: ${{ "task-repository-assets-" + string(inputs.operation_id) }}
   - name: workspace
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-workspace
@@ -62,7 +62,7 @@ jobs:
       condition:
         type: succeeded
   - name: prepare-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -91,7 +91,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -120,14 +120,14 @@ jobs:
       condition:
         type: succeeded
 - name: paths
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: prepare
     condition:
       type: succeeded
   steps:
   - name: path-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: item
       in: ${{ steps.assets.outputs.paths }}
@@ -141,14 +141,14 @@ jobs:
         remote_assets: ${{ "/tmp/orbit-task-repository-"+run.id }}
     concurrency: 1
 - name: maintenance
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: paths
     condition:
       type: succeeded
   steps:
   - name: snapshot-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -174,7 +174,7 @@ jobs:
         - ${{ "/tmp/orbit-task-repository-"+run.id+"/scripts/snapshot.py" }}
         stdin: ${{ steps.assets.outputs.input_json }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: snapshot-after
       condition:
@@ -196,7 +196,7 @@ jobs:
           INTENT: ${{ steps.assets.outputs.input_json }}
           AFTER: ${{ steps["snapshot-after"].outputs.stdout }}
   - name: cleanup-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

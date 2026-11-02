@@ -54,10 +54,10 @@ Deno.test("Route update reuses its existing children with one209selector and pha
         for (const job of value.jobs) {
             for (const step of job.steps) {
                 assertEquals(
-                    step.target ?? job.target ?? value.target,
-                    "orbit-node-209",
+                    step.labels ?? job.labels ?? value.labels,
+                    { role: "swamp" },
                 );
-                assertEquals("labels" in step, false);
+                assertEquals("target" in step, false);
             }
         }
         if (value.name.startsWith("route-mutation-")) {
@@ -103,19 +103,19 @@ Deno.test("Route primitive and shared publication children use one209selector", 
                 ),
             ),
         ) as {
-            target?: string;
+            labels?: unknown;
             jobs: {
-                target?: string;
+                labels?: unknown;
                 steps: { target?: string; labels?: unknown }[];
             }[];
         };
         for (const job of flow.jobs) {
             for (const step of job.steps) {
                 assertEquals(
-                    step.target ?? job.target ?? flow.target,
-                    "orbit-node-209",
+                    step.labels ?? job.labels ?? flow.labels,
+                    { role: "swamp" },
                 );
-                assertEquals("labels" in step, false);
+                assertEquals("target" in step, false);
             }
         }
     }

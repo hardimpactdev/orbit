@@ -49,7 +49,7 @@ jobs:
 - name: lan
   steps:
   - name: observe-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task: &observe
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -68,7 +68,7 @@ jobs:
           transport: {hostKeys: '${{ inputs.intent.host_keys }}'}
       inputs: {hosts: 'name:target', argv: [/usr/sbin/ufw, status], sudo: true}
   - name: changes
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: observe-before, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -77,7 +77,7 @@ jobs:
       methodName: lanChanges
       inputs: {plan: '${{ inputs.intent.rule }}', current: '${{ steps["observe-before"].outputs.stdout }}'}
   - name: apply
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: {item: rule, in: '${{ inputs.intent.rule.rules }}'}
     dependsOn: [{step: changes, condition: {type: succeeded}}]
     guard: '${{ !(self.rule.model_name in steps.changes.outputs.model_names) }}'
@@ -89,11 +89,11 @@ jobs:
       globalArgs: *ssh
       inputs: {hosts: 'name:target', argv: '${{ ["/usr/sbin/ufw"] + (self.rule.ensure == "absent" ? ["delete"] : []) + ["allow", "from", self.rule.source, "to", "any", "port", string(self.rule.port), "proto", self.rule.protocol] }}', sudo: true}
   - name: observe-after
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: changes, condition: {type: succeeded}}, {step: apply, condition: {type: always}}]
     task: *observe
   - name: verify-tuples
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: observe-after, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -102,7 +102,7 @@ jobs:
       methodName: lanApplied
       inputs: {plan: '${{ inputs.intent.rule }}', outcomes: '${{ steps }}'}
   - name: migrate
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: {item: plan, in: '${{ inputs.intent.rule.migrate ? [inputs.intent] : [] }}'}
     dependsOn: [{step: verify-tuples, condition: {type: succeeded}}]
     task:
@@ -115,7 +115,7 @@ jobs:
         execution_secrets: '${{ inputs.execution_secrets }}'
         intent: '${{ self.plan }}'
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: verify-tuples, condition: {type: succeeded}}, {step: migrate, condition: {type: always}}]
     task:
       type: behavior

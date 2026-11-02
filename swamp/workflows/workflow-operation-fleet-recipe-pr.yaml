@@ -25,7 +25,7 @@ jobs:
 - name: github
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -38,7 +38,7 @@ jobs:
         intent: ${{ inputs.intent }}
         run_id: ${{ run.id }}
   - name: branch
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -60,7 +60,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "open" }}
   - name: file
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -76,7 +76,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "open" }}
   - name: pull
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -92,7 +92,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "open" }}
   - name: tree
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -108,7 +108,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "update" }}
   - name: commit
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -131,7 +131,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "update" }}
   - name: ref
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -154,7 +154,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "update" }}
   - name: close
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -170,7 +170,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "close" }}
   - name: merge
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -186,7 +186,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.prepare.outputs.action != "merge" }}
   - name: comment
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
@@ -203,7 +203,7 @@ jobs:
     guard: ${{ !has(steps.prepare.outputs.comment) }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'

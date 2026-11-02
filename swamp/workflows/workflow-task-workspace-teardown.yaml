@@ -45,10 +45,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: teardown
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-repository-assets'
@@ -60,7 +60,7 @@ jobs:
         intent: ${{ inputs.intent }}
       behaviorName: ${{ "task-repository-assets-" + string(inputs.operation_id) }}
   - name: prepare-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -89,7 +89,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -107,7 +107,7 @@ jobs:
       condition:
         type: succeeded
   - name: teardown-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

@@ -14,7 +14,7 @@ export function workflow() {
     const steps = destroySteps();
     steps.push({
         name: "accepted",
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         dependsOn: [{ step: "remove-result", condition: { type: "succeeded" } }],
         task: {
             type: "assert",
@@ -50,7 +50,7 @@ export function workflow() {
             ],
             additionalProperties: false,
         },
-        jobs: [{ name: "destroy", target: "orbit-node-209", steps }],
+        jobs: [{ name: "destroy", labels: { role: "swamp" }, steps }],
     };
 }
 if (import.meta.main) {

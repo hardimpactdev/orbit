@@ -26,10 +26,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: guest
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: guest-available
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -67,7 +67,7 @@ jobs:
         - /usr/bin/true
         timeoutSec: 30
   - name: cloud-init
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -111,7 +111,7 @@ jobs:
       condition:
         type: succeeded
   - name: guest-key
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

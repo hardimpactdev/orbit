@@ -26,11 +26,11 @@ runpy.run_path(sys.argv[1],run_name='__main__')
         wrapper.chmod(0o755)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-node-worker-known-hosts.yaml').read_text())
         for job in workflow['jobs']:
-            self.assertEqual(job['target'], 'orbit-node-209')
+            self.assertEqual(job['labels'], {'role': 'swamp'})
             self.assertNotIn('labels', job)
             job.pop('target')
             for step in job['steps']:
-                self.assertEqual(step['target'], 'orbit-node-209')
+                self.assertEqual(step['labels'], {'role': 'swamp'})
                 self.assertNotIn('labels', step)
                 step.pop('target')
                 if step['name'] == 'write':

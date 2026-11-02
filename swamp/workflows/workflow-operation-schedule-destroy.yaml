@@ -24,10 +24,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: schedule
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: idle
-        target: orbit-node-209
+        labels: {role: swamp}
         guard: ${{ inputs.intent.cascade }}
         task:
           type: behavior
@@ -57,7 +57,7 @@ jobs:
               - sh
               - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
       - name: stop_timer
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: idle, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task:
           type: behavior
@@ -75,7 +75,7 @@ jobs:
             ensure: stopped
           inputs: {}
       - name: stop_service
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: stop_timer, condition: {type: succeeded}}]
         guard: ${{ !inputs.intent.cascade }}
         task:
@@ -92,7 +92,7 @@ jobs:
             command: ${{ "systemctl stop orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
           inputs: {}
       - name: remove_files
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - {step: stop_timer, condition: {type: succeeded}}
           - {step: stop_service, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -114,7 +114,7 @@ jobs:
             ensure: absent
           inputs: {}
       - name: reload
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: remove_files, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -130,7 +130,7 @@ jobs:
             command: systemctl daemon-reload
           inputs: {}
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: reload, condition: {type: succeeded}}]
         task:
           type: behavior

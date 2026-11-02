@@ -64,7 +64,7 @@ class AnalyticsEnableNative(NativeTestCase):
         )
         for job in parent["jobs"]:
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
         (self.repo / "workflows/workflow-analytics.yaml").write_text(
             yaml.safe_dump(parent, sort_keys=False)
@@ -309,6 +309,7 @@ print('{"ready":true}')
             workflow = yaml.safe_load(path.read_text())
             for job in workflow["jobs"]:
                 for step in job["steps"]:
+                    step.pop("labels", None)
                     step["target"] = "orbit-node-209"
             path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.cli(

@@ -9,7 +9,7 @@ jobs:
 - name: grace
   steps:
   - name: wait-private-dns-ttl
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

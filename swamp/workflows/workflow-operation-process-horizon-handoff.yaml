@@ -69,10 +69,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: horizon
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/horizon-observation'
@@ -80,7 +80,7 @@ jobs:
       methodName: assets
       inputs: {}
   - name: prepare-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -109,7 +109,7 @@ jobs:
         - -p
         - ${{ "/tmp/orbit-horizon-" + run.id }}
   - name: copy-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare-assets
       condition:
@@ -127,7 +127,7 @@ jobs:
         direction: to
         recursive: true
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -150,7 +150,7 @@ jobs:
       condition:
         type: succeeded
   - name: observation
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -163,7 +163,7 @@ jobs:
       inputs:
         stdout: ${{ steps.inspect.outputs.stdout }}
   - name: stage-unit
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -199,7 +199,7 @@ jobs:
         sudo: true
       globalArgs: *id002
   - name: validate-unit
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -234,7 +234,7 @@ jobs:
         sudo: true
       globalArgs: *id002
   - name: publish-unit
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -281,7 +281,7 @@ jobs:
         sudo: true
       globalArgs: *id002
   - name: reload-units
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -327,7 +327,7 @@ jobs:
         sudo: true
       globalArgs: *id002
   - name: enable
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -379,7 +379,7 @@ jobs:
         sudo: true
       globalArgs: *id002
   - name: graceful-handoff
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -445,7 +445,7 @@ jobs:
         sudo: true
       globalArgs: *id002
   - name: start
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -511,7 +511,7 @@ jobs:
       globalArgs: *id002
   - name: verify
     guard: ${{ steps.observation.outputs.active }}
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -582,7 +582,7 @@ jobs:
         sudo: true
       globalArgs: *id002
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -665,7 +665,7 @@ jobs:
           OUTCOME: '${{ steps.observation.outputs.active ? "terminated" : (inputs.intent.created ? "created" : "started")
             }}'
   - name: cleanup-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

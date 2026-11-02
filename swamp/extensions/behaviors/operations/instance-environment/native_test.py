@@ -21,7 +21,7 @@ class EnvironmentNative(NativeTestCase):
         source = ROOT / 'workflows/workflow-operation-instance-environment.yaml'
         workflow = yaml.safe_load(source.read_text())
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')
+            self.assertEqual(job.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
             self.assertEqual(job.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
         (self.repo / 'workflows' / source.name).write_text(yaml.safe_dump(workflow, sort_keys=False))
         secret = '-'.join(('private', 'environment', 'fixture', 'value'))

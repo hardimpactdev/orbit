@@ -155,12 +155,12 @@ export function vpPreparationJobs(
 ): Fields[] {
     return [{
         name: name + "-capture",
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         dependsOn: [{ job: dependencyJob, condition: { type: "succeeded" } }],
         steps: vpCaptureSteps(name, intent),
     }, {
         name: name + "-install",
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         dependsOn: [{
             job: name + "-capture",
             condition: { type: "succeeded" },

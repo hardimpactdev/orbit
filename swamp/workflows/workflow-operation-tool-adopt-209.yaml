@@ -31,10 +31,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: tools
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-adopt-command'
@@ -43,7 +43,7 @@ jobs:
       inputs:
         input: ${{ inputs.intent }}
   - name: query
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -68,7 +68,7 @@ jobs:
         sudo: false
         script: ${{ steps.assets.outputs.script_body }}
   - name: repository
-    target: orbit-node-209
+    labels: {role: swamp}
     allowFailure: true
     forEach: {item: package, in: '${{ "repository" in inputs.intent && inputs.intent.repository!=null ? [inputs.intent] : [] }}'}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
@@ -83,7 +83,7 @@ jobs:
         hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
       inputs: {hosts: 'name:target', sudo: false, argv: '${{ ["timeout","180","/usr/bin/python3","-I","-c",steps.assets.outputs.repository_body,"adopt",steps.assets.outputs.repository_json] }}'}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: query, condition: {type: succeeded}}, {step: repository, condition: {type: always}}]
     task:
       type: behavior
@@ -95,7 +95,7 @@ jobs:
         observation: ${{ steps.query.outputs }}
         repository_observation: '${{ "repository-0" in steps && steps["repository-0"].status=="succeeded" ? steps["repository-0"].outputs : null }}'
   - name: assert
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: result, condition: {type: succeeded}}]
     task:
       type: behavior

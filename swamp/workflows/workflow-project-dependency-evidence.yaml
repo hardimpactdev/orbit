@@ -58,10 +58,10 @@ reports:
   - '@swamp/workflow-summary'
 jobs:
 - name: read
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: pr-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: pr
       in: ${{ inputs.pr_urls }}
@@ -84,14 +84,14 @@ jobs:
           GH_CONFIG_DIR: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id
             + "/gh-config" }}
 - name: evidence
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: read
     condition:
       type: always
   steps:
   - name: evidence
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'

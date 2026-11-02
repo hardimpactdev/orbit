@@ -50,7 +50,7 @@ raise SystemExit(result.returncode)
                 "checkout_path": str(self.repo / "apps/project/workspace"),
                 "ssh_execution": {
                     "control_node_id": 209,
-                    "identity_file": "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+                    "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
                     "public_key": "ssh-ed25519 PUBLIC",
                     "target": {
                         "name": "target",
@@ -68,10 +68,10 @@ raise SystemExit(result.returncode)
             (ROOT / "workflows/workflow-task-vm-workspace.yaml").read_text()
         )
         for job in child["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", job)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
                 task = step["task"]
                 if task.get("behaviorType") == "@swamp/ssh":

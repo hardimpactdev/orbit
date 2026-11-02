@@ -27,10 +27,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provider
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -41,7 +41,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
   - name: observe-vm
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -83,7 +83,7 @@ jobs:
       condition:
         type: succeeded
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -99,7 +99,7 @@ jobs:
       condition:
         type: succeeded
   - name: observe-seed
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -131,7 +131,7 @@ jobs:
         type: succeeded
     guard: ${{ !inputs.intent.create.topology || steps.plan.outputs.exists }}
   - name: seed-plan
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -148,7 +148,7 @@ jobs:
         type: succeeded
     guard: ${{ !inputs.intent.create.topology || steps.plan.outputs.exists }}
   - name: clone-seed
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -183,7 +183,7 @@ jobs:
     guard: ${{ !inputs.intent.create.topology || steps.plan.outputs.exists || steps["seed-plan"].outputs.present
       }}
   - name: seed-ready
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: plan
       condition:
@@ -199,7 +199,7 @@ jobs:
       message: The admitted topology seed is unavailable
       severity: high
   - name: initialize-vm
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -239,7 +239,7 @@ jobs:
       condition:
         type: succeeded
   - name: read-metadata
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -276,7 +276,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: metadata
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -291,7 +291,7 @@ jobs:
       condition:
         type: succeeded
   - name: write-metadata
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -324,7 +324,7 @@ jobs:
         type: succeeded
     guard: ${{ steps.plan.outputs.running }}
   - name: start-vm
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -361,7 +361,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.plan.outputs.running }}
   - name: inspect-created-vm
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -407,7 +407,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: provider
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior

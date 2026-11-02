@@ -44,7 +44,7 @@ execute:async (...args:Parameters<typeof fixture.methods.apply.execute>) => {
             workflow=yaml.safe_load((ROOT/'workflows'/name).read_text())
             self.assertEqual([j['name'] for j in workflow['jobs']],['packages' if kind == 'node.prepare_php_packages' else 'bootstrap'])
             for job in workflow['jobs']:
-                self.assertEqual(job.pop('target'),'${{ "orbit-node-" + string(inputs.node_id) }}')
+                self.assertEqual(job.pop('labels'),{'node': '${{ string(inputs.node_id) }}'})
                 self.assertEqual(job.pop('labels'),{'node':'${{ string(inputs.node_id) }}'})
             (self.repo/'workflows'/name).write_text(yaml.safe_dump(workflow,sort_keys=False))
         self.state={'calls':[],'actions':0,'operation':{'id':17,'node_id':14,'kind':'node.bootstrap_verify','status':'queued','result':None,'cancel_requested':False,

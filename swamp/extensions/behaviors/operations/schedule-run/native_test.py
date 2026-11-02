@@ -91,10 +91,10 @@ raise SystemExit(r.returncode)
             (ROOT / "workflows/workflow-operation-schedule-run.yaml").read_text()
         )
         for job in self.workflow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", job)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
                 if step["task"]["behaviorType"] == "@swamp/ssh":
                     step["task"]["globalArgs"].update(

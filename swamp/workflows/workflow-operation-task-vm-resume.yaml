@@ -43,16 +43,16 @@ inputs:
   additionalProperties: false
 jobs:
 - name: resume
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: eligible
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: assert
       expr: inputs.intent.eligible == true
       message: The captured VM is not eligible for this transition
   - name: provider
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -68,7 +68,7 @@ jobs:
       condition:
         type: succeeded
   - name: ssh
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: provider
       condition:
@@ -82,7 +82,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
   - name: artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -133,7 +133,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.mode == "converge" }}
   - name: pi
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -161,7 +161,7 @@ jobs:
         type: always
     guard: ${{ inputs.intent.mode == "converge" }}
   - name: runtime-confirmed
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: ssh
       condition:
@@ -178,7 +178,7 @@ jobs:
         0 && steps.pi.outputs.exitCode == 0)
       message: The resumed runtime is not ready
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

@@ -40,11 +40,11 @@ inputs:
   additionalProperties: false
 jobs:
 - name: prepare
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: []
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.process_id == null }}
     writes: false
     task:
@@ -60,7 +60,7 @@ jobs:
           vite: null
           on_demand: false
   - name: controls
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     task:
       type: behavior
@@ -70,7 +70,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.process_id == null }}
     allowFailure: true
     writes: false
@@ -83,7 +83,7 @@ jobs:
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -100,7 +100,7 @@ jobs:
         - 0
         - 1
   - name: copy
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: directory
       condition:
@@ -124,7 +124,7 @@ jobs:
         direction: to
         recursive: true
   - name: prepared
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -146,14 +146,14 @@ jobs:
       severity: high
       message: Database Process command files unavailable.
 - name: inspect
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: prepare
     condition:
       type: succeeded
   steps:
   - name: inspect-${{ self.member.slot }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: member
       in: ${{ steps.controls.outputs.controls }}
@@ -183,7 +183,7 @@ jobs:
         - 0
         - 1
 - name: plan
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: inspect
     condition:
@@ -193,7 +193,7 @@ jobs:
       type: succeeded
   steps:
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     task:
       type: behavior
@@ -204,7 +204,7 @@ jobs:
         controls: ${{ steps.controls.outputs.controls }}
         steps: ${{ steps }}
   - name: checked
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: plan
       condition:
@@ -216,14 +216,14 @@ jobs:
       severity: high
       message: Database Process ownership inspection refused.
 - name: remove
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: plan
     condition:
       type: succeeded
   steps:
   - name: remove-${{ self.member.slot }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: member
       in: ${{ steps.plan.outputs.controls }}
@@ -239,7 +239,7 @@ jobs:
         execution_secrets: {}
         member: ${{ self.member }}
 - name: result
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: prepare
     condition:
@@ -255,7 +255,7 @@ jobs:
       type: always
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-destroy-metadata'
@@ -267,7 +267,7 @@ jobs:
         expected: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.controls.map(c,
           "remove-" + c.slot) : [] }}'
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

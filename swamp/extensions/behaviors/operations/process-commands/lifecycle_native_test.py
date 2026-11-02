@@ -153,9 +153,9 @@ p.write_text(json.dumps(s))
                 (ROOT / f"workflows/workflow-operation-process-{kind}.yaml").read_text()
             )
             for job in w["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     t = step["task"]
                     if t["type"] == "workflow":
                         continue

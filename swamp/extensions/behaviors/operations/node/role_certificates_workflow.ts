@@ -74,7 +74,7 @@ export function roleCertificateJobs(
         dependsOn: [dependency(`${inventory}_job`)],
         steps: [{
             name: publish + expr(key("self.leaf")),
-            target: "orbit-node-209",
+            labels: { role: "swamp" },
             forEach: { item: "leaf", in: expr(leaves) },
             ...guard,
             task: {
@@ -96,7 +96,7 @@ export function roleCertificateJobs(
         steps: [{
             name: record + expr("string(self.participant)"),
             writes: true,
-            target: expr('"orbit-node-" + string(inputs.node_id)'),
+            labels: { node: expr("string(inputs.node_id)") },
 
             forEach: { item: "participant", in: expr(nodes) },
             ...guard,

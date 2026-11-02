@@ -23,10 +23,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: schedule
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: units
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/schedule-run-assets'
@@ -34,7 +34,7 @@ jobs:
           methodName: lifecycle
           inputs: {schedule: '${{ inputs.intent.schedule }}'}
       - name: files
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: units, condition: {type: succeeded}}]
         forEach: {item: unit, in: '${{ ["service", "timer"] }}'}
         task:
@@ -56,7 +56,7 @@ jobs:
             mode: "0644"
           inputs: {}
       - name: reload
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: files, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -72,7 +72,7 @@ jobs:
             command: systemctl daemon-reload
           inputs: {}
       - name: timer
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: reload, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -90,7 +90,7 @@ jobs:
             ensure: '${{ inputs.intent.schedule.desired == "enabled" ? "running" : "stopped" }}'
           inputs: {}
       - name: remove_obsolete
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: timer, condition: {type: succeeded}}]
         forEach: {item: suffix, in: '${{ [".sh", ".complete"] }}'}
         task:
@@ -108,7 +108,7 @@ jobs:
             ensure: absent
           inputs: {}
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: remove_obsolete, condition: {type: succeeded}}]
         task:
           type: behavior

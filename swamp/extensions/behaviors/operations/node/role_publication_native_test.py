@@ -35,7 +35,7 @@ console.log(JSON.stringify(workflow));'''
         workflow = json.loads(self.source)
         for job in workflow["jobs"]:
             for step in job["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
                 step.pop("labels", None)
         self.workflow.write_text(json.dumps(workflow))
         self.state = {"operation": {"id": 17, "node_id": 13, "kind": "node.role_add", "status": "running",
@@ -60,7 +60,7 @@ console.log(JSON.stringify(workflow));'''
         for job in json.loads(self.source)["jobs"]:
             for step in job["steps"]:
                 if "forEach" in step:
-                    self.assertEqual(step["target"], '${{ "orbit-node-" + string(self.participant) }}')
+                    self.assertEqual(step["labels"], {'node': '${{ string(self.participant) }}'})
                     self.assertEqual(step["labels"], {"node": "${{ string(self.participant) }}"})
 
     def test_empty_publication_plan_still_completes_without_effects(self):

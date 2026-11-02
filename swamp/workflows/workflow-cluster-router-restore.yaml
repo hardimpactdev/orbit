@@ -34,7 +34,7 @@ jobs:
 - name: restore
   steps:
   - name: restore_prepare_certificates
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: "${{ inputs.intent.route_mutations.restore.certificates.filter(item,inputs.intent.route_mutations.restore.certificates.filter(first,first.node_id == item.node_id)[0].scope == item.scope) }}"
@@ -55,7 +55,7 @@ jobs:
         restoring: true
     allowFailure: true
   - name: restore_php
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -82,7 +82,7 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_lan
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.lan }}
@@ -108,7 +108,7 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_urls
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.url_writes }}
@@ -136,7 +136,7 @@ jobs:
           material: ${{ inputs.execution_secrets[self.part.secret_field] }}
     allowFailure: true
   - name: restore_restore_prepare_caddy
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -169,7 +169,7 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_dns
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.before.dns != null) }}
@@ -200,7 +200,7 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_dns_grace
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns != null && inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest
@@ -225,7 +225,7 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_restore_caddy
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -261,7 +261,7 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore_cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.cleanup }}
@@ -295,7 +295,7 @@ jobs:
         restoring: true
     allowFailure: true
   - name: restore_retire_lan
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.retire_lan }}
@@ -328,7 +328,7 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: restore
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: stage
       in: ${{ [inputs.intent.route_mutations.restore] }}
@@ -370,7 +370,7 @@ jobs:
         outcomes: ${{ steps }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: restore_prepare_certificates, condition: {type: always}}
     - {step: restore_php, condition: {type: always}}

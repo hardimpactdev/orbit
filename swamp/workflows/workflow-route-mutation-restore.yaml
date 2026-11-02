@@ -1,6 +1,6 @@
 id: f11fa84e-418c-44cf-86d9-a84f46ef0146
 name: route-mutation-restore
-target: orbit-node-209
+labels: {role: swamp}
 description: Canonical Route publications and complete native contribution proof.
 vaults:
 - orbit-control-inputs

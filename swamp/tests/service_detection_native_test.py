@@ -198,7 +198,7 @@ else:sys.exit(64)
                     enrollment.write_text(token)
                     enrollment.chmod(0o600)
                     worker = subprocess.Popen([CLI, "worker", "connect", url, "--token-file", str(enrollment),
-                                               "--cache-dir", str(root / "worker-cache"), "--label", "pool=migration", "--label", "node=209"],
+                                               "--cache-dir", str(root / "worker-cache"), "--label", "role=swamp", "--label", "node=209"],
                                               cwd=root, env=env, stdout=log, stderr=log)
 
                     def rpc(name, version=None, model="orbit-gateway"):

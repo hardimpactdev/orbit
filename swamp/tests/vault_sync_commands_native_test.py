@@ -23,7 +23,7 @@ class VaultSyncFixture(NativeTestCase):
             (ROOT / "workflows/workflow-operation-vault-sync.yaml").read_text()
         )
         for step in [step for job in workflow["jobs"] for step in job["steps"]]:
-            self.assertEqual(step.pop("target"), "orbit-node-209")
+            self.assertEqual(step.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", step)
         (self.repo / "workflows/workflow-operation-vault-sync.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)

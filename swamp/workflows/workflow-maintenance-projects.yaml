@@ -18,10 +18,10 @@ reports:
   skip: ['@swamp/workflow-summary']
 jobs:
   - name: maintenance
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: select
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/project-maintenance-input'
@@ -35,7 +35,7 @@ jobs:
             operations: '${{ inputs.operations }}'
             admissions: '${{ inputs.admissions }}'
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: select, condition: {type: succeeded}}]
         task:
           type: behavior

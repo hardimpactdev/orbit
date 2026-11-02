@@ -50,10 +50,10 @@ else:print('{"ready":true}')
         for filename in ("workflow-task-vm-provision.yaml", "workflow-operation-task-vm-provision.yaml", "workflow-task-vm-ssh-prepare.yaml", "workflow-task-vm-incus-first-visit.yaml", "workflow-task-vm-enrollment.yaml"):
             value = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in value["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", job)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
                     task = step["task"]
                     if task.get("behaviorType") == "@swamp/ssh":
@@ -65,7 +65,7 @@ else:print('{"ready":true}')
         self.fixture("task-vm-model-issue", "result", {"task_vm_id": 42, "issued": True}, stdout=True)
         self.fixture("task-vm-model-revoke", "result", {"task_vm_id": 42, "revoked": True}, stdout=True)
         self.fixture("task-vm-runtime", "result", {"task_vm_id": 42, "guest_node_id": 142, "process_id": 33, "ready": True}, stdout=True)
-        identity = {"control_node_id": 209, "identity_file": "/run/credentials/orbit-node-worker.service/proxy-ssh-identity", "public_key": public}
+        identity = {"control_node_id": 209, "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity", "public_key": public}
         ssh = {**identity, "target": {"name": "target", "host": "192.0.2.9", "user": "orbit", "port": 22, "host_keys": [public]}}
         self.intent = {"eligible": True, "task_vm_id": 42, "guest_node_id": 142, "provider": "incus", "name": "tvm-42", "user": "orbit",
                        "vm": {"project": "tasks", "name": "tvm-42"}, "ssh_identity": identity, "host_ssh_execution": ssh, "hub_ssh_execution": ssh,

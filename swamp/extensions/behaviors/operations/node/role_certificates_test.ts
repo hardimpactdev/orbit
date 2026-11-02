@@ -37,7 +37,7 @@ class Fixture {
                     ssh: {
                         control_node_id: 209 as const,
                         identity_file:
-                            "/run/credentials/orbit-node-worker.service/proxy-ssh-identity" as const,
+                            "/etc/orbit/swamp-role-worker/ssh-identity" as const,
                         public_key: "ssh-ed25519 fixture",
                         target: {
                             name: "target" as const,
@@ -144,7 +144,7 @@ Deno.test("role certificate jobs use the native child before root-only phase wri
         name: string;
         dependsOn: unknown;
         steps: {
-            target?: string;
+            labels?: unknown;
             guard?: string;
             task: Record<string, unknown>;
         }[];
@@ -160,7 +160,7 @@ Deno.test("role certificate jobs use the native child before root-only phase wri
     }
     assertEquals(jobs.length, 4);
     const child = jobs[1].steps[0];
-    assertEquals(child.target, "orbit-node-209");
+    assertEquals(child.labels, { role: "swamp" });
     assertEquals(child.task.type, "workflow");
     assertEquals(child.task.workflowIdOrName, "node-role-certificate-publish");
     const inputs = child.task.inputs as Record<string, unknown>;
@@ -184,8 +184,8 @@ Deno.test("role certificate jobs use the native child before root-only phase wri
     );
     assertEquals(jobs[2].steps[0].task.methodName, "record");
     assertEquals(
-        jobs[2].steps[0].target,
-        '${{ "orbit-node-" + string(inputs.node_id) }}',
+        jobs[2].steps[0].labels,
+        { node: "${{ string(inputs.node_id) }}" },
     );
     assertEquals(jobs[3].steps[0].task.methodName, "complete");
     assertEquals(jobs.at(-1)?.name, generated.lastJob);

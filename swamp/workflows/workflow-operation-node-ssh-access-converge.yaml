@@ -43,14 +43,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: ssh_access
-  target: orbit-node-209
-  labels:
-    node: '209'
+  labels: {role: swamp}
   steps:
   - name: authorize_assets
-    target: orbit-node-209
-    labels:
-      node: '209'
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-ssh-access'
@@ -60,9 +56,7 @@ jobs:
         user: ${{ inputs.intent.target.user }}
         public_key: ${{ inputs.intent.public_key }}
   - name: authorize
-    target: orbit-node-209
-    labels:
-      node: '209'
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - step: authorize_assets
@@ -92,9 +86,7 @@ jobs:
         sudo: false
         script: ${{ steps["authorize_assets"].outputs.script_body }}
   - name: verify-own-key
-    target: orbit-node-209
-    labels:
-      node: '209'
+    labels: {role: swamp}
     dependsOn:
     - step: authorize
       condition:
@@ -121,9 +113,7 @@ jobs:
         argv:
         - /usr/bin/true
   - name: result
-    target: orbit-node-209
-    labels:
-      node: '209'
+    labels: {role: swamp}
     dependsOn:
     - step: verify-own-key
       condition:

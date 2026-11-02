@@ -18,10 +18,10 @@ inputs:
 vaults: []
 jobs:
 - name: canary
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: identity
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -33,7 +33,7 @@ jobs:
         transport:
           kind: ssh
           user: orbit
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: vpn1
           address: 10.44.0.1
@@ -50,7 +50,7 @@ jobs:
         argv:
         - /usr/bin/hostname
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - step: identity
@@ -73,7 +73,7 @@ jobs:
         - ${{ "/run/orbit-official-ssh-canary-" + run.id }}
         sudo: true
   - name: write
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - step: directory
@@ -92,7 +92,7 @@ jobs:
           printf '%s\n' 'orbit-official-ssh-canary' > /run/orbit-official-ssh-canary-${{ run.id }}/proof
         sudo: true
   - name: read
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - step: write
@@ -116,7 +116,7 @@ jobs:
         stdin: |
           orbit-official-ssh-canary
   - name: remove-file
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - step: directory
@@ -141,7 +141,7 @@ jobs:
         - ${{ "/run/orbit-official-ssh-canary-" + run.id + "/proof" }}
         sudo: true
   - name: remove-directory
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - step: remove-file

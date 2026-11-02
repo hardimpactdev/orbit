@@ -43,7 +43,7 @@ it('admits the fixed tracked public key and existing execution copy without a ho
     expect($payload['inputs'])->toMatchArray(['node_id' => $this->target->id, 'kind' => 'node.ssh_access_converge',
         'execution_secrets' => ['bootstrap_identity' => ['vault' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-14']]]);
     expect($payload['inputs']['intent'])->toMatchArray(['control_node_id' => 209,
-        'identity_file' => '/run/credentials/orbit-node-worker.service/proxy-ssh-identity',
+        'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity',
         'public_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'target' => ['name' => 'target', 'host' => $this->target->wireguard_ip, 'user' => 'orbit', 'port' => 22,
             'host_keys' => [$this->target->ssh_host_key_type.' '.$this->target->ssh_host_key]]]);

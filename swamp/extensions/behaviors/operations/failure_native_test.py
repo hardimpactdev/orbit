@@ -32,7 +32,7 @@ class NativeFailureTest(NativeTestCase):
         for job in flow["jobs"]:
             self.assertNotIn("labels", job)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 if step["name"] == "Check the candidate":
                     step["task"] = {"type": "behavior", "behaviorType": "@nckrtl/fixture-rejected", "behaviorName": "rejected-${{ run.id }}", "behaviorVersion": "2026.11.01.1", "methodName": "apply"}
         (self.repo / "workflows/workflow-failure.yaml").write_text(

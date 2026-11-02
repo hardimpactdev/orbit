@@ -3,7 +3,6 @@ name: operation-task-vm-upcloud-image-build
 tags: {}
 jobs:
 - name: admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: intent
@@ -19,7 +18,6 @@ jobs:
   - job: admission
     condition:
       type: succeeded
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: prepare
@@ -238,7 +236,6 @@ jobs:
   - job: build
     condition:
       type: always
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: owned-cleanup

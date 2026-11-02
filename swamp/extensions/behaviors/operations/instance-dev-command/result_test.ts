@@ -152,5 +152,5 @@ Deno.test("VP preparation uses stock CLI environment installation and discrete o
     assertEquals(task.behaviorType, "@swamp/ssh");
     assertEquals(task.methodName, "exec");
     assertEquals(task.inputs.argv.slice(3, 5), ["env", "install"]);
-    assertEquals(steps.every((step) => step.target === "orbit-node-209"), true);
+    assertEquals(steps.every((step) => (step.labels as { role?: unknown } | undefined)?.role === "swamp"), true);
 });

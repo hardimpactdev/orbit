@@ -53,10 +53,10 @@ else:print('{}')
             path.write_text((ROOT / ('workflows/workflow-' + name + '.yaml')).read_text())
             self.cli('workflow', 'validate', name)
             w = yaml.safe_load(path.read_text())
-            self.assertEqual(w.pop('target'), 'orbit-node-209')
+            self.assertEqual(w.pop('labels'), {'role': 'swamp'})
             for job in w['jobs']:
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'), 'orbit-node-209')
+                    self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                     self.assertNotIn('labels', step)
                     if step['task'].get('behaviorType') == '@swamp/ssh':
                         step['task']['globalArgs']['sshBinary'] = str(fake)

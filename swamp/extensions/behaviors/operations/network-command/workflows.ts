@@ -15,7 +15,7 @@ function steps() {
     ) => {
         list.push({
             name,
-            target: "orbit-node-209",
+            labels: { role: "swamp" },
             ...(list.length
                 ? {
                     dependsOn: list.map((prior) => ({
@@ -258,7 +258,7 @@ export function workflow(network: boolean) {
         description:
             "Pinned official SSH from209; full public input and typed terminal output.",
         vaults: [],
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         inputs: {
             type: "object",
             properties: {

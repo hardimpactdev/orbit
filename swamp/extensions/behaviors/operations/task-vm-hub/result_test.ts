@@ -76,8 +76,8 @@ Deno.test("hub workflow uses one209 selector and validates before visible effect
         jobs: { steps: { name: string; target: string; labels?: unknown }[] }[];
     };
     for (const step of flow.jobs[0].steps) {
-        assertEquals(step.target, "orbit-node-209");
-        assertEquals("labels" in step, false);
+        assertEquals(step.labels, { role: "swamp" });
+        assertEquals("target" in step, false);
     }
     const names = flow.jobs[0].steps.map((s) => s.name);
     assertEquals(names[0], "validate");

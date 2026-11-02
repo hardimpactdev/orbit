@@ -53,7 +53,7 @@ raise SystemExit(result.returncode)
         for name in ('operation-task-vm-sweep','task-vm-sweep-incus','task-vm-sweep-cloud','task-vm-sweep-incus-cleanup','task-vm-sweep-cloud-cleanup'):
             flow=yaml.safe_load((ROOT/('workflows/workflow-'+name+'.yaml')).read_text())
             for step in flow['jobs'][0]['steps']:
-                self.assertEqual(step.pop('target'),'orbit-node-209')
+                self.assertEqual(step.pop('labels'),{'role': 'swamp'})
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     step['task']['globalArgs']['sshBinary'] = str(ssh)
             (self.repo/('workflows/workflow-'+name+'.yaml')).write_text(yaml.safe_dump(flow,sort_keys=False))

@@ -16,20 +16,20 @@ inputs:
   additionalProperties: false
 jobs:
 - name: actions
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     writes: false
     task:
       <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-create-command-assets', behaviorName: '${{ "database-create-assets-" + run.id }}'}
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: directory
-    <<: &remote {target: orbit-node-209}
+    <<: &remote {labels: {role: swamp}}
     writes: false
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-create-" + string(inputs.operation_id) }}', methodName: exec, globalArgs: {name: '${{ "database-create-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-create-" + string(inputs.operation_id) }}', methodName: exec, globalArgs: {name: '${{ "database-create-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
         hosts: name:server
         argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) }}']
@@ -286,7 +286,7 @@ jobs:
     dependsOn: [{step: action_14_valkey_save, condition: {type: always}}]
     task: {type: assert, expr: '!steps.exists(k, (k in ["assets","directory","copy","prepared"] || k.startsWith("action_")) && steps[k].status == "failed") && (inputs.intent.driver == "redis" ? steps.action_14_valkey_save.status == "succeeded" : steps.action_04_sql_authenticate.status == "succeeded")', severity: high, message: A database creation action failed.}
 - name: create
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: actions, condition: {type: always}}]
   steps:
   - name: result

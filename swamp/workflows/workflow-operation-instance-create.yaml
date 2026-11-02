@@ -3,7 +3,7 @@ name: operation-instance-create
 description: Development Instance create from 209 in the legacy phases, one shipped script per phase through official SSH.
 vaults: [orbit-control-inputs]
 queueTimeout: 10
-target: orbit-node-209
+labels: {role: swamp}
 inputs:
   type: object
   properties:
@@ -27,7 +27,7 @@ jobs:
   - name: create
     steps:
       - name: assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -36,7 +36,7 @@ jobs:
           inputs: {intent: '${{ inputs.intent }}'}
       # Prepare: refusals before the first write (account, destination, branch in use, origin, ownership marker).
       - name: prepare
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: assets, condition: {type: succeeded}}]
         guard: '${{ inputs.intent.already_active }}'
         task:
@@ -60,7 +60,7 @@ jobs:
             argv: [timeout, '10', python3, -I, -c, '${{ steps.assets.outputs.prepare }}', '${{ steps.assets.outputs.intent_json }}']
       # Source: worktree or fresh checkout, fetch, the admitted branch; prints only the checked-out commit.
       - name: source
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: prepare, condition: {type: succeeded}}]
         guard: '${{ steps.prepare.outputs.exitCode != 0 }}'
         task:
@@ -77,7 +77,7 @@ jobs:
             stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault, inputs.execution_secrets.git_read.key) }}'
       # Environment: write the .env the Gateway rendered at admission, in the application directory.
       - name: environment
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: source, condition: {type: succeeded}}]
         guard: '${{ steps.source.outputs.exitCode != 0 }}'
         task:
@@ -95,7 +95,7 @@ jobs:
       # Setup: the ordered Project setup list at the checkout root, each command within its admitted timeout
       # (the list totals at most 540 s); the first failed command stops it.
       - name: setup
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: environment, condition: {type: succeeded}}]
         guard: '${{ steps.environment.outputs.exitCode != 0 }}'
         task:
@@ -112,7 +112,7 @@ jobs:
             stdin: '${{ vault.get(inputs.execution_secrets.setup.vault, inputs.execution_secrets.setup.key) }}'
       # Processes: create and start the development Processes through the shared Process create workflow.
       - name: processes
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: setup, condition: {type: succeeded}}]
         guard: '${{ steps.setup.outputs.exitCode != 0 }}'
         forEach: {item: member, in: '${{ inputs.intent.processes }}'}
@@ -127,7 +127,7 @@ jobs:
             execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
       # Finish: map the first phase that did not finish to the public receipt.
       - name: finish
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - {step: assets, condition: {type: always}}
           - {step: prepare, condition: {type: always}}
@@ -148,6 +148,6 @@ jobs:
             setup: '${{ "setup" in steps ? steps.setup : null }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
       - name: accepted
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: finish, condition: {type: succeeded}}]
         task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The development Instance create did not complete.}

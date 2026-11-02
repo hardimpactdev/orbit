@@ -30,13 +30,13 @@ inputs:
     - execution_secrets
     - offline
   additionalProperties: false
-target: orbit-node-209
+labels: {role: swamp}
 concurrency: 1
 jobs:
   - name: phase_start
     steps:
       - name: start
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: assert, expr: inputs.intent.node_id != 209, message: The control worker cannot remove its own runtime, severity: high}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
   - name: phase_stop_units_assets
@@ -45,12 +45,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: stop_units_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "stop_units-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
         forEach: &ref_0 {item: action, in: '${{ inputs.intent.stop_units.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: stop_units
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_0
@@ -63,12 +63,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: remove_units_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "remove_units-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_unit, input: '${{ self.action.input }}'}}
         forEach: &ref_1 {item: action, in: '${{ inputs.intent.remove_units.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: remove_units
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_1
@@ -81,12 +81,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: remove_footprints_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "remove_footprints-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_footprint, input: '${{ self.action.input }}'}}
         forEach: &ref_2 {item: action, in: '${{ inputs.intent.remove_footprints.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: remove_footprints
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_2
@@ -99,12 +99,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: reload_units_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "reload_units-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: reload_units, input: '${{ self.action.input }}'}}
         forEach: &ref_3 {item: action, in: '${{ inputs.intent.reload_units.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: reload_units
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_3
@@ -117,12 +117,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: stop_containers_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "stop_containers-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_container, input: '${{ self.action.input }}'}}
         forEach: &ref_4 {item: action, in: '${{ inputs.intent.stop_containers.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: stop_containers
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_4
@@ -135,12 +135,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: remove_containers_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "remove_containers-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_container, input: '${{ self.action.input }}'}}
         forEach: &ref_5 {item: action, in: '${{ inputs.intent.remove_containers.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: remove_containers
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_5
@@ -153,12 +153,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: ci_project_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "ci_project-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: ci_project, input: '${{ self.action.input }}'}}
         forEach: &ref_6 {item: action, in: '${{ inputs.intent.ci_host.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: ci_project
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_6
@@ -171,12 +171,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: firewall_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "firewall-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: firewall, input: '${{ self.action.input }}'}}
         forEach: &ref_7 {item: action, in: '${{ inputs.intent.firewall.filter(a,!inputs.offline || (inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: firewall
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_7
@@ -189,7 +189,7 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: php
-        target: orbit-node-209
+        labels: {role: swamp}
         concurrency: 1
         forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p,!inputs.offline || p.node_id != inputs.intent.node_id).filter(p,p.after.php != null) }}'}
         task: {type: workflow, workflowIdOrName: operation-route-php-delta, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: {}, intent: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', before: '${{ self.publication.before.php }}', after: '${{ self.publication.after.php }}', direction: forward}}}
@@ -200,7 +200,7 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: caddy
-        target: orbit-node-209
+        labels: {role: swamp}
         concurrency: 1
         forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p,!inputs.offline || p.node_id != inputs.intent.node_id).filter(p,p.after.caddy != null) }}'}
         task: {type: workflow, workflowIdOrName: operation-route-caddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: {}, intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy.caddy }}'}}}}
@@ -211,7 +211,7 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: dns
-        target: orbit-node-209
+        labels: {role: swamp}
         concurrency: 1
         forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p,!inputs.offline || p.node_id != inputs.intent.node_id).filter(p,p.after.dns != null) }}'}
         task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: {}, intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before.dns }}', after: '${{ self.publication.after.dns }}', alternatives: []}}}
@@ -222,12 +222,12 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: certificates_assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "certificates-assets-"+run.id+"-"+string(self._index) }}', methodName: read, inputs: {action: remove_certificate, input: '${{ self.action.input }}'}}
         forEach: &ref_8 {item: action, in: '${{ inputs.intent.certificates.filter(c,!inputs.offline || (inputs.intent.ssh == null || c.ssh.target.host != inputs.intent.ssh.target.host)) }}'}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: certificates
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         concurrency: 1
         forEach: *ref_8
@@ -240,6 +240,6 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "result-"+run.id }}', methodName: roleResult, inputs: {node_id: '${{ inputs.intent.node_id }}', assignment_id: '${{ inputs.intent.assignment_id }}', role: '${{ inputs.intent.role }}', offline: '${{ inputs.offline }}'}}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'

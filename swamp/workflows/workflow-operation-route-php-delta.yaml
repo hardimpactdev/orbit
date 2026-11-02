@@ -84,10 +84,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: composition
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -103,7 +103,7 @@ jobs:
         direction: ${{ inputs.intent.direction }}
         host_keys: ${{ inputs.intent.host_keys }}
   - name: read-account
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -151,7 +151,7 @@ jobs:
       condition:
         type: succeeded
   - name: read-current
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -188,7 +188,7 @@ jobs:
       condition:
         type: succeeded
   - name: compose
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -210,10 +210,10 @@ jobs:
       condition:
         type: succeeded
 - name: publication
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: apply-pool
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -247,7 +247,7 @@ jobs:
       item: pool
       in: ${{ steps.compose.outputs.files }}
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -281,7 +281,7 @@ jobs:
       item: pool
       in: ${{ steps.compose.outputs.files }}
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -319,14 +319,14 @@ jobs:
     condition:
       type: succeeded
 - name: completion
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

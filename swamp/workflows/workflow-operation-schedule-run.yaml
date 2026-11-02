@@ -99,10 +99,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: run
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/schedule-run-assets'
@@ -110,7 +110,7 @@ jobs:
       methodName: read
       inputs: {}
   - name: prepare_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -139,7 +139,7 @@ jobs:
         - -p
         - ${{ "/tmp/orbit-schedule-run-" + run.id }}
   - name: copy_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare_assets
       condition:
@@ -157,7 +157,7 @@ jobs:
         direction: to
         recursive: true
   - name: account
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: copy_assets
       condition:
@@ -179,7 +179,7 @@ jobs:
         - ${{ inputs.intent.schedule.shell }}
         - ${{ inputs.intent.schedule.group }}
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: account
       condition:
@@ -202,7 +202,7 @@ jobs:
         - -d
         - ${{ inputs.intent.schedule.working_directory }}
   - name: accessible
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: directory
       condition:
@@ -225,7 +225,7 @@ jobs:
         - -x
         - ${{ inputs.intent.schedule.working_directory }}
   - name: command_hash
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: accessible
       condition:
@@ -246,7 +246,7 @@ jobs:
         stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key)
           }}
   - name: execute
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: command_hash
       condition:
@@ -274,7 +274,7 @@ jobs:
         timeoutSec: ${{ inputs.intent.schedule.timeout_seconds + 10 }}
         captureOutput: false
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -322,7 +322,7 @@ jobs:
           HASH: '${{ "command_hash" in steps ? steps.command_hash.status : "skipped"
             }}'
   - name: cleanup_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

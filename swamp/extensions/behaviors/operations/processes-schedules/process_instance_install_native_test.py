@@ -21,9 +21,9 @@ class RuntimeMembers(ProcessLifecycleNative):
         self.environment_paths = []
         workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-process-install-instance-definitions.yaml").read_text())
         for job in workflow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
         (self.repo / "workflows/workflow-operation-process-install-instance-definitions.yaml").write_text(yaml.safe_dump(workflow, sort_keys=False))
         # systemd serializes host requests. Serialize the fake's shared state too.
         systemctl = self.repo / "cfgmgmt-tools/systemctl"
@@ -99,16 +99,16 @@ class SharedInstallerParents(RuntimeMembers):
         filename = 'workflow-operation-instance-' + ('deploy-direct' if family == 'deploy' else 'transfer') + '.yaml'
         workflow = yaml.safe_load((ROOT / 'workflows' / filename).read_text())
         job = next(job for job in workflow['jobs'] if job['name'] == ('deploy' if family == 'deploy' else 'activate-runtime'))
-        job.pop('target', None)
+        job.pop('target', None); job.pop('labels', None)
         job.pop('dependsOn', None)
         marker = self.repo / 'parent-completed'
         marker.unlink(missing_ok=True)
         for step in job['steps']:
             if step['task']['type'] == 'workflow':
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 self.assertEqual(step['task']['workflowIdOrName'], 'operation-process-create')
             else:
-                step.pop('target', None)
+                step.pop('target', None); step.pop('labels', None)
                 step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': step['name'], 'methodName': 'execute', 'inputs': {'run': 'touch ' + str(marker) if step['name'] in ('finish-production', 'verify-runtime') else 'true'}}
         workflow['jobs'] = [job]
         workflow['id'] = 'e4aba95a-13dd-4b45-bc5f-ad08d986eeba'

@@ -41,10 +41,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provider
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
@@ -54,7 +54,7 @@ jobs:
         intent: ${{ inputs.intent }}
     dependsOn: []
   - name: list
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -74,7 +74,7 @@ jobs:
       condition:
         type: succeeded
   - name: plans
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -94,7 +94,7 @@ jobs:
       condition:
         type: succeeded
   - name: choose
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
@@ -112,7 +112,7 @@ jobs:
       condition:
         type: succeeded
   - name: create
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -136,7 +136,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: discover
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -159,7 +159,7 @@ jobs:
       condition:
         type: succeeded
   - name: selected
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
@@ -174,7 +174,7 @@ jobs:
       condition:
         type: succeeded
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -195,7 +195,7 @@ jobs:
       condition:
         type: succeeded
   - name: observed
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
@@ -210,7 +210,7 @@ jobs:
       condition:
         type: succeeded
   - name: start
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -232,7 +232,7 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: observe
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -256,7 +256,7 @@ jobs:
       condition:
         type: succeeded
   - name: provider
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'

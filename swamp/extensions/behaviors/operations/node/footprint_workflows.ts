@@ -67,9 +67,11 @@ export function footprintWorkflow(
           name: "analytics_storage",
           writes: true,
           guard: inactive,
-          target: expression(
-            '"orbit-node-" + string(steps.admit.outputs.snapshot.runtime != null && steps.admit.outputs.snapshot.runtime.role == "analytics" ? steps.admit.outputs.snapshot.runtime.clickhouse.node_id : inputs.node_id)',
-          ),
+          labels: {
+            node: expression(
+              'string(steps.admit.outputs.snapshot.runtime != null && steps.admit.outputs.snapshot.runtime.role == "analytics" ? steps.admit.outputs.snapshot.runtime.clickhouse.node_id : inputs.node_id)',
+            ),
+          },
           task: task("analyticsStorage", { admission }),
         }],
       });
@@ -282,7 +284,7 @@ export function footprintWorkflow(
       required: ["operation_id", "node_id", "kind"],
       additionalProperties: false,
     },
-    target: expression('"orbit-node-" + string(inputs.node_id)'),
+    labels: { node: expression("string(inputs.node_id)") },
 
     jobs,
   };

@@ -27,12 +27,12 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
             native = workflow['name'] in ('project-detect', 'project-routine', 'project-observe',
                                           'maintenance-projects', 'dependency-upgrade')
             if not native:
-                self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, path.name)
+                self.assertEqual(workflow['labels'], {'role': 'swamp'}, path.name)
             self.assertNotIn('queueTimeout', workflow)
             for job in workflow['jobs']:
                 for step in job['steps']:
                     if native:
-                        self.assertEqual(step['target'], 'orbit-node-209', path.name)
+                        self.assertEqual(step['labels'], {'role': 'swamp'}, path.name)
                     task = step['task']
                     fields = {**workflow, **job, **step}
                     self.assertTrue(fields.get('target') or fields.get('labels') or fields.get('platform'), path.name)
@@ -45,7 +45,7 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
         for name in ('dependency-results-prune',):
             path = REPO / f'workflows/workflow-{name}.yaml'
             workflow = yaml.safe_load(path.read_text())
-            self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, name)
+            self.assertEqual(workflow['labels'], {'role': 'swamp'}, name)
 
     def test_active_coordinators_select_authoritative_workers(self):
         for name in ('groups-driver', 'group-fanout', 'group-supervise', 'group-run',
@@ -54,9 +54,9 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
             for job in workflow['jobs']:
                 for step in job['steps']:
                     if name == 'operation-dependency-merge':
-                        self.assertEqual(job['target'], '${{ "orbit-node-" + string(inputs.node_id) }}')
+                        self.assertEqual(job['labels'], {'node': '${{ string(inputs.node_id) }}'})
                     else:
-                        self.assertEqual(step['labels'], {'pool': 'migration', 'node': '209'}, f"{name}/{step['name']}")
+                        self.assertEqual(step['labels'], {'role': 'swamp'}, f"{name}/{step['name']}")
 
     def test_pinned_native_loader_validates_the_shipped_workflows(self):
         with tempfile.TemporaryDirectory(prefix='heavy-workflow-validation-') as tmp:

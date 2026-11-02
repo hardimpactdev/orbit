@@ -10,10 +10,10 @@ inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, n
     operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
 - name: vite
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: suspend
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -24,7 +24,7 @@ jobs:
               hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {name: suspend, hosts: [target], argv: [/usr/bin/rm, -f, '${{ inputs.intent.vite_plan.suspend.marker }}'], sudo: true}
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: suspend, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -35,7 +35,7 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: /etc/orbit/vite, ensure: present, owner: root, group: root, mode: '0755'}
       inputs: {}
   - name: environment
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: directory, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -45,7 +45,7 @@ jobs:
       globalArgs: {<<: *node, path: '${{ inputs.intent.vite_plan.environment.path }}', content: '${{ inputs.intent.vite_plan.environment.content }}', mode: '0644'}
       inputs: {}
   - name: caddy
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: environment, condition: {type: succeeded}}]
     task:
       type: workflow

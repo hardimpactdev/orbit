@@ -113,7 +113,7 @@ jobs:
 - name: sweep
   steps:
   - name: incus
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.provider == "upcloud" }}
     task:
       type: workflow
@@ -125,7 +125,7 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: cloud
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.provider != "upcloud" }}
     task:
       type: workflow
@@ -137,7 +137,7 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: format
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: incus
       condition:
@@ -154,7 +154,7 @@ jobs:
         provider: ${{ inputs.intent.provider }}
         steps: ${{ steps }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: format
       condition:
@@ -171,7 +171,7 @@ jobs:
         env:
           RESULT: ${{ steps.format.outputs.result_json }}
   - name: accepted
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

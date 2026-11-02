@@ -30,10 +30,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: clone
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
@@ -41,17 +41,17 @@ jobs:
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "dbmq-" + run.id }}
-      globalArgs: &id001 {name: '${{ "dbmq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+      globalArgs: &id001 {name: '${{ "dbmq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-dbc-mysql-" + run.id }}']}
   - name: files
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: succeeded}}
     - {step: directory, condition: {type: succeeded}}
@@ -63,7 +63,7 @@ jobs:
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-dbc-mysql-" + run.id }}', direction: to, recursive: true}
   - name: source_probe
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: files, condition: {type: succeeded}}
     allowFailure: true
@@ -77,7 +77,7 @@ jobs:
             steps.assets.outputs.intent_json }}'], okExitCodes: [0, 1], stdin: '${{ vault.get(inputs.execution_secrets.database_clone.vault,inputs.execution_secrets.database_clone.key)
           }}'}
   - name: source_checked
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: source_probe, condition: {type: succeeded}}
     task:
@@ -86,7 +86,7 @@ jobs:
       severity: high
       message: Clone source is unavailable.
   - name: prepare_mysql
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: source_checked, condition: {type: succeeded}}
     task:
@@ -95,7 +95,7 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ steps.assets.outputs.create_intent
           }}', execution_secrets: {database_create: '${{ inputs.execution_secrets.database_clone }}'}}
   - name: mysql_copy
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepare_mysql, condition: {type: succeeded}}
     - {step: assets, condition: {type: succeeded}}
@@ -110,7 +110,7 @@ jobs:
             steps.assets.outputs.intent_json }}'], okExitCodes: [0, 1], stdin: '${{ vault.get(inputs.execution_secrets.database_clone.vault,inputs.execution_secrets.database_clone.key)
           }}'}
   - name: cleanup_scripts
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: always}}
     - {step: directory, condition: {type: always}}
@@ -128,7 +128,7 @@ jobs:
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-dbc-mysql-" + run.id }}']}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: assets, condition: {type: always}}
     - {step: directory, condition: {type: always}}
@@ -145,7 +145,7 @@ jobs:
       methodName: result
       inputs: {expected: '${{ ["source_probe","prepare_mysql","mysql_copy","cleanup_scripts"] }}', steps: '${{ steps }}'}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: result, condition: {type: succeeded}}
     task:

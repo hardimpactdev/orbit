@@ -39,10 +39,10 @@ class ProjectInputsNativeTest(NativeTestCase):
             (self.repo / "workflows/workflow-project-dependency-evidence.yaml").write_text(yaml.safe_dump(child))
         flow = yaml.safe_load((ROOT / f"workflows/workflow-project-{mode}.yaml").read_text())
         for job in flow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", job)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
                 encoded = json.dumps(step).replace("/home/orbit/.cache/orbit-dependency-scans/", str(self.repo / "scans") + "/")
                 step.clear()

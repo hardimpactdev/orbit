@@ -44,10 +44,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: cancel
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.instance_id == null || size(inputs.intent.teardown) == 0 }}
     task:
       type: workflow
@@ -61,7 +61,7 @@ jobs:
           : {} }}'
         action: inspect
   - name: withdraw
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition: &id001
@@ -82,7 +82,7 @@ jobs:
         parent_run_id: ${{ run.id }}
     guard: ${{ size(inputs.intent.workspace_routes) == 0 }}
   - name: withdrawn
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: withdraw
       condition: *id001
@@ -97,7 +97,7 @@ jobs:
           WITHDRAWN: ${{ string(size(inputs.intent.workspace_routes) == 0 || steps.withdraw.outputs.result.ready)
             }}
   - name: teardown
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ size(inputs.intent.teardown) == 0 || !steps.inspect.outputs.result.running }}
     task:
       type: workflow
@@ -113,7 +113,7 @@ jobs:
       condition:
         type: succeeded
   - name: vm
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.task_vm_id == null }}
     task:
       type: workflow
@@ -131,7 +131,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

@@ -72,7 +72,7 @@ Deno.test("adoption graph has an official SSH query and read-only repository che
   assertEquals(source.trimEnd().split("\n").length <= 200, true);
   const steps = root.jobs[0].steps;
   assertEquals(steps.length, 5);
-  for (const step of steps) { assertEquals(step.target, "orbit-node-209"); assertEquals(step.labels, undefined); }
+  for (const step of steps) { assertEquals(step.labels, { role: "swamp" }); assertEquals(step.target, undefined); }
   const ssh = steps.filter((s) => s.task.behaviorType === "@swamp/ssh");
   assertEquals(ssh.length, 2);
   assertEquals(ssh[0].task.inputs.sudo, false);

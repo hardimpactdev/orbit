@@ -27,7 +27,7 @@ jobs:
 - name: workload
   steps:
   - name: served-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
@@ -42,7 +42,7 @@ jobs:
         action: served_roots
         input: ${{ self.part }}
   - name: served-command
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
@@ -72,7 +72,7 @@ jobs:
         sudo: true
         script: ${{ steps["served-assets-0"].outputs.script_body }}
   - name: served
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
@@ -88,7 +88,7 @@ jobs:
       inputs:
         stdout: ${{ steps["served-command-0"].outputs.stdout }}
   - name: dev-source-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
@@ -106,7 +106,7 @@ jobs:
         action: source_access
         input: ${{ self.part }}
   - name: dev-source-command
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
@@ -139,7 +139,7 @@ jobs:
         sudo: true
         script: ${{ steps["dev-source-assets-0"].outputs.script_body }}
   - name: dev-source
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
@@ -158,7 +158,7 @@ jobs:
       inputs:
         stdout: ${{ steps["dev-source-command-0"].outputs.stdout }}
   - name: prod-source-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
@@ -179,7 +179,7 @@ jobs:
         action: source_access
         input: ${{ {"user":steps["served-0"].outputs.user,"sites":steps["served-0"].outputs.sites} }}
   - name: prod-source-command
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
@@ -215,7 +215,7 @@ jobs:
         sudo: true
         script: ${{ steps["prod-source-assets-0"].outputs.script_body }}
   - name: prod-source
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
@@ -237,7 +237,7 @@ jobs:
       inputs:
         stdout: ${{ steps["prod-source-command-0"].outputs.stdout }}
   - name: runtime-identity
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -278,7 +278,7 @@ jobs:
         - '-'
         stdin: ${{ self.part.marker }}
   - name: runtime-pool
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -313,7 +313,7 @@ jobs:
         content: ${{ self.part.pool }}
       inputs: {}
   - name: runtime-pool-proof
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -339,7 +339,7 @@ jobs:
         expected: ${{ self.part.pool_sha256 }}
         state: ${{ steps["runtime-pool-0"].outputs }}
   - name: runtime-validate
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -386,7 +386,7 @@ jobs:
         - --fpm-config
         - ${{ "/etc/orbit/php-fpm/" + self.part.user + "/generated/php-fpm.conf" }}
   - name: runtime-reload
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: part
       in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
@@ -430,7 +430,7 @@ jobs:
         - reload
         - ${{ "orbit-" + self.part.user + "-php" + self.part.version + "-fpm.service" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: served-assets, condition: {type: always}}
     - {step: served-command, condition: {type: always}}

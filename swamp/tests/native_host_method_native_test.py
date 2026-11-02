@@ -109,7 +109,7 @@ export const behavior = {
             cli('behavior', 'run', 'dependency-package', 'status')
             workflow = cli('workflow', 'create', 'native-host-proof')
             Path(workflow['path']).write_text(json.dumps({'id': workflow['id'], 'name': 'native-host-proof',
-                'labels': {'pool': 'migration', 'node': '209'}, 'queueTimeout': 10, 'affinity': True,
+                'labels': {'role': 'swamp'}, 'queueTimeout': 10, 'affinity': True,
                 'jobs': [{'name': 'proof', 'steps': [
                     {'name': 'remote', 'task': {'type': 'model_method', 'modelType': '@fixture/remote-refusal', 'modelName': 'refusal', 'methodName': 'probe'}},
                     {'name': 'coordinator', 'dependsOn': [{'step': 'remote', 'condition': {'type': 'succeeded'}}],
@@ -147,7 +147,7 @@ export const behavior = {
                     server_token.write_text(cli('access', 'token', 'reveal', 'fixture-worker', '--yes')['token'])
                     server_token.chmod(0o600)
                     worker = subprocess.Popen([CLI, 'worker', 'connect', url, '--token-file', str(enrollment), '--server-token-file', str(server_token),
-                                               '--cache-dir', str(root / 'worker-cache'), '--label', 'pool=migration', '--label', 'node=209'],
+                                               '--cache-dir', str(root / 'worker-cache'), '--label', 'role=swamp', '--label', 'node=209'],
                                               cwd=root, env=env, stdout=worker_log, stderr=worker_log)
                     result = cli('workflow', 'run', 'native-host-proof', *flags)
                     self.assertEqual(result['status'], 'succeeded', (root / 'serve.log').read_text()[-2000:])

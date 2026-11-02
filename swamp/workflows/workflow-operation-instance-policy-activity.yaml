@@ -22,8 +22,7 @@ jobs:
   - name: record
     steps:
       - name: record
-        target: orbit-node-209
-        labels: {node: '209'}
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: command/shell

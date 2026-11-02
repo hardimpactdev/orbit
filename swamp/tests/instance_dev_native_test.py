@@ -226,11 +226,11 @@ class InstanceDestroyNative(InstanceNativeFixture):
         with closing(sqlite3.connect(database)) as connection:
             connection.execute('CREATE TABLE proof(value)')
         workflow = yaml.safe_load((ROOT/'workflows/workflow-database-owned-sqlite-remove.yaml').read_text())
-        workflow = json.loads(json.dumps(workflow).replace('/tmp/orbit-db-owned-', str(self.control)+'/db-owned-').replace('/run/credentials/orbit-node-worker.service/proxy-ssh-identity',str(self.identity)))
+        workflow = json.loads(json.dumps(workflow).replace('/tmp/orbit-db-owned-', str(self.control)+'/db-owned-').replace('/etc/orbit/swamp-role-worker/ssh-identity',str(self.identity)))
         for job in workflow['jobs']:
-            job.pop('target', None)
+            job.pop('target', None); job.pop('labels', None)
             for step in job['steps']:
-                step.pop('target', None)
+                step.pop('target', None); step.pop('labels', None)
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     step['task']['globalArgs'].update(sshBinary=str(self.repo/'ssh'),scpBinary=str(self.repo/'scp'))
         (self.repo/'workflows/workflow-sqlite.yaml').write_text(yaml.safe_dump(workflow,sort_keys=False))

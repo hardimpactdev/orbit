@@ -71,10 +71,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: probe
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -106,7 +106,7 @@ jobs:
           if sudo /usr/bin/test -d "$ORBIT_PHP_HOME/current"; then initial=false; else initial=true; fi
           printf '{"present":%s,"initial":%s}\n' "$present" "$initial"
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
@@ -120,7 +120,7 @@ jobs:
       condition:
         type: succeeded
   - name: apply-pool
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -146,7 +146,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -169,7 +169,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -190,14 +190,14 @@ jobs:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
 - name: completion
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

@@ -14,7 +14,7 @@ jobs:
   steps:
   - name: package
     <<: &effect
-      target: orbit-node-209
+      labels: {role: swamp}
       guard: '${{ inputs.intent.runtime == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     guard: '${{ inputs.intent.runtime == null || !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
@@ -250,7 +250,7 @@ jobs:
       globalArgs: {<<: *owner, path: '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml" }}', ensure: absent}
   - name: result
     dependsOn: [{step: remove_candidate, condition: *done}]
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       type: behavior

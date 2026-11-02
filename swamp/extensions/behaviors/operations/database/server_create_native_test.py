@@ -88,9 +88,9 @@ sys.exit(code)
         self.child_workflow = yaml.safe_load((ROOT / 'workflows/workflow-database-server-container.yaml').read_text())
         for workflow in (self.workflow, self.child_workflow):
             for job in workflow['jobs']:
-                self.assertEqual(job.pop('target'), 'orbit-node-209'); self.assertNotIn('labels', job)
+                self.assertEqual(job.pop('labels'), {'role': 'swamp'}); self.assertNotIn('labels', job)
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'), 'orbit-node-209')
+                    self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                     self.assertNotIn('labels', step)
                     if step['task'].get('behaviorType') == '@swamp/ssh':
                         step['task']['globalArgs']['sshBinary'] = str(fake)

@@ -8,17 +8,17 @@ inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, n
     execution_secrets: {type: object, additionalProperties: false}}, required: [operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
 - name: sqlite
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: run
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: database-sqlite-seed
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
           }}'}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: run, condition: {type: always}}
     task:
@@ -28,7 +28,7 @@ jobs:
       methodName: result
       inputs: {kind: '${{ inputs.kind }}', expected: [run], steps: '${{ steps }}'}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: result, condition: {type: succeeded}}
     task:

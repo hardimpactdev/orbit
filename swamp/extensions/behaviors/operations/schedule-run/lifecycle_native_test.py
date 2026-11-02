@@ -97,10 +97,10 @@ p.write_text(json.dumps(s))
                 300 if kind == "create" else 200,
             )
             for job in workflow["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", job)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
                     # Map declared root ownership to this disposable fixture account.
                     if step["task"]["behaviorType"] == "@swamp/cfgmgmt/file":
@@ -366,9 +366,9 @@ p.write_text(json.dumps(s))
         import uuid
         workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-schedule-install-instance-definitions.yaml").read_text())
         for job in workflow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
         (self.repo / "workflows/workflow-operation-schedule-install-instance-definitions.yaml").write_text(yaml.safe_dump(workflow, sort_keys=False))
         systemctl = self.repo / "cfgmgmt-tools/systemctl"
         text = systemctl.read_text()

@@ -1,7 +1,7 @@
 import type { RoleBaselineAction } from "../fleet-recipe/observer_assets.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
-const placement = { target: "orbit-node-209" };
+const placement = { labels: { role: "swamp" } };
 const after = (step: string) => [{ step, condition: { type: "succeeded" } }];
 
 /** One baseline action; the parent supplies its immutable public input and SSH globals. */

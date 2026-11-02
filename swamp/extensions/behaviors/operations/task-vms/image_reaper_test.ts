@@ -443,8 +443,8 @@ Deno.test("reaper stays unscheduled with exact discovery/host placement", async 
     trigger?: unknown;
     jobs: {
       steps: {
-        target: string;
-        labels: { node: string; pool?: string };
+        target?: string;
+        labels: { node?: string; role?: string };
         task: { methodName: string };
         writes?: boolean;
       }[];
@@ -453,15 +453,9 @@ Deno.test("reaper stays unscheduled with exact discovery/host placement", async 
   assertEquals(workflow.concurrency, 1);
   // Unscheduled until its host steps reach hosts through @swamp/ssh from 209 (3f66b05494).
   assertEquals(workflow.trigger, undefined);
-  assertEquals(workflow.jobs[0].steps[0].target, "swamp209-migration-a");
-  assertEquals(workflow.jobs[0].steps[0].labels, {
-    node: "209",
-    pool: "migration",
-  });
-  assertEquals(
-    workflow.jobs[1].steps[0].target,
-    "orbit-node-${{ self.host.node_id }}",
-  );
+  assertEquals(workflow.jobs[0].steps[0].target, undefined);
+  assertEquals(workflow.jobs[0].steps[0].labels, { role: "swamp" });
+  assertEquals(workflow.jobs[1].steps[0].target, undefined);
   assertEquals(
     workflow.jobs[1].steps[0].labels.node,
     "${{ string(self.host.node_id) }}",

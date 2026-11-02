@@ -15,10 +15,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: remove
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     writes: false
     task:
       <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-owned-sqlite-assets-" + run.id }}'}
@@ -33,7 +33,7 @@ jobs:
         behaviorName: '${{ "dbos-" + run.id }}'
         globalArgs:
           name: '${{ "dbos-" + run.id }}'
-          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}
+          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}
           hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-db-owned-" + run.id }}']}

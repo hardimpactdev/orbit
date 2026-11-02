@@ -14,7 +14,7 @@ jobs:
 - name: engine
   steps:
   - name: package
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       type: behavior
@@ -24,7 +24,7 @@ jobs:
       globalArgs: &engine_owner {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, packages: [docker.io, openssl], ensure: present}
       inputs: {}
   - name: daemon
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     dependsOn: [{step: package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
@@ -37,12 +37,12 @@ jobs:
 - name: plan
   dependsOn: [{job: engine, condition: {type: succeeded}}]
   steps:
-  - {name: plan, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', task: {type: behavior, behaviorType: '@nckrtl/metrics-role-plan', behaviorName: '${{ "metrics-plan-" + run.id }}', methodName: plan, inputs: {assignment_id: '${{ inputs.intent.assignment_id }}', address: '${{ inputs.intent.ssh_execution.target.host }}', files: '${{ inputs.intent.files }}'}}}
+  - {name: plan, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', task: {type: behavior, behaviorType: '@nckrtl/metrics-role-plan', behaviorName: '${{ "metrics-plan-" + run.id }}', methodName: plan, inputs: {assignment_id: '${{ inputs.intent.assignment_id }}', address: '${{ inputs.intent.ssh_execution.target.host }}', files: '${{ inputs.intent.files }}'}}}
 - name: directories
   dependsOn: [{job: plan, condition: {type: succeeded}}]
   steps:
   - name: create-directory
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     forEach: {item: directory, in: '${{ inputs.intent.enabled ? inputs.intent.directories : [] }}'}
     task:
@@ -65,7 +65,7 @@ jobs:
   dependsOn: [{job: directories, condition: {type: succeeded}}]
   steps:
   - name: file
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     forEach: {item: file, in: '${{ inputs.intent.enabled ? inputs.intent.files + steps.plan.outputs.files : [] }}'}
     task:
@@ -77,7 +77,7 @@ jobs:
   dependsOn: [{job: files, condition: {type: succeeded}}]
   steps:
   - name: validate
-    <<: &enable {target: orbit-node-209, guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'}
+    <<: &enable {labels: {role: swamp}, guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'}
     task:
       <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', methodName: exec}
       behaviorName: '${{ "metrics-validate-" + run.id }}'
@@ -117,25 +117,25 @@ jobs:
 - name: unit-definitions
   dependsOn: [{job: configuration, condition: {type: succeeded}}]
   steps:
-  - {name: load-unit-definitions, target: orbit-node-209, guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', task: {<<: *ssh, behaviorName: '${{ "metrics-unitdefs-" + run.id }}', globalArgs: *ssh_owner, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, daemon-reload]}}}
+  - {name: load-unit-definitions, labels: {role: swamp}, guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', task: {<<: *ssh, behaviorName: '${{ "metrics-unitdefs-" + run.id }}', globalArgs: *ssh_owner, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, daemon-reload]}}}
 - name: containers
   dependsOn: [{job: unit-definitions, condition: {type: succeeded}}]
   steps:
-  - {name: prepare-unit, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "metrics-stop-" + run.id + "-" + string(self._index) }}', methodName: apply, globalArgs: {<<: *owner, service: '${{ self.service.name + ".service" }}', ensure: stopped, enabled: false}, inputs: {}}}
+  - {name: prepare-unit, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "metrics-stop-" + run.id + "-" + string(self._index) }}', methodName: apply, globalArgs: {<<: *owner, service: '${{ self.service.name + ".service" }}', ensure: stopped, enabled: false}, inputs: {}}}
 - name: prepare-runtime
   dependsOn: [{job: containers, condition: {type: succeeded}}]
   steps:
-  - {name: remove-existing, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {<<: *apply, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "metrics-old-" + run.id + "-" + string(self._index) }}', globalArgs: {<<: *owner, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: absent}}}
-  - {name: create-volume, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', dependsOn: [{step: remove-existing, condition: *done}], forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {<<: *ssh, behaviorName: '${{ "metrics-volume-" + run.id + "-" + string(self._index) }}', globalArgs: *ssh_owner, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.service.volume_args }}'}}}
+  - {name: remove-existing, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {<<: *apply, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "metrics-old-" + run.id + "-" + string(self._index) }}', globalArgs: {<<: *owner, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: absent}}}
+  - {name: create-volume, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', dependsOn: [{step: remove-existing, condition: *done}], forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {<<: *ssh, behaviorName: '${{ "metrics-volume-" + run.id + "-" + string(self._index) }}', globalArgs: *ssh_owner, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.service.volume_args }}'}}}
 - name: images
   dependsOn: [{job: prepare-runtime, condition: {type: succeeded}}]
   steps:
-  - {name: image, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {<<: *apply, behaviorType: '@swamp/cfgmgmt/docker_image', behaviorName: '${{ "metrics-image-" + run.id + "-" + string(self._index) }}', globalArgs: {<<: *owner, image: '${{ self.service.image }}', ensure: present}}}
+  - {name: image, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {<<: *apply, behaviorType: '@swamp/cfgmgmt/docker_image', behaviorName: '${{ "metrics-image-" + run.id + "-" + string(self._index) }}', globalArgs: {<<: *owner, image: '${{ self.service.image }}', ensure: present}}}
 - name: reload
   dependsOn: [{job: images, condition: {type: succeeded}}]
   steps:
-  - {name: reload-units, target: orbit-node-209, guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', task: {<<: *ssh, behaviorName: '${{ "metrics-reload-" + run.id }}', globalArgs: *ssh_owner, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, daemon-reload]}}}
-  - {name: start-unit, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', dependsOn: [{step: reload-units, condition: *done}], forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "metrics-start-" + run.id + "-" + string(self._index) }}', methodName: apply, globalArgs: {<<: *owner, service: '${{ self.service.name + ".service" }}', ensure: running, enabled: false}, inputs: {}}}
+  - {name: reload-units, labels: {role: swamp}, guard: '${{ !inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', task: {<<: *ssh, behaviorName: '${{ "metrics-reload-" + run.id }}', globalArgs: *ssh_owner, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, daemon-reload]}}}
+  - {name: start-unit, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', dependsOn: [{step: reload-units, condition: *done}], forEach: {item: service, in: '${{ inputs.intent.enabled ? steps.plan.outputs.services : [] }}'}, task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "metrics-start-" + run.id + "-" + string(self._index) }}', methodName: apply, globalArgs: {<<: *owner, service: '${{ self.service.name + ".service" }}', ensure: running, enabled: false}, inputs: {}}}
 - name: verify
   dependsOn: [{job: reload, condition: {type: succeeded}}]
   steps:
@@ -169,7 +169,7 @@ jobs:
   dependsOn: [{job: verify, condition: {type: succeeded}}]
   steps:
   - name: exporter
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     forEach: {item: exporter, in: '${{ inputs.intent.fleet }}'}
     task:
@@ -180,7 +180,7 @@ jobs:
   dependsOn: [{job: exporters, condition: {type: succeeded}}]
   steps:
   - name: publish-certificate
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     forEach: {item: leaf, in: '${{ inputs.intent.certificates.leaves }}'}
     task:
@@ -200,7 +200,7 @@ jobs:
   dependsOn: [{job: certificates, condition: {type: succeeded}}]
   steps:
   - name: port
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *apply
@@ -211,7 +211,7 @@ jobs:
   dependsOn: [{job: firewall, condition: {type: succeeded}}]
   steps:
   - name: caddy
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       type: workflow
@@ -221,7 +221,7 @@ jobs:
   dependsOn: [{job: caddy, condition: {type: succeeded}}]
   steps:
   - name: dns
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     forEach: {item: dns, in: '${{ inputs.intent.dns }}'}
     task:
@@ -232,7 +232,7 @@ jobs:
   dependsOn: [{job: dns, condition: {type: succeeded}}]
   steps:
   - name: withdraw-certificate
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *apply
@@ -242,10 +242,10 @@ jobs:
 - name: remove
   dependsOn: [{job: remove-certificate, condition: {type: succeeded}}]
   steps:
-  - {name: stop-runtime-unit, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? [] : steps.plan.outputs.services }}'}, task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "metrics-off-" + run.id + "-" + string(self._index) }}', methodName: apply, globalArgs: {<<: *owner, service: '${{ self.service.name + ".service" }}', ensure: stopped, enabled: false}, inputs: {}}}
+  - {name: stop-runtime-unit, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? [] : steps.plan.outputs.services }}'}, task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "metrics-off-" + run.id + "-" + string(self._index) }}', methodName: apply, globalArgs: {<<: *owner, service: '${{ self.service.name + ".service" }}', ensure: stopped, enabled: false}, inputs: {}}}
   - name: container
     dependsOn: [{step: stop-runtime-unit, condition: *done}]
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     forEach: {item: container, in: '${{ inputs.intent.enabled ? [] : steps.plan.outputs.services }}'}
     task:
@@ -257,7 +257,7 @@ jobs:
   dependsOn: [{job: remove, condition: {type: succeeded}}]
   steps:
   - name: remove-directory
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ inputs.intent.enabled || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *apply
@@ -267,12 +267,12 @@ jobs:
 - name: remove-units
   dependsOn: [{job: remove-configuration, condition: {type: succeeded}}]
   steps:
-  - {name: unit-file, target: orbit-node-209, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? [] : steps.plan.outputs.services }}'}, task: {<<: *apply, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "metrics-rm-unit-" + run.id + "-" + string(self._index) }}', globalArgs: {<<: *owner, path: '${{ "/etc/systemd/system/" + self.service.name + ".service" }}', ensure: absent}}}
+  - {name: unit-file, labels: {role: swamp}, guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}', forEach: {item: service, in: '${{ inputs.intent.enabled ? [] : steps.plan.outputs.services }}'}, task: {<<: *apply, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "metrics-rm-unit-" + run.id + "-" + string(self._index) }}', globalArgs: {<<: *owner, path: '${{ "/etc/systemd/system/" + self.service.name + ".service" }}', ensure: absent}}}
 - name: purge
   dependsOn: [{job: remove-units, condition: {type: succeeded}}]
   steps:
   - name: purge-volume
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     forEach: {item: volume, in: '${{ inputs.intent.purge_volumes }}'}
     task:
@@ -284,7 +284,7 @@ jobs:
   dependsOn: [{job: purge, condition: {type: succeeded}}]
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       type: behavior

@@ -58,10 +58,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: enrollment
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: provider-plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
@@ -70,7 +70,7 @@ jobs:
       inputs:
         provider: ${{ inputs.intent.provider }}
   - name: bootstrap-account-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -88,7 +88,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-account
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -122,7 +122,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-authorized_key-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -140,7 +140,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-authorized_key
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -175,7 +175,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-sudo-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -193,7 +193,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-sudo
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -227,7 +227,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-observer-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -245,7 +245,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-observer
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -279,7 +279,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-verify-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -297,7 +297,7 @@ jobs:
       condition:
         type: succeeded
   - name: bootstrap-verify
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -331,7 +331,7 @@ jobs:
       condition:
         type: succeeded
   - name: observer-identity-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -343,7 +343,7 @@ jobs:
       condition:
         type: succeeded
   - name: observer-identity
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -378,7 +378,7 @@ jobs:
       condition:
         type: succeeded
   - name: observer-configuration
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -413,7 +413,7 @@ jobs:
       condition:
         type: succeeded
   - name: observer-ca
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -448,7 +448,7 @@ jobs:
       condition:
         type: succeeded
   - name: observer-unit
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -483,7 +483,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-snapshot-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -497,7 +497,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-snapshot-command
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -531,7 +531,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-snapshot
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -544,7 +544,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-key-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -558,7 +558,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-key-command
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -592,7 +592,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-key
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -605,7 +605,7 @@ jobs:
       condition:
         type: succeeded
   - name: hub-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-hub-command'
@@ -621,7 +621,7 @@ jobs:
       condition:
         type: succeeded
   - name: hub
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -650,7 +650,7 @@ jobs:
         type: succeeded
     writes: true
   - name: peer-publish-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -664,7 +664,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-publish-command
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -698,7 +698,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-publish
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -711,7 +711,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-enable
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -745,7 +745,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-start
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -779,7 +779,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-dns-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -794,7 +794,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-dns-command
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -828,7 +828,7 @@ jobs:
       condition:
         type: succeeded
   - name: peer-dns
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -841,7 +841,7 @@ jobs:
       condition:
         type: succeeded
   - name: private-ssh
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-ssh-prepare
@@ -865,7 +865,7 @@ jobs:
       condition:
         type: succeeded
   - name: observer-reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -894,7 +894,7 @@ jobs:
       condition:
         type: succeeded
   - name: observer-start
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -925,7 +925,7 @@ jobs:
       condition:
         type: succeeded
   - name: model
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-model-issue
@@ -941,7 +941,7 @@ jobs:
       condition:
         type: succeeded
   - name: runtime
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-runtime
@@ -967,7 +967,7 @@ jobs:
       condition:
         type: succeeded
   - name: cloud-snapshot-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -982,7 +982,7 @@ jobs:
         type: succeeded
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
   - name: cloud-snapshot-cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1010,7 +1010,7 @@ jobs:
         type: succeeded
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
   - name: receipt
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
@@ -1035,7 +1035,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: model-revoke
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-model-revoke
@@ -1059,7 +1059,7 @@ jobs:
     guard: ${{ steps["provider-plan"].outputs.provider == "incus" && !(steps.model.status in ["succeeded","failed","cancelled"])
       }}
   - name: hub-restore-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-hub-command'
@@ -1087,7 +1087,7 @@ jobs:
       condition:
         type: always
   - name: hub-restore
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1116,7 +1116,7 @@ jobs:
         type: succeeded
     writes: true
   - name: peer-restore-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -1140,7 +1140,7 @@ jobs:
         type: always
     guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
   - name: peer-restore
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1175,7 +1175,7 @@ jobs:
         type: succeeded
     guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
   - name: peer-cleanup-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
@@ -1196,7 +1196,7 @@ jobs:
         type: always
     guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
   - name: peer-cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1231,7 +1231,7 @@ jobs:
         type: succeeded
     guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: receipt
       condition:
@@ -1250,7 +1250,7 @@ jobs:
       inputs:
         receipt: ${{ steps.receipt.outputs }}
   - name: cloud-revoked
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: model-revoke
@@ -1272,7 +1272,7 @@ jobs:
           } }}
         stdout: ${{ steps["model-revoke"].outputs.result.stdout }}
   - name: cloud-inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: cloud-revoked
@@ -1291,7 +1291,7 @@ jobs:
           : {} }}'
         action: inspect
   - name: cloud-stop
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" || !steps["cloud-inspect"].outputs.result.running
       }}
     dependsOn:
@@ -1311,7 +1311,7 @@ jobs:
           : {} }}'
         action: stop
   - name: cloud-delete
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: cloud-inspect

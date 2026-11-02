@@ -125,7 +125,7 @@ The shared [direct Operation boundary](/reference/operations#direct-swamp-starts
 
 Creation reloads after applying the files, including on rerun; the systemd model's content-triggered reload alone would miss a previous reload failure. Destruction makes one official `@swamp/ssh` active-work check before effects, stops and disables the timer through the systemd model, removes the UUID-owned files through the file model, then reloads systemd through the official exec model. A cascade removal uses an unconditional official exec stop so an activating oneshot is stopped too. These paths read no private command source and need no command execution copy.
 
-Create, enable, run and destroy use one explicit `orbit-node-209` target on each job and step, without a second label selector. Enable consumes the same shared worker host pins and approved identity as create and destroy. There is no target worker, Gateway execution relay, child Operation, polled claim or receipt.
+Create, enable, run and destroy use one `labels: {role: swamp}` selector on each job and step, without a token target. Enable consumes the same shared worker host pins and approved identity as create and destroy. There is no target worker, Gateway execution relay, child Operation, polled claim or receipt.
 
 Definition installation composes the same Schedule installer as steps of its parent native DAG. It does not create child Operations.
 

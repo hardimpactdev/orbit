@@ -26,7 +26,7 @@ jobs:
   description: "scan \u2192 plan \u2192 assert"
   steps:
   - name: fetch
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -38,7 +38,7 @@ jobs:
           ORBIT_CHECKOUT: ${{ inputs.checkoutDir }}
           ORBIT_BRANCH: ${{ inputs.branch }}
   - name: head
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: fetch
       condition:
@@ -68,7 +68,7 @@ jobs:
         type: succeeded
     weight: 0
     allowFailure: false
-    target: orbit-node-209
+    labels: {role: swamp}
   - name: plan
     description: dependency-planner records the upgrade-plan
     task:
@@ -83,7 +83,7 @@ jobs:
         type: succeeded
     weight: 0
     allowFailure: false
-    target: orbit-node-209
+    labels: {role: swamp}
   - name: plan-matches-scan
     task:
       type: assert
@@ -96,7 +96,7 @@ jobs:
         type: succeeded
     weight: 0
     allowFailure: false
-    target: orbit-node-209
+    labels: {role: swamp}
   - name: every-subtask-has-packages
     task:
       type: assert
@@ -109,7 +109,7 @@ jobs:
         type: succeeded
     weight: 0
     allowFailure: false
-    target: orbit-node-209
+    labels: {role: swamp}
   - name: registries-answered
     task:
       type: assert
@@ -123,10 +123,10 @@ jobs:
         type: succeeded
     weight: 0
     allowFailure: false
-    target: orbit-node-209
+    labels: {role: swamp}
   dependsOn: []
   weight: 0
-  target: orbit-node-209
+  labels: {role: swamp}
 - name: approve
   description: Approval gate when the plan has a major upgrade (stub)
   dependsOn:
@@ -147,7 +147,7 @@ jobs:
     dependsOn: []
     weight: 0
     allowFailure: false
-    target: orbit-node-209
+    labels: {role: swamp}
   weight: 0
-  target: orbit-node-209
+  labels: {role: swamp}
 version: 1

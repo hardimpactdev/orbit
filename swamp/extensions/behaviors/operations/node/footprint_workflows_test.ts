@@ -79,11 +79,10 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
                 condition: { type: "succeeded" },
             }]);
         }
-        assertEquals(
-            workflow.target,
-            '${{ "orbit-node-" + string(inputs.node_id) }}',
-        );
-        assertEquals("labels" in workflow, false);
+        assertEquals(workflow.labels, {
+            node: "${{ string(inputs.node_id) }}",
+        });
+        assertEquals("target" in workflow, false);
         const children = jobs.flatMap((job) => job.steps).filter((step) =>
             step.task.type === "workflow"
         );

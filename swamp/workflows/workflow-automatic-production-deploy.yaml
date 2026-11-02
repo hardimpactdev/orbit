@@ -1,7 +1,7 @@
 id: 78efdd30-08ce-4ffb-a8eb-c7259c96ad24
 name: automatic-production-deploy
 description: Run production and development automatic deployment policy after their Gateway cutovers.
-labels: { pool: services-local }
+labels: {role: swamp}
 trigger:
   schedule: 30 * * * * *
 inputs:

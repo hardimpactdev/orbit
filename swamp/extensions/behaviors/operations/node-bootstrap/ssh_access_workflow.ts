@@ -1,6 +1,6 @@
 import { authorizedKeySteps } from "./authorized_key_steps.ts";
 const expr = (source: string) => "${{ " + source + " }}";
-const placement = { target: "orbit-node-209", labels: { node: "209" } };
+const placement = { labels: { role: "swamp" } };
 const after = (step: string) => [{ step, condition: { type: "succeeded" } }];
 
 function globals(bootstrap: boolean) {

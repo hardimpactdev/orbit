@@ -67,13 +67,13 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
         self.native_env["PATH"] = str(tools) + ":" + os.environ["PATH"]
         self.workflow["name"] = "process-command-fixture"
         for job in self.workflow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", job)
             # The Vite child is its own workflow; these Processes have no Vite plan.
             job["steps"] = [step for step in job["steps"] if step["name"] != "Publish the dev route"]
             for step in job["steps"]:
                 step["dependsOn"] = [edge for edge in step.get("dependsOn", []) if edge["step"] != "Publish the dev route"]
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
                 task = step["task"]
                 if task["behaviorType"] == "@swamp/ssh":

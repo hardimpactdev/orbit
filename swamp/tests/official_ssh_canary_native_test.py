@@ -44,12 +44,12 @@ raise SystemExit(result.returncode)
         fake.chmod(0o755)
         production = yaml.safe_load((ROOT / 'workflows/workflow-node-proxy-canary.yaml').read_text())
         for step in production['jobs'][0]['steps']:
-            self.assertEqual(step['target'], 'orbit-node-209')
+            self.assertEqual(step['labels'], {'role': 'swamp'})
             self.assertNotIn('labels', step)
             self.assertEqual(step['task']['behaviorType'], '@swamp/ssh')
             self.assertNotIn('sshBinary', step['task']['globalArgs'])
             self.assertEqual(step['task']['globalArgs']['transport']['identityFile'],
-                             '/run/credentials/orbit-node-worker.service/proxy-ssh-identity')
+                             '/etc/orbit/swamp-role-worker/ssh-identity')
 
         def fixture_copy(value):
             if isinstance(value, str):
@@ -62,7 +62,7 @@ raise SystemExit(result.returncode)
 
         workflow = fixture_copy(production)
         workflow['jobs'][0].pop('target')
-        self.assertEqual(production['jobs'][0]['target'], 'orbit-node-209')
+        self.assertEqual(production['jobs'][0]['labels'], {'role': 'swamp'})
         self.assertNotIn('labels', production['jobs'][0])
         for step in workflow['jobs'][0]['steps']:
             # Only fixture placement and the official package's own binary seam

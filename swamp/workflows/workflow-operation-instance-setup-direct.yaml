@@ -11,7 +11,6 @@ inputs:
   required: [operation_id, node_id, kind]
 jobs:
   - name: setup
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
     labels:
       node: "${{ string(inputs.node_id) }}"
     writes: true

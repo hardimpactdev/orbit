@@ -23,10 +23,7 @@ jobs:
 - name: prepare
   steps:
   - name: prepare
-    target: swamp209-services
-    labels: &id001
-      node: '209'
-      pool: services-local
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior
@@ -48,7 +45,6 @@ jobs:
     forEach:
       item: node
       in: ${{ steps.prepare.outputs.nodes }}
-    target: orbit-node-${{ self.node.node_id }}
     labels:
       node: ${{ string(self.node.node_id) }}
     writes: true
@@ -75,8 +71,7 @@ jobs:
       type: always
   steps:
   - name: finish
-    target: swamp209-services
-    labels: *id001
+    labels: {role: swamp}
     writes: true
     task:
       type: behavior

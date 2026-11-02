@@ -43,7 +43,7 @@ inputs:
   additionalProperties: false
 jobs:
 - name: development
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: dev_assets
     guard: ${{ inputs.intent.deployment.variant != "development" }}
@@ -377,14 +377,14 @@ jobs:
     dependsOn: [{step: dev_inspect, condition: {type: succeeded}}]
     task: {type: behavior, behaviorType: '@nckrtl/development-deploy', behaviorName: '${{ "dev_inspect_check-" + run.id }}', methodName: check, inputs: {observation: '${{ steps.dev_inspect.outputs }}'}}
 - name: development-result
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: development, condition: {type: always}}]
   steps:
   - name: result
     guard: ${{ inputs.intent.deployment.variant != "development" }}
     task: {type: behavior, behaviorType: '@nckrtl/development-deploy', behaviorName: '${{ "dev-result-" + run.id }}', methodName: result, inputs: {steps: '${{ steps }}', instance_id: '${{ inputs.intent.instance_id }}'}}
 - name: deploy
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: {node: '${{ string(inputs.node_id) }}'}
   writes: true
   steps:
   - guard: ${{ inputs.intent.deployment.variant != "production" }}
@@ -400,7 +400,7 @@ jobs:
       methodName: prepareProduction
       type: behavior
   - name: install-processes
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: member
       in: '${{ inputs.intent.deployment.variant == "production" ? inputs.intent.process_members : [] }}'
@@ -444,7 +444,7 @@ jobs:
   - job: deploy
     condition:
       type: failed
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: {node: '${{ string(inputs.node_id) }}'}
   writes: true
   steps:
   - name: report

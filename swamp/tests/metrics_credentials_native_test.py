@@ -91,7 +91,7 @@ export const behavior = {
         (self.repo / 'extensions/behaviors/fixture.ts').write_text(fixture)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-metrics-credentials-reset.yaml').read_text())
         for step in workflow['jobs'][0]['steps']:
-            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'role': 'swamp'})
             step['task'] = copy.deepcopy(step['task'])
             if step['task'].get('behaviorType') == '@swamp/ssh':
                 step['task']['behaviorType'] = '@fixture/metrics-credential-host'

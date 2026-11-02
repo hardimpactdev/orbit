@@ -48,7 +48,7 @@ jobs:
 - name: update
   steps:
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
@@ -57,7 +57,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
   - name: process-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
@@ -76,7 +76,7 @@ jobs:
       condition:
         type: succeeded
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -109,7 +109,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -129,7 +129,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy-process
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -163,7 +163,7 @@ jobs:
       condition:
         type: succeeded
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -189,7 +189,7 @@ jobs:
       condition:
         type: succeeded
   - name: observation
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
@@ -203,7 +203,7 @@ jobs:
       condition:
         type: succeeded
   - name: createdb
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -234,7 +234,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.observation.outputs.replace }}
   - name: migrate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -265,7 +265,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.observation.outputs.replace }}
   - name: reinspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -308,7 +308,7 @@ jobs:
       condition:
         type: succeeded
   - name: recheck
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
@@ -322,7 +322,7 @@ jobs:
       condition:
         type: succeeded
   - name: remove
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-process-destroy
@@ -340,7 +340,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.recheck.outputs.replace }}
   - name: install
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-process-create
@@ -362,7 +362,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.recheck.outputs.replace }}
   - name: health
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -391,7 +391,7 @@ jobs:
       condition:
         type: succeeded
   - name: recover-remove
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-process-destroy
@@ -416,7 +416,7 @@ jobs:
     guard: ${{ !("recheck" in steps && steps.recheck.status == "succeeded" && steps.recheck.outputs.replace && (("remove" in steps && steps.remove.status
       == "failed") || ("install" in steps && steps.install.status == "failed") || ("health" in steps && steps.health.status == "failed"))) }}
   - name: recover-install
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-process-create
@@ -431,7 +431,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -452,7 +452,7 @@ jobs:
       condition:
         type: always
   - name: status
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

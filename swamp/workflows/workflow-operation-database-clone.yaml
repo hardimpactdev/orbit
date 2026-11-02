@@ -30,10 +30,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: clone
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: intent
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
@@ -41,7 +41,7 @@ jobs:
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: mysql
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: intent, condition: {type: succeeded}}
     guard: ${{ steps.intent.status != "succeeded" || inputs.intent.variant != "mysql" }}
@@ -51,7 +51,7 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{
           inputs.execution_secrets }}'}
   - name: sqlite
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: intent, condition: {type: succeeded}}
     guard: ${{ steps.intent.status != "succeeded" || inputs.intent.variant == "mysql" }}
@@ -61,12 +61,12 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{
           inputs.execution_secrets }}'}
 - name: result
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - {job: clone, condition: {type: always}}
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
@@ -74,7 +74,7 @@ jobs:
       methodName: result
       inputs: {expected: '${{ inputs.intent.variant == "mysql" ? ["mysql"] : ["sqlite"] }}', steps: '${{ steps }}'}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: result, condition: {type: succeeded}}
     task:

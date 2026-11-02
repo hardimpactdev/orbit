@@ -70,7 +70,7 @@ class ConnPairingNative(NativeTestCase):
             (ROOT / "workflows/workflow-operation-conn-pairing-create.yaml").read_text()
         )
         self.assertEqual(
-            workflow["jobs"][0]["steps"][0].pop("target"), "orbit-node-209"
+            workflow["jobs"][0]["steps"][0].pop("labels"), {"role": "swamp"}
         )
         self.assertNotIn("labels", workflow["jobs"][0]["steps"][0])
         (self.repo / "workflows/workflow-conn-pairing.yaml").write_text(
@@ -187,6 +187,7 @@ class ConnPairingNative(NativeTestCase):
         self.native_timeout = 120
         path = self.repo / "workflows/workflow-conn-pairing.yaml"
         workflow = yaml.safe_load(path.read_text())
+        workflow["jobs"][0]["steps"][0].pop("labels", None)
         workflow["jobs"][0]["steps"][0]["target"] = "orbit-node-209"
         path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.cli(

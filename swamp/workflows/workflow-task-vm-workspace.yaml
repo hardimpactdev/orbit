@@ -24,10 +24,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: workspace
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-workspace-input'
@@ -36,7 +36,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
   - name: account
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: input
       condition:
@@ -64,7 +64,7 @@ jobs:
         - /usr/bin/id
         - -un
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: account
       condition:
@@ -83,7 +83,7 @@ jobs:
         - --
         - ${{ steps.input.outputs.checkout_path }}
   - name: observe
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: directory
       condition:
@@ -103,7 +103,7 @@ jobs:
         - "import json,os,sys\nfrom pathlib import Path\nvalue=json.load(sys.stdin)\npath=Path(value[\"checkout_path\"])\nif not path.is_dir() or not os.access(path,os.W_OK):\n    raise SystemExit(1)\nprint(json.dumps({**value,\"ready\":True}))\n"
         stdin: ${{ steps.input.outputs.input_json }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: observe
       condition:

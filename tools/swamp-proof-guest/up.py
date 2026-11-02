@@ -191,7 +191,7 @@ def swamp():
                               + f'WorkingDirectory={STATE}\nLoadCredential=enrollment:{STATE}/credentials/enrollment\n'
                               + f'LoadCredential=server:{STATE}/credentials/worker\nLoadCredential=proxy-ssh-identity:{IDENTITY}\n'
                               + f'ExecStart={BINARY} worker connect {URL} --token-file=%d/enrollment --server-token-file=%d/server '
-                              + f'--ca-cert={tls}/ca.pem --cache-dir={STATE}/worker-cache --label node=209\n'),
+                              + f'--ca-cert={tls}/ca.pem --cache-dir={STATE}/worker-cache --label role=swamp --label node=209\n'),
     }
     for name, contents in units.items():
         Path(f'/etc/systemd/system/{name}.service').write_text(contents)

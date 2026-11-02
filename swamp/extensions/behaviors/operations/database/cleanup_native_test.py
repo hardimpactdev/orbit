@@ -19,13 +19,13 @@ class DatabaseCleanupNative(NativeTestCase):
         module.write_text('import {fixtureHttp, fixtureLocal} from "./cleanup_native_fixture.ts";\n' + module.read_text().replace('export const behavior = cleanup();', 'export const behavior = cleanup(() => fixtureHttp, fixtureLocal);'))
         source = ROOT / 'workflows/workflow-operation-database-cleanup.yaml'
         fixture_workflow = yaml.safe_load(source.read_text())
-        fixture_workflow.pop('target', None)
+        fixture_workflow.pop('target', None); fixture_workflow.pop('labels', None)
         fixture_workflow.pop('labels', None)
         for job in fixture_workflow['jobs']:
-            job.pop('target', None)
+            job.pop('target', None); job.pop('labels', None)
             job.pop('labels', None)
             for step in job['steps']:
-                step.pop('target', None)
+                step.pop('target', None); step.pop('labels', None)
                 step.pop('labels', None)
         (self.repo / 'workflows' / source.name).write_text(yaml.safe_dump(fixture_workflow, sort_keys=False))
         self.state = {'operation': {'id': 17, 'kind': 'database.sqlite_cleanup', 'node_id': 209, 'status': 'queued', 'result': None, 'cancel_requested': False, 'input': {'variant': 'clone', 'directory': '/tmp/orbit-sqlite-clone-'+str(17).zfill(32)}}, 'calls': [], 'cleanups': 0}

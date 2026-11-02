@@ -30,7 +30,7 @@ jobs:
 - name: environment
   steps:
   - name: read
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -55,7 +55,7 @@ jobs:
         - numbered
         sudo: true
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: read
       condition:

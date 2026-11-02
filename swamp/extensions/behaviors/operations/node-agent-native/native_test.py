@@ -42,7 +42,7 @@ class NodeAgentNative(NativeTestCase):
         workflow=yaml.safe_load((ROOT/f'workflows/workflow-{name}.yaml').read_text())
         for job in workflow['jobs']:
             for step in job['steps']:
-                self.assertEqual(step.pop('target'),'orbit-node-209')
+                self.assertEqual(step.pop('labels'),{'role': 'swamp'})
                 task=step.get('task',{})
                 if task.get('behaviorType')=='@swamp/ssh':
                     task['behaviorType']='@fixture/node-agent-ssh'

@@ -55,7 +55,7 @@ jobs:
 - name: certificate
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/certificate-script-assets'
@@ -65,7 +65,7 @@ jobs:
         node_id: ${{ inputs.intent.leaf.node_id }}
         intent: ${{ inputs.intent.leaf }}
   - name: prepare-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -96,7 +96,7 @@ jobs:
         - '0700'
         - ${{ "/tmp/orbit-route-" + run.id }}
   - name: copy-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare-assets
       condition:
@@ -114,7 +114,7 @@ jobs:
         direction: to
         recursive: true
   - name: remove
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -135,7 +135,7 @@ jobs:
       condition:
         type: succeeded
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -157,7 +157,7 @@ jobs:
       condition:
         type: succeeded
   - name: cleanup-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect
       condition:
@@ -175,7 +175,7 @@ jobs:
         - -rf
         - ${{ "/tmp/orbit-route-" + run.id }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'

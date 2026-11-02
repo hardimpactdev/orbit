@@ -48,7 +48,7 @@ jobs:
 - name: sweep
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
@@ -57,7 +57,7 @@ jobs:
       inputs:
         scope: ${{ inputs.intent.scope }}
   - name: cloud-api
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
@@ -69,7 +69,7 @@ jobs:
       condition:
         type: succeeded
   - name: cloud-inventory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -88,7 +88,7 @@ jobs:
       condition:
         type: succeeded
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
@@ -103,7 +103,7 @@ jobs:
       condition:
         type: succeeded
   - name: cloud-servers
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: plan
       condition:
@@ -116,7 +116,7 @@ jobs:
         resources: ${{ steps.plan.outputs.servers }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: cloud-templates
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: cloud-servers
       condition:
@@ -129,7 +129,7 @@ jobs:
         resources: ${{ steps.plan.outputs.templates }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: cloud-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -148,7 +148,7 @@ jobs:
       condition:
         type: succeeded
   - name: after-plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
@@ -162,7 +162,7 @@ jobs:
       condition:
         type: succeeded
   - name: format
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
@@ -176,7 +176,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

@@ -33,10 +33,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: runtime
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: 'Resolve check assets'
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
@@ -44,7 +44,7 @@ jobs:
       methodName: read
       inputs: {control: '${{ inputs.intent.control }}'}
   - name: 'Make the asset directory'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Resolve check assets', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -58,7 +58,7 @@ jobs:
         hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
       inputs: {hosts: 'name:target', argv: [mkdir, -p, '${{ "/tmp/orbit-process-control-" + run.id }}']}
   - name: 'Copy check assets'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Make the asset directory', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -70,7 +70,7 @@ jobs:
         recursive: true}
     # Start and restart of a production Process need its admitted release directory.
   - name: 'Check the release'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Copy check assets', condition: {type: succeeded}}]
     guard: ${{ !has(inputs.intent.control.directory) }}
     task:
@@ -82,7 +82,7 @@ jobs:
       inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-"
             + run.id + "/scripts/check_release.py" }}'], sudo: true}
   - name: 'Publish the dev route'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Check the release', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Copy check assets', condition: {type: succeeded}}]
     guard: ${{ !has(inputs.intent.vite_plan) }}
     task:
@@ -93,7 +93,7 @@ jobs:
               inputs.intent.ssh_execution }}'}, execution_secrets: {}}
     # Stop disables; start and restart enable unless the Process starts on demand (legacy enable --now, disable --now).
   - name: 'Set boot policy'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Check the release', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Publish the dev route', condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: 'Copy check assets', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" || (inputs.kind != "process.stop" && inputs.intent.control.on_demand) }}
@@ -106,7 +106,7 @@ jobs:
       inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_ENABLE=" + (inputs.kind ==
               "process.stop" ? "disable" : "enable") }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-" + run.id + "/scripts/enable.py" }}'], sudo: true}
   - name: 'Control the Process'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Set boot policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check the release', condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: 'Publish the dev route', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Copy check assets', condition: {type: succeeded}}]
     task:
@@ -118,7 +118,7 @@ jobs:
       inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_OPERATION=" + (inputs.kind == "process.stop" ? "stop" : (inputs.kind
               == "process.start" ? "start" : "restart")) }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-" + run.id + "/scripts/control.py" }}'], sudo: true}
   - name: 'Verify the state'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Control the Process', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -129,7 +129,7 @@ jobs:
       inputs: {hosts: 'name:target', argv: [env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', '${{ "ORBIT_PROCESS_DESIRED=" + (inputs.kind ==
               "process.stop" ? "stopped" : "running") }}', /usr/bin/python3, -B, '${{ "/tmp/orbit-process-control-" + run.id + "/scripts/verify.py" }}'], sudo: true}
   - name: 'Check the listener'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Verify the state', condition: {type: succeeded}}]
     guard: ${{ !has(inputs.intent.vite_plan) }}
     task:
@@ -143,7 +143,7 @@ jobs:
               }}'], sudo: true}
     # Only an explicit start wakes Vite traffic, as legacy did.
   - name: 'Mark it awake'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Check the listener', condition: {type: succeeded}}]
     guard: ${{ !has(inputs.intent.vite_plan) || inputs.kind != "process.start" }}
     task:
@@ -154,7 +154,7 @@ jobs:
       globalArgs: *ssh
       inputs: {hosts: 'name:target', argv: [install, -D, -m, '0644', /dev/null, '${{ has(inputs.intent.vite_plan) ? inputs.intent.vite_plan.awake.marker : "" }}'], sudo: true}
   - name: 'Clean up'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Verify the state', condition: {type: succeeded}}, {step: 'Mark it awake', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     # A failed run keeps its scripts for a resumed run.
     guard: ${{ steps.exists(key, steps[key].status == "failed") }}

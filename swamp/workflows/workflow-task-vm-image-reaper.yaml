@@ -7,8 +7,7 @@ jobs:
   - name: discover
     steps:
       - name: discover
-        target: swamp209-migration-a
-        labels: { pool: migration, node: "209" }
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: "@nckrtl/task-vm-image-reaper"
@@ -23,7 +22,6 @@ jobs:
           item: host
           in: "${{ steps.discover.outputs.nodes }}"
         concurrency: 1
-        target: orbit-node-${{ self.host.node_id }}
         labels: { node: "${{ string(self.host.node_id) }}" }
         writes: true
         task:

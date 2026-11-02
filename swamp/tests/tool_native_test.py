@@ -39,7 +39,7 @@ class ToolNative(NativeTestCase):
             path = f'workflows/workflow-operation-tool-{name}.yaml'
             workflow = yaml.safe_load((ROOT / path).read_text())
             for step in workflow['jobs'][0]['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     step['task']['globalArgs']['sshBinary'] = str(fixture)
             (self.repo / path).write_text(yaml.safe_dump(workflow, sort_keys=False))

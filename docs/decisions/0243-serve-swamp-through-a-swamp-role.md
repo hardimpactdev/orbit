@@ -23,9 +23,13 @@ Swamp serve listens on loopback port 9418 on Node 209. A hand-written Caddy Proc
 
 `swamp.orbit` is a private custom proxy Route on the `swamp` Node. Custom proxy sites already use HTTP/1.1 to a loopback upstream, keep the client `Host`, set the forwarded headers, flush immediately and allow one-hour reads, which Swamp's WebSockets need. Route convergence issues the certificate. The private DNS generator answers with the Route Node's WireGuard address.
 
+Relocating the role moves its Caddy build. The `swamp.orbit` Route stays a separate record on its Node and moves with the Route commands. A production relocation moves the vault and needs Nick's approval.
+
+### Workers and placement
+
 The role also runs Swamp's workers on its Node. Its runtime installs one systemd template, `orbit-swamp-worker@.service`, with instances `a` and `b`. Each connects to serve on loopback, `ws://127.0.0.1:9418`, never through Caddy or TLS, with 8 dispatch slots and the labels `role=swamp` and `node=<id>`. Two instances let one drain and restart while the other runs. Each instance loads its enrollment and server tokens from `/etc/orbit/swamp-role-worker/<instance>/` with `LoadCredential`. The operator mints those tokens on the swamp Node; the role never mints, reads or moves them. The runtime also places the Node's SSH identity at `/etc/orbit/swamp-role-worker/ssh-identity`, readable by the worker account, so both instances reach other Nodes with the same key.
 
-Relocating the role moves its Caddy build. The `swamp.orbit` Route stays a separate record on its Node and moves with the Route commands. A production relocation moves the vault and needs Nick's approval.
+Steps that run on the swamp Node select its workers by label, `labels: {role: swamp}`, not by the token name `orbit-node-209`. Steps for one effect Node select `labels: {node: "<id>"}`; every Node worker carries its `node` label. Any number of workers can carry a label, so a worker drains and restarts while another takes its steps, and no step names a token.
 
 ## Rejected alternatives
 

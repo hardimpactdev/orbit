@@ -42,10 +42,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: destroy
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
@@ -54,7 +54,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -71,7 +71,7 @@ jobs:
       condition:
         type: succeeded
   - name: stop
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -89,7 +89,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.inspect.outputs.result.running }}
   - name: model
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-model-revoke
@@ -112,7 +112,7 @@ jobs:
         - type: skipped
     guard: ${{ !steps.plan.outputs.model_required }}
   - name: revoked
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
@@ -138,7 +138,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: delete
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -155,7 +155,7 @@ jobs:
       condition:
         type: succeeded
   - name: seed-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -188,7 +188,7 @@ jobs:
         type: succeeded
     guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: seed
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
@@ -203,7 +203,7 @@ jobs:
         type: succeeded
     guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: seed-delete
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -220,7 +220,7 @@ jobs:
         type: succeeded
     guard: ${{ steps.plan.outputs.provider != "incus" || !steps.seed.outputs.present }}
   - name: seed-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -243,7 +243,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-node-remove
@@ -265,7 +265,7 @@ jobs:
         - type: skipped
     guard: ${{ !steps.plan.outputs.node_present }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'

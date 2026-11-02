@@ -29,13 +29,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: script
-  target: orbit-node-209
-  labels: &worker_labels
-    node: '209'
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-repository-assets'
@@ -47,8 +44,7 @@ jobs:
         intent: ${{ inputs.intent }}
       behaviorName: ${{ "task-repository-assets-" + string(inputs.operation_id) }}
   - name: prepare-assets
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -77,8 +73,7 @@ jobs:
       condition:
         type: succeeded
   - name: copy-assets
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -96,8 +91,7 @@ jobs:
       condition:
         type: succeeded
   - name: inspect
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -116,8 +110,7 @@ jobs:
       condition:
         type: succeeded
   - name: snapshot-before
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -136,8 +129,7 @@ jobs:
       condition:
         type: succeeded
   - name: execute
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -159,8 +151,7 @@ jobs:
       condition:
         type: succeeded
   - name: snapshot-after
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -179,8 +170,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -201,8 +191,7 @@ jobs:
       condition:
         type: succeeded
   - name: cleanup-assets
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -222,8 +211,7 @@ jobs:
       condition:
         type: succeeded
   - name: outcome
-    target: orbit-node-209
-    labels: *worker_labels
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

@@ -62,10 +62,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: paths
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
@@ -74,7 +74,7 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
       - name: mint
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: paths
             condition:
@@ -92,7 +92,7 @@ jobs:
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
       - name: candidate-branch
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: mint
             condition:
@@ -127,7 +127,7 @@ jobs:
               - branch
               - '--show-current'
       - name: candidate-commit
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-branch
             condition:
@@ -152,7 +152,7 @@ jobs:
               - '--verify'
               - 'HEAD^{commit}'
       - name: candidate-status
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-commit
             condition:
@@ -177,7 +177,7 @@ jobs:
               - '--porcelain'
               - '--untracked-files=all'
       - name: candidate-submodules
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-status
             condition:
@@ -202,7 +202,7 @@ jobs:
               - status
               - '--recursive'
       - name: candidate-origin-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-submodules
             condition:
@@ -216,7 +216,7 @@ jobs:
             action: origin
             input: '${{ inputs.intent.candidate }}'
       - name: candidate-origin
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-origin-assets
             condition:
@@ -232,7 +232,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["candidate-origin-assets"].outputs.script_body }}'
       - name: candidate
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-origin
             condition:
@@ -250,7 +250,7 @@ jobs:
             status: '${{ steps["candidate-status"].outputs }}'
             submodules: '${{ steps["candidate-submodules"].outputs }}'
       - name: source-worktrees
-        target: orbit-node-209
+        labels: {role: swamp}
         guard: >-
           ${{ steps.exists(key, steps[key].status == "failed") || (!(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null)
           || (inputs.intent.retained_source != null)) }}
@@ -287,7 +287,7 @@ jobs:
             condition:
               type: succeeded
       - name: source-branch-available
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-worktrees
             condition:
@@ -308,7 +308,7 @@ jobs:
               ${{ inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null && !(inputs.intent.retained_source != null) ?
               steps["source-worktrees"].outputs : {"stdout":""} }}
       - name: source-branch-accepted
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-branch-available
             condition:
@@ -323,7 +323,7 @@ jobs:
           severity: high
           message: instance.branch_in_use
       - name: source-prepare-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-branch-accepted
             condition:
@@ -341,7 +341,7 @@ jobs:
             action: prepare_directory
             input: '${{ inputs.intent }}'
       - name: source-prepare-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-prepare-assets
             condition:
@@ -361,7 +361,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-prepare-assets"].outputs.script_body }}'
       - name: source-prepared
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-prepare-read
             condition:
@@ -378,7 +378,7 @@ jobs:
           inputs:
             observation: '${{ steps["source-prepare-read"].outputs }}'
       - name: source-init
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-prepared
             condition:
@@ -408,7 +408,7 @@ jobs:
               - init
               - '--quiet'
       - name: source-worktree
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-init
             condition:
@@ -441,7 +441,7 @@ jobs:
               - '${{ inputs.intent.source.checkout }}'
               - '${{ inputs.intent.resolve.seed_commit == null ? "HEAD" : inputs.intent.resolve.seed_commit }}'
       - name: source-origin-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-worktree
             condition:
@@ -461,7 +461,7 @@ jobs:
               checkout: '${{ inputs.intent.source.checkout }}'
               allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
       - name: source-origin-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-assets
             condition:
@@ -481,7 +481,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-origin-assets"].outputs.script_body }}'
       - name: source-origin-proof
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-read
             condition:
@@ -500,7 +500,7 @@ jobs:
             observation: '${{ steps["source-origin-read"].outputs }}'
             allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
       - name: source-origin-configure
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-proof
             condition:
@@ -529,7 +529,7 @@ jobs:
               - remote.origin.url
               - '${{ inputs.intent.source.repository }}'
       - name: source-git-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-configure
             condition:
@@ -557,7 +557,7 @@ jobs:
               - rev-parse
               - '--absolute-git-dir'
       - name: source-marker-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-git-directory
             condition:
@@ -578,7 +578,7 @@ jobs:
               prepare_id: '${{ inputs.intent.source.prepare_id }}'
               git_directory: '${{ steps["source-git-directory"].outputs.stdout }}'
       - name: source-marker-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-marker-assets
             condition:
@@ -598,7 +598,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-marker-assets"].outputs.script_body }}'
       - name: source-paths
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-marker-read
             condition:
@@ -615,7 +615,7 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
       - name: source-scripts-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-paths
             condition:
@@ -637,7 +637,7 @@ jobs:
               - '-p'
               - '${{ "/tmp/orbit-source-" + run.id + "-source" }}'
       - name: source-scripts-copy
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-scripts-directory
             condition:
@@ -659,7 +659,7 @@ jobs:
             recursive: true
             direction: to
       - name: source-fetch
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-scripts-copy
             condition:
@@ -684,7 +684,7 @@ jobs:
               - '${{ inputs.intent.source.repository }}'
             stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key) }}'
       - name: source-refs
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-fetch
             condition:
@@ -714,7 +714,7 @@ jobs:
               - refs/heads
               - refs/remotes/origin
       - name: source-selected
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-refs
             condition:
@@ -732,7 +732,7 @@ jobs:
             resolve: '${{ inputs.intent.resolve }}'
             refs: '${{ steps["source-refs"].outputs }}'
       - name: source-checkout
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-selected
             condition:
@@ -764,7 +764,7 @@ jobs:
               - '${{ steps["source-selected"].outputs.branch }}'
               - '${{ steps["source-selected"].outputs.reference }}'
       - name: source-commit
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-checkout
             condition:
@@ -793,7 +793,7 @@ jobs:
               - '--verify'
               - 'HEAD^{commit}'
       - name: source-profile-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-commit
             condition:
@@ -811,7 +811,7 @@ jobs:
             action: profile
             input: '${{ inputs.intent }}'
       - name: source-profile-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-profile-assets
             condition:
@@ -831,7 +831,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-profile-assets"].outputs.script_body }}'
       - name: source-result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-profile-read
             condition:
@@ -851,7 +851,7 @@ jobs:
             branch: '${{ steps["source-selected"].outputs.branch }}'
             commit: '${{ steps["source-commit"].outputs }}'
       - name: environment
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-result
             condition:
@@ -882,14 +882,14 @@ jobs:
               - '${{ inputs.intent.environment_path }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
   - name: clone-vp-capture
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - job: prepare
         condition:
           type: succeeded
     steps:
       - name: clone-vp-local-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: command/shell
@@ -900,7 +900,7 @@ jobs:
             env:
               ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-"+run.id }}'
       - name: clone-vp-project-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-local-directory
             condition:
@@ -916,7 +916,7 @@ jobs:
               application: '${{ inputs.intent.application }}'
               destination: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
       - name: clone-vp-project
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-project-asset
             condition:
@@ -943,7 +943,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["clone-vp-project-asset"].outputs.script_body }}'
       - name: clone-vp-private-copy
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-project
             condition:
@@ -960,7 +960,7 @@ jobs:
             dst: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
             direction: from
       - name: clone-vp-requirements
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-private-copy
             condition:
@@ -973,14 +973,14 @@ jobs:
           inputs:
             path: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
   - name: clone-vp-install
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - job: clone-vp-capture
         condition:
           type: succeeded
     steps:
       - name: clone-vp-manager-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/node-tool-setup-assets'
@@ -994,7 +994,7 @@ jobs:
             ${{ steps["clone-vp-requirements"].outputs.manager_required ? (steps["clone-vp-requirements"].outputs.runtime == null ? [] :
             [steps["clone-vp-requirements"].outputs.runtime]) : [] }}
       - name: clone-vp-manager
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-assets
             condition:
@@ -1023,7 +1023,7 @@ jobs:
             sudo: true
         forEach: *ref_0
       - name: clone-vp-manager-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-assets
             condition:
@@ -1039,7 +1039,7 @@ jobs:
           severity: high
           message: The admitted VP manager was not prepared.
       - name: clone-vp-cli
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-ready
             condition:
@@ -1061,7 +1061,7 @@ jobs:
           item: runtime
           in: '${{ steps["clone-vp-requirements"].outputs.runtime == null ? [] : [steps["clone-vp-requirements"].outputs.runtime] }}'
       - name: clone-vp-cli-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-cli
             condition:
@@ -1076,7 +1076,7 @@ jobs:
             observation: '${{ steps["clone-vp-cli-0"].outputs }}'
         forEach: *ref_1
       - name: clone-vp-install
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-cli-ready
             condition:
@@ -1103,7 +1103,7 @@ jobs:
             env: *ref_6
         forEach: *ref_1
       - name: clone-vp-inventory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-install
             condition:
@@ -1126,7 +1126,7 @@ jobs:
             env: *ref_6
         forEach: *ref_1
       - name: clone-vp-verify
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-inventory
             condition:
@@ -1141,7 +1141,7 @@ jobs:
             inventory: '${{ steps["clone-vp-inventory-0"].outputs }}'
         forEach: *ref_1
       - name: clone-vp-result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-assets
             condition:
@@ -1176,14 +1176,14 @@ jobs:
             name: clone-vp
             steps: '${{ steps }}'
   - name: clone
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - job: clone-vp-install
         condition:
           type: succeeded
     steps:
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'

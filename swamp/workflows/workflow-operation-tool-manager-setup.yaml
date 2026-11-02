@@ -13,15 +13,15 @@ jobs:
 - name: setup
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tm-assets-" + run.id }}', methodName: manager_assets, inputs: {input: '${{ inputs.intent }}'}}
   - name: setup_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: '${{ !("setup" in inputs.intent) || inputs.intent.setup == null }}'
     task: {type: behavior, behaviorType: '@nckrtl/node-tool-setup-assets', behaviorName: '${{ "tm-setup-assets-" + run.id }}', methodName: read, inputs: {setup: '${{ inputs.intent.setup }}'}}
   # Read the manager; on a Linux first use install it at its pinned version, then read it again.
   - name: Set up the Tool Manager
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}, {step: setup_assets, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
@@ -37,6 +37,6 @@ jobs:
         # The bundle, then the installers; the Vite+ installer exceeds one exec argument.
         stdin: '${{ steps.assets.outputs.bundle + ("setup_assets" in steps && steps.setup_assets.status == "succeeded" ? "\x1e" + steps.setup_assets.outputs.manager_body + "\x1e" + (steps.setup_assets.outputs.apt_body == null ? "" : steps.setup_assets.outputs.apt_body) : "") }}'
   - name: ready
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: Set up the Tool Manager, condition: {type: succeeded}}]
     task: {type: assert, expr: '("report" in inputs && inputs.report) || steps["Set up the Tool Manager"].outputs.exitCode == 0', severity: high, message: The Tool Manager is not ready.}

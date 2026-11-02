@@ -30,7 +30,7 @@ return await fixture.methods.execute.execute(...args);
         workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-task-vm-cache-fill.yaml").read_text())
         self.assertEqual([j["name"] for j in workflow["jobs"]], ["fill"])
         for job in workflow["jobs"]:
-            self.assertEqual(job.pop("target"), '${{ "orbit-node-" + string(inputs.node_id) }}')
+            self.assertEqual(job.pop("labels"), {'node': '${{ string(inputs.node_id) }}'})
             self.assertEqual(job.pop("labels"), {"node": '${{ string(inputs.node_id) }}'})
         (self.repo / "workflows/workflow-operation-task-vm-cache-fill.yaml").write_text(yaml.safe_dump(workflow,sort_keys=False))
         self.state = {"fills":0,"calls":[],"posts":[],"operation":{"id":7,"kind":"task_vm.fill_package_cache","node_id":13,

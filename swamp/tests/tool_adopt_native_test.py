@@ -48,10 +48,10 @@ print(json.dumps(facts))
         fixture.chmod(0o700)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-tool-adopt-209.yaml').read_text())
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             self.assertNotIn('labels', job)
             for step in job['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 self.assertNotIn('labels', step)
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     transport=step['task']['globalArgs']['transport']

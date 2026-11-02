@@ -141,7 +141,7 @@ Deno.test("retained role parents delegate each leaf to the visible native child"
     const child = tasks.find((task) => task.type === "workflow")!;
     assertEquals(child.workflowIdOrName, "node-role-certificate-publish");
     assertEquals(
-        steps.find((step) => step.task === child)!.target,
-        "orbit-node-209",
+        steps.find((step) => step.task === child)!.labels,
+        { role: "swamp" },
     );
 });

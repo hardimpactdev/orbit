@@ -38,10 +38,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: update
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     writes: false
     task:
       <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-update-assets-" + run.id }}'}
@@ -59,7 +59,7 @@ jobs:
         behaviorName: '${{ "database-update-" + string(inputs.operation_id) }}'
         globalArgs:
           name: '${{ "database-update-" + string(inputs.operation_id) }}'
-          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}
+          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}
           hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
       methodName: exec
       inputs:

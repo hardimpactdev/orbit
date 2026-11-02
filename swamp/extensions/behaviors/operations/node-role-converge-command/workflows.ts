@@ -14,7 +14,7 @@ const on = (
     step: string,
     type = "succeeded",
 ) => [{ step, condition: { type } }];
-const target = { target: "orbit-node-209" };
+const target = { labels: { role: "swamp" } };
 const references = {
     type: "object",
     additionalProperties: {
@@ -242,7 +242,6 @@ export function roleWorkflow() {
         "inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null",
     );
     for (const step of steps) {
-        delete step.labels;
         step.allowFailure = true;
     }
     return {

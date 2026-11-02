@@ -45,7 +45,7 @@ jobs:
 - name: update
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: workload
       in: ${{ inputs.intent.workloads }}
@@ -65,7 +65,7 @@ jobs:
           plan: ${{ self.workload.prepare }}
         execution_secrets: {}
   - name: forward
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepare, condition: {type: always}}
     guard: ${{ !inputs.intent.effectful || steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
@@ -81,7 +81,7 @@ jobs:
         execution_secrets: ${{ inputs.execution_secrets }}
         parent_run_id: ${{ run.id }}
   - name: retire
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: workload
       in: ${{ inputs.intent.workloads }}
@@ -105,7 +105,7 @@ jobs:
           plan: ${{ self.workload.selected }}
         execution_secrets: {}
   - name: restore-workload
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach:
       item: workload
       in: ${{ inputs.intent.workloads }}
@@ -130,7 +130,7 @@ jobs:
           plan: ${{ self.workload.restore }}
         execution_secrets: {}
   - name: restore
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepare, condition: {type: always}}
     - {step: forward, condition: {type: always}}
@@ -149,7 +149,7 @@ jobs:
         execution_secrets: ${{ inputs.execution_secrets }}
         parent_run_id: ${{ run.id }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepare, condition: {type: always}}
     - {step: forward, condition: {type: always}}
@@ -169,7 +169,7 @@ jobs:
         workload_count: ${{ size(inputs.intent.workloads) }}
         steps: ${{ steps }}
   - name: complete
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: result, condition: {type: always}}
     task:

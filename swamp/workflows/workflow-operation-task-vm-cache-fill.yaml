@@ -10,8 +10,7 @@ inputs:
 vaults: []
 jobs:
   - name: fill
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: '${{ string(inputs.node_id) }}' }
+    labels: {node: '${{ string(inputs.node_id) }}'}
     steps:
       - name: fill-package-cache
         writes: true

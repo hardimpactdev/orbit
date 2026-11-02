@@ -33,10 +33,10 @@ reports:
   - '@swamp/workflow-summary'
 jobs:
 - name: routine
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
@@ -48,7 +48,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
   - name: select
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: input
       condition:
@@ -62,7 +62,7 @@ jobs:
         groups: ${{ inputs.intent.groups }}
         admitted_at: ${{ inputs.intent.admitted_at }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: select
       condition:

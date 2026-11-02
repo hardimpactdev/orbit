@@ -53,12 +53,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: bootstrap
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
     node: ${{ string(inputs.node_id) }}
   steps:
   - name: inspect-platform
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: &id001
       node: ${{ string(inputs.node_id) }}
     task:
@@ -85,7 +83,6 @@ jobs:
         - uname
         - -sm
   - name: inspect-host-key
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: *id001
     task:
       type: behavior
@@ -100,7 +97,6 @@ jobs:
       condition:
         type: succeeded
   - name: probe-host
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: *id001
     dependsOn:
     - step: inspect-host-key

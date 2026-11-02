@@ -19,7 +19,7 @@ jobs:
 - name: tools
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'
@@ -28,7 +28,7 @@ jobs:
       inputs: {input: '${{ inputs.intent }}'}
   # The installed package and, for apt and brew, what removing it would also remove.
   - name: Plan the removal
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -53,7 +53,7 @@ jobs:
         stdin: '${{ steps.assets.outputs.bundle }}'
   # Refuse a plan that removes anything else, a Composer non-root or an unsafe cask; nothing changes then.
   - name: decide
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: Plan the removal, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -62,7 +62,7 @@ jobs:
       methodName: decide
       inputs: {input: '${{ inputs.intent }}', plan: '${{ steps["Plan the removal"] }}'}
   - name: Remove the package
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: decide, condition: {type: succeeded}}]
     guard: '${{ !steps.decide.outputs.remove }}'
     task:
@@ -77,7 +77,7 @@ jobs:
         argv: [timeout, '120', python3, -I, -c, '${{ steps.assets.outputs.driver }}', remove]
         stdin: '${{ steps.assets.outputs.bundle }}'
   - name: Check it is gone
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: Remove the package, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -92,7 +92,7 @@ jobs:
         stdin: '${{ steps.assets.outputs.bundle }}'
   # Best-effort: the package is already gone, so a failure here keeps the apt repository record for a later cleanup.
   - name: Remove the apt source
-    target: orbit-node-209
+    labels: {role: swamp}
     allowFailure: true
     dependsOn:
       - {step: decide, condition: {type: succeeded}}
@@ -110,7 +110,7 @@ jobs:
         argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', remove_source]
         stdin: '${{ steps.assets.outputs.bundle }}'
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - {step: Plan the removal, condition: {type: always}}
       - {step: decide, condition: {type: always}}
@@ -130,6 +130,6 @@ jobs:
         check: '${{ "Check it is gone" in steps ? steps["Check it is gone"] : null }}'
         source: '${{ "Remove the apt source" in steps ? steps["Remove the apt source"] : null }}'
   - name: accepted
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: result, condition: {type: succeeded}}]
     task: {type: assert, expr: 'steps.result.outputs.ok == true', severity: high, message: The Tool removal did not prove the package absent.}

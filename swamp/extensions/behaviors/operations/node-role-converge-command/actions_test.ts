@@ -61,8 +61,8 @@ Deno.test("terminal assembly preserves unchanged artifacts and refuses missing r
 Deno.test("the complete shared role graph has exactly one209 selector per effect", () => {
     for (const job of roleWorkflow().jobs) {
         for (const step of job.steps) {
-            assertEquals(step.target, "orbit-node-209");
-            assertEquals("labels" in step, false);
+            assertEquals(step.labels, { role: "swamp" });
+            assertEquals("target" in step, false);
         }
     }
 });

@@ -30,7 +30,7 @@ export function sourceSteps(
     function add(suffix: string, task: Fields, guard?: string) {
         steps.push({
             name: `${name}-${suffix}`,
-            target: "orbit-node-209",
+            labels: { role: "swamp" },
             ...(steps.length
                 ? {
                     dependsOn: [{

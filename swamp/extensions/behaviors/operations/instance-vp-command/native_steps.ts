@@ -26,7 +26,7 @@ export function instanceActions(
         const prior = steps.at(-1)?.name ?? dependency;
         const step: Fields = {
             name: name + "-" + suffix,
-            target: "orbit-node-209",
+            labels: { role: "swamp" },
             ...(prior
                 ? {
                     dependsOn: [{

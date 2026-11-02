@@ -42,7 +42,7 @@ elif action=='observe':
         from native_harness import ROOT
         flow = yaml.safe_load((ROOT / 'workflows/workflow-operation-task-vm-hub-converge.yaml').read_text())
         for step in flow['jobs'][0]['steps']:
-            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'role': 'swamp'})
             self.assertNotIn('labels', step)
             if step['task'].get('behaviorType') == '@swamp/ssh':
                 step['task']['globalArgs']['sshBinary'] = str(binary)

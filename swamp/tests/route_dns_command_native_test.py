@@ -81,7 +81,7 @@ if Path(sys.argv[0]).name=='systemctl' and sys.argv[1:]==['restart','dnsmasq'] a
         self.patch = patch
         workflow = patch(workflow)
         for step in workflow["jobs"][0]["steps"]:
-            self.assertEqual(step.pop("target"), "orbit-node-209")
+            self.assertEqual(step.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", step)
             args = step["task"].get("inputs", {}).get("argv", [])
             if args[:1] == ["sudo"]:
@@ -168,7 +168,7 @@ if Path(sys.argv[0]).name=='systemctl' and sys.argv[1:]==['restart','dnsmasq'] a
         )
         flow = self.patch(flow)
         for step in flow["jobs"][0]["steps"]:
-            step.pop("target", None)
+            step.pop("target", None); step.pop("labels", None)
             argv = step["task"].get("inputs", {}).get("argv", [])
             if argv[:1] == ["sudo"]:
                 argv.pop(0)

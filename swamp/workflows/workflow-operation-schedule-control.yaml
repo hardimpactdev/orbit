@@ -24,10 +24,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: schedule
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: timer
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/systemd'
@@ -44,7 +44,7 @@ jobs:
             ensure: running
           inputs: {}
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: timer, condition: {type: succeeded}}]
         task:
           type: behavior

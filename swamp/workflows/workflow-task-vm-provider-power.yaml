@@ -49,10 +49,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provider
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
@@ -62,7 +62,7 @@ jobs:
         intent: ${{ inputs.intent }}
         action: ${{ inputs.action }}
   - name: cloud-discover
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -83,7 +83,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.provider != "upcloud" }}
   - name: discovery
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.provider != "upcloud" }}
     task:
       type: behavior
@@ -102,7 +102,7 @@ jobs:
       condition:
         type: always
   - name: incus-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -135,7 +135,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.provider != "incus" }}
   - name: cloud-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -156,7 +156,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.provider != "upcloud" }}
   - name: before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
@@ -179,7 +179,7 @@ jobs:
       condition:
         type: always
   - name: incus-action
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -197,7 +197,7 @@ jobs:
     guard: ${{ inputs.intent.provider != "incus" || !steps.before.outputs.change }}
     allowFailure: true
   - name: cloud-action
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -219,7 +219,7 @@ jobs:
     guard: ${{ inputs.intent.provider != "upcloud" || !steps.before.outputs.change }}
     allowFailure: true
   - name: incus-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -243,7 +243,7 @@ jobs:
       condition:
         type: always
   - name: cloud-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -270,7 +270,7 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'

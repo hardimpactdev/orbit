@@ -43,16 +43,16 @@ inputs:
   additionalProperties: false
 jobs:
 - name: park
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: eligible
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: assert
       expr: inputs.intent.eligible == true
       message: The captured VM is not eligible for this transition
   - name: provider
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -68,7 +68,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell

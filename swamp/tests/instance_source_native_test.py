@@ -38,9 +38,9 @@ raise SystemExit(result.returncode)
         for kind in ("register", "rename"):
             workflow = yaml.safe_load((ROOT / f"workflows/workflow-operation-instance-{kind}.yaml").read_text())
             for job in workflow["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     if step["task"].get("behaviorType") == "@swamp/ssh":
                         step["task"]["globalArgs"]["sshBinary"] = str(self.fake)
             (self.repo / f"workflows/workflow-operation-instance-{kind}.yaml").write_text(yaml.safe_dump(workflow, sort_keys=False))

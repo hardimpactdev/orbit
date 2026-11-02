@@ -63,7 +63,6 @@ export function rolePublicationJobs(
       steps: [{
         name: `${name}_` + expr("self.participant"),
         writes: true,
-        target: expr('"orbit-node-" + string(self.participant)'),
         labels: { node: expr("string(self.participant)") },
         forEach: { item: "participant", in: expr(members) },
         ...(options.blocked ? { guard: expr(options.blocked) } : {}),

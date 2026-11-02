@@ -13,7 +13,7 @@ const Connection = z.object({
   ssh: z.object({
     control_node_id: z.literal(209),
     identity_file: z.literal(
-      "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+      "/etc/orbit/swamp-role-worker/ssh-identity",
     ),
     public_key: z.string().min(1),
     target: z.object({

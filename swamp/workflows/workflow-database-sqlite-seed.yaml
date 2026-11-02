@@ -8,10 +8,10 @@ inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, n
     execution_secrets: {type: object, additionalProperties: false}}, required: [operation_id, node_id, kind, intent, execution_secrets], additionalProperties: false}
 jobs:
 - name: sqlite
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: intent
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/database-sqlite-command-assets'
@@ -19,7 +19,7 @@ jobs:
       methodName: read
       inputs: {kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', action: check, run_id: '${{ run.id }}'}
   - name: export
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: intent, condition: {type: succeeded}}
     task:
@@ -28,7 +28,7 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
           }}', action: source_export}
   - name: snapshot
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: export, condition: {type: succeeded}}
     task:
@@ -38,7 +38,7 @@ jobs:
       methodName: snapshot
       inputs: {stdout: '${{ steps.export.outputs.result.stdout }}', exit_code: '${{ steps.export.outputs.result.exitCode }}'}
   - name: prepare_target
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: snapshot, condition: {type: succeeded}}
     task:
@@ -47,7 +47,7 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
           }}', action: target_prepare, snapshot: '${{ steps.snapshot.outputs.ref }}'}
   - name: prepared
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepare_target, condition: {type: succeeded}}
     task:
@@ -57,7 +57,7 @@ jobs:
       methodName: prepared
       inputs: {stdout: '${{ steps.prepare_target.outputs.result.stdout }}', exit_code: '${{ steps.prepare_target.outputs.result.exitCode }}'}
   - name: transfer_dir
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepared, condition: {type: succeeded}}
     allowFailure: true
@@ -71,20 +71,20 @@ jobs:
           mkdir -p -- /tmp/orbit-sqlite-transfer-${{ run.id }}'}
     guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
   - name: download
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: transfer_dir, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "dbss-" + run.id }}
-      globalArgs: {name: '${{ "dbss-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+      globalArgs: {name: '${{ "dbss-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.source_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.source_ssh.host_keys }}'}}]}
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.intent.outputs.source_path }}', dst: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', direction: from}
     guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
   - name: verify
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: download, condition: {type: succeeded}}
     allowFailure: true
@@ -97,7 +97,7 @@ jobs:
           }}'}
     guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
   - name: artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: verify, condition: {type: succeeded}}
     task:
@@ -108,7 +108,7 @@ jobs:
       inputs: {path: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', run_id: '${{ run.id }}'}
     guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
   - name: upload
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: artifact, condition: {type: succeeded}}
     - {step: prepared, condition: {type: succeeded}}
@@ -117,12 +117,12 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "dbst-" + run.id }}
-      globalArgs: {name: '${{ "dbst-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+      globalArgs: {name: '${{ "dbst-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', dst: '${{ steps.prepared.outputs.incoming }}', direction: to}
   - name: install
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: prepared, condition: {type: succeeded}}
     - {step: upload, condition: {type: always}}
@@ -134,7 +134,7 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
           }}', action: target_install, snapshot: '${{ steps.snapshot.outputs.ref }}'}
   - name: cleanup_target
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: intent, condition: {type: always}}
     - {step: export, condition: {type: always}}
@@ -155,7 +155,7 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
           }}', action: target_recover}
   - name: cleanup_source
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: intent, condition: {type: always}}
     - {step: export, condition: {type: always}}
@@ -175,7 +175,7 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets
           }}', action: source_cleanup}
   - name: cleanup_transfer
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: intent, condition: {type: always}}
     - {step: export, condition: {type: always}}
@@ -198,7 +198,7 @@ jobs:
       methodName: execute
       inputs: {run: 'rm -rf -- /tmp/orbit-sqlite-transfer-${{ run.id }}'}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: intent, condition: {type: always}}
     - {step: export, condition: {type: always}}
@@ -223,7 +223,7 @@ jobs:
           : has(steps.prepared) && steps.prepared.status == "succeeded" && steps.prepared.outputs.state == "resume" ? ["export","prepare_target","install","cleanup_source","cleanup_transfer"]
           : ["export","prepare_target","verify","artifact","install","cleanup_source","cleanup_transfer"] }}', steps: '${{ steps }}'}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: result, condition: {type: succeeded}}
     task:

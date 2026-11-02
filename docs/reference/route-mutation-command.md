@@ -19,7 +19,7 @@ The parent passes the immutable stored `route_mutations` capture and that output
 
 Private DNS answers have a 30-second TTL. A Route DNS phase keeps the previous target serving for 31 seconds after the new answer is published, then retires its host, certificate and LAN allowance. Restoration first retains both physical targets, publishes the prior DNS answer, waits, then withdraws the candidate. Public authoritative DNS is unaffected.
 
-The orchestrator and Nick approved one exception to the no-wait rule on 2026-10-31: `swamp/workflows/workflow-route-dns-grace.yaml`, job `grace`, step `wait-private-dns-ttl`, placed on `orbit-node-209`, executes exactly `/usr/bin/sleep 31` through core `command/shell`. Pinned Swamp e459 core and the official workflows extension have no elapsed-delay primitive. The canonical gate matches the exact file, job, step, placement and task; no general wait allowance or baseline change applies.
+The orchestrator and Nick approved one exception to the no-wait rule on 2026-10-31: `swamp/workflows/workflow-route-dns-grace.yaml`, job `grace`, step `wait-private-dns-ttl`, placed on `labels: {role: swamp}`, executes exactly `/usr/bin/sleep 31` through core `command/shell`. Pinned Swamp e459 core and the official workflows extension have no elapsed-delay primitive. The canonical gate matches the exact file, job, step, placement and task; no general wait allowance or baseline change applies.
 
 DNS publication reads the current public records and catalog files, applies the captured delta, then uses official SSH file actions, validation and service activation. Like Caddy section composition, forward and restore preserve unrelated observed revisions. No step reads the Gateway.
 

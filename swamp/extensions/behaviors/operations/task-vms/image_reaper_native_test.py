@@ -22,10 +22,10 @@ class ImageReaperNative(NativeTestCase):
         workflow = yaml.safe_load(workflow_path.read_text())
         self.assertEqual(workflow['trigger']['schedule'], '0 */30 * * * *')
         discovery = workflow['jobs'][0]['steps'][0]
-        self.assertEqual(discovery['target'], 'swamp209-migration-a')
-        self.assertEqual(discovery['labels'], {'pool': 'migration', 'node': '209'})
+        self.assertNotIn('target', discovery)
+        self.assertEqual(discovery['labels'], {'role': 'swamp'})
         host = workflow['jobs'][1]['steps'][0]
-        self.assertEqual(host['target'], 'orbit-node-${{ self.host.node_id }}')
+        self.assertNotIn('target', host)
         self.assertEqual(host['labels'], {'node': '${{ string(self.host.node_id) }}'})
         for job in workflow['jobs']:
             for step in job['steps']:

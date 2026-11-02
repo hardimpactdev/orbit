@@ -23,20 +23,20 @@ inputs:
   additionalProperties: false
 jobs:
 - name: container
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: inspect
-    <<: &remote {target: orbit-node-209, allowFailure: true}
+    <<: &remote {labels: {role: swamp}, allowFailure: true}
     guard: ${{ !(true) }}
     writes: false
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-server-" + string(inputs.operation_id) }}', globalArgs: {name: '${{ "database-server-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-server-" + string(inputs.operation_id) }}', globalArgs: {name: '${{ "database-server-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '', inspect.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
         okExitCodes: [0, 1]
   - name: plan
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     dependsOn: [{step: inspect, condition: {type: always}}]
     writes: false
     task:

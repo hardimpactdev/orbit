@@ -26,7 +26,7 @@ class UpCloudImageNative(NativeTestCase):
         p.write_text('import {fixtureHttp,fixtureCloud,fixtureGuest,fixtureKeys} from "./upcloud_image_native_fixture.ts";\n' + p.read_text().replace('...upcloudImageDirect()', '...upcloudImageDirect(() => fixtureHttp, fixtureCloud, fixtureGuest, fixtureKeys)'))
         wf = yaml.safe_load((ROOT / 'workflows/workflow-operation-task-vm-upcloud-image-build.yaml').read_text())
         for job in wf['jobs']:
-            self.assertEqual(job.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')
+            self.assertEqual(job.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
             self.assertEqual(job.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
         (self.repo / 'workflows/workflow-operation-task-vm-upcloud-image-build.yaml').write_text(yaml.safe_dump(wf, sort_keys=False))
         self.state = {'calls': [], 'provider': [], 'guest': [], 'phases': [], 'servers': {},

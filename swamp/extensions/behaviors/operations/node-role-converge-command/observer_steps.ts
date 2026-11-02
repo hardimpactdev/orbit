@@ -2,7 +2,7 @@ import { roleBaselineSteps } from "./steps.ts";
 
 type Fields = Record<string, unknown>;
 const expr = (source: string) => "${{ " + source + " }}";
-const placement = { target: "orbit-node-209" };
+const placement = { labels: { role: "swamp" } };
 
 /** Observer files and service only. Worker installation and retirement are separate families. */
 export function roleObserverSteps(

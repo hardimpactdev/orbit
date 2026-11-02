@@ -29,7 +29,7 @@ jobs:
 - name: prepare
   steps:
   - name: account_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-command'
@@ -39,7 +39,7 @@ jobs:
         action: account
         input: '${{ {"user": inputs.intent.user} }}'
   - name: account_command
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: account_assets, condition: {type: succeeded}}
     task:
@@ -65,7 +65,7 @@ jobs:
         sudo: false
         script: ${{ steps["account_assets"].outputs.script_body }}
   - name: account
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: account_command, condition: {type: succeeded}}
     task:
@@ -76,7 +76,7 @@ jobs:
       inputs:
         stdout: ${{ steps["account_command"].outputs.stdout }}
   - name: packages_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: account, condition: {type: succeeded}}
     task:
@@ -88,7 +88,7 @@ jobs:
         releases: ${{ inputs.intent.prerequisites.releases }}
         packages: ${{ inputs.intent.prerequisites.packages }}
   - name: packages
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - {step: packages_assets, condition: {type: succeeded}}
@@ -115,7 +115,7 @@ jobs:
         sudo: true
         script: ${{ steps["packages_assets"].outputs.script_body }}
   - name: caddy_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: packages, condition: {type: succeeded}}
     task:
@@ -127,7 +127,7 @@ jobs:
         action: caddy_package
         input: ${{ inputs.intent.caddy_package }}
   - name: caddy_command
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn:
     - {step: caddy_assets, condition: {type: succeeded}}
@@ -154,7 +154,7 @@ jobs:
         sudo: true
         script: ${{ steps["caddy_assets"].outputs.script_body }}
   - name: caddy
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: caddy_command, condition: {type: succeeded}}
     task:
@@ -165,7 +165,7 @@ jobs:
       inputs:
         stdout: ${{ steps["caddy_command"].outputs.stdout }}
   - name: firewall
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: caddy, condition: {type: succeeded}}
     task:

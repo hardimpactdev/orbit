@@ -19,8 +19,7 @@ inputs:
     - kind
 jobs:
   - name: prepare
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
+    labels: {node: '${{ string(inputs.node_id) }}'}
     writes: true
     steps:
       - name: prepare
@@ -53,8 +52,7 @@ jobs:
             kind: ${{ inputs.kind }}
             run_id: ${{ run.id }}
   - name: members
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
+    labels: {node: '${{ string(inputs.node_id) }}'}
     writes: true
     dependsOn:
       - job: prepare
@@ -83,8 +81,7 @@ jobs:
             member_id: ${{ self.member }}
             publication_status: '${{ has(steps.caddy) ? steps.caddy.status : "skipped" }}'
   - name: finish
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
+    labels: {node: '${{ string(inputs.node_id) }}'}
     writes: true
     dependsOn:
       - job: members

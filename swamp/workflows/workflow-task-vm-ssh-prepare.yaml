@@ -23,10 +23,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: ssh
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: available
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -56,7 +56,7 @@ jobs:
         sudo: ${{ inputs.intent.provider != "incus" }}
         timeoutSec: 180
   - name: package
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -77,7 +77,7 @@ jobs:
       condition:
         type: succeeded
   - name: host-keys
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -95,7 +95,7 @@ jobs:
       condition:
         type: succeeded
   - name: authorize-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -109,7 +109,7 @@ jobs:
       condition:
         type: succeeded
   - name: authorize
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -129,7 +129,7 @@ jobs:
       condition:
         type: succeeded
   - name: firewall-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
@@ -141,7 +141,7 @@ jobs:
       condition:
         type: succeeded
   - name: firewall
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -161,7 +161,7 @@ jobs:
       condition:
         type: succeeded
   - name: sshd
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -180,7 +180,7 @@ jobs:
       condition:
         type: succeeded
   - name: host-key
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -199,7 +199,7 @@ jobs:
       condition:
         type: succeeded
   - name: guest
-    target: orbit-node-209
+    labels: {role: swamp}
     task: &id002
       type: behavior
       behaviorType: '@nckrtl/task-vm-ssh-input'
@@ -213,7 +213,7 @@ jobs:
       condition:
         type: succeeded
   - name: verify
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -241,7 +241,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task: *id002
     dependsOn:
     - step: verify

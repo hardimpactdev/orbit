@@ -234,11 +234,11 @@ Deno.test("both shared Project entrypoints accept full Gateway inputs and emit n
     });
     assertEquals(workflow.inputs.properties.projectId, undefined);
     for (const job of workflow.jobs) {
-      assertEquals(job.target, "orbit-node-209");
-      assertEquals(job.labels, undefined);
+      assertEquals(job.labels, { role: "swamp" });
+      assertEquals(job.target, undefined);
       for (const step of job.steps) {
-        assertEquals(step.target, "orbit-node-209");
-        assertEquals(step.labels, undefined);
+        assertEquals(step.labels, { role: "swamp" });
+        assertEquals(step.target, undefined);
         assertEquals(step.task.modelType, undefined);
       }
     }

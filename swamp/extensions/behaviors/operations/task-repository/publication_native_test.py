@@ -180,10 +180,10 @@ subprocess.run=run
         )
         flow["name"] = "task-publication-fixture"
         for job in flow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertEqual(job.pop("labels"), {"node": "209"})
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertEqual(step.pop("labels"), {"node": "209"})
                 task_inputs = step["task"].get("inputs", {})
                 # Keep native CEL/argv intact, replacing only the scratch root.

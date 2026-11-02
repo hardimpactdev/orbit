@@ -45,16 +45,16 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provision
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: eligible
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: assert
       expr: inputs.intent.eligible == true && inputs.intent.provider in ["incus","upcloud"]
       message: Provision requires its admitted provider and eligible VM
   - name: provider-plan
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: eligible
       condition:
@@ -67,7 +67,7 @@ jobs:
       inputs:
         provider: ${{ inputs.intent.provider }}
   - name: incus
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-incus
@@ -82,7 +82,7 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.provider != "incus" }}
   - name: incus-first-visit
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: incus
       condition:
@@ -97,7 +97,7 @@ jobs:
         intent: ${{ inputs.intent }}
     guard: ${{ inputs.intent.provider != "incus" }}
   - name: cloud
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.provider != "upcloud" }}
     dependsOn:
     - step: eligible
@@ -114,7 +114,7 @@ jobs:
         execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud,"bootstrap":inputs.execution_secrets.bootstrap}
           : {} }}'
   - name: guest
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
@@ -137,7 +137,7 @@ jobs:
       condition:
         type: always
   - name: enrollment
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: guest
       condition:
@@ -155,7 +155,7 @@ jobs:
         provider: '${{ inputs.intent.provider == "incus" ? steps.incus.outputs.provider : steps.cloud.outputs.provider
           }}'
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: enrollment
       condition:
@@ -168,7 +168,7 @@ jobs:
       inputs:
         receipt: ${{ steps.enrollment.outputs.result }}
   - name: cloud-prefix-rollback
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: result

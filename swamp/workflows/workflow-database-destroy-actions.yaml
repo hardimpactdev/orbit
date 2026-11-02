@@ -17,10 +17,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: prepare
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     writes: false
     task:
       <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-destroy-assets-" + run.id }}'}
@@ -29,7 +29,7 @@ jobs:
   - name: directory
     <<: *placed
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
         hosts: name:server
         argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -46,7 +46,7 @@ jobs:
         direction: to
         recursive: true
   - name: inventory
-    <<: &command {target: orbit-node-209, allowFailure: true}
+    <<: &command {labels: {role: swamp}, allowFailure: true}
     writes: false
     dependsOn: [{step: copy, condition: {type: succeeded}}, {step: assets, condition: {type: succeeded}}]
     guard: ${{ inputs.intent.driver != "mysql" || size(inputs.intent.test_prefixes) == 0 }}
@@ -75,7 +75,7 @@ jobs:
         intent: ${{ inputs.intent }}
         inventory: '${{ (inputs.intent.driver != "mysql" || size(inputs.intent.test_prefixes) == 0) ? "{\"databases\":[]}" : steps.inventory.outputs.stdout }}'
 - name: inspect
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: prepare, condition: {type: succeeded}}]
   steps:
   - name: ownership
@@ -137,7 +137,7 @@ jobs:
     dependsOn: [{step: ownership, condition: {type: always}}, {step: ownership_checked, condition: {type: always}}, {step: fence, condition: {type: always}}, {step: fence_checked, condition: {type: always}}, {step: blockers, condition: {type: always}}, {step: acl_snapshot, condition: {type: always}}]
     task: {type: assert, expr: '(inputs.intent.driver == "redis" ? true : (has(steps.blockers) && has(steps.blockers.outputs) && steps.blockers.outputs.exitCode == 0 && steps.blockers.outputs.stdout == "{\"ready\": true}\n")) && (inputs.intent.driver != "redis" ? true : (has(steps.acl_snapshot) && has(steps.acl_snapshot.outputs) && steps.acl_snapshot.outputs.exitCode == 0 && steps.acl_snapshot.outputs.stdout == "{\"ready\": true}\n")) && steps.fence_checked.status == "succeeded"', severity: high, message: Database removal safety check failed.}
 - name: databases
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: inspect, condition: {type: succeeded}}, {job: prepare, condition: {type: succeeded}}]
   steps:
   - name: drop_database
@@ -159,7 +159,7 @@ jobs:
     dependsOn: [{step: drop_database, condition: {type: always}}]
     task: {type: assert, expr: '!steps.exists(k, k.startsWith("drop_database-") && (steps[k].status != "succeeded" || steps[k].outputs.exitCode != 0 || steps[k].outputs.stdout != "{\"ready\": true}\n"))', severity: high, message: Database removal safety check failed.}
 - name: users
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: databases, condition: {type: succeeded}}, {job: inspect, condition: {type: succeeded}}, {job: prepare, condition: {type: succeeded}}]
   steps:
   - name: drop_user
@@ -211,7 +211,7 @@ jobs:
     dependsOn: [{step: drop_user, condition: {type: always}}, {step: acl_remove, condition: {type: always}}, {step: users_removed, condition: {type: always}}, {step: acl_save, condition: {type: always}}]
     task: {type: assert, expr: '(inputs.intent.driver != "redis" ? true : (has(steps.acl_save) && has(steps.acl_save.outputs) && steps.acl_save.outputs.exitCode == 0 && steps.acl_save.outputs.stdout == "{\"ready\": true}\n")) && steps.users_removed.status == "succeeded"', severity: high, message: Database removal safety check failed.}
 - name: cleanup
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: prepare, condition: {type: always}}, {job: inspect, condition: {type: always}}, {job: databases, condition: {type: always}}, {job: users, condition: {type: always}}]
   steps:
   - name: restore

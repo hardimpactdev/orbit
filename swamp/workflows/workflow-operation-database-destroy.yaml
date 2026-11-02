@@ -16,10 +16,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: remove
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: remove
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: database-destroy-actions
@@ -31,11 +31,11 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
 - name: result
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: remove, condition: {type: always}}]
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     task:
       type: behavior
@@ -48,7 +48,7 @@ jobs:
         failure_code: database.destroy_outcome_unknown
         steps: ${{ steps }}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     dependsOn: [{step: result, condition: {type: succeeded}}]
     task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database removal did not complete.}

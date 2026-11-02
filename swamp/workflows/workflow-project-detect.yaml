@@ -66,10 +66,10 @@ reports:
   - '@swamp/workflow-summary'
 jobs:
 - name: detect
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
@@ -81,7 +81,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
   - name: begin
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: input
       condition:
@@ -94,7 +94,7 @@ jobs:
         project: ${{ steps.input.outputs.project }}
         runId: ${{ run.id }}
   - name: checkout
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: begin
       condition:
@@ -118,7 +118,7 @@ jobs:
           GIT_CONFIG_VALUE_0: ${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key)
             }}
   - name: head
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: checkout
       condition:
@@ -135,7 +135,7 @@ jobs:
         env:
           ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id }}
   - name: evidence
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: input
       condition:
@@ -152,7 +152,7 @@ jobs:
         execution_secrets:
           github_token: ${{ inputs.execution_secrets.github_token }}
   - name: scan
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: head
       condition:
@@ -171,7 +171,7 @@ jobs:
         commit: ${{ steps.head.outputs.stdout.trim() }}
         evidence: ${{ steps.evidence.outputs.evidence.evidence }}
   - name: head_now
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: scan
       condition:
@@ -194,7 +194,7 @@ jobs:
             }}
           ORBIT_REF: ${{ steps.input.outputs.source_ref }}
   - name: verify_head
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: head_now
       condition:
@@ -209,7 +209,7 @@ jobs:
         head: ${{ steps.head_now.outputs.stdout }}
         scan_succeeded: ${{ steps.scan.outputs.scan_succeeded }}
   - name: finalize
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: checkout
       condition:
@@ -232,7 +232,7 @@ jobs:
         runId: ${{ run.id }}
         steps: ${{ steps }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: finalize
       condition:
@@ -249,7 +249,7 @@ jobs:
         env:
           ORBIT_RESULT: ${{ steps.finalize.outputs.result_json }}
   - name: outcome
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:
@@ -264,7 +264,7 @@ jobs:
         env:
           ORBIT_SCAN_SUCCEEDED: ${{ string(steps.finalize.outputs.scan_succeeded) }}
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: checkout
       condition:

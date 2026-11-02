@@ -20,7 +20,7 @@ class FirewallNative(NativeTestCase):
         self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-firewall-direct.yaml').read_text())
         for step in workflow['jobs'][0]['steps']:
-            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'role': 'swamp'})
         (self.repo / 'workflows/workflow-operation-firewall-direct.yaml').write_text(yaml.safe_dump(workflow))
         (self.repo / 'ufw_double.py').write_text((Path(__file__).parent / 'firewall_test.py').read_text().split('def rule(')[0]
                                                  .replace("SCRIPT = Path(__file__).parent", "SCRIPT = Path(__file__).parent / 'extensions/behaviors/operations/firewall'"))

@@ -118,7 +118,7 @@ Official `@swamp/ssh` `exec` also accepts one whole `vault.get(...)` expression 
 `task.inputs.stdin`. This applies only to workflow `behavior` tasks with
 `behaviorType: '@swamp/ssh'` or `model_method` tasks with
 `modelType: '@swamp/ssh'`, and literal `methodName: exec`. The effective placement
-must select Node 209 with `target: orbit-node-209` or labels `{node: '209'}`.
+must select Node 209 with `labels: {role: swamp}`, `target: orbit-node-209` or labels `{node: '209'}`.
 Use target-only placement for new workflows. The checks accept a single target
 or node label, including inherited placement. Matching dual selectors remain
 accepted during the existing workflow migration; conflicting selectors fail.

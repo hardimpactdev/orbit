@@ -82,10 +82,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: user
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     task:
       type: behavior
@@ -95,7 +95,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     task:
@@ -107,7 +107,7 @@ jobs:
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -124,7 +124,7 @@ jobs:
         - 0
         - 1
   - name: copy
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     dependsOn:
@@ -147,7 +147,7 @@ jobs:
         direction: to
         recursive: true
   - name: prepared
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     dependsOn:
     - step: copy
@@ -159,7 +159,7 @@ jobs:
       severity: high
       message: SQL user command files unavailable.
   - name: wal
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ !(inputs.intent.driver == "pgsql" && inputs.intent.replication) }}
     writes: false
     allowFailure: true
@@ -188,7 +188,7 @@ jobs:
         - 1
         stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
   - name: wal_checked
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     dependsOn:
     - step: wal
@@ -204,7 +204,7 @@ jobs:
       severity: high
       message: Replication user WAL check refused.
   - name: apply
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     allowFailure: true
     dependsOn:
@@ -232,7 +232,7 @@ jobs:
         - 1
         stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
   - name: grant
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     allowFailure: true
     dependsOn:
@@ -248,7 +248,7 @@ jobs:
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -271,7 +271,7 @@ jobs:
         stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
     guard: ${{ !has(steps.apply.outputs) || steps.apply.outputs.exitCode != 0 }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -307,7 +307,7 @@ jobs:
         failure_code: database.user_create_outcome_unknown
         steps: ${{ steps }}
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     allowFailure: true
     writes: true
     dependsOn:
@@ -332,7 +332,7 @@ jobs:
         - 1
     guard: ${{ steps.result.outputs.exitCode != 0 }}
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

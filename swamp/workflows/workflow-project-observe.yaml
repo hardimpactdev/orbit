@@ -66,10 +66,10 @@ reports:
   - '@swamp/workflow-summary'
 jobs:
 - name: observe
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
@@ -81,7 +81,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
   - name: evidence
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: input
       condition:
@@ -98,7 +98,7 @@ jobs:
         execution_secrets:
           github_token: ${{ inputs.execution_secrets.github_token }}
   - name: refresh
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: evidence
       condition:
@@ -111,7 +111,7 @@ jobs:
         rows: '${{ steps.input.outputs.previous_index == null ? [] : [{"project":steps.input.outputs.project,"index":steps.input.outputs.previous_index,"evidence":steps.evidence.outputs.evidence.evidence}]
           }}'
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: refresh
       condition:

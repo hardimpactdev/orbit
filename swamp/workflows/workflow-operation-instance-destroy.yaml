@@ -43,10 +43,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: destroy
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: destroy-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -71,7 +71,7 @@ jobs:
               - '-p'
               - '${{ "/tmp/orbit-instance-" + run.id }}'
       - name: destroy-observe-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-directory
             condition:
@@ -92,7 +92,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members }}'
       - name: destroy-observe
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-observe-asset
             condition:
@@ -111,7 +111,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members }}'
       - name: destroy-observed
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-observe
             condition:
@@ -127,7 +127,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members }}'
       - name: destroy-origin-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-observed
             condition:
@@ -146,7 +146,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members }}'
       - name: destroy-origin
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-origin-assets
             condition:
@@ -166,7 +166,7 @@ jobs:
           in: '${{ inputs.intent.members }}'
         guard: '${{ !steps["destroy-observed-"+string(self._index)].outputs.origin_required }}'
       - name: destroy-inspect
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-origin
             condition:
@@ -183,7 +183,7 @@ jobs:
             input: '${{ inputs.intent }}'
             steps: '${{ steps }}'
       - name: destroy-source-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-inspect
             condition:
@@ -196,7 +196,7 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
       - name: destroy-mint
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-source-assets
             condition:
@@ -215,7 +215,7 @@ jobs:
               ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
         guard: '${{ inputs.intent.force || inputs.intent.members.all(member,member.failed_creation) }}'
       - name: destroy-fetch-files
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-source-assets
             condition:
@@ -233,7 +233,7 @@ jobs:
             direction: to
             recursive: true
       - name: destroy-fetch
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-fetch-files
             condition:
@@ -258,7 +258,7 @@ jobs:
           in: '${{ inputs.intent.members }}'
         guard: '${{ inputs.intent.force || self.member.failed_creation || !steps["destroy-observed-"+string(self._index)].outputs.origin_required }}'
       - name: destroy-verify-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-inspect
             condition:
@@ -286,7 +286,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members }}'
       - name: destroy-verify
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-verify-asset
             condition:
@@ -305,7 +305,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members }}'
       - name: destroy-verified
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-verify
             condition:
@@ -325,7 +325,7 @@ jobs:
               - '${{ size(inputs.intent.members) }}'
             steps: '${{ steps }}'
       - name: destroy-schedules
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-verified
             condition:
@@ -347,7 +347,7 @@ jobs:
           item: schedule
           in: '${{ inputs.intent.direct_destroy.runtime.schedules }}'
       - name: destroy-schedules-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-schedules
             condition:
@@ -367,7 +367,7 @@ jobs:
               - '${{ size(inputs.intent.direct_destroy.runtime.schedules) }}'
             steps: '${{ steps }}'
       - name: destroy-processes
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-schedules-ready
             condition:
@@ -387,7 +387,7 @@ jobs:
           item: process
           in: '${{ inputs.intent.native_runtime.processes }}'
       - name: destroy-runtime-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-schedules
             condition:
@@ -412,7 +412,7 @@ jobs:
               - '${{ size(inputs.intent.native_runtime.processes) }}'
             steps: '${{ steps }}'
       - name: destroy-step-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-runtime-ready
             condition:
@@ -426,7 +426,7 @@ jobs:
             action: run_project_step
             input: {}
       - name: destroy-step-copy
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-step-assets
             condition:
@@ -443,7 +443,7 @@ jobs:
             dst: '${{ "/tmp/orbit-instance-" + run.id + "/run_project_step.py" }}'
             direction: to
       - name: destroy-teardown-0
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-step-copy
             condition:
@@ -466,7 +466,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==0) }}'
       - name: destroy-teardown-1
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-0
             condition:
@@ -489,7 +489,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==1) }}'
       - name: destroy-teardown-2
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-1
             condition:
@@ -512,7 +512,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==2) }}'
       - name: destroy-teardown-3
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-2
             condition:
@@ -535,7 +535,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==3) }}'
       - name: destroy-teardown-4
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-3
             condition:
@@ -558,7 +558,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==4) }}'
       - name: destroy-teardown-5
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-4
             condition:
@@ -581,7 +581,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==5) }}'
       - name: destroy-teardown-6
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-5
             condition:
@@ -604,7 +604,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==6) }}'
       - name: destroy-teardown-7
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-6
             condition:
@@ -627,7 +627,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==7) }}'
       - name: destroy-teardown-8
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-7
             condition:
@@ -650,7 +650,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==8) }}'
       - name: destroy-teardown-9
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-8
             condition:
@@ -673,7 +673,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==9) }}'
       - name: destroy-teardown-10
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-9
             condition:
@@ -696,7 +696,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==10) }}'
       - name: destroy-teardown-11
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-10
             condition:
@@ -719,7 +719,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==11) }}'
       - name: destroy-teardown-12
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-11
             condition:
@@ -742,7 +742,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==12) }}'
       - name: destroy-teardown-13
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-12
             condition:
@@ -765,7 +765,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==13) }}'
       - name: destroy-teardown-14
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-13
             condition:
@@ -788,7 +788,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==14) }}'
       - name: destroy-teardown-15
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-14
             condition:
@@ -811,7 +811,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==15) }}'
       - name: destroy-teardown-16
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-15
             condition:
@@ -834,7 +834,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==16) }}'
       - name: destroy-teardown-17
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-16
             condition:
@@ -857,7 +857,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==17) }}'
       - name: destroy-teardown-18
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-17
             condition:
@@ -880,7 +880,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==18) }}'
       - name: destroy-teardown-19
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-18
             condition:
@@ -903,7 +903,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==19) }}'
       - name: destroy-teardown-20
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-19
             condition:
@@ -926,7 +926,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==20) }}'
       - name: destroy-teardown-21
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-20
             condition:
@@ -949,7 +949,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==21) }}'
       - name: destroy-teardown-22
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-21
             condition:
@@ -972,7 +972,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==22) }}'
       - name: destroy-teardown-23
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-22
             condition:
@@ -995,7 +995,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==23) }}'
       - name: destroy-teardown-24
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-23
             condition:
@@ -1018,7 +1018,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==24) }}'
       - name: destroy-teardown-25
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-24
             condition:
@@ -1041,7 +1041,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==25) }}'
       - name: destroy-teardown-26
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-25
             condition:
@@ -1064,7 +1064,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==26) }}'
       - name: destroy-teardown-27
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-26
             condition:
@@ -1087,7 +1087,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==27) }}'
       - name: destroy-teardown-28
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-27
             condition:
@@ -1110,7 +1110,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==28) }}'
       - name: destroy-teardown-29
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-28
             condition:
@@ -1133,7 +1133,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==29) }}'
       - name: destroy-teardown-30
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-29
             condition:
@@ -1156,7 +1156,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==30) }}'
       - name: destroy-teardown-31
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-30
             condition:
@@ -1179,7 +1179,7 @@ jobs:
           item: command
           in: '${{ inputs.intent.teardown_commands.filter(command,command.index==31) }}'
       - name: destroy-teardown-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-0
             condition:
@@ -1354,7 +1354,7 @@ jobs:
               - '${{ size(inputs.intent.teardown_commands.filter(command,command.index==31)) }}'
             steps: '${{ steps }}'
       - name: destroy-sqlite
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-teardown-ready
             condition:
@@ -1379,7 +1379,7 @@ jobs:
           item: database
           in: '${{ inputs.intent.direct_destroy.database.sqlite }}'
       - name: destroy-database-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-sqlite
             condition:
@@ -1399,7 +1399,7 @@ jobs:
               - '${{ size(inputs.intent.direct_destroy.database.sqlite) }}'
             steps: '${{ steps }}'
       - name: withdraw_prepare_certificates
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: >-
@@ -1428,7 +1428,7 @@ jobs:
             parent_run_id: '${{ run.id }}'
             restoring: false
       - name: withdraw_php
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}'
@@ -1458,7 +1458,7 @@ jobs:
               direction: forward
             execution_secrets: {}
       - name: withdraw_lan
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.lan }}'
@@ -1485,7 +1485,7 @@ jobs:
               host_keys: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}'
             execution_secrets: {}
       - name: withdraw_ingress
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.ingress }}'
@@ -1514,7 +1514,7 @@ jobs:
               host_keys: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}'
             execution_secrets: {}
       - name: withdraw_prepare_caddy
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}'
@@ -1551,7 +1551,7 @@ jobs:
               alternatives: '${{ [inputs.intent.route_mutations.artifacts.caddy[self.part.before.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.prepared.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.withdrawn.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.after.caddy]] }}'
             execution_secrets: {}
       - name: withdraw_urls
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.url_writes }}'
@@ -1585,7 +1585,7 @@ jobs:
             execution_secrets:
               material: '${{ inputs.execution_secrets[self.part.secret_field] }}'
       - name: withdraw_prepare_dns
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null) }}'
@@ -1623,7 +1623,7 @@ jobs:
               alternatives: '${{ [inputs.intent.route_mutations.artifacts.dns[self.part.before.dns],inputs.intent.route_mutations.artifacts.dns[self.part.prepared.dns],inputs.intent.route_mutations.artifacts.dns[self.part.withdrawn.dns],inputs.intent.route_mutations.artifacts.dns[self.part.after.dns]] }}'
             execution_secrets: {}
       - name: withdraw_dns_grace
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && inputs.intent.route_mutations.artifacts.dns[p.before.dns].digest != inputs.intent.route_mutations.artifacts.dns[p.after.dns].digest) ? [{}] : [] }}'
@@ -1656,7 +1656,7 @@ jobs:
             intent: {}
             execution_secrets: {}
       - name: withdraw_withdraw_caddy
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}'
@@ -1701,7 +1701,7 @@ jobs:
               alternatives: '${{ [inputs.intent.route_mutations.artifacts.caddy[self.part.before.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.prepared.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.withdrawn.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.after.caddy]] }}'
             execution_secrets: {}
       - name: withdraw_live_certificates
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: >-
@@ -1747,7 +1747,7 @@ jobs:
             parent_run_id: '${{ run.id }}'
             restoring: false
       - name: withdraw_live_caddy
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}'
@@ -1796,7 +1796,7 @@ jobs:
               alternatives: '${{ [inputs.intent.route_mutations.artifacts.caddy[self.part.before.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.prepared.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.withdrawn.caddy],inputs.intent.route_mutations.artifacts.caddy[self.part.after.caddy]] }}'
             execution_secrets: {}
       - name: withdraw_dns
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null) }}'
@@ -1844,7 +1844,7 @@ jobs:
               alternatives: '${{ [inputs.intent.route_mutations.artifacts.dns[self.part.before.dns],inputs.intent.route_mutations.artifacts.dns[self.part.prepared.dns],inputs.intent.route_mutations.artifacts.dns[self.part.withdrawn.dns],inputs.intent.route_mutations.artifacts.dns[self.part.after.dns]] }}'
             execution_secrets: {}
       - name: withdraw_cleanup
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.cleanup }}'
@@ -1893,7 +1893,7 @@ jobs:
             parent_run_id: '${{ run.id }}'
             restoring: false
       - name: withdraw_retire_lan
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.retire_lan }}'
@@ -1942,7 +1942,7 @@ jobs:
               host_keys: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}'
             execution_secrets: {}
       - name: withdraw_retire_ingress
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: part
           in: '${{ inputs.intent.route_mutations.forward.retire_ingress }}'
@@ -1993,7 +1993,7 @@ jobs:
               host_keys: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}'
             execution_secrets: {}
       - name: withdraw
-        target: orbit-node-209
+        labels: {role: swamp}
         forEach:
           item: stage
           in: '${{ [inputs.intent.route_mutations.forward] }}'
@@ -2065,7 +2065,7 @@ jobs:
               withdraw_retire_ingress: '${{ size(inputs.intent.route_mutations.forward.retire_ingress) }}'
             outcomes: '${{ steps }}'
       - name: remove-worktree-source-verify-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -2087,7 +2087,7 @@ jobs:
             condition:
               type: succeeded
       - name: remove-worktree-source-verify
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-worktree-source-verify-asset
             condition:
@@ -2117,7 +2117,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members.filter(member,member.source_layout=="worktree") }}'
       - name: remove-worktree-source-verified
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-worktree-source-verify
             condition:
@@ -2137,7 +2137,7 @@ jobs:
               - '${{ size(inputs.intent.members.filter(member,member.source_layout=="worktree")) }}'
             steps: '${{ steps }}'
       - name: remove-worktree-source-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-worktree-source-verified
             condition:
@@ -2158,7 +2158,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members.filter(member,member.source_layout=="worktree") }}'
       - name: remove-worktree-source
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-worktree-source-asset
             condition:
@@ -2177,7 +2177,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members.filter(member,member.source_layout=="worktree") }}'
       - name: remove-worktree-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-worktree-source
             condition:
@@ -2197,7 +2197,7 @@ jobs:
               - '${{ size(inputs.intent.members.filter(member,member.source_layout=="worktree")) }}'
             steps: '${{ steps }}'
       - name: remove-checkout-source-verify-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-worktree-ready
             condition:
@@ -2219,7 +2219,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members.filter(member,member.source_layout=="checkout") }}'
       - name: remove-checkout-source-verify
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-checkout-source-verify-asset
             condition:
@@ -2238,7 +2238,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members.filter(member,member.source_layout=="checkout") }}'
       - name: remove-checkout-source-verified
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-checkout-source-verify
             condition:
@@ -2258,7 +2258,7 @@ jobs:
               - '${{ size(inputs.intent.members.filter(member,member.source_layout=="checkout")) }}'
             steps: '${{ steps }}'
       - name: remove-checkout-source-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-checkout-source-verified
             condition:
@@ -2279,7 +2279,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members.filter(member,member.source_layout=="checkout") }}'
       - name: remove-checkout-source
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-checkout-source-asset
             condition:
@@ -2298,7 +2298,7 @@ jobs:
           item: member
           in: '${{ inputs.intent.members.filter(member,member.source_layout=="checkout") }}'
       - name: remove-checkout-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-checkout-source
             condition:
@@ -2318,7 +2318,7 @@ jobs:
               - '${{ size(inputs.intent.members.filter(member,member.source_layout=="checkout")) }}'
             steps: '${{ steps }}'
       - name: remove-result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destroy-directory
             condition:
@@ -2578,7 +2578,7 @@ jobs:
             intent: '${{ inputs.intent }}'
             steps: '${{ steps }}'
       - name: accepted
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-result
             condition:

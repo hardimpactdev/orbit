@@ -29,7 +29,7 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Swamp credential expiry alerts
 
-The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the `orbit-node-209` worker. It is alert only: it reads expiry metadata and changes no credential or grant. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers. It is alert only: it reads expiry metadata and changes no credential or grant. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
 
 - `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
 - `swamp auth token list --collective nckrtl`, for club tokens; a token with no `expiresAt` is reported as `no_expiry`;

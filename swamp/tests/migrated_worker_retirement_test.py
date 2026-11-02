@@ -48,20 +48,15 @@ class MigratedWorkerRetirement(unittest.TestCase):
                 placed_steps = list(steps(workflow))
                 self.assertTrue(placed_steps)
                 for placement, task in placed_steps:
-                    # Matching duals remain temporarily supported by the canonical lower.
-                    if 'target' in placement:
-                        self.assertEqual(placement['target'], 'orbit-node-209')
-                    else:
-                        self.assertEqual(placement.get('labels'), {'node': '209'})
-                    if 'labels' in placement:
-                        self.assertEqual(placement['labels'], {'node': '209'})
+                    self.assertNotIn('target', placement)
+                    self.assertEqual(placement.get('labels'), {'role': 'swamp'})
                     if task.get('type') == 'workflow':
                         pending.append(task['workflowIdOrName'])
 
     def test_effect_node_expression_is_detected_in_a_nested_scope(self):
-        workflow = {'target': 'orbit-node-209', 'jobs': [{'steps': [
-            {'target': '${{ "orbit-node-" + string(inputs.node_id) }}', 'task': {'type': 'assert'}}]}]}
-        self.assertNotEqual(next(steps(workflow))[0]['target'], 'orbit-node-209')
+        workflow = {'labels': {'role': 'swamp'}, 'jobs': [{'steps': [
+            {'labels': {'node': '${{ string(inputs.node_id) }}'}, 'task': {'type': 'assert'}}]}]}
+        self.assertNotEqual(next(steps(workflow))[0]['labels'], {'role': 'swamp'})
 
     def test_retired_issuer_workflows_and_proxy_behavior_are_absent(self):
         for name in ('node-proxy-workers-setup', 'node-proxy-preflight', 'node-worker-enroll', 'node-worker-rotation'):

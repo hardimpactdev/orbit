@@ -73,7 +73,7 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
             ).read_text()
         )
         for step in child["jobs"][0]["steps"]:
-            self.assertEqual(step.pop("target"), "orbit-node-209")
+            self.assertEqual(step.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", step)
             task = step["task"]
             if task.get("behaviorType") == "@swamp/ssh":

@@ -64,21 +64,21 @@ Deno.test("official dependency workflow refuses registry faults before approval;
     const workflowPath = `${dir}/workflows/workflow-dependency-upgrade.yaml`;
     const workflow = parse(await Deno.readTextFile(workflowPath)) as {
       jobs: {
-        target?: string;
+        labels?: unknown;
         steps: {
           name: string;
-          target?: string;
+          labels?: unknown;
           task: Record<string, unknown>;
         }[];
       }[];
     };
     let methods = 0;
     for (const job of workflow.jobs) {
-      assertEquals(job.target, "orbit-node-209");
-      delete job.target;
+      assertEquals(job.labels, { role: "swamp" });
+      delete job.labels;
       for (const step of job.steps) {
-        assertEquals(step.target, "orbit-node-209");
-        delete step.target;
+        assertEquals(step.labels, { role: "swamp" });
+        delete step.labels;
         if (step.name === "fetch") step.task.inputs = { run: "true" };
         if (step.name === "head") {
           step.task.inputs = {

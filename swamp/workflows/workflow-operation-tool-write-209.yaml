@@ -21,7 +21,7 @@ jobs:
 - name: tools
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-write-command'
@@ -30,7 +30,7 @@ jobs:
       inputs: {input: '${{ inputs.intent }}'}
   # Only when the Tool Manager is not ready yet: the shared setup child, which the development deploy also runs.
   - name: Set up the Tool Manager
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
     guard: '${{ inputs.intent.kind == "tool.update" || !("setup" in inputs.intent) || inputs.intent.setup == null || ("manager_ready" in inputs.intent && inputs.intent.manager_ready) }}'
     task:
@@ -38,7 +38,7 @@ jobs:
       workflowIdOrName: operation-tool-manager-setup
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ inputs.intent }}', ssh: '${{ inputs.ssh }}', report: true}
   - name: Add the signed apt source
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - {step: assets, condition: {type: succeeded}}
       - {step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -65,12 +65,12 @@ jobs:
         argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', source]
         stdin: '${{ steps.assets.outputs.bundle }}'
   - name: Update the apt source
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
     guard: '${{ inputs.intent.kind != "tool.update" || !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}'
     task: *source
   - name: Check the candidate
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - {step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
       - {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -90,7 +90,7 @@ jobs:
         stdin: '${{ steps.assets.outputs.bundle }}'
   # The constraint, the installed version and every refusal, before any package write.
   - name: decide
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: Check the candidate, condition: {type: succeeded}}]
     task:
       type: behavior
@@ -100,7 +100,7 @@ jobs:
       inputs: {input: '${{ inputs.intent }}', check: '${{ steps["Check the candidate"] }}'}
   # apt as root with --no-remove, waiting up to 300 s for a busy lock; other managers as the managed account.
   - name: Install the package
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: decide, condition: {type: succeeded}}]
     guard: '${{ inputs.intent.kind != "tool.install" || !steps.decide.outputs.mutate }}'
     task: &write
@@ -116,12 +116,12 @@ jobs:
         argv: [timeout, '900', python3, -I, -c, '${{ steps.assets.outputs.driver }}', write, '${{ steps.decide.outputs.candidate_json }}']
         stdin: '${{ steps.assets.outputs.bundle }}'
   - name: Upgrade the package
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: decide, condition: {type: succeeded}}]
     guard: '${{ inputs.intent.kind != "tool.update" || !steps.decide.outputs.mutate }}'
     task: *write
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - {step: Set up the Tool Manager, condition: {type: always}}
       - {step: Add the signed apt source, condition: {type: always}}
@@ -143,6 +143,6 @@ jobs:
         decision: '${{ "decide" in steps ? steps.decide : null }}'
         write: '${{ "Install the package" in steps && steps["Install the package"].status != "skipped" ? steps["Install the package"] : ("Upgrade the package" in steps && steps["Upgrade the package"].status != "skipped" ? steps["Upgrade the package"] : null) }}'
   - name: accepted
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: result, condition: {type: succeeded}}]
     task: {type: assert, expr: 'steps.result.outputs.ok == true', severity: high, message: The Tool write did not complete.}

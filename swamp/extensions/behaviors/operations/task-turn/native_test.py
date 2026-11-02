@@ -161,10 +161,10 @@ class NativeTurn(harness.NativeTestCase):
         )
         self.flow["name"] = "task-turn-fixture"
         for job in self.flow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertEqual(job.pop("labels"), {"node": "209"})
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertEqual(step.pop("labels"), {"node": "209"})
                 args = step["task"].get("inputs", {}).get("argv")
                 if args:

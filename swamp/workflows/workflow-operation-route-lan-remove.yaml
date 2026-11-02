@@ -62,7 +62,7 @@ jobs:
 - name: withdrawal
   steps:
   - name: converge-lan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: route-lan-apply
@@ -80,7 +80,7 @@ jobs:
             rules: ${{ inputs.intent.rules }}
             migrate: ${{ inputs.intent.migrate }}
   - name: remove-lan
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: converge-lan
       condition:

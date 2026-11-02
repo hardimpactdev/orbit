@@ -10,7 +10,6 @@ inputs:
   required: [operation_id, node_id, kind]
 jobs:
   - name: rollback
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
     labels:
       node: '${{ string(inputs.node_id) }}'
     writes: true
@@ -28,7 +27,6 @@ jobs:
             run_id: '${{ run.id }}'
   - name: failure
     dependsOn: [{job: rollback, condition: {type: failed}}]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
     labels:
       node: '${{ string(inputs.node_id) }}'
     writes: true

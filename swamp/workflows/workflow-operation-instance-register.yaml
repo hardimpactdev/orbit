@@ -30,10 +30,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: source
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: inspect-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
@@ -43,7 +43,7 @@ jobs:
         action: inspect
         input: ${{ inputs.intent }}
   - name: filesystem
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect-assets
       condition:
@@ -70,7 +70,7 @@ jobs:
         interpreter: python3
         script: ${{ steps["inspect-assets"].outputs.script_body }}
   - name: top
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: filesystem
       condition:
@@ -94,7 +94,7 @@ jobs:
         - rev-parse
         - --show-toplevel
   - name: common
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: top
       condition:
@@ -119,7 +119,7 @@ jobs:
         - --path-format=absolute
         - --git-common-dir
   - name: worktrees
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: common
       condition:
@@ -144,7 +144,7 @@ jobs:
         - list
         - --porcelain
   - name: origin-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: worktrees
       condition:
@@ -158,7 +158,7 @@ jobs:
         action: origin
         input: ${{ inputs.intent }}
   - name: origin
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: origin-assets
       condition:
@@ -174,7 +174,7 @@ jobs:
         interpreter: python3
         script: ${{ steps["origin-assets"].outputs.script_body }}
   - name: branch
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: origin
       condition:
@@ -198,7 +198,7 @@ jobs:
         - branch
         - --show-current
   - name: commit
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: branch
       condition:
@@ -223,7 +223,7 @@ jobs:
         - --verify
         - HEAD^{commit}
   - name: default
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: commit
       condition:
@@ -248,7 +248,7 @@ jobs:
         - --format=%(symref)
         - refs/remotes/origin/HEAD
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: default
       condition:
@@ -271,7 +271,7 @@ jobs:
           commit: ${{ steps.commit.outputs }}
           default: ${{ steps.default.outputs }}
   - name: protect-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:
@@ -285,7 +285,7 @@ jobs:
         action: protect_environment
         input: ${{ inputs.intent }}
   - name: protect-environment
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: protect-assets
       condition:

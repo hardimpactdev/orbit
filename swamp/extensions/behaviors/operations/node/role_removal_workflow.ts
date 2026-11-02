@@ -61,7 +61,6 @@ export function roleRemovalJobs(afterJob: string) {
       stage,
       target_node_id: expr(node),
     }, {
-      target: expr('"orbit-node-" + string(' + node + ")"),
       labels: { node: expr("string(" + node + ")") },
       ...(certificates
         ? {
@@ -130,7 +129,6 @@ export function roleRemovalWorkflow() {
       required: ["operation_id", "node_id", "kind"],
       additionalProperties: false,
     },
-    target: expr('"orbit-node-" + string(inputs.node_id)'),
     labels: { node: expr("string(inputs.node_id)") },
     jobs,
   };

@@ -74,9 +74,9 @@ class AnalyticsRuntimeNative(NativeTestCase):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:
                 if "target" in job:
-                    self.assertEqual(job.pop("target"), "orbit-node-209")
+                    self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
                     task = step["task"]
                     if task.get("behaviorType", "").startswith(

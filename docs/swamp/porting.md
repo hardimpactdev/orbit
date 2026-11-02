@@ -71,10 +71,10 @@ jobs:
   - name: execute
     steps:
       - name: assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task: {type: behavior, behaviorType: '@nckrtl/REPLACE_KIND-assets', behaviorName: '${{ "assets-" + run.id }}', methodName: read}
       - name: action
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: assets, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -90,7 +90,7 @@ jobs:
               ORBIT_PUBLIC_VALUE: '${{ inputs.intent.public_value }}'
               ORBIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}'
       - name: accepted
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: action, condition: {type: succeeded}}]
         task: {type: assert, expr: 'steps.action.outputs.exitCode == 0', severity: high, message: REPLACE_KIND did not complete.}
 ```
@@ -199,7 +199,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](/swamp/
 
 | Anti-pattern | Why it fails | Do this instead |
 | --- | --- | --- |
-| `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `target: orbit-node-209`, then `@swamp/ssh` |
+| `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `labels: {role: swamp}`, then `@swamp/ssh` |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |
 | A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body |
 | Swamp growth without a reason, or a new TypeScript behavior that native Swamp, an official extension or a shared helper could replace | `swamp/` grew +226,316 lines against Orbit −162,866; the migration total of +63,450 must turn negative (F15) | Use native Swamp, an official extension, a shared helper or a script file. A reason for growth says why none of them can do it. |

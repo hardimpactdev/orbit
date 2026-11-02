@@ -27,7 +27,7 @@ class FleetReleaseNative(NativeTestCase):
             workflow = yaml.safe_load((ROOT / 'workflows' / name).read_text())
             for job in workflow['jobs']:
                 for step in job['steps']:
-                    step.pop('target', None)
+                    step.pop('target', None); step.pop('labels', None)
                     step.pop('labels', None)
             (self.repo / 'workflows' / name).write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.state = {'bound': True, 'calls': [], 'effects': [], 'failure': None, 'uncertain': False,

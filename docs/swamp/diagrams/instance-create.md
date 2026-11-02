@@ -73,7 +73,7 @@ Later stages were already Swamp: #1617 (in `3c897e768a`) admitted an Operation t
 
 ## Swamp flow on main
 
-The Gateway validates the request, reserves the Instance and records the intent in one transaction. After the commit, `StartSwampRun` writes the vault copies and starts the run. It refuses a Route, a database and `gh_cli` source access before reservation, so the Swamp flow has no Route or database step. A Swamp run then executes one root on Node 209. Every step has `target: orbit-node-209`. Steps marked SSH run an official `@swamp/ssh` method from 209 against the app-dev Node as its managed user. The other steps run locally on 209: asserts, TypeScript behaviors that shape inputs and render scripts, and `command/shell`.
+The Gateway validates the request, reserves the Instance and records the intent in one transaction. After the commit, `StartSwampRun` writes the vault copies and starts the run. It refuses a Route, a database and `gh_cli` source access before reservation, so the Swamp flow has no Route or database step. A Swamp run then executes one root on Node 209. Every step has `labels: {role: swamp}`. Steps marked SSH run an official `@swamp/ssh` method from 209 against the app-dev Node as its managed user. The other steps run locally on 209: asserts, TypeScript behaviors that shape inputs and render scripts, and `command/shell`.
 
 ```mermaid
 flowchart TD

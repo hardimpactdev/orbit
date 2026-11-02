@@ -102,7 +102,7 @@ jobs:
 - name: prepare
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -111,7 +111,7 @@ jobs:
         intent: ${{ inputs.intent }}
       behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-assets" }}
   - name: workspace
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -133,7 +133,7 @@ jobs:
       condition:
         type: succeeded
   - name: configure
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -158,7 +158,7 @@ jobs:
       condition:
         type: succeeded
   - name: login
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -182,7 +182,7 @@ jobs:
       condition:
         type: succeeded
   - name: unlock
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -206,7 +206,7 @@ jobs:
       condition:
         type: succeeded
   - name: sync
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -230,7 +230,7 @@ jobs:
       condition:
         type: succeeded
   - name: inventory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -255,7 +255,7 @@ jobs:
       condition:
         type: succeeded
   - name: trash
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -280,7 +280,7 @@ jobs:
       condition:
         type: succeeded
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -301,7 +301,7 @@ jobs:
       type: succeeded
   steps:
   - name: delete
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -332,7 +332,7 @@ jobs:
       type: succeeded
   steps:
   - name: write
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -363,7 +363,7 @@ jobs:
       type: always
   steps:
   - name: logout
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -384,7 +384,7 @@ jobs:
       behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-logout" }}
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
   - name: remove-cache
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -413,7 +413,7 @@ jobs:
       type: always
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'

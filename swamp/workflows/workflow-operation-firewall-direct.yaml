@@ -17,7 +17,7 @@ jobs:
 - name: firewall
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/firewall-assets'
@@ -25,7 +25,7 @@ jobs:
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: apply
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: true
     dependsOn: [{step: assets, condition: {type: succeeded}}]
     task:
@@ -48,6 +48,6 @@ jobs:
         argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.script }}', '${{ steps.assets.outputs.input }}']
         okExitCodes: [0, 1]
   - name: accepted
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: apply, condition: {type: succeeded}}]
     task: {type: assert, expr: steps.apply.outputs.exitCode == 0, severity: high, message: The firewall rule did not converge.}

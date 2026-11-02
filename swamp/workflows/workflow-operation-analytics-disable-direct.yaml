@@ -50,7 +50,7 @@ jobs:
 - name: withdraw
   steps:
   - name: caddy
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -70,7 +70,7 @@ jobs:
       type: succeeded
   steps:
   - name: dns
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: route-dns-publish
@@ -90,7 +90,7 @@ jobs:
       type: succeeded
   steps:
   - name: dns-grace
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ inputs.intent.dns.size() == 0 }}
     task:
       type: workflow
@@ -103,7 +103,7 @@ jobs:
       type: succeeded
   steps:
   - name: certificate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: route-certificate-remove
@@ -125,7 +125,7 @@ jobs:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-site'
