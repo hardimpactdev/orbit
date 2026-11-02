@@ -22,6 +22,7 @@ additionalFiles:
   - scripts/create_valkey.py
   - scripts/shipped.py
   - scripts/database_create.py
+  - scripts/database_destroy.py
   - scripts/sql_probe_user.py
   - scripts/sql_probe_databases.py
   - scripts/sql_create_user.py

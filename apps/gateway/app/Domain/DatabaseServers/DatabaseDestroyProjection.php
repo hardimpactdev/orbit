@@ -9,10 +9,10 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
-use App\Models\DatabaseExecutionIntent;
+use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -25,17 +25,16 @@ final readonly class DatabaseDestroyProjection implements DirectOperationProject
         $input = array_intersect_key($operation->input, array_flip(['driver', 'container', 'host', 'port', 'default_open', 'databases', 'users', 'test_prefixes', 'owners']));
         app(DatabaseDestroySafety::class)->assertNames(ValidatedData::stringList($input['databases'] ?? []), ValidatedData::stringList($input['test_prefixes'] ?? []));
         $input['owners'] = (object) ($input['owners'] ?? []);
-        $id = app(DatabaseIntentSource::class)->ownerId($operation);
-        if ($id === null) {
+        if (app(DatabaseIntentSource::class)->ownerId($operation) === null) {
             throw new ResourceOperationException('database.destroy_intent_invalid', 'The removal belongs to another resource or Node.', 422);
         }
-        $intent = DatabaseExecutionIntent::recorded($id);
-        $node = Node::query()->findOrFail($operation->node_id);
-        $input['ssh'] = ['host' => $node->wireguard_ip, 'user' => $node->user, 'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key) ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
+        $input['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id));
+        $admin = ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$operation->target_id}-admin"];
+        if (! $operation->status->terminal()) {
+            $admin = DatabaseServerAdminSecret::copy(DatabaseServer::query()->findOrFail($operation->target_id));
+        }
 
-        return ['intent' => $input, 'execution_secrets' => ['database_destroy' => app(SwampCommandStep::class)->executionCopy(
-            'orbit-control-inputs', 'database-destroy-intent-'.$id, json_encode(['password' => $intent->payload['commands']['database-apply']['input']['password']], JSON_THROW_ON_ERROR),
-        )]];
+        return ['intent' => $input, 'execution_secrets' => ['admin' => $admin]];
     }
 
     public function apply(Operation $operation, array $data): Operation

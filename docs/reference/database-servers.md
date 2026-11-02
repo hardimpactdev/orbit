@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/scripts/{database_create,shipped}.py},workflows/workflow-operation-database-{server-create,server-destroy,create}.yaml}
+  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/{scripts/{database_create,database_destroy,shipped}.py,database_{create,destroy}_test.py}},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
 ---
 
 # Database servers
@@ -260,13 +260,13 @@ For Valkey writes, Swamp invokes the fixed `database.valkey` program on the serv
 
 `database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
-Standalone removal receives captured public intent and a vault descriptor. Native steps on 209 use official SSH to inventory, prove ownership, check blockers, drop each database and remove each unshared user. PostgreSQL restores surviving connection fences after failure. Valkey saves the admitted ACL users for rollback before deleting them and persists the result with a separate save step. Native retry of the removal child repeats the safety checks; resuming terminal delivery alone repeats no effects. The Gateway removes records through the shared terminal projector.
+Standalone removal runs `operation-database-destroy` on Node 209 in the [chart's](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.destroy.mmd) two Node steps over official SSH: drop the databases and users, then check they are gone. The drop step reads the admin password from the server's own vault key on standard input, finds MySQL test databases under the recorded prefix, checks blockers for the whole set, and then drops. On Valkey it runs `ACL DELUSER` for each user and `ACL SAVE`. The Gateway removes records through the shared terminal projector.
 
-The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and holds no execution lock. Swamp inventories MySQL test-prefix members, verifies full grants for the recorded user, and checks PostgreSQL owners before removal. System database names and prefixes are refused before SQL. PostgreSQL keeps a persistent connection fence across the final checks and drops. Swamp restores database admission after a failed drop.
+The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and refuses a server Node without a stored SSH host key. System database names and prefixes are refused before SQL. Standalone removal runs no ownership probe and no connection fence (flow-tighten rule 22): a client that connects between the blocker check and the drop is cut off.
 
 Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, metadata locks on the planned schemas (including transactions that use qualified table names without a default database), stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
 
-PostgreSQL removal closes new client admission across the whole planned set with `ALLOW_CONNECTIONS false`, then checks blockers again before any drop. Existing clients stay connected and block removal. The fence remains through the drops. On refusal or failure, Orbit restores each surviving database's exact prior `ALLOW_CONNECTIONS` value; it never changes `CONNECTION LIMIT`.
+Owned removal (`instance:destroy` and `database.destroy_owned`) still runs the older removal child until its port. There, PostgreSQL removal closes new client admission across the whole planned set with `ALLOW_CONNECTIONS false`, then checks blockers again before any drop. Existing clients stay connected and block removal. The fence remains through the drops. On refusal or failure, Orbit restores each surviving database's exact prior `ALLOW_CONNECTIONS` value; it never changes `CONNECTION LIMIT`.
 
 The admin database `postgres` keeps the original admission values and database OIDs in the admin-only `orbit_admin.database_removal_fences` table. Journaling and fencing commit together. A crash before commit rolls both back; a crash after commit retains the journal for retry. Retrying either completes removal or restores admission before returning a refusal. A changed database OID stops recovery instead of changing a replacement database.
 
@@ -333,6 +333,8 @@ The server commands return these codes.
 | `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
 | `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
+| `database.destroy_incomplete` | 502 | A planned database or user is still present after the drops; run the command again. |
+| `database.destroy_outcome_unknown` | 502 | The removal run ended without a readable result; run the command again. |
 | `database.in_use` | 409 | A session, replication object, prepared transaction, or user dependency blocks the planned database removal. Nothing is dropped. |
 | `database.name_conflict` | 409 | The name is taken on the server, a recorded test member has a foreign owner, or its managed role is missing. |
 | `database.slug_conflict` | 409 | The connection slug exists and the request is not an identical PostgreSQL pool retry. |
