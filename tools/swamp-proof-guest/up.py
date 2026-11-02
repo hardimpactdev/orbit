@@ -312,9 +312,14 @@ def serve_gateway():
     run(['chown', '-R', 'root:caddy', str(tls)])
     run(['chmod', '0640', str(tls / 'key.pem')])
     address = TOPOLOGY['network']['gateway']
+    # Without this line gateway.orbit resolves through fleet private DNS to the production Gateway; a signing
+    # step would then call production. up fails unless the name resolves to this VM.
     hosts = Path('/etc/hosts')
-    if 'gateway.orbit' not in hosts.read_text():
-        hosts.write_text(hosts.read_text() + f'{address} gateway.orbit\n')
+    lines = [line for line in hosts.read_text().splitlines() if 'gateway.orbit' not in line.split()[1:]]
+    hosts.write_text('\n'.join([*lines, f'{address} gateway.orbit']) + '\n')
+    resolved = run(['getent', 'hosts', 'gateway.orbit']).split()
+    if not resolved or resolved[0] != address:
+        raise RuntimeError(f'gateway.orbit resolves to {resolved[:1]}, not this topology Gateway {address}')
     Path('/etc/php/8.5/fpm/pool.d/proof-gateway.conf').write_text(
         '[proof-gateway]\nuser = orbit\ngroup = orbit\nlisten = /run/php/proof-gateway.sock\nlisten.owner = caddy\n'
         'listen.group = caddy\npm = ondemand\npm.max_children = 4\nclear_env = no\n')
