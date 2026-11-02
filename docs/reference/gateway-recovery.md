@@ -553,7 +553,7 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning. It queues [host-local recipe image builds](/reference/compute-drivers#build-the-base-image) when the deployed recipe changes. This only records and dispatches work; it never builds on the release process. A dispatch failure logs an error and the minute recipe check retries it without rolling back a healthy Gateway.
 
-Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider. Use the guarded [Docker provider migration](/reference/docker-provider-migration) in a separate maintenance window; fallback requires explicit approval with `--fallback`.
+Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider.
 
 When publication is needed, the Caddy handoff submits the normal
 `route.caddy_converge` native root on the Gateway Node worker. Its report records
@@ -1186,8 +1186,6 @@ Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Ni
 
 A failed image build blocks readiness, not convergence progress. Run `task-vms:build-recipe --retry` after fixing the build; convergence starts when every host promotes the current identity and generation. A Node visit failure or interrupted visit stays halted for manual recovery, even after an image retry.
 
-A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not migrate it. Schedule a window for the explicit [Docker provider migration](/reference/docker-provider-migration). It shares the role, apt and self-update locks but stops every container on that Node.
-
-If migration returns `node.docker_migration_failed`, preserve the root-only journal and original data directories. Resolve the named stage and resume the same command with the same recipe. Do not delete the journal to force a new inventory.
+A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not change it.
 
 Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.

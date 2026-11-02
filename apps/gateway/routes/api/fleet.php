@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Http\Controllers\Api\FleetDockerMigrationController;
 use App\Http\Controllers\Api\FleetMaintenanceController;
 use App\Http\Controllers\Api\FleetPeerDnsController;
 use App\Http\Controllers\Api\FleetRecipesController;
@@ -15,7 +14,6 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
-    Route::post('fleet/nodes/{node}/docker-migration', [FleetDockerMigrationController::class, 'store'])->name('fleet:docker:migrate');
     Route::get('fleet/nodes/{node}/visit-policy', [FleetMaintenanceController::class, 'visitPolicy'])->name('fleet:visit:policy');
     Route::get('fleet/rollout/plan', [FleetMaintenanceController::class, 'rolloutPlan'])->name('fleet:rollout:plan');
     Route::post('fleet/rollout', [FleetMaintenanceController::class, 'rollout'])->name('fleet:rollout');

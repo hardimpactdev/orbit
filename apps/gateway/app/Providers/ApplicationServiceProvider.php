@@ -15,7 +15,6 @@ use App\Console\Commands\ConvergeNodeRecipeCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
-use App\Console\Commands\MigrateDockerCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
@@ -47,7 +46,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             ConvergeNodeRecipeCommand::class,
             FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
-            MigrateDockerCommand::class,
             ProvisionNodeCommand::class,
             ReconcilePeerDnsCommand::class,
             RenderNodeRecipeCommand::class,

@@ -1927,58 +1927,6 @@
       ]
     },
     {
-      "name": "docker.plan-migration",
-      "summary": "Inspect Docker CE and plan a provider migration without changing the Node.",
-      "mutates": false,
-      "timeout_seconds": 3600,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "docker.migration_failed"
-      ]
-    },
-    {
-      "name": "docker.prepare-migration",
-      "summary": "Preserve Docker state and migrate CE to the recipe's Ubuntu provider.",
-      "mutates": true,
-      "timeout_seconds": 3600,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "docker.migration_failed"
-      ]
-    },
-    {
-      "name": "docker.restore-migration-policies",
-      "summary": "Restore original container policies after an operator restores Docker CE.",
-      "mutates": true,
-      "timeout_seconds": 3600,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "docker.migration_failed"
-      ]
-    },
-    {
-      "name": "docker.report-migration",
-      "summary": "Report final container states without exposing private Docker inventory.",
-      "mutates": false,
-      "timeout_seconds": 3600,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "docker.migration_failed"
-      ]
-    },
-    {
       "name": "recipe.verify-delivery",
       "summary": "Verify the installed agent and CLI under the update lock before recording a recipe.",
       "mutates": false,

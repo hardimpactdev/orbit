@@ -187,7 +187,7 @@ The command requires an active managed Ubuntu Node on x86_64. Another architectu
 
 The Gateway captures desired pins and the enrolled account without contacting the host. Swamp performs package inventory, origin proof, source retirement, verified downloads, runtime installation and service checks through shipped, linted system programs. Official SSH runs privileged host actions with sudo from 209. The package transaction uses APT’s own locks and removes its temporary restart policy on an ordinary failure. An interrupted write remains uncertain until its native step is assessed; it records no recipe success. The agent remains an observer.
 
-Native preflight refuses Docker CE with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider. Follow the [Docker migration runbook](/reference/docker-provider-migration) during a planned window.
+Native preflight refuses Docker CE with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider.
 
 The `ci-runner` role selects its recipe tool set through the same role union as other roles. Roleless Nodes use `operator`. Recorded profiles have no effect.
 

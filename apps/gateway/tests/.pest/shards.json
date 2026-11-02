@@ -358,7 +358,6 @@
         "Tests\\Feature\\Fleet\\CliReleaseBuildInputsTest": 0.2061,
         "Tests\\Feature\\Fleet\\ConvergeNodeRecipeTest": 3.9817,
         "Tests\\Feature\\Fleet\\DesiredFleetStateTest": 0.9385,
-        "Tests\\Feature\\Fleet\\DockerMigrationTest": 1.3332,
         "Tests\\Feature\\Fleet\\FleetContainerWiringTest": 0.1794,
         "Tests\\Feature\\Fleet\\FleetConvergeUnitsTest": 0.2017,
         "Tests\\Feature\\Fleet\\FleetIntegrationTest": 0.3663,

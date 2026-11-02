@@ -575,8 +575,6 @@ mod tests {
     fn shared_host_mutations_hold_one_lock_per_resource() {
         let packages = [
             "caddy.install-package",
-            "docker.prepare-migration",
-            "docker.restore-migration-policies",
             "gateway.converge-release-units",
             "image.clean",
             "metrics.cadvisor",

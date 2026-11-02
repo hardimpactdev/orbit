@@ -22,7 +22,6 @@ pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
-mod docker_migration;
 mod doctor_node;
 mod doctor_project;
 mod doctor_public_route;
@@ -234,10 +233,6 @@ pub fn all() -> Vec<Entry> {
         entry::<php_build::operations::Inspect>(),
         entry::<php_build::operations::Install>(),
         entry::<php_profile::Configure>(),
-        entry::<docker_migration::Plan>(),
-        entry::<docker_migration::Prepare>(),
-        entry::<docker_migration::Restore>(),
-        entry::<docker_migration::Report>(),
         entry::<recipe_delivery::Verify>(),
         entry::<recipe::operations::Inspect>(),
         entry::<recipe::operations::IncusPreflight>(),

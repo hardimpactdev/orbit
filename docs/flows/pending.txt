@@ -5,7 +5,6 @@ database.sqlite_cleanup
 database.sqlite_seed
 database_server.close
 fleet.cli_converge
-fleet.docker_migrate
 gateway.swamp_load
 instance.policy_event
 node.bootstrap_host
