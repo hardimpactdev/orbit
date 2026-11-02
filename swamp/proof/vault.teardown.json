@@ -10,6 +10,11 @@
   },
   "before_gateway": [
     [
+      "rm",
+      "-f",
+      "/home/orbit/.orbit/swamp-proof/vault-setup/account.json"
+    ],
+    [
       "python3",
       "-I",
       "swamp/tests/fixtures/vaultwarden_proof_setup.py",
