@@ -2,7 +2,8 @@ id: 39d6e292-f81d-437f-9225-5f959b261432
 name: group-start
 description: >-
   Start one Orbit task group (tg-<group id>) in the orbit-groups factory. Serve runs
-  remote-only, so a bare CLI method run has no placement; this is the placed start.
+  remote-only, so a bare CLI method run has no placement, and serve cannot evaluate the
+  factory's templated stages before dispatch; the driver starts it on the worker.
   groups-driver discovers the active work item on its next tick.
 queueTimeout: 60
 inputs:
@@ -19,7 +20,7 @@ jobs:
         labels: {role: swamp}
         task:
           type: model_method
-          modelIdOrName: orbit-groups
+          modelIdOrName: orbit-driver-groups
           methodName: start
           inputs:
             workItem: '${{ inputs.workItem }}'

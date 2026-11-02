@@ -450,7 +450,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.10.28.2",
+  version: "2026.11.2.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
@@ -468,6 +468,18 @@ export const behavior = {
     },
   },
   methods: {
+    start: {
+      description: "Start one work item in the factory; serve cannot place the factory's own templated start",
+      arguments: z.object({ workItem: z.string().regex(/^tg-[1-9][0-9]*$/) }),
+      execute: async (
+        args: { workItem: string },
+        rawCtx: Omit<Ctx, "definitionName"> & { definition: { name: string } },
+      ) => {
+        const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
+        await call(ctx, ctx.globalArgs.factory, "start", { workItem: args.workItem });
+        return { dataHandles: [] };
+      },
+    },
     preapprove: {
       outputLifetime: "7d",
       description: "Store a human approval for a gate the run has not reached yet; the next tick that parks at exactly that gate, stage and cycle applies it",

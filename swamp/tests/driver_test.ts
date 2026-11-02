@@ -141,3 +141,24 @@ Deno.test("a group's failed status never aborts the remaining groups and is reco
     assertEquals((ticks[1].items as { error?: string }[]).every((r) => !r.error), true);
   }
 });
+
+Deno.test("start begins exactly one work item in the driver's factory on the worker", async () => {
+  const calls: { definition: string; method: string; arguments?: Record<string, unknown> }[] = [];
+  const context = {
+    globalArgs: behavior.globalArguments.parse({ factory: "orbit-groups" }),
+    definition: { name: "orbit-driver-groups" },
+    queryData: recordQuery(() => Promise.resolve([])),
+    invokeModel: (call: (typeof calls)[number]) => {
+      calls.push(call);
+      return Promise.resolve({ ok: true });
+    },
+    writeResource: (_spec: string, name: string) => Promise.resolve({ name }),
+    logger: { info: () => {}, warning: () => {} },
+  };
+  await behavior.methods.start.execute({ workItem: "tg-2314" }, context);
+  assertEquals(calls, [{ definition: "orbit-groups", method: "start", arguments: { workItem: "tg-2314" } }]);
+  const refused = { ...context, invokeModel: () => Promise.resolve({ ok: false, error: { message: "already started" } }) };
+  let failed = false;
+  await behavior.methods.start.execute({ workItem: "tg-2314" }, refused).catch(() => (failed = true));
+  assert(failed, "a refused factory start fails the step");
+});
