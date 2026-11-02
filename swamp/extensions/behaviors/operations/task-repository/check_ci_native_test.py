@@ -5,8 +5,29 @@ import json
 import unittest
 
 import yaml
-from publication_native_test import TOKEN, NativePublicationFixture
+from publication_native_test import ROOT, TOKEN, NativePublicationFixture
 
+
+def check_result(history):
+    """The result as the Gateway reads it: the report's stdout, else the push step's finish."""
+    steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+    if "Report the result" not in steps:  # the scheduled CI workflow keeps its own result step
+        return steps["result"]["outputs"]["stdout"]
+    report = steps["Report the result"]
+    if report["status"] == "succeeded":
+        return report["outputs"]["stdout"]
+    return steps["Push the candidate"]["outputs"]["finish"]["result_json"]
+
+
+def child_steps(history):
+    """Every step of the run: the parent's, and each child's from its parent step's outputs."""
+    rows = []
+    for step in history["jobs"][0]["steps"]:
+        rows.append(step)
+        for name, outputs in (step.get("outputs") or {}).items():
+            if isinstance(outputs, dict):
+                rows.append({"name": name, "status": "succeeded", "outputs": outputs})
+    return rows
 
 class NativeCheckCI(NativePublicationFixture):
     def setUp(self):
@@ -75,6 +96,11 @@ class NativeCheckCI(NativePublicationFixture):
         (self.repo / "workflows/workflow-check-fixture.yaml").write_text(
             yaml.safe_dump(self.flow, sort_keys=False)
         )
+        for child in sorted((ROOT / "workflows").glob("workflow-task-check-*.yaml")):
+            if child.name != "workflow-task-check-ci.yaml":
+                (self.repo / "workflows" / child.name).write_text(
+                    yaml.safe_dump(self.copy_flow(child.name), sort_keys=False)
+                )
         schedule = self.copy_flow("workflow-task-check-ci.yaml")
         (self.repo / "workflows/workflow-check-ci.yaml").write_text(
             yaml.safe_dump(schedule, sort_keys=False)
@@ -103,8 +129,7 @@ class NativeCheckCI(NativePublicationFixture):
                     pass
         self.assertIsNotNone(run, reply.stdout)
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-        result = next(x for x in history["jobs"][0]["steps"] if x["name"] == "result")
-        return history, json.loads(result["outputs"]["stdout"])
+        return history, json.loads(check_result(history))
 
     def reading(self, status="in_progress", conclusion=None):
         self.server.pulls = {

@@ -224,7 +224,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-pending-" + string(self._index) }}'
+      # The group's record (one pending handoff per group): settle replaces it, so the next tick no longer finds it pending.
+      behaviorName: '${{ ("task-check-pending-" + string(self.check.attributes.inputs.intent.group_id)).split(".").join("-") }}'
       methodName: settle
       inputs:
         value: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs }}

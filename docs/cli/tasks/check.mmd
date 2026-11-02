@@ -76,6 +76,11 @@ sequenceDiagram
     %%> - export, import, mint, push and revoke as in `tasks:publish`; the run then ends with CI pending
     %%> - a native schedule reads the Checks once a minute, snapshots the workspace again and settles the check
   end
+  Note over SW: Report the result<br/>outcome · error code
+  %%> What it does:
+  %%> - prints the check result and fails the run on its error code
+  %%> Why a step of its own:
+  %%> - each chart step above is a child workflow, and a failed step keeps no output; this parent step reports the result the push step always ends with
   alt every step passes
     SW-->>GW: Run succeeded<br/>outcome · commit · ci
     Note over GW: Record check 17<br/>passed, failed or changed

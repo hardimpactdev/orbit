@@ -1,0 +1,88 @@
+id: a6f064ae-6bbd-5d35-80fb-f1080170b6f6
+name: task-check-project
+description: Run the Project check as one SSH exec argv in the checkout.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      propertyNames:
+        enum:
+        - github_token
+        - checks_token
+      maxProperties: 2
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^task-check-(write|read)-[a-f0-9-]{36}$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+    kind:
+      type: string
+    run_id:
+      type: string
+    prepared:
+      type: object
+    setup:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - intent
+  - execution_secrets
+  - kind
+  - run_id
+  - prepared
+  - setup
+  additionalProperties: false
+jobs:
+- name: project
+  labels:
+    role: swamp
+  steps:
+  - name: project
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 3600
+        argv: ${{ inputs.prepared.project }}
+    guard: ${{ !inputs.setup.passed || inputs.intent.command == null }}
+    writes: true
+queueTimeout: 30

@@ -56,3 +56,4 @@ metrics.exporter_disable
 metrics.exporter_enable
 task_vm.sweep_host
 task_vm.destroy
+tasks.check

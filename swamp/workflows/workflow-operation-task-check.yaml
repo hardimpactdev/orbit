@@ -13,10 +13,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - tasks.check
+    kind: {type: string, const: tasks.check}
     intent:
       type: object
     execution_secrets:
@@ -51,1079 +48,159 @@ jobs:
 - name: check
   labels: {role: swamp}
   steps:
-  - name: prepare
+  - name: Build every argv
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-prepare" }}'
-      methodName: prepare
+      type: workflow
+      workflowIdOrName: task-check-prepare
       inputs:
-        intent: ${{ inputs.intent }}
+        operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
-        root: ${{ "/tmp/orbit-task-check-" + run.id }}
-  - name: prepare_remote
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: &ssh_args
-        name: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        argv:
-        - mkdir
-        - -p
-        - -m
-        - '0700'
-        - --
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/output" }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
-  - name: output_local
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-output_local" }}'
-      methodName: execute
-      inputs:
-        run: |
-          umask 077
-          mkdir -p -- "$ORBIT_OUTPUT"
-        env:
-          ORBIT_OUTPUT: ${{ "/tmp/orbit-task-check-" + run.id + "-output" }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
-  - name: original
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-    dependsOn:
-    - step: prepare_remote
-      condition:
-        type: succeeded
-    guard: ${{ !steps.prepare.outputs.valid }}
-  - name: setup-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: ${{ self.setup.timeout_seconds }}
-        argv: ${{ steps.prepare.outputs.setup[self._index] }}
-    forEach:
-      item: setup
-      in: ${{ inputs.intent.setup }}
-    concurrency: 1
-    dependsOn:
-    - step: original
-      condition:
-        type: succeeded
-    guard: ${{ self._index > 0 && (!("setup-" + string(self._index - 1) in steps) || !("outputs" in steps["setup-" + string(self._index - 1)]) || steps["setup-" + string(self._index - 1)].outputs.exitCode != 0) }}
-    writes: true
-  - name: setup_result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-setup_result" }}'
-      methodName: setup
-      inputs:
+        kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        prepared: ${{ steps.prepare.outputs }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: prepare_remote
-      condition:
-        type: succeeded
-    - step: setup-${{ self._index }}
-      condition:
-        type: always
-    - step: original
-      condition:
-        type: always
-  - name: snapshot-before-index
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+  - name: Run setup in order
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
+      type: workflow
+      workflowIdOrName: task-check-setup
       inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - read-tree
-        - HEAD
-    dependsOn:
-    - step: setup_result
-      condition:
-        type: succeeded
-  - name: snapshot-before-add
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-    dependsOn:
-    - step: snapshot-before-index
-      condition:
-        type: succeeded
-  - name: snapshot-before-tree
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - write-tree
-    dependsOn:
-    - step: snapshot-before-add
-      condition:
-        type: succeeded
-  - name: snapshot-before-head
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-    dependsOn:
-    - step: snapshot-before-tree
-      condition:
-        type: succeeded
-  - name: before
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-before" }}'
-      methodName: snapshot
-      inputs:
-        phase: before
-        steps: ${{ steps }}
-    dependsOn:
-    - step: snapshot-before-head
-      condition:
-        type: succeeded
-  - name: project
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 3600
-        argv: ${{ steps.prepare.outputs.project }}
-    dependsOn:
-    - step: before
-      condition:
-        type: succeeded
-    guard: ${{ !steps.setup_result.outputs.passed || inputs.intent.command == null }}
-    writes: true
-  - name: diff
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - diff-tree
-        - -r
-        - --no-renames
-        - --name-status
-        - -z
-        - ${{ inputs.intent.base }}
-        - ${{ steps.before.outputs.tree }}
-    dependsOn:
-    - step: project
-      condition:
-        type: always
-    - step: before
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.base == "" }}
-  - name: base_archive-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv: ${{ steps.prepare.outputs.bases[self._index].archive }}
-    forEach:
-      item: deliverable
-      in: ${{ inputs.intent.command_deliverables }}
-    concurrency: 1
-    dependsOn:
-    - step: diff
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
-  - name: base_extract-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv: ${{ steps.prepare.outputs.bases[self._index].extract }}
-    forEach:
-      item: deliverable
-      in: ${{ inputs.intent.command_deliverables }}
-    concurrency: 1
-    dependsOn:
-    - step: base_archive-${{ self._index }}
-      condition:
-        type: succeeded
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
-    writes: true
-  - name: base_dependencies-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv: ${{ steps.prepare.outputs.bases[self._index].dependencies }}
-    forEach:
-      item: deliverable
-      in: ${{ inputs.intent.command_deliverables }}
-    concurrency: 1
-    dependsOn:
-    - step: base_extract-${{ self._index }}
-      condition:
-        type: succeeded
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
-    writes: true
-  - name: base_overlay-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        argv: ${{ steps.prepare.outputs.bases[self._index].overlay }}
-    forEach:
-      item: deliverable
-      in: ${{ inputs.intent.command_deliverables }}
-    concurrency: 1
-    dependsOn:
-    - step: base_dependencies-${{ self._index }}
-      condition:
-        type: succeeded
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
-    writes: true
-  - name: base_directory-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        argv: ${{ steps.prepare.outputs.bases[self._index].directory }}
-    forEach:
-      item: deliverable
-      in: ${{ inputs.intent.command_deliverables }}
-    concurrency: 1
-    dependsOn:
-    - step: base_overlay-${{ self._index }}
-      condition:
-        type: succeeded
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) || !("base_overlay-" + string(self._index) in steps) || !("outputs" in steps["base_overlay-" + string(self._index)]) || steps["base_overlay-" + string(self._index)].outputs.exitCode != 0 }}
-  - name: base-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 600
-        argv: ${{ steps.prepare.outputs.bases[self._index].run }}
-    forEach:
-      item: deliverable
-      in: ${{ inputs.intent.command_deliverables }}
-    concurrency: 1
-    dependsOn:
-    - step: base_directory-${{ self._index }}
-      condition:
-        type: succeeded
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) || !("base_directory-" + string(self._index) in steps) || !("outputs" in steps["base_directory-" + string(self._index)]) || steps["base_directory-" + string(self._index)].outputs.exitCode != 0 }}
-    writes: true
-  - name: deliverable-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 3600
-        argv: ${{ steps.prepare.outputs.deliverables[self._index] }}
-    forEach:
-      item: deliverable
-      in: ${{ inputs.intent.command_deliverables }}
-    concurrency: 1
-    dependsOn:
-    - step: base-${{ self._index }}
-      condition:
-        type: always
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
-    writes: true
-  - name: snapshot-after-index
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - read-tree
-        - HEAD
-    dependsOn:
-    - step: deliverable-${{ self._index }}
-      condition:
-        type: always
-    - step: project
-      condition:
-        type: always
-    - step: setup_result
-      condition:
-        type: succeeded
-  - name: snapshot-after-add
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-    dependsOn:
-    - step: snapshot-after-index
-      condition:
-        type: succeeded
-  - name: snapshot-after-tree
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - write-tree
-    dependsOn:
-    - step: snapshot-after-add
-      condition:
-        type: succeeded
-  - name: snapshot-after-head
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-    dependsOn:
-    - step: snapshot-after-tree
-      condition:
-        type: succeeded
-  - name: after
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-after" }}'
-      methodName: snapshot
-      inputs:
-        phase: after
-        steps: ${{ steps }}
-    dependsOn:
-    - step: snapshot-after-head
-      condition:
-        type: succeeded
-  - name: changed
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - diff-tree
-        - -r
-        - --no-renames
-        - --name-status
-        - -z
-        - ${{ steps.before.outputs.tree }}
-        - ${{ steps.after.outputs.tree }}
-    dependsOn:
-    - step: after
-      condition:
-        type: succeeded
-  - name: output_copy
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        direction: from
-        recursive: true
-        src: ${{ "/tmp/orbit-task-check-" + run.id + "/output" }}
-        dst: ${{ "/tmp/orbit-task-check-" + run.id + "-output/" }}
-        timeoutSec: 60
-    dependsOn:
-    - step: changed
-      condition:
-        type: succeeded
-    - step: output_local
-      condition:
-        type: succeeded
-  - name: local
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-local" }}'
-      methodName: local
-      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        prepared: ${{ steps.prepare.outputs }}
-        steps: ${{ steps }}
-        outputs: ${{ "/tmp/orbit-task-check-" + run.id + "-output/output" }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
     dependsOn:
-    - step: changed
+    - step: Build every argv
       condition:
         type: succeeded
-    - step: output_copy
-      condition:
-        type: succeeded
-  - name: commit_add
+  - name: Snapshot the workspace
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
+      type: workflow
+      workflowIdOrName: task-check-snapshot-before
       inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-    dependsOn:
-    - step: local
-      condition:
-        type: succeeded
-    guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
-    writes: true
-  - name: commit
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        stdin: ${{ inputs.intent.message }}
-        argv:
-        - env
-        - GIT_AUTHOR_NAME=Orbit
-        - GIT_AUTHOR_EMAIL=orbit@users.noreply.github.com
-        - GIT_COMMITTER_NAME=Orbit
-        - GIT_COMMITTER_EMAIL=orbit@users.noreply.github.com
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - commit.gpgSign=false
-        - commit
-        - --allow-empty
-        - --allow-empty-message
-        - --cleanup=verbatim
-        - --quiet
-        - --file=-
-    dependsOn:
-    - step: commit_add
-      condition:
-        type: succeeded
-    guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
-    writes: true
-  - name: commit_read
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-        - HEAD^{tree}
-        - HEAD^
-    dependsOn:
-    - step: commit
-      condition:
-        type: succeeded
-    guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
-  - name: candidate
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-candidate" }}'
-      methodName: candidate
-      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        local: ${{ steps.local.outputs.result }}
-        steps: ${{ steps }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
     dependsOn:
-    - step: commit_read
-      condition:
-        type: always
-    - step: local
+    - step: Run setup in order
       condition:
         type: succeeded
-  - name: commit_ref
+  - name: Run the Project check
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
+      type: workflow
+      workflowIdOrName: task-check-project
       inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - update-ref
-        - ${{ "refs/orbit/check-operations/" + string(inputs.operation_id) }}
-        - ${{ steps.candidate.outputs.result.commit }}
-    dependsOn:
-    - step: candidate
-      condition:
-        type: succeeded
-    guard: ${{ has(steps.candidate.outputs.result.error_code) || steps.candidate.outputs.result.commit == null }}
-    writes: true
-  - name: export
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - bundle
-        - create
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/candidate.bundle" }}
-        - HEAD
-      globalArgs: *ssh_args
-    dependsOn:
-    - step: commit_ref
-      condition:
-        type: succeeded
-    guard: ${{ has(steps.candidate.outputs.result.error_code) || inputs.intent.check_name == null || steps.candidate.outputs.result.outcome != "passed"
-      || steps.candidate.outputs.result.commit == null }}
-    writes: true
-  - name: prepare_local
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-prepare_local" }}'
-      methodName: execute
-      inputs:
-        run: 'mkdir -p -- "$ORBIT_PUBLICATION_ROOT"
-
-          '
-        env:
-          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-check-" + run.id + "-control" }}
-    dependsOn:
-    - step: export
-      condition:
-        type: succeeded
-  - name: copy_bundle
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      inputs:
-        hosts: name:target
-        src: ${{ "/tmp/orbit-task-check-" + run.id + "/candidate.bundle" }}
-        dst: ${{ "/tmp/orbit-task-check-" + run.id + "-control/candidate.bundle" }}
-        direction: from
-      globalArgs: *ssh_args
-    dependsOn:
-    - step: prepare_local
-      condition:
-        type: succeeded
-  - name: import
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-import" }}'
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          git init --quiet --bare --template= --object-format="$ORBIT_OBJECT_FORMAT" "$ORBIT_REPOSITORY"
-          git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" HEAD:refs/heads/candidate
-          git -C "$ORBIT_REPOSITORY" rev-parse refs/heads/candidate 'refs/heads/candidate^{tree}'
-        ignoreExitCode: true
-        timeout: 60000
-        env:
-          GIT_CONFIG_GLOBAL: /dev/null
-          GIT_CONFIG_NOSYSTEM: '1'
-          ORBIT_OBJECT_FORMAT: ${{ steps.candidate.outputs.object_format }}
-          ORBIT_BUNDLE: ${{ "/tmp/orbit-task-check-" + run.id + "-control/candidate.bundle" }}
-          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-check-" + run.id + "-control/repository.git" }}
-    dependsOn:
-    - step: copy_bundle
-      condition:
-        type: succeeded
-  - name: import_result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-import_result" }}'
-      methodName: imported
-      inputs:
-        local: ${{ steps.candidate.outputs.result }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: import
-      condition:
-        type: succeeded
-  - name: mint_github
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-mint" }}'
-      methodName: execute
-      inputs:
-        run: |
-          curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \
-            --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \
-            --header 'Content-Type: application/json' --header 'Accept: application/json' \
-            --data "$ORBIT_MINT_REQUEST" "$ORBIT_MINT_URL"
-        ignoreExitCode: true
-        env:
-          ORBIT_MINT_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}
-          ORBIT_MINT_REQUEST: ${{ "{\"run_id\":\"" + run.id + "\"}" }}
-    dependsOn:
-    - step: import_result
-      condition:
-        type: succeeded
-    guard: ${{ !steps.import_result.outputs.imported }}
-  - name: mint_result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-mint-result" }}'
-      methodName: minted
-      inputs:
-        expected: ${{ inputs.intent.execution_references_json }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: mint_github
-      condition:
-        type: succeeded
-  - name: push
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-push" }}'
-      methodName: execute
-      inputs:
-        run: |
-          git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC"
-        ignoreExitCode: true
-        timeout: 60000
-        env:
-          GIT_TERMINAL_PROMPT: '0'
-          GIT_CONFIG_GLOBAL: /dev/null
-          GIT_CONFIG_NOSYSTEM: '1'
-          GIT_ALLOW_PROTOCOL: https
-          GIT_CONFIG_COUNT: '4'
-          GIT_CONFIG_KEY_0: credential.helper
-          GIT_CONFIG_VALUE_0: ''
-          GIT_CONFIG_KEY_1: credential.helper
-          GIT_CONFIG_VALUE_1: '!gh auth git-credential'
-          GIT_CONFIG_KEY_2: core.hooksPath
-          GIT_CONFIG_VALUE_2: /dev/null
-          GIT_CONFIG_KEY_3: http.followRedirects
-          GIT_CONFIG_VALUE_3: 'false'
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-" + run.id + "-control/gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-check-" + run.id + "-control/repository.git" }}
-          ORBIT_REMOTE: ${{ steps.candidate.outputs.remote }}
-          ORBIT_REFSPEC: ${{ steps.candidate.outputs.refspec }}
-    dependsOn:
-    - step: mint_result
-      condition:
-        type: succeeded
-    guard: ${{ !steps.mint_result.outputs.minted }}
-    writes: true
-  - name: revoke_write
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-revoke-write" }}'
-      methodName: execute
-      inputs:
-        run: |
-          gh api --method DELETE installation/token
-        timeout: 30000
-        env:
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-" + run.id + "-control/gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-    dependsOn:
-    - step: finish
-      condition:
-        type: succeeded
-    guard: ${{ !steps.finish.outputs.minted }}
-    allowFailure: true
-  - name: finish
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-finish" }}'
-      methodName: finish
-      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        local: ${{ steps.candidate.outputs.result }}
-        steps: ${{ steps }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
+        setup: '${{ steps["Run setup in order"].outputs.setup_result }}'
     dependsOn:
-    - step: candidate
+    - step: Snapshot the workspace
       condition:
         type: succeeded
-    - step: push
-      condition:
-        type: always
-    - step: import
-      condition:
-        type: always
-    - step: mint_github
-      condition:
-        type: always
-  - name: pending
+  - name: Run each deliverable
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-pending" }}'
-      methodName: pending
+      type: workflow
+      workflowIdOrName: task-check-deliverables
       inputs:
-        pending: true
-        inputs: ${{ inputs }}
-        root_run_id: ${{ run.id }}
-        result: ${{ steps.finish.outputs.result }}
-        pushed_at: ${{ steps.finish.outputs.pushed_at }}
-        admitted_at: ${{ inputs.intent.admitted_at }}
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+        before: '${{ steps["Snapshot the workspace"].outputs.before }}'
+        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
+        project: '${{ "Run the Project check" in steps && "outputs" in steps["Run the Project check"] && "project" in steps["Run the Project check"].outputs ? steps["Run the Project check"].outputs.project : {"exitCode": 0} }}'
+        setup: '${{ steps["Run setup in order"].outputs.setup_result }}'
     dependsOn:
-    - step: finish
+    - step: Run the Project check
       condition:
         type: succeeded
-    guard: ${{ !steps.finish.outputs.pending }}
-  - name: revoke_unused_read
+  - name: Snapshot the checked tree
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-revoke-unused-read" }}'
-      methodName: execute
+      type: workflow
+      workflowIdOrName: task-check-snapshot-after
       inputs:
-        run: |
-          gh api --method DELETE installation/token
-        timeout: 30000
-        env:
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.checks_token.vault, inputs.execution_secrets.checks_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-" + run.id + "-control/gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+        before: '${{ steps["Snapshot the workspace"].outputs.before }}'
+        prepared: '${{ steps["Build every argv"].outputs.prepare }}'
+        observed: '${{ steps }}'
     dependsOn:
-    - step: finish
+    - step: Run each deliverable
       condition:
         type: succeeded
-    guard: ${{ steps.finish.outputs.pending || !steps.finish.outputs.minted }}
-    allowFailure: true
-  - name: result
+  - name: Commit the candidate
     labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-check-commit
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+        local: '${{ steps["Snapshot the checked tree"].outputs.local }}'
+    dependsOn:
+    - step: Snapshot the checked tree
+      condition:
+        type: succeeded
+  - name: Push the candidate
+    labels: {role: swamp}
+    # Runs after any earlier failure too: it reports the check and removes the scratch files.
+    task:
+      type: workflow
+      workflowIdOrName: task-check-push
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        run_id: ${{ run.id }}
+        candidate: '${{ "Commit the candidate" in steps && "outputs" in steps["Commit the candidate"] && "candidate" in steps["Commit the candidate"].outputs ? steps["Commit the candidate"].outputs.candidate : {"result": {"error_code": "tasks.repository_execution_unknown", "check_id": inputs.intent.check_id}, "remote": "", "refspec": "", "object_format": ""} }}'
+    dependsOn:
+    - step: Commit the candidate
+      condition:
+        type: always
+  - name: Report the result
+    labels: {role: swamp}
+    # Prints the result and fails on its error code. A failed step keeps no stdout, so the Gateway
+    # then reads the same result from the push step, which always ends with it.
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: '${{ "task-check-result" }}'
       methodName: execute
       inputs:
-        run: 'printf ''%s\n'' "$ORBIT_RESULT"
-
-          '
+        run: |
+          printf '%s\n' "$ORBIT_RESULT"
+          python3 -c 'import json,os,sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)'
         env:
-          ORBIT_RESULT: ${{ steps.finish.outputs.result_json }}
+          ORBIT_RESULT: '${{ "Push the candidate" in steps && "outputs" in steps["Push the candidate"] && "finish" in steps["Push the candidate"].outputs ? steps["Push the candidate"].outputs.finish.result_json : "{\"error_code\":\"tasks.repository_execution_unknown\",\"check_id\":" + string(inputs.intent.check_id) + "}" }}'
     dependsOn:
-    - step: pending
+    - step: Push the candidate
       condition:
         type: always
-    - step: finish
-      condition:
-        type: succeeded
-  - name: outcome
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-outcome" }}'
-      methodName: execute
-      inputs:
-        run: 'python3 -c ''import json, os, sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)''
-
-          '
-        env:
-          ORBIT_RESULT: ${{ steps.finish.outputs.result_json }}
-    dependsOn:
-    - step: result
-      condition:
-        type: succeeded
-  - name: cleanup_remote
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - rm
-        - -rf
-        - --
-        - ${{ "/tmp/orbit-task-check-" + run.id }}
-      globalArgs: *ssh_args
-    dependsOn:
-    - step: outcome
-      condition:
-        type: always
-    allowFailure: true
-  - name: cleanup_local
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-cleanup_local" }}'
-      methodName: execute
-      inputs:
-        run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT" "$ORBIT_OUTPUT"
-
-          '
-        env:
-          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-check-" + run.id + "-control" }}
-          ORBIT_OUTPUT: ${{ "/tmp/orbit-task-check-" + run.id + "-output" }}
-    dependsOn:
-    - step: outcome
-      condition:
-        type: always
-    allowFailure: true

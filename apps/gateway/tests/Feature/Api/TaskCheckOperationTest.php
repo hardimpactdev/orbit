@@ -59,13 +59,26 @@ function native_check_start(Task $group, Task $task, string $phase = 'baseline')
     return Operation::findOrFail($id);
 }
 
+/** The run's last two chart steps: the report prints the result, and a failed report keeps none, so the push step's finish holds it. */
+function native_check_steps(array $result, string $status): array
+{
+    $json = json_encode($result === [] ? (object) [] : $result, JSON_THROW_ON_ERROR);
+    $failed = in_array($status, ['failed', 'interrupted'], true) && isset($result['error_code']);
+
+    return [
+        ['name' => 'Push the candidate', 'status' => 'succeeded', 'outputs' => ['finish' => ['result_json' => $json]]],
+        $failed ? ['name' => 'Report the result', 'status' => 'failed', 'outputs' => null]
+            : ['name' => 'Report the result', 'status' => $status === 'succeeded' ? 'succeeded' : 'failed', 'outputs' => ['stdout' => $json]],
+    ];
+}
+
 function native_check_finish(Operation $operation, array $result, string $status = 'succeeded'): array
 {
     $run = ['id' => test()->run, 'workflowName' => 'operation-task-check', 'status' => $status,
         'inputs' => app(DirectOperation::class)->workflowInputs($operation), 'startedAt' => '2026-10-31T08:00:00.000Z', 'completedAt' => '2026-10-31T08:01:00.000Z',
-        'jobs' => [['name' => 'check', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result === [] ? (object) [] : $result, JSON_THROW_ON_ERROR)]]]]]];
+        'jobs' => [['name' => 'check', 'steps' => native_check_steps($result, $status)]]];
     test()->socket->reply = static fn (array $message): array => [['id' => $message['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
-    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => test()->run, 'status' => $status], ['job' => 'check', 'step' => 'result']);
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => test()->run, 'status' => $status], app(DirectOperation::class)->definition('tasks.check')['terminal_result']);
 
     return $run;
 }
@@ -95,6 +108,16 @@ it('projects failed and changed native checks without starting another action', 
     expect(TaskCheck::findOrFail($operation->input['check_id'])->status->value)->toBe($outcome)
         ->and($group->fresh()->status->value)->toBe('running')->and(count($this->socket->sent))->toBe(2);
 })->with(['failed', 'changed']);
+
+it('keeps the result and error code of a failed run from the push step', function (): void {
+    [$group, $task] = native_check_group();
+    $operation = native_check_start($group, $task);
+    $check = TaskCheck::query()->sole();
+    native_check_finish($operation, ['error_code' => 'tasks.deliverable_invalid', 'check_id' => $check->id], 'failed');
+    expect($operation->fresh()->status->value)->toBe('failed')
+        ->and($operation->fresh()->error_code)->toBe('tasks.deliverable_invalid')
+        ->and($operation->fresh()->result)->toBe(['error_code' => 'tasks.deliverable_invalid', 'check_id' => $check->id]);
+});
 
 it('uses the native exact-head CI result for reviewer eligibility', function (string $state): void {
     [$group, $task] = native_check_group();

@@ -31,7 +31,10 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
             if ($operation->status->terminal()) {
                 return $operation;
             }
-            $result = ValidatedData::object($data['result'] ?? []);
+            $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
+            if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && is_string($result['error_code'] ?? null)) {
+                $data['error_code'] = $result['error_code'];
+            }
             $ci = is_array($result['ci'] ?? null) ? $result['ci'] : [];
             $pending = ($data['status'] ?? null) === 'succeeded' && ($result['pending'] ?? null) === true && in_array($ci['state'] ?? null, ['pending', 'missing'], true);
             if (($operation->result['pending'] ?? false) === true && ($data['status'] ?? null) !== 'cancelled') {
@@ -84,5 +87,23 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /**
+     * The report step prints the result and fails on its error code; a failed step keeps no stdout,
+     * so the result then comes from the push step, which always ends with it.
+     *
+     * @param  array<string,mixed>  $result
+     * @return array<string,mixed>
+     */
+    private static function receipt(array $result): array
+    {
+        $captured = $result['receipt'] ?? null;
+        unset($result['receipt']);
+        if ($result === [] && is_array($captured) && is_string($captured['result_json'] ?? null)) {
+            return ValidatedData::object(json_decode($captured['result_json'], true, flags: JSON_THROW_ON_ERROR));
+        }
+
+        return $result;
     }
 }

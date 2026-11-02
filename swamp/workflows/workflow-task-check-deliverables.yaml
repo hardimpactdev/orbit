@@ -1,0 +1,350 @@
+id: 7615a9cf-2059-5bf2-9e6d-3529913d1095
+name: task-check-deliverables
+description: Run the file diff and each command deliverable, on the start commit first when it must fail there.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      propertyNames:
+        enum:
+        - github_token
+        - checks_token
+      maxProperties: 2
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^task-check-(write|read)-[a-f0-9-]{36}$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+    kind:
+      type: string
+    run_id:
+      type: string
+    before:
+      type: object
+    prepared:
+      type: object
+    project:
+      type: object
+    setup:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - intent
+  - execution_secrets
+  - kind
+  - run_id
+  - before
+  - prepared
+  - project
+  - setup
+  additionalProperties: false
+jobs:
+- name: deliverables
+  labels:
+    role: swamp
+  steps:
+  - name: diff
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - diff-tree
+        - -r
+        - --no-renames
+        - --name-status
+        - -z
+        - ${{ inputs.intent.base }}
+        - ${{ inputs.before.tree }}
+    guard: ${{ inputs.intent.base == "" }}
+  - name: base_archive-${{ self._index }}
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-")
+        }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ inputs.prepared.bases[self._index].archive }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: diff
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !self.deliverable.fails_on_base || !inputs.setup.passed || inputs.project.exitCode != 0 }}
+  - name: base_extract-${{ self._index }}
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-")
+        }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ inputs.prepared.bases[self._index].extract }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_archive-${{ self._index }}
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !inputs.setup.passed || inputs.project.exitCode != 0 }}
+    writes: true
+  - name: base_dependencies-${{ self._index }}
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-")
+        }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ inputs.prepared.bases[self._index].dependencies }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_extract-${{ self._index }}
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !inputs.setup.passed || inputs.project.exitCode != 0 }}
+    writes: true
+  - name: base_overlay-${{ self._index }}
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-")
+        }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv: ${{ inputs.prepared.bases[self._index].overlay }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_dependencies-${{ self._index }}
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !inputs.setup.passed || inputs.project.exitCode != 0 }}
+    writes: true
+  - name: base_directory-${{ self._index }}
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-")
+        }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv: ${{ inputs.prepared.bases[self._index].directory }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_overlay-${{ self._index }}
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !inputs.setup.passed || inputs.project.exitCode != 0 || !("base_overlay-"
+      + string(self._index) in steps) || !("outputs" in steps["base_overlay-" + string(self._index)]) || steps["base_overlay-"
+      + string(self._index)].outputs.exitCode != 0 }}
+  - name: base-${{ self._index }}
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-")
+        }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 600
+        argv: ${{ inputs.prepared.bases[self._index].run }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_directory-${{ self._index }}
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !inputs.setup.passed || inputs.project.exitCode != 0 || !("base_directory-"
+      + string(self._index) in steps) || !("outputs" in steps["base_directory-" + string(self._index)]) || steps["base_directory-"
+      + string(self._index)].outputs.exitCode != 0 }}
+    writes: true
+  - name: deliverable-${{ self._index }}
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-")
+        }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 3600
+        argv: ${{ inputs.prepared.deliverables[self._index] }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base-${{ self._index }}
+      condition:
+        type: always
+    guard: ${{ !inputs.setup.passed || inputs.project.exitCode != 0 }}
+    writes: true
+queueTimeout: 30

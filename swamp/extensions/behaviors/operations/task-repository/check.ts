@@ -178,6 +178,26 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
 type Command = { exit_code?: number; output?: string };
 
 /**
+ * The check's chart steps run as child workflows; the parent sees each child's
+ * step outputs under its own step. This lifts them to one flat map keyed by the
+ * child step names that `run` reads.
+ */
+export function flatten(parent: Steps): Steps {
+    const flat: Steps = {};
+    for (const step of Object.values(parent)) {
+        const outputs = ObjectValue.safeParse(
+            ObjectValue.safeParse(step).data?.outputs,
+        );
+        for (const [name, value] of Object.entries(outputs.data ?? {})) {
+            if (ObjectValue.safeParse(value).success) {
+                flat[name] = { outputs: value };
+            }
+        }
+    }
+    return flat;
+}
+
+/**
  * One command step's exit code and the redacted tail of its downloaded output
  * file in `local`, or nothing when it did not run. A ran command whose output
  * file is missing refuses the check.
@@ -593,7 +613,7 @@ export function finish(args: Record<string, unknown>) {
 /** Public check data on Node 209; commands, Git and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.02.3",
+    version: "2026.11.02.4",
     resources: {
         public: {
             description: "Public check observations",
@@ -705,7 +725,11 @@ export const behavior = {
                 const result = await localResult(
                     CheckInput.parse(args.intent),
                     ObjectValue.parse(args.prepared),
-                    ObjectValue.parse(args.steps),
+                    // The check's other chart steps ran as sibling child workflows; the parent hands their outputs in.
+                    {
+                        ...flatten(ObjectValue.parse(args.parent ?? {})),
+                        ...ObjectValue.parse(args.steps),
+                    },
                     z.string().startsWith("/").parse(args.outputs),
                 );
                 return output(ctx, {

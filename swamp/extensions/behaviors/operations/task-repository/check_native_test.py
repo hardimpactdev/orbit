@@ -9,6 +9,25 @@ import yaml
 from native_test import ROOT, NativeRepository, runtime
 
 
+def check_result(history):
+    """The result as the Gateway reads it: the report's stdout, else the push step's finish."""
+    steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+    report = steps["Report the result"]
+    if report["status"] == "succeeded":
+        return report["outputs"]["stdout"]
+    return steps["Push the candidate"]["outputs"]["finish"]["result_json"]
+
+
+def child_steps(history):
+    """Every step of the run: the parent's, and each child's from its parent step's outputs."""
+    rows = []
+    for step in history["jobs"][0]["steps"]:
+        rows.append(step)
+        for name, outputs in (step.get("outputs") or {}).items():
+            if isinstance(outputs, dict):
+                rows.append({"name": name, "status": "succeeded", "outputs": outputs})
+    return rows
+
 class NativeCheck(NativeRepository):
     def setUp(self):
         super().setUp()
@@ -69,6 +88,18 @@ class NativeCheck(NativeRepository):
         (self.repo / "workflows/workflow-check.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)
         )
+        # Each chart step of the check is a child workflow.
+        for child in sorted((ROOT / "workflows").glob("workflow-task-check-*.yaml")):
+            if child.name == "workflow-task-check-ci.yaml":
+                continue
+            item = paths(yaml.safe_load(child.read_text()))
+            for job in item["jobs"]:
+                job.pop("labels", None)
+                for step in job["steps"]:
+                    step.pop("labels", None)
+            (self.repo / "workflows" / child.name).write_text(
+                yaml.safe_dump(item, sort_keys=False)
+            )
         result = self.cli(
             "workflow",
             "run",
@@ -79,10 +110,7 @@ class NativeCheck(NativeRepository):
         )
         run = self.decode(result)
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-        selected = next(x for x in history["jobs"][0]["steps"] if x["name"] == "result")
-        return history, json.loads(
-            selected["outputs"]["stdout"]
-        ) if has_result else None
+        return history, json.loads(check_result(history)) if has_result else None
 
     def assert_preparation_failure(self, failed_step):
         self.inputs["intent"].update(
@@ -109,8 +137,10 @@ class NativeCheck(NativeRepository):
         )
         history, _ = self.execute_check(success=False, has_result=False)
         self.assertEqual(history["status"], "failed")
-        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        steps = {step["name"]: step for step in child_steps(history)}
+        # A failed child step fails its chart step; its own row stays in the child.
         self.assertEqual(steps[failed_step]["status"], "failed")
+        # A skipped child workflow records none of its steps.
         for name in (
             "original",
             "setup_result",
@@ -126,9 +156,10 @@ class NativeCheck(NativeRepository):
             "local",
             "mint_github",
             "push",
-            "result",
         ):
-            self.assertEqual(steps[name]["status"], "skipped", name)
+            self.assertEqual(steps.get(name, {"status": "skipped"})["status"], "skipped", name)
+        # The push child still reports the refusal and cleans up.
+        self.assertIn("tasks.repository_execution_unknown", check_result(history))
         self.assertFalse((self.workspace / "should-not-run").exists())
         self.assertNotIn("Invalid expression", json.dumps(history))
         self.assertNotIn("InvalidExpressionError", json.dumps(history))
@@ -141,7 +172,7 @@ class NativeCheck(NativeRepository):
             + '\nimport sys\nif "-M" in sys.argv or "-O" in sys.argv:raise SystemExit(0)'
             + '\nsys.stderr.write("fixture SSH unavailable\\n")\nraise SystemExit(255)\n'
         )
-        self.assert_preparation_failure("prepare_remote")
+        self.assert_preparation_failure("Build every argv")
 
     def test_baseline_setup_is_ordered_before_the_checked_snapshot(self):
         self.inputs["intent"]["setup"] = [
@@ -187,7 +218,7 @@ class NativeCheck(NativeRepository):
             ],
         )
         history, result = self.execute_check()
-        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        steps = {step["name"]: step for step in child_steps(history)}
         for name in ("setup-0", "project", "base-0", "deliverable-0"):
             self.assertEqual(steps[name]["outputs"]["stdout"], "", name)
         self.assertEqual(result["output"].count("[REDACTED]"), 4)
@@ -248,9 +279,10 @@ class NativeCheck(NativeRepository):
                 )
                 before = self.git("rev-parse", "HEAD")
                 history, result = self.execute_check(success=False)
-                steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+                steps = {step["name"]: step for step in child_steps(history)}
                 self.assertEqual(result["error_code"], "tasks.deliverable_invalid")
-                self.assertEqual(steps["base-0"]["status"], "skipped")
+                # A skipped child step leaves no outputs in the parent history.
+                self.assertNotIn("base-0", steps)
                 self.assertEqual(self.git("rev-parse", "HEAD"), before)
 
     def test_missing_base_cannot_count_as_a_reproduced_failure(self):

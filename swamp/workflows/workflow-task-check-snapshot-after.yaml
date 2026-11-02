@@ -1,0 +1,297 @@
+id: 6df24760-d4af-5764-afe8-2583fa6e97ef
+name: task-check-snapshot-after
+description: Snapshot the checked tree, download the redacted command output and shape the local evidence.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      propertyNames:
+        enum:
+        - github_token
+        - checks_token
+      maxProperties: 2
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^task-check-(write|read)-[a-f0-9-]{36}$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+    kind:
+      type: string
+    run_id:
+      type: string
+    before:
+      type: object
+    prepared:
+      type: object
+    observed:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - intent
+  - execution_secrets
+  - kind
+  - run_id
+  - before
+  - prepared
+  - observed
+  additionalProperties: false
+jobs:
+- name: snapshot-after
+  labels:
+    role: swamp
+  steps:
+  - name: snapshot-after-index
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + inputs.run_id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - read-tree
+        - HEAD
+  - name: snapshot-after-add
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + inputs.run_id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - add
+        - --all
+    dependsOn:
+    - step: snapshot-after-index
+      condition:
+        type: succeeded
+  - name: snapshot-after-tree
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + inputs.run_id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - write-tree
+    dependsOn:
+    - step: snapshot-after-add
+      condition:
+        type: succeeded
+  - name: snapshot-after-head
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+    dependsOn:
+    - step: snapshot-after-tree
+      condition:
+        type: succeeded
+  - name: after
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-after" }}
+      methodName: snapshot
+      inputs:
+        phase: after
+        steps: ${{ steps }}
+    dependsOn:
+    - step: snapshot-after-head
+      condition:
+        type: succeeded
+  - name: changed
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - diff-tree
+        - -r
+        - --no-renames
+        - --name-status
+        - -z
+        - ${{ inputs.before.tree }}
+        - ${{ steps.after.outputs.tree }}
+    dependsOn:
+    - step: after
+      condition:
+        type: succeeded
+  - name: output_copy
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: copy
+      globalArgs:
+        name: ${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        direction: from
+        recursive: true
+        src: ${{ "/tmp/orbit-task-check-" + inputs.run_id + "/output" }}
+        dst: ${{ "/tmp/orbit-task-check-" + inputs.run_id + "-output/" }}
+        timeoutSec: 60
+    dependsOn:
+    - step: changed
+      condition:
+        type: succeeded
+  - name: local
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-local" }}
+      methodName: local
+      inputs:
+        intent: ${{ inputs.intent }}
+        prepared: ${{ inputs.prepared }}
+        steps: ${{ steps }}
+        parent: ${{ inputs.observed }}
+        outputs: ${{ "/tmp/orbit-task-check-" + inputs.run_id + "-output/output" }}
+    dependsOn:
+    - step: changed
+      condition:
+        type: succeeded
+    - step: output_copy
+      condition:
+        type: succeeded
+queueTimeout: 30

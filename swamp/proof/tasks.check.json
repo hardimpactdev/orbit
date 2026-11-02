@@ -68,63 +68,57 @@
   },
   "phases": [
     {
-      "name": "prepare",
+      "name": "Build every argv",
       "job": "check",
-      "step": "prepare",
-      "budget_seconds": 10
+      "step": "Build every argv",
+      "budget_seconds": 25
     },
     {
-      "name": "original",
+      "name": "Run setup in order",
       "job": "check",
-      "step": "original",
-      "budget_seconds": 15
-    },
-    {
-      "name": "setup-0",
-      "job": "check",
-      "step": "setup-0",
+      "step": "Run setup in order",
       "budget_seconds": 30
     },
     {
-      "name": "snapshot-before-add",
+      "name": "Snapshot the workspace",
       "job": "check",
-      "step": "snapshot-before-add",
-      "budget_seconds": 15
+      "step": "Snapshot the workspace",
+      "budget_seconds": 20
     },
     {
-      "name": "project",
+      "name": "Run the Project check",
       "job": "check",
-      "step": "project",
+      "step": "Run the Project check",
       "budget_seconds": 30
     },
     {
-      "name": "diff",
+      "name": "Run each deliverable",
       "job": "check",
-      "step": "diff",
+      "step": "Run each deliverable",
       "budget_seconds": 15
     },
     {
-      "name": "snapshot-after-add",
+      "name": "Snapshot the checked tree",
       "job": "check",
-      "step": "snapshot-after-add",
+      "step": "Snapshot the checked tree",
+      "budget_seconds": 40
+    },
+    {
+      "name": "Commit the candidate",
+      "job": "check",
+      "step": "Commit the candidate",
       "budget_seconds": 15
     },
     {
-      "name": "output_copy",
+      "name": "Push the candidate",
       "job": "check",
-      "step": "output_copy",
-      "budget_seconds": 15
+      "step": "Push the candidate",
+      "budget_seconds": 20
     },
     {
-      "name": "local",
+      "name": "Report the result",
       "job": "check",
-      "step": "local",
-      "budget_seconds": 10
-    },
-    {
-      "name": "result",
-      "job": "check",
-      "step": "result",
+      "step": "Report the result",
       "budget_seconds": 10
     }
   ],
