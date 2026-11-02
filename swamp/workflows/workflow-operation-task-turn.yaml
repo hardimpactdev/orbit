@@ -562,6 +562,7 @@ jobs:
         - -C
         - ${{ inputs.intent.checkout_path }}
         - reset
+        - --quiet
         - --hard
         - ${{ inputs.intent.candidate }}
         timeoutSec: 60
@@ -591,6 +592,7 @@ jobs:
         - -C
         - ${{ inputs.intent.checkout_path }}
         - clean
+        - --quiet
         - -fd
         timeoutSec: 60
     writes: true

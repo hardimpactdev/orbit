@@ -227,6 +227,7 @@ class NativeTurn(harness.NativeTestCase):
         credential = "a1" * 32
         self.server.agent_text = "MODEL_KEY=" + credential
         self.inputs["intent"].update(role="reviewer", candidate=self.head)
+        self.workspace.joinpath(credential).write_text("untracked\n")
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")
         result = self.result(run)
