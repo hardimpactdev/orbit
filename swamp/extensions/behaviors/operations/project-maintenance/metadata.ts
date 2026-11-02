@@ -29,6 +29,7 @@ import { behavior as p15 } from "../../projects/ditis-hr/mod.ts";
 import { behavior as p16 } from "../../projects/platform11/mod.ts";
 import { behavior as p17 } from "../../projects/hauzer/mod.ts";
 import { behavior as p18 } from "../../projects/mealou/mod.ts";
+import { behavior as p19 } from "../../projects/orbit/mod.ts";
 const projects = [
     p0,
     p1,
@@ -49,6 +50,7 @@ const projects = [
     p16,
     p17,
     p18,
+    p19,
 ];
 import { scheduleKey } from "../../_lib/project_schedule.ts";
 
@@ -116,6 +118,10 @@ async function configuredProject(
         }
     }
     const owner = matched.at(-1);
+    // Maintenance is opt-in: a Project without a source-owned policy module is refused by name.
+    if (owner === undefined) {
+        throw new Error("project.maintenance_not_configured");
+    }
     const selected = owner
         ? await exported(owner, async () => {
             const rows = await ctx.queryData(

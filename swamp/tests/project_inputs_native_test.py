@@ -71,6 +71,19 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.assertEqual(result["requests"][0]["input"]["status"], "backlog")
         self.assertIn("32-routine-2026-10-26", result["key"])
 
+    def test_a_project_without_maintenance_policy_is_refused_by_name(self):
+        self.workflow("routine")
+        self.inputs["intent"]["project"] = {"id": 999, "repository": "https://github.com/example/unknown.git", "default_branch": "main", "check": "composer check"}
+        _history, steps = self.run_workflow("routine", success=False)
+        self.assertIn("project.maintenance_not_configured", steps["Read the admitted input"]["error"])
+
+    def test_orbit_routine_reads_its_policy(self):
+        self.workflow("routine")
+        self.inputs["intent"]["project"] = {"id": 46, "repository": "https://github.com/hardimpactdev/orbit.git", "default_branch": "main", "check": "composer check"}
+        _history, steps = self.run_workflow("routine")
+        self.assertEqual(steps["Read the admitted input"]["status"], "succeeded")
+        self.assertEqual(json.loads(steps["Report the result"]["outputs"]["stdout"])["project_id"], 46)
+
     def test_project_mismatch_fails_before_any_downstream_request(self):
         self.workflow("routine")
         self.inputs["intent"]["project"]["check"] = "a different check"
