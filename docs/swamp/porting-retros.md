@@ -325,3 +325,10 @@ Cancellation 8222 destroyed task VM 344 at 2026-11-02T19:27:26Z. The lane holds 
 `schedule.run` already uses the shared one-step `task-command-run` workflow with official SSH argv and vault stdin; no execution rewrite or shipped script is needed. Its chart now says that command output stays in the Node journal. The fresh minimal@10 receipt at `f0ac508f0d` takes 2.34 seconds, verifies the marker file and no Node units, and proves that running a disabled Node Schedule leaves its trigger absent. Its one-sample p95 is 2.34 seconds; the fixture budget is 120 seconds and queue timeout 300. The receipt index is `swamp/proof/receipts/schedule-run-native.json`.
 
 Native command success, failure, timeout, context and secret isolation retain their six passing local cases. The proof uses test commands and a proof CA, with no production data or scale.
+
+
+## Native Schedule enable
+
+`schedule.enable` sets an existing workflow's trigger without rewriting its fixed intent. A copied definition with no workflow still publishes its command and workflow first. The regression fails against the previous extra edit, covers repeat enable, and retains the first-copy case. Fifty-two Gateway cases, PHP analysis, formatting, charts and docs pass.
+
+The fresh minimal@10 receipt at `bf68a00fae` enables a disabled Node Schedule in 0.17 seconds, with no Node units or control run. This is one sample, so observed p95 is 0.17 seconds; its budget is 60 seconds and the shared fire child's queue timeout is 300. The index is `swamp/proof/receipts/schedule-enable-native.json`. No script is added or deleted. The proof uses a test calendar and proof CA, without production data or scale.
