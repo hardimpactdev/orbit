@@ -31,6 +31,10 @@ class NativeRepository(harness.NativeTestCase):
         library = self.repo / "extensions/behaviors/_lib"
         library.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / "extensions/behaviors/_lib/repository_analysis.ts", library)
+        # Setup and teardown argv expand @orbit/ci-caches with the shared program.
+        runtime = self.repo / "extensions/behaviors/operations/instance-deploy"
+        runtime.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts", runtime)
 
         official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
         official.parent.mkdir(parents=True)

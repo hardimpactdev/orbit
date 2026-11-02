@@ -20,6 +20,9 @@ class NativeEnding(fixture.NativeRepository):
     test_private_analysis_is_refused_before_native_history = None
     test_script_native_steps_return_business_failure_with_literal_arguments = None
     test_native_resume_after_result_failure_never_reexecutes_program = None
+    test_untracked_or_non_executable_script_refuses_without_running = None
+    test_moved_candidate_refuses_as_stale_without_running_the_analyzer = None
+    test_private_analysis_is_refused_in_the_terminal_result = None
     native_timeout = 150
 
     def setUp(self):

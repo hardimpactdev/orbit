@@ -19,6 +19,9 @@ class NativeProvision(fixture.NativeRepository):
     test_private_analysis_is_refused_before_native_history = None
     test_script_native_steps_return_business_failure_with_literal_arguments = None
     test_native_resume_after_result_failure_never_reexecutes_program = None
+    test_untracked_or_non_executable_script_refuses_without_running = None
+    test_moved_candidate_refuses_as_stale_without_running_the_analyzer = None
+    test_private_analysis_is_refused_in_the_terminal_result = None
     native_timeout = 150
 
     def setUp(self):
@@ -378,26 +381,35 @@ raise SystemExit(r.returncode)
         self.assertEqual(result["failed_step"], "guest")
         self.assertFalse(self.checkout.exists())
 
-    def test_each_setup_step_reads_current_dotenv_and_redacts_its_values(self):
+    def test_setup_runs_each_command_in_the_checkout_without_exporting_its_dotenv(self):
         self.setup_commands(
             [
-                "python3 -c "
-                + shlex.quote(
-                    'import secrets; from pathlib import Path; Path(".env").write_text("SETUP_VALUE=ready\\nDB_PASSWORD="+secrets.token_hex(24)+"\\n")'
-                ),
-                'test "$SETUP_VALUE" = ready; printf "%s\\n" "$DB_PASSWORD"',
+                "printf 'SETUP_VALUE=ready\\n' > .env",
+                'test -z "${SETUP_VALUE-}"; test "$COMPOSER_NO_INTERACTION" = 1; printf clean > setup-proof',
             ]
         )
         history, steps = self.execute_provision()
-        secret = (
-            self.checkout.joinpath(".env")
-            .read_text()
-            .split("DB_PASSWORD=", 1)[1]
-            .strip()
-        )
-        self.assertNotIn(secret, json.dumps(history))
         self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(self.checkout.joinpath("setup-proof").read_text(), "clean")
         self.assertTrue(json.loads(steps["result"]["outputs"]["stdout"])["ready"])
+
+    def test_laravel_profile_reads_composer_metadata_and_entry_point_over_ssh(self):
+        (self.workspace / "composer.json").write_text(
+            json.dumps({"require": {"php": "^8.5", "laravel/framework": "^13.0"}})
+        )
+        (self.workspace / "artisan").write_text("#!/usr/bin/env php\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Laravel")
+        self.inputs["intent"]["workspace"].update(
+            project_type="laravel-app",
+            skip_profile=False,
+            start_commit=self.git("rev-parse", "HEAD"),
+        )
+        history, steps = self.execute_provision()
+        result = json.loads(steps["result"]["outputs"]["stdout"])
+        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(result["source"]["php_version"], "8.5")
+        self.assertTrue(result["source"]["laravel"])
 
     def test_source_acquisition_failure_still_returns_vm_readiness_in_root_result(self):
         self.inputs["intent"]["workspace"]["repository"] = str(

@@ -4,6 +4,7 @@ import {
   ProvisioningRefusal,
 } from "../instance-lifecycle/source_profile.ts";
 import { WorkspaceInput } from "../task-vm-workspace/input.ts";
+import { lifecycleArgv } from "./lifecycle.ts";
 
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
@@ -102,6 +103,73 @@ const Source = z.object({
   laravel: z.boolean(),
 });
 const Observation = z.object({ source: Source, analysis_base: Sha.nullable() });
+const COMPOSER_BYTES = 1048576;
+
+/** The SSH exec argv of each admitted setup command, in order. */
+export function setupArgv(raw: unknown): string[][] {
+  const workspace = Intent.parse(raw).workspace;
+  return workspace.setup.map((item) =>
+    lifecycleArgv(workspace.checkout_path, workspace.user, item.command)
+  );
+}
+
+/**
+ * Shapes the public checkout reads into the identity and source profile.
+ * `identity` is `git rev-parse HEAD --abbrev-ref HEAD`, `base` the merge base
+ * (empty when Git found none), `files` the `stat -c %n|%F|%s` lines of
+ * composer.json and the entry point (absent files have no line), and
+ * `composer` the composer.json text.
+ */
+export function observe(
+  workspace: z.infer<typeof Workspace>,
+  read: { identity: string; base: string; files: string; composer: string },
+) {
+  const [commit = "", branch = ""] = read.identity.trim().split("\n");
+  const base = read.base.trim();
+  const files = new Map(
+    read.files.split("\n").filter((line) => line !== "").map((line) => {
+      const [name, type, size] = line.split("|");
+      return [name, {
+        regular: type === "regular file" ||
+          type === "regular empty file",
+        size: Number(size),
+      }];
+    }),
+  );
+  const composer = files.get("composer.json");
+  const entry = files.get(workspace.entry_point);
+  let profile: Record<string, unknown> = {
+    kind: "none",
+    composer: null,
+    entry_point: null,
+  };
+  if (workspace.skip_profile) {
+    // A monorepo's root metadata is irrelevant to its workspace.
+  } else if (composer === undefined) {
+    if (entry !== undefined) profile = { ...profile, kind: "partial" };
+  } else if (!composer.regular || composer.size > COMPOSER_BYTES) {
+    profile = { ...profile, kind: "unsafe" };
+  } else {
+    const bytes = new TextEncoder().encode(read.composer);
+    profile = {
+      kind: "composer",
+      composer: btoa(
+        Array.from(bytes, (b) => String.fromCharCode(b)).join(""),
+      ),
+      entry_point: entry === undefined
+        ? "absent"
+        : entry.regular
+        ? "regular"
+        : "unsafe",
+    };
+  }
+  return {
+    branch,
+    commit: Sha.parse(commit),
+    analysis_base: base === "" ? null : Sha.parse(base),
+    profile,
+  };
+}
 function nativeOutputs(steps: Record<string, unknown>, name: string) {
   const step = z.record(z.string(), z.unknown()).safeParse(steps[name]).data ??
     {};
@@ -123,12 +191,14 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
       "clone",
       "bundle",
       "prepare_remote",
-      "copy_assets",
       "copy_bundle",
       "import",
       "origin",
       "branch",
-      "observe",
+      "identity",
+      "analysis_base",
+      "inspect",
+      "composer",
       "profile",
       ...intent.workspace.setup.map((_, i) => `setup-${i}`),
     ]
@@ -203,7 +273,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.02.1",
+  version: "2026.11.02.2",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -240,14 +310,10 @@ export const behavior = {
     },
     prepare: {
       description:
-        "Validate public workspace intent and resolve shipped actions",
+        "Validate public workspace intent and build each setup command's SSH exec argv",
       arguments: z.object({ intent: Intent }),
       execute: (args: { intent: z.infer<typeof Intent> }, ctx: Context) =>
-        data(ctx, {
-          directory: ctx.extensionFile("scripts/provision_profile.py")
-            .replace(/\/[^/]+$/, ""),
-          input_json: JSON.stringify(args.intent.workspace),
-        }),
+        data(ctx, { setup: setupArgv(args.intent) }),
     },
     guest: {
       description:
@@ -259,6 +325,9 @@ export const behavior = {
       ) =>
         data(ctx, {
           workspace: connection(args.intent, args.vm),
+          // proof_club.py stays for the gap rule 22 cannot cover yet: official
+          // cfgmgmt `file` connects with accept-new host keys, and task VM
+          // WireGuard addresses are reused, so a later VM at the same address fails.
           proof_script: await Deno.readTextFile(
             ctx.extensionFile("scripts/proof_club.py"),
           ),
@@ -267,18 +336,30 @@ export const behavior = {
     profile: {
       description:
         "Classify source with canonical Instance profile policy and retain its initial analysis pin",
-      arguments: z.object({ intent: Intent, observation: z.string() }),
+      arguments: z.object({
+        intent: Intent,
+        identity: z.string(),
+        analysis_base: z.string(),
+        files: z.string(),
+        composer: z.string(),
+      }),
       execute: (
-        args: { intent: z.infer<typeof Intent>; observation: string },
+        args: {
+          intent: z.infer<typeof Intent>;
+          identity: string;
+          analysis_base: string;
+          files: string;
+          composer: string;
+        },
         ctx: Context,
       ) => {
         const workspace = Intent.parse(args.intent).workspace;
-        const observation = z.object({
-          branch: z.string(),
-          commit: Sha,
-          analysis_base: Sha.nullable(),
-          profile: z.unknown(),
-        }).parse(JSON.parse(args.observation));
+        const observation = observe(workspace, {
+          identity: args.identity,
+          base: args.analysis_base,
+          files: args.files,
+          composer: args.composer,
+        });
         if (
           observation.branch !== workspace.branch ||
           observation.commit !== workspace.start_commit

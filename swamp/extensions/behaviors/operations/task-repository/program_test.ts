@@ -404,22 +404,40 @@ Deno.test("analysis movement is changed; a failed run with no movement is analys
     );
 });
 
-Deno.test("teardown assets resolve the shipped scripts directory", async () => {
+Deno.test("teardown assets record one SSH exec argv per teardown command", async () => {
     let value: Record<string, unknown> = {};
     await assets.methods.read.execute({
         operation_id: 11,
         node_id: 30,
         kind: "tasks.cancel",
-        intent: { group_id: 8 },
+        intent: {
+            group_id: 8,
+            checkout_path: "/home/orbit/apps/proof/workspace",
+            ssh_execution: { target: { user: "orbit" } },
+            teardown: [{
+                input_json: JSON.stringify({ command: "rm -f db.sqlite" }),
+                timeout_seconds: 30,
+            }],
+        },
     }, {
-        extensionFile: (name) => "/native/bundle/" + name,
         writeResource: (_spec, _name, record) => {
             value = record as Record<string, unknown>;
             return Promise.resolve({ name: "assets" });
         },
     });
     assertEquals(value, {
-        directory: "/native/bundle/scripts",
-        input_json: JSON.stringify({ group_id: 8, operation_id: 11 }),
+        teardown: [[
+            "env",
+            "-C",
+            "/home/orbit/apps/proof/workspace",
+            "COMPOSER_NO_INTERACTION=1",
+            "ORBIT_CHECK_PROCESSES=1",
+            "COMPOSER_CACHE_DIR=/home/orbit/.cache/composer",
+            "ORBIT_SEED_PATH=",
+            "ORBIT_SEED_COMMIT=",
+            "/bin/bash",
+            "-lc",
+            "rm -f db.sqlite",
+        ]],
     });
 });

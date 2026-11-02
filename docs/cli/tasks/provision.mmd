@@ -74,8 +74,10 @@ sequenceDiagram
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
   %%> What it does:
   %%> - clones the repository on 209 and copies it as a Git bundle, on branch `task-42` from the default branch
-  %%> - runs the Project setup steps in order, each with its own timeout
-  %%> - captures the start commit as the fixed analysis base
+  %%> - reads the checkout with one `@swamp/ssh exec` argv each: `identity` (HEAD and branch), `analysis_base` (merge base with the default branch), `inspect` (`stat` of `composer.json` and the entry point) and `composer` (its text)
+  %%> - `profile` on 209 refuses a checkout on another commit, classifies the source and keeps the start commit's merge base as the fixed analysis base
+  %%> - runs the Project setup steps in order as `setup-0`, `setup-1`, …: each is one `@swamp/ssh exec` argv, `env -C <checkout> … /bin/bash -lc <command>`, with its own timeout
+  %%> - no step copies a script to the VM
   Note over GW: Board follows the run<br/>step events → group, subtasks
   %%> How:
   %%> - the Gateway's run reader turns each finished step into board state: `running`, subtask status, thread links, check rows and turn receipts
@@ -172,6 +174,8 @@ sequenceDiagram
     SW->>VM: Run teardown steps<br/>Project teardown · own timeouts
     %%> When:
     %%> - only while VM 88 runs; a parked VM skips guest teardown
+    %%> What it does:
+    %%> - runs each Project teardown step in order as `teardown-0`, `teardown-1`, …: one `@swamp/ssh exec` argv in the checkout, with its own timeout; no script reaches the VM
   end
   SW->>H: Destroy the task VM<br/>delete VM · revoke model key
   %%> What it does:

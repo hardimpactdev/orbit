@@ -1,5 +1,14 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { connection, result, sourceResult } from "./provision.ts";
+import { teardownArgv } from "./assets.ts";
+import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
+import {
+  connection,
+  Intent,
+  observe,
+  result,
+  setupArgv,
+  sourceResult,
+} from "./provision.ts";
 
 const intent = {
   task_vm_id: 10,
@@ -105,12 +114,14 @@ Deno.test("source result requires every ordered setup step before exposing the i
       "clone_public",
       "bundle",
       "prepare_remote",
-      "copy_assets",
       "copy_bundle",
       "import",
       "origin",
       "branch",
-      "observe",
+      "identity",
+      "analysis_base",
+      "inspect",
+      "composer",
       "profile",
     ].map((name) => [name, { status: "succeeded", outputs: {} }]),
   );
@@ -206,24 +217,140 @@ Deno.test("profile refuses a checkout that is not on the admitted start commit",
     extensionFile: () => "unused",
     writeResource: () => Promise.resolve({}),
   };
-  const observation = (commit: string) =>
-    JSON.stringify({
-      branch: "task-30",
-      commit,
-      analysis_base: commit,
-      profile: null,
-    });
+  const read = (commit: string) => ({
+    identity: commit + "\ntask-30\n",
+    analysis_base: commit + "\n",
+    files: "",
+    composer: "",
+  });
   await behavior.methods.profile.execute({
     intent: admitted,
-    observation: observation("c".repeat(40)),
+    ...read("c".repeat(40)),
   }, ctx);
   assertThrows(
     () =>
       behavior.methods.profile.execute({
         intent: admitted,
-        observation: observation("d".repeat(40)),
+        ...read("d".repeat(40)),
       }, ctx),
     Error,
     "instance.source_identity_changed",
+  );
+});
+
+Deno.test("each setup and teardown command runs as one SSH exec argv in the checkout with empty seeds", () => {
+  const setup = (command: string) => ({
+    ...intent,
+    workspace: {
+      ...intent.workspace,
+      setup: [{
+        name: "setup",
+        command,
+        timeout_seconds: 30,
+        input_json: JSON.stringify({ command }),
+      }],
+    },
+  });
+  const argv = (command: string) => [
+    "env",
+    "-C",
+    "/home/orbit/apps/project/workspace",
+    "COMPOSER_NO_INTERACTION=1",
+    "ORBIT_CHECK_PROCESSES=1",
+    "COMPOSER_CACHE_DIR=/home/orbit/.cache/composer",
+    "ORBIT_SEED_PATH=",
+    "ORBIT_SEED_COMMIT=",
+    "/bin/bash",
+    "-lc",
+    command,
+  ];
+  assertEquals(setupArgv(setup("composer install")), [
+    argv("composer install"),
+  ]);
+  // The Gateway-owned step expands to the shared CI cache program, never a literal command.
+  assertEquals(setupArgv(setup("@orbit/ci-caches")), [
+    argv(ciCacheImportProgram),
+  ]);
+  assertEquals(
+    teardownArgv({
+      checkout_path: "/home/orbit/apps/project/workspace",
+      ssh_execution: { target: { user: "orbit", host: "10.44.0.20" } },
+      teardown: [{
+        input_json: JSON.stringify({
+          name: "drop",
+          command: "rm -f db.sqlite",
+          timeout_seconds: 30,
+        }),
+        timeout_seconds: 30,
+      }],
+    }),
+    { teardown: [argv("rm -f db.sqlite")] },
+  );
+});
+
+Deno.test("the checkout reads become the identity, analysis pin and source profile", () => {
+  const workspace = Intent.parse({
+    ...intent,
+    workspace: {
+      ...intent.workspace,
+      project_type: "laravel-app",
+      skip_profile: false,
+    },
+  }).workspace;
+  const head = "c".repeat(40);
+  const composer = '{"require":{"php":"^8.4","laravel/framework":"^13"}}';
+  const read = (files: string, base = "b".repeat(40) + "\n") => ({
+    identity: head + "\ntask-30\n",
+    base,
+    files,
+    composer,
+  });
+  const laravel = observe(
+    workspace,
+    read("composer.json|regular file|52\nartisan|regular file|300\n"),
+  );
+  assertEquals(laravel.branch, "task-30");
+  assertEquals(laravel.commit, head);
+  assertEquals(laravel.analysis_base, "b".repeat(40));
+  assertEquals(laravel.profile, {
+    kind: "composer",
+    composer: btoa(composer),
+    entry_point: "regular",
+  });
+  // Git found no merge base: the pin is unavailable, never the current HEAD.
+  assertEquals(observe(workspace, read("", "")).analysis_base, null);
+  assertEquals(observe(workspace, read("")).profile.kind, "none");
+  assertEquals(
+    observe(workspace, read("artisan|regular file|300\n")).profile.kind,
+    "partial",
+  );
+  assertEquals(
+    observe(workspace, read("composer.json|symbolic link|13\n")).profile
+      .kind,
+    "unsafe",
+  );
+  assertEquals(
+    observe(workspace, read("composer.json|regular file|1048577\n")).profile
+      .kind,
+    "unsafe",
+  );
+  assertEquals(
+    observe(
+      workspace,
+      read("composer.json|regular file|52\nartisan|symbolic link|7\n"),
+    ).profile.entry_point,
+    "unsafe",
+  );
+  assertEquals(
+    observe(workspace, read("composer.json|regular file|52\n")).profile
+      .entry_point,
+    "absent",
+  );
+  assertEquals(
+    observe(
+      { ...workspace, skip_profile: true },
+      read("composer.json|regular file|52\n"),
+    ).profile.kind,
+    "none",
   );
 });

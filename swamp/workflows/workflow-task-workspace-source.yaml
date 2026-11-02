@@ -1,5 +1,5 @@
-description: Prepare one captured Tasks source checkout and ordered setup through
-  official SSH from209.
+description: Prepare one captured Tasks source checkout and ordered setup as official
+  SSH exec argv from 209; no script reaches the VM.
 id: 46a068b0-6512-4c23-8729-e5bdc43c136c
 inputs:
   additionalProperties: false
@@ -203,36 +203,6 @@ jobs:
       condition:
         type: succeeded
     allowFailure: true
-  - name: copy_assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs:
-        hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        src: ${{ steps.prepare.outputs.directory }}
-        dst: ${{ "/tmp/orbit-task-provision-"+run.id+"/" }}
-        direction: to
-        recursive: true
-    dependsOn:
-    - step: prepare_remote
-      condition:
-        type: succeeded
-    allowFailure: true
   - name: copy_bundle
     labels: {role: swamp}
     task:
@@ -369,7 +339,7 @@ jobs:
       condition:
         type: succeeded
     allowFailure: true
-  - name: observe
+  - name: identity
     labels: {role: swamp}
     task:
       type: behavior
@@ -391,16 +361,117 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-provision-"+run.id+"/scripts/provision_profile.py"
-          }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.workspace.checkout_path }}
+        - rev-parse
+        - HEAD
+        - --abbrev-ref
+        - HEAD
     dependsOn:
     - step: branch
       condition:
         type: succeeded
-    - step: copy_assets
+    allowFailure: true
+  - name: analysis_base
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.workspace.checkout_path }}
+        - merge-base
+        - ${{ "refs/remotes/origin/" + inputs.intent.workspace.default_branch }}
+        - HEAD
+    dependsOn:
+    - step: identity
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: inspect
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv:
+        - /usr/bin/env
+        - -C
+        - ${{ inputs.intent.workspace.checkout_path }}
+        - stat
+        - -c
+        - '%n|%F|%s'
+        - --
+        - composer.json
+        - ${{ inputs.intent.workspace.entry_point }}
+    dependsOn:
+    - step: identity
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: composer
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv:
+        - /usr/bin/cat
+        - --
+        - ${{ inputs.intent.workspace.checkout_path + "/composer.json" }}
+    dependsOn:
+    - step: identity
       condition:
         type: succeeded
     allowFailure: true
@@ -413,9 +484,18 @@ jobs:
       methodName: profile
       inputs:
         intent: ${{ inputs.intent }}
-        observation: ${{ steps.observe.outputs.stdout }}
+        identity: ${{ steps.identity.outputs.stdout }}
+        analysis_base: ${{ steps.analysis_base.outputs.stdout }}
+        files: ${{ steps.inspect.outputs.stdout }}
+        composer: ${{ steps.composer.outputs.stdout }}
     dependsOn:
-    - step: observe
+    - step: analysis_base
+      condition:
+        type: succeeded
+    - step: inspect
+      condition:
+        type: succeeded
+    - step: composer
       condition:
         type: succeeded
     allowFailure: true
@@ -440,12 +520,7 @@ jobs:
           user: ${{ inputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-provision-"+run.id+"/scripts/provision_setup.py" }}
-        - ${{ self.setup.input_json }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
+        argv: ${{ steps.prepare.outputs.setup[self._index] }}
         timeoutSec: ${{ self.setup.timeout_seconds }}
     dependsOn:
     - step: profile
@@ -490,9 +565,6 @@ jobs:
     - step: prepare_remote
       condition:
         type: always
-    - step: copy_assets
-      condition:
-        type: always
     - step: copy_bundle
       condition:
         type: always
@@ -505,7 +577,16 @@ jobs:
     - step: branch
       condition:
         type: always
-    - step: observe
+    - step: identity
+      condition:
+        type: always
+    - step: analysis_base
+      condition:
+        type: always
+    - step: inspect
+      condition:
+        type: always
+    - step: composer
       condition:
         type: always
     - step: profile
