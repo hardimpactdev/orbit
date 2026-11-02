@@ -7,6 +7,7 @@ namespace App\Domain\Broadcasting;
 use Closure;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -29,12 +30,19 @@ final readonly class RecordEventBroadcaster
      * where the clients that connected before DNS moved still listen. A failure on one server never stops
      * the other.
      *
+     * The HTTP call to Reverb runs after the surrounding transaction commits, never under SQLite's write lock, and a
+     * rolled-back change broadcasts nothing. Outside a transaction it runs at once.
+     *
      * @param  array<string, mixed>  $data
      * @param  string  $channel  the private channel without its `private-` prefix
      */
     public function broadcast(RecordEventType $type, int|string $id, array $data, string $channel = 'orbit'): void
     {
-        $event = new RecordBroadcast($type, $id, $data, $channel);
+        DB::afterCommit(fn () => $this->deliver(new RecordBroadcast($type, $id, $data, $channel), $type, $id));
+    }
+
+    private function deliver(RecordBroadcast $event, RecordEventType $type, int|string $id): void
+    {
 
         try {
             $connections = $this->realtime->all();

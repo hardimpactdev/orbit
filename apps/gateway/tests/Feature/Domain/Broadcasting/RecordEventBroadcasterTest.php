@@ -13,6 +13,7 @@ use App\Models\Node;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 describe('RecordEventBroadcaster', function (): void {
@@ -54,6 +55,44 @@ describe('RecordEventBroadcaster', function (): void {
 
         app(RecordEventBroadcaster::class)
             ->broadcast(RecordEventType::NodeCreated, 9, ['id' => 9, 'name' => 'edge']);
+    });
+
+    // A projection runs inside an IMMEDIATE transaction, which holds SQLite's write lock; a slow Reverb held it 4-13 s.
+    it('calls Reverb only after the surrounding transaction commits, and never for a rolled-back change', function (): void {
+        activate_websocket_role();
+        $sent = [];
+        Broadcast::extend('reverb', function () use (&$sent): Broadcaster {
+            return new class($sent) implements Broadcaster
+            {
+                /** @param list<int|string> $sent */
+                public function __construct(private array &$sent) {}
+
+                public function auth($request) {}
+
+                public function validAuthenticationResponse($request, $result) {}
+
+                public function broadcast(array $channels, $event, array $payload = []): void
+                {
+                    $this->sent[] = $payload['id'] ?? null;
+                }
+            };
+        });
+        $broadcaster = app(RecordEventBroadcaster::class);
+
+        DB::transaction(function () use ($broadcaster, &$sent): void {
+            $broadcaster->broadcast(RecordEventType::NodeCreated, 9, ['id' => 9, 'name' => 'edge']);
+            expect($sent)->toBe([]);
+        });
+        expect($sent)->toBe([9]);
+
+        try {
+            DB::transaction(function () use ($broadcaster): never {
+                $broadcaster->broadcast(RecordEventType::NodeCreated, 10, ['id' => 10, 'name' => 'gone']);
+                throw new RuntimeException('Rolled back.');
+            });
+        } catch (RuntimeException) {
+        }
+        expect($sent)->toBe([9]);
     });
 
     it('broadcasts without error when the websocket role is active and Reverb is healthy', function (): void {
