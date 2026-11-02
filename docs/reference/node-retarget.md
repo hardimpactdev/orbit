@@ -13,7 +13,7 @@ covers:
 
 ## One lifecycle owner per Node name
 
-`node:add`, `node:remove`, `node:rename`, and retarget each take one lock for the Node name. They hold it from the lookup to the last remote step and rollback. Another operation on the same name fails with `node.provisioning_busy` (HTTP 409) before it changes anything. A retry reads the Node again after it gets the lock. Operations on different names run at the same time. The lock does not block role or settings changes. A lock that nobody releases expires after one hour.
+`node:add`, `node:remove`, `node:update`, and retarget each take one lock for the Node name; a rename also takes the new name's lock. They hold it from the lookup to the last remote step and rollback. Another operation on the same name fails with `node.provisioning_busy` (HTTP 409) before it changes anything. A retry reads the Node again after it gets the lock. Operations on different names run at the same time. The lock does not block role changes. A lock that nobody releases expires after one hour.
 
 ## Two paths
 

@@ -70,7 +70,7 @@ it('rolls back the Operation when a duplicate needs explicit convergence', funct
 
 it('leaves assignments unchanged when another Operation holds the Node', function (): void {
     $node = FleetFixtures::node('role-intent-held', [RoleName::WebSocket]);
-    Operation::query()->create(['kind' => 'node.settings', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+    Operation::query()->create(['kind' => 'node.update', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
         'lock_key' => 'node:'.$node->id, 'input' => [], 'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
 
     expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::WebSocket, true))

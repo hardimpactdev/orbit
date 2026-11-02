@@ -7,11 +7,9 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Nodes\ListNodesAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Nodes\RemoveNodeAction;
-use App\Actions\Nodes\RenameNodeAction;
-use App\Actions\Nodes\SetNodePlatformAction;
 use App\Actions\Nodes\SetNodeWireGuardKeyAction;
 use App\Actions\Nodes\ShowNodeAction;
-use App\Actions\Nodes\UpdateNodeSettingsAction;
+use App\Actions\Nodes\UpdateNodeAction;
 use App\Data\Nodes\NodeAccessData;
 use App\Data\Nodes\NodeData;
 use App\Data\Operations\OperationData;
@@ -23,10 +21,8 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Nodes\ProvisionNodeRequest;
 use App\Http\Requests\Nodes\RemoveNodeRequest;
-use App\Http\Requests\Nodes\RenameNodeRequest;
-use App\Http\Requests\Nodes\SetNodePlatformRequest;
 use App\Http\Requests\Nodes\SetNodeWireGuardKeyRequest;
-use App\Http\Requests\Nodes\UpdateNodeSettingsRequest;
+use App\Http\Requests\Nodes\UpdateNodeRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
 use App\Models\Operation;
@@ -111,20 +107,6 @@ final class NodesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
-    public function rename(
-        RenameNodeRequest $request,
-        Node $node,
-        RenameNodeAction $action,
-    ): JsonResponse {
-        $node = $action->execute($node, $request->name());
-
-        return response()->json([
-            'data' => NodeData::fromModel($node)->toArray(),
-            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::Target)]
     public function wireguardKey(
         SetNodeWireGuardKeyRequest $request,
         Node $node,
@@ -139,29 +121,15 @@ final class NodesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
-    public function platform(
-        SetNodePlatformRequest $request,
+    #[StartsOperation('node.update')]
+    public function update(
+        UpdateNodeRequest $request,
         Node $node,
-        SetNodePlatformAction $action,
-    ): JsonResponse {
-        $node = $action->execute($node, $request->platform());
-
-        return response()->json([
-            'data' => NodeData::fromModel($node)->toArray(),
-            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::Target)]
-    #[StartsOperation('node.settings')]
-    public function settings(
-        UpdateNodeSettingsRequest $request,
-        Node $node,
-        UpdateNodeSettingsAction $action,
+        UpdateNodeAction $action,
     ): JsonResponse {
         $caller = $request->user();
-        $result = $action->start($node, $request->payload(), $caller instanceof Node ? $caller : null,
-            $request->attributes->getString('orbit.request_id'));
+        $result = $action->execute($node, $request->name(), $request->platform(), $request->settings(),
+            $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
         if ($result instanceof Operation) {
             return response()->json([
                 'data' => OperationData::fromModel($result)->toArray(),

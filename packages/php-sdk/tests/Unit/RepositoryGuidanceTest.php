@@ -69,10 +69,9 @@ use Orbit\Sdk\Requests\Nodes\AddNodeExcludedProjectRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodeExcludedProjectsRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeExcludedProjectRequest;
-use Orbit\Sdk\Requests\Nodes\RenameNodeRequest;
-use Orbit\Sdk\Requests\Nodes\SetNodePlatformRequest;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
+use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
@@ -227,7 +226,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 108;
+        $preScheduleOperationCount = 106;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
@@ -521,9 +520,8 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(UnsetClusterRouterRequest::class)
             ->toContain(ShowNodeMetricsRequest::class)
             ->toContain(RelocateNodeRoleRequest::class)
-            ->toContain(RenameNodeRequest::class)
-            ->toContain(SetNodeWireGuardKeyRequest::class)
-            ->toContain(SetNodePlatformRequest::class);
+            ->toContain(UpdateNodeRequest::class)
+            ->toContain(SetNodeWireGuardKeyRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,

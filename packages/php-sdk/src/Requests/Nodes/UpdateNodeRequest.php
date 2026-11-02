@@ -7,8 +7,7 @@ namespace Orbit\Sdk\Requests\Nodes;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
-use Orbit\Sdk\Responses\Nodes\NodeSettings;
-use Orbit\Sdk\Responses\Nodes\NodeSettingsMutationResponse;
+use Orbit\Sdk\Responses\Nodes\NodeUpdateResponse;
 use Orbit\Sdk\Responses\Nodes\TaskVmsSettings;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
@@ -16,7 +15,8 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
+/** Changes a Node's name, platform, apps folder, or task VM host settings; only an apps folder change starts a run. */
+final class UpdateNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
@@ -25,6 +25,8 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly int $nodeId,
+        private readonly ?string $name = null,
+        private readonly ?string $platform = null,
         private readonly bool $hasApps = false,
         private readonly ?AppsSettings $apps = null,
         private readonly bool $hasTaskVms = false,
@@ -32,28 +34,17 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
         private readonly ?string $idempotencyKey = null,
     ) {}
 
-    public static function fromSettings(int $nodeId, NodeSettings $settings): self
-    {
-        return new self(
-            nodeId: $nodeId,
-            hasApps: true,
-            apps: $settings->apps,
-            hasTaskVms: $settings->task_vms !== null,
-            taskVms: $settings->task_vms,
-        );
-    }
-
     public function resolveEndpoint(): string
     {
-        return "/api/v1/nodes/{$this->nodeId}/settings";
+        return "/api/v1/nodes/{$this->nodeId}";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodeSettingsMutationResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodeUpdateResponse
     {
         $data = $this->unwrapData($response);
         $requestId = $this->successRequestId($response);
 
-        return new NodeSettingsMutationResponse($response->status() === 202
+        return new NodeUpdateResponse($response->status() === 202
             ? OperationResponse::fromGatewayData($data, $requestId)
             : NodeResponse::fromGatewayData($data, $requestId));
     }
@@ -68,6 +59,14 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         $body = [];
+
+        if ($this->name !== null) {
+            $body['name'] = $this->name;
+        }
+
+        if ($this->platform !== null) {
+            $body['platform'] = $this->platform;
+        }
 
         if ($this->hasApps) {
             $body['apps'] = $this->apps?->toArray();

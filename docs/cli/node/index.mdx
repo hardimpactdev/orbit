@@ -1,18 +1,18 @@
 ---
 title: "node"
 sidebarTitle: "Overview"
-description: "Add machines to the fleet, rename Nodes, set unmanaged WireGuard keys, assign and move roles, grant access, set the apps root, read metrics, and remove Nodes."
+description: "Add machines to the fleet, update a Node's name, platform and settings, set unmanaged WireGuard keys, assign and move roles, grant access, read metrics, and remove Nodes."
 covers:
   - apps/cli/app/Commands/Nodes/**
   - apps/cli/app/Support/NodeSettingOptions.php
-  - apps/gateway/app/Actions/Nodes/{RenameNodeAction,SetNodeWireGuardKeyAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
+  - apps/gateway/app/Actions/Nodes/{UpdateNodeAction,SetNodeWireGuardKeyAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
   - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController,NodeFootprintsController}.php
   - apps/gateway/app/Http/Requests/Nodes/**
   - packages/php-sdk/src/Requests/Nodes/**
   - packages/php-sdk/src/Responses/Nodes/**
 ---
 
-A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family adds a machine, converges it again, renames it, assigns and moves its roles, records which Node may act on which, sets its apps root, and removes it.
+A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family adds a machine, converges it again, updates its name, platform and settings, assigns and moves its roles, records which Node may act on which, and removes it.
 
 [Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and operator-approved task VM host configuration.
 
@@ -25,10 +25,8 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:list`](/cli/node/list) | List the Nodes. |
 | [`node:show`](/cli/node/show) | Show one Node. |
 | [`node:metrics`](/cli/node/metrics) | Show one metrics snapshot of a Node. |
-| [`node:rename`](/cli/node/rename) | Change the name of a Node. |
-| [`node:settings`](/cli/node/settings) | Set the apps root or task VM host configuration of a Node. |
+| [`node:update`](/cli/node/update) | Change the name, platform, apps folder, or task VM host settings of a Node. |
 | [`node:wireguard-key`](/cli/node/wireguard-key) | Set an unmanaged Node's WireGuard public key and reconverge the hub. |
-| [`node:platform`](/cli/node/platform) | Set the platform of an unmanaged Node. |
 | [`node:role:add`](/cli/node/role-add) | Add a role, or converge an existing role. |
 | [`node:role:list`](/cli/node/role-list) | List the roles of a Node. |
 | [`node:role:relocate`](/cli/node/role-relocate) | Move `gateway`, `websocket`, or `metrics` to another Node. |
@@ -72,8 +70,8 @@ The checkout, the SQLite database, the Orbit CA, and the SSH keys live on the ma
 
 The WireGuard hub and private DNS stay on their original Node. `vpn` is protected from `node:role:add`, `node:role:remove`, and relocate.
 
-### Rename is its own verb
+### One update for a Node's fields
 
-A rename changes one identity field and does not touch WireGuard. Removing and adding the Node again would delete its WireGuard peer and records. `node:update` is rejected as a name, because update means a partial field patch.
+`node:update` is a partial patch: it changes only the fields you name. The name, the platform, and the task VM host settings are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
 
 Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Use `--converge` to converge an existing assignment and `--idempotency-key` to retry the same request.

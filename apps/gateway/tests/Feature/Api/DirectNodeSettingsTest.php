@@ -25,14 +25,14 @@ beforeEach(function (): void {
         'protected_roots' => ['/etc'], 'managed_checkouts' => [],
         'settings' => ['apps' => ['path' => '/srv/new']], 'settings_patch' => ['apps' => true, 'task_vms' => false]];
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $this->operation = Operation::query()->create(['kind' => 'node.settings', 'target_type' => 'node', 'target_id' => $this->node->id,
+    $this->operation = Operation::query()->create(['kind' => 'node.update', 'target_type' => 'node', 'target_id' => $this->node->id,
         'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => $this->input,
         'state' => ['node_settings_writer' => 'direct', 'swamp_run_id' => $this->run]]);
     $this->body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z',
         'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => null, 'result' => ['steps' => ['Check owner and mode' => ['status' => 'succeeded', 'stdout' => "directory orbit:orbit 755\n"]]]];
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => $this->run,
+        'kind' => 'started', 'workflowName' => 'operation-node-update', 'runId' => $this->run,
     ]]];
     app()->instance(WebSocketClient::class, $this->socket);
     config(['swamp.run_token' => 'fake.token', 'swamp_workers.nodes' => [$this->node->id]]);

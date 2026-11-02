@@ -116,7 +116,7 @@ describe('node storage settings', function (): void {
         expect(Node::query()->where('name', 'app-dev')->sole()->settings)->toBeNull();
     });
 
-    it('rejects unknown settings keys without persisting', function (): void {
+    it('rejects unknown members and unknown settings keys without persisting', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
@@ -126,13 +126,13 @@ describe('node storage settings', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+            ->patchJson("/api/v1/nodes/{$node->id}", [
                 'packages' => ['path' => '/srv/orbit/packages'],
             ])
             ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.settings_invalid');
+            ->assertJsonPath('error.code', 'validation.failed');
         $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", ['tasks' => ['worker' => 'none']])
+            ->patchJson("/api/v1/nodes/{$node->id}", ['apps' => ['path' => '/srv/apps', 'mode' => '0700']])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.settings_invalid');
 
@@ -149,7 +149,7 @@ describe('node storage settings', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => $path]])
+            ->patchJson("/api/v1/nodes/{$node->id}", ['apps' => ['path' => $path]])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', $code);
 
@@ -170,7 +170,7 @@ describe('node storage settings', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+            ->patchJson("/api/v1/nodes/{$node->id}", [
                 'apps' => ['path' => '/etc/orbit'],
             ])
             ->assertUnprocessable()
@@ -199,7 +199,7 @@ describe('node storage settings', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+            ->patchJson("/api/v1/nodes/{$node->id}", [
                 'apps' => ['path' => ''],
             ])
             ->assertUnprocessable()
@@ -226,7 +226,7 @@ describe('node storage settings', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+            ->patchJson("/api/v1/nodes/{$node->id}", [
                 'apps' => ['path' => $path],
             ])
             ->assertUnprocessable()
@@ -254,7 +254,7 @@ describe('node storage settings', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+            ->patchJson("/api/v1/nodes/{$node->id}", [
                 'apps' => ['path' => $path],
             ])
             ->assertUnprocessable()
@@ -276,24 +276,49 @@ describe('node storage settings', function (): void {
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
         $socket = new FakeRoutePublicationSocket;
         $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
-            'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+            'kind' => 'started', 'workflowName' => 'operation-node-update', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
         ]]];
         app()->instance(WebSocketClient::class, $socket);
         config(['swamp.run_token' => 'fake.token', 'swamp_workers.nodes' => []]);
         $agents = Mockery::mock(AgentCommandRunner::class);
         $agents->shouldNotReceive('run', 'install');
         app()->instance(AgentCommandRunner::class, $agents);
-        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => $path]])
+        $this->patchJson("/api/v1/nodes/{$node->id}", ['apps' => ['path' => $path]])
             ->assertUnprocessable()->assertJsonPath('error.code', 'node.settings_path_protected');
         expect($node->refresh()->settings)->toBeNull()
             ->and($socket->sent)->toBe([]);
     })->with(['/home/orbit/.orbit/worktrees/instances', '/home/orbit/.orbit/worktrees/extra']);
+
+    it('saves a new name at once and starts one node.update run for the apps folder in the same request', function (): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev', 'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10', 'user' => 'orbit',
+            'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.3', 'ssh_host_fingerprint' => 'SHA256:test',
+            'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
+        ]);
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+        $socket = new FakeRoutePublicationSocket;
+        $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => $message['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        ]]];
+        app()->instance(WebSocketClient::class, $socket);
+        config(['swamp.run_token' => 'fake.token', 'swamp_workers.nodes' => []]);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}", ['name' => 'renamed', 'apps' => ['path' => '/srv/apps']])
+            ->assertAccepted()
+            ->assertJsonPath('data.kind', 'node.update');
+
+        expect($node->refresh())->name->toBe('renamed')->settings->toBeNull()
+            ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-node-update')
+            ->and($socket->sent[0]['payload']['inputs']['intent']['storage'])->toBe(['root' => '/srv/apps', 'user' => 'orbit', 'group' => 'orbit']);
+    });
 
     it('rejects list settings at every HTTP boundary without changing stored intent', function (
         string $method,
         string $path,
         array $payload,
         ?array $stored,
+        string $code = 'node.settings_invalid',
     ): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
@@ -307,12 +332,12 @@ describe('node storage settings', function (): void {
             'role' => RoleName::AppDev,
             'status' => LifecycleStatus::Active,
         ]);
-        $url = $path === 'settings' ? "/api/v1/nodes/{$node->id}/settings" : '/api/v1/nodes';
+        $url = $path === 'settings' ? "/api/v1/nodes/{$node->id}" : '/api/v1/nodes';
 
         $this
             ->json($method, $url, $payload)
             ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.settings_invalid');
+            ->assertJsonPath('error.code', $code);
 
         expect($node->refresh()->settings)->toBe($stored);
         if ($path === 'provision') {
@@ -324,6 +349,7 @@ describe('node storage settings', function (): void {
             'settings',
             [],
             ['apps' => ['path' => '/srv/orbit/apps']],
+            'validation.failed',
         ],
         'patch nested list' => [
             'PATCH',

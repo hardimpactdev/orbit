@@ -1,5 +1,5 @@
 id: "b100f60c-b164-4036-8881-17e603ba3901"
-name: "operation-node-settings"
+name: "operation-node-update"
 description: "Create a Node's apps folder with official cfgmgmt from 209 and prove its owner and mode."
 vaults: []
 queueTimeout: 30
@@ -8,7 +8,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [node.settings]}
+    kind: {type: string, enum: [node.update]}
     intent: {type: object}
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -24,7 +24,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: ${{ "node-settings-folder-" + string(inputs.node_id) }}
+      behaviorName: ${{ "node-update-folder-" + string(inputs.node_id) }}
       methodName: apply
       globalArgs: {path: '${{ inputs.intent.storage.root }}', ensure: present, owner: '${{ inputs.intent.storage.user }}', group: '${{ inputs.intent.storage.group }}',
         mode: '0755', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
@@ -37,10 +37,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-settings-ssh-" + string(inputs.node_id) }}
+      behaviorName: ${{ "node-update-ssh-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs:
-        name: ${{ "node-settings-ssh-" + string(inputs.node_id) }}
+        name: ${{ "node-update-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.target.user }}

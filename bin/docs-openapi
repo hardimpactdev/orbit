@@ -669,7 +669,7 @@ DEFINITION_ROUTES = {
 SUMMARIES = {
     'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
-    'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
+    'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:update': 'Update a Node',
     'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
     'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:activate': 'Activate a Cluster', 'cluster:deactivate': 'Deactivate a Cluster', 'cluster:destroy': 'Remove a Cluster',
@@ -1225,7 +1225,7 @@ def rules_to_schema(rules_text, route_name=None):
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
-    if route_name in ('instance:rename', 'instance:update'):
+    if route_name in ('instance:rename', 'instance:update', 'node:update'):
         root['minProperties'] = 1
     if route_name == 'instance:update':
         root['properties']['shared_paths']['type'] = ['array', 'null']
@@ -2105,6 +2105,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['202'] = envelope(ref('OperationData'), 'Accepted pending registration cleanup. Follow conn:operation:show.')
             responses['204'] = {'description': 'The registration cleanup revision is already complete.'}
         elif starts_operation:
+            if route['name'] == 'node:update':
+                responses['200'] = envelope(ref('NodeData'), 'A record-only change was saved; the Node with its new values.')
             responses['202'] = envelope(ref('OperationData'), 'Accepted. The operation is queued; follow it with `operation:show`.')
             responses['503'] = error_response('The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.')
         elif route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):

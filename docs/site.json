@@ -315,7 +315,7 @@
     },
     {
       "source": "/decisions/0091-rename-a-node-without-changing-wireguard-identity",
-      "destination": "/cli/node/rename"
+      "destination": "/cli/node/update"
     },
     {
       "source": "/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",

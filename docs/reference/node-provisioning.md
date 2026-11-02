@@ -16,7 +16,7 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
-Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge, SSH access and rekey use official `@swamp/cfgmgmt` behaviors and ship no script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
+Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.update` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge, SSH access and rekey use official `@swamp/cfgmgmt` behaviors and ship no script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
@@ -31,7 +31,7 @@ The operator selects Linux Nodes through the `ORBIT_SWAMP_WORKER_NODES` JSON arr
 
 Retained enrollment configuration contains the admitted Node ID and configured `user`. Its worker installation uses the checksum-pinned Swamp binary, public Orbit CA and persistent `orbit-node-worker.service`. The binary download stays in a private directory beside its destination, outside memory-backed command scratch. Verification and atomic publication stream the file, so installation does not allocate memory in proportion to its size. It uses the existing account and passwordless sudo. Task VM hosts are supported; task VM Nodes retain their separate worker lifecycle. No worker account or sudo rule is created.
 
-The rollout list records desired workers and permits protected credential staging for their initial enrollment. Standalone `node.converge`, `node.settings` and `node.agent_rekey` use 209 and do not consult this selection. They require managed SSH identity on the target. HTTP input cannot supply worker credentials.
+The rollout list records desired workers and permits protected credential staging for their initial enrollment. Standalone `node.converge`, `node.update` and `node.agent_rekey` use 209 and do not consult this selection. They require managed SSH identity on the target. HTTP input cannot supply worker credentials.
 
 Before configuring a selected worker, the agent requires Linux `MemAvailable` to cover the pinned binary's 403,378,168 bytes plus 256 MiB of headroom. Missing or malformed memory information refuses with `swamp.node_worker_memory_low`. The check precedes agent file changes, downloads, credentials and worker publication, applies when the binary is already installed, and runs again before systemd starts the worker. A small Node must remain outside the worker selection; installation never changes swap or memory limits to make it fit.
 
@@ -350,7 +350,7 @@ Doctor checks a Node without roles like any other Node when the Gateway has a pi
 
 An iPad or iPhone can join WireGuard as an unmanaged peer. The operator owns its tunnel. It has no pinned SSH host key and no role. Orbit runs nothing on it. The `ipados` platform records this, so the Node is not mistaken for a Linux machine.
 
-Set the platform with [`node:platform`](/cli/node/platform). The command takes `linux`, `macos`, or `ipados`, and accepts only a Node with no pinned SSH host key and no role. It changes the stored platform and nothing else. `node:add` does not accept `ipados`. Keep the architecture the machine reports, such as `arm64`.
+Set the platform with [`node:update --platform`](/cli/node/update). It takes `linux`, `macos`, or `ipados`, and accepts only a Node with no pinned SSH host key and no role. It changes the stored platform and nothing else. `node:add` does not accept `ipados`. Keep the architecture the machine reports, such as `arm64`.
 
 The Gateway treats an `ipados` Node as a peer it never contacts. It reuses the platform gates that macOS and unmanaged Nodes already have.
 

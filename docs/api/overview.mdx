@@ -117,21 +117,24 @@ Injected-failure tests must stop the operation after the registry save but befor
 
 This entry is the docs-first endpoint contract. The generated API sidebar and OpenAPI operation are added from the route, request, SDK, and CLI definitions when the command is implemented; generated files are not hand-edited to advertise a route that does not yet exist.
 
-## Set an unmanaged Node's platform
+## Update a Node
 
-`PATCH /api/v1/nodes/{node}/platform` serves [`node:platform`](/cli/node/platform). The path takes a positive numeric Node ID. The caller needs access to the target Node.
+`PATCH /api/v1/nodes/{node}` serves [`node:update`](/cli/node/update). The path takes a positive numeric Node ID. The caller needs access to the target Node.
 
-Send exactly one member, `platform`, set to `linux`, `macos`, or `ipados`:
+The body is one closed JSON object with at least one of these members:
 
 ```json
 {
-  "platform": "ipados"
+  "name": "tablet",
+  "platform": "ipados",
+  "apps": { "path": "/mnt/apps" },
+  "task_vms": null
 }
 ```
 
-Another value, a missing member, or an extra member returns HTTP 422 `validation.failed`. The Gateway refuses a Node with a pinned SSH host fingerprint or any role assignment with HTTP 409 `node.platform_managed`. A competing lifecycle operation on the Node returns HTTP 409 `node.provisioning_busy`. These refusals change nothing.
+`name` and `platform` follow the `node:update` rules. `apps` and `task_vms` follow [Node settings](/reference/node-settings#set-the-apps-root). An empty object, a non-object body, or an unknown member returns HTTP 422 `validation.failed`. A platform on a Node with a pinned SSH host fingerprint or any role returns HTTP 409 `node.platform_managed`. A competing lifecycle operation on the Node, or on the new name, returns HTTP 409 `node.provisioning_busy`. These refusals change nothing.
 
-On success the Gateway stores the platform and returns HTTP 200 with the standard Node record and `meta.request_id`. It does not contact the machine. A changed platform sends the normal `node.updated` broadcast. Repeating the stored platform writes nothing. Activity records the command as `node:platform`. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what the Gateway refuses on an `ipados` Node.
+The name, the platform, and `task_vms` are records. The Gateway saves them and returns HTTP 200 with the standard Node record and `meta.request_id`. A change sends one `node.updated` broadcast. An `apps` change that needs the folder returns HTTP 202 with a `node.update` [operation](/reference/operations); a name or platform in the same request is already saved. Activity records the command as `node:update`. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what the Gateway refuses on an `ipados` Node.
 
 ## Follow a long operation
 

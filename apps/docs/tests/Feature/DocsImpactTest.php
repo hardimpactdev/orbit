@@ -777,6 +777,17 @@ it('docs impact reports deleted and signature-removed CLI command owners', funct
     expect(collect($removedSignature['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/list.mdx');
 });
 
+it('docs impact does not ask for the page of a deleted CLI command whose page is also deleted', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/cli/app/Commands/NodeList.php';
+    exec('git -C '.escapeshellarg($root).' rm -q '.escapeshellarg($path).' docs/cli/node/list.mdx');
+
+    $report = new DocsImpact($root)->report('HEAD', [$path, 'docs/cli/node/list.mdx']);
+
+    expect($report['errors'])->not->toContain('Removed from current source: CLI command [node:list] has no documentation page at docs/cli/node/list.mdx.')
+        ->and(collect($report['errors'])->filter(fn (string $error): bool => str_contains($error, 'has no documentation page'))->all())->toBe([]);
+});
+
 it('docs impact marks both CLI owners when a command changes families', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/cli/route/list.mdx', "---\ntitle: \"orbit route:list\"\n---\nRoute\n");

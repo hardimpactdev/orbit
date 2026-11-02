@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\StartNodeConvergeAction;
-use App\Actions\Nodes\UpdateNodeSettingsAction;
+use App\Actions\Nodes\UpdateNodeAction;
 use App\Data\Nodes\NodeStorageAppsData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NodeAgentRekeyProjection;
@@ -80,7 +80,7 @@ it('shapes the role parts for their cfgmgmt steps: the pinned Caddy package and 
 });
 
 it('prepares settings from a public SSH intent and stores them only at terminal success', function (): void {
-    $op = app(UpdateNodeSettingsAction::class)->start($this->node, new NodeSettingsPatch(true, new NodeStorageAppsData('/srv/new')));
+    $op = app(UpdateNodeAction::class)->execute($this->node, null, null, new NodeSettingsPatch(true, new NodeStorageAppsData('/srv/new')));
     expect($op)->toBeInstanceOf(Operation::class)
         ->and($this->node->fresh()->settings['apps']['path'] ?? null)->not->toBe('/srv/new')
         ->and($this->socket->sent[0]['payload']['inputs']['intent']['ssh']['control_node_id'])->toBe(209)

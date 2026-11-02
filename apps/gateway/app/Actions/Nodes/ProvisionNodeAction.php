@@ -64,7 +64,7 @@ final readonly class ProvisionNodeAction
         private NodeAgentRuntime $agent,
         private ManagedNodeEligibility $managedNodeEligibility,
         private ConfiguredStoragePathValidator $storagePaths,
-        private UpdateNodeSettingsAction $nodeSettings,
+        private UpdateNodeAction $nodeSettings,
         private ManagedUserAccountResolver $accounts,
         private ActiveTldScopeGuard $tldScope,
         private EnrollMacOsNodeAction $macNodes,
@@ -138,7 +138,7 @@ final readonly class ProvisionNodeAction
         if ($node->exists && ! in_array($node->platform, ['linux', 'macos'], true)) {
             throw new ResourceOperationException(
                 errorCode: 'node.platform_unsupported',
-                message: "Node [{$node->name}] is {$node->platform}. Orbit runs nothing on it. Set its platform with node:platform first if that is wrong.",
+                message: "Node [{$node->name}] is {$node->platform}. Orbit runs nothing on it. Set its platform with node:update --platform first if that is wrong.",
             );
         }
 

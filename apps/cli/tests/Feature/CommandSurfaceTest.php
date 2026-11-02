@@ -166,15 +166,13 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:list',
         'node:metrics',
         'node:network:converge',
-        'node:platform',
         'node:remove',
-        'node:rename',
         'node:role:add',
         'node:role:list',
         'node:role:relocate',
         'node:role:remove',
-        'node:settings',
         'node:show',
+        'node:update',
         'node:wireguard-hub:converge',
         'node:wireguard-key',
         'operation:cancel',
@@ -247,7 +245,7 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::allowsCommand('project:create'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('instance:clone'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('instance:transfer'))->toBeTrue();
-        expect(CommandVocabulary::allowsCommand('node:settings'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('node:update'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('doctor'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('profile'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeFalse();
@@ -880,10 +878,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:metrics' => [['node'], ['json' => false]],
         'node:network:converge' => [['node'], ['idempotency-key' => null, 'json' => false]],
         'node:wireguard-hub:converge' => [['node'], ['idempotency-key' => null, 'json' => false]],
-        'node:platform' => [['node', 'platform'], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'idempotency-key' => null, 'json' => false]],
-        'node:rename' => [['node', 'name'], ['json' => false]],
-        'node:settings' => [['node'], ['setting' => [], 'idempotency-key' => null, 'json' => false]],
+        'node:update' => [['node'], ['name' => null, 'platform' => null, 'apps-path' => null, 'task-vms' => null, 'idempotency-key' => null, 'json' => false]],
         'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],
         'operation:cancel' => [['operation'], ['json' => false]],
         'operation:list' => [[], ['status' => null, 'kind' => null, 'instance' => null, 'json' => false]],
@@ -1076,7 +1072,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'dns:resolve' => ['target'],
             'node:add' => ['host'],
             'node:wireguard-key' => ['node', 'public-key'],
-            'node:platform' => ['node', 'platform'],
+            'node:update' => ['node'],
             'profile' => ['url'],
             'tool:install' => ['package'],
             'metrics:enable', 'project:excluded-node:add', 'project:excluded-node:remove' => ['node'],
@@ -1333,14 +1329,12 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:metrics' => [['node' => '1'], ...$profileMissing],
         'node:network:converge' => [['node' => '1'], ...$profileMissing],
         'node:wireguard-hub:converge' => [['node' => '1'], ...$profileMissing],
-        'node:platform' => [['node' => '1', 'platform' => 'ipados'], ...$profileMissing],
         'node:remove' => [['node' => '1', '--force' => true], ...$profileMissing],
-        'node:rename' => [['node' => '1', 'name' => 'vpn'], ...$profileMissing],
         'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
         'node:role:list' => [['node' => '7'], ...$profileMissing],
         'node:role:relocate' => [['node' => '7', 'role' => 'gateway', '--force' => true], ...$profileMissing],
         'node:role:remove' => [['node' => '7', 'role' => 'app-dev', '--force' => true], ...$profileMissing],
-        'node:settings' => [['node' => '1', '--setting' => ['apps.path:/srv/orbit/apps']], ...$profileMissing],
+        'node:update' => [['node' => '1', '--apps-path' => '/srv/orbit/apps'], ...$profileMissing],
         'node:wireguard-key' => [['node' => '1', 'public-key' => base64_encode(str_repeat('n', 32))], ...$profileMissing],
         'node:show' => [['node' => '1'], ...$profileMissing],
         'operation:cancel' => [['operation' => '1'], ...$profileMissing],

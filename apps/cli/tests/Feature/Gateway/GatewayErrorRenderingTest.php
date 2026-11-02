@@ -833,9 +833,9 @@ it('renders local validation failures through the exact json boundary', function
         'node_role.role_required',
         'Role is required.',
     ],
-    'node rename empty name' => [
-        'node:rename',
-        ['node' => '1', 'name' => ''],
+    'node update empty name' => [
+        'node:update',
+        ['node' => '1', '--name' => ''],
         'node.name_required',
         'Name is required.',
     ],
@@ -968,15 +968,11 @@ it('renders console input failures through the exact json boundary', function (a
         ],
         'The "--unknown-option" option does not exist.',
     ],
-    'node rename missing required arguments' => [
-        ['command' => 'node:rename', '--json' => true],
-        'Not enough arguments (missing: "node, name").',
-    ],
-    'node rename unknown option' => [
+    'node update unknown option' => [
         [
-            'command' => 'node:rename',
+            'command' => 'node:update',
             'node' => '1',
-            'name' => 'vpn',
+            '--name' => 'vpn',
             '--json' => true,
             '--unknown-option' => true,
         ],

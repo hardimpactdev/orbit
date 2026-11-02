@@ -3,22 +3,22 @@ title: "Node settings"
 description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and explicit host configuration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
-  - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
+  - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
-  - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
-  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
+  - apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php
+  - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeCommand}.php
+  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeRequest}.php
 ---
 
 # Node settings
 
-A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or `node:settings`. [`node`](/cli/node/settings) lists the commands. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
+A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or [`node:update`](/cli/node/update). The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
-A settings change that touches the apps root records a `node.settings` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/settings.mmd) shows both paths.
+A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
 
-The Gateway starts `operation-node-settings` on the `swamp` role's workers. Its inputs are the SSH target and the resolved apps folder with the managed user and group. Every step runs on Node 209 and reaches the Node over SSH with sudo.
+The Gateway starts `operation-node-update` on the `swamp` role's workers. Its inputs are the SSH target and the resolved apps folder with the managed user and group. Every step runs on Node 209 and reaches the Node over SSH with sudo.
 
 The steps are:
 
@@ -39,14 +39,14 @@ State-only patches, such as task VM host intent, stay synchronous in the Gateway
 
 ## Set the apps root
 
-Both commands take repeatable `--setting=<setting-path>:<value>` options. Use `apps.path` for the apps root and `task_vms` for a JSON host configuration object.
+`node:add` takes repeatable `--setting=<setting-path>:<value>` options: `apps.path` for the apps root and `task_vms` for a JSON host configuration object. `node:update` takes `--apps-path` and `--task-vms`.
 
 ```bash
 orbit node:add app-dev app-dev.example --role=app-dev --setting=apps.path:/srv/orbit/apps
-orbit node:settings app-dev --setting=apps.path:/mnt/apps
+orbit node:update app-dev --apps-path=/mnt/apps
 ```
 
-The CLI splits each option at its first colon, so a value can contain more colons. An empty value unsets the path: `--setting=apps.path:` sends null. The CLI does not trim a value. `node:settings` needs at least one `--setting` option.
+`node:add` splits each option at its first colon, so a value can contain more colons. An empty value unsets the path: `--setting=apps.path:` and `--apps-path=` send null. The CLI does not trim a value.
 
 `POST /api/v1/nodes` accepts an optional `settings` member:
 
@@ -54,13 +54,13 @@ The CLI splits each option at its first colon, so a value can contain more colon
 { "settings": { "apps": { "path": "/srv/orbit/apps" } } }
 ```
 
-`PATCH /api/v1/nodes/{node}/settings` takes the settings object directly, without a `settings` wrapper:
+`PATCH /api/v1/nodes/{node}` takes the members directly, without a `settings` wrapper, beside the optional `name` and `platform`:
 
 ```json
 { "apps": { "path": "/mnt/apps" } }
 ```
 
-The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null, and `task_vms` as a typed object or null. The settings object and its nested objects reject unknown fields. A patch needs at least one supported member, `apps` or `task_vms`; the `apps.path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path.
+The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null, and `task_vms` as a typed object or null. The settings object and its nested objects reject unknown fields. The request needs at least one member; the `apps.path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path.
 
 A patch changes only the members it names. Other stored keys stay, and the API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
@@ -69,7 +69,7 @@ A patch changes only the members it names. Other stored keys stay, and the API n
 Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
 
 ```bash
-orbit node:settings beast --setting='task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 ```
 
 This is an example, not the live configuration of beast. Preserve a host's current values when changing its configuration. The API patch takes the object directly:
@@ -142,17 +142,17 @@ The CLI refuses a bad option before it sends a request.
 
 | Code | Condition |
 | --- | --- |
-| `node.setting_unknown` | The setting path is not supported. |
-| `node.setting_duplicate` | The same setting path appears twice. |
-| `node.setting_invalid` | An option has no colon or an empty setting path. |
-| `node.setting_required` | `node:settings` got no `--setting` option. |
+| `node.setting_unknown` | A `node:add` setting path is not supported. |
+| `node.setting_duplicate` | The same `node:add` setting path appears twice. |
+| `node.setting_invalid` | A `node:add` option has no colon or an empty setting path, or the task VM host settings are not a typed JSON object or `null`. |
+| `node.option_required` | `node:update` got none of `--name`, `--platform`, `--apps-path`, or `--task-vms`. |
 
 The Gateway refuses an invalid value without changing the stored setting.
 
 | Code | Condition |
 | --- | --- |
 | `node.settings_platform_unsupported` | An apps-root action requires a Linux Node. |
-| `node.settings_invalid` | The object has an unknown member, is not an object, or a patch has no supported member. |
+| `node.settings_invalid` | The `apps` or `task_vms` value has an unknown member or is not an object or null. An unknown top-level member or an empty body returns `validation.failed`. |
 | `node.settings_path_invalid` | The path is empty or not absolute and normalized. |
 | `node.settings_path_protected` | The path overlaps a protected path. |
 | `node.settings_path_managed` | The path equals or lies inside an Instance checkout. |

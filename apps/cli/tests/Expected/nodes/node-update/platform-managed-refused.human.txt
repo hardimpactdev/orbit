@@ -1,8 +1,8 @@
-Setting Node platform...
+Updating Node...
 
-┌  Set Node platform
+┌  Update Node
 │
-├  ● Setting Node platform
+├  ● Updating Node
 │
 └  Operation failed.
 

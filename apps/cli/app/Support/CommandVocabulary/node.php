@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    'actions' => ['converge', 'relocate', 'rename'],
-    'noun_endings' => ['node:metrics', 'node:platform', 'node:settings', 'node:wireguard-key'],
+    'actions' => ['converge', 'relocate'],
+    'noun_endings' => ['node:metrics', 'node:wireguard-key'],
     'route_exceptions' => [],
 ];

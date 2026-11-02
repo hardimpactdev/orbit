@@ -384,8 +384,9 @@ final readonly class DocsImpact
         }
         foreach ($baseErrors as $error) {
             // A deleted non-API source needs no new ownership binding. Owned removals are routed above.
-            // The API generators decide for a deleted API source.
-            if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command [') || str_starts_with($error, 'Unowned migration surface'))) {
+            // The API generators decide for a deleted API source. A deleted CLI command needs no page.
+            if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command [') || str_starts_with($error, 'Unowned migration surface')
+                || (str_starts_with($error, 'CLI command [') && str_contains($error, '] has no documentation page at ')))) {
                 continue;
             }
 

@@ -1,7 +1,7 @@
 {
     "schema": 1,
-    "request": "Orbit\\Sdk\\Requests\\Nodes\\SetNodePlatformRequest",
-    "route": "PATCH /api/v1/nodes/{node}/platform",
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\UpdateNodeRequest",
+    "route": "PATCH /api/v1/nodes/{node}",
     "status": 200,
     "body": {
         "data": {
@@ -25,7 +25,8 @@
             "error_code": null,
             "roles": [],
             "settings": null,
-            "updating": null
+            "updating": null,
+            "swamp_worker_selected": false
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

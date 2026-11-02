@@ -29,7 +29,7 @@ Role relocation requires its native parent workflow. Until that writer is availa
 A Node name is a unique identifier. It is not the WireGuard key or address. When the old Node is named `gateway` and the new machine must use that name, rename the old Node first:
 
 ```bash
-orbit node:rename gateway vpn
+orbit node:update gateway --name=vpn
 orbit node:add gateway <new-host>
 ```
 

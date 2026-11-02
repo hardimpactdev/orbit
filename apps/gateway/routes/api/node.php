@@ -64,18 +64,12 @@ Route::middleware([
         ->name('node:excluded-project:remove');
     Route::post('nodes', [NodesController::class, 'store'])
         ->name('node:add');
-    Route::patch('nodes/{node}/name', [NodesController::class, 'rename'])
+    Route::patch('nodes/{node}', [NodesController::class, 'update'])
         ->whereNumber('node')
-        ->name('node:rename');
+        ->name('node:update');
     Route::patch('nodes/{node}/wireguard-key', [NodesController::class, 'wireguardKey'])
         ->whereNumber('node')
         ->name('node:wireguard-key');
-    Route::patch('nodes/{node}/platform', [NodesController::class, 'platform'])
-        ->whereNumber('node')
-        ->name('node:platform');
-    Route::patch('nodes/{node}/settings', [NodesController::class, 'settings'])
-        ->whereNumber('node')
-        ->name('node:settings');
     Route::delete('nodes/{node}', [NodesController::class, 'destroy'])
         ->name('node:remove');
     Route::put(

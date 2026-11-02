@@ -11,6 +11,8 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -25,7 +27,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-final readonly class UpdateNodeSettingsAction
+final readonly class UpdateNodeAction
 {
     public function __construct(
         private NodeSettingsNormalizer $normalizer,
@@ -33,22 +35,44 @@ final readonly class UpdateNodeSettingsAction
         private ManagedUserAccountResolver $accounts,
         private NodeStorageRootPreparer $preparer,
         private StartOperationAction $operations,
+        private NodeProvisioningLock $provisioningLock,
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function start(Node $node, NodeSettingsPatch $patch, ?Node $caller = null, ?string $requestId = null): Node|Operation
+    /**
+     * Saves the record fields at once. Only an apps folder change that needs the folder starts a run; its settings
+     * are stored when the run succeeds, while a new name or platform in the same request is already saved.
+     */
+    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation
     {
-        return DB::transaction(function () use ($node, $patch, $caller, $requestId): Node|Operation {
+        try {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): Node|Operation {
+                $node->refresh();
+                $update = fn (): Node|Operation => $this->update($node, $name, $platform, $settings, $caller, $requestId);
+
+                return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
+            });
+        } catch (NodeProvisioningLockException $exception) {
+            throw $exception->toBusyException();
+        }
+    }
+
+    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): Node|Operation
+    {
+        $written = false;
+        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation {
             $node->refresh();
-            $merged = $patch->merge($this->normalizer->fromStored($node->settings));
+            $written = $this->record($node, $name, $platform);
+            if ($settings->isEmpty()) {
+                return $node;
+            }
+            $merged = $settings->merge($this->normalizer->fromStored($node->settings));
             $normalized = $this->normalizer->normalize($merged);
             $this->validateHostBridge($node, $normalized);
             $create = $this->hasActiveAppDevRole($node);
-            if (! $patch->hasApps || (! $create && $normalized?->appsPath() === null)) {
+            if (! $settings->hasApps || (! $create && $normalized?->appsPath() === null)) {
                 $this->persist($node, $normalized);
-                ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-                    RecordEventType::NodeUpdated, $node->id, NodeData::fromModel($node)->toArray(),
-                );
+                $written = true;
 
                 return $node;
             }
@@ -60,13 +84,46 @@ final readonly class UpdateNodeSettingsAction
             $account = new ManagedUserAccount($node->user, $node->user, $node->user === 'root' ? '/root' : '/home/'.$node->user);
             $root = $this->validator->validateEffective($normalized, $node, $account);
 
-            return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
+            return $this->operations->execute('node.update', 'node', $node->id, $node->id, [
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 'root' => $root->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
-                'settings_patch' => ['apps' => $patch->hasApps, 'task_vms' => $patch->hasTaskVms],
+                'settings_patch' => ['apps' => $settings->hasApps, 'task_vms' => $settings->hasTaskVms],
             ], 'operator', $requestId, expectedWriter: 'direct');
         });
+
+        if ($written) {
+            $node->refresh()->load('roles');
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::NodeUpdated, $node->id, NodeData::fromModel($node)->toArray(),
+            );
+        }
+
+        return $result instanceof Node ? $node->load('roles') : $result;
+    }
+
+    /** Saves the name and platform, the registry facts that need no run, and reports whether either changed. */
+    private function record(Node $node, ?string $name, ?string $platform): bool
+    {
+        // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
+        if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
+            throw new ResourceOperationException('node.platform_managed', 'Only an unmanaged Node, with no pinned SSH host key and no role, takes a platform from this command.', 409);
+        }
+        if ($name !== null && $name !== $node->name && Node::query()->where('name', $name)->whereKeyNot($node->id)->exists()) {
+            throw new ResourceOperationException('validation.failed', "The name [{$name}] is already registered.", details: ['field' => 'name']);
+        }
+        if ($name !== null) {
+            $node->name = $name;
+        }
+        if ($platform !== null) {
+            $node->platform = $platform;
+        }
+        if (! $node->isDirty()) {
+            return false;
+        }
+        $node->save();
+
+        return true;
     }
 
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void

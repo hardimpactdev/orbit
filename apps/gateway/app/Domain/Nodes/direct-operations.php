@@ -43,8 +43,8 @@ return ['node.worker_known_hosts' => [
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'rekey', 'step' => 'Prove the new key', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-agent-rekey-[1-9][0-9]*-[1-9][0-9]*$']],
-], 'node.settings' => [
-    'workflow' => 'operation-node-settings',
+], 'node.update' => [
+    'workflow' => 'operation-node-update',
     'projection' => NodeSettingsProjection::class,
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true],

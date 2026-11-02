@@ -99,6 +99,8 @@ A request field the API validates as a boolean is a JSON `boolean` in `docs/open
 
 The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.
 
+The `node:update` body has optional `name`, `platform`, `apps`, and `task_vms` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. It publishes two success responses: HTTP 200 with the Node for a record-only change, and HTTP 202 with the `node.update` operation for an apps folder change.
+
 ### External task status inputs
 
 Task group and subtask updates expose `status` in the API, MCP, PHP SDK, and generated web types. The schema lists the stored statuses; the Gateway enforces the [external status moves](/reference/tasks#tasks-and-subtasks) and keeps tick input unchanged. Group updates cannot provision or end work, and subtask updates cannot cancel it. A repeat of the current external status changes nothing.

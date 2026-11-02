@@ -19,7 +19,7 @@ it('authorizes the Node hash store against the exact operation and owner', funct
     $owner = $node->id;
     $value = str_repeat('b', 64);
     match ($variant) {
-        'kind' => $operation->kind = 'node.settings',
+        'kind' => $operation->kind = 'node.update',
         'type' => $operation->target_type = 'instance',
         'target' => $operation->target_id = $other->id,
         'owner' => $owner = $other->id,

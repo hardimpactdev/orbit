@@ -79,7 +79,7 @@
         "Tests\\Feature\\Api\\RealtimeConfigTest": 0.1587,
         "Tests\\Feature\\Api\\RealtimeResponseFixturesTest": 0.0891,
         "Tests\\Feature\\Api\\RemoveNodeTest": 2.5458,
-        "Tests\\Feature\\Api\\RenameNodeTest": 0.2305,
+        "Tests\\Feature\\Api\\UpdateNodeTest": 0.2305,
         "Tests\\Feature\\Api\\ResolveDirectoryInstanceTest": 1.5219,
         "Tests\\Feature\\Api\\RootCaCertificateTest": 0.9944,
         "Tests\\Feature\\Api\\RouteWebRootsTest": 2.2772,

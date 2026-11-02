@@ -1,8 +1,8 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1 (task_vms is record-only), R2, R4 (apps.path is Node work). docs/reference/node-settings.md.
+  %% Target design: ADR 0244 task, DECISIONS R1 (task_vms is record-only), R2, R4 (apps.path is Node work), decision 8 (one node:update). docs/reference/node-settings.md.
   %% status: draft
-  %% command: node:settings
-  %% kind: node.settings
+  %% command: node:update
+  %% kind: node.update
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,22 +12,26 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: node:settings 12<br/>--setting=apps.path:/srv/apps
+  CLI->>GW: node:update 12<br/>--apps-path=/srv/apps
   %%> Command:
-  %%> - `orbit node:settings 12 --setting=apps.path:/srv/apps`
-  %%> - syntax: `<node> --setting=KEY:VALUE [--setting=…] [--idempotency-key=KEY] [--json]`
+  %%> - `orbit node:update 12 --apps-path=/srv/apps`
+  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the Node, by id or exact name
-  %%> - one or more settings: `apps.path`, or `task_vms` as a JSON object
-  %%> - an empty value unsets it: `--setting=apps.path:` sends a null path, `--setting=task_vms:null` removes the task VM host settings
+  %%> - at least one of: a new name, a platform, the apps folder, or the task VM host settings as a JSON object
+  %%> - an empty value unsets a setting: `--apps-path=` sends a null path, `--task-vms=null` removes the task VM host settings
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, lock the Node<br/>task #5131 · Node 12
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
-  %%> - Node 12 is an active, managed Linux Node
-  %%> - no other settings change runs for Node 12; the Gateway holds one lock per Node
-  %%> Checks for `apps.path`:
+  %%> - an apps folder needs an active, managed Linux Node
+  %%> - no other lifecycle change runs for Node 12; the Gateway holds the Node's name lock, and the new name's lock for a rename
+  %%> Checks for the name:
+  %%> - ASCII letters, digits, dashes and underscores, at most 63 characters, unique among Nodes
+  %%> Checks for the platform:
+  %%> - `linux`, `macos` or `ipados`, and only on an unmanaged Node: no pinned SSH host key and no role
+  %%> Checks for the apps folder:
   %%> - absolute and normalized: not `/`, no trailing or repeated `/`, no `.` or `..` part
   %%> - not the managed user's home (`/home/<user>`, as Orbit creates it) or an ancestor of it, and not inside a hidden folder of that home
   %%> - not overlapping `/boot`, `/dev`, `/etc`, `/proc`, `/run`, `/sys`, `/usr`, `/opt/orbit`, `/var/lib/orbit`, `/var/www`, or the Gateway checkout and release layout
@@ -37,24 +41,25 @@ sequenceDiagram
   %%> - the bridge `cidr` overlaps no other task VM host
   %%> Decides:
   %%> - whether the change touches Node 12, or only the record
-  alt only task_vms changes
-    Note over GW: Store the settings<br/>R1: no run · next task VM
+  alt only record fields change
+    Note over GW: Store the record<br/>R1: no run · decision 8
     %%> When:
-    %%> - the request changes only `task_vms`
-    %%> - or it unsets `apps.path` on a Node without an active `app-dev` role, so no folder is needed
+    %%> - the request changes only the name, the platform or `task_vms`
+    %%> - or it unsets the apps folder on a Node without an active `app-dev` role, so no folder is needed
     %%> Why no run:
-    %%> - nothing on Node 12 changes now; the values apply when the next task VM is created on Node 12
+    %%> - nothing on Node 12 changes now; the name and platform are registry facts, and `task_vms` applies when the next task VM is created on Node 12
     %%> - task VMs that already run keep their settings
     %%> Result:
-    %%> - Node 12's task VM host settings are saved
-    %%> - task #5131 succeeds at once; no Swamp run starts (R1)
-    GW-->>CLI: Settings saved<br/>Node 12
+    %%> - Node 12's record is saved
+    %%> - no Swamp run starts (R1)
+    GW-->>CLI: Node updated<br/>Node 12
     %%> What you get:
-    %%> - the Node with its new settings, at once; there is nothing to follow
-  else apps.path changes
-    GW->>SW: Start run, full intent<br/>operation-node-settings
+    %%> - the Node with its new values, at once; there is nothing to follow
+  else apps path changes
+    GW->>SW: Start run, full intent<br/>operation-node-update
     %%> When:
-    %%> - the request changes `apps.path`, alone or together with `task_vms`
+    %%> - the request changes the apps folder, alone or together with other fields
+    %%> - a new name or platform in the same request is saved at once; it needs no run
     %%> - unsetting it on a Node with an active `app-dev` role prepares the default folder, `<managed-user-home>/apps`
     %%> What it does:
     %%> - starts one Swamp run on serve (Node 209)
@@ -91,7 +96,7 @@ sequenceDiagram
       %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
       Note over GW: Save the settings<br/>apps.path set · task succeeded
       %%> Result:
-      %%> - Node 12's `apps.path` is `/srv/apps`; any `task_vms` change in the same request is saved with it
+      %%> - Node 12's apps folder is `/srv/apps`; any `task_vms` change in the same request is saved with it
       %%> - task #5131 succeeds
     else a step fails
       N--xSW: wrong owner or exit ≠ 0

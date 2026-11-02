@@ -104,7 +104,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `ai-router` | `setup`, `teardown`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
 | `operation` | `cancel` | The CLI asks a running [operation](/reference/operations) to stop. `operation:list` and `operation:show` read operations. |
-| `node` | `converge`, `relocate`, `rename` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
+| `node` | `converge`, `relocate` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), or moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `project` | `archive`, `download`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content. |
@@ -122,15 +122,13 @@ Some families have actions outside the pairs above. Each action belongs only to 
 
 ## Noun-ending commands
 
-Seven commands end in a noun.
+Five commands end in a noun.
 
 | Command | Result |
 | --- | --- |
 | `analytics:credentials` | The CLI shows whether a Plausible Stats API key is stored, stores one, or clears it. It never prints the key. |
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
-| `node:platform` | Set the platform of an unmanaged Node. |
-| `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
 | `node:wireguard-key` | Set an unmanaged Node's public key and reconverge the WireGuard hub. |
 | `tasks:agents` | The CLI lists the agent threads of a [task](/reference/tasks). |
 
@@ -143,7 +141,7 @@ Some routes have no CLI command. `instance:deploy:automatic` is the [trusted aut
 `instance:dependencies:show` and `project:dependencies:show` read Swamp-owned [dependency results](/reference/instance-dependencies) for the API and SDK. They have no matching CLI command. `tasks:agent-stream` is a server-sent event stream for the web task board. `tasks:insights` returns the [task insights](/reference/tasks#task-insights) that the web task board shows. Its JSON read, `tasks:agent:show`, has the [CLI command](/cli/tasks/agent-show) of the same name. `instance:resolve` resolves a Route target for API clients; the CLI has no bare `instance:resolve` command. The `conn:` routes serve Conn devices and T3 servers, as [Conn layer](/reference/conn) describes, and have no CLI commands.
 
 
-[`node:wireguard-key`](/cli/node/wireguard-key) uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`. [`node:platform`](/cli/node/platform) follows the same rule. Its endpoint is `PATCH /api/v1/nodes/{node}/platform`.
+[`node:wireguard-key`](/cli/node/wireguard-key) uses a noun-ending command because setting the key also reconverges the WireGuard hub; it is not a record patch. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`. [`node:update`](/cli/node/update) patches a Node's name, platform and settings through `PATCH /api/v1/nodes/{node}`.
 
 ## Why it works this way
 

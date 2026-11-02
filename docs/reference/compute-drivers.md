@@ -1232,7 +1232,7 @@ A host still building, missing, or failing the current recipe cannot serve a new
 
 A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless `sudo`. Then:
 
-1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:settings` or the Node settings API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
+1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
 2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
 3. Run `task-vms:build-image {node}` to build the current recipe locally.
 

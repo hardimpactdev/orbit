@@ -1,0 +1,68 @@
+---
+title: "orbit node:update"
+sidebarTitle: "node:update"
+description: "Change the name, platform, apps folder, or task VM host settings of a Node. Only an apps folder change runs on the Node."
+---
+
+```bash
+orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--idempotency-key=KEY] [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `node` | Node ID or exact name. A terminal prompts for it when you omit it. |
+| `--name=NAME` | New unique registry name. |
+| `--platform=PLATFORM` | `linux`, `macos`, or `ipados`. Only an unmanaged Node takes a platform. |
+| `--apps-path=PATH` | The [apps folder](/reference/node-settings#set-the-apps-root). An empty value, `--apps-path=`, unsets it. |
+| `--task-vms=JSON` | The [task VM host settings](/reference/node-settings#configure-a-task-vm-host) as a JSON object. `--task-vms=null` removes them. |
+| `--idempotency-key=KEY` | Reuse the same key to repeat an apps folder run safely. |
+| `--json` | Print only the Node, or the final Operation of an apps folder run. |
+
+The command needs at least one of `--name`, `--platform`, `--apps-path`, or `--task-vms`. It sends one `PATCH /api/v1/nodes/{node}` request with only the members you set.
+
+```bash
+orbit node:update gateway --name=vpn
+orbit node:update ipad --platform=ipados
+orbit node:update app-dev --apps-path=/mnt/apps
+orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+```
+
+## Record fields
+
+The name, the platform, and the task VM host settings are records. The Gateway saves them at once and returns the Node. It does not contact the machine and starts no run.
+
+- **Name.** ASCII letters, digits, dashes, and underscores, at most 63 characters, unique among Nodes. The name is only a registry identifier: keys, addresses, SSH identity, and roles stay the same. The Gateway holds the [lifecycle lock](/reference/node-retarget#one-lifecycle-owner-per-node-name) for the current name, and for the new name, so a concurrent `node:add` cannot take the new name. After a rename, use the new name or the numeric ID. The WireGuard hub configuration names each peer in a comment; that comment keeps the old name until the Gateway next projects the hub. [Relocate the gateway role](/solutions/relocate-gateway-role) uses a rename to free the name `gateway` for a new machine.
+- **Platform.** Only an unmanaged Node takes a platform: it has no pinned SSH host fingerprint and no role. Use it to record what an operator-owned peer runs, such as an iPad on `ipados`. Enrollment observes a managed Node's platform, so the Gateway refuses that Node with `node.platform_managed` and changes nothing. `node:add` does not accept `ipados`, and Orbit runs nothing on an `ipados` Node. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what the Gateway refuses or skips.
+- **Task VM host settings.** The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host). It has no `node_id`, because the selected Node supplies its identity. The example above is not the live configuration of any host. Keep the host's current values when you change it. Remove the settings only after you destroy the host's task VMs. An `app-dev` role alone never makes a Node a task VM host.
+
+Repeating the stored name or platform succeeds and writes nothing.
+
+## The apps folder
+
+A change to the apps folder runs on the Node when the folder must exist. The Gateway returns a `node.update` Operation with HTTP 202. The CLI follows it and prints its final receipt. The settings are saved only when the run succeeds. A new name or platform in the same request is saved at once. Unsetting the folder on a Node without an active `app-dev` role needs no folder, so it is saved at once.
+
+A change never moves an existing checkout. [Node settings](/reference/node-settings#validation) lists the checks on the folder and their failure codes.
+
+## Output
+
+Progress uses `Update Node`, `Updating Node`, and `Node updated`. A saved change prints `Node #<id> [<name>] updated.` and `Request ID: <uuid>`. With `--json`, the CLI prints only the standard Node response, or the final Operation. Errors use the standard error envelope and exit 1.
+
+Without a terminal, or with `--json`, a missing Node fails before the request. Cancelling the Node prompt exits 1 and changes nothing.
+
+## Errors
+
+| Code | Meaning and recovery |
+| --- | --- |
+| `node.reference_required` | The CLI got no Node without a terminal or with `--json`. Supply an ID or name. |
+| `node.option_required` | The CLI got none of `--name`, `--platform`, `--apps-path`, or `--task-vms`. |
+| `node.name_required` | `--name` is empty. |
+| `node.platform_required` | `--platform` is empty. Supply `linux`, `macos`, or `ipados`. |
+| `node.setting_invalid` | `--task-vms` is not a typed JSON host object or `null`. |
+| `validation.failed` | The name is malformed or taken, the platform is unknown, or the body has no member or an unknown member. Nothing changes. |
+| `node.platform_managed` | The Node has a pinned SSH host fingerprint or a role. Nothing changes. |
+| `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock, or the new name's lock. Nothing changes. Retry when it finishes. |
+| `node.settings_*` | The apps folder or the task VM host settings failed a check. [Node settings](/reference/node-settings#failure-codes) lists the codes. |
+
+## How it works
+
+<div className="flow-at" data-chart="node/update"></div>

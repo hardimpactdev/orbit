@@ -60,20 +60,11 @@ final readonly class NodeSettingOptions
             $seen[$key] = true;
 
             if ($key === 'task_vms') {
-                if ($value === '' || $value === 'null') {
-                    $body['task_vms'] = null;
-
-                    continue;
+                $host = self::parseTaskVms($value);
+                if ($host['ok'] === false) {
+                    return $host;
                 }
-                try {
-                    $decoded = json_decode($value, flags: JSON_THROW_ON_ERROR);
-                } catch (JsonException) {
-                    return self::invalidTaskVms();
-                }
-                if (! $decoded instanceof stdClass || ! self::validTaskVms(get_object_vars($decoded))) {
-                    return self::invalidTaskVms();
-                }
-                $body['task_vms'] = get_object_vars($decoded);
+                $body['task_vms'] = $host['value'];
             } else {
                 $body['apps'] = $value === '' ? null : ['path' => $value];
             }
@@ -89,6 +80,28 @@ final readonly class NodeSettingOptions
             apps: array_key_exists('apps', $body) ? self::apps($body['apps']) : null,
             task_vms: self::taskVms($body['task_vms'] ?? null),
         );
+    }
+
+    /**
+     * Reads the task VM host settings: a typed JSON object, or `null` or an empty value to remove them.
+     *
+     * @return array{ok: true, value: array<string, mixed>|null}|array{ok: false, code: string, message: string}
+     */
+    public static function parseTaskVms(string $value): array
+    {
+        if ($value === '' || $value === 'null') {
+            return ['ok' => true, 'value' => null];
+        }
+        try {
+            $decoded = json_decode($value, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return self::invalidTaskVms();
+        }
+        if (! $decoded instanceof stdClass || ! self::validTaskVms(get_object_vars($decoded))) {
+            return self::invalidTaskVms();
+        }
+
+        return ['ok' => true, 'value' => get_object_vars($decoded)];
     }
 
     public static function taskVms(mixed $value): ?TaskVmsSettings

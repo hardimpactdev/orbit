@@ -30,4 +30,4 @@ if expected == 'created':
 else:
     check(operation['status'] == 'failed' and operation['error_code'] == 'node.settings_root_failed', 'the Operation failed with node.settings_root_failed')
     check(observed.startswith('regular'), f'the file is left as it is ({observed!r})')
-print(f'parity: node.settings {expected} {path}')
+print(f'parity: node.update {expected} {path}')

@@ -1,13 +1,13 @@
 {
-  "kind": "node.settings",
-  "workflow": "operation-node-settings",
+  "kind": "node.update",
+  "workflow": "operation-node-update",
   "topology": "minimal",
   "budget_seconds": 120,
   "queue_timeout_seconds": 30,
   "prepare": [],
   "request": {
     "method": "PATCH",
-    "path": "nodes/${node.target}/settings",
+    "path": "nodes/${node.target}",
     "body": {
       "apps": {
         "path": "/srv/proof-${proof.run}/apps"
@@ -32,7 +32,7 @@
     }
   ],
   "parity": [
-    "swamp/proof/node.settings/parity.py",
+    "swamp/proof/node.update/parity.py",
     "created"
   ]
 }

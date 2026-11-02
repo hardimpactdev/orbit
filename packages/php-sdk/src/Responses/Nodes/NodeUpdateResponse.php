@@ -6,8 +6,8 @@ namespace Orbit\Sdk\Responses\Nodes;
 
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
-/** A state-only patch completes immediately; an apps-root check returns an Operation. */
-final readonly class NodeSettingsMutationResponse
+/** A record-only change returns the Node at once; an apps folder change returns the Operation that prepares it. */
+final readonly class NodeUpdateResponse
 {
     public function __construct(public NodeResponse|OperationResponse $result) {}
 }

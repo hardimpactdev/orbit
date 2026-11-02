@@ -244,7 +244,7 @@ A draft in the frozen F13 request format (`swamp-proof-fixture-v0.md`). It needs
   "prepare": [
     {"argv": ["orbit", "project:create", "proof-tr-${proof.run}", "monorepo", "${proof.repo.url}", "--json"],
      "capture": {"project_id": "$.id"}},
-    {"argv": ["orbit", "node:settings", "${topology.app-dev-2.node_id}", "--setting=apps.path:/srv/apps", "--json"]},
+    {"argv": ["orbit", "node:update", "${topology.app-dev-2.node_id}", "--apps-path=/srv/apps", "--json"]},
     {"argv": ["orbit", "instance:create", "${capture.project_id}", "${topology.app-dev.node_id}", "proof-${proof.run}", "--json"],
      "capture": {"instance_id": "$.target_id"}},
     {"argv": ["orbit", "route:create", "${capture.instance_id}", "proof-${proof.run}.${topology.tld}", "--json"],
@@ -263,4 +263,4 @@ Gaps the fixture exposes:
 - **Topology:** `app-dev-pair` (two app-dev Nodes, one Cluster, a Router) is not in the F12 library yet.
 - **Binding:** `${topology.tld}` is not an F13 binding; the Route domain needs it or a fixed proof TLD.
 - **Route:** transfer needs an authoritative Route, but native create makes none and refuses web-serving Projects. The `route:create` step on a `monorepo` Instance is unverified on main.
-- **Destination path:** the destination needs a stored `apps.path`; the topology should set it so the `node:settings` step can go.
+- **Destination path:** the destination needs a stored `apps.path`; the topology should set it so the `node:update` step can go.

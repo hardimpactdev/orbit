@@ -1,7 +1,7 @@
 {
     "schema": 1,
-    "request": "Orbit\\Sdk\\Requests\\Nodes\\SetNodePlatformRequest",
-    "route": "PATCH /api/v1/nodes/{node}/platform",
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\UpdateNodeRequest",
+    "route": "PATCH /api/v1/nodes/{node}",
     "status": 409,
     "body": {
         "error": {

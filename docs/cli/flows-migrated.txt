@@ -15,7 +15,7 @@ instance.sync_environment
 node.agent_rekey
 node.converge
 node.network_converge
-node.settings
+node.update
 node.ssh_access_converge
 node.wireguard_hub_converge
 process.create
