@@ -41,9 +41,8 @@ return [
     'instance.register' => ['workflow' => 'operation-instance-register', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'source', 'step' => 'result'], 'projection' => InstanceRegisterResult::class],
     'instance.destroy' => ['workflow' => 'operation-instance-destroy', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceDestroyProjection::class,
-        'github_token_issuer' => InstanceGitHubReadTokens::class,
-        'terminal_result' => ['job' => 'destroy', 'step' => 'remove-result', 'captures' => ['source_inspection' => ['job' => 'destroy', 'step' => 'destroy-inspect']]],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-(?:git-operation-[1-9][0-9]*|destroy-[1-9][0-9]*-teardown-[0-9]+)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']]],
+        'terminal_result' => ['job' => 'destroy', 'step' => 'Report the result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-operation-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']]],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'source', 'step' => 'result'], 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',

@@ -551,11 +551,11 @@ it('projects native failure with its exact failed phase and retries the complete
     $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
-    $result = ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'];
+    $result = ['removed' => false, 'error_code' => 'instance.removal_incomplete', 'failed_step' => 'Remove SQLite files'];
 
     app(DevelopmentInstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
         'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z',
-        'result' => $result, 'error_code' => 'instance.destroy_failed']);
+        'result' => $result, 'error_code' => 'instance.removal_incomplete']);
 
     expect($operation->refresh()->status->value)->toBe('failed');
     expect($operation->result)->toBe($result);

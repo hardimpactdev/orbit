@@ -40,7 +40,7 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
     }
 
     /**
-     * Development create mints when its run starts, as the legacy Gateway did before its source call.
+     * Development create and a normal removal mint when their run starts, as the legacy Gateway did before its source call.
      * An already active create runs no source phase and gets no credential.
      *
      * @return array{vault:string,key:string}

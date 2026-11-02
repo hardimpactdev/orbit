@@ -1,6 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import { createResult } from "./result.ts";
-import { destroyResult, requireActions } from "./required.ts";
 import { vpInstallSteps } from "../instance-vp-command/steps.ts";
 const done = (outputs: Record<string, unknown> = {}) => ({
     status: "succeeded",
@@ -105,41 +104,6 @@ Deno.test("an already active create reports ready without phase evidence", () =>
         ),
         { ready: true, instance_id: 7, already_active: true },
     );
-});
-Deno.test("empty fanouts need zero concrete actions and every present action must succeed", () => {
-    requireActions(["empty"], [0], {});
-    assertThrows(() => requireActions(["apply"], [1], {}));
-    assertThrows(() =>
-        requireActions(["apply"], [1], { "apply-0": { status: "skipped" } })
-    );
-    assertThrows(() =>
-        requireActions(["apply"], [1], { "apply-0": done(), "apply-1": done() })
-    );
-    requireActions(["apply"], [2], { "apply-0": done(), "apply-1": done() });
-});
-Deno.test("destroy cannot accept skipped verification or publication and retains source recovery", () => {
-    const intent = { members: [{}] },
-        inspection = {
-            members: [{ instance_id: 7 }],
-            inventory_digest: "a".repeat(64),
-        };
-    const steps = {
-        "destroy-inspect": done(inspection),
-        "destroy-verified": done(),
-        "destroy-runtime-ready": done(),
-        "destroy-teardown-ready": done(),
-        "destroy-database-ready": done(),
-        "withdraw-0": done({ ready: true }),
-        "remove-worktree-ready": done(),
-        "remove-checkout-ready": done(),
-    };
-    assertEquals(destroyResult(intent, steps).ready, true);
-    const result = destroyResult(intent, {
-        ...steps,
-        "destroy-verified": { status: "skipped" },
-    });
-    assertEquals(result.ready, false);
-    assertEquals(JSON.parse(result.stdout).source_inspection, inspection);
 });
 Deno.test("VP preparation uses stock CLI environment installation and discrete official SSH effects", () => {
     const steps = vpInstallSteps("vp", "inputs.intent");

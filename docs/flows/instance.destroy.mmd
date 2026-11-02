@@ -65,6 +65,9 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  Note over SW: Read the scripts<br/>instance-dev-command assets
+  %%> What it does:
+  %%> - reads the shipped destroy phase scripts and the teardown runner on 209, to send them over SSH in argv
   SW->>N: Verify the source<br/>@swamp/ssh · owner, origin, inode
   %%> What it does:
   %%> - checks that the checkout and its linked worktrees are the ones captured at admission
@@ -108,7 +111,7 @@ sequenceDiagram
   %%> - removes its PHP pool and its certificate
   %%> Keeps:
   %%> - every other site, pool and certificate on Node 12
-  Note over SW: DNS withdrawal held<br/>open: Nick decides
+  Note over GW: DNS withdrawal held<br/>open: Nick decides
   %%> Open:
   %%> - DNS publication for Routes is on hold (`native-dns-takeover-held`)
   %%> - until Nick decides, the run removes no DNS record
@@ -118,11 +121,18 @@ sequenceDiagram
   %%> - deletes only the paths whose identity it verified
   %%> Runs as:
   %%> - the Node's own user, not root
-  SW->>N: Check it is gone<br/>path, units, Caddy site absent
+  SW->>N: Check it is gone<br/>path, units, containers absent
   %%> What it does:
-  %%> - checks that the checkout, the Process units and the Caddy site are absent
+  %%> - checks that the checkout, its removal quarantine, the Process units and containers are absent
+  %%> - the Route's own steps already confirmed its Caddy site is gone
   %%> Why:
   %%> - Instance 42 only counts as removed when the Node shows it
+  Note over SW: Report the result<br/>removed · failed_step · error_code
+  %%> What it does:
+  %%> - maps the first failed step to its error code and keeps the source capture for a rerun
+  Note over SW: Fail on an error<br/>assert · exit code 0
+  %%> What it does:
+  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
   alt all steps pass
     N-->>SW: Instance 42 absent
     %%> Returns:

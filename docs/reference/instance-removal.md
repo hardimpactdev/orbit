@@ -23,7 +23,9 @@ The CLI requires consent. `--yes` confirms without a prompt and is required for 
 
 ## Native order
 
-The parent captures source ownership, repository identity, branch and the complete linked-worktree inventory before removing anything. It verifies each source, stops its Schedules and Processes through their canonical children, and runs the admitted Project teardown commands as the managed account. It then removes owned SQLite files, withdraws the complete captured Route publications through the canonical Route children, and finalizes linked worktrees before their owning checkout. The Gateway deletes owned records only after native success.
+The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/instance.destroy.mmd), one shipped script per Node phase. Admission already removed the Instance's native Schedules. `Verify the source` captures source ownership, repository identity, branch and the complete linked-worktree inventory before removing anything. A normal removal then fetches origin with the read token and refuses unpushed work (`Check work is pushed`).
+
+The run stops and removes each Process through the canonical Process child, and runs the Project teardown commands, passed as run inputs, as the managed account. It removes owned SQLite files and withdraws the captured Route publications through the shared Route mutation. It finalizes linked worktrees before their owning checkout, then checks that the checkout and the Process units are gone. The Gateway deletes owned records only after native success.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 
@@ -39,11 +41,11 @@ The Gateway records the member set as Removing in the same admission transaction
 
 This parent supports development Instances on managed app-dev Nodes, including their native Process, Schedule and Route withdrawal children. Owned SQLite and registered external database records are supported. Production Instances, managed server databases and TaskVM-owned workspaces return `operation.kind_unavailable` before admission. TaskVM workspace readiness belongs to the shared `task-vm-workspace` child and its owning provision parent; an ordinary development checkout has no fabricated TaskVM identity.
 
-Repository reads use a fresh scoped GitHub App credential or normal anonymous access. A configured App without an installation supplies no credential. A non-forced removal that requires `gh_cli` source access refuses before admission; forced removal needs no fetch or GitHub mint.
+Repository reads use a fresh scoped GitHub App credential or normal anonymous access. A configured App without an installation supplies no credential. A non-forced removal that requires `gh_cli` source access refuses before admission; forced removal needs no fetch or GitHub mint. The Gateway mints the read token when the run starts and pushes it to the vault; no step calls the Gateway for it.
 
 ## Processes and Schedules
 
-The native run stops each admitted Schedule and Process before database and source removal. Their records remain until the parent reports success. 
+Admission removes each admitted Schedule's native workflow, and the run removes each Process before database and source removal. Their records remain until the parent reports success. 
 
 ## Keep unfinished transfer history
 

@@ -27,7 +27,9 @@ use Tests\Support\FakeRoutePublicationSocket;
 beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture.shared.token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-destroy', 'runId' => (string) Str::uuid()]]];
+    $socket->reply = static fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-destroy', 'runId' => (string) Str::uuid()]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->socket = $socket;
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
@@ -63,9 +65,10 @@ it('admits stored source intent and one native root without Gateway source or ac
         ->and($operation->input['source_pending'])->toBeTrue()
         ->and($operation->input['members'][0]['origin'])->toBeNull()
         ->and($operation->input['members'][0]['worktree_inventory'])->toBeNull()
-        ->and($this->socket->sent)->toHaveCount(1)
-        ->and($this->socket->sent[0]['type'])->toBe('workflow.run')
-        ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run'])
+        ->and($this->socket->sent[0]['payload']['key'])->toBe('instance-git-operation-'.$id)
+        ->and($this->socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
+        ->and($this->socket->sent[1]['payload']['inputs']['execution_secrets']['git_read']['key'])->toBe('instance-git-operation-'.$id)
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing)
         ->and(InstanceRemoval::query()->count())->toBe(1);
     Queue::assertNothingPushed();
@@ -224,7 +227,7 @@ it('admits a new native retry after terminal failure using the same immutable so
     expect($retried->input)->toBe($saved)
         ->and($retried->state['swamp_run_id'])->not->toBe($first->state['swamp_run_id'])
         ->and($retried->input['direct_destroy']['database']['sqlite'][0]['connection_id'])->toBe($database->id)
-        ->and($this->socket->sent)->toHaveCount(2);
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'vault.put', 'workflow.run']);
     expect(Operation::query()->count())->toBe(2);
     $executable = app(InstanceDestroySourceInspection::class)->executable(Operation::query()->findOrFail($next)->input);
     expect($executable['source_pending'])->toBeFalse()
