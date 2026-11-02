@@ -34,21 +34,11 @@ class ProcessFixture(NativeTestCase):
                 ROOT / "extensions/behaviors/operations/processes-schedules" / filename,
                 contracts / filename,
             )
-        for package in ["ssh", "cfgmgmt"]:
-            source = ROOT / ".swamp/pulled-extensions/@swamp" / package
-            shutil.copytree(
-                source, self.repo / ".swamp/pulled-extensions/@swamp" / package
-            )
         inventory = json.loads(
             (ROOT / "extensions/models/upstream_extensions.json").read_text()
         )
-        dest = self.repo / "extensions/models/upstream_extensions.json"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(
-            json.dumps(
-                {key: inventory[key] for key in ["@swamp/ssh", "@swamp/cfgmgmt"]}
-            )
-        )
+        for package in ["@swamp/ssh", "@swamp/cfgmgmt"]:
+            self.cli("extension", "pull", f"{package}@{inventory[package]['version']}")
         self.host = self.repo / "host"
         self.host.mkdir()
         (self.host / "units").mkdir()
