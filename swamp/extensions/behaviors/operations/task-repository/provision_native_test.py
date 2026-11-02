@@ -6,6 +6,7 @@ import os
 import shlex
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import native_test as fixture
@@ -209,37 +210,66 @@ export const model = {
         self.inputs["execution_secrets"]["proof_club"] = {
             "vault": "orbit-control-inputs", "key": "swamp-proof-club-api-key"
         }
-        marker = self.repo / "private-delivery-public-receipt.json"
+        # The private home lives outside the scanned scratch repository.
+        home = Path(tempfile.mkdtemp(prefix="orbit-proof-club-", dir=os.environ.get("TMPDIR")))
+        self.addCleanup(shutil.rmtree, home, True)
+        (home / ".config/swamp").mkdir(parents=True)
+        (home / ".config/swamp/club-api-key").symlink_to(home / "public")
+        (home / "public").write_text("untouched")
+        calls = self.repo / "proof-club-calls.json"
         ssh = self.repo / "tools/ssh"
-        # The official SSH transport remains real; only its remote effect is substituted.
-        script = "#!" + sys.executable + "\n" + """import hashlib,json,shlex,subprocess,sys
+        # The official SSH transport stays real. The fixture drops sudo and the orbit
+        # ownership (no root here) and maps /home/orbit to the private home.
+        script = "#!" + sys.executable + "\n" + """import json,shlex,subprocess,sys
 from pathlib import Path
 args=sys.argv[1:]
 if '-M' in args or '-O' in args:raise SystemExit(0)
 argv=shlex.split(args[-1]);material=sys.stdin.buffer.read()
-if any('/home/orbit/.config/swamp/club-api-key' in value for value in argv):
-    assert hashlib.sha256(material).hexdigest()==DIGEST
-    Path(MARKER).write_text(json.dumps({'user':argv[-1],'private_stdin_received':True}))
-    if FAIL:
+if any('/home/orbit/.config/swamp' in value for value in argv):
+    assert argv[:3]==['sudo','-n','--'], argv
+    argv=argv[3:]
+    while '-o' in argv:
+        i=argv.index('-o');del argv[i:i+2]
+    while '-g' in argv:
+        i=argv.index('-g');del argv[i:i+2]
+    argv=[v.replace('/home/orbit',HOME) for v in argv]
+    log=Path(CALLS);rows=json.loads(log.read_text()) if log.exists() else []
+    rows.append({'argv':argv,'stdin':bool(material)});log.write_text(json.dumps(rows))
+    if FAIL and '/dev/stdin' in argv:
         print('fixture private destination refused',file=sys.stderr);raise SystemExit(1)
-    print(json.dumps({'stored':True}));raise SystemExit(0)
 r=subprocess.run(argv,input=material,capture_output=True)
 sys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr)
 raise SystemExit(r.returncode)
 """
-        script = script.replace("DIGEST", repr(hashlib.sha256(secret.encode()).hexdigest()))
-        script = script.replace("MARKER", repr(str(marker))).replace("FAIL", repr(fail))
+        script = script.replace("HOME", repr(str(home))).replace("CALLS", repr(str(calls))).replace("FAIL", repr(fail))
         ssh.write_text(script)
         ssh.chmod(0o755)
         history, steps = self.execute_provision(success=not fail)
-        self.assertEqual(json.loads(marker.read_text()), {"user":"orbit", "private_stdin_received":True})
         self.assertEqual(steps["vm"]["outputs"]["result"]["vm_copy_keys"], [])
+        rows = json.loads(calls.read_text())
+        # Only the final write receives the token, on stdin; no argv names it.
+        self.assertEqual([row["stdin"] for row in rows], [False, False, True])
+        self.assertEqual(rows[2]["argv"][2:], ["install", "-m", "0600", "/dev/stdin", str(home / ".config/swamp/club-api-key")])
+        self.assertTrue(all(secret not in json.dumps(row) for row in rows))
+        self.assertEqual((home / "public").read_text(), "untouched")
+        self.assertEqual((home / ".config/swamp").stat().st_mode & 0o777, 0o700)
+        logs = self.cli("workflow", "history", "logs", history["id"])
+        self.assertNotIn(secret, logs.stdout + logs.stderr)
+        self.private_home = home
         return history, steps
 
-    def test_proof_club_copy_is_parent_only_private_ssh_stdin_and_never_native_history(self):
+    def test_proof_club_token_reaches_a_private_file_on_ssh_stdin_and_never_native_history(self):
         history, steps = self.proof_delivery()
         self.assertEqual(history["status"], "succeeded")
         self.assertEqual(steps["proof_club"]["status"], "succeeded")
+        # History records only that the exec had stdin, never the token.
+        recorded = steps["proof_club"]["dataArtifacts"][0]["attributes"]["args"]
+        self.assertEqual(recorded["hasStdin"], True)
+        self.assertEqual(sorted(recorded), ["argv", "hasStdin", "sudo"])
+        destination = self.private_home / ".config/swamp/club-api-key"
+        self.assertFalse(destination.is_symlink())
+        self.assertEqual(destination.read_text(), self.secrets[0])
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
         self.assertNotIn("error_code", json.loads(steps["result"]["outputs"]["stdout"]))
 
     def test_private_delivery_refusal_keeps_vm_facts_but_never_claims_group_source_success(self):

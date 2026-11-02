@@ -273,7 +273,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.02.2",
+  version: "2026.11.02.3",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -322,16 +322,7 @@ export const behavior = {
       execute: async (
         args: { intent: unknown; vm: unknown },
         ctx: Context,
-      ) =>
-        data(ctx, {
-          workspace: connection(args.intent, args.vm),
-          // proof_club.py stays for the gap rule 22 cannot cover yet: official
-          // cfgmgmt `file` connects with accept-new host keys, and task VM
-          // WireGuard addresses are reused, so a later VM at the same address fails.
-          proof_script: await Deno.readTextFile(
-            ctx.extensionFile("scripts/proof_club.py"),
-          ),
-        }),
+      ) => data(ctx, { workspace: connection(args.intent, args.vm) }),
     },
     profile: {
       description:
