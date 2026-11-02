@@ -16,6 +16,7 @@ const StoredImageIntent = z.object({
   attempt: z.number().int().positive(),
   host_node_id: z.number().int().positive(),
   agent_sha256: hash,
+  agent_url: z.string().url().startsWith("https://"),
   identity: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   generation: z.number().int().positive(),
   project: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),

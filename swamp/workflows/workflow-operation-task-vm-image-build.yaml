@@ -39,8 +39,49 @@ jobs:
   dependsOn:
   - {job: admission, condition: {type: succeeded}}
   steps:
+  # The release pins the agent; builder and smoke VMs get this host's binary, and every agent call checks the pin.
+  - name: install-agent
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: ${{ "image-agent-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {url: '${{ inputs.intent.agent_url }}', path: /usr/local/bin/orbit-agent, checksum: '${{ "sha256:" + inputs.intent.agent_sha256 }}',
+        owner: root, group: root, mode: '0755', nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}',
+        nodePort: '${{ inputs.intent.ssh_execution.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true}
+      inputs: {}
+  # The host's observer runs the binary it started with; restart it so it reports the pin. A host without the service skips this.
+  - name: restart-agent
+    labels: {role: swamp}
+    dependsOn:
+    - {step: install-agent, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: &id000
+        name: ${{ ("image-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '60', /usr/bin/systemctl, try-restart, orbit-agent.service]
+        timeoutSec: 90
   - name: reset-builder
     labels: {role: swamp}
+    dependsOn:
+    - {step: restart-agent, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

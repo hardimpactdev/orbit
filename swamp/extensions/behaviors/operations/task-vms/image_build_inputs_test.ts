@@ -21,6 +21,7 @@ export const intent = (pi: string | null = null) => ({
   attempt: 1,
   host_node_id: 13,
   agent_sha256: pin,
+  agent_url: "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.7.0/orbit-agent-linux-x86_64",
   identity,
   generation: 1,
   project: "orbit-tasks",
@@ -223,4 +224,8 @@ Deno.test("install and seed replies check their pins", () => {
     Error,
     "task_vm.image_build_failed",
   );
+});
+
+Deno.test("the intent refuses an agent build that is not served over HTTPS", async () => {
+  await assertRejects(() => imagePlan({ ...intent(), agent_url: "http://example.invalid/orbit-agent" }));
 });

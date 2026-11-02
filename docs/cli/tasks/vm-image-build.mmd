@@ -27,6 +27,12 @@ sequenceDiagram
   %%> - the Gateway computes each agent envelope `{agent_sha256, deadline_ms, input}` at admission, so no `plan` step re-reads the intent (rule 15)
   %%> Budget:
   %%> - 2,400 seconds; `queueTimeout` 30 seconds
+  SW->>H: Install the pinned agent<br/>install-agent · restart-agent
+  %%> What it does:
+  %%> - `@swamp/cfgmgmt/fetch` downloads the release's agent build from `intent.agent_url` to `/usr/local/bin/orbit-agent`, root-owned, mode 0755, and checks `sha256:<agent_sha256>`
+  %%> - one `@swamp/ssh exec` argv `systemctl try-restart orbit-agent.service` restarts the observer when it runs
+  %%> Why:
+  %%> - every later agent call carries the release pin; without this step a pin move fails each call with `agent.version_mismatch`
   SW->>H: Remove earlier attempts<br/>reset · forEach builder, smoke
   %%> What it does:
   %%> - one `forEach` over `tvm-image-61` and `tvm-image-61-smoke`; each item runs `sudo -n -- orbit-agent command incus.vm` with `remove_instance`

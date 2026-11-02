@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -15,6 +16,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageInput;
 use App\Infrastructure\TaskVms\RecipeImagePruning;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 
@@ -40,7 +42,7 @@ final readonly class StartTaskVmImageOperationAction
 
         return $this->start->execute('task_vm.image_build', 'task_vm_image', $build->id, $node->id, [
             'build_id' => $build->id, 'attempt' => $build->attempt, 'host_node_id' => $node->id,
-            'agent_sha256' => $this->delivery->pin($node), 'identity' => $recipe->identity, 'generation' => $build->recipe_generation,
+            'agent_sha256' => $this->delivery->pin($node), 'agent_url' => $this->agentUrl($node), 'identity' => $recipe->identity, 'generation' => $build->recipe_generation,
             'project' => $host->project, 'name' => $build->builder_vm_name, 'cidr' => $host->cidr, 'pool' => $host->pool,
             'network' => $host->network, 'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk,
             'source' => $build->source_fingerprint ?? TaskVmHost::SourceImage,
@@ -50,5 +52,16 @@ final readonly class StartTaskVmImageOperationAction
             'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'pi_artifact' => $pi === null ? null : ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location, 'sha256' => $pi->digest],
             'prune' => $this->pruning->input($build),
         ], 'task-vm-image', null);
+    }
+
+    /** The release's pinned agent for the build host; the build installs it before any agent call. */
+    private function agentUrl(Node $node): string
+    {
+        $url = $this->delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null;
+        if (! is_string($url) || ! str_starts_with($url, 'https://')) {
+            throw new ResourceOperationException('task_vm.image_agent_unavailable', 'The agent delivery has no HTTPS build for this host.', 409);
+        }
+
+        return $url;
     }
 }

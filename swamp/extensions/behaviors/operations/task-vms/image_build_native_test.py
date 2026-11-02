@@ -87,6 +87,12 @@ class ImageBuildNative(NativeTestCase):
             for step in job['steps']:
                 self.assertEqual(step.pop('labels'), {'role': 'swamp'}, step['name'])
                 task = step['task']
+                if step['name'] == 'install-agent':
+                    # Official cfgmgmt fetch opens its own SSH; the fixture records the arguments it would apply.
+                    self.assertEqual(task['behaviorType'], '@swamp/cfgmgmt/fetch')
+                    self.fetch = task['globalArgs']
+                    step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': 'fixture-fetch',
+                                    'methodName': 'execute', 'inputs': {'run': 'printf fetched >> ' + str(self.repo / 'fetch.log')}}
                 if task.get('behaviorType') == '@swamp/ssh':
                     task['globalArgs']['sshBinary'] = str(fake)
                     task['globalArgs']['scpBinary'] = str(scp)
@@ -98,6 +104,7 @@ class ImageBuildNative(NativeTestCase):
                           'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
         self.intent = {
             'build_id': 7, 'attempt': 1, 'host_node_id': 13, 'agent_sha256': PIN, 'identity': IDENTITY,
+            'agent_url': 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.7.0/orbit-agent-linux-x86_64',
             'generation': 1, 'project': 'orbit-tasks', 'name': 'tvm-image-7', 'cidr': '10.251.77.0/24',
             'pool': 'orbit-tasks', 'network': 'orbittask0', 'cpus': 2, 'memory': '4GiB', 'disk': '45GiB',
             'source': 'ubuntu-26.04-vm', 'candidate_alias': 'candidate-7', 'base_alias': 'orbit-task-base',
@@ -133,6 +140,14 @@ class ImageBuildNative(NativeTestCase):
         self.assertEqual(run['status'], 'succeeded')
         self.assertEqual(steps['complete']['status'], 'succeeded')
         self.assertEqual(steps['publish-reply']['outputs']['fingerprint'], FINGERPRINT)
+        # The release-pinned agent is installed and its service restarted before the first agent call.
+        self.assertEqual(self.fetch['url'], '${{ inputs.intent.agent_url }}')
+        self.assertEqual(self.fetch['path'], '/usr/local/bin/orbit-agent')
+        self.assertEqual(self.fetch['checksum'], '${{ "sha256:" + inputs.intent.agent_sha256 }}')
+        self.assertEqual((self.fetch['owner'], self.fetch['mode'], self.fetch['become']), ('root', '0755', True))
+        self.assertEqual(steps['install-agent']['status'], 'succeeded')
+        self.assertIn('try-restart', calls[0]['argv'])
+        self.assertIn('orbit-agent.service', calls[0]['argv'])
         names = [name for name, _call in self.agent_calls(calls)]
         self.assertEqual(names, [
             'incus.vm', 'incus.vm', 'incus.vm', 'agent.install', 'guest.cloud-init', 'image.inspect-phase',
@@ -233,6 +248,14 @@ class ImageBuildNative(NativeTestCase):
         self.assertIn('agent.version_mismatch', json.dumps(steps['clean-guest-reply']))
         self.assertEqual(steps['publish']['status'], 'skipped')
         self.assertEqual(steps['complete']['status'], 'skipped')
+        # The release-pinned agent is installed and its service restarted before the first agent call.
+        self.assertEqual(self.fetch['url'], '${{ inputs.intent.agent_url }}')
+        self.assertEqual(self.fetch['path'], '/usr/local/bin/orbit-agent')
+        self.assertEqual(self.fetch['checksum'], '${{ "sha256:" + inputs.intent.agent_sha256 }}')
+        self.assertEqual((self.fetch['owner'], self.fetch['mode'], self.fetch['become']), ('root', '0755', True))
+        self.assertEqual(steps['install-agent']['status'], 'succeeded')
+        self.assertIn('try-restart', calls[0]['argv'])
+        self.assertIn('orbit-agent.service', calls[0]['argv'])
         names = [name for name, _call in self.agent_calls(calls)]
         self.assertEqual(names[-3:], ['image.clean', 'incus.vm', 'incus.vm'])
         removed = [call['stdin']['input']['vm']['name'] for name, call in self.agent_calls(calls)[-2:]]

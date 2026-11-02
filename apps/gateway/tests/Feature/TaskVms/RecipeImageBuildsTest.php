@@ -18,6 +18,7 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -192,7 +193,9 @@ it('starts one native image run with the full intent as inputs and no Gateway re
         ->and($inputs['intent'])->not->toHaveKey('current')->and($inputs['intent']['recipe'])->toBeString()
         ->and($inputs['intent']['pi_artifact']['sha256'])->toBe(hash('sha256', 'pinned pi bytes'))
         ->and($inputs['intent']['pi_source']['target']['host'])->toBe('10.44.0.8')
-        ->and($inputs['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.7');
+        ->and($inputs['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.7')
+        ->and($inputs['intent']['agent_url'])->toBe(app(AgentDelivery::class)->artifacts()['linux-x86_64']['url'])
+        ->and($inputs['intent']['agent_sha256'])->toBe(app(AgentDelivery::class)->artifacts()['linux-x86_64']['sha256']);
     expect(app(DirectOperation::class)->usesNativeTerminal($op))->toBeTrue();
     $this->getJson('/api/v1/direct-operations/'.$op->id.'/private-material?run_id=878a384f-8b8a-4066-bd17-dcad8eac3e86')->assertStatus(422);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $op->kind, 'worker' => 'obsolete'])->assertNotFound();
@@ -409,4 +412,19 @@ it('records an exact successful terminal replacement on the same failed image at
     expect($build->fresh()->attempt)->toBe(1);
     expect(app(RecipeImageBuilds::class)->reconcile(retry: true)[0]->attempt)->toBe(1);
     $this->assertDatabaseCount('operations', 1);
+});
+
+it('refuses an image build when the release has no HTTPS agent build for the host', function (): void {
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/agent-delivery/manifest.json')), true, flags: JSON_THROW_ON_ERROR);
+    unset($fixture['artifacts']['linux-x86_64']['url']);
+    $manifest = tempnam(sys_get_temp_dir(), 'agent-delivery');
+    file_put_contents($manifest, json_encode($fixture, JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($manifest, sys_get_temp_dir()));
+
+    expect(fn () => app(RecipeImageBuilds::class)->reconcile())
+        ->toThrow(ResourceOperationException::class, 'The agent delivery has no HTTPS build for this host.');
+    expect(Operation::query()->where('kind', 'task_vm.image_build')->exists())->toBeFalse();
 });
