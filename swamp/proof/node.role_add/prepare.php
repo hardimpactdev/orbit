@@ -10,4 +10,8 @@ require $root.'/vendor/autoload.php';
 $app = require $root.'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 $node = Node::findOrFail((int) $argv[1]);
-$node->roles()->delete();
+if (isset($argv[2])) {
+    $node->roles()->where('role', $argv[2])->delete();
+} else {
+    $node->roles()->delete();
+}

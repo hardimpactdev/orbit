@@ -2,7 +2,7 @@
   "kind": "node.role_add.metrics",
   "workflow": "operation-node-role-add",
   "topology": "minimal",
-  "clean": true,
+  "clean": false,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "before_gateway": [
@@ -13,7 +13,8 @@
       "--",
       "php",
       "swamp/proof/node.role_add/prepare.php",
-      "${node.metrics}"
+      "${node.metrics}",
+      "metrics"
     ]
   ],
   "request": {

@@ -3,7 +3,6 @@ name: operation-node-role-add
 description: Apply role-owned resources from captured intent through Node 209. Node convergence owns the observer and CLI.
 vaults:
 - orbit-control-inputs
-- default
 queueTimeout: 30
 inputs:
   type: object
@@ -208,6 +207,7 @@ jobs:
     forEach:
       item: package
       in: ${{ inputs.intent.php_packages }}
+    concurrency: 1
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "role-add-php-download-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, url: '${{ self.package.url }}', path: '${{ self.package.path }}', checksum: '${{ "sha256:" + self.package.sha256 }}', owner: root,
@@ -580,6 +580,9 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-metrics-remove-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: absent}, inputs: {}}
+    dataOutputOverrides:
+    - specName: state
+      vaultName: orbit-control-inputs
   dependsOn:
   - {job: phase_33, condition: {type: succeeded}}
 - name: phase_35
@@ -612,9 +615,26 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-metrics-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running}, inputs: {}}
+    dataOutputOverrides:
+    - specName: state
+      vaultName: orbit-control-inputs
   dependsOn:
   - {job: phase_35, condition: {type: succeeded}}
 - name: phase_37
+  labels:
+    role: swamp
+  steps:
+  - name: Start Incus
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ !inputs.intent.runtime.ci_host }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-incus-service-"+string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{
+          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
+          }}', become: true, service: incus.service, ensure: running}, inputs: {}}
+  dependsOn:
+  - {job: phase_36, condition: {type: succeeded}}
+- name: phase_38
   labels:
     role: swamp
   steps:
@@ -624,8 +644,8 @@ jobs:
     guard: ${{ !inputs.intent.runtime.ci_host }}
     task: {type: behavior, behaviorType: '@nckrtl/node-role-resources', behaviorName: '${{ "role-add-ci-plan-"+string(inputs.node_id) }}', methodName: ci_host, inputs: {}}
   dependsOn:
-  - {job: phase_36, condition: {type: succeeded}}
-- name: phase_38
+  - {job: phase_37, condition: {type: succeeded}}
+- name: phase_39
   labels:
     role: swamp
   steps:
@@ -640,8 +660,8 @@ jobs:
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.read }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_37, condition: {type: succeeded}}
-- name: phase_39
+  - {job: phase_38, condition: {type: succeeded}}
+- name: phase_40
   labels:
     role: swamp
   steps:
@@ -659,8 +679,8 @@ jobs:
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.create }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_38, condition: {type: succeeded}}
-- name: phase_40
+  - {job: phase_39, condition: {type: succeeded}}
+- name: phase_41
   labels:
     role: swamp
   steps:
@@ -677,8 +697,8 @@ jobs:
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.argv }}', timeoutSec: 905, stdin: '${{ self.resource.stdin }}'}}
   dependsOn:
-  - {job: phase_39, condition: {type: succeeded}}
-- name: phase_41
+  - {job: phase_40, condition: {type: succeeded}}
+- name: phase_42
   labels:
     role: swamp
   steps:
@@ -693,8 +713,8 @@ jobs:
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.argv }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_40, condition: {type: succeeded}}
-- name: phase_42
+  - {job: phase_41, condition: {type: succeeded}}
+- name: phase_43
   labels:
     role: swamp
   steps:
@@ -704,8 +724,8 @@ jobs:
     guard: ${{ inputs.intent.runtime.analytics == null }}
     task: {type: behavior, behaviorType: '@nckrtl/node-role-resources', behaviorName: '${{ "role-add-clickhouse-plan-"+string(inputs.node_id) }}', methodName: clickhouse, inputs: {}}
   dependsOn:
-  - {job: phase_41, condition: {type: succeeded}}
-- name: phase_43
+  - {job: phase_42, condition: {type: succeeded}}
+- name: phase_44
   labels:
     role: swamp
   steps:
@@ -723,8 +743,8 @@ jobs:
           == null ? inputs.intent.ssh : inputs.intent.runtime.analytics.clickhouse_ssh).identity_file }}', become: true, path: '${{ self.directory }}', owner: root, group: root, mode: '0755',
         ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_42, condition: {type: succeeded}}
-- name: phase_44
+  - {job: phase_43, condition: {type: succeeded}}
+- name: phase_45
   labels:
     role: swamp
   steps:
@@ -742,8 +762,8 @@ jobs:
           : inputs.intent.runtime.analytics.clickhouse_ssh).identity_file }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: root, group: root,
         mode: '0644', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_43, condition: {type: succeeded}}
-- name: phase_45
+  - {job: phase_44, condition: {type: succeeded}}
+- name: phase_46
   labels:
     role: swamp
   steps:
@@ -758,8 +778,8 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.analytics.intent.installation.definition.image }}', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_44, condition: {type: succeeded}}
-- name: phase_46
+  - {job: phase_45, condition: {type: succeeded}}
+- name: phase_47
   labels:
     role: swamp
   steps:
@@ -776,8 +796,8 @@ jobs:
             inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {
               hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.initialization.argv }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_45, condition: {type: succeeded}}
-- name: phase_47
+  - {job: phase_46, condition: {type: succeeded}}
+- name: phase_48
   labels:
     role: swamp
   steps:
@@ -791,8 +811,8 @@ jobs:
     task: {type: workflow, workflowIdOrName: operation-process-create, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: process.create, intent: '${{
           self.analytics.intent }}', execution_secrets: {environment: '${{ inputs.intent.runtime.analytics == null ? {} : inputs.execution_secrets["analytics_environment"] }}'}}}
   dependsOn:
-  - {job: phase_46, condition: {type: succeeded}}
-- name: phase_48
+  - {job: phase_47, condition: {type: succeeded}}
+- name: phase_49
   labels:
     role: swamp
   steps:
@@ -808,8 +828,8 @@ jobs:
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","curl","--max-time","5","--retry","59","--retry-delay","1","--retry-connrefused","--silent","--show-error","--output","/dev/null"]
           + (self.probe.require_success ? ["--fail"] : []) + [self.probe.url] }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_47, condition: {type: succeeded}}
-- name: phase_49
+  - {job: phase_48, condition: {type: succeeded}}
+- name: phase_50
   labels:
     role: swamp
   steps:
@@ -824,10 +844,10 @@ jobs:
         sudo: true, argv: [timeout, '60', docker, exec, -i, orbit-metrics-grafana, grafana, cli, --homepath, /usr/share/grafana, admin, reset-admin-password, --password-from-stdin],
         stdin: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets[''metrics_password''].key) }}', timeoutSec: 70}}
   dependsOn:
-  - {job: phase_48, condition: {type: succeeded}}
+  - {job: phase_49, condition: {type: succeeded}}
 - name: swamp_runtime_job
   dependsOn:
-  - {job: phase_49, condition: {type: succeeded}}
+  - {job: phase_50, condition: {type: succeeded}}
   steps:
   - name: Apply Swamp identity
     writes: true
@@ -959,7 +979,7 @@ jobs:
       role: swamp
   labels:
     role: swamp
-- name: phase_50
+- name: phase_51
   labels:
     role: swamp
   steps:
@@ -978,7 +998,7 @@ jobs:
                   == self.leaf.node_id)[0].ssh.target.host_keys }}'}}]}}}
   dependsOn:
   - {job: Check Swamp runtime_job, condition: {type: succeeded}}
-- name: phase_51
+- name: phase_52
   labels:
     role: swamp
   steps:
@@ -993,8 +1013,8 @@ jobs:
           }}', intent: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys
             }}', connection: '${{ self.publication.connection }}', before: '${{ self.publication.before.php }}', after: '${{ self.publication.after.php }}', direction: forward}, execution_secrets: {}}}
   dependsOn:
-  - {job: phase_50, condition: {type: succeeded}}
-- name: phase_52
+  - {job: phase_51, condition: {type: succeeded}}
+- name: phase_53
   labels:
     role: swamp
   steps:
@@ -1009,8 +1029,8 @@ jobs:
         intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys
               }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy }}'}}, execution_secrets: {}}}
   dependsOn:
-  - {job: phase_51, condition: {type: succeeded}}
-- name: phase_53
+  - {job: phase_52, condition: {type: succeeded}}
+- name: phase_54
   labels:
     role: swamp
   steps:
@@ -1027,8 +1047,8 @@ jobs:
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.argv }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_52, condition: {type: succeeded}}
-- name: phase_54
+  - {job: phase_53, condition: {type: succeeded}}
+- name: phase_55
   labels:
     role: swamp
   steps:
@@ -1045,8 +1065,8 @@ jobs:
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.argv }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_53, condition: {type: succeeded}}
-- name: phase_55
+  - {job: phase_54, condition: {type: succeeded}}
+- name: phase_56
   labels:
     role: swamp
   steps:
@@ -1061,8 +1081,8 @@ jobs:
           node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before.dns
             }}', after: '${{ self.publication.after.dns }}', alternatives: []}, execution_secrets: {}}}
   dependsOn:
-  - {job: phase_54, condition: {type: succeeded}}
-- name: phase_56
+  - {job: phase_55, condition: {type: succeeded}}
+- name: phase_57
   labels:
     role: swamp
   steps:
@@ -1076,8 +1096,8 @@ jobs:
     task: {type: workflow, workflowIdOrName: metrics-exporter-node, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{
           inputs.kind }}', intent: '${{ self.exporter }}'}}
   dependsOn:
-  - {job: phase_55, condition: {type: succeeded}}
-- name: phase_57
+  - {job: phase_56, condition: {type: succeeded}}
+- name: phase_58
   labels:
     role: swamp
   steps:
@@ -1091,8 +1111,8 @@ jobs:
     task: {type: workflow, workflowIdOrName: metrics-exporter-allows, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{
           inputs.kind }}', intent: '${{ self.exporter }}'}}
   dependsOn:
-  - {job: phase_56, condition: {type: succeeded}}
-- name: phase_58
+  - {job: phase_57, condition: {type: succeeded}}
+- name: phase_59
   labels:
     role: swamp
   steps:
@@ -1108,8 +1128,8 @@ jobs:
               }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","curl","--max-time","5","--retry","59","--retry-delay","1","--retry-connrefused","--fail","--silent","--show-error","--output","/dev/null",self.metrics.url]
           }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_57, condition: {type: succeeded}}
-- name: phase_59
+  - {job: phase_58, condition: {type: succeeded}}
+- name: phase_60
   labels:
     role: swamp
   steps:
@@ -1124,8 +1144,8 @@ jobs:
         nodeHost: '${{ self.metrics.ssh.target.host }}', nodeUser: '${{ self.metrics.ssh.target.user }}', nodePort: '${{ self.metrics.ssh.target.port }}', nodeIdentityFile: '${{ self.metrics.ssh.identity_file
           }}', become: true, path: '${{ self.metrics.candidate }}', content: '${{ self.metrics.configuration }}', owner: root, group: root, mode: '0644', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_58, condition: {type: succeeded}}
-- name: phase_60
+  - {job: phase_59, condition: {type: succeeded}}
+- name: phase_61
   labels:
     role: swamp
   steps:
@@ -1141,8 +1161,8 @@ jobs:
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', docker, exec, -i, orbit-metrics-prometheus, /bin/promtool, check, config, /dev/stdin], timeoutSec: 905,
         stdin: '${{ self.metrics.configuration }}'}}
   dependsOn:
-  - {job: phase_59, condition: {type: succeeded}}
-- name: phase_61
+  - {job: phase_60, condition: {type: succeeded}}
+- name: phase_62
   labels:
     role: swamp
   steps:
@@ -1158,8 +1178,8 @@ jobs:
         hosts: [{name: target, address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true,
         argv: '${{ ["timeout","60","cp","--",self.metrics.candidate,"/etc/orbit/metrics/prometheus.yml"] }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_60, condition: {type: succeeded}}
-- name: phase_62
+  - {job: phase_61, condition: {type: succeeded}}
+- name: phase_63
   labels:
     role: swamp
   steps:
@@ -1175,8 +1195,8 @@ jobs:
         hosts: [{name: target, address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true,
         argv: [timeout, '60', docker, kill, --signal, HUP, orbit-metrics-prometheus], timeoutSec: 905}}
   dependsOn:
-  - {job: phase_61, condition: {type: succeeded}}
-- name: phase_63
+  - {job: phase_62, condition: {type: succeeded}}
+- name: phase_64
   labels:
     role: swamp
   steps:
@@ -1192,8 +1212,8 @@ jobs:
         argv: [timeout, '60', curl, --max-time, '5', --retry, '59', --retry-delay, '1', --retry-connrefused, --fail, --silent, --show-error, --output, /dev/null, 'http://127.0.0.1:9090/-/ready'],
         timeoutSec: 905}}
   dependsOn:
-  - {job: phase_62, condition: {type: succeeded}}
-- name: phase_64
+  - {job: phase_63, condition: {type: succeeded}}
+- name: phase_65
   labels:
     role: swamp
   steps:
@@ -1207,8 +1227,8 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, service: '${{ self.service.name }}', ensure: running, enabled: true}, inputs: {}}
   dependsOn:
-  - {job: phase_63, condition: {type: succeeded}}
-- name: phase_65
+  - {job: phase_64, condition: {type: succeeded}}
+- name: phase_66
   labels:
     role: swamp
   steps:
@@ -1222,8 +1242,21 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, service: '${{ self.unit.name }}', enabled: true, ensure: running}, inputs: {}}
   dependsOn:
-  - {job: phase_64, condition: {type: succeeded}}
-- name: phase_66
+  - {job: phase_65, condition: {type: succeeded}}
+- name: phase_67
+  labels:
+    role: swamp
+  steps:
+  - name: Check Incus
+    labels:
+      role: swamp
+    guard: ${{ !inputs.intent.runtime.ci_host }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-incus-service-check-"+string(inputs.node_id) }}', methodName: check, globalArgs: {nodeHost: '${{
+          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
+          }}', become: true, service: incus.service, ensure: running}, inputs: {}}
+  dependsOn:
+  - {job: phase_66, condition: {type: succeeded}}
+- name: phase_68
   labels:
     role: swamp
   steps:
@@ -1237,8 +1270,8 @@ jobs:
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, groupname: '${{ self.group.name }}', gid: '${{ self.group.gid }}', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_65, condition: {type: succeeded}}
-- name: phase_67
+  - {job: phase_67, condition: {type: succeeded}}
+- name: phase_69
   labels:
     role: swamp
   steps:
@@ -1253,8 +1286,8 @@ jobs:
           inputs.intent.ssh.identity_file }}', become: true, username: '${{ self.user.name }}', uid: '${{ self.user.uid }}', gid: '${{ self.user.gid }}', shell: /usr/sbin/nologin, ensure: present},
       inputs: {}}
   dependsOn:
-  - {job: phase_66, condition: {type: succeeded}}
-- name: phase_68
+  - {job: phase_68, condition: {type: succeeded}}
+- name: phase_70
   labels:
     role: swamp
   steps:
@@ -1265,8 +1298,8 @@ jobs:
           inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
           }}', become: true, packages: '${{ inputs.intent.packages }}', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_67, condition: {type: succeeded}}
-- name: phase_69
+  - {job: phase_69, condition: {type: succeeded}}
+- name: phase_71
   labels:
     role: swamp
   steps:
@@ -1281,8 +1314,8 @@ jobs:
           inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.directory.path }}', owner: '${{ self.directory.owner }}', group: '${{ self.directory.group }}', mode: '${{
           self.directory.mode }}', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_68, condition: {type: succeeded}}
-- name: phase_70
+  - {job: phase_70, condition: {type: succeeded}}
+- name: phase_72
   labels:
     role: swamp
   steps:
@@ -1297,8 +1330,8 @@ jobs:
           }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group }}', mode: '${{ self.file.mode
           }}', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_69, condition: {type: succeeded}}
-- name: phase_71
+  - {job: phase_71, condition: {type: succeeded}}
+- name: phase_73
   labels:
     role: swamp
   steps:
@@ -1313,8 +1346,8 @@ jobs:
           inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.directory.path }}', owner: '${{ self.directory.owner }}', group: '${{ self.directory.group }}', mode: '${{
           self.directory.mode }}', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_70, condition: {type: succeeded}}
-- name: phase_72
+  - {job: phase_72, condition: {type: succeeded}}
+- name: phase_74
   labels:
     role: swamp
   steps:
@@ -1329,8 +1362,8 @@ jobs:
           inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group
           }}', mode: '${{ self.file.mode }}', ensure: '${{ "ensure" in self.file ? self.file.ensure : "present" }}'}, inputs: {}}
   dependsOn:
-  - {job: phase_71, condition: {type: succeeded}}
-- name: phase_73
+  - {job: phase_73, condition: {type: succeeded}}
+- name: phase_75
   labels:
     role: swamp
   steps:
@@ -1345,8 +1378,8 @@ jobs:
           inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.file.path }}', content: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets[self.file.secret].key)
           }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group }}', mode: '0600', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_72, condition: {type: succeeded}}
-- name: phase_74
+  - {job: phase_74, condition: {type: succeeded}}
+- name: phase_76
   labels:
     role: swamp
   steps:
@@ -1359,7 +1392,7 @@ jobs:
         hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
         argv: '${{ ["timeout","60","dpkg-query","--show","--showformat=${Package}\t${Version}\n"] + inputs.intent.php_packages.map(p,p.name) }}', timeoutSec: 70}}
   dependsOn:
-  - {job: phase_73, condition: {type: succeeded}}
+  - {job: phase_75, condition: {type: succeeded}}
 - name: role
   labels:
     role: swamp
@@ -1370,14 +1403,14 @@ jobs:
     task: {type: assert, expr: 'inputs.intent.services.size() == steps.filter(k, k.startsWith("Check role services-") && steps[k].status == "succeeded").size() && inputs.intent.services.all(service,
         data.latest("role-add-service-check-"+string(inputs.node_id)+"-"+string(service.index), inputs.intent.ssh.target.host).attributes.status == "compliant") && (inputs.intent.bun
         == null || steps["Check Bun version-0"].outputs.stdout.trim() == inputs.intent.bun.version) && steps.filter(k,k.startsWith("Check Gateway DNS policy-")).all(k,steps[k].outputs.status
-        == "compliant") && (!inputs.intent.runtime.ci_host || steps["Plan CI resources"].outputs.checks.all(c,steps["Check CI resources-"+string(c.index)].outputs.stdout.trim() == c.expected))
-        && steps.filter(k,k.startsWith("Check runtime groups-") || k.startsWith("Check runtime users-") || k.startsWith("Check runtime units-") || k.startsWith("Check Metrics containers-")).all(k,steps[k].outputs.status
-        == "compliant") && steps["Check prerequisites"].outputs.status == "compliant" && steps.filter(k,k.startsWith("Check role folders-") || k.startsWith("Check role files-") || k.startsWith("Check
-        runtime folders-") || k.startsWith("Check runtime files-") || k.startsWith("Check private files-")).all(k,steps[k].outputs.status == "compliant") && (inputs.intent.php_packages.size()
-        == 0 || inputs.intent.php_packages.all(p,steps["Check PHP package versions"].outputs.stdout.split("\n").exists(line,line == p.name+"\t"+p.version)))', severity: high, message: Every
-        role service must match its admitted state.}
+        == "compliant") && (!inputs.intent.runtime.ci_host || steps["Check Incus"].outputs.status == "compliant") && (!inputs.intent.runtime.ci_host || steps["Plan CI resources"].outputs.checks.all(c,steps["Check
+        CI resources-"+string(c.index)].outputs.stdout.trim() == c.expected)) && steps.filter(k,k.startsWith("Check runtime groups-") || k.startsWith("Check runtime users-") || k.startsWith("Check
+        runtime units-") || k.startsWith("Check Metrics containers-")).all(k,steps[k].outputs.status == "compliant") && steps["Check prerequisites"].outputs.status == "compliant" &&
+        steps.filter(k,k.startsWith("Check role folders-") || k.startsWith("Check role files-") || k.startsWith("Check runtime folders-") || k.startsWith("Check runtime files-") || k.startsWith("Check
+        private files-")).all(k,steps[k].outputs.status == "compliant") && (inputs.intent.php_packages.size() == 0 || inputs.intent.php_packages.all(p,steps["Check PHP package versions"].outputs.stdout.split("\n").exists(line,line
+        == p.name+"\t"+p.version)))', severity: high, message: Every role service must match its admitted state.}
   dependsOn:
-  - {job: phase_74, condition: {type: succeeded}}
+  - {job: phase_76, condition: {type: succeeded}}
 - name: cleanup
   dependsOn:
   - {job: phase_0, condition: {type: completed}}
@@ -1430,11 +1463,11 @@ jobs:
   - {job: phase_47, condition: {type: completed}}
   - {job: phase_48, condition: {type: completed}}
   - {job: phase_49, condition: {type: completed}}
+  - {job: phase_50, condition: {type: completed}}
   - {job: swamp_runtime_job, condition: {type: completed}}
   - {job: swamp_workers_job, condition: {type: completed}}
   - {job: swamp_check_job, condition: {type: completed}}
   - {job: Check Swamp runtime_job, condition: {type: completed}}
-  - {job: phase_50, condition: {type: completed}}
   - {job: phase_51, condition: {type: completed}}
   - {job: phase_52, condition: {type: completed}}
   - {job: phase_53, condition: {type: completed}}
@@ -1459,6 +1492,8 @@ jobs:
   - {job: phase_72, condition: {type: completed}}
   - {job: phase_73, condition: {type: completed}}
   - {job: phase_74, condition: {type: completed}}
+  - {job: phase_75, condition: {type: completed}}
+  - {job: phase_76, condition: {type: completed}}
   - {job: role, condition: {type: completed}}
   steps:
   - name: Remove Prometheus staging
@@ -1480,6 +1515,9 @@ jobs:
     forEach:
       item: initialization
       in: '${{ inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize }}'
+    dataOutputOverrides:
+    - specName: state
+      vaultName: orbit-control-inputs
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-analytics-init-cleanup-"+string(inputs.node_id) + "-"+string(self._index) }}',
       methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.initialization.name }}', image: '${{ self.initialization.image }}', ensure: absent},

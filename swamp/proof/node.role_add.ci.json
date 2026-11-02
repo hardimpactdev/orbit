@@ -2,7 +2,7 @@
   "kind": "node.role_add.ci",
   "workflow": "operation-node-role-add",
   "topology": "minimal",
-  "clean": true,
+  "clean": false,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "before_gateway": [
@@ -13,12 +13,13 @@
       "--",
       "php",
       "swamp/proof/node.role_add/prepare.php",
-      "${node.metrics}"
+      "${node.peer}",
+      "ci-runner"
     ]
   ],
   "request": {
     "method": "POST",
-    "path": "nodes/${node.metrics}/roles",
+    "path": "nodes/${node.peer}/roles",
     "body": {
       "role": "ci-runner"
     }
@@ -36,7 +37,7 @@
   ],
   "parity": [
     "swamp/proof/node.role_add/parity.py",
-    "metrics",
+    "peer",
     "ci-runner"
   ]
 }

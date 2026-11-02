@@ -2,7 +2,7 @@
   "kind": "node.role_add.websocket",
   "workflow": "operation-node-role-add",
   "topology": "minimal",
-  "clean": true,
+  "clean": false,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "before_gateway": [
@@ -13,7 +13,15 @@
       "--",
       "php",
       "swamp/proof/node.role_add/prepare.php",
-      "${node.metrics}"
+      "${node.metrics}",
+      "websocket"
+    ],
+    [
+      "incus",
+      "file",
+      "push",
+      "/home/orbit/.orbit/ca/root.pem",
+      "metrics/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
     ]
   ],
   "request": {
@@ -38,5 +46,14 @@
     "swamp/proof/node.role_add/parity.py",
     "metrics",
     "websocket"
-  ]
+  ],
+  "before_node": {
+    "metrics": [
+      [
+        "sh",
+        "-c",
+        "sed -i '/gateway\\.orbit/d' /etc/hosts; printf '10.231.0.1 gateway.orbit\\n' >> /etc/hosts; update-ca-certificates"
+      ]
+    ]
+  }
 }

@@ -17,6 +17,18 @@ def check(ok, message):
         sys.exit('parity: ' + message)
 
 
+if operation['status'] != 'succeeded' and role == 'websocket':
+    state = run('systemctl', 'show', 'orbit-websocket.service', '-p', 'Result', '-p', 'ExecMainStatus')
+    sys.stderr.write(state.stdout)
+    web = operation['input']['native_role']['runtime']['websocket']
+    private = run('cat', web['release'] + '/.env').stdout
+    logs = run('journalctl', '-u', 'orbit-websocket.service', '--no-pager', '-n', '20').stdout
+    for line in private.splitlines():
+        if line and not line.startswith('#') and '=' in line:
+            value = line.split('=', 1)[1]
+            if len(value) >= 6:
+                logs = logs.replace(value, '[REDACTED]')
+    sys.stderr.write(logs)
 check(operation['status'] == 'succeeded', 'native role-add succeeded')
 check(operation['result'].get('role_proven') is True, 'the Gateway records the native end check')
 intent = operation['input']['native_role']

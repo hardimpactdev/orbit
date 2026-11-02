@@ -43,7 +43,7 @@ final readonly class NativeNodeRoleAddInput
         $services = [...($caddy ? ['caddy.service'] : []),
             ...(in_array('docker.io', $packages, true) ? ['docker.service'] : [])];
         if ($role === RoleName::CiRunner) {
-            $services[] = 'incus.service';
+            $services[] = 'incus.socket';
         }
 
         $footprint = ValidatedData::object($snapshot['footprint']);

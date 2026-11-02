@@ -160,6 +160,9 @@ sequenceDiagram
   SW->>N: Check Metrics containers<br/>cfgmgmt docker_container
   end
   opt role plan needs this action
+  SW->>N: Start Incus<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
   SW->>SW: Plan CI resources<br/>public resource plan
   end
   opt role plan needs this action
@@ -274,6 +277,9 @@ sequenceDiagram
   end
   opt role plan needs this action
   SW->>N: Check runtime units<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Check Incus<br/>cfgmgmt systemd
   end
   opt role plan needs this action
   SW->>N: Check runtime groups<br/>cfgmgmt group
