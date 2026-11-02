@@ -15,8 +15,20 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
+    def authorized(self):
+        if (
+            self.headers.get("Authorization")
+            == "Bearer synthetic-pi-test-token-with-at-least-32-characters"
+        ):
+            return True
+        self.send_response(401)
+        self.end_headers()
+        return False
+
     def do_POST(self):
         global turn
+        if not self.authorized():
+            return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         calls.append(self.path)
         if self.path.endswith("/messages"):
@@ -44,6 +56,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b'{"accepted":true}')
 
     def do_GET(self):
+        if not self.authorized():
+            return
         self.send_response(200)
         self.end_headers()
         self.wfile.write(
