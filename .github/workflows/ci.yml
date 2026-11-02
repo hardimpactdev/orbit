@@ -158,6 +158,12 @@ jobs:
           done
           bun install --cwd apps/web --frozen-lockfile
           APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= bin/build-api
+      # bin/remote-programs-check runs when a remote program or the recipe under apps/gateway/resources changes.
+      - name: Install the pinned remote program linters
+        run: |
+          python3 -m venv "$RUNNER_TEMP/program-tools"
+          "$RUNNER_TEMP/program-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1
+          echo "$RUNNER_TEMP/program-tools/bin" >> "$GITHUB_PATH"
       - name: Run the Project check
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
