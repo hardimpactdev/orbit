@@ -7,7 +7,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },

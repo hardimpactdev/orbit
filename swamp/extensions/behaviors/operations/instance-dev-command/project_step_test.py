@@ -63,6 +63,29 @@ class ProjectStep(unittest.TestCase):
                 for start in range(len(secret) - 8 + 1):
                     self.assertNotIn(secret[start:start + 8], tail, f'offset {offset}')
 
+    def test_overlapping_secrets_redact_the_union_without_short_remainders(self):
+        for first, second, output in [
+            ('abcdefgh', 'fghijk', 'abcdefghijk'),
+            ('abcde', 'defghijk', 'abcdefghijk'),
+            ('aba', 'bab', 'ababa'),
+            ('abc', 'def', 'abcdef'),
+        ]:
+            with self.subTest(first=first, second=second), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder)
+                (path / '.env').write_text(f'FIRST_SECRET="{first}"\nSECOND_SECRET="{second}"\n')
+                result = self.run_step(path, f'printf "%s\\nsafe diagnostic\\n" "{output}" >&2; exit 7')
+                self.assertEqual(result.returncode, 7)
+                self.assertEqual(json.loads(result.stdout), {
+                    'exitCode': 7, 'stderr': '[REDACTED]\nsafe diagnostic\n',
+                })
+
+    def test_redaction_marker_is_not_reprocessed_for_a_one_letter_secret(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            (path / '.env').write_text('APP_KEY="R"\n')
+            result = self.run_step(path, 'printf "R\\nsafe diagnostic\\n" >&2; exit 7')
+            self.assertEqual(json.loads(result.stdout)['stderr'], '[REDACTED]\nsafe diagnostic\n')
+
     def test_many_fragment_lines_are_dropped_and_the_tail_stays_bounded(self):
         secret = 'unique-private-fragment-0123456789'
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:

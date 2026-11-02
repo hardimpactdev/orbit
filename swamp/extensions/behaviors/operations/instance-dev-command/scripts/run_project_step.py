@@ -105,12 +105,25 @@ process.stderr.close()
 code = process.wait()
 
 
-pattern = re.compile(b'|'.join(re.escape(secret) for secret in secrets)) if secrets else None
-
-
 def redact(text: bytes) -> bytes:
-    # One pass never reprocesses a marker that another match inserted.
-    return pattern.sub(b'[REDACTED]', text) if pattern else text
+    # Mark every occurrence, including matches inside or overlapping another match.
+    # The mask merges covered ranges without retaining an unbounded list of matches.
+    covered = bytearray(len(text))
+    for secret in secrets:
+        start = text.find(secret)
+        while start >= 0:
+            covered[start:start + len(secret)] = b'\1' * len(secret)
+            start = text.find(secret, start + 1)
+    pieces: list[bytes] = []
+    cursor = 0
+    while (start := covered.find(b'\1', cursor)) >= 0:
+        end = covered.find(b'\0', start)
+        if end < 0:
+            end = len(text)
+        pieces.extend((text[cursor:start], b'[REDACTED]'))
+        cursor = end
+    pieces.append(text[cursor:])
+    return b''.join(pieces)
 
 
 def holds_fragment(line: bytes) -> bool:
@@ -124,9 +137,10 @@ def holds_fragment(line: bytes) -> bool:
 
 
 # Normalize invalid UTF-8 BEFORE matching: dropping bytes afterwards could join harmless pieces into a secret.
-# Redact the whole capture first, then cut the tail, then redact the tail again for matches split at its start.
+# Redact the whole capture once. The tail discards its partial first line below;
+# reprocessing it would match known values inside generated redaction markers.
 whole = redact(bytes(captured).decode('utf-8', errors='replace').encode())
-tail = redact(whole[-TAIL_LIMIT:])
+tail = whole[-TAIL_LIMIT:]
 lines = tail.split(b'\n')
 if truncated or len(whole) > TAIL_LIMIT:
     lines = lines[1:]  # the first line may start mid-secret
