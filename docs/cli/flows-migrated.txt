@@ -33,3 +33,5 @@ tool.update
 tool.remove
 database_server.close
 vault.sync
+node.remove
+node.role_remove

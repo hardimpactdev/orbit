@@ -225,3 +225,11 @@ Before receipt notes, Orbit grows by 609 lines: Gateway +15, root documentation 
 Cancellation operation 8068 destroyed task VM 320 and completed provider cleanup. The first status read failed during a Gateway release; a read confirmed success and the proof tool recorded destruction without admitting another cancellation. Both receipts contain the destruction record. The rebased workflows, behaviors and proof files match the proven source.
 
 The first pushed CI failed the registry boot check: the intended policy included native credential-field grants, but the Vault kind declarations omitted them. The follow-up declares that same already-proven grant for setup and sync. It changes no rendered authority or workflow execution. The registry entrypoint and all 60 Vault and grant-policy tests pass. The skill now requires both Orbit's `bin/check-operation-kinds` and native `serve check-config`: they check different contracts.
+
+## L22-NODE-REMOVAL: native resources replace shipped scripts
+
+Node and role removal use official cfgmgmt behaviors and SSH argv. Eleven shipped scripts and their manifest are deleted. Publication withdrawal precedes runtime cleanup, Metrics membership changes precede exporter removal, and the control key goes last. Native checks confirm removal. User data, unrelated keys and unrelated firewall rules stay. No script gap remains.
+
+Four passing minimal@10 receipts cover online Node removal, offline consent, WebSocket role removal and a drained CI host. Operation p95 and maximum are 42.89 seconds across four samples, with queueTimeout 30 seconds. The receipt index is `swamp/proof/receipts/node-removal.json`. Task VM 322 is destroyed. The WebSocket fixture uses a disposable sleep service; no production data is involved.
+
+Proof failures found a nested Caddy field and sparse Route block metadata passed to the strict full-publication contract. Admission now captures that contract directly. Routed UFW deletion uses one shared argv builder with `route` before `delete`. Fixture checks follow the recorded keys and role firewall catalog, and offline parity removes its test SSH block. Eleven native removal tests and 25 Gateway removal tests pass.
