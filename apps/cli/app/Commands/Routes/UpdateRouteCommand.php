@@ -45,6 +45,7 @@ final class UpdateRouteCommand extends RouteCommand
         if ($connector === null) {
             return self::FAILURE;
         }
+
         return $this->startRouteOperation($repository, $connector, new UpdateRouteRequest($id, domain: $domain, publication: $publication, webRoot: $webRoot, clearWebRoot: $webRootProvided && $webRoot === null), 'Update Route');
     }
 }

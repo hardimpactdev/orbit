@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Commands\Clusters;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
-use App\Commands\Concerns\FollowsOperations;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class UnsetClusterRouterCommand extends ClusterCommand
