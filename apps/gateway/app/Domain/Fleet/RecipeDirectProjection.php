@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
