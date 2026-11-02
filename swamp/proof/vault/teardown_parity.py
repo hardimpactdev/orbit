@@ -16,7 +16,7 @@ assert not list(Path('/tmp').glob('orbit-vault-teardown.*'))
 state = Path('/home/orbit/.orbit/swamp-proof')
 up = json.loads((state / 'up.json').read_text())
 source = Path(__file__).resolve().parents[3]
-reply = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', str(source / 'tools/swamp-proof-guest/gateway.php'), 'request'], input=json.dumps({'method': 'GET', 'path': 'vault', 'caller': up['operator_address'], 'seconds': 30}), text=True, capture_output=True, check=True, timeout=60, cwd=source / 'apps/gateway')
+reply = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', str(source / 'tools/swamp-proof-guest/gateway.php'), 'request'], input=json.dumps({'method': 'GET', 'path': 'vault', 'caller': up['operator_address'], 'seconds': 30, 'operation': False, 'key': 'proof-' + os.environ['PROOF_RUN'] + '-vault-status'}), text=True, capture_output=True, check=True, timeout=60, cwd=source / 'apps/gateway')
 status = json.loads(reply.stdout.strip().splitlines()[-1])['response']['data']
 assert status['configured'] is False and status['items'] == 0
 config = json.loads((state / 'vault-setup/account.json').read_text())
