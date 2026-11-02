@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4 + 2 (DNS hold) + round 2 (route.destroy cleanup runs in the workflow; the Gateway deletes the record on the terminal result), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Remove a Route).
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 + round 2 (route.destroy cleanup runs in the workflow; the Gateway deletes the record on the terminal result), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Remove a Route).
   %% status: draft
   %% command: route:destroy
   autonumber
@@ -67,10 +67,6 @@ sequenceDiagram
   %%> - checks the loaded catalog and a DNS reply
   %%> Order:
   %%> - DNS goes first, so the name stops resolving before its site leaves
-  Note over V: open: Nick decides<br/>DNS hold · native-dns-takeover
-  %%> Open:
-  %%> - DNS publication is under the DNS hold; Nick decides (rule 9)
-  %%> - until then, the run skips this step and the grace wait
   Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
   %%> Why:
   %%> - resolvers that honor the TTL stop asking for the name before its site leaves
