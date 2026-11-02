@@ -85,11 +85,7 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 
 User creation takes `username`, `password`, optional `read_only`, and optional `replication` (strict booleans, default false). List returns the recorded `replication` attribute without passwords. Create returns an Operation and updates the recorded user after its command succeeds. [Logical replication users](/reference/database-servers#logical-replication-users) defines PostgreSQL grants, WAL requirements, and publication ownership.
 
-`database_user.create` starts its Swamp workflow directly after admission. The Node worker runs the fixed native SQL action with sudo. PostgreSQL WAL and foreign-role checks run there before changing the login. Those failures appear on the Operation; request validation still rejects unsupported drivers, unsafe names and a username already owned by a connection.
-
-SQL and passwords stay in the encrypted database intent and reach only the shared run-bound private-material callback. Public intent contains the driver, container, username, admitted digest and validation flags. The Gateway projects the recorded user after native success, without a command relay or execution receipt. This direct-only kind has no polled fallback; rollback reverts its cutover PR.
-
-Native resume retries a failed terminal projection from its saved safe outcome without repeating successful SQL. PostgreSQL checks and creates a new login in one atomic block. If SQL succeeds before its native outcome is saved, replay accepts only the exact password verifier recorded in that intent; it refuses a foreign role. Grant replacement can then run again. This recovery does not promise exactly-once SQL.
+`database_user.create` starts its Swamp run right after admission. [Add a user](/reference/database-servers#add-a-user) describes its SQL batch and the user's login check. Request validation rejects unsupported drivers, unsafe names, and a username that a connection already owns.
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
