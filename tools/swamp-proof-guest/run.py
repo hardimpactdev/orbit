@@ -155,6 +155,10 @@ def main():
             # An Operation request binds its target, such as the Process it created, or one field of its input.
             field = request.get('bind_input')
             context[request['bind'] + '.id'] = reply['operation']['input'][field] if field else reply['operation']['target_id']
+    # Gateway records a request needs that only the prepared records make possible, such as a Route that failed after
+    # its sites were published; run as root on the task VM from the staged checkout, like before_gateway.
+    for argv in fixture.get('after_prepare', []):
+        run([str(arg) for arg in bind(argv, context)], cwd=SOURCE, timeout=900)
     for argv in fixture.get('before_target', []):
         on_target(up['target']['key'], bind(argv, context))
     request = bind(fixture['request'], context)
