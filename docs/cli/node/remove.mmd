@@ -1,7 +1,6 @@
 sequenceDiagram
-  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4, single-swamp-node (per-Node workers retired), agent-observer-swamp-acts. docs/reference/node-provisioning.md#remove-a-node.
-  %% Tightened: flow-tighten 2026-11-02, rules 8, 22 (Metrics target dropped first; cfgmgmt firewall/absent/authorized_key; Q-WGHUB hub file + wg syncconf).
-  %% status: draft
+  %% Rule 22: official cfgmgmt resources and SSH argv; Gateway captures intent and projects native completion.
+  %% status: reviewed
   %% command: node:remove
   %% kind: node.remove
   autonumber
@@ -13,145 +12,96 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Node 12<br/>reached over ssh
-  participant P as Fleet Nodes<br/>vpn hub · Metrics
-  CLI->>GW: node:remove 12<br/>--force · --offline
-  %%> Command:
-  %%> - `orbit node:remove 12 --force`
-  %%> - syntax: `<node> [--force] [--offline] [--idempotency-key=KEY] [--json]`
-  %%> Input:
-  %%> - the Node, by numeric id
-  %%> - `--force` confirms without a prompt and consents to shedding Node 12's roles; required without a terminal and with `--json`
-  %%> - `--offline` also allows removal when Node 12 can't be reached
-  %%> What it does:
-  %%> - removes Node 12 from Orbit and hands the machine back, reachable over public SSH
-  %%> - keeps user data, package managers and unrelated SSH keys on the machine
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Check guards, record<br/>Node 12 removing · task #6202
-  %%> Requirements:
-  %%> - your Node has an access grant to Node 12
-  %%> - Node 12 has no Instances, Database servers, Schedules, active Routes or operator firewall rules
-  %%> - Node 12 is not your own Node, the Gateway Node, the `vpn` Node or the Swamp Node 209
-  %%> - a task VM host has no task VMs and no task VM host setting; a task VM guest is removed by its own lifecycle
-  %%> - no other change runs for Node 12; the Gateway holds one lock per Node and one for the hub
-  %%> Builds:
-  %%> - the role removal steps for each role, the public SSH rule, and the list of Orbit files and units on Node 12
-  %%> - the participants: the hub, the DNS catalog, the Metrics Node and the Cluster Router, with their addresses and SSH host keys
-  %%> Result:
-  %%> - Node 12 marked `removing`, so hub and DNS renders leave it out
-  %%> - task #6202 recorded with the full intent
-  GW->>SW: Start run, full intent<br/>operation-node-remove
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - Node 12's addresses and SSH host keys, its managed user and its Orbit SSH block
-  %%> - the role removal steps, the files to remove, and each participant's change
-  %%> - the `offline` flag; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task #6202
-  %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  opt a Metrics Node exists
-    SW->>P: Drop the Metrics target<br/>validate, reload Prometheus
-    %%> Why first:
-    %%> - unpublish before removing: Prometheus stops scraping Node 12 before its exporters go, as `metrics:exporter:disable` does
-    %%> What it does:
-    %%> - removes Node 12 from the Prometheus configuration and validates it with `promtool`
-    %%> - reloads Prometheus while it runs; no restart
+  participant N as Target Node<br/>reached over ssh
+  participant P as Fleet Nodes<br/>hub · DNS
+  CLI->>GW: node:remove 12<br/>--force
+  %%> Input: the Node and explicit removal consent. Role removal also takes a role and optional purge consent.
+  Note over GW: Admit removal intent<br/>mark the record removing
+  %%> Requirements: no attached resources or active role operation; the Gateway, VPN and Swamp guards apply.
+  %%> Builds: pinned SSH targets, complete publication changes and exact managed resource paths.
+  GW->>SW: Start the removal run<br/>full public intent
+  GW-->>CLI: 202 Accepted<br/>operation id
+  opt admitted resources exist
+    SW->>N: Log in to departing Node
+    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
   end
-  SW->>N: Probe Node 12<br/>@swamp/ssh · new connection
-  %%> What it does:
-  %%> - opens a new SSH connection over WireGuard and runs `true`
-  %%> Why:
-  %%> - a shared connection can outlive a stopped sshd, so only a new one proves Node 12 is reachable
-  %%> Result:
-  %%> - an unreachable Node fails here with `node.unreachable`, unless `--offline` was given
-  alt Node 12 is reachable
-    opt Node 12 has roles
-      SW->>N: Shed each role<br/>shared role remove steps
-      %%> What it does:
-      %%> - runs the same steps as `node:role:remove` for each role, in the same run
-      %%> - removes the role's runtime, certificates and firewall rules; keeps its data and container volumes
-      %%> Not included:
-      %%> - a child task per role
-    end
-    SW->>N: Restore public SSH<br/>@swamp/cfgmgmt/firewall
-    %%> What it does:
-    %%> - adds the public SSH recovery rule while the tunnel still works
-    %%> - checks that SSH answers on the public address
-    %%> Why:
-    %%> - without it, the machine is reachable only through its provider console once the peer goes
-    %%> macOS:
-    %%> - skipped; Orbit never managed the Mac's firewall
-    SW->>N: Remove the Node agent<br/>@swamp/cfgmgmt · absent
-    %%> What it does:
-    %%> - stops and disables `orbit-agent`, node-exporter, cAdvisor and the PHP-FPM exporter
-    %%> - deletes their units and files in `/etc/orbit`, then reloads systemd once
-    %%> How:
-    %%> - official `@swamp/cfgmgmt/systemd` and `@swamp/cfgmgmt/file` behaviors over SSH from 209
-    %%> Not included:
-    %%> - per-Node worker stop, files and token revocation; per-Node workers are retired
-    SW->>N: Remove the Orbit keys<br/>authorized_key absent
-    %%> What it does:
-    %%> - removes each key Orbit recorded with `@swamp/cfgmgmt/authorized_key`, `ensure: absent`
-    %%> - keeps every other key, so operator access stays
-    %%> Why last:
-    %%> - after this step Swamp can no longer log in to Node 12
-  else --offline and unreachable
-    Note over SW: Leave Node 12 untouched<br/>retained_on_node
-    %%> What it does:
-    %%> - skips every step on Node 12
-    %%> Result:
-    %%> - the result lists what stays on the machine: the Node agent, its files and the Orbit SSH block
+    SW->>SW: Require offline consent
+  opt admitted resources exist
+    SW->>P: Publish Metrics membership
+    %%> Uses: `@swamp/cfgmgmt/file apply`. Each admitted resource has its own stable behavior name.
   end
-  SW->>P: Withdraw the hub peer<br/>file 0600 · wg syncconf
-  %%> How:
-  %%> - Swamp reaches the `vpn` Node over `@swamp/ssh` from 209; there is no worker on Node 1
-  %%> What it does:
-  %%> - writes the Gateway-rendered hub config without Node 12 with `@swamp/cfgmgmt/file`, then live-syncs it with `wg syncconf`; other peers keep their tunnels
-  %%> - removes Node 12's private names from the DNS catalog and reloads the listener
-  %%> Cluster:
-  %%> - a Cluster Router drops Node 12 from its LAN rules, through the shared firewall step
-  SW->>P: Check Node 12 is gone<br/>wg show · DNS · Prometheus
-  %%> What it does:
-  %%> - checks that the hub has no peer for Node 12, and that DNS and Prometheus no longer name it
-  %%> Why:
-  %%> - the removal only counts when the fleet shows it
-  alt every step passes
-    P-->>SW: Node 12 absent
-    %%> Returns:
-    %%> - `removed: true`, with `roles_shed` and `retained_on_node`
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event and reads the run's outputs; Swamp never calls the Gateway
-    Note over GW: Delete Node 12 records<br/>task succeeded
-    %%> Result:
-    %%> - Node 12, its role assignments, access grants and SSH host key pins are deleted
-    %%> - task #6202 succeeds and lists `roles_shed` and `retained_on_node`
-  else a step fails
-    N--xSW: exit ≠ 0
-    %%> When:
-    %%> - a role removal, the public SSH check, a file removal or a participant change fails, or the budget ends
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code, and which steps finished
-    Note over GW: Keep Node 12, mark failed<br/>task failed · rerun is safe
-    %%> Result:
-    %%> - Node 12 stays, marked failed at that step, with its records
-    %%> - task #6202 fails
-    %%> On the Node:
-    %%> - finished steps stay; there is no rollback
-    %%> - public SSH is restored before anything else goes, so the machine stays reachable
-    %%> Retry:
-    %%> - run the same `node:remove` again after fixing the cause; finished steps find nothing left to remove
+  opt admitted resources exist
+    SW->>P: Reload Metrics membership
+    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
   end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #6202
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
-    GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
+  opt admitted resources exist
+    SW->>N: Remove Node roles
   end
+  opt admitted resources exist
+    SW->>N: Keep public SSH access
+    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Disable the services
+    %%> Uses: `@swamp/cfgmgmt/systemd apply`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Stop activating services
+    %%> Uses: `@swamp/cfgmgmt/exec apply`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Remove managed files
+    %%> Uses: `@swamp/cfgmgmt/file apply`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Remove service config
+    %%> Uses: `@swamp/cfgmgmt/directory apply`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Remove the containers
+    %%> Uses: `@swamp/cfgmgmt/docker_container apply`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Reload unit catalogue
+    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Withdraw firewall rules
+    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>P: Remove hub peer
+  end
+  opt admitted resources exist
+    SW->>P: Remove router ingress
+    %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>P: Refresh peer DNS
+  end
+  opt admitted resources exist
+    SW->>P: Withdraw Node DNS
+  end
+  opt admitted resources exist
+    SW->>N: Check removed files
+    %%> Uses: `@swamp/cfgmgmt/file check`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Check removed directories
+    %%> Uses: `@swamp/cfgmgmt/directory check`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Revoke management keys
+    %%> Uses: `@swamp/cfgmgmt/authorized_key apply`. Each admitted resource has its own stable behavior name.
+  end
+  opt admitted resources exist
+    SW->>N: Revoke control key
+    %%> Uses: `@swamp/cfgmgmt/authorized_key apply`. Each admitted resource has its own stable behavior name.
+    %%> The behavior reads back using its existing connection. No target connection follows key removal.
+  end
+    SW->>SW: Confirm Node removal
+  SW-->>GW: Native terminal state
+  Note over GW: Record completed removal
+  %%> Result: remove records only after the native end check succeeds. A failed run keeps failed intent for a rerun; completed effects stay applied.
+  %%> On the Node: preserve packages, users, user data and unrelated keys. Retain runtime data unless role removal explicitly requests purge.
+  GW-->>CLI: Removal result<br/>or failed step

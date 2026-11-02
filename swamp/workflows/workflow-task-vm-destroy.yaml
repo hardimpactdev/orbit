@@ -294,8 +294,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         provider: ${{ steps.delete.outputs.result }}
-        removal_stdout: '${{ steps.plan.outputs.node_present ? steps.cleanup.outputs.result.stdout : ""
-          }}'
+        removal_complete: '${{ !steps.plan.outputs.node_present || steps.cleanup.status == "succeeded" }}'
         seed_stdout: '${{ inputs.intent.provider == "incus" ? steps["seed-after"].outputs.stdout : ""
           }}'
     dependsOn:

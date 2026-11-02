@@ -13,7 +13,6 @@ from native_harness import ROOT
 class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('operations/node-removal-command')
         source = ROOT / 'extensions/behaviors/operations/certificates/scripts/role_paths.py'
         target = self.repo / 'extensions/behaviors/operations/certificates/scripts/role_paths.py'
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -21,10 +20,10 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         self.state.write_text(json.dumps({'status':'Running','exists':True,'volumes':['tvm-42-topology-seed','tvm-43-topology-seed']}))
         for name in ('task-vm-destroy','operation-task-vm-destroy','node-role-remove','operation-node-remove'):
             value = yaml.safe_load((ROOT / ('workflows/workflow-' + name + '.yaml')).read_text())
-            if 'target' in value:
+            if 'labels' in value:
                 self.assertEqual(value.pop('labels'), {'role': 'swamp'})
             for job in value['jobs']:
-                if 'target' in job:
+                if 'labels' in job:
                     self.assertEqual(job.pop('labels'), {'role': 'swamp'})
                 for step in job['steps']:
                     self.assertEqual(step.pop('labels'), {'role': 'swamp'})
@@ -46,7 +45,7 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         model['jobs'][0]['steps'][0]['task']['inputs']['env'] = {'CALLS':str(self.calls)}
         (self.repo/'workflows/workflow-task-vm-model-revoke.yaml').write_text(yaml.safe_dump(model, sort_keys=False))
         role = {'schema_version':1,'node_id':142,'assignment_id':41,'role':'app-dev','ssh':None,
-                'publications':[], **{field:[] for field in ('stop_units','remove_units','remove_footprints','reload_units','stop_containers','remove_containers','ci_host','firewall','certificates')}}
+                'publications':[], **{field:[] for field in ('public_ssh','files','directories','commands','stop_units','remove_units','remove_footprints','reload_units','stop_containers','remove_containers','ci_host','firewall','certificates')}}
         removal = {'schema_version':1,'node_id':142,'name':'tvm-42','machine_deleted':True,'offline':True,'platform':'linux',
                    'probe':{'host':'192.0.2.142','port':22},'ssh':None,'roles':[role],'public_ssh':{'argv':[]},
                    'managed_keys':[], 'retained_on_node':[], 'preserved_on_node':[],

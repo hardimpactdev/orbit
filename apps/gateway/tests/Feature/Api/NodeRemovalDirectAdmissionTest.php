@@ -9,6 +9,7 @@ use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalProjection;
+use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
@@ -125,11 +126,11 @@ it('deletes Gateway records only after successful native terminal output', funct
     $snapshot = app(NodeRemovalPlan::class)->build($node, true);
     $run = '3a332a4f-0911-4e9d-9a18-09899b7b1864';
     $operation = Operation::query()->create(['kind' => 'node.remove', 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
-        'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => $run], 'input' => ['_node_removal' => $snapshot, 'intent' => []]]);
+        'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => $run], 'input' => ['_node_removal' => $snapshot, 'intent' => ['node_id' => $node->id, 'name' => $node->name, 'roles' => [], 'preserved_on_node' => [], 'retained_on_node' => []]]]);
 
     app(NodeRemovalProjection::class)->apply($operation, ['run_id' => $run, 'status' => $status,
         'started_at' => '2026-11-01T04:00:00.000Z', 'finished_at' => '2026-11-01T04:00:01.000Z',
-        'result' => $status === 'succeeded' ? ['schema_version' => 1, 'node_id' => $node->id, 'removed' => true] : [],
+        'result' => $status === 'succeeded' ? ['steps' => ['Confirm Node removal' => ['status' => 'succeeded']]] : [],
         'error_code' => $status === 'succeeded' ? null : 'node.remove_failed']);
 
     if ($status === 'succeeded') {
@@ -149,7 +150,7 @@ it('keeps a removal whose budget expired as a failed Node record', function (): 
     $snapshot = app(NodeRemovalPlan::class)->build($node, true);
     $operation = Operation::query()->create(['kind' => 'node.remove', 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
         'status' => 'running', 'sequence' => 1, 'started_at' => now(), 'state' => ['swamp_run_id' => '3a332a4f-0911-4e9d-9a18-09899b7b1864'],
-        'input' => ['_node_removal' => $snapshot, 'intent' => []]]);
+        'input' => ['_node_removal' => $snapshot, 'intent' => ['node_id' => $node->id, 'name' => $node->name, 'roles' => [], 'preserved_on_node' => [], 'retained_on_node' => []]]]);
     $this->travel(2100)->seconds();
 
     expect(app(ExpireOperationAction::class)->execute($operation)->error_code)->toBe('operation.timed_out')
@@ -185,7 +186,7 @@ it('captures Metrics teardown for the canonical surviving fleet including209', f
     $metrics->update(['wireguard_public_key' => null]);
     $capture = app(NodeRemovalInput::class)->capture(app(NodeRemovalPlan::class)->build($metrics, false));
     $role = $capture['intent']['roles'][0];
-    expect(array_column($role['remove_footprints'], 'input'))->toContain(['node_id' => 209, 'group' => 'exporter']);
+    expect(array_filter($role['files'], static fn (array $file): bool => $file['ssh']['target']['host'] === $control->wireguard_ip && $file['path'] === '/usr/local/bin/orbit-cadvisor'))->not->toBeEmpty();
     expect($role['certificates'])->not->toBeEmpty();
     expect($role['publications'])->not->toBeEmpty();
     expect(array_column($role['firewall'], 'input'))->not->toBeEmpty();
@@ -238,3 +239,39 @@ it('admits the TaskVM guest token boundary only from records and worker selectio
     expect($selected)->toBe($target === 'selected');
     expect($captured['intent']['task_vm_guest'])->toBe(str_starts_with($target, 'guest'));
 })->with(['ordinary', 'selected', 'host', 'guest', 'guest-selected-config']);
+
+it('runs standalone role removal with captured native intent and projects its end check', function (bool $succeeded): void {
+    FleetFixtures::bind();
+    config(['swamp.run_token' => 'fixture.fake']);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    $caller = $this->markAsGateway(FleetFixtures::node('native-role-remove-caller'));
+    $node = FleetFixtures::node('native-role-remove-target', [RoleName::Database]);
+    $role = $node->roles()->sole();
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson('/api/v1/nodes/'.$node->id.'/roles/database', ['force' => true])
+        ->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($socket->sent)->toHaveCount(1);
+    $start = $socket->sent[0]['payload'];
+    expect($start['workflowIdOrName'])->toBe('operation-node-role-remove-direct')
+        ->and($start['inputs']['intent']['assignment_id'])->toBe($role->id)
+        ->and($start['inputs']['intent']['ssh']['target']['host'])->toBe($node->wireguard_ip)
+        ->and((array) $start['inputs']['execution_secrets'])->toBeEmpty()
+        ->and($start['inputs']['offline'])->toBeFalse();
+
+    app(NodeRoleRemovalProjection::class)->apply($operation, [
+        'run_id' => $operation->state['swamp_run_id'], 'status' => $succeeded ? 'succeeded' : 'failed',
+        'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['steps' => ['Confirm role removal' => ['status' => $succeeded ? 'succeeded' : 'failed']]],
+        'error_code' => $succeeded ? null : 'node_role.remove_failed',
+    ]);
+    $this->assertModelExists($node);
+    if ($succeeded) {
+        $this->assertModelMissing($role);
+        expect($operation->fresh()->result['role_removed'])->toBeTrue();
+    } else {
+        expect($role->fresh()->status)->toBe(LifecycleStatus::Failed);
+    }
+})->with([true, false]);

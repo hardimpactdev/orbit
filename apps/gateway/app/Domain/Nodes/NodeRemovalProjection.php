@@ -7,6 +7,8 @@ namespace App\Domain\Nodes;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Routes\RouteExecutionProof;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +26,15 @@ final readonly class NodeRemovalProjection implements DirectOperationProjection,
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
-            $result = ValidatedData::object($data['result'] ?? []);
+            $raw = ValidatedData::object($data['result'] ?? []);
+            $intent = ValidatedData::object($operation->input['intent']);
+            $offline = NativeRunResult::stepStatus($raw, 'Log in to departing Node-0') !== 'succeeded';
+            $result = ($data['status'] ?? null) === 'succeeded' && NativeRunResult::stepStatus($raw, 'Confirm Node removal') === 'succeeded'
+                ? ['schema_version' => 1, 'node_id' => $intent['node_id'], 'name' => $intent['name'], 'removed' => true,
+                    'offline' => $offline, 'roles_shed' => array_column(RouteExecutionProof::objects($intent['roles']), 'role'),
+                    'retained_on_node' => [...ValidatedData::stringList($intent['preserved_on_node']), ...($offline ? ValidatedData::stringList($intent['retained_on_node']) : [])],
+                    'follow_up' => $offline ? 'Discard the Node or clear the reported retained artifacts when it is reachable.' : null]
+                : array_intersect_key($raw, array_flip(['error_code']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal) {
                 return $projected;

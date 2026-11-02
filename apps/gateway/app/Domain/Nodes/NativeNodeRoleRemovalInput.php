@@ -64,7 +64,7 @@ final readonly class NativeNodeRoleRemovalInput
      * @param  list<array<string,mixed>>  $before
      * @return array<string,mixed>
      */
-    public function capture(Node $node, NodeRole $assignment, array $before, bool $machineDeleted = false, ?NodeRole $desiredAssignment = null): array
+    public function capture(Node $node, NodeRole $assignment, array $before, bool $machineDeleted = false, ?NodeRole $desiredAssignment = null, bool $purgeData = false): array
     {
         if ($assignment->node_id !== $node->id || $assignment->status !== LifecycleStatus::Removing
             || ! app(RoleRegistry::class)->definition($assignment->role)->mutable) {
@@ -95,12 +95,13 @@ final readonly class NativeNodeRoleRemovalInput
             if ($assignment->role === RoleName::Analytics) {
                 $containers[] = ValidatedData::string($runtime['name']);
             } elseif ($assignment->role === RoleName::Metrics) {
-                $containers = ['orbit-metrics-prometheus', 'orbit-metrics-grafana'];
+                $containers = ['orbit-metrics-prometheus', 'orbit-metrics-grafana', 'orbit-metrics-prometheus-orbit-rollback', 'orbit-metrics-grafana-orbit-rollback'];
             } elseif ($assignment->role === RoleName::WebSocket) {
                 $units[] = 'orbit-websocket.service';
             }
         }
-        $footprints = [];
+        $files = [];
+        $directories = [];
         $reloads = $units === [] ? [] : [['ssh' => $ssh, 'input' => []]];
         if ($assignment->role === RoleName::Metrics) {
             $catalog = app(NodeFirewallRuleCatalog::class);
@@ -118,7 +119,9 @@ final readonly class NativeNodeRoleRemovalInput
                     foreach (['prometheus-node-exporter.service', 'orbit-cadvisor.service', 'orbit-fpm-exporter.service'] as $unit) {
                         $unitsForFleet[] = ['ssh' => $connection, 'input' => ['unit' => $unit]];
                     }
-                    $footprints[] = ['ssh' => $connection, 'input' => ['node_id' => $target->id, 'group' => 'exporter']];
+                    $paths = NodeRemovalResources::footprints($connection);
+                    $files = [...$files, ...$paths['files']];
+                    $directories = [...$directories, ...$paths['directories']];
                     $reloads[] = ['ssh' => $connection, 'input' => []];
                 }
                 $catalog = app(NodeFirewallRuleCatalog::class);
@@ -133,12 +136,46 @@ final readonly class NativeNodeRoleRemovalInput
                 }
             }
         }
+        $commands = [];
+        if ($assignment->role === RoleName::Gateway) {
+            $files[] = ['ssh' => $ssh, 'path' => '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf'];
+            $reloads[] = ['ssh' => $ssh];
+            $commands[] = ['ssh' => $ssh, 'command' => 'timeout 60 resolvectl revert orbit',
+                'only_if' => 'test ! -e /etc/wireguard/orbit.dns-link && ip link show dev orbit >/dev/null 2>&1'];
+        }
+        if ($assignment->role === RoleName::Metrics) {
+            foreach (['/etc/orbit/metrics/prometheus.yml', '/etc/orbit/metrics/grafana/grafana.ini',
+                '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml',
+                '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml',
+                '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json',
+                '/etc/orbit/metrics/grafana/dashboards/orbit-caddy.json', '/etc/orbit/metrics/grafana/dashboards/orbit-fpm.json',
+                '/etc/orbit/metrics/grafana/admin-password', '/etc/orbit/metrics/.orbit-owner'] as $path) {
+                $files[] = ['ssh' => $ssh, 'path' => $path];
+            }
+            if ($purgeData) {
+                foreach (['orbit-metrics-prometheus-data', 'orbit-metrics-grafana-data'] as $volume) {
+                    $commands[] = ['ssh' => $ssh, 'command' => 'timeout 60 docker volume rm -- '.$volume,
+                        'only_if' => 'docker volume inspect '.$volume.' >/dev/null 2>&1'];
+                }
+            }
+        }
+        if ($assignment->role === RoleName::WebSocket && $purgeData && is_array($runtime)) {
+            $path = ValidatedData::string($runtime['install_path']);
+            $files[] = ['ssh' => $ssh, 'path' => $path];
+            $directories[] = ['ssh' => $ssh, 'path' => $path.'.releases'];
+        }
+        if ($assignment->role === RoleName::CiRunner && $purgeData) {
+            foreach (['project' => 'orbit-ci', 'network' => 'orbitci0', 'network acl' => 'orbit-ci-egress'] as $type => $name) {
+                $commands[] = ['ssh' => $ssh, 'command' => 'timeout 60 incus '.$type.' delete '.$name,
+                    'only_if' => 'incus '.$type.' show '.$name.' >/dev/null 2>&1'];
+            }
+        }
         $certificates = [];
         foreach (RouteExecutionProof::objects(ValidatedData::object($plan['certificates'])['withdrawals']) as $entry) {
             if ($machineDeleted && $entry['node_id'] === $node->id) {
                 continue;
             }
-            $certificates[] = ['ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(ValidatedData::integer($entry['node_id']))), 'input' => ['scope' => $entry['scope']]];
+            $certificates[] = ['ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(ValidatedData::integer($entry['node_id']))), 'path' => '/etc/caddy/orbit-'.str_replace('role-', '', ValidatedData::string($entry['scope'])).'-cert-current'];
         }
         $publications = [];
         foreach ($this->publications($node, $assignment->role, $machineDeleted) as $after) {
@@ -154,14 +191,17 @@ final readonly class NativeNodeRoleRemovalInput
 
         $input = ['schema_version' => 1, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
             'role' => $assignment->role->value, 'ssh' => $ssh, 'publications' => $publications,
+            'public_ssh' => $node->roles()->whereKeyNot($assignment->id)->exists() ? [] : [['ssh' => $ssh,
+                'input' => ['argv' => ['ufw', ...array_slice(app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node)->arguments, 2)]]]],
             'stop_units' => [...$unitsForFleet, ...array_map(static fn (string $unit): array => ['ssh' => $ssh, 'input' => ['unit' => $unit]], $units)],
-            'remove_footprints' => $footprints, 'reload_units' => $reloads,
+            'files' => [...$files, ...array_map(static fn (string $unit): array => ['ssh' => $ssh, 'path' => '/etc/systemd/system/'.$unit], $units)],
+            'commands' => $commands, 'directories' => $directories, 'reload_units' => $reloads,
             'remove_units' => array_map(static fn (string $unit): array => ['ssh' => $ssh, 'input' => ['unit' => $unit]], $units),
             'stop_containers' => array_map(static fn (string $name): array => ['ssh' => $ssh, 'input' => ['name' => $name, 'action' => 'stop']], $containers),
             'remove_containers' => array_map(static fn (string $name): array => ['ssh' => $ssh, 'input' => ['name' => $name, 'action' => 'rm']], $containers),
             'firewall' => $firewall, 'certificates' => $certificates,
             'ci_host' => $assignment->role === RoleName::CiRunner ? [['ssh' => $ssh, 'input' => []]] : []];
-        foreach (['stop_units', 'remove_footprints', 'reload_units', 'remove_units', 'stop_containers', 'remove_containers', 'firewall', 'ci_host'] as $field) {
+        foreach (['public_ssh', 'stop_units', 'files', 'directories', 'commands', 'reload_units', 'remove_units', 'stop_containers', 'remove_containers', 'firewall', 'ci_host'] as $field) {
             $input[$field] = array_values(array_filter($input[$field], static fn (array $action): bool => $action['ssh'] !== null));
         }
 

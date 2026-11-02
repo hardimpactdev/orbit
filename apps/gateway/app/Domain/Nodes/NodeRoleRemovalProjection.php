@@ -14,6 +14,7 @@ use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketRegistry;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -27,9 +28,7 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
 {
     public function input(Operation $operation): array
     {
-        $snapshot = ValidatedData::object($operation->input['_role_remove']);
-
-        return [...$snapshot, ...$this->publicInput($operation, ValidatedData::integer($operation->node_id))];
+        return ['intent' => $operation->input['intent'], 'execution_secrets' => [], 'offline' => false];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -47,15 +46,14 @@ final readonly class NodeRoleRemovalProjection implements DirectOperationProject
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
-            $result = ValidatedData::object($data['result'] ?? []);
+            $raw = ValidatedData::object($data['result'] ?? []);
+            $snapshot = ValidatedData::object($operation->input['_role_remove']);
+            $result = ($data['status'] ?? null) === 'succeeded' && NativeRunResult::stepStatus($raw, 'Confirm role removal') === 'succeeded'
+                ? ['node_id' => $snapshot['node_id'], 'assignment_id' => $snapshot['assignment_id'], 'role' => $snapshot['role'], 'role_removed' => true, 'offline' => false]
+                : array_intersect_key($raw, array_flip(['error_code', 'failed_step']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal) {
                 return $projected;
-            }
-            $snapshot = ValidatedData::object($operation->input['_role_remove']);
-            if (isset($result['publication_phase'])) {
-                $phase = ValidatedData::object($result['publication_phase']);
-                app(NodeRolePublicationState::class)->record(ValidatedData::object($snapshot['certificates']), ValidatedData::string($phase['phase']), ValidatedData::integer($phase['node_id']));
             }
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             if (! $status->terminal()) {

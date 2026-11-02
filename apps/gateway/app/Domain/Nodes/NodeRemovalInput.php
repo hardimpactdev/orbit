@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Actions\Nodes\AdmitNodeWireGuardHubOperationAction;
 use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRoutePublicationInput;
@@ -85,14 +86,16 @@ final readonly class NodeRemovalInput
             foreach (Node::query()->with('roles')->whereKeyNot($node->id)->where('status', LifecycleStatus::Active)->get() as $member) {
                 if ($policy->manages($member)) {
                     $peers[] = ['ssh' => $ssh->forNode($member), 'dns_server' => $policy->server($member),
-                        'public_key' => $member->wireguard_public_key, 'domains' => $afterDomains];
+                        'public_key' => $member->wireguard_public_key, 'domains' => $afterDomains,
+                        'server' => $policy->server($member),
+                        'dns_hook' => NodeNetworkConvergeInput::dnsHook($policy->server($member), $afterDomains)];
                 }
             }
         }
         $hub = [];
         if ($node->wireguard_public_key !== null) {
             $owner = Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Vpn))->sole();
-            $hub[] = ['ssh' => $ssh->forNode($owner), 'input' => ['public_key' => $node->wireguard_public_key]];
+            $hub[] = app(AdmitNodeWireGuardHubOperationAction::class)->intent($owner);
         }
         $routerRules = [];
         foreach ($routerBefore as $id => $prior) {
@@ -108,7 +111,9 @@ final readonly class NodeRemovalInput
         $retained = app(NodeSideResidue::class)->describe(array_values($roles->map(static fn ($role): RoleName => $role->role)->all()), nodeLeavesFleet: true);
         $participants = [209, $node->id, ...array_column($dns, 'node_id')];
         foreach ([...$peers, ...$hub, ...$routerRules] as $row) {
-            $participants[] = Node::query()->where('wireguard_ip', $row['ssh']['target']['host'])->sole()->id;
+            $connection = ValidatedData::object($row['ssh']);
+            $remote = ValidatedData::object($connection['target']);
+            $participants[] = Node::query()->where('wireguard_ip', ValidatedData::string($remote['host']))->sole()->id;
         }
 
         $metrics = app(MetricsFleetCapture::class)->captureRetiring($node);
@@ -135,9 +140,10 @@ final readonly class NodeRemovalInput
                 'probe' => ['host' => $node->wireguard_ip, 'port' => 22], 'ssh' => $target,
                 'roles' => $roleIntents, 'dns' => $dns, 'peers' => $peers, 'hub' => $hub, 'router_rules' => $routerRules,
                 'public_ssh' => ['argv' => ['ufw', ...array_slice($publicSsh->arguments, 2)]],
-                'managed_keys' => array_values(array_unique([$ssh->identity()['public_key'], trim(app(SshKeyProvider::class)->publicKey())])),
+                'managed_keys' => array_values(array_unique([trim(app(SshKeyProvider::class)->publicKey()), $ssh->identity()['public_key']])),
                 'preserved_on_node' => ['User account, installed packages, application data, role release data and volumes, and host-side WireGuard configuration'],
                 'retained_on_node' => [...$retained, 'Swamp worker unit, credentials and cache', 'Orbit management SSH keys'],
-                'metrics_files' => $metricsFiles, 'metrics_reload' => $metricsReload]];
+                'metrics_files' => $metricsFiles, 'metrics_reload' => $metricsReload,
+                'footprints' => $target === null ? ['files' => [], 'directories' => []] : NodeRemovalResources::footprints($target, observer: true)]];
     }
 }

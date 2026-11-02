@@ -1,6 +1,5 @@
 import {
   roleRemovalJobs,
-  roleRemovalWorkflow,
 } from "./role_removal_workflow.ts";
 import { roleMetricsJobs } from "./role_metrics_workflow.ts";
 import { roleCertificateJobs } from "./role_certificates_workflow.ts";
@@ -330,7 +329,6 @@ export function generatedFootprintWorkflows() {
   return [
     footprintWorkflow(true),
     footprintWorkflow(true, true),
-    roleRemovalWorkflow(),
   ].map((workflow) => {
     return {
       path: new URL(

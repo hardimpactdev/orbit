@@ -1,0 +1,47 @@
+{
+  "workflow": "operation-node-role-remove-direct",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [],
+  "phases": [
+    {
+      "name": "Confirm role removal",
+      "job": "remove",
+      "step": "Confirm role removal",
+      "budget_seconds": 20
+    }
+  ],
+  "kind": "node.role_remove",
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' '{\"roles\":{\"${node.target}\":[\"websocket\"]}}' | php tools/swamp-proof-guest/gateway.php fixture"
+    ]
+  ],
+  "before_node": {
+    "target": [
+      [
+        "sh",
+        "-c",
+        "mkdir -p /srv/proof-retained /etc/caddy/orbit-websocket-cert-current; echo keep > /srv/proof-retained/user-data; printf \"[Unit]\\nDescription=Proof WebSocket removal\\n[Service]\\nExecStart=/usr/bin/sleep infinity\\n[Install]\\nWantedBy=multi-user.target\\n\" > /etc/systemd/system/orbit-websocket.service; systemctl daemon-reload; systemctl enable --now orbit-websocket.service; ufw allow 6001/tcp comment orbit:role:websocket"
+      ]
+    ]
+  },
+  "request": {
+    "method": "DELETE",
+    "path": "nodes/${node.target}/roles/websocket",
+    "body": {
+      "force": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "parity": [
+    "swamp/proof/node.remove/parity.py",
+    "role"
+  ]
+}

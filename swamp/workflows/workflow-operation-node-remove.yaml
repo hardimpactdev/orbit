@@ -2,8 +2,12 @@
 # Generated from node-removal-command/workflows.ts
 id: 450e57df-e174-4ad6-bba5-306c2581d919
 name: operation-node-remove
-description: 'Public input, native209 actions and typed terminal output; no Gateway callbacks.'
-vaults: []
+description: 'Official resource removal and single-command SSH actions; retained user data, native end check.'
+vaults:
+  - orbit-control-inputs
+queueTimeout: 30
+labels: &ref_0
+  role: swamp
 inputs:
   type: object
   properties:
@@ -27,396 +31,182 @@ inputs:
     - intent
     - execution_secrets
   additionalProperties: false
-labels:
-  role: swamp
-concurrency: 1
 jobs:
-  - name: phase_start
+  - name: phase_0
     steps:
-      - name: start
-        labels: &ref_0 {role: swamp}
-        task: {type: assert, expr: inputs.intent.node_id != 209, message: The control Node cannot remove itself, severity: high}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: assets
+      - name: Log in to departing Node
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "assets-node-removal-command" }}', methodName: paths, inputs: {}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: probe
-        labels: *ref_0
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || (has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted) }}'
-        dependsOn: [{step: assets, condition: &ref_14 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "node-remove-probe" }}', methodName: execute, inputs: {run: python3 "$PROBE_SCRIPT" "$PROBE_HOST" "$PROBE_PORT", env: {PROBE_SCRIPT: '${{ steps.assets.outputs.probe }}', PROBE_HOST: '${{ inputs.intent.probe.host }}', PROBE_PORT: '${{ string(inputs.intent.probe.port) }}'}}}
-      - name: preflight
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "preflight-node-removal-command" }}', methodName: preflight, inputs: {stdout: '${{ has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted ? ''{"reachable":false}'' : steps.probe.outputs.stdout }}', offline: '${{ inputs.intent.offline }}', has_ssh: '${{ inputs.intent.ssh != null }}'}}
-        dependsOn: [{step: probe, condition: *ref_14}]
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_roles
+        forEach: {item: action, in: '${{ inputs.intent.ssh == null || inputs.intent.machine_deleted ? [] : [{"ssh":inputs.intent.ssh}] }}'}
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-log-in-to-departing-node-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-log-in-to-departing-node-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: false, argv: ['true'], timeoutSec: 10}}
+        allowFailure: true
+  - name: phase_1
     dependsOn:
-      - job: phase_start
+      - job: phase_0
         condition: {type: succeeded}
     steps:
-      - name: roles
+      - name: Require offline consent
         labels: *ref_0
-        concurrency: 1
-        forEach: {item: role, in: '${{ inputs.intent.roles }}'}
-        task: {type: workflow, workflowIdOrName: node-role-remove, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ self.role }}', execution_secrets: {}, offline: '${{ steps.preflight.outputs.offline }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_public_ssh_assets
+        task: {type: assert, expr: '"Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded" || inputs.intent.offline || inputs.intent.machine_deleted', message: node.removal_incomplete, severity: high}
+  - name: phase_2
     dependsOn:
-      - job: phase_roles
+      - job: phase_1
         condition: {type: succeeded}
     steps:
-      - name: public_ssh_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "public_ssh-assets-" + string(self._index) }}', methodName: read, inputs: {action: firewall, input: '${{ self.action.input }}'}}
-        forEach: &ref_1 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":(inputs.intent.public_ssh)}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: public_ssh
+      - name: Publish Metrics membership
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_1
-        dependsOn: [{step: public_ssh_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("public_ssh-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("public_ssh-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["public_ssh_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_worker_stop_assets
+        forEach: {item: action, in: '${{ inputs.intent.metrics_files }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ ("remove-file-publish-metrics-membership-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, path: '${{ self.action.input.path }}', ensure: present, content: '${{ self.action.input.content }}', mode: '0644', owner: root, group: root}, inputs: {}}
+  - name: phase_3
     dependsOn:
-      - job: phase_public_ssh_assets
+      - job: phase_2
         condition: {type: succeeded}
     steps:
-      - name: worker_stop_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "worker_stop-assets-" + string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_2 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"unit":"orbit-node-worker.service"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: worker_stop
+      - name: Reload Metrics membership
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_2
-        dependsOn: [{step: worker_stop_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("worker_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("worker_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["worker_stop_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_guest_worker_stop_assets
+        forEach: {item: action, in: '${{ inputs.intent.metrics_reload }}'}
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-reload-metrics-membership-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-reload-metrics-membership-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', docker, kill, '--signal', HUP, orbit-metrics-prometheus]}}
+  - name: phase_4
     dependsOn:
-      - job: phase_worker_stop_assets
+      - job: phase_3
         condition: {type: succeeded}
     steps:
-      - name: guest_worker_stop_assets
+      - name: Remove Node roles
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "guest_worker_stop-assets-" + string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_3 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"unit":"orbit-swamp-worker.service"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: guest_worker_stop
-        labels: *ref_0
-        writes: true
-        concurrency: 1
-        forEach: *ref_3
-        dependsOn: [{step: guest_worker_stop_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("guest_worker_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("guest_worker_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["guest_worker_stop_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_observer_stop_assets
+        forEach: {item: publication, in: '${{ inputs.intent.roles }}'}
+        task: {type: workflow, workflowIdOrName: node-role-remove, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ self.publication }}', execution_secrets: {}, offline: '${{ !("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") }}'}}
+  - name: phase_5
     dependsOn:
-      - job: phase_guest_worker_stop_assets
+      - job: phase_4
         condition: {type: succeeded}
     steps:
-      - name: observer_stop_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "observer_stop-assets-" + string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_4 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"unit":"orbit-agent.service"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: observer_stop
+      - name: Keep public SSH access
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_4
-        dependsOn: [{step: observer_stop_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("observer_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("observer_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["observer_stop_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_node_exporter_stop_assets
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":inputs.intent.public_ssh}] : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-keep-public-ssh-access-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-keep-public-ssh-access-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"] + self.action.input.argv }}'}}
+  - name: phase_6
     dependsOn:
-      - job: phase_observer_stop_assets
+      - job: phase_5
         condition: {type: succeeded}
     steps:
-      - name: node_exporter_stop_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "node_exporter_stop-assets-" + string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_5 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"unit":"prometheus-node-exporter.service"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: node_exporter_stop
+      - name: Disable the services
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_5
-        dependsOn: [{step: node_exporter_stop_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("node_exporter_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("node_exporter_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["node_exporter_stop_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_cadvisor_stop_assets
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? ["orbit-agent.service","prometheus-node-exporter.service","orbit-cadvisor.service","orbit-fpm-exporter.service"].map(u,{"ssh":inputs.intent.ssh,"input":{"unit":u} }) : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("remove-systemd-disable-the-services-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, service: '${{ self.action.input.unit }}', ensure: stopped, enabled: false}, inputs: {}}
+  - name: phase_7
     dependsOn:
-      - job: phase_node_exporter_stop_assets
+      - job: phase_6
         condition: {type: succeeded}
     steps:
-      - name: cadvisor_stop_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "cadvisor_stop-assets-" + string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_6 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"unit":"orbit-cadvisor.service"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: cadvisor_stop
+      - name: Stop activating services
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_6
-        dependsOn: [{step: cadvisor_stop_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("cadvisor_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("cadvisor_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["cadvisor_stop_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_fpm_exporter_stop_assets
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? ["orbit-agent.service","prometheus-node-exporter.service","orbit-cadvisor.service","orbit-fpm-exporter.service"].map(u,{"ssh":inputs.intent.ssh,"input":{"unit":u} }) : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ ("remove-exec-stop-activating-services-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, command: '${{ "timeout 60 systemctl stop " + self.action.input.unit }}', onlyIf: '${{ "test $(systemctl show --property=LoadState --value " + self.action.input.unit + ") = loaded" }}'}, inputs: {}}
+  - name: phase_8
     dependsOn:
-      - job: phase_cadvisor_stop_assets
+      - job: phase_7
         condition: {type: succeeded}
     steps:
-      - name: fpm_exporter_stop_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "fpm_exporter_stop-assets-" + string(self._index) }}', methodName: read, inputs: {action: stop_unit, input: '${{ self.action.input }}'}}
-        forEach: &ref_7 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"unit":"orbit-fpm-exporter.service"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: fpm_exporter_stop
+      - name: Remove managed files
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_7
-        dependsOn: [{step: fpm_exporter_stop_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fpm_exporter_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("fpm_exporter_stop-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["fpm_exporter_stop_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_worker_files_assets
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? inputs.intent.footprints.files : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ ("remove-file-remove-managed-files-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, path: '${{ self.action.path }}', ensure: absent}, inputs: {}}
+      - name: Remove service config
+        labels: *ref_0
+        writes: true
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? inputs.intent.footprints.directories : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ ("remove-directory-remove-service-config-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, path: '${{ self.action.path }}', ensure: absent}, inputs: {}}
+      - name: Remove the containers
+        labels: *ref_0
+        dataOutputOverrides: [{specName: state, vaultName: orbit-control-inputs}]
+        writes: true
+        forEach: {item: action, in: '${{ [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ ("remove-docker_container-remove-the-containers-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, name: '${{ self.action.input.name }}', image: unused, ensure: absent}, inputs: {}}
+  - name: phase_9
     dependsOn:
-      - job: phase_fpm_exporter_stop_assets
+      - job: phase_8
         condition: {type: succeeded}
     steps:
-      - name: worker_files_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "worker_files-assets-" + string(self._index) }}', methodName: read, inputs: {action: remove_footprint, input: '${{ self.action.input }}'}}
-        forEach: &ref_8 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"node_id":inputs.intent.node_id,"group":"worker"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: worker_files
+      - name: Reload unit catalogue
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_8
-        dependsOn: [{step: worker_files_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("worker_files-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("worker_files-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["worker_files_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_observer_files_assets
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? [{"ssh": inputs.intent.ssh}] : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-reload-unit-catalogue-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-reload-unit-catalogue-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', systemctl, daemon-reload]}}
+  - name: phase_10
     dependsOn:
-      - job: phase_worker_files_assets
+      - job: phase_9
         condition: {type: succeeded}
     steps:
-      - name: observer_files_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "observer_files-assets-" + string(self._index) }}', methodName: read, inputs: {action: remove_footprint, input: '${{ self.action.input }}'}}
-        forEach: &ref_9 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"node_id":inputs.intent.node_id,"group":"observer"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: observer_files
+      - name: Withdraw firewall rules
         labels: *ref_0
         writes: true
-        concurrency: 1
-        forEach: *ref_9
-        dependsOn: [{step: observer_files_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("observer_files-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("observer_files-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["observer_files_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_exporter_files_assets
+        forEach: {item: action, in: '${{ [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-withdraw-firewall-rules-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-withdraw-firewall-rules-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"] + self.action.input.argv }}', okExitCodes: [0, 1]}}
+  - name: phase_11
     dependsOn:
-      - job: phase_observer_files_assets
+      - job: phase_10
         condition: {type: succeeded}
     steps:
-      - name: exporter_files_assets
+      - name: Remove hub peer
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "exporter_files-assets-" + string(self._index) }}', methodName: read, inputs: {action: remove_footprint, input: '${{ self.action.input }}'}}
-        forEach: &ref_10 {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({"node_id":inputs.intent.node_id,"group":"exporter"})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: exporter_files
-        labels: *ref_0
-        writes: true
-        concurrency: 1
-        forEach: *ref_10
-        dependsOn: [{step: exporter_files_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("exporter_files-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("exporter_files-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["exporter_files_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_reload_units
-    dependsOn:
-      - job: phase_exporter_files_assets
-        condition: {type: succeeded}
-    steps:
-      - name: reload_units
+        forEach: {item: publication, in: '${{ inputs.intent.hub }}'}
+        task: {type: workflow, workflowIdOrName: operation-node-wireguard-hub-converge, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.wireguard_hub_converge, intent: '${{ self.publication }}', execution_secrets: {}}}
+      - name: Remove router ingress
         labels: *ref_0
         writes: true
-        forEach: {item: action, in: '${{ (!steps.preflight.outputs.offline && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"input":({})}] : [] }}'}
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("node-remove-reload-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("node-remove-reload-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, daemon-reload]}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_worker_tokens
-    dependsOn:
-      - job: phase_reload_units
-        condition: {type: succeeded}
-    steps:
-      - name: worker_tokens
+        forEach: {item: action, in: '${{ inputs.intent.router_rules }}'}
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-remove-router-ingress-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-remove-router-ingress-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"] + self.action.input.argv }}', okExitCodes: [0, 1]}}
+      - name: Refresh peer DNS
         labels: *ref_0
-        writes: true
-        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "worker_tokens" }}', methodName: execute, inputs: {run: /home/orbit/.local/bin/swamp worker token list --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json, env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
-      - name: access_tokens
+        forEach: {item: publication, in: '${{ inputs.intent.peers }}'}
+        task: {type: workflow, workflowIdOrName: operation-fleet-peer-dns, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: fleet.peer_dns, intent: '${{ self.publication }}', execution_secrets: {}}}
+      - name: Withdraw Node DNS
         labels: *ref_0
-        writes: true
-        dependsOn: [{step: worker_tokens, condition: *ref_14}]
-        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "access_tokens" }}', methodName: execute, inputs: {run: /home/orbit/.local/bin/swamp access token list --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json, env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
-      - name: tokens
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "tokens-node-removal-command" }}', methodName: tokens, inputs: {node_id: '${{ inputs.intent.node_id }}', worker_stdout: '${{ steps.worker_tokens.outputs.stdout }}', server_stdout: '${{ steps.access_tokens.outputs.stdout }}'}}
-        dependsOn: [{step: access_tokens, condition: *ref_14}]
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
-  - name: phase_revoke_worker
-    dependsOn:
-      - job: phase_worker_tokens
-        condition: {type: succeeded}
-    steps:
-      - name: revoke_worker
-        labels: *ref_0
-        writes: true
-        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "revoke-worker-" + string(self._index) }}', methodName: execute, inputs: {run: '/home/orbit/.local/bin/swamp worker token revoke ''${{ self.token }}'' --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json', env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        forEach: {item: token, in: '${{ inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.worker }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
-  - name: phase_revoke_access
-    dependsOn:
-      - job: phase_revoke_worker
-        condition: {type: succeeded}
-    steps:
-      - name: revoke_access
-        labels: *ref_0
-        writes: true
-        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "revoke-access-" + string(self._index) }}', methodName: execute, inputs: {run: '/home/orbit/.local/bin/swamp access token revoke ''${{ self.token }}'' --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json', env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        forEach: {item: token, in: '${{ inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.server }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
-  - name: phase_keys_assets
-    dependsOn:
-      - job: phase_revoke_access
-        condition: {type: succeeded}
-    steps:
-      - name: keys_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "keys-assets-" + string(self._index) }}', methodName: read, inputs: {action: revoke_keys, input: '${{ self.action.input }}'}}
-        forEach: &ref_11 {item: action, in: '${{ !steps.preflight.outputs.offline ? [{"ssh":inputs.intent.ssh,"input":({"user":inputs.intent.ssh.target.user,"keys":inputs.intent.managed_keys})}] : [] }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: keys
-        labels: *ref_0
-        writes: true
-        concurrency: 1
-        forEach: *ref_11
-        dependsOn: [{step: keys_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("keys-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("keys-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: false, script: '${{ steps["keys_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_hub_assets
-    dependsOn:
-      - job: phase_keys_assets
-        condition: {type: succeeded}
-    steps:
-      - name: hub_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "hub-assets-" + string(self._index) }}', methodName: read, inputs: {action: hub_peer, input: '${{ self.action.input }}'}}
-        forEach: &ref_12 {item: action, in: '${{ inputs.intent.hub }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: hub
-        labels: *ref_0
-        writes: true
-        concurrency: 1
-        forEach: *ref_12
-        dependsOn: [{step: hub_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("hub-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("hub-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["hub_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_router_assets
-    dependsOn:
-      - job: phase_hub_assets
-        condition: {type: succeeded}
-    steps:
-      - name: router_assets
-        labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "router-assets-" + string(self._index) }}', methodName: read, inputs: {action: firewall, input: '${{ self.action.input }}'}}
-        forEach: &ref_13 {item: action, in: '${{ inputs.intent.router_rules }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: router
-        labels: *ref_0
-        writes: true
-        concurrency: 1
-        forEach: *ref_13
-        dependsOn: [{step: router_assets, condition: *ref_14}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("router-" + string(self.action.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("router-" + string(self.action.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}', transport: {hostKeys: '${{ self.action.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["router_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_peer_assets
-    dependsOn:
-      - job: phase_router_assets
-        condition: {type: succeeded}
-    steps:
-      - name: peer_assets
-        labels: *ref_0
-        forEach: {item: peer, in: '${{ inputs.intent.peers }}'}
-        task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: '${{ "peer-assets-" + string(self._index) }}', methodName: dns, inputs: {dns_server: '${{ self.peer.dns_server }}', public_key: '${{ self.peer.public_key }}', domains: '${{ self.peer.domains }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: peers
-        labels: *ref_0
-        writes: true
-        dependsOn: [{step: peer_assets, condition: *ref_14}]
-        forEach: {item: peer, in: '${{ inputs.intent.peers }}'}
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("peer-ssh-" + string(self.peer.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("peer-ssh-" + string(self.peer.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.peer.ssh.target.user }}', port: '${{ self.peer.ssh.target.port }}', identityFile: '${{ self.peer.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.peer.ssh.target.host }}', transport: {hostKeys: '${{ self.peer.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["peer_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_dns
-    dependsOn:
-      - job: phase_peer_assets
-        condition: {type: succeeded}
-    steps:
-      - name: dns
-        labels: *ref_0
-        concurrency: 1
         forEach: {item: publication, in: '${{ inputs.intent.dns }}'}
-        task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: {}, intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before }}', after: '${{ self.publication.after }}', alternatives: []}}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_metrics_assets
+        task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before }}', after: '${{ self.publication.after }}', alternatives: []}, execution_secrets: {}}}
+  - name: phase_12
     dependsOn:
-      - job: phase_dns
+      - job: phase_11
         condition: {type: succeeded}
     steps:
-      - name: metrics_assets
+      - name: Check removed files
         labels: *ref_0
-        forEach: {item: file, in: '${{ inputs.intent.metrics_files }}'}
-        task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: '${{ "metrics-assets-" + string(self._index) }}', methodName: read, inputs: {action: file, input: '${{ self.file.input }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: metrics
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? inputs.intent.footprints.files : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ ("remove-file-check-removed-files-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: check, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, path: '${{ self.action.path }}', ensure: absent}, inputs: {}}
+      - name: Check removed directories
         labels: *ref_0
-        writes: true
-        dependsOn: [{step: metrics_assets, condition: *ref_14}]
-        forEach: {item: file, in: '${{ inputs.intent.metrics_files }}'}
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("metrics-" + string(self.file.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("metrics-" + string(self.file.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.file.ssh.target.user }}', port: '${{ self.file.ssh.target.port }}', identityFile: '${{ self.file.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.file.ssh.target.host }}', transport: {hostKeys: '${{ self.file.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["metrics_assets-"+string(self._index)].outputs.script_body }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-  - name: phase_metrics_reload
+        forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? inputs.intent.footprints.directories : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ ("remove-directory-check-removed-directories-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: check, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, path: '${{ self.action.path }}', ensure: absent}, inputs: {}}
+  - name: phase_13
     dependsOn:
-      - job: phase_metrics_assets
+      - job: phase_12
         condition: {type: succeeded}
     steps:
-      - name: metrics_reload
+      - name: Revoke management keys
         labels: *ref_0
         writes: true
-        forEach: {item: owner, in: '${{ inputs.intent.metrics_reload }}'}
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("metrics-reload-" + string(self.owner.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("metrics-reload-" + string(self.owner.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.owner.ssh.target.user }}', port: '${{ self.owner.ssh.target.port }}', identityFile: '${{ self.owner.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.owner.ssh.target.host }}', transport: {hostKeys: '${{ self.owner.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/docker, kill, '--signal', HUP, orbit-metrics-prometheus]}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
+        forEach: {item: action, in: '${{ ("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") ? inputs.intent.managed_keys.filter(k,k != inputs.intent.managed_keys[size(inputs.intent.managed_keys)-1]).map(k,{"ssh":inputs.intent.ssh,"key":k}) : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/authorized_key', behaviorName: '${{ ("remove-authorized_key-revoke-management-keys-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, user: '${{ self.action.ssh.target.user }}', key: '${{ self.action.key }}', ensure: absent}, inputs: {}}
+  - name: phase_14
+    dependsOn:
+      - job: phase_13
+        condition: {type: succeeded}
+    steps:
+      - name: Revoke control key
+        labels: *ref_0
+        writes: true
+        forEach: {item: action, in: '${{ ("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") ? [{"ssh":inputs.intent.ssh,"key":inputs.intent.managed_keys[size(inputs.intent.managed_keys)-1]}] : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/authorized_key', behaviorName: '${{ ("remove-authorized_key-revoke-control-key-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, user: '${{ self.action.ssh.target.user }}', key: '${{ self.action.key }}', ensure: absent}, inputs: {}}
   - name: remove
     dependsOn:
-      - job: phase_metrics_reload
+      - job: phase_14
         condition: {type: succeeded}
     steps:
-      - name: prepare_result
+      - name: Confirm Node removal
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "prepare_result-node-removal-command" }}', methodName: result, inputs: {node_id: '${{ inputs.intent.node_id }}', name: '${{ inputs.intent.name }}', offline: '${{ steps.preflight.outputs.offline }}', roles_shed: '${{ inputs.intent.roles.map(role,role.role) }}', retained_on_node: '${{ inputs.intent.preserved_on_node + (steps.preflight.outputs.offline ? inputs.intent.retained_on_node : []) }}'}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
-      - name: result
-        labels: *ref_0
-        dependsOn: [{step: prepare_result, condition: *ref_14}]
-        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "node-remove-result" }}', methodName: execute, inputs: {run: printf '%s\n' "$RESULT", env: {RESULT: '${{ steps.prepare_result.outputs.result_json }}'}}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
+        task: {type: assert, expr: 'steps.filter(k,k.startsWith("Check removed files-")).all(k,steps[k].outputs.status == "compliant") && steps.filter(k,k.startsWith("Check removed directories-")).all(k,steps[k].outputs.status == "compliant") && steps.filter(k,k.startsWith("Remove router ingress-")).all(k,steps[k].outputs.exitCode == 0 || (steps[k].outputs.exitCode == 1 && (steps[k].outputs.stdout + steps[k].outputs.stderr).contains("Could not delete non-existent rule"))) && steps.filter(k,k.startsWith("Revoke management keys-") || k.startsWith("Revoke control key-")).all(k,steps[k].outputs.status in ["compliant","applied"] && !steps[k].outputs.current.keyPresent)', message: node.removal_incomplete, severity: high}

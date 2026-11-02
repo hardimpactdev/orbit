@@ -15,28 +15,6 @@ def removal(node_id=13):
 
 
 class RoleLifecycleNative(DirectRoleNative):
-    def test_remove_composes_the_shared_source_chain_without_a_child_run(self):
-        self.workflow_name='operation-node-role-remove-direct'
-        self.set_workflow()
-        self.state['operation']['kind']='node.role_remove'
-        self.state['operation']['input']=removal()
-        self.save();self.run_workflow()
-        state=self.read()
-        self.assertEqual(state['operation']['status'],'succeeded')
-        self.assertEqual(state['effects'],['source:13:'+stage for stage in ['public-ssh','runtime','ci-host','gateway-dns','firewall']])
-
-    def test_failed_metrics_fleet_never_starts_source_withdrawal(self):
-        self.workflow_name='operation-node-role-remove-direct';self.set_workflow()
-        self.state['operation']['kind']='node.role_remove';self.state['operation']['input']=removal()
-        self.state['operation']['input']['metrics_fleet']={'metrics_node_id':13,'metrics_address':'10.44.0.13','fleet':[{'node_id':13,'address':'10.44.0.13','agent_sha256':'a'*64,'worker':True,'selected':True,'caddy_managed':False,'fpm':False,'service':{'config':None},'pools':[]}]}
-        self.state['metrics_failure']='apply';self.save()
-        module=self.repo/'extensions/behaviors/operations/node/role_metrics.ts'
-        module.write_text('import {fixtureMetricsStage} from "./role_removal_native_fixture.ts";\n'+module.read_text().replace('roleMetrics(() => fixtureHttp);','roleMetrics(() => fixtureHttp,fixtureMetricsStage);'))
-        self.run_workflow(success=False);state=self.read()
-        self.assertEqual(state['operation']['status'],'failed')
-        self.assertEqual(state['operation']['result']['error_code'],'node_role.remove_failed')
-        self.assertFalse(any(str(event).startswith('source:') for event in state['effects']))
-
     def set_workflow(self):
         import json,subprocess
         source=Path(__file__).resolve().parents[4]/('workflows/workflow-'+self.workflow_name+'.yaml')

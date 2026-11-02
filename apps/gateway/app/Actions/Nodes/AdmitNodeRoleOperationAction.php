@@ -10,6 +10,7 @@ use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
+use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
@@ -148,8 +149,8 @@ final readonly class AdmitNodeRoleOperationAction
                     'reason' => 'swamp_self_removal', 'role' => $role->value,
                 ]);
             }
-            if (! app(ManagedNodeEligibility::class)->allows($node) || ! app(NodeRolePlacement::class)->allows($node)) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires its exact managed Node worker.', 422);
+            if (! app(ManagedNodeEligibility::class)->allows($node)) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires recorded SSH management.', 422);
             }
             $this->routes->assertRoleRemovable($node, $role);
             $assignment = $node->roles()->where('role', $role)->lockForUpdate()->firstOrFail();
@@ -163,9 +164,13 @@ final readonly class AdmitNodeRoleOperationAction
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
+            $native = app(NativeNodeRoleRemovalInput::class);
+            $before = $native->publications($node, $role);
             $assignment->claimRemoval();
+            $node->unsetRelation('roles');
             $snapshot = app(NodeRoleRemoveInput::class)->capture($node, $assignment, $purgeData, $offline, $deleted);
-            $this->bindRemoval($operation, $snapshot);
+            $intent = $native->capture($node, $assignment, $before, purgeData: $purgeData);
+            $this->bindRemoval($operation, $snapshot, $intent);
 
             return $operation;
         });
@@ -214,12 +219,14 @@ final readonly class AdmitNodeRoleOperationAction
         });
     }
 
-    /** @param array<string,mixed> $snapshot */
-    private function bindRemoval(Operation $operation, array $snapshot): void
+    /** @param array<string,mixed> $snapshot
+     * @param  array<string,mixed>  $intent
+     */
+    private function bindRemoval(Operation $operation, array $snapshot, array $intent): void
     {
         $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
         $owner = $metrics === null ? $operation->node_id : ValidatedData::integer($metrics['metrics_node_id']);
-        $this->store->change($operation, ['input' => [...$operation->input, '_role_remove' => $snapshot,
+        $this->store->change($operation, ['input' => [...$operation->input, '_role_remove' => $snapshot, 'intent' => $intent,
             'participant_node_ids' => array_values(array_unique([$operation->node_id,
                 ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
                 ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),

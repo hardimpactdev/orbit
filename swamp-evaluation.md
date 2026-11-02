@@ -37,3 +37,16 @@ These are open questions from the Tools pass-3 reconciliation. Evidence uses Swa
 | Remove repository pins | `apt_repository.apply(ensure=absent)` removes its source and signing key, but does not manage apt preferences. Could optional preferences belong to that resource? The separate signing-key removal was redundant and is gone. |
 
 Apt writes keep SSH argv because the official package resource cannot express `--no-remove` and the bounded dpkg lock wait. Homebrew keeps argv for its managed prefix, environment and bottle policy. Could those options fit the official resources? Installation on first use still uses the existing bootstrap boundary; it is not credited as fully rule 22 done.
+
+
+## Node removal candidates
+
+The removal family uses official cfgmgmt and direct SSH argv, with no shipped scripts. These operations remain separate native steps; no wrapper combines them.
+
+| Chart action | Native operations and candidate question |
+| --- | --- |
+| Stop and remove services | systemd apply, guarded exec stop, file/directory apply, daemon-reload. Could systemd converge activating units to stopped and support absent units in one operation? |
+| Remove role certificates | One rm argv handles the canonical current directory or symlink. Could an official absent resource handle both types? |
+| Withdraw firewall access | Exact UFW argv and a native assertion preserve comments, routed rules and destinations. Could firewall represent those fields and retain the full rule identity? |
+| Verify removal | Resource check methods and native assert. Could checks optionally fail on drift while retaining their state? |
+| Purge role data | Guarded official exec covers Docker volumes and ordered Incus project/network/ACL deletion. Could native resource behaviors cover these absent operations? |

@@ -55,7 +55,7 @@ export function destroyRevocation(raw: unknown, stdout: string) {
 export function destroyTerminal(
     raw: unknown,
     providerRaw: unknown,
-    removalStdout: string,
+    removalComplete: boolean,
     seedStdout: string,
 ) {
     const intent = Intent.parse(raw);
@@ -68,14 +68,25 @@ export function destroyTerminal(
         provider.provider !== intent.provider ||
         provider.action !== "delete" || !provider.absent || provider.running
     ) throw new Error("task_vm.destroy_incomplete");
-    const removal = intent.guest_node_id === null ? null : z.object({
-        node_id: Id,
-        removed: z.literal(true),
-        offline: z.literal(true),
-    }).passthrough().parse(JSON.parse(removalStdout));
-    if (removal !== null && removal.node_id !== intent.guest_node_id) {
+    if (intent.guest_node_id !== null && !removalComplete) {
         throw new Error("task_vm.destroy_incomplete");
     }
+    const node = intent.removal;
+    const removal = intent.guest_node_id === null ? null : {
+        schema_version: 1,
+        node_id: intent.guest_node_id,
+        name: node?.name,
+        removed: true,
+        offline: true,
+        roles_shed: z.array(z.object({ role: z.string() })).parse(node?.roles)
+            .map((role) => role.role),
+        retained_on_node: [
+            ...z.array(z.string()).parse(node?.preserved_on_node),
+            ...z.array(z.string()).parse(node?.retained_on_node),
+        ],
+        follow_up:
+            "Discard the Node or clear the reported retained artifacts when it is reachable.",
+    };
     return {
         result_json: JSON.stringify({
             task_vm_id: intent.task_vm_id,
@@ -211,14 +222,14 @@ export const behavior = {
             arguments: z.object({
                 intent: Intent,
                 provider: ProviderReceipt,
-                removal_stdout: z.string(),
+                removal_complete: z.boolean(),
                 seed_stdout: z.string(),
             }),
             async execute(
                 args: {
                     intent: unknown;
                     provider: unknown;
-                    removal_stdout: string;
+                    removal_complete: boolean;
                     seed_stdout: string;
                 },
                 ctx: Context,
@@ -231,7 +242,7 @@ export const behavior = {
                             destroyTerminal(
                                 args.intent,
                                 args.provider,
-                                args.removal_stdout,
+                                args.removal_complete,
                                 args.seed_stdout,
                             ),
                         ),

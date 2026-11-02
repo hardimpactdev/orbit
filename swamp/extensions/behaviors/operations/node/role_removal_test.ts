@@ -163,7 +163,7 @@ Deno.test("source chain publishes DNS before grace then Caddy before runtime and
     roleRemovalWorkflow().jobs.some((job) =>
       JSON.stringify(job).includes('"type":"workflow"')
     ),
-    false,
+    true,
   );
 });
 

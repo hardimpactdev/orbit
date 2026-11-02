@@ -31,7 +31,7 @@ return ['node.worker_known_hosts' => [
 ], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'remove', 'step' => 'result'],
+    'terminal_result' => ['job' => 'remove', 'step' => 'Confirm Node removal', 'native' => true],
 ], ...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
@@ -69,6 +69,7 @@ return ['node.worker_known_hosts' => [
     'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
 ], 'node.role_remove' => [
     'workflow' => 'operation-node-role-remove-direct',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'remove', 'step' => 'Confirm role removal', 'native' => true],
     'projection' => NodeRoleRemovalProjection::class,
-    'private_material' => ['metrics_runtime' => 'metrics.fleet_runtime'],
 ]];
