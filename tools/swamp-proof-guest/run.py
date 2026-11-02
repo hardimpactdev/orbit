@@ -154,7 +154,7 @@ def main():
     reply = gateway({**bind(fixture['request'], context), 'caller': operator, 'key': f'proof-{run_id}-request'}, fixture['budget_seconds'])
     operation = reply.get('operation') or {}
     receipt.update(http_status=reply.get('http_status'), operation=operation, admit_seconds=reply.get('admit_seconds'),
-                   total_seconds=reply.get('terminal_seconds'))
+                   total_seconds=reply.get('terminal_seconds'), job_errors=reply.get('job_errors') or {})
     refusal = fixture['expect'].get('error_code')
     if refusal is not None:
         # An admission refusal starts no run: prove the code, that no Operation exists, and the target is unchanged.

@@ -158,19 +158,24 @@ def up(gateway, name='minimal'):
     state.update(commit=commit, topology_version=topology(name)['version'], ready=False, last_up_started_at=utc(), last_up_started_epoch=time.time())
     save(SESSION, state)
     guest = provision(gateway, state)
+    staged = stage(guest, commit)
+    bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
+    return state
+
+
+def stage(guest, commit):
+    """Replace the VM's source tree with a fresh clone of commit; returns the seconds it took."""
     started = time.time()
     with tempfile.TemporaryDirectory() as folder:
         bundle = Path(folder) / 'source.bundle'
         subprocess.run(['git', '-C', str(ROOT), 'bundle', 'create', str(bundle), 'HEAD'], check=True, capture_output=True)
         # A held VM's serve writes into the staged tree; stop it before the tree is replaced.
-        stage = ('systemctl stop orbit-node-worker orbit-swamp-serve 2>/dev/null; rm -rf /home/orbit/swamp-proof'
-                 ' && install -d -o orbit -g orbit /home/orbit/swamp-proof && cat > /home/orbit/swamp-proof/source.bundle')
-        guest.call(['sh', '-c', stage], input=bundle.read_bytes(), timeout=300)
+        script = ('systemctl stop orbit-node-worker orbit-swamp-serve 2>/dev/null; rm -rf /home/orbit/swamp-proof'
+                  ' && install -d -o orbit -g orbit /home/orbit/swamp-proof && cat > /home/orbit/swamp-proof/source.bundle')
+        guest.call(['sh', '-c', script], input=bundle.read_bytes(), timeout=300)
     guest.call(['runuser', '-u', 'orbit', '--', 'git', 'clone', '-q', '--no-checkout', '/home/orbit/swamp-proof/source.bundle', SOURCE])
     guest.call(['runuser', '-u', 'orbit', '--', 'git', '-C', SOURCE, 'checkout', '-q', '--detach', commit])
-    staged = time.time() - started
-    bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
-    return state
+    return time.time() - started
 
 
 def bring_up(guest, state, commit, timings, fresh=False):
@@ -223,8 +228,10 @@ def run(state, kind):
     # Consecutive kinds share one up. A fixture that needs a clean end state gets fresh Nodes and a fresh
     # Gateway database on the same VM, but only when an earlier fixture ran since the last up.
     if fixture.get('clean') is True and state.get('runs_since_up', 0) > 0:
+        # A fresh clone too: the Swamp repository in the staged tree records its datastore, which up recreates.
         state['last_up_started_epoch'] = time.time()
-        bring_up(guest, state, state['commit'], [{'step': 'clean restage', 'seconds': 0}], fresh=True)
+        staged = stage(guest, state['commit'])
+        bring_up(guest, state, state['commit'], [{'step': 'clean restage', 'seconds': round(staged, 1)}], fresh=True)
     started = time.time()
     body = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/run.py', SOURCE, kind], timeout=3600))
     receipt = {'kind': kind, 'proof_pass': body.get('proof_pass') is True, 'topology': state['topology'],

@@ -163,6 +163,8 @@ if (! is_int($id)) {
 $subscriber = app(SwampRunSubscriber::class);
 $subscriber->recover();
 $deadline = $started + (int) $input['seconds'];
+// The last failure of each job class, so a receipt shows why a projection never finished.
+$jobErrors = [];
 do {
     $subscriber->follow($id);
     $subscriber->pass();
@@ -171,8 +173,9 @@ do {
     while (($job = app('queue')->connection(GatewayQueue::Connection)->pop(GatewayQueue::Operations->value)) !== null) {
         try {
             $job->fire();
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             // As the queue worker does: a failed attempt is released and retried.
+            $jobErrors[$job->resolveName()] = $exception::class.': '.mb_substr($exception->getMessage(), 0, 500);
             $job->release(10);
         }
     }
@@ -186,5 +189,5 @@ $subscriber->close();
 echo json_encode(['http_status' => $response->getStatusCode(), 'operation' => [
     'id' => $operation->id, 'kind' => $operation->kind, 'target_id' => $operation->target_id, 'status' => $operation->status->value, 'error_code' => $operation->error_code,
     'input' => $operation->input, 'result' => $operation->result, 'swamp_run_id' => $operation->state['swamp_run_id'] ?? null,
-], 'admit_seconds' => round($admitted - $started, 2), 'terminal_seconds' => round(microtime(true) - $started, 2)]), PHP_EOL;
+], 'admit_seconds' => round($admitted - $started, 2), 'terminal_seconds' => round(microtime(true) - $started, 2), 'job_errors' => $jobErrors]), PHP_EOL;
 exit($operation->status->terminal() ? 0 : 2);
