@@ -108,7 +108,8 @@ On an app-dev Node, the [watch list](#watch-list) names the `apps_root`. The age
 | `origin` | The origin URL, with any embedded credential masked |
 | `branch`, `head` | The branch `HEAD` names, null when detached, and the `HEAD` commit |
 | `default_branch` | The branch `refs/remotes/origin/HEAD` names, or null |
-| `artisan`, `composer` | Whether `artisan` is `regular`, a `symlink` or `absent`, and the text of `composer.json` (at most 1 MiB, or null) |
+| `application` | The application directory the agent read: the checkout, or the subdirectory `applications` names for its Project |
+| `artisan`, `composer` | Whether `artisan` in `application` is `regular`, a `symlink` or `absent`, and the text of its `composer.json` (at most 1 MiB, or null) |
 
 After the checkouts, the agent sends the `checkouts` index. The Gateway deletes the `checkout` rows whose path is missing from the new index, in the same short transaction.
 
@@ -125,6 +126,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
   "data": {
     "services": ["caddy.service", "docker.service"],
     "apps_root": "/home/orbit/apps",
+    "applications": { "operator": "server/web" },
     "workspaces": [
       {
         "instance_id": 31,
@@ -138,7 +140,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 }
 ```
 
-`services` are the services of the Node's roles, which the agent reports as [facts](#facts). `apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+`services` are the services of the Node's roles, which the agent reports as [facts](#facts). `apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 

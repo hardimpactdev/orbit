@@ -2050,7 +2050,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'services': {'type': 'array', 'items': {'type': 'string'}, 'description': "Systemd services of the Node's roles, such as `caddy.service`."},
             'workspaces': {'type': 'array', 'items': workspace, 'description': 'Task checkouts, as `agent:workspaces` lists them.'},
             'apps_root': {'type': ['string', 'null'], 'description': 'The apps path of an active app-dev Node, whose checkouts the agent reports; null otherwise.'},
-        }, 'required': ['services', 'workspaces', 'apps_root']}, 'The request succeeded.')
+            'applications': {'type': 'object', 'additionalProperties': {'type': 'string'}, 'description': 'By Project slug, the application directory inside a checkout when it is not the checkout root, such as `server/web`.'},
+        }, 'required': ['services', 'workspaces', 'apps_root', 'applications']}, 'The request succeeded.')
     elif route['name'] == 'agent:facts':
         op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False,
             'required': ['kind', 'observed_at', 'data'], 'description': 'At most 1 MiB.', 'properties': {

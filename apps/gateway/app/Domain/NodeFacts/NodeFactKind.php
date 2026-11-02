@@ -55,6 +55,7 @@ enum NodeFactKind: string
                 'branch' => ['present', 'nullable', 'string', 'max:255'],
                 'head' => ['present', 'nullable', 'string', 'regex:/\A[a-f0-9]{40}(?:[a-f0-9]{24})?\z/'],
                 'default_branch' => ['present', 'nullable', 'string', 'max:255'],
+                'application' => ['required', 'string', 'starts_with:/', 'max:4096'],
                 'artisan' => ['required', 'string', 'in:regular,symlink,absent'],
                 'composer' => ['present', 'nullable', 'string', 'max:1048576'],
             ],

@@ -8,6 +8,7 @@ use App\Domain\NodeFacts\NodeAgentState;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\NodeFact;
+use App\Models\Project;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -70,20 +71,25 @@ describe('agent facts and liveness', function (): void {
 
     it('names the role services the agent watches, and the apps root of an active app-dev Node', function (): void {
         $this->node->forceFill(['settings' => ['apps' => ['path' => '/fast/apps']]])->save();
-        $this->getJson('/api/v1/agent/watch')->assertOk()->assertJsonPath('data.apps_root', null);
+        foreach (['operator' => 'server/web/public', 'hauzer' => 'public'] as $slug => $root) {
+            Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'laravel-app', 'root' => $root,
+                'repository_url' => "https://github.com/example/{$slug}.git", 'default_branch' => 'main']);
+        }
+        $response = $this->getJson('/api/v1/agent/watch')->assertOk()->assertJsonPath('data.apps_root', null);
+        expect($response->getContent())->toContain('"applications":{}');
 
         $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
         $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
 
         $this->getJson('/api/v1/agent/watch')->assertOk()
             ->assertJsonPath('data.services', ['caddy.service', 'docker.service'])->assertJsonPath('data.workspaces', [])
-            ->assertJsonPath('data.apps_root', '/fast/apps');
+            ->assertJsonPath('data.apps_root', '/fast/apps')->assertJsonPath('data.applications', ['operator' => 'server/web']);
     });
 
     $checkout = static fn (string $path = '/fast/apps/acme/default', string $branch = 'main'): array => ['kind' => 'checkout',
         'subject' => $path, 'observed_at' => '2026-11-02T18:00:00Z', 'data' => ['owner' => 'nckrtl', 'top_level' => $path,
             'common_dir' => $path.'/.git', 'linked' => false, 'worktrees' => [$path], 'origin' => 'git@github.com:acme/app.git',
-            'branch' => $branch, 'head' => str_repeat('a', 40), 'default_branch' => 'main', 'artisan' => 'regular', 'composer' => '{}']];
+            'branch' => $branch, 'head' => str_repeat('a', 40), 'default_branch' => 'main', 'application' => $path, 'artisan' => 'regular', 'composer' => '{}']];
 
     it('stores one row per checkout and writes only the checkout that changed', function () use ($checkout): void {
         $this->postJson('/api/v1/agent/facts', $checkout())->assertNoContent();

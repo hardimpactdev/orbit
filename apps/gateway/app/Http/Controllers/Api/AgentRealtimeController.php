@@ -70,8 +70,11 @@ final class AgentRealtimeController extends Controller
         $node = $this->peer($request);
         $this->ensureEligible($node, $eligibility);
 
+        $watch = $action->execute($node);
+
+        // `applications` is a map, so an empty one is `{}`, never `[]`.
         return response()->json([
-            'data' => $action->execute($node),
+            'data' => [...$watch, 'applications' => (object) $watch['applications']],
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

@@ -8,8 +8,10 @@ use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
+use App\Models\Project;
 
 /**
  * What one Node's agent watches, at start and every 60 seconds. It opens only what this list names: the services
@@ -20,7 +22,7 @@ final readonly class AgentWatchListAction
 {
     public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces) {}
 
-    /** @return array{services: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string} */
+    /** @return array{services: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>} */
     public function execute(Node $node): array
     {
         $services = [];
@@ -35,8 +37,28 @@ final readonly class AgentWatchListAction
         return [
             'services' => $services,
             'workspaces' => array_map(static fn (AgentWorkspaceData $workspace): array => $workspace->toArray(), $this->workspaces->execute($node)),
-            'apps_root' => $this->appsRoot($node),
+            'apps_root' => $root = $this->appsRoot($node),
+            'applications' => $root === null ? [] : $this->applications(),
         ];
+    }
+
+    /**
+     * The application directory of each Project whose application is not at the checkout root, by Project slug, such
+     * as `server/web`. The agent reads `artisan` and `composer.json` there.
+     *
+     * @return array<string, string>
+     */
+    private function applications(): array
+    {
+        $applications = [];
+        foreach (Project::query()->orderBy('slug')->get(['slug', 'root']) as $project) {
+            $directory = ApplicationDirectory::resolve('', $project->root);
+            if ($directory !== '') {
+                $applications[$project->slug] = ltrim($directory, '/');
+            }
+        }
+
+        return $applications;
     }
 
     /** The apps root of an active app-dev Node, whose `<project>/<name>` checkouts the agent reports. */
