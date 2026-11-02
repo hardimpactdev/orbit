@@ -38,8 +38,8 @@ it('admits recorded MySQL identity without an execution receipt or PHP probe', f
     expect($prepared->kind)->toBe('database.destroy');
     expect($prepared->input['test_prefixes'])->toBe(['proof_testing']);
     expect($prepared->input['owners']->proof)->toBe('proof');
-    expect($intent->payload['commands']['database-apply']['protected'])->toBe(['password']);
-    expect(array_keys($intent->payload['commands']['database-apply']['input']))->toBe(['password']);
+    // The run reads the admin password from the server's own vault key; the intent records no secret.
+    expect($intent->payload['commands'])->toBe([]);
     expect(Operation::query()->count())->toBe(0);
 });
 
@@ -96,11 +96,12 @@ it('starts native removal with captured intent and a vault descriptor for each e
     $inputs = $this->socket->sent[1]['payload']['inputs'];
     expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
     expect($inputs['intent'])->toMatchArray(['driver' => $driver, 'users' => ['proof']])->not->toHaveKeys(['password', 'payload', 'sql']);
-    expect($inputs['execution_secrets']['database_destroy'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'database-destroy-intent-'.$operation->input['intent_id']]);
-    expect(json_decode($this->socket->sent[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['password' => $this->server->root_password]);
+    expect($inputs['execution_secrets'])->toBe(['admin' => ['vault' => 'orbit-control-inputs', 'key' => 'database-server-'.$this->server->id.'-admin']]);
+    expect($this->socket->sent[0]['payload'])->toMatchArray(['key' => 'database-server-'.$this->server->id.'-admin', 'value' => $this->server->root_password]);
+    expect($inputs['intent']['ssh_execution']['target']['host'])->toBe($this->dbNode->wireguard_ip);
     expect(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain($this->server->root_password);
     expect(app(DirectOperation::class)->definition('database.destroy'))->not->toHaveKey('private_material');
-    $this->server->update(['port' => 3333, 'root_password' => 'changed-private-root']);
+    $this->server->update(['port' => 3333]);
     expect(app(DirectOperation::class)->workflowInputs($operation))->toEqual($inputs);
     $this->assertDatabaseHas('database_connections', ['id' => $connection->id]);
 })->with(['mysql', 'pgsql', 'redis']);
@@ -111,7 +112,7 @@ it('deletes records once from successful native terminal history', function (): 
     $inputs = $this->socket->sent[1]['payload']['inputs'];
     $history = ['id' => $this->runId, 'workflowName' => 'operation-database-destroy', 'status' => 'succeeded', 'inputs' => $inputs,
         'startedAt' => '2026-11-01T00:30:00Z', 'completedAt' => '2026-11-01T00:30:01Z',
-        'jobs' => [['name' => 'result', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"backend":"absent"}']]]]],
+        'jobs' => [['name' => 'destroy', 'steps' => [['name' => 'Report the result', 'outputs' => ['stdout' => '{"backend":"absent"}']]]]],
     ];
     $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
     config(['swamp.read_token' => 'fake.token']);

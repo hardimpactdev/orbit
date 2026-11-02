@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/MetricsCaddySiteSource.php
-  - swamp/{workflows/workflow-operation-metrics-*.yaml,extensions/behaviors/operations/metrics-*/**}
+  - swamp/{workflows/workflow-operation-metrics-*.yaml,extensions/behaviors/operations/{metrics-*/**,integrations/metrics_*.ts}}
 ---
 
 # Metrics role

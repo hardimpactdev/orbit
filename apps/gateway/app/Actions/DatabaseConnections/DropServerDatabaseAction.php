@@ -11,9 +11,11 @@ use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
@@ -40,12 +42,15 @@ final readonly class DropServerDatabaseAction
      */
     public function prepareMany(array $connections, ?int $ownerInstanceId = null): array
     {
-        return array_map(fn (array $snapshot): PreparedDatabaseOperation => $this->operations->prepare(
-            'database.destroy', 'database_server', $snapshot['server_id'], $snapshot['node_id'],
-            ['connection_ids' => $snapshot['connection_ids'], ...$snapshot['input']],
-            ['database-apply' => ['name' => 'database.destroy', 'input' => ['password' => $snapshot['password']], 'protected' => ['password']]],
-            ['delete_connections' => $snapshot['connection_ids']],
-        ), $this->snapshots($connections, $ownerInstanceId));
+        $prepared = [];
+        foreach ($this->snapshots($connections, $ownerInstanceId) as $snapshot) {
+            app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($snapshot['node_id']));
+            // The run reads the admin password from the server's own vault key (R3), so the intent records none.
+            $prepared[] = $this->operations->prepare('database.destroy', 'database_server', $snapshot['server_id'], $snapshot['node_id'],
+                ['connection_ids' => $snapshot['connection_ids'], ...$snapshot['input']], [], ['delete_connections' => $snapshot['connection_ids']]);
+        }
+
+        return $prepared;
     }
 
     /** Protected snapshots also compose into an Instance's single native DAG.

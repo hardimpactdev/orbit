@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/database-server-command-scripts'
-version: 2026.11.02.3
+version: 2026.11.02.4
 visibility: private
 license: MIT
 description: Database server command files and public result shaping.
@@ -13,7 +13,6 @@ behaviors:
   - operations/database-server-commands/create_assets.ts
 additionalFiles:
   - scripts/server_common.py
-  - scripts/wait_ready.py
   - scripts/user_common.py
   - scripts/user_wal.py
   - scripts/user_apply.py
@@ -23,6 +22,7 @@ additionalFiles:
   - scripts/create_valkey.py
   - scripts/shipped.py
   - scripts/database_create.py
+  - scripts/database_destroy.py
   - scripts/sql_probe_user.py
   - scripts/sql_probe_databases.py
   - scripts/sql_create_user.py

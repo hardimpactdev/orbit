@@ -9,7 +9,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.destroy, database.destroy_owned]}
+    kind: {type: string, enum: [database.destroy_owned]}
     scope: {type: string, pattern: '^(single|server-[1-9][0-9]*)$'}
     intent: {type: object}
     execution_secrets: {type: object, properties: {database_destroy: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-(destroy-intent-[1-9][0-9]*|destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*)$'}}, required: [vault, key], additionalProperties: false}}, required: [database_destroy], additionalProperties: false}

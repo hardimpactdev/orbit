@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md#remove-a-database.
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key), flow-tighten (rules 6, 22: no ownership probe or fence, scripts in argv). docs/reference/database-servers.md#remove-a-database.
   %% status: draft
   %% command: database:destroy
   autonumber
@@ -56,67 +56,38 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5124
+    Note over SW: Read the scripts<br/>database-create-command assets
+    %%> What it does:
+    %%> - reads the shipped destroy phase module and its library on 209, to send them over SSH in argv
+    %%> - nothing is copied to Node 12, so nothing is left to clean up
+    SW->>N: Drop databases and users<br/>@swamp/ssh · blockers, then drop
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
-    %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
-    %%> What it does:
-    %%> - copies the shipped action scripts into `/tmp/orbit-database-destroy-5124`
-    %%> - each later step reads the admin password with `vault.get` and passes it on standard input
-    SW->>N: Check ownership<br/>inventory, grants, owners
-    %%> What it does:
-    %%> - MySQL: lists every database that starts with the test prefix and checks the user's full grants
-    %%> - PostgreSQL: checks that the managed owner owns every planned database
-    %%> - Valkey: saves the planned ACL users, so a failed removal can put them back
-    %%> Refuses:
-    %%> - a database or user that is not Orbit's; nothing changes
-    opt PostgreSQL server
-      SW->>N: Fence new clients<br/>ALLOW_CONNECTIONS false
-      %%> What it does:
-      %%> - stops new clients from connecting to every planned database
-      %%> - journals each database's prior value in `orbit_admin.database_removal_fences`, in the same transaction
-      %%> Not included:
-      %%> - existing clients stay connected; Orbit never force-disconnects them
-    end
-    SW->>N: Check for blockers<br/>sessions, slots, locks, keys
-    %%> What it does:
-    %%> - checks the whole set before the first drop
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior and the `swamp` role's SSH identity
+    %%> - the script reads the admin password from the server's own vault key `database-server-3-admin` on standard input
+    %%> What it does, in order:
+    %%> - on MySQL, finds the test databases under the recorded test prefix
+    %%> - checks the whole set for blockers before the first drop
+    %%> - drops each planned database, then each planned user; a missing one counts as removed
     %%> Blocks:
     %%> - PostgreSQL: sessions, replication slots, prepared transactions, subscriptions, outside dependencies of a removed role
     %%> - MySQL: connected clients, metadata locks, outside definers, cross-schema foreign keys
     %%> Refuses:
     %%> - any blocker gives `database.in_use`; nothing is dropped
-    SW->>N: Drop the databases<br/>primary, test, test pool
-    %%> What it does:
-    %%> - drops each planned database; a missing one counts as removed
     %%> Per driver:
-    %%> - Valkey: no database; the user's keys stay
-    SW->>N: Drop unshared users<br/>Valkey: ACL DELUSER, ACL SAVE
-    %%> What it does:
-    %%> - drops each planned user that no other connection on `beast-mysql` uses
-    %%> - Valkey: deletes the ACL user, then saves the ACL file
+    %%> - Valkey: no database; `ACL DELUSER` for each user, then `ACL SAVE`; the user's keys stay
+    %%> Not included:
+    %%> - no ownership probe and no connection fence (flow-tighten rule 22); a client that connects between the check and the drop is cut off
     SW->>N: Check they are gone<br/>databases and users absent
     %%> What it does:
     %%> - checks that no planned database or user is left on the server
     %%> Why:
     %%> - the removal only counts when the server shows it
-    opt a step failed
-      SW->>N: Restore the fence<br/>prior ALLOW_CONNECTIONS · ACL
-      %%> When:
-      %%> - only after a failed step, and only when the run fenced PostgreSQL databases or saved Valkey users
-      %%> What it does:
-      %%> - PostgreSQL: gives each surviving database its exact prior value from the journal
-      %%> - Valkey: puts back the saved ACL users and saves the file
-      %%> If it fails:
-      %%> - the journal stays; the next `database:destroy` restores or finishes
-    end
-    SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5124
-    %%> When:
-    %%> - always, as the last Node step, whether the steps above passed or failed
+    Note over SW: Report the result<br/>backend · failed_step · error_code
     %%> What it does:
-    %%> - removes `/tmp/orbit-database-destroy-5124`, so no scripts stay on Node 12
-    %%> If it fails:
-    %%> - the task result does not change; the directory holds no secrets
+    %%> - maps the first failed step to its error code, for example `database.in_use`
+    Note over SW: Fail on an error<br/>assert · exit code 0
+    %%> What it does:
+    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
     alt every step passes
       N-->>SW: set absent
       %%> Returns:
