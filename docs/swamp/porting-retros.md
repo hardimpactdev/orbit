@@ -292,3 +292,12 @@ Both proofs pass on minimal@10 at `dba6cc48150066255fd7bb46812fb8b9c7e38ccd`: `e
 Four native tests, 68 Gateway/grant/status tests, PHPStan, Pint, shape, names, placement, flow, docs, registry and native rendered-grant validation pass. Provisioning first waited for recipe images; the five-minute retry obtained one VM for both branches. Fixture failures exposed an unsupported Python file opener and omitted fields in a parity read; neither was a workflow failure. Both fixture faults were corrected before the passing receipts.
 
 Task VM 330 was destroyed by cancellation 8164 after both proofs. Before receipt notes, Orbit grows by 96 lines: Gateway +118, root docs +15, config -25, embedded script -299, tests and fixtures -340, legacy behavior -183, proof +275, workflows +535. Native workflow declarations replace the hidden program; proof fixtures check both real-service outcomes.
+
+
+## Native Schedule creation
+
+`schedule.create` publishes one `schedule-<uuid>` workflow and its cron trigger on 209, without a Node visit or a control run. Each fire calls the existing native `task-command-run` child. Node and Instance Schedules both accept `--no-start`; their workflow exists without a trigger. The CLI, admission, chart and reference now agree. Production schedulers that fire every minute keep their Node timers. No shipped script is added or removed in this follow-up.
+
+Three fresh minimal@10 receipts at `412ee26b39` cover enabled creation and a successful fire, a failed fire, and disabled Node creation. Admission takes 0.18, 0.20 and 0.17 seconds; its observed p95 is 0.20 seconds for three samples. Calendar waits take 52.46 and 58.56 seconds, and the native root fires take 1.93 and 1.34 seconds. The failed fire records `schedule.run_failed`. Fixtures keep a 150-second budget and the shared child's 300-second queue timeout. Every parity reader uses `PROOF_OPERATION_FILE`, verifies no Node units, and checks the workflow and trigger. The receipt index is `swamp/proof/receipts/schedule-create-native.json`.
+
+The local checks pass: 58 Gateway cases, 73 CLI cases, six native command cases, charts, registry, docs and PHP analysis. The proof uses disposable Linux Nodes, a proof CA and test commands, with no production data, load or serve restart.

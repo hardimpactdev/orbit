@@ -1,0 +1,77 @@
+{
+  "topology": "minimal",
+  "topology_version": 10,
+  "source_commit": "412ee26b39d29ad082fc5af0d1efbb3b1ae31a90",
+  "scripts_deleted": 0,
+  "cases": [
+    {
+      "kind": "schedule.create",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/schedule.create/20261102T192204Z-minimal.json",
+      "proof_pass": true,
+      "admission_seconds": 0.18,
+      "fire": {
+        "fire": {
+          "id": 3,
+          "status": "succeeded",
+          "result": {
+            "ready": true
+          },
+          "run_id": "e7933a45-98fe-4379-af96-bc3353bee353"
+        },
+        "seen_running": false,
+        "seconds": 52.46,
+        "native": {
+          "status": "succeeded",
+          "steps": [
+            {
+              "job": "fire",
+              "step": "Run the Schedule",
+              "status": "succeeded",
+              "seconds": 1.864,
+              "error": null
+            }
+          ],
+          "seconds": 1.926
+        }
+      }
+    },
+    {
+      "kind": "schedule.create.fire-fails",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/schedule.create.fire-fails/20261102T192306Z-minimal.json",
+      "proof_pass": true,
+      "admission_seconds": 0.2,
+      "fire": {
+        "fire": {
+          "id": 6,
+          "status": "failed",
+          "result": {
+            "error_code": "schedule.run_failed"
+          },
+          "run_id": "c69cf9eb-172c-49fe-9b71-ebef6c08eb4b"
+        },
+        "seen_running": true,
+        "seconds": 58.56,
+        "native": {
+          "status": "failed",
+          "steps": [
+            {
+              "job": "fire",
+              "step": "Run the Schedule",
+              "status": "failed",
+              "seconds": 1.312,
+              "error": "exec failed on 1/1 host(s): target (***)"
+            }
+          ],
+          "seconds": 1.338
+        }
+      }
+    },
+    {
+      "kind": "schedule.create.disabled",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/schedule.create.disabled/20261102T192309Z-minimal.json",
+      "proof_pass": true,
+      "admission_seconds": 0.17,
+      "fire": null
+    }
+  ]
+}
