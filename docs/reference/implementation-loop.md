@@ -110,7 +110,7 @@ Two checks guard the flow charts. Generated contracts requires a chart or a `doc
 
 Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Only the validation job, which checks workflows and rendered grants, receives its two approved secret inputs, on pull requests and pushes to main. Shape and Operation test jobs receive no secret environment. CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
-Build jobs, including Swamp validation, shape and test shards, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+Build jobs, including Swamp validation, shape and test shards, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. CI builds no Rust agent; the [release workflow](#agent-delivery) does. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
@@ -158,11 +158,13 @@ The fast CI gate uses hosted runners. It needs no Gateway test system packages, 
 
 Existing runner provisioning remains available to other workflows. This CI workflow schedules no test shards or publishes quality-cache refs.
 
-### Frozen agent delivery
+### Agent delivery
 
-CI has no agent build, selection, combine or upload jobs. The command guard downloads the frozen binary only to verify its read-only command inventory; it publishes nothing. Gateway preparation verifies the fixed published manifest and writes that same pin into each prepared release. Desired fleet state reads that pin. No Gateway commit waits for its own agent or CLI release.
+CI has no agent build, selection, combine or upload jobs. The command guard downloads the pinned binary only to verify its read-only command inventory; it publishes nothing. Gateway preparation verifies the pinned published manifest and writes that same pin into each prepared release. Desired fleet state reads that pin. No Gateway commit waits for its own agent or CLI release.
 
-The CLI release workflow continues to publish each green main commit with its own CLI version, checksums and provenance. It includes no agent binaries or manifest.
+The CLI release workflow publishes each green main commit with its own CLI version, checksums and provenance. When the agent source commit (`apps/agent/scripts/source-commit`) differs from the previous release's, the same release also builds and carries the agent. A change that got no release of its own therefore ships in the next one.
+
+Two read-only jobs build the Linux and macOS agents from the release commit with the pinned `dtolnay/rust-toolchain`, and the manifest names the agent source commit. The publish job combines them with `tools/combine_agent_delivery.py`, which refuses a mixed source or altered bytes, and `bin/orbit-cli-release-assets` adds each agent's release URL to `manifest.json`. A failed agent build stops the release. The [pin](/reference/node-agent#releases) moves only in a reviewed commit.
 
 The Docs site workflow also follows each green main commit. It builds the docs and force-pushes the `docs-site` branch, which Mintlify deploys; see [Write the documentation](/contributor-guide#2-write-the-documentation).
 

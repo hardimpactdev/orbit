@@ -5,11 +5,15 @@ set -Eeuo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir>
+  bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir> [<agent-dir> <download-url>]
 
 Package the Linux x86_64 and macOS arm64 CLI binaries and sorted SHA256SUMS.
-The agent stays at its frozen published pin and is not part of new releases.
-Refuse missing, empty, or incorrectly targeted CLI binaries before writing.
+With <agent-dir>, the release also carries the agent delivery that the release
+workflow built and combined: the three agent binaries and manifest.json, with
+each binary's URL under <download-url>. Only the release of the commit that
+last changed the agent source carries one; the Gateway uses its pin.
+Refuse missing, empty, or incorrectly targeted binaries, and an agent binary
+that does not match its manifest digest, before writing.
 EOF
 }
 
@@ -23,7 +27,7 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     exit 0
 fi
 
-[ "$#" -eq 3 ] || {
+[ "$#" -eq 3 ] || [ "$#" -eq 5 ] || {
     usage >&2
     exit 2
 }
@@ -31,10 +35,18 @@ fi
 version="$1"
 artifact_dir="$2"
 out_dir="$3"
+agent_dir="${4:-}"
+download_url="${5:-}"
+download_url="${download_url%/}"
 
 [[ "$version" =~ ^0\.[1-9][0-9]*\.0$ ]] || fail "not a release version: ${version}"
 [ -d "$artifact_dir" ] || fail "artifact directory not found: ${artifact_dir}"
 [ ! -e "$out_dir" ] || fail "output directory already exists: ${out_dir}"
+if [ -n "$agent_dir" ]; then
+    [ -f "${agent_dir}/manifest.json" ] || fail "agent manifest not found: ${agent_dir}/manifest.json"
+    [[ "$download_url" =~ ^https://[^[:space:]]+$ ]] || fail "not an HTTPS download URL: ${download_url}"
+    command -v jq >/dev/null 2>&1 || fail 'jq is required.'
+fi
 
 command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required.'
 
@@ -64,7 +76,7 @@ targets=(
     'orbit-linux-x64/linux-x64:linux-x86_64'
     'orbit-macos-arm64/mac-arm:macos-arm64'
 )
-
+agent_platforms=(linux-x86_64 macos-aarch64 macos-x86_64)
 
 for target in "${targets[@]}"; do
     source_path="${artifact_dir}/${target%%:*}"
@@ -73,11 +85,36 @@ for target in "${targets[@]}"; do
     check_platform "$source_path" "${target##*:}"
 done
 
+# The agent ships exactly as the release workflow built it: the manifest names each platform once, with its digest.
+if [ -n "$agent_dir" ]; then
+    [ "$(jq -r '.artifacts | keys | join(" ")' "${agent_dir}/manifest.json")" = "${agent_platforms[*]}" ] \
+        || fail "the agent manifest does not name exactly ${agent_platforms[*]}"
+    for platform in "${agent_platforms[@]}"; do
+        source_path="${agent_dir}/orbit-agent-${platform}"
+        [ -f "$source_path" ] || fail "missing binary: ${source_path}"
+        [ -s "$source_path" ] || fail "empty binary: ${source_path}"
+        check_platform "$source_path" "$platform"
+        [ "$(jq -r --arg p "$platform" '.artifacts[$p].path' "${agent_dir}/manifest.json")" = "orbit-agent-${platform}" ] \
+            || fail "the agent manifest names another file for ${platform}"
+        [ "$(jq -r --arg p "$platform" '.artifacts[$p].sha256' "${agent_dir}/manifest.json")" = "$(sha256sum -- "$source_path" | cut -d ' ' -f 1)" ] \
+            || fail "${source_path} does not match its manifest digest"
+    done
+fi
+
 mkdir -p "$out_dir"
 
 for target in "${targets[@]}"; do
     install -m 0755 "${artifact_dir}/${target%%:*}" "${out_dir}/orbit-${version}-${target##*:}"
 done
+
+if [ -n "$agent_dir" ]; then
+    for platform in "${agent_platforms[@]}"; do
+        install -m 0755 "${agent_dir}/orbit-agent-${platform}" "${out_dir}/orbit-agent-${platform}"
+    done
+    # A Gateway pin is a byte copy of this file, so its URLs name this release.
+    jq --arg base "$download_url" '.artifacts |= with_entries(.value.url = ($base + "/" + .value.path))' \
+        "${agent_dir}/manifest.json" > "${out_dir}/manifest.json"
+fi
 
 (
     cd "$out_dir"

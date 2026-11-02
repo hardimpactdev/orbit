@@ -134,13 +134,14 @@ function cli_release_artifacts(): string
 /**
  * @return array{int, string, string}
  */
-function cli_release_assets(string $root, string $version): array
+function cli_release_assets(string $root, string $version, bool $agent = false): array
 {
     return cli_release_run([
         cli_release_repo_root().'/bin/orbit-cli-release-assets',
         $version,
         $root.'/artifacts',
         $root.'/release',
+        ...($agent ? [$root.'/agent-delivery', 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/'] : []),
     ], $root);
 }
 
@@ -259,6 +260,52 @@ describe('CLI release assets', function (): void {
             ->and($root.'/release/manifest.json')->not->toBeFile()
             ->and(glob($root.'/release/orbit-agent-*'))->toBe([]);
     })->with(['digest', 'platform', 'missing']);
+
+    it('adds the agent delivery with release URLs when the release carries one', function (): void {
+        $root = cli_release_artifacts();
+
+        [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0', agent: true);
+
+        $agents = ['orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64'];
+        $binaries = [...$agents, 'orbit-0.4681.0-linux-x86_64', 'orbit-0.4681.0-macos-arm64'];
+        sort($binaries);
+        $files = array_map(basename(...), File::files($root.'/release'));
+        sort($files);
+        $manifest = json_decode(File::get($root.'/release/manifest.json'), true);
+
+        expect($exitCode)->toBe(0, $stderr)
+            ->and($files)->toBe(['SHA256SUMS', 'manifest.json', ...$binaries])
+            ->and(File::get($root.'/release/SHA256SUMS'))->toBe(implode('', array_map(
+                static fn (string $name): string => hash_file('sha256', $root.'/release/'.$name)."  {$name}\n",
+                $binaries,
+            )))
+            ->and($manifest['commit'])->toBe(str_repeat('a', 40))
+            ->and($manifest['artifacts']['macos-aarch64'])->toBe([
+                'path' => 'orbit-agent-macos-aarch64',
+                'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-macos-aarch64'),
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-agent-macos-aarch64',
+            ])
+            ->and(fileperms($root.'/release/orbit-agent-linux-x86_64') & 0777)->toBe(0755);
+    });
+
+    it('refuses an agent delivery whose binaries do not match its manifest', function (string $fault, string $error): void {
+        $root = cli_release_artifacts();
+        match ($fault) {
+            'digest' => File::append($root.'/agent-delivery/orbit-agent-linux-x86_64', 'changed'),
+            'platform' => cli_release_fake_binary($root.'/agent-delivery/orbit-agent-macos-x86_64', 'macos-aarch64'),
+            'missing' => File::delete($root.'/agent-delivery/orbit-agent-macos-aarch64'),
+        };
+
+        [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0', agent: true);
+
+        expect($exitCode)->toBe(1)
+            ->and($stderr)->toContain($error)
+            ->and($root.'/release')->not->toBeDirectory();
+    })->with([
+        ['digest', 'does not match its manifest digest'],
+        ['platform', 'is not a macos-x86_64 executable'],
+        ['missing', 'missing binary'],
+    ]);
 
     it('refuses a binary built for another platform', function (): void {
         $root = cli_release_artifacts();
@@ -467,6 +514,7 @@ describe('CLI release workflow', function (): void {
             'COMMIT' => str_repeat('a', 40),
             'VERSION' => '0.2.0',
             'TAG' => 'cli-v0.2.0',
+            'AGENT' => 'false',
         ]);
         $process->run();
 
@@ -476,6 +524,93 @@ describe('CLI release workflow', function (): void {
         'a release from before provenance' => [false, 1, 'has no provenance.sigstore.json'],
         'a complete release' => [true, 0, 'is already published'],
     ]);
+
+    it('expects the agent assets only in a release that carries the agent delivery', function (bool $agent, bool $withAgentAssets, int $exitCode): void {
+        $bin = (string) cli_release_temp('orbit-cli-release-bin');
+        File::ensureDirectoryExists($bin);
+        $names = ['SHA256SUMS', 'provenance.sigstore.json', 'orbit-0.2.0-linux-x86_64', 'orbit-0.2.0-macos-arm64'];
+        if ($withAgentAssets) {
+            $names = [...$names, 'manifest.json', 'orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64'];
+        }
+        File::put($bin.'/release.json', json_encode(['assets' => array_map(static fn (string $name): array => ['name' => $name], $names)]));
+        File::put($bin.'/gh', "#!/bin/sh\ncase \"\$2\" in\n  */releases/tags/*) cat '{$bin}/release.json' ;;\n  *) echo \"\$COMMIT\" ;;\nesac\n");
+        chmod($bin.'/gh', 0755);
+        File::put($bin.'/output', '');
+
+        $steps = array_column(cli_release_workflow()['jobs']['resolve']['steps'], null, 'name');
+        $process = new Process(['bash', '-e', '-c', $steps['Check for an existing release']['run']], $bin, [
+            'PATH' => $bin.':'.getenv('PATH'),
+            'GITHUB_OUTPUT' => $bin.'/output',
+            'REPOSITORY' => 'hardimpactdev/orbit',
+            'COMMIT' => str_repeat('a', 40),
+            'VERSION' => '0.2.0',
+            'TAG' => 'cli-v0.2.0',
+            'AGENT' => $agent ? 'true' : 'false',
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe($exitCode, $process->getOutput());
+    })->with([
+        'an agent release with its delivery' => [true, true, 0],
+        'an agent release without its delivery' => [true, false, 1],
+        'a CLI release with agent assets' => [false, true, 1],
+    ]);
+
+    it('builds the agent when its source changed since the previous release, even when that change had no release', function (bool $agentChange, bool $released, string $build): void {
+        $repo = cli_release_fixture_repo();
+        File::ensureDirectoryExists($repo.'/apps/agent/scripts');
+        File::copy(cli_release_repo_root().'/apps/agent/scripts/source-commit', $repo.'/apps/agent/scripts/source-commit');
+        chmod($repo.'/apps/agent/scripts/source-commit', 0755);
+        File::put($repo.'/apps/agent/source-paths.json', '["apps/agent/src"]');
+        File::ensureDirectoryExists($repo.'/apps/agent/src');
+        File::ensureDirectoryExists($repo.'/apps/agent/src');
+        File::put($repo.'/apps/agent/src/main.rs', 'fn main() {}');
+        cli_release_git($repo, 'add', '.');
+        cli_release_git($repo, 'tag', 'cli-v0.1.0', cli_release_commit($repo, 'released'));
+        File::put($repo.'/apps/agent/src/main.rs', $agentChange ? 'fn main() { 1; }' : 'fn main() {}');
+        File::put($repo.'/README.md', 'unreleased');
+        cli_release_git($repo, 'add', '.');
+        $unreleased = cli_release_commit($repo, 'unreleased change');
+        if ($released) {
+            cli_release_git($repo, 'tag', 'cli-v0.2.0', $unreleased);
+        }
+        File::put($repo.'/README.md', 'tip');
+        cli_release_git($repo, 'add', '.');
+        $tip = cli_release_commit($repo, 'tip');
+        File::put($repo.'/output', '');
+
+        $steps = array_column(cli_release_workflow()['jobs']['resolve']['steps'], null, 'name');
+        $process = new Process(['bash', '-e', '-c', $steps['Decide whether this release carries an agent delivery']['run']], $repo, [
+            'GITHUB_OUTPUT' => $repo.'/output',
+            'COMMIT' => $tip,
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(File::get($repo.'/output'))->toContain("build={$build}\n");
+    })->with([
+        'an unreleased agent change' => [true, false, 'true'],
+        'an agent change already released' => [true, true, 'false'],
+        'no agent change' => [false, false, 'false'],
+    ]);
+
+    it('builds the agent with a read-only token and names its source commit', function (): void {
+        $jobs = cli_release_workflow()['jobs'];
+
+        expect($jobs['resolve']['outputs']['agent'])->toBe('${{ steps.agent.outputs.build }}')
+            ->and($jobs['agent-linux']['env'])->toBe(['SOURCE' => '${{ needs.resolve.outputs.agent_source }}'])
+            ->and($jobs['agent-linux'])->not->toHaveKey('permissions')
+            ->and($jobs['agent-macos'])->not->toHaveKey('permissions')
+            ->and($jobs['agent-linux']['if'])->toBe("needs.resolve.outputs.publish == 'true' && needs.resolve.outputs.agent == 'true'")
+            ->and($jobs['agent-macos']['if'])->toBe($jobs['agent-linux']['if'])
+            ->and($jobs['publish']['needs'])->toBe(['resolve', 'build', 'agent-linux', 'agent-macos'])
+            ->and(preg_replace('/\s+/', ' ', $jobs['publish']['if']))->toBe(
+                "!cancelled() && needs.build.result == 'success' && ( needs.resolve.outputs.agent != 'true' || "
+                ."(needs.agent-linux.result == 'success' && needs.agent-macos.result == 'success') )",
+            )
+            ->and(array_column($jobs['publish']['steps'], 'run', 'name')['Verify and combine the agent parts'])
+            ->toBe('python3 tools/combine_agent_delivery.py agent-delivery agent-parts/agent-delivery-linux agent-parts/agent-delivery-macos');
+    });
 
     it('signs every release file with the workflow identity and publishes the bundle with the release', function (): void {
         $jobs = cli_release_workflow()['jobs'];
@@ -588,7 +723,7 @@ describe('CLI binary workflow', function (): void {
     it('publishes only after every supported platform build succeeds', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 
-        expect($jobs['publish']['needs'])->toBe(['resolve', 'build'])
+        expect($jobs['publish']['needs'])->toBe(['resolve', 'build', 'agent-linux', 'agent-macos'])
             ->and($jobs['build']['uses'])->toBe('./.github/workflows/orbit-cli-binary.yml')
             ->and(cli_binary_workflow()['permissions'])->toBe(['contents' => 'read'])
             ->and(cli_binary_workflow()['jobs']['build'])->not->toHaveKey('permissions');

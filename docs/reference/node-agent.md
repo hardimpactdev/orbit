@@ -657,9 +657,11 @@ The supervised fixture sends a Unix datagram after execution, including its proc
 
 ## Releases
 
-The frozen agent remains in the published `cli-v0.7261.0` release. CI builds no agent and copies no agent into future releases. [Gateway preparation](/reference/gateway-recovery#prepare-a-release) verifies that fixed delivery independently of the Gateway commit's publication. New [CLI releases](/reference/cli-binaries#published-releases) contain only CLI assets.
+The Gateway installs the agent that its pin names: `apps/gateway/resources/agent/frozen-manifest.json`, a byte copy of one release's `manifest.json`. [Gateway preparation](/reference/gateway-recovery#prepare-a-release) verifies that delivery independently of the Gateway commit's publication.
 
-The frozen release retains these agent assets:
+A [CLI release](/reference/cli-binaries#published-releases) also builds and carries the agent when the agent source changed since the previous release. Its manifest names the agent source commit. Other releases contain only CLI assets. A new agent reaches Nodes only when a reviewed commit moves the pin. That commit copies the release's `manifest.json` into the pin and records the binary's command contract in `frozen-commands.json` and `frozen-commands-source.json`, which `bin/check-frozen-agent-commands` verifies. The next Gateway release prepares the new pin, and the fleet rollout installs it Node by Node.
+
+An agent release carries these assets:
 
 | Asset | Contents |
 | --- | --- |
@@ -668,7 +670,7 @@ The frozen release retains these agent assets:
 | `orbit-agent-macos-x86_64` | Command binary for Intel Macs |
 | `manifest.json` | The delivery manifest, with each binary's URL in this release |
 
-The frozen release's `SHA256SUMS` and `provenance.sigstore.json` authenticate those bytes. A Gateway commit needs no new agent release.
+The release's `SHA256SUMS` and `provenance.sigstore.json` authenticate those bytes. A Gateway commit needs no new agent release.
 
 ## Limits
 

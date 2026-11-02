@@ -40,6 +40,8 @@ jobs:
       commit: ${{ steps.release.outputs.commit }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
+      agent: ${{ steps.agent.outputs.build }}
+      agent_source: ${{ steps.agent.outputs.source }}
       publish: ${{ steps.existing.outputs.publish }}
     steps:
       - name: Check out main with full history
@@ -85,6 +87,27 @@ jobs:
           fi
           echo "Required checks passed on ${COMMIT}"
 
+      # A release carries an agent delivery when the agent source changed since the previous release, so a change
+      # that was not itself released still ships in the next release. The Gateway keeps installing its pin until a
+      # reviewed commit moves it (docs/reference/node-agent.md#releases).
+      - name: Decide whether this release carries an agent delivery
+        id: agent
+        env:
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          source="$(apps/agent/scripts/source-commit "$COMMIT")"
+          previous=""
+          if tag="$(git describe --tags --abbrev=0 --match 'cli-v0.*.0' "${COMMIT}^" 2>/dev/null)"; then
+            previous="$(apps/agent/scripts/source-commit "$tag")"
+          fi
+          if [ "$source" != "$previous" ]; then build=true; else build=false; fi
+          {
+            echo "build=${build}"
+            echo "source=${source}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Agent source ${source}, previous release ${tag:-none} at ${previous:-none}: agent delivery ${build}"
+
       - name: Read CI's Gateway release input decision
         id: scope
         env:
@@ -105,6 +128,7 @@ jobs:
           COMMIT: ${{ steps.release.outputs.commit }}
           VERSION: ${{ steps.release.outputs.version }}
           TAG: ${{ steps.release.outputs.tag }}
+          AGENT: ${{ steps.agent.outputs.build }}
         run: |
           set -euo pipefail
           if ! release="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}" 2>/dev/null)"; then
@@ -116,7 +140,11 @@ jobs:
             exit 0
           fi
           tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
-          expected="$(printf '%s\n' SHA256SUMS provenance.sigstore.json "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64" | LC_ALL=C sort)"
+          names=(SHA256SUMS provenance.sigstore.json "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64")
+          if [ "$AGENT" = true ]; then
+            names+=(manifest.json orbit-agent-linux-x86_64 orbit-agent-macos-aarch64 orbit-agent-macos-x86_64)
+          fi
+          expected="$(printf '%s\n' "${names[@]}" | LC_ALL=C sort)"
           assets="$(jq -r '.assets[].name' <<< "$release" | LC_ALL=C sort)"
           if [ "$tagged" = "$COMMIT" ] && [ "$assets" = "$(grep -vx provenance.sigstore.json <<< "$expected")" ]; then
             echo "::error::Release ${TAG} was published before release provenance and has no provenance.sigstore.json. Published releases are never replaced, so the Gateway never installs it."
@@ -138,9 +166,83 @@ jobs:
       commit: ${{ needs.resolve.outputs.commit }}
       version: ${{ needs.resolve.outputs.version }}
 
+  # The agent jobs have a read-only token and build the release commit's own source.
+  agent-linux:
+    name: Build Linux agent
+    needs: resolve
+    if: needs.resolve.outputs.publish == 'true' && needs.resolve.outputs.agent == 'true'
+    timeout-minutes: 30
+    runs-on: ubuntu-26.04
+    env:
+      SOURCE: ${{ needs.resolve.outputs.agent_source }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install the musl compiler
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends --yes musl-tools
+
+      - name: Build the Linux agent
+        working-directory: apps/agent
+        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --commit "$SOURCE"
+
+      - name: Upload the Linux agent
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery-linux
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
+
+  agent-macos:
+    name: Build macOS agent
+    needs: resolve
+    if: needs.resolve.outputs.publish == 'true' && needs.resolve.outputs.agent == 'true'
+    timeout-minutes: 30
+    runs-on: macos-15
+    env:
+      SOURCE: ${{ needs.resolve.outputs.agent_source }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build the macOS agents
+        working-directory: apps/agent
+        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --commit "$SOURCE" --target aarch64-apple-darwin --target x86_64-apple-darwin
+
+      - name: Upload the macOS agents
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery-macos
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: Publish release
-    needs: [resolve, build]
+    needs: [resolve, build, agent-linux, agent-macos]
+    # The agent jobs are skipped in a release without an agent delivery; a failed agent build stops the release.
+    if: >-
+      !cancelled() && needs.build.result == 'success' && (
+        needs.resolve.outputs.agent != 'true' ||
+        (needs.agent-linux.result == 'success' && needs.agent-macos.result == 'success')
+      )
     runs-on: ubuntu-26.04
     # id-token and attestations let the attest action sign with this job's own OIDC identity; no secret exists.
     permissions:
@@ -154,6 +256,7 @@ jobs:
       COMMIT: ${{ needs.resolve.outputs.commit }}
       VERSION: ${{ needs.resolve.outputs.version }}
       TAG: ${{ needs.resolve.outputs.tag }}
+      AGENT: ${{ needs.resolve.outputs.agent }}
     steps:
       # This job holds a write token, so it runs only this workflow's own scripts from main, never the release
       # commit's. The release commit's code runs only in the build jobs, which have a read-only token.
@@ -168,8 +271,25 @@ jobs:
           pattern: orbit-*
           path: artifacts
 
+      - name: Download the agent parts
+        if: needs.resolve.outputs.agent == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: agent-delivery-*
+          path: agent-parts
+
+      - name: Verify and combine the agent parts
+        if: needs.resolve.outputs.agent == 'true'
+        run: python3 tools/combine_agent_delivery.py agent-delivery agent-parts/agent-delivery-linux agent-parts/agent-delivery-macos
+
       - name: Prepare release assets
-        run: bin/orbit-cli-release-assets "$VERSION" artifacts release
+        run: |
+          set -euo pipefail
+          agent=()
+          if [ "$AGENT" = true ]; then
+            agent=(agent-delivery "https://github.com/${REPOSITORY}/releases/download/${TAG}")
+          fi
+          bin/orbit-cli-release-assets "$VERSION" artifacts release "${agent[@]}"
 
       # Sigstore signs every release file with this workflow's identity on main; the Gateway verifies the
       # bundle before it installs an agent or names a CLI digest (docs/reference/cli-binaries.md#provenance).

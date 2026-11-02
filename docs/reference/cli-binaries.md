@@ -18,7 +18,9 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries and the commit's [`orbit-agent`](/reference/node-agent#releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries. When the agent source changed since the previous release, the release also holds the [`orbit-agent`](/reference/node-agent#releases).
+
+The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -39,20 +41,23 @@ A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`
 
 ### Assets
 
-Each new release has one CLI binary per supported platform, a checksum file, and a provenance bundle. The agent stays at its frozen published pin.
+Each new release has one CLI binary per supported platform, a checksum file, and a provenance bundle. A release also carries the agent delivery when the agent source changed since the previous release. The Gateway installs only the agent that its [pin](/reference/node-agent#releases) names.
 
 | Asset | Platform | Built on | Run on |
 | --- | --- | --- | --- |
 | `orbit-0.N.0-linux-x86_64` | Linux x86_64 | Hosted `ubuntu-26.04` | The same runner |
 | `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `ubuntu-26.04` | Hosted `macos-26` |
-| `SHA256SUMS` | Checksums of the two CLI binaries | | |
-| `provenance.sigstore.json` | The [provenance](#provenance) of the three files above | | |
+| `orbit-agent-linux-x86_64` | Agent for Linux x86_64, in an agent release only | Hosted `ubuntu-26.04` | |
+| `orbit-agent-macos-aarch64`, `orbit-agent-macos-x86_64` | Agents for macOS, in an agent release only | Hosted `macos-15` | |
+| `manifest.json` | The agent delivery manifest, with each agent's URL in this release, in an agent release only | | |
+| `SHA256SUMS` | Checksums of every binary above | | |
+| `provenance.sigstore.json` | The [provenance](#provenance) of every file above | | |
 
 Each CLI binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the agent's do. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
 
 ### Provenance
 
-The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the three files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
+The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
 
 The certificate names the workflow file and its ref, `orbit-cli-release.yml@refs/heads/main`. A `workflow_run` after CI and a `workflow_dispatch` backfill both run the workflow on `refs/heads/main`, so both sign with that identity. No other workflow or branch can produce it.
 
@@ -231,7 +236,7 @@ PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary f
 
 The macOS job only runs the binary, so it needs no PHP. In October 2026 `shivammathur/setup-php` could not install PHP 8.5 on `macos-26`. That one failed job blocked every CLI release, and the fleet rollout waited for a Linux binary that was never published. Now the Mac needs nothing that a hosted runner does not already have. The release still waits for the macOS run, so it never publishes a macOS binary that does not start.
 
-The repository is public, so hosted macOS runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network. The agent's macOS CI job is different: it runs on mini when `ORBIT_MINI_RUNNER` is `true` ([macOS agent runner](/reference/implementation-loop#macos-agent-runner-on-mini)).
+The repository is public, so hosted macOS runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network. The agent's macOS build in an agent release runs on hosted `macos-15` for the same reasons.
 
 ### Linux x86_64 only
 
