@@ -43,10 +43,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-cert-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-account-" + string(inputs.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("route-cert-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+        name: '${{ ("route-cert-account-" + string(inputs.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.connection.nodeUser }}'
@@ -69,7 +69,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: '${{ ("route-cert-dir-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-dir-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version }}', owner: root, group: caddy, mode: '0750', ensure: present,
         nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
@@ -84,10 +84,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-cert-csr-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-csr-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("route-cert-csr-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+        name: '${{ ("route-cert-csr-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.connection.nodeUser }}'
@@ -111,7 +111,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-cert-key-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-key-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/key.pem" }}', owner: root, group: caddy, mode: '0640', ensure: present,
         nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
@@ -125,7 +125,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("route-cert-sign-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-sign-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: "timeout 90 python3 -I \"$ORBIT_SIGN_SCRIPT\""
@@ -146,7 +146,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-cert-cert-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-cert-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/cert.pem" }}', content: '${{ "-----BEGIN CERTIFICATE-----" + steps["Sign the CSR-" + string(self._index)].outputs.stdout.split("-----BEGIN CERTIFICATE-----")[1] }}', owner: root, group: caddy, mode: '0644', ensure: present,
         nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
@@ -161,7 +161,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("route-cert-current-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-current-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/current" }}', target: '${{ "versions/" + self.leaf.version }}', owner: root, ensure: present,
         nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
@@ -176,10 +176,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-cert-copy-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-copy-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("route-cert-copy-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+        name: '${{ ("route-cert-copy-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.connection.nodeUser }}'
@@ -203,7 +203,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("route-cert-copy-current-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-copy-current-" + string(inputs.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ steps["Read the account"].outputs.stdout.split(":")[5] + "/.orbit/certificates/" + self.leaf.scope + "/current" }}', target: '${{ "versions/" + self.leaf.version }}', owner: '${{ self.leaf.user }}', ensure: present,
         nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
@@ -217,7 +217,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-cert-trust-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-trust-" + string(inputs.node_id)).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt, content: '${{ "-----BEGIN CERTIFICATE-----" + steps["Sign the CSR-0"].outputs.stdout.split("-----BEGIN CERTIFICATE-----")[2] }}', owner: root, group: root, mode: '0644', ensure: present,
         nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
@@ -231,10 +231,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-cert-trust-store-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-trust-store-" + string(inputs.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("route-cert-trust-store-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+        name: '${{ ("route-cert-trust-store-" + string(inputs.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.connection.nodeUser }}'
