@@ -91,6 +91,8 @@ sequenceDiagram
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
   %%> - one step, the mirror of `route:create`, which installs the certificate and publishes the site in one step
+  %%> If it does not hold:
+  %%> - every later step is skipped and the task fails with `route.withdrawal_failed`; the Instance and its source stay
   %%> How:
   %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt/file` (`ensure: absent`) plus `@swamp/cfgmgmt/systemd` reload; nothing is copied to the Node
   %%> Why first:

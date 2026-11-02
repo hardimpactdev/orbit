@@ -544,6 +544,27 @@ it('records native cancellation and leaves accepted removal retryable without re
     expect(app(DirectInstanceDestroyIntent::class)->record($retry))->toEqual($input);
 });
 
+it('fails a run whose Route withdrawal did not hold and keeps the Instance', function (): void {
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    $run = (string) Str::uuid();
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
+        'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
+    // The Route child allowed its PHP pool step to fail; destroy then kept the source and its end check failed.
+    $result = ['withdrawal' => ['ready' => false], 'steps' => ['Check it is gone' => ['status' => 'failed', 'exit_code' => 1]],
+        'summary' => ['failed_steps' => ['Check it is gone']]];
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
+        'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z',
+        'result' => $result, 'error_code' => 'operation.native_failed']);
+
+    expect($operation->refresh()->status->value)->toBe('failed')
+        ->and($operation->result)->toBe(['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed'])
+        ->and(InstanceRemoval::query()->sole()->failed_step->value)->toBe('route_target_clear');
+    $this->assertModelExists($this->instance);
+});
+
 it('projects native failure with its exact failed phase and retries the complete saved admission', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));

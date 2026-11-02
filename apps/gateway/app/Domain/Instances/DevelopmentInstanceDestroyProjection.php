@@ -93,6 +93,10 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             return [ValidatedData::nullableString($data['error_code'] ?? null), []];
         }
         $run = ValidatedData::object($data['result'] ?? []);
+        $withdrawal = $run['withdrawal'] ?? null;
+        if (is_array($withdrawal) && ($withdrawal['ready'] ?? null) === false) {
+            return ['route.withdrawal_failed', ['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed']];
+        }
         $summary = is_array($run['summary'] ?? null) ? $run['summary'] : [];
         $first = is_array($summary['failed_steps'] ?? null) && is_string($summary['failed_steps'][0] ?? null) ? $summary['failed_steps'][0] : null;
         $label = $first === null ? null : preg_replace('/-[0-9]+\z/', '', $first);

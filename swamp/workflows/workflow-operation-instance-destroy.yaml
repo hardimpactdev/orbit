@@ -158,7 +158,7 @@ jobs:
           alternatives: ${{ [inputs.intent.route_mutations.artifacts.dns[self.part.before.dns], inputs.intent.route_mutations.artifacts.dns[self.part.prepared.dns], inputs.intent.route_mutations.artifacts.dns[self.part.withdrawn.dns],
             inputs.intent.route_mutations.artifacts.dns[self.part.after.dns]] }}
         execution_secrets: {}
-    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
   - name: Stop, remove Processes
     labels:
       role: swamp
@@ -178,7 +178,7 @@ jobs:
     - step: Remove DNS records
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
     forEach:
       item: process
       in: ${{ inputs.intent.native_runtime.processes }}
@@ -252,7 +252,7 @@ jobs:
     - step: Stop, remove Processes
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
   - name: Remove SQLite files
     labels:
       role: swamp
@@ -278,7 +278,7 @@ jobs:
     - step: Run teardown steps
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
     writes: true
     forEach:
       item: database
@@ -325,7 +325,7 @@ jobs:
     - step: Remove SQLite files
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
     forEach:
       item: server
       in: ${{ inputs.intent.direct_destroy.database.servers }}
@@ -374,7 +374,7 @@ jobs:
     - step: Drop owned databases
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps && steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -389,10 +389,11 @@ jobs:
   - name: Check it is gone
     labels:
       role: swamp
+    # Always the end check: a source that stayed, for any reason, fails the run.
     dependsOn:
     - step: Remove the source
       condition:
-        type: succeeded
+        type: always
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

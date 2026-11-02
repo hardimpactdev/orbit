@@ -21,7 +21,6 @@ class InstanceNativeFixture(NativeTestCase):
             target=self.repo/'extensions/behaviors/operations'/family
             target.mkdir(parents=True,exist_ok=True)
             for file in files: shutil.copy(ROOT/'extensions/behaviors/operations'/family/file,target/file)
-        shutil.copytree(ROOT/'extensions/behaviors/operations/node-bootstrap/tool_scripts',self.repo/'extensions/behaviors/operations/node-bootstrap/tool_scripts')
         inventory = json.loads((ROOT / 'extensions/models/upstream_extensions.json').read_text())
         for package in ['@swamp/ssh', '@swamp/cfgmgmt']:
             self.cli('extension', 'pull', f"{package}@{inventory[package]['version']}")
@@ -253,6 +252,27 @@ class InstanceDestroyNative(InstanceNativeFixture):
         self.assertEqual(run['status'],'succeeded')
         self.assertEqual(log.read_text(),'17-0_17-1_17-2_18-0_18-1_18-2_')
         self.assertFalse(sibling.exists()); self.assertFalse(self.application.exists())
+    def test_an_unready_route_withdrawal_keeps_the_source_and_fails(self):
+        # A child step that fails is allowed inside the forward child, so only its ready result tells destroy;
+        # beast kept a deleted Instance's PHP pool when destroy went on without it.
+        path=self.repo/'workflows/workflow-route-mutation-forward.yaml'
+        forward=yaml.safe_load(path.read_text())
+        for step in forward['jobs'][0]['steps']:
+            if step['name']=='forward':
+                step.pop('forEach',None)
+                step['task']={'type':'behavior','behaviorType':'command/shell','behaviorName':'${{ "unready-forward-" + run.id }}','methodName':'execute','inputs':{'run':'exit 3'}}
+                step['name']='forward-0'
+        for step in forward['jobs'][0]['steps']:
+            for d in step.get('dependsOn',[]):
+                if d['step']=='forward': d['step']='forward-0'
+        path.write_text(yaml.safe_dump(forward,sort_keys=False))
+        run,steps=self.destroy(False)
+        self.assertEqual(run['status'],'failed')
+        self.assertEqual(steps['Withdraw the Route']['status'],'succeeded')
+        for name in ['Run teardown steps','Remove the source']:
+            self.assertNotIn(steps.get(name,{}).get('status'),['succeeded'])
+        self.assertTrue(self.application.is_dir())
+        self.assertEqual(steps['Check it is gone']['status'],'failed')
     def test_a_failed_teardown_stops_before_route_and_source(self):
         self.teardown(self.application, 17, ['true', 'echo broke >&2; exit 4', 'touch never'])
         run,steps = self.destroy(False)
