@@ -62,7 +62,5 @@ try:
     for field in ("certificate_base64", "root_certificate_base64"):
         sys.stdout.write(base64.b64decode(leaf[field], validate=True).decode())
 except (OSError, ValueError, KeyError, TypeError, StopIteration) as error:
-    sys.exit(
-        "app-dev.certificate_sign_failed: "
-        + str(getattr(error, "code", type(error).__name__))
-    )
+    code = "app-dev.certificate_sign_failed"
+    sys.exit(code + ": " + str(getattr(error, "code", type(error).__name__)))
