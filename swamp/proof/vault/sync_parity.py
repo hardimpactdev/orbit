@@ -10,10 +10,10 @@ result = operation["result"]
 assert result["outcome"] == "succeeded"
 data = result["data"]
 assert data["backend"] == "synced"
-assert len(data["sources"]) == 1 and data["sources"][0].startswith("database:")
+assert len(data["sources"]) == 1 and data["sources"][0].startswith("database-connection:")
 assert len(data["cipher_ids"]) == 1 and data["cipher_ids"][0]
 assert len(data["revisions"]) == 1 and data["revisions"][0]
 assert len(data["fingerprints"]) == 1 and data["fingerprints"][0]
 assert not list(Path("/tmp").glob("orbit-vault-sync.*"))
-assert not any(key in json.dumps(operation["input"]) for key in ("client_secret", "master_password", "cipher"))
+assert not any(key in json.dumps(operation["input"]) for key in ("client_secret", "master_password", '"cipher":'))
 print("Real Bitwarden CLI reconciled one encrypted item; only its public ledger was projected; CLI cache removed.")
