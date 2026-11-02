@@ -61,7 +61,7 @@ sequenceDiagram
     %%> - only public metadata: the expiry
     Note over GW: Read the link once<br/>empty the key · task done
     %%> What it does:
-    %%> - reads `conn-pairing-url-5170` once, keeps the link encrypted on pairing 7, then overwrites the key with an empty value, because Swamp has no vault delete
+    %%> - reads `conn-pairing-url-5170` once, keeps the link encrypted on pairing 7, then deletes the key with the native `vault.delete` frame
     %%> Result:
     %%> - pairing 7 gets its issued and expiry times; task #5170 succeeds
   else T3 refuses or no reply
