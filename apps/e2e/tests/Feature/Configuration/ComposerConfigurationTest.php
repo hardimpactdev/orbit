@@ -415,7 +415,7 @@ it('sets up PHP 8.5 through the one pinned setup-php action in every PHP job of 
         ->not->toContain('php-build');
     expect($phpJobs)->toBe([
         'ci.yml:php', 'ci.yml:gateway-static', 'ci.yml:docs', 'ci.yml:project-check', 'ci.yml:api-reference', 'ci.yml:web',
-        'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
+        'dependency-audit.yml:audit', 'docs-site.yml:publish', 'orbit-cli-binary.yml:build',
     ])
         ->and($directJobs)->toBe(['swamp-shape.yml:test-shards']);
     // The shared action installs PHP and Composer only; it compiles no agent and installs no recipe PHP build.
