@@ -41,7 +41,8 @@ if expected == 'destroyed':
     sys.exit(0)
 check(operation['status'] == 'succeeded' and operation['result'] == {'backend': 'active'}, 'the projected result is backend active')
 stage = '/run/orbit-database-create-' + str(operation['id'])
-check(target('test', '-e', stage).returncode == 1, f'{stage} is gone from the Node')
+for path in (stage + '.env', stage + '-owner.env'):
+    check(target('test', '-e', path).returncode == 1, f'{path} is gone from the Node')
 listing = target('sh', '-c', 'docker ps --format "{{.Names}}" | grep "^orbit-process-.*-proof-dbsrv-' + os.environ['PROOF_RUN'] + '$"').stdout.strip()
 if operation['input']['driver'] == 'mysql':
     check(listing != '', 'the server container runs')

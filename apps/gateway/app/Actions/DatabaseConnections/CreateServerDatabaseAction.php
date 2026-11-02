@@ -129,7 +129,7 @@ final readonly class CreateServerDatabaseAction
                 'databases' => $redis ? [] : [$database, ...($test === null ? [] : ($processes === null ? [$test] : $this->postgresTests->names($test, $processes)))],
                 'test_prefix' => $server->driver === DatabaseDriver::Mysql ? $test : null, 'locale' => $data->locale,
                 'host' => $server->node->wireguard_ip, 'port' => $server->port,
-                'container' => $redis ? null : app(DockerProcessRenderer::class)->containerName($server->process ?? throw new ResourceOperationException('database.server_command_failed', 'The server has no Process.', 502)),
+                'container' => app(DockerProcessRenderer::class)->containerName($server->process ?? throw new ResourceOperationException('database.server_command_failed', 'The server has no Process.', 502)),
                 'index' => $redis ? $data->database : null, 'patterns' => $redis ? $data->patterns : [], 'allow' => $redis ? $data->allow : []];
 
             return $this->retries->record($this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,

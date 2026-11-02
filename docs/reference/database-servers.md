@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/{scripts/{database_create,shipped}.py,database_create_test.py}},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
+  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/create_assets.ts},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
 ---
 
 # Database servers
@@ -20,11 +20,11 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 ## Execution
 
-Managed database creation runs `operation-database-create` on Node 209 in the [chart's](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.create.mmd) four Node steps over official SSH: stage the owner password, create the owner and databases, check the owner login, and remove the staged password.
+Managed database creation runs `operation-database-create` on Node 209 over official SSH, one `docker exec -i` per action ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.create.mmd)): check names are free, create the owner and databases, then log in as the owner over TCP.
 
-The create step reads the server's admin password from its own vault key, `database-server-<id>-admin`, on standard input. A step takes one secret on standard input, so the owner password goes first into a root-only file under `/run`, and an always-run step removes it whether the run passed or failed. The owner key holds only the owner's password and salt, never the admin password.
+The create statement carries the owner's password, so the Gateway renders it and puts it in the vault, and the step reads it on standard input. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's key `database-server-<id>-client-env`; the owner's login uses a second such file. Always-run steps remove both. PostgreSQL uses local trust for the admin work.
 
-Each step sends the shipped phase module and its library in argv, so no script is copied to the Node. Ownership checks precede changes; existing data and passwords survive a rerun. The Gateway projects the recorded connection after native success.
+A database that exists for another owner is refused with `database.name_conflict` before any change. The Gateway projects the recorded connection after native success.
 
 Database actions return one [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs one native DAG on the admitted Nodes and returns a bounded result. The CLI follows the Operation; use `--idempotency-key` after a lost start response. List and show read Gateway records. Tables, schema, describe and read-only queries run in the native Database read workflow.
 

@@ -74,6 +74,97 @@ final readonly class DatabaseStatements
     }
 
     /**
+     * database:create. `probe` and `login` are public; `create` carries the owner's password (or its SCRAM verifier,
+     * or its ACL hash) and goes Gateway → vault → stdin; `owner_env` is the owner's login as a Docker env file.
+     *
+     * @param  array{driver: string, username: string, databases: list<string>, test_prefix: ?string, locale: ?string, index: ?int, patterns: list<string>, allow: list<string>}  $input
+     * @return array{probe: string, login: string, create: string, owner_env: string}
+     */
+    public function create(array $input, #[\SensitiveParameter] string $password, string $salt): array
+    {
+        $driver = DatabaseDriver::from($input['driver']);
+        $user = $input['username'];
+        if ($driver === DatabaseDriver::Redis) {
+            if (preg_match('/\A[A-Za-z0-9_-]{1,63}\z/D', $user) !== 1) {
+                $this->invalid();
+            }
+            $rules = ['reset', 'on', '#'.hash('sha256', $password), ...array_map(static fn (string $p): string => '~'.$p, $input['patterns']),
+                'resetchannels', '-@all', ...array_map(static fn (string $r): string => '+'.$r, $input['allow']), '-@admin', '-@dangerous', '-function', '-script',
+                ...(in_array('flushdb', $input['allow'], true) ? ['+flushdb'] : [])];
+            foreach ($rules as $rule) {
+                if (preg_match('/\A[^\s\x00-\x1F"]{1,1024}\z/D', $rule) !== 1) {
+                    $this->invalid();
+                }
+            }
+
+            return ['probe' => "CONFIG GET databases\nACL GETUSER {$user}\n", 'login' => "PING\n",
+                'create' => "ACL SETUSER {$user} ".implode(' ', $rules)."\nACL SAVE\n", 'owner_env' => "REDISCLI_AUTH={$password}\n"];
+        }
+        foreach ([$user, ...$input['databases'], ...($input['test_prefix'] === null ? [] : [$input['test_prefix']])] as $name) {
+            if (preg_match(self::NAME, $name) !== 1) {
+                $this->invalid();
+            }
+        }
+        $pg = $driver === DatabaseDriver::Pgsql;
+        $names = $this->list($input['databases']);
+        if ($pg) {
+            $locale = $input['locale'] === null ? '' : " TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE '{$input['locale']}'";
+            $create = "DO \$orbit\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{$user}') THEN CREATE ROLE \"{$user}\" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '".self::scram($password, $salt)."'; END IF; END \$orbit\$;\n";
+            foreach ($input['databases'] as $name) {
+                // psql \\gexec runs CREATE DATABASE outside a transaction; the statement is a literal, so its quotes double.
+                $statement = str_replace("'", "''", "CREATE DATABASE \"{$name}\" OWNER \"{$user}\"{$locale}");
+                $create .= "SELECT '{$statement}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='{$name}')\\gexec\n";
+            }
+            foreach ($input['databases'] as $name) {
+                $create .= "REVOKE ALL ON DATABASE \"{$name}\" FROM PUBLIC;\n\\connect {$name}\nREVOKE CREATE ON SCHEMA public FROM PUBLIC;\nGRANT ALL ON SCHEMA public TO \"{$user}\";\n\\connect postgres\n";
+            }
+            // A database that exists with another owner, or a role that exists with superuser-like rights, is not ours to reuse.
+            $probe = "SELECT datname FROM pg_database WHERE datname IN ({$names}) AND pg_get_userbyid(datdba) <> '{$user}' UNION ALL SELECT rolname FROM pg_roles WHERE rolname='{$user}' AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication);\n";
+
+            return ['probe' => $probe, 'login' => "SELECT current_user;\n", 'create' => $create, 'owner_env' => "PGPASSWORD={$password}\n"];
+        }
+        $prefix = $input['test_prefix'];
+        $create = "CREATE USER IF NOT EXISTS '{$user}'@'%' IDENTIFIED BY '".str_replace(['\\', "'"], ['\\\\', "''"], $password)."';\n";
+        foreach ($input['databases'] as $name) {
+            $create .= "CREATE DATABASE IF NOT EXISTS `{$name}`;\nGRANT ALL PRIVILEGES ON `".str_replace('_', '\\_', $name)."`.* TO '{$user}'@'%';\n";
+        }
+        if ($prefix !== null) {
+            $create .= 'GRANT ALL PRIVILEGES ON `'.str_replace('_', '\\_', $prefix)."%`.* TO '{$user}'@'%';\n";
+        }
+        // An existing database the owner holds no full grant on belongs to someone else.
+        $grant = "d.Db=REPLACE(s.SCHEMA_NAME,'_','\\\\_')";
+        $probe = "SELECT s.SCHEMA_NAME FROM information_schema.SCHEMATA s WHERE s.SCHEMA_NAME IN ({$names}) AND NOT EXISTS (SELECT 1 FROM mysql.db d WHERE d.User='{$user}' AND d.Host='%' AND {$grant} AND d.Create_priv='Y');\n";
+
+        return ['probe' => $probe, 'login' => "SELECT CURRENT_USER();\n", 'create' => $create, 'owner_env' => "MYSQL_PWD={$password}\n"];
+    }
+
+    /** PostgreSQL's SCRAM-SHA-256 verifier, so the plaintext password never reaches the server's SQL log. */
+    public static function scram(#[\SensitiveParameter] string $password, string $salt): string
+    {
+        $salted = hash_pbkdf2('sha256', $password, base64_decode($salt, true) ?: '', 4096, 32, true);
+        $stored = hash('sha256', hash_hmac('sha256', 'Client Key', $salted, true), true);
+        $server = hash_hmac('sha256', 'Server Key', $salted, true);
+
+        return "SCRAM-SHA-256\$4096:{$salt}\$".base64_encode($stored).':'.base64_encode($server);
+    }
+
+    /**
+     * The owner's client argv for the login check, over TCP so the password itself is proven.
+     *
+     * @return list<string>
+     */
+    public static function ownerClient(DatabaseDriver $driver, string $container, string $login, string $user, string $database): array
+    {
+        return match ($driver) {
+            DatabaseDriver::Pgsql => ['docker', 'exec', '-i', '--env-file', $login, $container, 'psql', '--no-psqlrc', '--host=127.0.0.1', "--username={$user}",
+                "--dbname={$database}", '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1'],
+            DatabaseDriver::Redis => ['docker', 'exec', '-i', '--env-file', $login, $container, 'valkey-cli', '--user', $user, '--no-auth-warning'],
+            default => ['docker', 'exec', '-i', '--env-file', $login, $container, 'mysql', '--protocol=TCP', '--host=127.0.0.1', "--user={$user}",
+                '--batch', '--skip-column-names'],
+        };
+    }
+
+    /**
      * The admin client argv for one `docker exec -i` with the statement on stdin. MySQL and Valkey read the admin login
      * from the env file a step writes with cfgmgmt/file; PostgreSQL uses local trust inside the container.
      *
