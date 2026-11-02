@@ -49,7 +49,7 @@ jobs:
       - name: Withdraw the Caddy sites
         labels: *ref_0
         forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p,!inputs.offline || p.node_id != inputs.intent.node_id).filter(p,p.after.caddy != null) }}'}
-        task: {type: workflow, workflowIdOrName: operation-route-caddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy.caddy }}'}}, execution_secrets: {}}}
+        task: {type: workflow, workflowIdOrName: operation-route-caddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy }}'}}, execution_secrets: {}}}
   - name: phase_2
     dependsOn:
       - job: phase_1

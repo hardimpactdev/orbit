@@ -1,7 +1,7 @@
 {
   "workflow": "operation-node-role-remove-direct",
   "topology": "minimal",
-  "clean": true,
+  "clean": false,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "prepare": [],
@@ -18,7 +18,7 @@
     [
       "sh",
       "-c",
-      "printf '%s' '{\"roles\":{\"${node.target}\":[\"websocket\"]}}' | php tools/swamp-proof-guest/gateway.php fixture"
+      "cd apps/gateway && printf '%s' '{\"roles\":{\"${node.target}\":[\"websocket\"]}}' | php ../../tools/swamp-proof-guest/gateway.php fixture"
     ]
   ],
   "before_node": {

@@ -251,7 +251,7 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
                     control_node_id: 209,
                     host_keys: ex("self.publication.host_keys"),
                     connection: ex("self.publication.connection"),
-                    caddy: ex("self.publication.after.caddy.caddy"),
+                    caddy: ex("self.publication.after.caddy"),
                 },
             },
         )],

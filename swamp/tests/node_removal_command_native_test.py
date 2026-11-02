@@ -114,6 +114,24 @@ if 'delete' in sys.argv:print('Could not delete non-existent rule');sys.exit(1)
         self.assertFalse(self.file.exists())
         self.assertTrue(self.data.exists())
 
+    def test_role_passes_the_admitted_caddy_document_to_the_publication_child(self):
+        publication = {'node_id': 701, 'control_node_id': 209, 'host_keys': self.ssh['target']['host_keys'],
+                       'connection': {'nodeHost': 'fixture', 'nodeUser': 'fixture'},
+                       'before': {'caddy': {'content': 'before'}, 'php': None, 'dns': None},
+                       'after': {'caddy': {'content': '# desired Caddy'}, 'php': None, 'dns': None}}
+        self.role['publications'] = [publication]
+        child = {'id': '13129719-09a9-4833-afb8-4eb1611fdd20', 'name': 'operation-route-caddy',
+                 'inputs': {'type': 'object'}, 'jobs': [{'name': 'publish', 'steps': [{
+                     'name': 'Check the captured document', 'task': {'type': 'assert', 'severity': 'high',
+                         'expr': 'inputs.intent.caddy_publication.caddy.content == "# desired Caddy"',
+                         'message': 'The publication child did not receive the admitted Caddy document.'}}]}]}
+        (self.repo / 'workflows/workflow-operation-route-caddy.yaml').write_text(json.dumps(child))
+
+        self.run_root('node-role-remove', self.role, offline=False)
+
+        self.assertFalse(self.file.exists())
+        self.assertTrue(self.data.exists())
+
     def test_failed_stop_keeps_following_files_and_reports_failure(self):
         self.native_env['FAIL_STOP'] = '1'
         self.run_root('node-role-remove', self.role, success=False, offline=False)
