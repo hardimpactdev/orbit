@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Cluster;
@@ -40,7 +41,7 @@ afterEach(function (): void {
     }
 });
 
-it('admits Database-only convergence without a target worker and copies only the existing observer digest', function (): void {
+it('admits Database-only convergence without a target worker or a vault copy, with the public verifier in its intent', function (): void {
     config(['swamp.run_token' => 'fake.token']);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
@@ -51,15 +52,15 @@ it('admits Database-only convergence without a target worker and copies only the
         ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]]
         : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => $sent['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     DB::commit();
-    expect(array_column($socket->sent, 'type'))->toBe(['vault.put', 'workflow.run'])
-        ->and($socket->sent[0]['payload']['value'])->toBe(str_repeat('e', 64));
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
     $input = app(DirectOperation::class)->workflowInputs($operation);
     expect($input['intent']['node_id'])->toBe($this->node->id)
         ->and($input['intent']['ssh']['control_node_id'])->toBe(209)
         ->and($input['intent']['ssh']['target']['host_keys'])->toBe([$this->node->ssh_host_key_type.' '.$this->node->ssh_host_key])
         ->and($operation->input['participant_node_ids'])->toContain(209)
         ->and(NodeRoleDirectInput::ownerId($operation))->toBeNull()
-        ->and(json_encode($input, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('e', 64));
+        ->and($input['intent']['verifier_hash'])->toBe(str_repeat('e', 64))
+        ->and((array) $input['execution_secrets'])->toBe([]);
 });
 
 it('preserves the retained snapshot for other role sets and their callback reads', function (): void {
@@ -175,7 +176,7 @@ it('captures complete pinned Ingress publication and firewall without a target w
         ->and($intent['firewall']['desired'])->not->toBeEmpty()
         ->and($intent['firewall']['desired'][0])->toBe(['ufw', 'allow', 'in', 'on', 'orbit', 'to', $node->wireguard_ip, 'comment', 'orbit:wireguard-members'])
         ->and($intent['firewall']['remove'][0])->toBe(['ufw', '--force', 'delete', 'allow', 'in', 'proto', 'tcp', 'to', 'any', 'port', (string) $node->public_ssh_port, 'comment', 'orbit:public-ssh-recovery'])
-        ->and($intent['caddy_package'])->toHaveKeys(['release', 'minimum_version', 'amd64_sha512']);
+        ->and($intent['caddy_package'])->toBe(AgentCaddyPackage::nativeInput());
     $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     expect(NativeNodeRoleConvergeInput::supports($node, RoleName::Ingress))->toBeFalse();
 });
