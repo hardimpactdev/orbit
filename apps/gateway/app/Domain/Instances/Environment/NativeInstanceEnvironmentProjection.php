@@ -50,8 +50,9 @@ final readonly class NativeInstanceEnvironmentProjection implements DirectOperat
         $run = ValidatedData::object($data['result'] ?? []);
         $plan = ValidatedData::object($operation->input['direct_environment']);
         $status = $data['status'] ?? null;
-        $read = is_array($run['steps']['Read the key names'] ?? null) && is_string($run['steps']['Read the key names']['stdout'] ?? null)
-            ? explode("\n", $run['steps']['Read the key names']['stdout']) : [];
+        $steps = is_array($run['steps'] ?? null) ? $run['steps'] : [];
+        $keyNames = is_array($steps['Read the key names'] ?? null) ? $steps['Read the key names'] : [];
+        $read = is_string($keyNames['stdout'] ?? null) ? explode("\n", $keyNames['stdout']) : [];
         if (in_array($status, [OperationStatus::Failed->value, OperationStatus::Interrupted->value], true)) {
             if (NativeRunResult::stepStatus($run, 'Check for foreign keys') === 'failed') {
                 $known = [...ValidatedData::stringList($plan['keys']), ...ValidatedData::stringList($plan['owned_keys'])];
@@ -60,7 +61,7 @@ final readonly class NativeInstanceEnvironmentProjection implements DirectOperat
 
                 return ['env.sync_would_drop_keys', ['error_code' => 'env.sync_would_drop_keys', 'foreign_keys' => $foreign]];
             }
-            $refresh = array_filter(is_array($run['steps'] ?? null) ? $run['steps'] : [], static fn (mixed $step, int|string $name): bool => str_starts_with((string) $name, 'Refresh the runtime')
+            $refresh = array_filter($steps, static fn (mixed $step, int|string $name): bool => str_starts_with((string) $name, 'Refresh the runtime')
                 && is_array($step) && ($step['status'] ?? null) === 'failed', ARRAY_FILTER_USE_BOTH);
             $code = $refresh !== [] ? 'env.runtime_refresh_failed'
                 : ValidatedData::nullableString($data['error_code'] ?? null) ?? 'operation.native_failed';

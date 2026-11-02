@@ -31,19 +31,16 @@ inputs:
         ssh_execution: {type: object}
       required: [environment, runtime, ssh_execution]
       additionalProperties: false
+    # environment always; testing when the Gateway rendered .env.testing.
     execution_secrets:
       type: object
-      properties:
-        environment: &secret
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^instance-environment-(?:testing-)?[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-        testing: *secret
-      required: [environment]
-      additionalProperties: false
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^instance-environment-(?:testing-)?[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
@@ -58,7 +55,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: &ssh
+      globalArgs:
         name: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
@@ -133,9 +130,19 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
+      behaviorName: ${{ "instance-environment-refresh-" + string(inputs.node_id) + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *ssh
+      globalArgs:
+        name: ${{ "instance-environment-refresh-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
         hosts: name:target
         argv: ${{ self.action }}
