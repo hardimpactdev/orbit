@@ -162,7 +162,7 @@ Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`lab
 | `operation-ai-router-account-update` | 3: AI router accounts |
 | `operation-conn-direct`, `operation-vault-direct`, `operation-dependency-merge`, `node-worker-canary` | 4: one step each |
 
-Task VM hosts keep a Node worker for the remaining image work: `operation-task-vm-upcloud-image-build` and `operation-task-vm-cache-fill` run on the host itself. Shark keeps `orbit-node-13` for them. `operation-task-vm-image-build` and `task-vm-image-reaper` run every step on role `swamp` workers and reach the host over official SSH.
+Task VM hosts keep a Node worker for the remaining image work: `operation-task-vm-upcloud-image-build` runs on the host itself. Shark keeps `orbit-node-13` for it. `operation-task-vm-image-build`, `task-vm-image-reaper` and `operation-task-vm-cache-fill` run every step on role `swamp` workers and reach the host over official SSH.
 
 ## Test layout
 

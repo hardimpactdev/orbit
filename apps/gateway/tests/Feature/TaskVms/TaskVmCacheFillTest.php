@@ -3,21 +3,23 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\StartTaskVmPackageCacheOperationAction;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Domain\TaskVms\TaskVmPackageCacheProjection;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\PackageCacheEntry;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\Schedules\NativeScheduleReplies;
 use Tests\Support\TaskVmSettingsBuilder;
 
 function cacheFillArtifact(string $key): array
@@ -28,73 +30,96 @@ function cacheFillArtifact(string $key): array
 function cacheFillAdmission(array $artifacts): Operation
 {
     $host = Node::query()->create(['name' => 'cache-host', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '192.0.2.10', 'public_ssh_port' => 22, 'user' => 'orbit', 'wireguard_ip' => '10.44.0.7']);
-    $gateway = Node::query()->create(['public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'name' => 'gateway', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.1']);
-    NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    $services = Node::query()->create(['public_ssh_host' => '192.0.2.12', 'user' => 'orbit', 'name' => 'services', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.3']);
-    $host->accessibleNodes()->attach($gateway);
-    config(['dependency_detection.services_node_id' => $services->id]);
-    test()->withServerVariables(['REMOTE_ADDR' => $host->wireguard_ip]);
+        'public_ssh_host' => '192.0.2.10', 'public_ssh_port' => 22, 'user' => 'orbit', 'wireguard_ip' => '10.44.0.7',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-pin']);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id)]]);
     $project = Project::query()->create(['name' => 'Cache', 'slug' => 'cache', 'repository_url' => 'https://github.com/example/cache.git']);
-    PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => $artifacts]);
+    PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => $artifacts, 'fill_pending' => true]);
 
     return app(StartTaskVmPackageCacheOperationAction::class)->execute($host->id);
 }
 
-beforeEach(function (): void {
-    $this->run = '80fc2fea-52e3-46ed-b789-d38219c231c6';
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-task-vm-cache-fill', 'runId' => $this->run,
-    ]]];
-    app()->instance(WebSocketClient::class, $socket);
-    app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
-    config(['swamp.run_token' => 'fixture.token']);
-    $this->outcome = ['run_id' => $this->run, 'status' => 'running', 'started_at' => '2026-10-31T00:00:00.000Z'];
-});
-
-function cacheBatch(array $hashes = [], array $failures = []): array
+/** One batch reply as the pinned agent prints it. */
+function cacheFillReply(array $hashes = [], array $failures = []): string
 {
-    return ['replace_inventory' => true, 'archive_ids' => array_keys($hashes), 'archive_digests' => array_values($hashes),
-        'failed_ids' => array_keys($failures), 'failure_reasons' => array_values($failures)];
+    return json_encode(['ok' => true, 'data' => ['hashes' => (object) $hashes, 'failures' => (object) $failures]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
 }
 
-it('admits one exact-host native root with safe input and no executor fallback', function (): void {
-    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
-    expect(app(StartTaskVmPackageCacheOperationAction::class)->execute($op->node_id)->id)->toBe($op->id);
-    expect(app(OperationKinds::class)->directOnly($op->kind))->toBeTrue()->and(DirectOperation::owns($op))->toBeTrue()
-        ->and(app(OperationKinds::class)->definition('task_vm.fill_package_cache_batch'))->toBeNull()
-        ->and($op->input)->not->toHaveKeys(['batches', 'deadline_at'])->and($op->lock_key)->toBeNull();
-    $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id='.$this->run)->assertOk()
-        ->assertJsonPath('data.input.artifacts.0.key', 'archive')->assertJsonMissingPath('data.input.github_token')
-        ->assertJsonMissingPath('data.input.snapshots');
+beforeEach(function (): void {
+    $this->run = '80fc2fea-52e3-46ed-b789-d38219c231c6';
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $message): array => NativeScheduleReplies::for($message) ?? [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-task-vm-cache-fill', 'runId' => $this->run,
+    ]]];
+    app()->instance(WebSocketClient::class, $this->socket);
+    $this->manifest = tempnam(sys_get_temp_dir(), 'cache-fill-agent-');
+    file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
+    config(['swamp.run_token' => 'fixture.token']);
 });
 
-it('refuses oversized artifact keys before recording intent', function (): void {
+afterEach(function (): void {
+    unlink($this->manifest);
+});
+
+function cacheFillTerminal(Operation $op, string $status, array $replies): Operation
+{
+    $result = ['steps' => [], 'summary' => ['status' => $status, 'succeeded' => 0, 'failed' => 0, 'skipped' => 0, 'failed_steps' => []]];
+    foreach ($replies as $batch => $stdout) {
+        $result['fill_'.$batch] = $stdout;
+    }
+
+    return app(TaskVmPackageCacheProjection::class)->apply($op->fresh(), ['run_id' => test()->run, 'status' => $status,
+        'started_at' => '2026-11-02T00:00:00.000Z', 'finished_at' => '2026-11-02T00:00:01.000Z', 'result' => $result,
+        'error_code' => $status === 'failed' ? 'operation.native_failed' : null,
+        'failure' => $status === 'failed' ? ['failed_step' => 'Check every archive', 'detail' => 'task_vm.package_cache_failed'] : null]);
+}
+
+it('starts one native run on role swamp with the full intent and one vault request per batch', function (): void {
+    $artifacts = array_map(cacheFillArtifact(...), array_map(static fn (int $i): string => 'archive-'.$i, range(0, 4096)));
+    $op = cacheFillAdmission($artifacts);
+    expect(app(StartTaskVmPackageCacheOperationAction::class)->execute($op->node_id)->id)->toBe($op->id)
+        ->and(app(OperationKinds::class)->directOnly($op->kind))->toBeTrue()->and(DirectOperation::owns($op))->toBeTrue()
+        ->and(app(DirectOperation::class)->definition($op->kind))->not->toHaveKey('private_material')
+        ->and($op->input)->not->toHaveKey('github_token');
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'workflow.run']);
+    $requests = array_map(static fn (array $frame): array => json_decode($frame['payload']['value'], true, flags: JSON_THROW_ON_ERROR), array_slice($this->socket->sent, 0, 2));
+    expect(array_column(array_column(array_slice($this->socket->sent, 0, 2), 'payload'), 'key'))->toBe(['task-vm-cache-fill-'.$op->node_id.'-0', 'task-vm-cache-fill-'.$op->node_id.'-1'])
+        ->and($requests[0]['agent_sha256'])->toBe(str_repeat('a', 64))
+        ->and($requests[0]['input'])->toMatchArray(['operation' => 'fill', 'github_token' => null])
+        ->and(count($requests[0]['input']['artifacts']))->toBe(4096)
+        ->and(array_column($requests[1]['input']['artifacts'], 'key'))->toBe(['archive-4096']);
+    $inputs = $this->socket->sent[2]['payload']['inputs'];
+    expect($inputs['intent']['batches'])->toBe([0, 1])
+        ->and($inputs['intent']['ssh_execution']['target'])->toMatchArray(['host' => '10.44.0.7', 'host_keys' => ['ssh-ed25519 fixture-host-pin']])
+        ->and($inputs['execution_secrets'])->toBe([
+            'batch_0' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-cache-fill-'.$op->node_id.'-0'],
+            'batch_1' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-cache-fill-'.$op->node_id.'-1'],
+        ]);
+    expect(OperationRunBudgets::seconds($op->fresh()))->toBe(2100);
+});
+
+it('refuses oversized artifact keys and inventories past the batch bound before recording intent', function (array $artifacts, string $message): void {
     Queue::fake();
-    expect(fn () => cacheFillAdmission([cacheFillArtifact(str_repeat('a', 1025))]))->toThrow(TaskVmException::class, 'cache key exceeds');
+    expect(fn () => cacheFillAdmission($artifacts))->toThrow(TaskVmException::class, $message);
     $this->assertDatabaseCount('operations', 0);
     Queue::assertNothingPushed();
-});
+})->with([
+    'key' => [[cacheFillArtifact(str_repeat('a', 1025))], 'cache key exceeds'],
+    'inventory' => [array_map(static fn (int $i): array => cacheFillArtifact('a-'.$i), range(0, 8 * 4096)), 'batch bound'],
+]);
 
-it('projects partial verified inventory and replays it without retaining executor receipts', function (): void {
+it('records verified archives from the batch replies when a refused archive fails the run', function (): void {
     $op = cacheFillAdmission([cacheFillArtifact('verified'), cacheFillArtifact('refused')]);
-    $path = '/api/v1/direct-operations/'.$op->id.'/result';
-    $this->postJson($path, $this->outcome)->assertOk();
     $hash = 'sha256-'.str_repeat('a', 64);
-    $batch = cacheBatch(['verified' => $hash], ['refused' => 'ChecksumMismatch']);
-    $this->postJson($path, [...$this->outcome, 'result' => $batch])->assertOk();
-    $this->postJson($path, [...$this->outcome, 'result' => $batch])->assertOk();
+    $reply = cacheFillReply(['verified' => $hash], ['refused' => 'Archive checksum mismatch']);
+    cacheFillTerminal($op, 'failed', [$reply]);
+    expect($op->fresh()->status->value)->toBe('failed')->and($op->fresh()->error_code)->toBe('task_vm.package_cache_failed');
     $this->assertDatabaseHas('package_cache_entries', ['host_node_id' => $op->node_id, 'key' => 'verified', 'integrity' => $hash]);
     $this->assertDatabaseCount('package_cache_entries', 1);
     expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeTrue();
-    $final = [...$this->outcome, 'status' => 'failed', 'finished_at' => '2026-10-31T00:00:01.000Z',
-        'error_code' => 'task_vm.package_cache_failed', 'result' => ['error_code' => 'task_vm.package_cache_failed']];
-    $this->postJson($path, $final)->assertOk()->assertJsonPath('data.status', 'failed');
-    $this->postJson($path, $final)->assertOk();
+    cacheFillTerminal($op, 'failed', [cacheFillReply()]);
     $this->assertDatabaseCount('package_cache_entries', 1);
-    expect($op->fresh()->state)->not->toHaveKeys(['children', 'executor_runs']);
 });
 
 it('updates only the admitted snapshot and completes fully verified inventory', function (bool $stale): void {
@@ -102,50 +127,30 @@ it('updates only the admitted snapshot and completes fully verified inventory', 
     if ($stale) {
         PackageCacheSnapshot::query()->sole()->update(['blobs' => ['composer.lock' => 'new']]);
     }
-    $path = '/api/v1/direct-operations/'.$op->id.'/result';
-    $this->postJson($path, [...$this->outcome, 'result' => cacheBatch(['archive' => 'sha256-'.str_repeat('b', 64)])])->assertOk();
-    $this->postJson($path, [...$this->outcome, 'status' => 'succeeded', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
-    expect(PackageCacheEntry::query()->count())->toBe($stale ? 0 : 1);
+    cacheFillTerminal($op, 'succeeded', [cacheFillReply(['archive' => 'sha256-'.str_repeat('b', 64)])]);
+    expect($op->fresh()->status->value)->toBe('succeeded')->and($op->fresh()->result)->toBe(['ready' => true])
+        ->and(PackageCacheEntry::query()->count())->toBe($stale ? 0 : 1);
     if (! $stale) {
         expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeFalse();
     }
 })->with([false, true]);
 
-it('refuses a late running batch without changing verified inventory', function (): void {
+it('refuses a reply that names an archive outside its batch without changing inventory', function (): void {
     $op = cacheFillAdmission([cacheFillArtifact('archive')]);
-    $path = '/api/v1/direct-operations/'.$op->id.'/result';
-    $hash = 'sha256-'.str_repeat('a', 64);
-    $this->postJson($path, [...$this->outcome, 'result' => cacheBatch(['archive' => $hash])])->assertOk();
-    $this->postJson($path, [...$this->outcome, 'status' => 'succeeded', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
-    $before = PackageCacheEntry::query()->sole()->getAttributes();
-    $this->postJson($path, [...$this->outcome, 'result' => cacheBatch()])->assertConflict();
-    expect(PackageCacheEntry::query()->sole()->getAttributes())->toBe($before);
-    expect($op->fresh()->status->value)->toBe('succeeded');
+    expect(fn () => cacheFillTerminal($op, 'succeeded', [cacheFillReply(['other' => 'sha256-'.str_repeat('a', 64)])]))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.result_invalid'));
+    $this->assertDatabaseCount('package_cache_entries', 0);
+    expect($op->fresh()->status->value)->not->toBe('succeeded');
 });
 
-it('keeps verified inventory when cancellation happens before a fill result', function (): void {
+it('keeps verified inventory when the run is cancelled before a fill reply', function (): void {
     $op = cacheFillAdmission([cacheFillArtifact('archive')]);
     $snapshot = PackageCacheSnapshot::query()->sole();
     PackageCacheEntry::query()->create(['project_id' => $snapshot->project_id, 'host_node_id' => $op->node_id,
         'manager' => 'npm', 'package' => 'package-archive', 'version' => '1.0.0', 'key' => 'archive', 'integrity' => 'sha256-'.str_repeat('a', 64)]);
-    $path = '/api/v1/direct-operations/'.$op->id.'/result';
-    $this->postJson($path, $this->outcome)->assertOk();
-    $this->postJson($path, [...$this->outcome, 'status' => 'cancelled', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => []])->assertOk();
+    cacheFillTerminal($op, 'cancelled', []);
+    expect($op->fresh()->status->value)->toBe('cancelled');
     $this->assertDatabaseCount('package_cache_entries', 1);
-});
-
-it('hydrates only the owning root through the shared private callback', function (): void {
-    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
-    $path = '/api/v1/direct-operations/'.$op->id.'/private-material?run_id='.$this->run;
-    $this->withServerVariables(['REMOTE_ADDR' => Node::query()->where('name', 'services')->sole()->wireguard_ip]);
-    $this->getJson($path)->assertForbidden();
-    $host = Node::query()->findOrFail($op->node_id);
-    $host->accessibleNodes()->syncWithoutDetaching([Node::query()->where('name', 'gateway')->sole()->id]);
-    config(['operation_executor.worker_node_ids' => [$host->id]]);
-    $this->withServerVariables(['REMOTE_ADDR' => $host->wireguard_ip]);
-    $this->getJson($path)->assertOk()->assertJsonPath('data.github_token', null)->assertHeader('Cache-Control', 'no-store, private');
-    $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id='.$this->run)->assertOk()->assertJsonMissingPath('data.input.github_token');
-    $this->getJson(str_replace($this->run, '413c7594-13e7-40bf-b952-90df5a0eb737', $path))->assertConflict();
 });
 
 it('does not count another hosts stale version as a fully replicated archive', function (): void {
@@ -156,6 +161,6 @@ it('does not count another hosts stale version as a fully replicated archive', f
     $hash = 'sha256-'.str_repeat('a', 64);
     PackageCacheEntry::query()->create(['project_id' => $snapshot->project_id, 'host_node_id' => $other->id,
         'manager' => 'npm', 'package' => 'package-archive', 'version' => '0.9.0', 'key' => 'archive', 'integrity' => $hash]);
-    $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', [...$this->outcome, 'result' => cacheBatch(['archive' => $hash])])->assertOk();
+    cacheFillTerminal($op, 'succeeded', [cacheFillReply(['archive' => $hash])]);
     expect($snapshot->fresh()->fill_pending)->toBeTrue();
 });

@@ -86,6 +86,8 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. The budget is replaced by the 14-day p95 once repository installs have native history.
 
+`task_vm.fill_package_cache` has a provisional 2,100 seconds: the legacy fill's single 1,700-second budget plus margin for the run start and the end check. Each batch is bounded on the host by `timeout 1530`. A first success replaces it with a p95.
+
 Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes. The observer caches each kind’s history budget for one pass; it makes no additional Swamp request or polling loop.
 
 An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. Startup recovery includes these rows, even when cancellation was already requested.

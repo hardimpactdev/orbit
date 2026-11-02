@@ -20,9 +20,3 @@ it('refuses UpCloud hydration for an Incus VM before reading the configured toke
     expect(fn () => app(OperationSecrets::class)->references($operation, ['token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]], ['token' => 'upcloud.api']))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.execution_forbidden'));
 });
-
-it('refuses a package cache credential on a different execution Node', function (): void {
-    $operation = new Operation(['kind' => 'task_vm.fill_package_cache', 'target_type' => 'task_vm_cache', 'target_id' => 4, 'node_id' => 5]);
-    expect(fn () => app(OperationSecrets::class)->references($operation, ['github_token' => ['$secret' => 'task_vm.package_cache_github', 'id' => 4]], ['github_token' => 'task_vm.package_cache_github']))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.execution_forbidden'));
-});

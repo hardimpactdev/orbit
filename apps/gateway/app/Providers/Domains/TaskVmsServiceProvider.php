@@ -33,7 +33,7 @@ final class TaskVmsServiceProvider extends ServiceProvider
         $this->app->scoped(TaskVmModelAdmission::class);
         $this->app->tag(TaskVmImageArtifactSource::class, OperationSecretSource::class);
         $this->app->tag(TaskVmImageBootstrapStore::class, OperationSecretOutputStore::class);
-        foreach (['upcloud.api', 'task_vm.package_cache_github', 'task_vm.image_bootstrap'] as $source) {
+        foreach (['upcloud.api', 'task_vm.image_bootstrap'] as $source) {
             $name = 'task-vm.secret.'.$source;
             $this->app->bind($name, static fn (): TaskVmSecretSource => new TaskVmSecretSource($source));
             $this->app->tag($name, OperationSecretSource::class);

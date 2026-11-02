@@ -4,25 +4,70 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\TaskVmInputs;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\PackageCacheEntry;
 use App\Models\PackageCacheSnapshot;
+use App\Models\Project;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-/** Projects bounded native cache results against the admitted lockfile snapshots. */
-final readonly class TaskVmPackageCacheProjection implements DirectOperationProjection
+/** Pinned agent batches at the run start, then one terminal projection of the batch replies against the admitted lockfile snapshots. */
+final readonly class TaskVmPackageCacheProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
+    /** One agent request stays below the agent's 4 MiB envelope limit. */
+    public const int BatchArtifacts = 4096;
+
+    /** Every batch reply is read from one native history read, which the shared reader bounds at 8 MiB. */
+    public const int MaximumBatches = 8;
+
+    /** Each batch request runs inside this agent deadline; the step's literal `timeout 1530` bounds it on the host. */
+    public const int BatchDeadlineMilliseconds = 1_500_000;
+
+    public const string FillStep = 'Fill the package cache';
+
     public function __construct(private TaskVmSettings $settings) {}
 
+    /** Fixed captures: the full stdout of each batch's fill step.
+     * @return array<string,array{job:string,step:string,field:string}>
+     */
+    public static function captures(): array
+    {
+        $captures = [];
+        for ($batch = 0; $batch < self::MaximumBatches; $batch++) {
+            $captures['fill_'.$batch] = ['job' => 'fill', 'step' => self::FillStep.'-'.$batch, 'field' => 'stdout'];
+        }
+
+        return $captures;
+    }
+
+    /** @param list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}> $artifacts
+     * @return list<list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}>>
+     */
+    public static function batches(array $artifacts): array
+    {
+        $batches = array_chunk($artifacts, self::BatchArtifacts);
+
+        return $batches === [] ? [[]] : $batches;
+    }
+
+    /** Public intent only: the host's pinned SSH target, the batch numbers and the integrity conflicts. */
     public function input(Operation $operation): array
     {
         $input = $operation->input;
@@ -30,27 +75,109 @@ final readonly class TaskVmPackageCacheProjection implements DirectOperationProj
             || $operation->node_id !== $operation->target_id || ($input['host_node_id'] ?? null) !== $operation->node_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Cache intent requires its exact admitted host.', 422);
         }
-
         $this->settings->host(ValidatedData::integer($operation->node_id));
 
-        return [...Arr::only($input, ['artifacts', 'max_bytes']), 'conflicts' => (object) ValidatedData::stringMap($input['conflicts'])];
+        return ['intent' => [
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id)),
+            'batches' => array_keys(self::batches(TaskVmInputs::artifacts($input['artifacts']))),
+            'conflicts' => (object) ValidatedData::stringMap($input['conflicts']),
+        ], 'execution_secrets' => []];
+    }
+
+    /** The run start writes each batch's whole agent request, with the minted GitHub token, into the vault. */
+    public function workflowInput(Operation $operation): array
+    {
+        $input = $this->input($operation);
+        $node = Node::query()->findOrFail($operation->node_id);
+        $artifacts = TaskVmInputs::artifacts($operation->input['artifacts']);
+        $token = $this->githubToken($operation, $artifacts);
+        $pin = app(AgentDelivery::class)->pin($node);
+        $secrets = [];
+        foreach (self::batches($artifacts) as $batch => $items) {
+            $request = json_encode(['agent_sha256' => $pin, 'deadline_ms' => self::BatchDeadlineMilliseconds, 'input' => [
+                'operation' => 'fill', 'artifacts' => $items, 'max_bytes' => ValidatedData::integer($operation->input['max_bytes']), 'github_token' => $token,
+            ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+            $secrets['batch_'.$batch] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-vm-cache-fill-'.$node->id.'-'.$batch, $request);
+        }
+
+        return [...$input, 'execution_secrets' => $secrets];
+    }
+
+    /** A metadata-read installation token for Composer archives on GitHub; npm archives need none.
+     * @param  list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}>  $artifacts
+     */
+    private function githubToken(Operation $operation, array $artifacts): ?string
+    {
+        if (! array_any($artifacts, static fn (array $artifact): bool => $artifact['manager'] === 'composer') || app(GitHubAppStore::class)->credentials() === null) {
+            return null;
+        }
+        $projects = array_column(TaskVmInputs::snapshots($operation->input['snapshots']), 'project_id');
+        foreach (Project::query()->whereIn('id', $projects)->orderBy('id')->get() as $project) {
+            $repository = GitHubRepository::fromOrigin($project->repository_url);
+            if ($repository instanceof GitHubRepository) {
+                try {
+                    return app(RepositoryPullRequestAccess::class)->metadataToken($repository);
+                } catch (GitHubApiException) {
+                    continue;
+                }
+            }
+        }
+
+        return null;
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
         return DB::transaction(function () use ($operation, $data): Operation {
-            $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            $result = ValidatedData::object($data['result'] ?? []);
-            $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            if ($data['status'] === OperationStatus::Running->value && $result !== []) {
-                $hashes = array_combine(ValidatedData::stringList($result['archive_ids']), ValidatedData::stringList($result['archive_digests']));
-                $failures = array_combine(ValidatedData::stringList($result['failed_ids']),
-                    array_map(new CommandActivityInputSanitizer()->redactText(...), ValidatedData::stringList($result['failure_reasons'])));
-                $this->inventory($operation, $hashes, $failures, $result['replace_inventory'] === true);
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            $status = OperationStatus::from(ValidatedData::string($data['status']));
+            if (! $status->terminal()) {
+                throw new ResourceOperationException('operation.result_invalid', 'The cache result needs a terminal native outcome.', 422);
+            }
+            $native = ValidatedData::object($data['result'] ?? []);
+            $code = in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true) ? TaskVmError::PackageCacheFailed->value : null;
+            if (! $operation->status->terminal()) {
+                [$hashes, $failures, $first] = $this->replies($operation, $native);
+                if ($hashes !== [] || $failures !== []) {
+                    $this->inventory($operation, $hashes, $failures, $first);
+                }
             }
 
-            return $projected;
+            return app(DirectOperation::class)->project($operation, [...$data, 'error_code' => $code],
+                $code !== null ? ['error_code' => $code] : ($status === OperationStatus::Succeeded ? ['ready' => true] : []));
         });
+    }
+
+    /** Batch replies the run recorded; a reply that names an archive outside its batch is refused.
+     * @param  array<string,mixed>  $native
+     * @return array{0:array<string,string>,1:array<string,string>,2:bool}
+     */
+    private function replies(Operation $operation, array $native): array
+    {
+        $batches = self::batches(TaskVmInputs::artifacts($operation->input['artifacts']));
+        $hashes = [];
+        $failures = [];
+        foreach ($batches as $batch => $items) {
+            $stdout = $native['fill_'.$batch] ?? null;
+            if (! is_string($stdout)) {
+                continue;
+            }
+            $reply = json_decode($stdout, true);
+            if (! is_array($reply) || ($reply['ok'] ?? null) !== true || ! is_array($reply['data'] ?? null)) {
+                continue;
+            }
+            $batchHashes = ValidatedData::stringMap($reply['data']['hashes'] ?? []);
+            $batchFailures = ValidatedData::stringMap($reply['data']['failures'] ?? []);
+            $keys = array_column($items, 'key');
+            if (array_diff([...array_keys($batchHashes), ...array_keys($batchFailures)], $keys) !== []
+                || array_any($batchHashes, static fn (string $hash): bool => preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hash) !== 1)) {
+                throw new ResourceOperationException('operation.result_invalid', 'A cache batch reply names an archive outside its batch.', 422);
+            }
+            $hashes = [...$hashes, ...$batchHashes];
+            $failures = [...$failures, ...array_map(static fn (string $reason): string => substr($reason, 0, 160), $batchFailures)];
+        }
+
+        return [$hashes, [...$failures, ...ValidatedData::stringMap($operation->input['conflicts'])], isset($native['fill_0'])];
     }
 
     /** @param array<string,string> $hashes
@@ -59,7 +186,8 @@ final readonly class TaskVmPackageCacheProjection implements DirectOperationProj
     private function inventory(Operation $operation, array $hashes, array $failures, bool $first): void
     {
         foreach ($failures as $key => $reason) {
-            Log::warning('Task VM package cache artifact failed.', ['host_node_id' => $operation->node_id, 'archive_id' => $key, 'reason' => $reason]);
+            Log::warning('Task VM package cache artifact failed.', ['host_node_id' => $operation->node_id, 'archive_id' => $key,
+                'reason' => new CommandActivityInputSanitizer()->redactText($reason)]);
         }
         foreach (TaskVmInputs::snapshots($operation->input['snapshots']) as $snapshot) {
             $current = PackageCacheSnapshot::query()->lockForUpdate()->find($snapshot['project_id']);

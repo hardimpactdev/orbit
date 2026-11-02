@@ -1101,26 +1101,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/cache_fill_direct.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/cache_fill_direct.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/cache_host.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/image_phase.ts",
       "rule": "custom-control",
       "count": 4,

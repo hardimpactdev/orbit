@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Node;
 use App\Models\Operation;
@@ -43,6 +44,10 @@ final readonly class StartTaskVmPackageCacheOperationAction
                 }
             }
         }
+        $artifacts = array_values(array_diff_key($artifacts, $conflicts));
+        if (count($artifacts) > TaskVmPackageCacheProjection::BatchArtifacts * TaskVmPackageCacheProjection::MaximumBatches) {
+            throw new TaskVmException('task_vm.package_cache_invalid_result', 'The cache inventory exceeds its batch bound.');
+        }
         $maxBytes = config()->integer('package_cache.max_bytes');
         if ($maxBytes < 1) {
             throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
@@ -50,8 +55,7 @@ final readonly class StartTaskVmPackageCacheOperationAction
 
         return $this->start->execute('task_vm.fill_package_cache', 'task_vm_cache', $hostNodeId, $hostNodeId, [
             'host_node_id' => $hostNodeId,
-            'artifacts' => array_values(array_diff_key($artifacts, $conflicts)), 'conflicts' => $conflicts,
-            'max_bytes' => $maxBytes, 'github_token' => ['$secret' => 'task_vm.package_cache_github', 'id' => $hostNodeId],
+            'artifacts' => $artifacts, 'conflicts' => $conflicts, 'max_bytes' => $maxBytes,
             'snapshots' => $snapshots->map->only(['project_id', 'blobs', 'artifacts'])->all(),
         ], 'task-vm', null);
     }

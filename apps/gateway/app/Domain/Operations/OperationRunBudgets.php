@@ -48,6 +48,9 @@ final class OperationRunBudgets
         'node.remove' => 2100,
         'node.role_add' => 2700,
         'task_vm.destroy' => 2700,
+        // No native run yet. Basis: the legacy fill's one overall 1,700 s budget, plus margin for the run start and the
+        // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
+        'task_vm.fill_package_cache' => 2100,
         'task_vm.image_build' => 2400,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,

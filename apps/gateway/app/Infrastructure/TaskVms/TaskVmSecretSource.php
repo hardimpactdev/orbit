@@ -4,15 +4,10 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\GitHub\GitHubApiException;
-use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use App\Models\Project;
 use App\Models\UpCloudTaskVmImageBuild;
 
 /** Tagged family sources. Ownership checks never read credentials. */
@@ -30,7 +25,6 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
     {
         return match ($this->source) {
             'upcloud.api' => ['task_vm_upcloud_image'],
-            'task_vm.package_cache_github' => ['task_vm_cache'],
             'task_vm.image_bootstrap' => ['task_vm_upcloud_image'],
             default => ['task_vm'],
         };
@@ -47,8 +41,6 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
             if ($build?->intent === null || $build->intent['node_id'] !== $operation->node_id) {
                 return null;
             }
-        } elseif ($operation->target_type === 'task_vm_cache' && ($operation->kind !== 'task_vm.fill_package_cache' || $operation->node_id !== $id || ($operation->input['host_node_id'] ?? null) !== $id)) {
-            return null;
         }
 
         return $id;
@@ -64,26 +56,6 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
         }
         if ($this->source === 'task_vm.image_bootstrap') {
             return new OperationSecretValue(UpCloudTaskVmImageBuild::query()->findOrFail($id)->bootstrap);
-        }
-        if ($this->source === 'task_vm.package_cache_github') {
-            if (array_any(TaskVmInputs::artifacts($operation->input['artifacts']), static fn (array $artifact): bool => $artifact['manager'] === 'composer') && app(GitHubAppStore::class)->credentials() !== null) {
-                if ($operation->kind !== 'task_vm.fill_package_cache' || $operation->node_id !== $id || $operation->target_id !== $id) {
-                    throw new ResourceOperationException('operation.execution_forbidden', 'Cache credentials require the owning fill parent.', 422);
-                }
-                $projects = array_column(TaskVmInputs::snapshots($operation->input['snapshots']), 'project_id');
-                foreach (Project::query()->whereIn('id', $projects)->orderBy('id')->get() as $project) {
-                    $repository = GitHubRepository::fromOrigin($project->repository_url);
-                    if ($repository instanceof GitHubRepository) {
-                        try {
-                            return new OperationSecretValue(app(RepositoryPullRequestAccess::class)->metadataToken($repository));
-                        } catch (GitHubApiException) {
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            return new OperationSecretValue(null);
         }
         throw new ResourceOperationException('operation.secret_unavailable', 'The secret source is unavailable.', 409);
     }
