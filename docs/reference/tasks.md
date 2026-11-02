@@ -782,13 +782,15 @@ swamp workflow run group-plan --input-file plan.yaml --server wss://swamp.orbit
 - `group-plan` takes `workItem`, `plan` and `actor` at the plan stage.
 - It records the complete typed plan and its exact consent in one call.
 - It then wakes the group, which applies the consent and starts analysis.
+- An `analysis-retry` returns the group to a new plan cycle. Run `group-plan` again: consent holds for one cycle only.
 
 Each group run is one bounded generation. Its drive starts the next generation, so an active group needs no poll:
 
 - While a Gateway operation runs, the next generation waits 60 seconds before it looks again.
 - A group at a human gate holds no run. A group that needs input, such as a plan, holds none either.
 - An event such as `group-plan` or `group-approve` starts the next generation.
-- A gate that checks an approval's note, such as `plan-authorized`, counts as waiting on that approval, so a stored consent applies at once.
+- A gate that checks an approval's note, such as `plan-authorized`, counts as waiting on that approval in every cycle.
+- So a stored consent applies at once.
 - `groups-driver` runs every 10 minutes. It only restarts a group whose run chain broke.
 
 ## Workspace lease

@@ -16,5 +16,5 @@ jobs:
 - name: result
   dependsOn: [{"job":"recovery","condition":{"type":"always"}}]
   steps:
-  - {"name":"result","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":'${{ "result" }}',"methodName":"result","inputs":{"kind":"node.agent_rekey","intent":"${{ inputs.intent }}","steps":"${{ steps }}"}}}
+  - {"name":"result","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":'${{ "result-node-agent-native" }}',"methodName":"result","inputs":{"kind":"node.agent_rekey","intent":"${{ inputs.intent }}","steps":"${{ steps }}"}}}
   - {"name":"proven","labels":{"role":"swamp"},"task":{"type":"assert","expr":"!has(steps.result.outputs.error_code)","severity":"high","message":"The native Node action must complete"},"dependsOn":[{"step":"result","condition":{"type":"always"}}]}

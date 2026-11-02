@@ -58,7 +58,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-      behaviorName: '${{ "task-repository-assets" }}'
+      behaviorName: '${{ "task-repository-assets-task-repository-assets" }}'
   - name: prepare-assets
     labels: {role: swamp}
     task:

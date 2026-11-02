@@ -1,5 +1,9 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { invalidName, perRunNames } from "./lint-behavior-names.ts";
+import {
+    invalidName,
+    perRunNames,
+    sharedAcrossTypes,
+} from "./lint-behavior-names.ts";
 
 const workflow = (steps: unknown[]) => ({ jobs: [{ name: "main", steps }] });
 const step = (name: string, behaviorName: string) => ({
@@ -74,4 +78,30 @@ Deno.test("dotless, integer and passed-in names are valid", () => {
             "gateway-swamp-load",
         ]
     ) assertEquals(invalidName(name), null, name);
+});
+
+Deno.test("one behavior name used with two behavior types fails", () => {
+    const workflow = (type: string) => ({
+        jobs: [{
+            name: "main",
+            steps: [{
+                name: "r",
+                task: { behaviorType: type, behaviorName: '${{ "result" }}' },
+            }],
+        }],
+    });
+    assertEquals(
+        sharedAcrossTypes({
+            a: workflow("command/shell"),
+            b: workflow("command/shell"),
+        }),
+        [],
+    );
+    assertEquals(
+        sharedAcrossTypes({
+            a: workflow("command/shell"),
+            b: workflow("@nckrtl/network-command"),
+        }).length,
+        1,
+    );
 });

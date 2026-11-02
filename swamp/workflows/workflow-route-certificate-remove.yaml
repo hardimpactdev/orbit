@@ -59,7 +59,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/certificate-script-assets'
-      behaviorName: '${{ "route-cert-assets" }}'
+      behaviorName: '${{ "route-cert-assets-certificate-script-assets" }}'
       methodName: read
       inputs:
         node_id: ${{ inputs.intent.leaf.node_id }}
@@ -179,7 +179,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "route-cert-result" }}'
+      behaviorName: '${{ "route-cert-result-route-mutation-command" }}'
       methodName: certificateRemoved
       inputs:
         leaf: ${{ inputs.intent.leaf }}

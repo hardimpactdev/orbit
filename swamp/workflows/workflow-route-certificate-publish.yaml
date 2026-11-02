@@ -68,7 +68,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: '${{ "route-cert-assets" }}'
+      behaviorName: '${{ "route-cert-assets-node-certificate-assets" }}'
       methodName: read
       inputs:
         node_id: ${{ inputs.intent.node_id }}
@@ -311,7 +311,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: '${{ "route-cert-result" }}'
+      behaviorName: '${{ "route-cert-result-node-certificate-assets" }}'
       methodName: result
       inputs:
         leaves: ${{ inputs.intent.leaves }}

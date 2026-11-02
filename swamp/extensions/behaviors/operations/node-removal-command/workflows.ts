@@ -21,7 +21,8 @@ const resource = (
     task: {
         type: "behavior",
         behaviorType: "@nckrtl/node-removal-command",
-        behaviorName: ex(JSON.stringify(name)),
+        // Named with its type: fixed names such as `result` recur across behavior types.
+        behaviorName: ex(JSON.stringify(name + "-node-removal-command")),
         methodName,
         inputs,
     },

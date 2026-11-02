@@ -40,7 +40,7 @@ jobs:
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
-      behaviorName: '${{ "task-repository-assets" }}'
+      behaviorName: '${{ "task-repository-assets-task-maintenance-input" }}'
   - name: workspace
     labels: {role: swamp}
     task:

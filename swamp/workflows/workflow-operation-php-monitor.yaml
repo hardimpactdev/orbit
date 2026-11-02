@@ -110,7 +110,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
-      behaviorName: '${{ "input" }}'
+      behaviorName: '${{ "input-php-monitor-command" }}'
       methodName: prepare
       inputs:
         runtime: ${{ inputs.intent.php_runtime }}
@@ -201,7 +201,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "result" }}'
+      behaviorName: '${{ "result-shell" }}'
       methodName: execute
       inputs:
         run: printf '{"ready":true,"present":%s}\n' "$ORBIT_PHP_PRESENT"

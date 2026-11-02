@@ -89,8 +89,12 @@ function awaitsHuman(t: Transition, g: Gate): boolean {
   if (g.type === "human-approval") return true;
   if (g.type !== "cel") return false;
   const humans = t.gates.flatMap((h) => h.type === "human-approval" ? h.reasons : [])
-    .flatMap((r) => [.../awaiting human approval '([^']+)'/.exec(r)?.slice(1) ?? []]).map((id) => id.replaceAll("-", "_"));
-  return g.reasons.length > 0 && g.reasons.every((r) => humans.some((id) => r.includes(`No such key: ${id}`)));
+    .flatMap((r) => [.../awaiting human approval '([^']+)'/.exec(r)?.slice(1) ?? []]);
+  // A consent gate reads its gate's approvals: before the first decision the key is missing; in a later
+  // cycle its message says which pending approval it awaits.
+  return g.reasons.length > 0 && g.reasons.every((r) =>
+    humans.some((id) => r.includes(`No such key: ${id.replaceAll("-", "_")}`) || r.startsWith(`awaiting human approval '${id}'`))
+  );
 }
 
 export function pendingGateIds(status: Pick<Status, "transitions">): string[] {
@@ -464,7 +468,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.11.02.5",
+  version: "2026.11.02.6",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
