@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), 2 (DNS hold), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
+  %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
   %% status: draft
   %% command: cluster:router:set
   autonumber
@@ -74,11 +74,11 @@ sequenceDiagram
   %%> - checks from Node 7 that every Cluster Route's workload answers with a valid certificate
   %%> Why:
   %%> - Node 7 only becomes the Router when it can serve every Route
-  Note over SW: Select Node 7 in DNS<br/>open: Nick decides (DNS hold)
+  Note over SW: Select Node 7 in DNS<br/>Node 1 over @swamp/ssh
   %%> What it does:
   %%> - private DNS answers members' Cluster names with Node 7's LAN address, then waits the 31-second DNS grace
-  %%> Open:
-  %%> - the DNS hold (`native-dns-takeover-held`) is in force; Nick decides how Route DNS is published
+  %%> How:
+  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   opt Node 5 was the Router
     SW->>M: Retire the old Router<br/>withdraw sites · LAN rules
     %%> When:
