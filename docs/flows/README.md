@@ -18,7 +18,7 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **Record-only changes start no run (R1).** A change that touches no Node is written by the Gateway and answered at once.
 
-**Read-only commands use the Node agent.** A command that only reads a Node answers from the Node agent's latest reports: no task, no Swamp run, no SSH. Stale reports give "can't verify". The Node agent observes only; it acts on nothing.
+**Read-only commands answer from the Gateway.** Lists and shows (Nodes, Routes, Instances on a Node, installed Tools) read the Gateway's recorded state. Treat it as current: Node agents report changes to the Gateway, and runs record their results. A read starts no task and no Swamp run, and contacts no Node.
 
 **Failure keeps records and allows a rerun.** The record is marked failed, not deleted. Say what stays on the Node (no rollback unless needed) and that a rerun is safe.
 
@@ -32,7 +32,7 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 Nick decided these points in chart reviews:
 
-- `doctor` and `tool:adopt` read Node agent state.
+- `doctor` and `tool:adopt` answer from Gateway state that Node agent reports keep current.
 - `instance:create` renders `.env` from the Project env template and starts development Processes.
 - `firewall` takes `<port>` plus `--label`, and it has no allowlist.
 - `firewall` refuses exact conflicts. Narrower rules go first, and operator rules sit above managed rules.
@@ -67,7 +67,7 @@ Copy the style of these reviewed charts exactly:
 - `firewall.allow`: a plain Node change. It is the best model.
 - `tool.install`: optional steps (`opt`) and per Tool Manager blocks.
 - `tool.remove`: a record-only branch versus a Node-work branch (nested `alt`).
-- `doctor.inspect` and `tool.adopt`: read-only through the Node agent, with no Swamp lane.
+- `doctor.inspect` and `tool.adopt`: read-only from Gateway state, with no Swamp lane; the Node agent lane shows how that state stays current.
 - `metrics.exporter_enable`: a second target Node (purple lane).
 - `instance.create`: a long create flow.
 
@@ -85,7 +85,7 @@ Each lane is one `participant` line. A `%% lane <ID> icon=<terminal|gateway|work
 - `GW as Gateway<br/>Laravel API`
 - `SW as Swamp<br/>serve on Node 209`
 - `N as Target Node<br/>reached over ssh`
-- For a read-only command, the Node agent replaces Swamp and the target: title `Node agent`, subtitle `orbit-agent`, `icon=server pill=observer tone=amber`.
+- For a read-only command that depends on Node facts, a Node agent lane may show how the Gateway's state stays current: title `Node agent`, subtitle `orbit-agent`, `icon=server pill=observer tone=amber`.
 
 Add a lane only when it really acts. Use at most 5 lanes, with `tone=purple` for an extra Node. A kind with no CLI caller, such as an automatic or scheduled one, starts from the Gateway or Swamp lane.
 
@@ -147,3 +147,7 @@ Name a step's behavior after its target, never its run. Swamp reuses a definitio
 One behavior has one lock, and differing global arguments rewrite its definition. Steps that share a name take turns. A step that waits for the lock fails after 60 seconds (`SWAMP_LOCK_TIMEOUT_MS`). Swamp refuses a second type under one name, and it refuses a name with other characters when the step runs. With the dot rule, `10.44.0.2` becomes `10-44-0-2`. The run id, the index and integer ids need no wrapping.
 
 The Swamp shape job runs `bin/lint-behavior-names.ts`. It rejects a workflow that has more per-run names than at the comparison base, any name that Swamp would refuse, and a name used with two behavior types.
+
+## Designing a command
+
+To design a new command or tighten a chart, use the `flow-tighten` skill in `.agents/skills/flow-tighten/SKILL.md`. It holds the rules for a short, efficient flow.
