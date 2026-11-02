@@ -44,6 +44,8 @@ The Gateway reads the terminal `measure` output through the shared scheduled-res
 | `serve\|cpu` | Serve used more than 50% CPU over the sample |
 | `watch\|failed` | A watch run did not succeed, so the datastore is unwatched |
 
+Serve's own garbage collection keeps runs and outputs 6 hours and bookkeeping 2 hours (`garbageCollection` in `swamp/.swamp.yaml`). Its retention pass rereads that file every hour, so a change applies at the next pass without a restart. Bookkeeping, such as step leases, is reaped by serve's worker GC, which first runs an hour after serve starts ([Lab #4287](https://swamp-club.com/lab/4287)).
+
 A key is filed once two fires at least 10 minutes apart report it. The first later fire that does not report a key resolves it. A replayed or older run changes nothing. Large auto-definition directories are the known cause of high serve CPU ([Lab #4280](https://swamp-club.com/lab/4280)).
 
 ## Swamp credential expiry alerts
