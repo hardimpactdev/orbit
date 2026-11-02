@@ -6,6 +6,7 @@ use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -16,7 +17,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Swamp\SwampRunSubscriber;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
@@ -35,9 +36,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
-use Psr\Log\NullLogger;
 use Tests\Support\FakeRoutePublicationSocket;
-use Tests\Support\FakeSwampEventSocket;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 /** @return list<Event> */
@@ -257,33 +256,28 @@ describe(GatewayHorizon::class, function (): void {
             ->and($this->runtime->convergedProcessIds)->toBe([]);
     });
 
-    it('projects Horizon terminal results with no Horizon queue consumer', function (string $status): void {
+    it('projects Horizon terminal results with no Horizon queue consumer', function (string $status, bool $terminated): void {
         $admitted = app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
         $operation = Operation::query()->findOrFail($admitted['operation_id']);
-        $result = $status === 'succeeded' ? ['ready' => true, 'state' => 'active', 'process_id' => $operation->target_id] : [];
+        $result = $status === 'succeeded' ? ['ready' => true, 'state' => $terminated ? 'unknown' : 'active', 'outcome' => $terminated ? 'terminated' : 'created', 'process_id' => $operation->target_id] : [];
         $runId = $operation->state['swamp_run_id'];
         $history = ['id' => $runId, 'workflowName' => 'operation-process-horizon-handoff', 'status' => $status,
             'inputs' => $this->socket->sent[0]['payload']['inputs'],
             'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(),
-            'jobs' => [['name' => 'horizon', 'steps' => [['name' => 'result',
-                ...($status === 'succeeded' ? ['outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]] : ['status' => 'skipped']),
-            ]]]],
+            'jobs' => [['name' => 'horizon', 'steps' => [
+                ['name' => 'Accept Horizon', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped'],
+                ['name' => 'Hand off to new release', 'status' => $status === 'succeeded' && $terminated ? 'succeeded' : 'skipped'],
+                ['name' => 'Check Horizon runs', 'status' => $status === 'succeeded' && ! $terminated ? 'succeeded' : 'skipped'],
+            ]]],
         ];
         $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
-        config(['queue.default' => 'gateway']);
-        $native = new FakeSwampEventSocket;
-        $subscriber = new SwampRunSubscriber($native, new NullLogger);
-        $subscriber->pass();
-        $requestId = $native->sent[0]['id'];
-        $native->push(
-            ['type' => 'run.attached', 'id' => $requestId, 'payload' => ['runId' => $runId, 'kind' => 'workflow-run', 'lastSeq' => 0]],
-            ['type' => 'event', 'id' => $requestId, 'event' => ['kind' => 'completed', 'runId' => $runId, 'seq' => 1,
-                'run' => ['id' => $runId, 'workflowName' => 'operation-process-horizon-handoff', 'status' => $status]]],
-        );
+        app(SwampCommandStep::class)->projectTerminal($operation,
+            ['id' => $runId, 'status' => $status], app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
 
-        $subscriber->pass();
-        $subscriber->close();
-
+        if ($status === 'succeeded') {
+            expect($operation->refresh()->result)->toMatchArray(['ready' => true,
+                'state' => $terminated ? 'unknown' : 'active', 'outcome' => $terminated ? 'terminated' : 'created']);
+        }
         expect(DB::table('jobs')->count())->toBe(0);
         expect($this->socket->sent)->toHaveCount(2)
             ->and($this->socket->sent[1]['type'])->toBe('workflow.history.get');
@@ -296,9 +290,9 @@ describe(GatewayHorizon::class, function (): void {
             expect($horizon->systemd_activation_hash)->toBe($operation->input['content_hash'])
                 ->and($horizon->systemd_activation_pending)->toBeFalse();
         }
-    })->with(['succeeded', 'failed']);
+    })->with([['succeeded', false], ['succeeded', true], ['failed', false]]);
 
-    it('retains a failed Horizon intent when native submission cannot be confirmed', function (): void {
+    it('retains a pending Horizon intent when native submission cannot be confirmed', function (): void {
         app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket(false));
 
         expect(fn () => app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))
@@ -306,9 +300,9 @@ describe(GatewayHorizon::class, function (): void {
 
         $operation = Operation::query()->sole();
         $horizon = Process::query()->where('name', 'horizon')->sole();
-        expect($operation->status)->toBe(OperationStatus::Failed)
-            ->and($horizon->status)->toBe(LifecycleStatus::Failed)
-            ->and($horizon->error_code)->toBe($operation->error_code)
+        expect($operation->status)->toBe(OperationStatus::Running)
+            ->and($horizon->status)->toBe(LifecycleStatus::Provisioning)
+            ->and($horizon->error_code)->toBeNull()
             ->and($horizon->desired_state)->toBe(DesiredProcessState::Running)
             ->and($this->runtime->convergedProcessIds)->toBe([]);
     });

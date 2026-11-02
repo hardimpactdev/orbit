@@ -23,7 +23,9 @@ Each direct declaration names a workflow and a small result projection. There ar
 
 Passwords and SQL use the shared private-material API for the exact root run and admitted Node custody. They remain inside the effect callback. They do not enter Operation public input, results, native JSON resources or logs. The Gateway deletes encrypted intent after the Operation and its 24-hour retry window finish. Public Operation history remains.
 
-Create reserves names and credentials without probing a server, and refuses a server Node without a stored SSH host key (`swamp.ssh_target_unavailable`) before it records anything. A matching retry reuses them. Swamp refuses a database that exists for another owner (`database.name_conflict`) before any change, and the connection becomes active only after the owner logs in with its own password (`database.owner_login_failed` otherwise). A MySQL exact grant escapes underscores. Destruction refuses system names and prefixes, names that are not plain identifiers, attached connections, and a server Node without a stored SSH host key, and refuses blockers before any drop. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
+Create reserves names and credentials without probing a server, and refuses a server Node without a stored SSH host key (`swamp.ssh_target_unavailable`) before it records anything. A matching retry reuses them. Swamp refuses a database that exists for another owner (`database.name_conflict`) before any change, and the connection becomes active only after the owner logs in with its own password (`database.owner_login_failed` otherwise). A MySQL exact grant escapes underscores.
+
+When removing a database, Orbit refuses system names and prefixes, names that are not plain identifiers, attached connections, and a server Node without a stored SSH host key, and refuses blockers before any drop. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
 
 ## Instance database steps
 
