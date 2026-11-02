@@ -65,9 +65,7 @@ A Node that does not accept the `swamp` role identity yet needs Node bootstrap f
 
 `rolePackageSteps(name, prerequisitesExpr, globalArgs, dependency)` accepts the admitted `{releases,packages}` object and runs one operating-system package action after its dependency. It preserves installed packages and uses the captured supported release policy. The final step returns official SSH outputs. The owner retains runtime, settings, services, publication, failure ordering and restoration. These exports create no Operation, callback or credential.
 
-`@nckrtl/node-bootstrap-command.observer({url,sha256})` reads the existing action that delivers the observer and verifies its checksum. It takes only the admitted artifact. The owning parent executes its returned `script_body` through official SSH and owns the account, files, service activation and terminal contribution. This metadata method creates no bootstrap admission.
 
-`authorizedKeySteps` re-exports the canonical helper already on main. Its behavior is `@nckrtl/node-ssh-access`. Normal role prerequisites use209's own approved identity and full target pins. The Gateway identity execution copy remains restricted to its separate first-key operation. Core dependencies and official SSH script/output handling fit these actions; official cfgmgmt connection schemas lack the admitted full host-key list, so the exports use official SSH for that contract.
 ## Record a trusted first host key
 
 After an authorized one-time scan from209 over the Node's WireGuard address, `POST /api/v1/nodes/{node}/ssh-host-key` records the public `{host,type,value}` result. `host` must equal the Node's stored WireGuard address; `type` is `ssh-ed25519` and `value` is its base64 public key. The Gateway calculates the SHA-256 fingerprint and records the three host-key fields on the Node, then broadcasts its normal update. The response is the updated Node with HTTP200. Normal directed Node access applies.

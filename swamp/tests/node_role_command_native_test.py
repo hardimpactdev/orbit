@@ -71,21 +71,3 @@ print(json.dumps(result))
         self.assertEqual([row['action'] for row in calls], ['account', 'group', 'packages'])
         self.assertEqual(calls[-1]['data'], {'packages': ['openssl'], 'releases': ['resolute']})
 
-    def test_tracked_authorized_key_action_uses_the_admitted_public_key(self):
-        source = (ROOT / 'extensions/behaviors/operations/node-role-command/steps.ts').as_uri()
-        program = ('import {authorizedKeySteps} from ' + json.dumps(source) + ';console.log(JSON.stringify(' +
-                   'authorizedKeySteps("authorize","inputs.user","inputs.public_key",' + json.dumps(self.globals) + ')));')
-        deno = os.environ.get('DENO_BIN', shutil.which('deno') or '/tmp/lane4-deno-2.9.8/deno')
-        steps = json.loads(subprocess.run([deno, 'eval', program], capture_output=True, text=True, check=True).stdout)
-        for step in steps:
-            self.assertEqual(step.pop('labels'), {'role': 'swamp'})
-        workflow = {'id': 'af4cba59-b8aa-4fe9-b0c2-d08a28536de5', 'name': 'tracked-key-fixture',
-                    'inputs': {'type': 'object'}, 'jobs': [{'name': 'key', 'steps': steps}]}
-        (self.repo / 'workflows/workflow-tracked-key-fixture.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
-        public_key = 'ssh-ed25519 AAAA public-tracked-key'
-        self.cli('workflow', 'validate', 'tracked-key-fixture')
-        run = json.loads(self.cli('workflow', 'run', 'tracked-key-fixture', '--input',
-                                 json.dumps({'user': 'orbit', 'public_key': public_key})).stdout)
-        self.assertEqual(run['status'], 'succeeded')
-        calls = [json.loads(row) for row in self.audit.read_text().splitlines()]
-        self.assertEqual(calls, [{'action': 'authorized', 'data': {'user': 'orbit', 'public_key': public_key}}])

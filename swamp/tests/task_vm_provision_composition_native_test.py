@@ -25,20 +25,9 @@ from pathlib import Path
 argv=shlex.split(sys.argv[-1]);body=sys.stdin.read();program=' '.join(argv)+'\\n'+body
 with Path(EVENTS).open('a') as output:output.write(json.dumps({'argv':argv,'body':body,'ssh_argv':sys.argv[1:]})+'\\n')
 if '/etc/ssh/ssh_host_ed25519_key.pub' in argv:print(PUBLIC)
-elif 'observer_ready' in program and 'hashlib.file_digest' in program:print(json.dumps({'observer_ready':True,'observer_digest':'e'*64}))
+elif argv[-3:]==['/usr/bin/sudo','-n','true'] and Path(VERIFY_FAULT).exists():sys.exit(1)
+elif '/usr/bin/sha256sum' in argv and argv[-1]=='/etc/orbit/agent/secret':print('e'*64+'  /etc/orbit/agent/secret')
 elif 'wg pubkey <' in program:print(PEER)
-elif 'def verify(data)' in program:
-    import io
-    from types import SimpleNamespace
-    from unittest.mock import patch
-    namespace={'__name__':'bootstrap_verify_fixture'}
-    exec(argv[-1],namespace)
-    user=argv[argv.index('-u')+1] if '-u' in argv else 'root'
-    if Path(VERIFY_FAULT).exists():user='foreign'
-    account=SimpleNamespace(pw_name=user,pw_gid=1000,pw_dir='/home/'+user)
-    with patch('pwd.getpwuid',return_value=account), patch('os.getuid',return_value=1000 if user!='root' else 0), patch('grp.getgrgid',return_value=SimpleNamespace(gr_name=user)), patch('pathlib.Path.open',return_value=io.BytesIO(b'fixture observer')), patch('hashlib.file_digest',return_value=SimpleNamespace(hexdigest=lambda:'b'*64)), patch('subprocess.run') as sudo:
-        print(json.dumps(namespace['verify'](namespace['BOOTSTRAP_INPUT'])))
-        assert sudo.call_args.args[0]==['/usr/bin/sudo','-n','true']
 else:print('{"ready":true}')
 '''.replace("EVENTS", repr(str(self.events))).replace("VERIFY_FAULT", repr(str(self.verify_fault))).replace("PUBLIC", repr(public)).replace("PEER", repr(self.peer)))
         fake.chmod(0o755)
@@ -72,7 +61,7 @@ else:print('{"ready":true}')
                        "vm": {"project": "tasks", "name": "tvm-42"}, "ssh_identity": identity, "host_ssh_execution": ssh, "hub_ssh_execution": ssh,
                        "node": {"node_id": 142, "wireguard_ip": "10.44.0.142"},
                        "runtime": {"process": {"process_id": 33}}, "bootstrap": {"user": "orbit", "public_key": public, "releases": ["resolute"], "packages": ["wireguard-tools"], "dns_policy": "managed"},
-                       "agent_sha256": "b" * 64, "agent_artifact_url": "https://example.test/observer", "observer_digest_json": "null",
+                       "agent_sha256": "b" * 64, "agent_artifact_url": "https://example.test/observer", "observer_digest": None,
                        "agent": {"configuration": "public configuration", "certificate": "public certificate", "unit": "public unit"},
                        "network_input": {"existing_key": None, "peer": {"server_public_key": self.peer, "endpoint": "192.0.2.1:51820", "address": "10.44.0.142/16", "subnet": "10.44.0.0/16", "dns_server": "10.44.0.1", "domains": ["orbit"], "operator_dns": None, "retain": False}},
                        "hub": {"hub_id": 1, "ssh": ssh, "file": "/etc/wireguard/orbit-peers.d/142.conf",
@@ -113,8 +102,11 @@ else:print('{"ready":true}')
         self.assertNotIn("GatewayOperation", calls)
         self.assertIn("10.44.0.142", calls)
         self.assertIn("openssh-server", calls)
-        verify = next(json.loads(line) for line in calls.splitlines() if "def verify(data)" in line)
-        self.assertEqual(verify["argv"][-9:-1], ["/usr/bin/sudo", "-n", "-u", "orbit", "--", "/usr/bin/python3", "-B", "-c"])
+        guest = [json.loads(line)["argv"] for line in calls.splitlines() if line.startswith('{"argv"')]
+        # Bootstrap is argv only: the account proves sudo, the agent binary its pinned digest.
+        self.assertIn(["/usr/bin/sudo", "-n", "-u", "orbit", "--", "/usr/bin/sudo", "-n", "true"], [argv[-8:] for argv in guest])
+        self.assertIn(["/usr/bin/sha256sum", "--check", "--strict", "-"], [argv[-4:] for argv in guest])
+        self.assertNotIn("python3", calls)
         self.assertIn("10.44.0.15", calls)
         self.assertLess(calls.index("wg-quick@orbit.service"), calls.index("orbit-agent.service", calls.index("wg-quick@orbit.service")))
         records = [json.loads(line) for line in calls.splitlines() if line.startswith('{"behavior"')]
@@ -123,7 +115,6 @@ else:print('{"ready":true}')
         self.assertEqual(hub, {"/etc/wireguard/orbit-peers.d/142.conf": "[Peer]\n# tvm-42\nPublicKey = " + self.peer + "\nAllowedIPs = 10.44.0.142/32\n"})
         self.assertIn('"wg", "addconf", "orbit", "/etc/wireguard/orbit-peers.d/142.conf"', calls)
         self.assertNotIn("PrivateKey =", self.intent["peer_files"]["config"])
-        guest = [json.loads(line)["argv"] for line in calls.splitlines() if line.startswith('{"argv"')]
         # One firewall command: only 209 reaches TCP 22, its allow ahead of the deny; no script reaches the guest.
         firewall = next(argv[-1] for argv in guest if argv[-1].startswith("ufw --force delete"))
         self.assertLess(firewall.index("prepend deny in proto tcp to any port 22"), firewall.index("prepend allow in on orbit proto tcp from 10.44.0.15"))
@@ -137,7 +128,7 @@ else:print('{"ready":true}')
         run = self.run_root(success=False)
         self.assertEqual(run["status"], "failed")
         calls = self.events.read_text()
-        self.assertIn("def verify(data)", calls)
+        self.assertIn('"/usr/bin/sudo", "-n", "true"', calls)
         self.assertNotIn("wg pubkey", calls)
 
     def test_unavailable_upcloud_refuses_before_provider_or_guest_actions(self):

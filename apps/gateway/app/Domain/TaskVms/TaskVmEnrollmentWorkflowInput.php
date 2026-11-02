@@ -54,7 +54,7 @@ final readonly class TaskVmEnrollmentWorkflowInput
             // The guest's peer file on the hub, with a mark for the key the guest prepares, and the guest's own files.
             'hub' => AdmitNodeWireGuardHubOperationAction::joining($hub, $guest->id, $guest->name, ValidatedData::string($vm->wireguard_ip)),
             'peer_files' => NodeNetworkConvergeInput::peerFiles(ValidatedData::object($network['peer'])),
-            'observer_digest' => $guest->agent_secret_hash, 'observer_digest_json' => json_encode($guest->agent_secret_hash, JSON_THROW_ON_ERROR),
+            'observer_digest' => $guest->agent_secret_hash,
             'bootstrap' => [...ValidatedData::object($public['bootstrap']), 'public_key' => $identity['public_key']],
             'pi_artifact' => ['path' => $this->settings->piArtifactPath, 'sha256' => $this->settings->piArtifactSha256,
                 'ssh_execution' => $this->ssh->forNode($gateway)],

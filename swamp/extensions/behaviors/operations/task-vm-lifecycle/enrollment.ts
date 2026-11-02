@@ -55,10 +55,12 @@ export function enrollmentTerminal(raw: unknown) {
         process_id: Id,
         ready: z.literal(true),
     }).parse(JSON.parse(runtime_stdout));
-    const observer = z.object({
-        observer_ready: z.literal(true),
-        observer_digest: z.string().regex(/^[a-f0-9]{64}$/),
-    }).parse(JSON.parse(observer_stdout));
+    // `sha256sum /etc/orbit/agent/secret`: the digest is the first field.
+    const observer = {
+        observer_digest: z.string().regex(/^[a-f0-9]{64}$/).parse(
+            observer_stdout.trim().split(/\s+/)[0],
+        ),
+    };
     if (
         model.task_vm_id !== intent.task_vm_id ||
         runtime.task_vm_id !== intent.task_vm_id ||

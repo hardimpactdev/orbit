@@ -58,55 +58,76 @@ inputs:
   additionalProperties: false
 jobs:
 - name: enrollment
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
   - name: Pin the guest host key
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "vm-known-hosts" }}'
+      behaviorName: ${{ "vm-known-hosts" }}
       methodName: execute
       inputs:
-        # Official cfgmgmt checks host keys against this worker account's known_hosts and takes no pin.
-        # Task VMs reuse addresses, so the guest's provider-observed key replaces whatever was there.
-        run: |
-          set -eu
+        run: 'set -eu
+
           install -d -m 0700 "$HOME/.ssh"
+
           ssh-keygen -R "$ORBIT_ADDRESS" -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1 || true
-          printf '%s\n' "$ORBIT_LINES" >> "$HOME/.ssh/known_hosts"
+
+          printf ''%s\n'' "$ORBIT_LINES" >> "$HOME/.ssh/known_hosts"
+
+          '
         env:
           ORBIT_ADDRESS: ${{ inputs.guest.ssh_execution.target.host }}
-          ORBIT_LINES: '${{ inputs.guest.ssh_execution.target.host_keys.map(key, inputs.guest.ssh_execution.target.host + " " + key).join("\n") }}'
+          ORBIT_LINES: ${{ inputs.guest.ssh_execution.target.host_keys.map(key, inputs.guest.ssh_execution.target.host + " " + key).join("\n") }}
+    dependsOn: []
   - name: provider-plan
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
-      behaviorName: '${{ "vm-enrollment-plan" }}'
+      behaviorName: ${{ "vm-enrollment-plan" }}
       methodName: plan
       inputs:
         provider: ${{ inputs.intent.provider }}
-  - name: bootstrap-account-assets
-    labels: {role: swamp}
+    dependsOn: []
+  - name: bootstrap-account
+    labels:
+      role: swamp
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: '${{ "vm-bootstrap-input" }}'
-      methodName: read
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
-        action: account
-        user: ${{ inputs.intent.user }}
-        command: ${{ inputs.intent.bootstrap }}
-        artifact:
-          url: ${{ inputs.intent.agent_artifact_url }}
-          sha256: ${{ inputs.intent.agent_sha256 }}
+        hosts: name:target
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/sbin/useradd","--create-home","--shell","/bin/bash","--",inputs.intent.user] : ["/usr/sbin/useradd","--create-home","--shell","/bin/bash","--",inputs.intent.user] }}'
+        okExitCodes:
+        - 0
+        - 9
     dependsOn:
     - step: provider-plan
       condition:
         type: succeeded
-  - name: bootstrap-account
-    labels: {role: swamp}
+  - name: bootstrap-authorized_key
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -116,49 +137,26 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c",steps["bootstrap-account-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["bootstrap-account-assets"].outputs.script_body]
-          }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
-    dependsOn:
-    - step: bootstrap-account-assets
-      condition:
-        type: succeeded
-  - name: bootstrap-authorized_key-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: '${{ "vm-bootstrap-input" }}'
-      methodName: read
-      inputs:
-        action: authorized_key
-        user: ${{ inputs.intent.user }}
-        command: ${{ inputs.intent.bootstrap }}
-        artifact:
-          url: ${{ inputs.intent.agent_artifact_url }}
-          sha256: ${{ inputs.intent.agent_sha256 }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-D","-m","0600","-o",inputs.intent.user,"-g",inputs.intent.user,"/dev/stdin","/home/" + inputs.intent.user + "/.ssh/authorized_keys2"] : ["/usr/bin/install","-D","-m","0600","-o",inputs.intent.user,"-g",inputs.intent.user,"/dev/stdin","/home/" + inputs.intent.user + "/.ssh/authorized_keys2"] }}'
+        stdin: ${{ inputs.intent.bootstrap.public_key + "\n" }}
     dependsOn:
     - step: bootstrap-account
       condition:
         type: succeeded
-  - name: bootstrap-authorized_key
-    labels: {role: swamp}
+  - name: bootstrap-sudo
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -168,50 +166,26 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c",steps["bootstrap-authorized_key-assets"].outputs.script_body]
-          : ["/usr/bin/python3","-B","-c",steps["bootstrap-authorized_key-assets"].outputs.script_body]
-          }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
-    dependsOn:
-    - step: bootstrap-authorized_key-assets
-      condition:
-        type: succeeded
-  - name: bootstrap-sudo-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: '${{ "vm-bootstrap-input" }}'
-      methodName: read
-      inputs:
-        action: sudo
-        user: ${{ inputs.intent.user }}
-        command: ${{ inputs.intent.bootstrap }}
-        artifact:
-          url: ${{ inputs.intent.agent_artifact_url }}
-          sha256: ${{ inputs.intent.agent_sha256 }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-m","0440","-o","root","-g","root","/dev/stdin","/etc/sudoers.d/" + inputs.intent.user] : ["/usr/bin/install","-m","0440","-o","root","-g","root","/dev/stdin","/etc/sudoers.d/" + inputs.intent.user] }}'
+        stdin: ${{ inputs.intent.user + " ALL=(ALL) NOPASSWD:ALL\n" }}
     dependsOn:
     - step: bootstrap-authorized_key
       condition:
         type: succeeded
-  - name: bootstrap-sudo
-    labels: {role: swamp}
+  - name: bootstrap-sudo-check
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -221,49 +195,25 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c",steps["bootstrap-sudo-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["bootstrap-sudo-assets"].outputs.script_body]
-          }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
-    dependsOn:
-    - step: bootstrap-sudo-assets
-      condition:
-        type: succeeded
-  - name: bootstrap-observer-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: '${{ "vm-bootstrap-input" }}'
-      methodName: read
-      inputs:
-        action: observer
-        user: ${{ inputs.intent.user }}
-        command: ${{ inputs.intent.bootstrap }}
-        artifact:
-          url: ${{ inputs.intent.agent_artifact_url }}
-          sha256: ${{ inputs.intent.agent_sha256 }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/sbin/visudo","-cf","/etc/sudoers.d/" + inputs.intent.user] : ["/usr/sbin/visudo","-cf","/etc/sudoers.d/" + inputs.intent.user] }}'
     dependsOn:
     - step: bootstrap-sudo
       condition:
         type: succeeded
-  - name: bootstrap-observer
-    labels: {role: swamp}
+  - name: bootstrap-observer-download
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -273,49 +223,110 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c",steps["bootstrap-observer-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["bootstrap-observer-assets"].outputs.script_body]
-          }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/curl","--fail","--silent","--show-error","--location","--max-time","120","--proto","=https","--output","/usr/local/bin/.orbit-agent.download",inputs.intent.agent_artifact_url] : ["/usr/bin/curl","--fail","--silent","--show-error","--location","--max-time","120","--proto","=https","--output","/usr/local/bin/.orbit-agent.download",inputs.intent.agent_artifact_url] }}'
     dependsOn:
-    - step: bootstrap-observer-assets
+    - step: bootstrap-sudo-check
       condition:
         type: succeeded
-  - name: bootstrap-verify-assets
-    labels: {role: swamp}
+  - name: bootstrap-observer-checksum
+    labels:
+      role: swamp
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: '${{ "vm-bootstrap-input" }}'
-      methodName: read
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
-        action: verify
-        user: ${{ inputs.intent.user }}
-        command: ${{ inputs.intent.bootstrap }}
-        artifact:
-          url: ${{ inputs.intent.agent_artifact_url }}
-          sha256: ${{ inputs.intent.agent_sha256 }}
+        hosts: name:target
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/sha256sum","--check","--strict","-"] : ["/usr/bin/sha256sum","--check","--strict","-"] }}'
+        stdin: ${{ inputs.intent.agent_sha256 + "  /usr/local/bin/.orbit-agent.download\n" }}
+    dependsOn:
+    - step: bootstrap-observer-download
+      condition:
+        type: succeeded
+  - name: bootstrap-observer
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
+      inputs:
+        hosts: name:target
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-m","0755","-o","root","-g","root","/usr/local/bin/.orbit-agent.download","/usr/local/bin/orbit-agent"] : ["/usr/bin/install","-m","0755","-o","root","-g","root","/usr/local/bin/.orbit-agent.download","/usr/local/bin/orbit-agent"] }}'
+    dependsOn:
+    - step: bootstrap-observer-checksum
+      condition:
+        type: succeeded
+  - name: bootstrap-verify-sudo
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
+      inputs:
+        hosts: name:target
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/sudo","-n","-u",inputs.intent.user,"--","/usr/bin/sudo","-n","true"] : ["/usr/bin/sudo","-n","-u",inputs.intent.user,"--","/usr/bin/sudo","-n","true"] }}'
     dependsOn:
     - step: bootstrap-observer
       condition:
         type: succeeded
   - name: bootstrap-verify
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -325,43 +336,57 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/sudo","-n","-u",inputs.intent.user,"--","/usr/bin/python3","-B","-c",steps["bootstrap-verify-assets"].outputs.script_body] : ["/usr/bin/sudo","-n","-u",inputs.intent.user,"--","/usr/bin/python3","-B","-c",steps["bootstrap-verify-assets"].outputs.script_body]
-          }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/sha256sum","--check","--strict","-"] : ["/usr/bin/sha256sum","--check","--strict","-"] }}'
+        stdin: ${{ inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" }}
     dependsOn:
-    - step: bootstrap-verify-assets
+    - step: bootstrap-verify-sudo
       condition:
         type: succeeded
-  - name: observer-identity-assets
-    labels: {role: swamp}
+  - name: observer-identity-find
+    labels:
+      role: swamp
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: '${{ "vm-bootstrap-input" }}'
-      methodName: observer_identity
-      inputs: {}
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
+      inputs:
+        hosts: name:target
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/test","-e","/etc/orbit/agent/secret"] : ["/usr/bin/test","-e","/etc/orbit/agent/secret"] }}'
+        okExitCodes:
+        - 0
+        - 1
     dependsOn:
     - step: bootstrap-verify
       condition:
         type: succeeded
-  - name: observer-identity
-    labels: {role: swamp}
+  - name: observer-identity-folder
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -371,32 +396,26 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c",steps["observer-identity-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["observer-identity-assets"].outputs.script_body]
-          }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
-        stdin: ${{ inputs.intent.observer_digest_json }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-d","-m","0700","-o","root","-g","root","/etc/orbit/agent"] : ["/usr/bin/install","-d","-m","0700","-o","root","-g","root","/etc/orbit/agent"] }}'
     dependsOn:
-    - step: observer-identity-assets
+    - step: observer-identity-find
       condition:
         type: succeeded
-  - name: observer-configuration
-    labels: {role: swamp}
+    guard: ${{ steps["observer-identity-find"].outputs.exitCode == 0 }}
+  - name: observer-identity-create
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -406,32 +425,99 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/orbit/agent/config.toml",inputs.intent.agent.configuration]
-          : ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/orbit/agent/config.toml",inputs.intent.agent.configuration]
-          }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/openssl","rand","-hex","-out","/etc/orbit/agent/secret","32"] : ["/usr/bin/openssl","rand","-hex","-out","/etc/orbit/agent/secret","32"] }}'
+    dependsOn:
+    - step: observer-identity-folder
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps["observer-identity-find"].outputs.exitCode == 0 }}
+  - name: observer-identity-mode
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
+      inputs:
+        hosts: name:target
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/chmod","0600","/etc/orbit/agent/secret"] : ["/usr/bin/chmod","0600","/etc/orbit/agent/secret"] }}'
+    dependsOn:
+    - step: observer-identity-create
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: observer-identity
+    labels: &id001
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
+      inputs:
+        hosts: name:target
+        sudo: ${{ inputs.intent.provider != "incus" }}
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/sha256sum","/etc/orbit/agent/secret"] : ["/usr/bin/sha256sum","/etc/orbit/agent/secret"] }}'
+    dependsOn:
+    - step: observer-identity-mode
+      condition:
+        type: succeeded
+  - name: observer-identity-proven
+    labels: *id001
     dependsOn:
     - step: observer-identity
       condition:
         type: succeeded
-  - name: observer-ca
-    labels: {role: swamp}
+    task:
+      type: assert
+      severity: high
+      message: agent.secret_mismatch
+      expr: inputs.intent.observer_digest == null || steps["observer-identity"].outputs.stdout.startsWith(inputs.intent.observer_digest + "  ")
+  - name: observer-configuration
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -441,32 +527,55 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/orbit/agent/ca.pem",inputs.intent.agent.certificate]
-          : ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/orbit/agent/ca.pem",inputs.intent.agent.certificate]
-          }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-D","-m","0644","/dev/stdin","/etc/orbit/agent/config.toml"] : ["/usr/bin/install","-D","-m","0644","/dev/stdin","/etc/orbit/agent/config.toml"] }}'
+        stdin: ${{ inputs.intent.agent.configuration }}
+        sudo: ${{ inputs.intent.provider != "incus" }}
+    dependsOn:
+    - step: observer-identity-proven
+      condition:
+        type: succeeded
+  - name: observer-ca
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-D","-m","0644","/dev/stdin","/etc/orbit/agent/ca.pem"] : ["/usr/bin/install","-D","-m","0644","/dev/stdin","/etc/orbit/agent/ca.pem"] }}'
+        stdin: ${{ inputs.intent.agent.certificate }}
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: observer-configuration
       condition:
         type: succeeded
   - name: observer-unit
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -476,32 +585,26 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/systemd/system/orbit-agent.service",inputs.intent.agent.unit]
-          : ["/usr/bin/python3","-B","-c","from pathlib import Path\nimport sys\nPath(sys.argv[1]).write_text(sys.argv[2])\n","/etc/systemd/system/orbit-agent.service",inputs.intent.agent.unit]
-          }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/install","-D","-m","0644","/dev/stdin","/etc/systemd/system/orbit-agent.service"] : ["/usr/bin/install","-D","-m","0644","/dev/stdin","/etc/systemd/system/orbit-agent.service"] }}'
+        stdin: ${{ inputs.intent.agent.unit }}
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: observer-ca
       condition:
         type: succeeded
   - name: peer-key-command
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -511,35 +614,29 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/bin/sh","-c","umask 077 && mkdir -p /etc/wireguard && { test -s /etc/wireguard/orbit.key || wg genkey > /etc/wireguard/orbit.key; } && wg pubkey < /etc/wireguard/orbit.key"] : ["/bin/sh","-c","umask 077 && mkdir -p /etc/wireguard && { test -s /etc/wireguard/orbit.key || wg genkey > /etc/wireguard/orbit.key; } && wg pubkey < /etc/wireguard/orbit.key"]
-          }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/bin/sh","-c","umask 077 && mkdir -p /etc/wireguard && { test -s /etc/wireguard/orbit.key || wg genkey > /etc/wireguard/orbit.key; } && wg pubkey < /etc/wireguard/orbit.key"] : ["/bin/sh","-c","umask 077 && mkdir -p /etc/wireguard && { test -s /etc/wireguard/orbit.key || wg genkey > /etc/wireguard/orbit.key; } && wg pubkey < /etc/wireguard/orbit.key"] }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: observer-unit
       condition:
         type: succeeded
   - name: peer-key
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/node-peer-command'
-      behaviorName: '${{ "vm-node-peer-command" }}'
+      behaviorName: ${{ "vm-node-peer-command" }}
       methodName: decode
       inputs:
         stdout: ${{ steps["peer-key-command"].outputs.stdout }}
@@ -548,11 +645,12 @@ jobs:
       condition:
         type: succeeded
   - name: hub-peer
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("wireguard-hub-peer-" + string(inputs.intent.hub.hub_id) + "-" + string(inputs.intent.guest_node_id)).split(".").join("-") }}'
+      behaviorName: ${{ ("wireguard-hub-peer-" + string(inputs.intent.hub.hub_id) + "-" + string(inputs.intent.guest_node_id)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         nodeHost: ${{ inputs.intent.hub_ssh_execution.target.host }}
@@ -562,7 +660,7 @@ jobs:
         become: true
         path: ${{ inputs.intent.hub.file }}
         ensure: present
-        content: '${{ inputs.intent.hub.section.split("@KEY@").join(steps["peer-key"].outputs.public_key) }}'
+        content: ${{ inputs.intent.hub.section.split("@KEY@").join(steps["peer-key"].outputs.public_key) }}
         owner: root
         group: root
         mode: '0600'
@@ -573,14 +671,15 @@ jobs:
         type: succeeded
     writes: true
   - name: hub
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("wireguard-hub-"+string(inputs.intent.hub.hub_id)).split(".").join("-") }}'
+      behaviorName: ${{ ("wireguard-hub-"+string(inputs.intent.hub.hub_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: '${{ ("wireguard-hub-"+string(inputs.intent.hub.hub_id)).split(".").join("-") }}'
+        name: ${{ ("wireguard-hub-"+string(inputs.intent.hub.hub_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.hub_ssh_execution.target.user }}
@@ -591,7 +690,6 @@ jobs:
           address: ${{ inputs.intent.hub_ssh_execution.target.host }}
           transport:
             hostKeys: ${{ inputs.intent.hub_ssh_execution.target.host_keys }}
-      # Only this guest's peer file changes on the hub, so enrollments that overlap never drop each other's peers.
       inputs:
         hosts: name:hub
         sudo: true
@@ -602,7 +700,8 @@ jobs:
         type: succeeded
     writes: true
   - name: peer-publish-command
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -612,31 +711,25 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.conf","sh",inputs.intent.peer_files.config] : ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.conf","sh",inputs.intent.peer_files.config]
-          }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.conf","sh",inputs.intent.peer_files.config] : ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.conf","sh",inputs.intent.peer_files.config] }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: hub
       condition:
         type: succeeded
   - name: peer-enable
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -646,31 +739,25 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/systemctl","enable","wg-quick@orbit.service"] : ["/usr/bin/systemctl","enable","wg-quick@orbit.service"]
-          }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/systemctl","enable","wg-quick@orbit.service"] : ["/usr/bin/systemctl","enable","wg-quick@orbit.service"] }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: peer-publish-command
       condition:
         type: succeeded
   - name: peer-start
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -680,31 +767,25 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/systemctl","restart","wg-quick@orbit.service"] : ["/usr/bin/systemctl","restart","wg-quick@orbit.service"]
-          }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/usr/bin/systemctl","restart","wg-quick@orbit.service"] : ["/usr/bin/systemctl","restart","wg-quick@orbit.service"] }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: peer-enable
       condition:
         type: succeeded
   - name: peer-dns-command
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -714,31 +795,25 @@ jobs:
         name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
-            }}'
-          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
-            }}'
-          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
-            }}'
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file }}'
         hosts:
         - name: target
-          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
-            }}'
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host }}'
           transport:
-            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
-              }}'
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys }}'
       inputs:
         hosts: name:target
-        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.dns-link","sh",inputs.intent.peer_files.dns_marker] : ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.dns-link","sh",inputs.intent.peer_files.dns_marker]
-          }}'
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name] + ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.dns-link","sh",inputs.intent.peer_files.dns_marker] : ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.dns-link","sh",inputs.intent.peer_files.dns_marker] }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: peer-start
       condition:
         type: succeeded
   - name: private-ssh
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: task-vm-ssh-prepare
@@ -762,14 +837,15 @@ jobs:
       condition:
         type: succeeded
   - name: observer-reload
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
+        name: ${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.guest.ssh_execution.target.user }}
@@ -791,14 +867,15 @@ jobs:
       condition:
         type: succeeded
   - name: observer-start
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
+        name: ${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.guest.ssh_execution.target.user }}
@@ -822,7 +899,8 @@ jobs:
       condition:
         type: succeeded
   - name: model
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: task-vm-model-issue
@@ -831,14 +909,14 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.model_intent }}
-        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor}
-          }}
+        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor} }}
     dependsOn:
     - step: observer-start
       condition:
         type: succeeded
   - name: runtime
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: task-vm-runtime
@@ -856,18 +934,18 @@ jobs:
           certificate: ${{ inputs.intent.certificate }}
           pi_url: ${{ inputs.intent.pi_url }}
           ssh_execution: ${{ inputs.guest.ssh_execution }}
-        execution_secrets: ${{ {"pi_models":inputs.execution_secrets.pi_models,"pi_token":inputs.execution_secrets.pi_token}
-          }}
+        execution_secrets: ${{ {"pi_models":inputs.execution_secrets.pi_models,"pi_token":inputs.execution_secrets.pi_token} }}
     dependsOn:
     - step: model
       condition:
         type: succeeded
   - name: receipt
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
-      behaviorName: '${{ "vm-enrollment-input" }}'
+      behaviorName: ${{ "vm-enrollment-input" }}
       methodName: terminal
       inputs:
         intent: ${{ inputs.intent }}
@@ -882,7 +960,8 @@ jobs:
       condition:
         type: succeeded
   - name: model-revoke
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: task-vm-model-revoke
@@ -891,8 +970,7 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.model_intent }}
-        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor}
-          }}
+        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor} }}
     dependsOn:
     - step: receipt
       condition:
@@ -903,11 +981,10 @@ jobs:
     - step: model
       condition:
         type: always
-    # A model step that never started has no entry in steps; it still needs the revoke.
-    guard: ${{ "provider-plan" in steps && steps["provider-plan"].outputs.provider == "incus" && !("model" in steps && steps.model.status in ["succeeded","failed","cancelled"])
-      }}
+    guard: ${{ "provider-plan" in steps && steps["provider-plan"].outputs.provider == "incus" && !("model" in steps && steps.model.status in ["succeeded","failed","cancelled"]) }}
   - name: result
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: receipt
       condition:
@@ -915,12 +992,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
-      behaviorName: '${{ "vm-enrollment-result" }}'
+      behaviorName: ${{ "vm-enrollment-result" }}
       methodName: forward
       inputs:
         receipt: ${{ steps.receipt.outputs }}
   - name: cloud-revoked
-    labels: {role: swamp}
+    labels:
+      role: swamp
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: model-revoke
@@ -929,14 +1007,14 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: '${{ "cloud-rollback-proof" }}'
+      behaviorName: ${{ "cloud-rollback-proof" }}
       methodName: revocation
       inputs:
-        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"guest_node_id":null,"provider":"upcloud","model_key_required":true,"removal":null,"provider_input":{"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null}
-          } }}
+        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"guest_node_id":null,"provider":"upcloud","model_key_required":true,"removal":null,"provider_input":{"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null} } }}
         stdout: ${{ steps["model-revoke"].outputs.result.stdout }}
   - name: cloud-inspect
-    labels: {role: swamp}
+    labels:
+      role: swamp
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: cloud-revoked
@@ -949,15 +1027,13 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
-        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null}
-          }}
-        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
-          : {} }}'
+        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null} }}
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud} : {} }}'
         action: inspect
   - name: cloud-stop
-    labels: {role: swamp}
-    guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" || !steps["cloud-inspect"].outputs.result.running
-      }}
+    labels:
+      role: swamp
+    guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" || !steps["cloud-inspect"].outputs.result.running }}
     dependsOn:
     - step: cloud-inspect
       condition:
@@ -969,13 +1045,12 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
-        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null}
-          }}
-        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
-          : {} }}'
+        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null} }}
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud} : {} }}'
         action: stop
   - name: cloud-delete
-    labels: {role: swamp}
+    labels:
+      role: swamp
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
     - step: cloud-inspect
@@ -994,8 +1069,6 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
-        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null}
-          }}
-        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
-          : {} }}'
+        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null} }}
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud} : {} }}'
         action: delete
