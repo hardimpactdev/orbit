@@ -683,7 +683,7 @@ SUMMARIES = {
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
     'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
-    'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
+    'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:activate': 'Activate a Cluster', 'cluster:deactivate': 'Deactivate a Cluster', 'cluster:destroy': 'Remove a Cluster',
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
     'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
     'tool:manager:list': 'List Tool Managers', 'tool:scan': 'Scan installed packages', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:adopt': 'Adopt a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',

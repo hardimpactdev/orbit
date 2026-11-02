@@ -53,7 +53,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'activity:show',
         'analytics:credentials',
         'analytics:update',
+        'cluster:activate',
         'cluster:create',
+        'cluster:deactivate',
         'cluster:destroy',
         'cluster:list',
         'cluster:node:add',
@@ -597,8 +599,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'cluster:show' => [['cluster'], ['json' => false]],
         'cluster:update' => [
             ['cluster'],
-            ['name' => null, 'tld' => null, 'state' => null, 'json' => false],
+            ['name' => null, 'tld' => null, 'json' => false],
         ],
+        'cluster:activate' => [['cluster'], ['json' => false]],
+        'cluster:deactivate' => [['cluster'], ['json' => false]],
         'database:create' => [
             ['slug'],
             [
@@ -1171,7 +1175,9 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'cluster:router:unset' => [['cluster' => '1', '--force' => true], ...$profileMissing],
         'cluster:router:set' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
         'cluster:show' => [['cluster' => '1'], ...$profileMissing],
-        'cluster:update' => [['cluster' => '1', '--state' => 'inactive'], ...$profileMissing],
+        'cluster:update' => [['cluster' => '1', '--name' => 'renamed'], ...$profileMissing],
+        'cluster:activate' => [['cluster' => '1'], ...$profileMissing],
+        'cluster:deactivate' => [['cluster' => '1'], ...$profileMissing],
         'database:create' => [[
             'slug' => 'app',
             '--driver' => 'mysql',

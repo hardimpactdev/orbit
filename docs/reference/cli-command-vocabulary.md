@@ -91,6 +91,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 
 | Family | Actions | Result |
 | --- | --- | --- |
+| `cluster` | `activate`, `deactivate` | The CLI turns a Cluster's private domains and LAN ingress on or off; see [cluster](/cli/cluster#orbit-clusteractivate). |
 | `database` | `close`, `describe`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections), or closes an [adopted Valkey server](/reference/database-servers#close-an-adopted-server) with `database:server:close`. |
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |

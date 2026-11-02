@@ -24,8 +24,6 @@ final class UpdateClusterRequest extends GatewayRequest implements HasBody
         private readonly ?string $name = null,
         private readonly bool $hasTld = false,
         private readonly ?string $tld = null,
-        private readonly bool $hasState = false,
-        private readonly ?string $state = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -49,10 +47,6 @@ final class UpdateClusterRequest extends GatewayRequest implements HasBody
 
         if ($this->hasTld) {
             $body['tld'] = $this->tld;
-        }
-
-        if ($this->hasState) {
-            $body['state'] = $this->state;
         }
 
         return $body;

@@ -21,7 +21,9 @@ The [Routes reference](/reference/routes) owns domain generation, routing scope,
 | [`cluster:create`](#orbit-clustercreate) | Create a Cluster, optionally with a TLD. |
 | [`cluster:list`](#orbit-clusterlist) | List Clusters. |
 | [`cluster:show`](#orbit-clustershow) | Show one Cluster with its members and Router. |
-| [`cluster:update`](#orbit-clusterupdate) | Change the name, TLD, or state. |
+| [`cluster:update`](#orbit-clusterupdate) | Change the name or TLD. |
+| [`cluster:activate`](#orbit-clusteractivate) | Make the Cluster serve its private domains and LAN ingress. |
+| [`cluster:deactivate`](#orbit-clusterdeactivate) | Stop the Cluster serving its private domains and LAN ingress. |
 | [`cluster:node:add`](#orbit-clusternodeadd) | Attach a Node. |
 | [`cluster:node:remove`](#orbit-clusternoderemove) | Detach a Node. |
 | [`cluster:router:set`](#orbit-clusterrouterset) | Set or replace the Router. |
@@ -95,10 +97,10 @@ orbit cluster:show <cluster>
 
 ## orbit cluster:update
 
-Change the name, TLD, or state of a Cluster. At least one option is required.
+Change the name or TLD of a Cluster. At least one option is required. To change its state, use [`cluster:activate`](#orbit-clusteractivate) or [`cluster:deactivate`](#orbit-clusterdeactivate).
 
 ```bash
-orbit cluster:update <cluster> [--name=NAME] [--tld=TLD] [--state=STATE]
+orbit cluster:update <cluster> [--name=NAME] [--tld=TLD]
 ```
 
 | Argument | Required | Meaning |
@@ -109,23 +111,48 @@ orbit cluster:update <cluster> [--name=NAME] [--tld=TLD] [--state=STATE]
 | --- | --- |
 | `--name=NAME` | New Cluster name. |
 | `--tld=TLD` | New development TLD. An empty value, `--tld=`, unsets it. |
-| `--state=STATE` | `inactive` or `active`. |
 
 ```bash
-orbit cluster:update 3 --state=active
 orbit cluster:update 3 --tld=
 ```
 
-Activating a Cluster that has a TLD, or setting a TLD on an active Cluster, makes the Gateway check that one active Router exists, that no non-member Node owns the proposed TLD, and that every affected Route keeps a valid domain, scope, and target. Generated domains then use the Cluster TLD even when member Nodes have their own TLDs. The Gateway then republishes DNS and Router projections before it stores the change. A failure leaves the previous state authoritative. A name change alone touches no traffic.
+Setting a TLD on an active Cluster makes the Gateway check that one active Router exists, that no non-member Node owns the proposed TLD, and that every affected Route keeps a valid domain, scope, and target. Generated domains then use the Cluster TLD even when member Nodes have their own TLDs. The Gateway then republishes DNS and Router projections before it stores the change. A failure leaves the previous state authoritative. A name change alone touches no traffic.
 
 | Error code | Meaning |
 | --- | --- |
 | `cluster.update_required` | No option was given. |
-| `cluster.state_invalid` | The state is not `inactive` or `active`. |
 | `cluster.router_required` | The Cluster would be active with a TLD but has no active Router. |
 | `cluster.tld_conflict` | A Node outside the Cluster already owns the proposed TLD. |
 | `cluster.router_busy` | Another Router transition still owns this Cluster; retry after it finishes. |
 | `route.reconciliation_required` | An active Route depends on the change and cannot be reconciled by this operation. |
+
+## orbit cluster:activate
+
+Activate a Cluster. An active Cluster serves its private domains and LAN ingress by itself, so this is an `activate` and `deactivate` pair, not an `update` option.
+
+```bash
+orbit cluster:activate <cluster> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `cluster` | yes | Numeric Cluster ID. |
+
+Activating a Cluster that has a TLD runs the same checks as setting a TLD on an active Cluster: one active Router, no non-member Node that owns the TLD, and a valid domain, scope, and target for every affected Route. Activating an active Cluster changes nothing. The errors are those of [`cluster:update`](#orbit-clusterupdate), without `cluster.update_required`.
+
+## orbit cluster:deactivate
+
+Deactivate a Cluster. Its private domains and LAN ingress stop. The Cluster, its members, and its Router stay.
+
+```bash
+orbit cluster:deactivate <cluster> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `cluster` | yes | Numeric Cluster ID. |
+
+Deactivating an inactive Cluster changes nothing. Generated domains of the affected Routes fall back to their member Node TLDs, as the Gateway republishes DNS and Router projections before it stores the change.
 
 ## orbit cluster:node:add
 

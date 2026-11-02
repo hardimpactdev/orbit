@@ -333,6 +333,11 @@ describe('repository guidance bootstrap', function (): void {
             ListTaskAgentsRequest::class,
             ShowTaskAgentRequest::class,
         ];
+        // Behaviors that keep acting by themselves get an enable and a disable request, never an update flag.
+        $enableRequests = [
+            'Orbit\\Sdk\\Requests\\Clusters\\ActivateClusterRequest',
+            'Orbit\\Sdk\\Requests\\Clusters\\DeactivateClusterRequest',
+        ];
         $lifecycleRequests = [
             RenameInstanceRequest::class,
             CreateProjectLifecycleStepRequest::class,
@@ -381,7 +386,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeWireGuardHubRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + count($enableRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -597,7 +602,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Node: list, show, add, rename, settings update, WireGuard key set, standalone WireGuard hub converge, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
             ->toContain(
-                '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
+                '- Cluster: list, show, create, update, activate, deactivate, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain('- Schedule: list, add, show, run, logs, complete, remove, activate, and deactivate.')
