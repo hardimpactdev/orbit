@@ -351,3 +351,12 @@ Five native workflow tests, six data tests and 109 Gateway tests pass, as do PHP
 When the first success receipts failed parity, the native Operation had succeeded. The metadata CLI needed the harness account environment and an absolute launcher. Its missing-key reply says `vault_inspect_failed` with “does not exist”. Expected HTTP refusals return a nonzero driver status. These fixture checks were corrected before the passing receipt; the production path was unchanged.
 
 Cancellation 8268 destroyed task VM 356 at 2026-11-02T20:08:43Z. The lane holds no VM. The rebased workflow, data type, Conn Gateway code and shared native read/delete helpers match the proven source.
+
+
+## Native Schedule destroy
+
+`schedule.destroy` removes the trigger, workflow and command key, then records success without a control run or Node visit. The minimal@10 recovery proof exposed two pinned-runtime details: an absent UUID loses the canonical-name grant match, and `workflow.delete` wraps a missing resource as `workflow_delete_failed`. Deletion now uses the stable `schedule-<uuid>` name and accepts only the exact missing-workflow response for that name. Authorization, storage failures and a missing response keep the Schedule `removing`. No grant is widened.
+
+Two fresh receipts at `f42b8ba0e9` prove ordinary removal in 0.12 seconds and removal after the trigger and workflow are already gone in 0.35 seconds. Both verify the command key is gone, with no Node units or control run. The observed p95 is 0.35 seconds for two samples; each fixture has a 60-second budget and the shared fire child's queue timeout of 300. `swamp/proof/receipts/schedule-destroy-native.json` indexes both receipts. Forty-four Gateway cases, PHP analysis, formatting, registry, charts and docs pass; the name and missing-resource regressions failed before the fix. No script is added or removed.
+
+The proof uses a test calendar and proof CA, without production data, load or scale.
