@@ -11,7 +11,7 @@ declare(strict_types=1);
  *            subscriber in production, is not part of the minimal topology.
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
- *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
+ *   fixture  stdin {roles: {node_id: [role]}, replace_roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
  *            instances: [attributes], task_vms: [attributes], operations: [attributes],
  *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}],
@@ -94,6 +94,14 @@ if ($argv[1] === 'seed') {
 }
 
 if ($argv[1] === 'fixture') {
+    // A Node's whole role set, for a kind that needs another placement than the topology's, such as app-prod.
+    foreach ($input['replace_roles'] ?? [] as $id => $roles) {
+        $node = Node::query()->findOrFail((int) $id);
+        $node->roles()->whereNotIn('role', $roles)->delete();
+        foreach ($roles as $role) {
+            $node->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
+        }
+    }
     foreach ($input['roles'] ?? [] as $id => $roles) {
         foreach ($roles as $role) {
             Node::query()->findOrFail((int) $id)->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
