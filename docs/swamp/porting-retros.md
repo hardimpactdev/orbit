@@ -236,20 +236,26 @@ Proof failures found a nested Caddy field and sparse Route block metadata passed
 
 ## Fleet observer and role files (rule 22, partial)
 
-Fleet recipe and role callers replace five scripts with official file resources, bounded identity and checkout argv, and the shared native PHP, private DNS and Route residue workflows. The Gateway captures their public file intent and SSH descriptor. DNS rollback is removed. The final CLI script remains queued; recipe.py is the approved open gap. The release checkout owns its worker renderer; extension manifests omit it. No new kind is declared done.
+Fleet recipe and retained role callers delete five scripts and their manifest entries: public files, observer identity and checkout cleanup, PHP runtime and private DNS footprint. They use official cfgmgmt resources, bounded SSH argv and shared native children. DNS rollback is removed. The worker renderer runs only in the release checkout; its manifest entry is deleted. `recipe.py` remains the approved gap for package policy, Incus drain and repacked PHP. CLI removal is a separate conversion owned by the docs lane; Fleet recipe is not declared done yet. Eight Tools adoption scripts remain frozen for the Node observer pass.
 
-| Pre-rebase receipt on minimal@10 | Runtime, one sample | Run budget / queue timeout |
+Fresh proofs on shared minimal@10 pass at `e949c0d501`. The receipt index is `swamp/proof/receipts/fleet-rule22-files.json`.
+
+| Kind or fixture | Operation seconds, one sample | Run budget / queue timeout |
 | --- | --- | --- |
-| `evidence/proof/node.converge/20261102T163119Z-minimal.json` | 64.13 s | 1800 / 30 s |
-| `evidence/proof/node.role_converge/20261102T164744Z-minimal.json` | 37.01 s | 1800 / 60 s |
-| `evidence/proof/fleet.recipe/20261102T165733Z-minimal.json` | 104.38 s | 1800 / 60 s |
+| `fleet.recipe` | 118.71 | 1800 / 60 s |
+| `node.converge` | 34.89 | 1800 / 30 s |
+| `node.role_converge` | 24.70 | 900 / 30 s |
+| `tool.install.first-use` | 77.38 | 900 / 60 s |
+| `tool.install` | 26.66 | 300 / 60 s |
+| `tool.update` | 16.53 | 300 / 60 s |
+| `tool.remove` | 14.45 | 300 / 60 s |
 
-Each row's p95 equals its one sample. The recipe proof uses the existing topology-only StaticCliRelease catalog with real public CLI 0.8725.0, downloaded and checked on the Node. Package pins and the agent use the normal recipe and frozen manifest. The retained add/relocate callers have native graph coverage; their whole roots still require target workers and are not proved on minimal.
+Each fixture's nearest-rank p95 equals its one sample. The recipe uses the actual current recipe and frozen agent, with public CLI 0.8725.0 from the existing test catalog. Tool first use installs the real Vite+ manager from no store; the apt cases download and fingerprint-check the signing key on 209 before Node work. The retained add/relocate roots have native graph coverage only. The role proof covers a sole Database role. The fixture fleet has no production data or scale.
 
-The pre-rebase recipe run succeeded before parity exposed Linux's environment size limit. Parity now reads the full Operation from a JSON file. A real subprocess test covers a 1 MiB intent. These receipts predate the newer observer and role workflows on main; the reconciled batch needs fresh receipts before publication.
+The complete native recipe exposed two dependency errors after reconciliation with main. An empty peer-DNS set skipped unrelated writes. A required footprint failure could still reach delivery. Native dependencies now cover completion of the optional set and require footprint success before delivery; Route residue remains best effort. Eleven native recipe cases, two retained-role cases and 39 Gateway cases pass. Deno, registry, chart, documentation, shape, naming and placement checks pass.
 
-The reconciled source is `8673ef0142`. It keeps the newer observer and sole-role workflows from main. The recipe tests found two dependency errors. When peer DNS selected no work, the workflow skipped other writes. A failure in required footprint work could still reach delivery. Native completion dependencies now cover the optional set, and delivery requires footprint success. Route residue failure remains best effort. Eleven complete recipe DAG cases, two retained-role cases, 39 Gateway cases and 113 Deno cases pass; the chart, documentation, shape, naming and placement checks pass too. The separate generated-workflow suite adds four passing cases.
+Parity reads the full Operation from `PROOF_OPERATION_FILE`, avoiding the operating system environment size limit. A real subprocess test covers a 1 MiB intent. New Node removal and Vault parity readers follow the same contract. No parity assertion is removed.
 
-Fresh proof provisioning for this source refused group 2641 with `tasks.capacity_unavailable`: recipe `42499493220f` waits for images on Beast and Shark. No retry loop ran. Cancellation 8075 confirms destruction at 17:23:50Z. No new receipt or rule 22 done claim is made. The CLI script replacement and all its live callers are handed to the docs lane; the other eight Tools adoption scripts stay frozen for the observer pass.
+Cancellation 8123 confirms task VM 323 destroyed at 2026-11-02T18:08:51Z. The lane holds no VM. No production serve restart or reload was used.
 
-Before these final notes, this batch removes 1083 net Orbit lines. Swamp behaviors shrink by 337, shipped scripts by 789, tests and fixtures by 440, and configuration by 9. Workflows grow by 11 for the retained native boundaries and dependencies. Proof fixtures grow by 119 for the actual recipe and CLI release catalog; maintained docs grow by 317 for the real chart labels. The remaining 45 lines cover Gateway intent and the large-Operation parity-file transport. The five deleted script sources total 789 lines; the release-only worker renderer is removed from manifest shipping, not counted as a deleted script.
+Orbit shrinks by 974 lines. Swamp behaviors shrink by 337, replaced scripts by 789, tests and fixtures by 440, and configuration by 9. Workflows grow by 11 for native declarations and dependencies. Proof fixtures grow by 217 for the actual recipe, public CLI catalog and receipt index. The other 373 lines cover chart labels, Gateway intent and parity transport.

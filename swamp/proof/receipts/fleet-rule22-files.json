@@ -1,0 +1,98 @@
+{
+  "topology": "minimal",
+  "topology_version": 10,
+  "source_commit": "e949c0d5012af3f81c7764c4bfae73ed6299d0d8",
+  "scripts_deleted": 5,
+  "retained_script_gaps": [
+    "recipe.py: signed package policy, Incus drain, repacked PHP"
+  ],
+  "pending_conversion": [
+    "cli.py: delegated to docs lane",
+    "tool.adopt: eight scripts frozen for Node observer pass"
+  ],
+  "vm": {
+    "group_id": 2657,
+    "provision_operation_id": 8099,
+    "task_vm_id": 323,
+    "node_id": 351,
+    "name": "tvm-323",
+    "host_node_id": 13,
+    "seed": "b52d9c01d06875e8c37dffc5ed4e9b80cab6d4b35fe709d8a17f0d356571d030",
+    "provisioned_at": "2026-11-02T17:55:58Z",
+    "cancel_operation_id": 8123,
+    "destroyed": true,
+    "destroyed_at": "2026-11-02T18:08:51Z"
+  },
+  "cases": [
+    {
+      "kind": "fleet.recipe",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/fleet.recipe/20261102T180118Z-minimal.json",
+      "operation_seconds": 118.71,
+      "fixture_seconds": 122.6,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 60,
+      "run_id": "8d740c4b-261f-42bd-9148-bc4959aac54d",
+      "proof_pass": true
+    },
+    {
+      "kind": "node.converge",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.converge/20261102T180156Z-minimal.json",
+      "operation_seconds": 34.89,
+      "fixture_seconds": 37.8,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "run_id": "f329806c-a5cd-4274-b91a-ef6d89499f12",
+      "proof_pass": true
+    },
+    {
+      "kind": "node.role_converge",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.role_converge/20261102T180224Z-minimal.json",
+      "operation_seconds": 24.7,
+      "fixture_seconds": 27.7,
+      "budget_seconds": 900,
+      "queue_timeout_seconds": 30,
+      "run_id": "dd937302-82d6-488e-b11e-8d21a7d4ebbb",
+      "proof_pass": true
+    },
+    {
+      "kind": "tool.install.first-use",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tool.install.first-use/20261102T180345Z-minimal.json",
+      "operation_seconds": 77.38,
+      "fixture_seconds": 80.6,
+      "budget_seconds": 900,
+      "queue_timeout_seconds": 60,
+      "run_id": "069fe026-3f13-4030-83be-b611c0682cf9",
+      "proof_pass": true
+    },
+    {
+      "kind": "tool.install",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tool.install/20261102T180418Z-minimal.json",
+      "operation_seconds": 26.66,
+      "fixture_seconds": 31.8,
+      "budget_seconds": 300,
+      "queue_timeout_seconds": 60,
+      "run_id": "f774fdba-5625-4d5f-84db-7b3b7f00b699",
+      "proof_pass": true
+    },
+    {
+      "kind": "tool.update",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tool.update/20261102T180535Z-minimal.json",
+      "operation_seconds": 16.53,
+      "fixture_seconds": 41.1,
+      "budget_seconds": 300,
+      "queue_timeout_seconds": 60,
+      "run_id": "17dbe1bd-1894-43eb-888f-05e97bb99617",
+      "proof_pass": true
+    },
+    {
+      "kind": "tool.remove",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tool.remove/20261102T180614Z-minimal.json",
+      "operation_seconds": 14.45,
+      "fixture_seconds": 39.1,
+      "budget_seconds": 300,
+      "queue_timeout_seconds": 60,
+      "run_id": "6da39484-b8c6-4aee-ab45-2e9e202f3b2c",
+      "proof_pass": true
+    }
+  ]
+}
