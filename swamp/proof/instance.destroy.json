@@ -35,10 +35,17 @@
       "operation": false,
       "body": {
         "name": "dev-server",
-        "environments": ["development"],
+        "environments": [
+          "development"
+        ],
         "spec": {
           "runtime": "systemd",
-          "command": ["/usr/bin/python3", "-m", "http.server", "8766"],
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "http.server",
+            "8766"
+          ],
           "restart_policy": "on-failure"
         }
       }
@@ -54,22 +61,66 @@
       }
     }
   ],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "printf '.env\\n' >> /home/orbit/apps/proof-destroy/d-${proof.run}/.git/info/exclude; git -C /home/orbit/apps/proof-destroy/d-${proof.run} status --porcelain --untracked-files=all >&2"
+    ]
+  ],
   "request": {
     "method": "DELETE",
     "path": "instances/${instance.id}",
-    "body": {"force": false}
+    "body": {
+      "force": false
+    }
   },
   "expect": {
     "status": "succeeded"
   },
   "phases": [
-    {"name": "Read the scripts", "job": "destroy", "step": "Read the scripts", "budget_seconds": 15},
-    {"name": "Verify the source", "job": "destroy", "step": "Verify the source", "budget_seconds": 20},
-    {"name": "Check work is pushed", "job": "destroy", "step": "Check work is pushed", "budget_seconds": 40},
-    {"name": "Run teardown steps", "job": "destroy", "step": "Run teardown steps", "budget_seconds": 20},
-    {"name": "Remove the source", "job": "destroy", "step": "Remove the source", "budget_seconds": 20},
-    {"name": "Check it is gone", "job": "destroy", "step": "Check it is gone", "budget_seconds": 20},
-    {"name": "Report the result", "job": "destroy", "step": "Report the result", "budget_seconds": 15}
+    {
+      "name": "Read the scripts",
+      "job": "destroy",
+      "step": "Read the scripts",
+      "budget_seconds": 15
+    },
+    {
+      "name": "Verify the source",
+      "job": "destroy",
+      "step": "Verify the source",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Check work is pushed",
+      "job": "destroy",
+      "step": "Check work is pushed",
+      "budget_seconds": 40
+    },
+    {
+      "name": "Run teardown steps",
+      "job": "destroy",
+      "step": "Run teardown steps",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Remove the source",
+      "job": "destroy",
+      "step": "Remove the source",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Check it is gone",
+      "job": "destroy",
+      "step": "Check it is gone",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Report the result",
+      "job": "destroy",
+      "step": "Report the result",
+      "budget_seconds": 15
+    }
   ],
   "parity": "swamp/proof/instance.destroy/parity.py"
 }
