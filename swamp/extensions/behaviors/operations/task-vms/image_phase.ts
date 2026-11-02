@@ -1,11 +1,11 @@
 import { z } from "npm:zod@4.4.3";
-import type { incusGuest } from "./image_guest.ts";
+import type { sshImageGuest } from "./image_ssh.ts";
 
 /** Shared recipe supervision. Unknown reads never repeat the phase mutation. */
 export async function imagePhase(
   key: { identity: string; profile: string; phase: string; execution: string },
   recipe: Record<string, unknown>,
-  builder: ReturnType<typeof incusGuest>,
+  builder: ReturnType<typeof sshImageGuest>,
   artifact: () => Promise<Uint8Array>,
   sha256: string | null,
   expectedBoot: string | null,

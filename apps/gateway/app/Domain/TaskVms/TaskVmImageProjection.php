@@ -5,34 +5,59 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\NativeRunResult;
+use App\Infrastructure\Swamp\NativeRunTimestamp;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
-/** Immutable image intent and native progress projection. No host calls or child proofs. */
+/** Immutable image intent at the run start and one terminal projection from Swamp's run data. No host calls or progress callbacks. */
 final readonly class TaskVmImageProjection implements DirectOperationProjection
 {
+    /** Workflow stages in run order; each native step is named after its stage, alone or with an action suffix. */
     public const array Phases = ['reset', 'launch', 'boot', 'apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi', 'prepare', 'clean', 'publish', 'smoke', 'seed', 'delete-smoke', 'finish-seed', 'promote', 'prune', 'complete'];
 
+    /** The recipe phases whose start and completion reads give the phase seconds. */
+    public const array RecipePhases = ['apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi'];
+
+    /** Fixed captures for the declaration: the published fingerprint and each recipe phase's start and completion read.
+     * @return array<string,array{job:string,step:string,field?:string}>
+     */
+    public static function captures(): array
+    {
+        $captures = ['fingerprint' => ['job' => 'build', 'step' => 'publish-reply', 'field' => 'fingerprint']];
+        foreach (self::RecipePhases as $phase) {
+            $name = str_replace('-', '_', $phase);
+            $captures[$name.'_start'] = ['job' => 'build', 'step' => $phase.'-start'];
+            $captures[$name.'_inspect'] = ['job' => 'build', 'step' => $phase.'-inspect'];
+        }
+
+        return $captures;
+    }
+
+    /** Admission: the attempt must own its build and its recipe must still be current when the run starts. */
     public function input(Operation $operation): array
     {
         $build = $this->build($operation);
-        $input = Arr::except($operation->input, ['caller_node_id', 'pi_artifact_file']);
-        if (is_array($input['pi_artifact'] ?? null)) {
-            $input['pi_artifact'] = Arr::only($input['pi_artifact'], ['sha256']);
-        }
+        app(RecipeImageBuildSteps::class)->assertCurrent($build);
+        $input = Arr::except($operation->input, ['caller_node_id']);
+        $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($query) => $query
+            ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
+        // The Pi build lives in the Gateway home; 209 fetches it with the same pinned SSH as every other step.
+        $input['pi_source'] = app(SwampSshExecutionInput::class)->forNode($gateway);
 
-        $input['current'] = app(RecipeImageBuildSteps::class)->current($build);
-
-        return $input;
+        return ['intent' => $input, 'execution_secrets' => []];
     }
 
     private function build(Operation $operation): TaskVmImageBuild
@@ -57,69 +82,115 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $build = $this->build($operation);
             $status = OperationStatus::from(ValidatedData::string($data['status']));
-            $result = ValidatedData::object($data['result'] ?? []);
-            $code = ValidatedData::nullableString($data['error_code'] ?? null);
-            $phase = $result['phase'] ?? null;
-            $fingerprint = $result['fingerprint'] ?? null;
-            $hash = is_string($fingerprint) && preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) === 1;
-            $valid = match ($status) {
-                OperationStatus::Running => $code === null && in_array($phase, self::Phases, true)
-                    && array_diff(array_keys($result), ['phase', 'completed', 'fingerprint']) === []
-                    && (! isset($result['completed']) || $result['completed'] === true)
-                    && ($fingerprint === null || ($phase === 'publish' && $hash)),
-                OperationStatus::Succeeded => $code === null && count($result) === 2 && ($result['ready'] ?? null) === true
-                    && $hash && $fingerprint === $build->image_fingerprint && $build->promoted_at !== null,
-                OperationStatus::Failed => $code !== null && preg_match('/\A[a-z0-9_]+\.[a-z0-9_.-]{1,80}\z/D', $code) === 1 && $result === ['error_code' => $code],
-                OperationStatus::Cancelled => $code === null && $result === [],
-                default => false,
+            $native = ValidatedData::object($data['result'] ?? []);
+            $fingerprint = $native['fingerprint'] ?? null;
+            $fingerprint = is_string($fingerprint) && preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) === 1 ? $fingerprint : null;
+            $promoted = NativeRunResult::stepStatus($native, 'promote-reply') === 'succeeded';
+            if (! $status->terminal()) {
+                throw new ResourceOperationException('operation.result_invalid', 'The image result needs a terminal native outcome.', 422);
+            }
+            $code = in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true) ? $this->errorCode($data['failure'] ?? null) : null;
+            $result = match (true) {
+                $code !== null => ['error_code' => $code],
+                $status === OperationStatus::Succeeded => ['ready' => true, 'fingerprint' => $fingerprint],
+                default => [],
             };
-            if (! $valid) {
-                throw new ResourceOperationException('operation.result_invalid', 'The image result needs a bounded native phase or outcome.', 422);
+            if ($status === OperationStatus::Succeeded && ($fingerprint === null || ! $promoted)) {
+                throw new ResourceOperationException('operation.result_invalid', 'A succeeded image run needs its published and promoted fingerprint.', 422);
             }
-            if (in_array($status, [OperationStatus::Running, OperationStatus::Succeeded], true)) {
-                app(RecipeImageBuildSteps::class)->assertCurrent($build);
-            }
-            $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            if (! $terminal && $status === OperationStatus::Running) {
-                $this->progress($build, $operation, ValidatedData::string($phase), $result);
+            if (! $operation->status->terminal()) {
+                $this->record($build, $operation, $native, $fingerprint, $promoted);
             }
 
-            return $projected;
+            return app(DirectOperation::class)->project($operation, [...$data, 'error_code' => $code], $result);
         });
     }
 
-    /** @param array<string,mixed> $result */
-    private function progress(TaskVmImageBuild $build, Operation $operation, string $phase, array $result): void
+    /** A refused agent reply keeps its own public code; other failures take their stage's code. */
+    private function errorCode(mixed $failure): string
     {
-        $phase = in_array($phase, ['seed', 'delete-smoke', 'finish-seed'], true) ? 'topology-seed' : $phase;
-        $step = match ($phase) {
-            'promote' => TaskVmImageBuildStep::Promote, 'prune' => TaskVmImageBuildStep::Prune,
-            default => TaskVmImageBuildStep::Recipe,
+        $step = is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : '';
+        $detail = is_array($failure) && is_string($failure['detail'] ?? null) ? trim($failure['detail']) : '';
+        if ((str_ends_with($step, '-reply') || $step === 'plan') && preg_match('/\A[a-z0-9_]+\.[a-z0-9_.-]{1,80}\z/D', $detail) === 1) {
+            return $detail;
+        }
+
+        return match (true) {
+            str_starts_with($step, 'cleanup-') => 'task_vm.image_cleanup_failed',
+            in_array($step, ['boot-wait-agent', 'smoke-wait-agent'], true) => TaskVmError::BootstrapTimeout->value,
+            in_array($step, ['boot-cloud-init', 'boot-push-agent', 'smoke-cloud-init', 'smoke-push-agent'], true) => TaskVmError::BootstrapFailed->value,
+            default => 'task_vm.image_build_failed',
         };
-        $program = $step === TaskVmImageBuildStep::Recipe ? 'base:'.$phase : null;
-        $steps = $build->steps;
-        $index = array_find_key($steps, static fn (array $entry): bool => $entry['step'] === $step->value && $entry['program'] === $program) ?? count($steps);
-        $entry = $steps[$index] ?? ['step' => $step->value, 'program' => $program, 'started_at' => now()->toISOString(), 'seconds' => null, 'error' => null];
-        if (($result['completed'] ?? false) === true) {
-            $entry['seconds'] = max(0, now()->getTimestamp() - Carbon::parse($entry['started_at'])->getTimestamp());
+    }
+
+    /** Build steps from the run's step statuses; seconds only where the run data shows a phase's start and end.
+     * @param  array<string,mixed>  $native
+     */
+    private function record(TaskVmImageBuild $build, Operation $operation, array $native, ?string $fingerprint, bool $promoted): void
+    {
+        $statuses = is_array($native['steps'] ?? null) ? $native['steps'] : [];
+        $entries = [];
+        foreach (self::Phases as $phase) {
+            $reached = array_filter(array_keys($statuses), fn (int|string $name): bool => $this->stage((string) $name) === $phase
+                && NativeRunResult::stepStatus($native, (string) $name) !== 'skipped');
+            if ($reached === []) {
+                continue;
+            }
+            $program = in_array($phase, ['seed', 'delete-smoke', 'finish-seed'], true) ? 'topology-seed' : $phase;
+            $step = match ($program) {
+                'promote' => TaskVmImageBuildStep::Promote, 'prune' => TaskVmImageBuildStep::Prune, default => TaskVmImageBuildStep::Recipe,
+            };
+            $program = $step === TaskVmImageBuildStep::Recipe ? 'base:'.$program : null;
+            [$startedAt, $seconds] = $this->timing($native, $phase);
+            $entries[$step->value.':'.$program] ??= ['step' => $step->value, 'program' => $program, 'started_at' => $startedAt, 'seconds' => $seconds, 'error' => null];
         }
-        $steps[$index] = $entry;
-        if (isset($result['fingerprint'])) {
-            $build->image_fingerprint = ValidatedData::string($result['fingerprint']);
-            $build->images = ['base' => ['project' => ValidatedData::string($operation->input['project']),
-                'alias' => ValidatedData::string($operation->input['candidate_alias']), 'fingerprint' => $build->image_fingerprint, 'type' => 'virtual-machine']];
+        // A run that ended before its first stage keeps the build's recorded steps.
+        $last = end($entries);
+        $changes = $last === false ? [] : ['steps' => array_values($entries), 'current_step' => TaskVmImageBuildStep::from($last['step']),
+            'current_program' => $last['program']];
+        if ($fingerprint !== null) {
+            $changes['image_fingerprint'] = $fingerprint;
+            $changes['images'] = ['base' => ['project' => ValidatedData::string($operation->input['project']),
+                'alias' => ValidatedData::string($operation->input['candidate_alias']), 'fingerprint' => $fingerprint, 'type' => 'virtual-machine']];
         }
-        if ($phase === 'promote' && ($result['completed'] ?? false) === true) {
-            $build->promoted_at ??= now();
+        if ($promoted && $fingerprint !== null) {
+            $changes['promoted_at'] = $build->promoted_at ?? now();
         }
-        $build->forceFill(['steps' => $steps, 'current_step' => $step, 'current_program' => $program])->save();
+        $build->forceFill($changes)->save();
+    }
+
+    /** The longest stage name that is the step name or its prefix before an action. */
+    private function stage(string $step): ?string
+    {
+        $match = null;
+        foreach (self::Phases as $phase) {
+            if (($step === $phase || str_starts_with($step, $phase.'-')) && strlen($phase) > strlen($match ?? '')) {
+                $match = $phase;
+            }
+        }
+
+        return $match;
+    }
+
+    /** @param array<string,mixed> $native
+     * @return array{0:?string,1:?float}
+     */
+    private function timing(array $native, string $phase): array
+    {
+        if (! in_array($phase, self::RecipePhases, true)) {
+            return [null, null];
+        }
+        $name = str_replace('-', '_', $phase);
+        $start = is_array($native[$name.'_start'] ?? null) ? NativeRunTimestamp::parse($native[$name.'_start']['startedAt'] ?? null) : null;
+        $end = is_array($native[$name.'_inspect'] ?? null) ? NativeRunTimestamp::parse($native[$name.'_inspect']['finishedAt'] ?? null) : null;
+
+        return [$start?->toISOString(), $start !== null && $end !== null ? round(max(0.0, $start->diffInMilliseconds($end)) / 1000, 1) : null];
     }
 
     /** Project terminal changes, including shared-reader corrections after Gateway expiry. */
     public function changed(Operation $operation): void
     {
-        if ($operation->wasChanged('status') && in_array($operation->status, [OperationStatus::Succeeded, OperationStatus::Failed, OperationStatus::Cancelled], true)) {
+        if ($operation->wasChanged('status') && in_array($operation->status, [OperationStatus::Succeeded, OperationStatus::Failed, OperationStatus::Cancelled, OperationStatus::Interrupted], true)) {
             $this->finish($operation, $operation->status, $operation->error_code);
         }
     }

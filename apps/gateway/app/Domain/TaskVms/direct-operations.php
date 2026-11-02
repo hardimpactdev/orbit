@@ -42,11 +42,10 @@ return ['task_vm.hub_converge' => [
     'private_material' => ['github_token' => 'task_vm.package_cache_github'],
 ], 'task_vm.image_build' => [
     'workflow' => 'operation-task-vm-image-build',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'task_vm_image_writer',
     'projection' => TaskVmImageProjection::class,
     'workflow_inputs' => true,
-    'private_material' => ['pi_artifact_file' => 'task_vm.image_artifact'],
+    // No result step: the projector reads step statuses, the published fingerprint and each recipe phase's start and end.
+    'terminal_result' => ['job' => 'build', 'step' => 'complete', 'native' => true, 'captures' => TaskVmImageProjection::captures()],
 ], 'task_vm.sweep_host' => [
     'workflow' => 'operation-task-vm-sweep',
     'projection' => TaskVmSweepProjection::class,

@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationArtifact;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVmImageBuild;
+use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
@@ -21,13 +22,22 @@ beforeEach(function (): void {
     file_put_contents($this->artifactPath, $this->bytes);
     $this->digest = hash('sha256', $this->bytes);
     config(['orbit.home' => $this->artifactHome]);
-    $this->build = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'recipe_generation' => 1]);
+    // The UpCloud image builder still fetches its Pi build through the private artifact read; the Incus build copies it with SSH.
+    $this->build = UpCloudTaskVmImageBuild::query()->create(['recipe_identity' => 'sha256:'.str_repeat('a', 64), 'state' => 'running', 'started_at' => now()]);
+    $this->build->forceFill(['intent' => ['build_id' => $this->build->id, 'node_id' => $this->host->id]])->save();
     $this->run = '878a384f-8b8a-4066-bd17-dcad8eac3e86';
-    $this->operation = Operation::query()->create(['kind' => 'task_vm.image_build', 'target_type' => 'task_vm_image', 'target_id' => $this->build->id,
+    $this->operation = Operation::query()->create(['kind' => 'task_vm.upcloud_image_build', 'target_type' => 'task_vm_upcloud_image', 'target_id' => $this->build->id,
         'node_id' => $this->host->id, 'status' => 'queued', 'sequence' => 1,
-        'state' => ['task_vm_image_writer' => 'direct', 'swamp_run_id' => $this->run],
-        'input' => ['build_id' => $this->build->id, 'attempt' => 1, 'pi_artifact' => ['path' => $this->artifactPath, 'sha256' => $this->digest],
+        'state' => ['task_vm_upcloud_image_writer' => 'direct', 'swamp_run_id' => $this->run],
+        'input' => ['build_id' => $this->build->id, 'pi_artifact' => ['path' => $this->artifactPath, 'sha256' => $this->digest],
             'pi_artifact_file' => ['$secret' => 'task_vm.image_artifact', 'id' => $this->build->id]]]);
+    // Only the artifact field, so the shared private read needs no UpCloud token or bootstrap fixture.
+    $reflection = new ReflectionClass(DirectOperation::class);
+    $direct = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('definitions')->setValue($direct, ['task_vm.upcloud_image_build' => [
+        ...(require app_path('Domain/TaskVms/direct-operations.php'))['task_vm.upcloud_image_build'],
+        'private_material' => ['pi_artifact_file' => 'task_vm.image_artifact'], 'secret_outputs' => []]]);
+    app()->instance(DirectOperation::class, $direct);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id.'/private-material?run_id='.$this->run;
     $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip]);
 });
@@ -62,7 +72,7 @@ it('refuses foreign unbound and terminal runs before opening an artifact', funct
     if ($change === 'foreign') {
         $this->path = str_replace($this->run, '878a384f-8b8a-4066-bd17-dcad8eac3e87', $this->path);
     } elseif ($change === 'unbound') {
-        $this->operation->update(['state' => ['task_vm_image_writer' => 'direct']]);
+        $this->operation->update(['state' => ['task_vm_upcloud_image_writer' => 'direct']]);
     } else {
         $this->operation->update(['status' => $change]);
     }
@@ -76,7 +86,7 @@ it('refuses undeclared artifact fields, foreign references and stale image attem
     } elseif ($change === 'owner') {
         $this->operation->update(['input' => [...$this->operation->input, 'pi_artifact_file' => ['$secret' => 'task_vm.image_artifact', 'id' => $this->build->id + 1]]]);
     } else {
-        $this->build->update(['attempt' => 2]);
+        $this->build->forceFill(['intent' => ['build_id' => $this->build->id, 'node_id' => $this->host->id + 1]])->save();
     }
     $this->get($this->path.'&artifact='.$field)->assertUnprocessable();
 })->with(['field', 'owner', 'attempt']);

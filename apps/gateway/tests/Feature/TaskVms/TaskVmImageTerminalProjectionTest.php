@@ -39,6 +39,13 @@ it('records a native image terminal result without the retired completion contra
     $code = $status === 'failed' ? 'task_vm.image_channel_lost' : null;
     $data = ['run_id' => $run, 'status' => $status, 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
         'error_code' => $code, 'result' => $code === null ? [] : ['error_code' => $code]];
+    if ($provider === 'incus') {
+        // Native run data: the failed reply step's own public code, read once by the shared terminal reader.
+        $data = [...$data, 'error_code' => $code === null ? null : 'operation.native_failed',
+            'result' => ['steps' => ['rust-inspect-reply' => ['status' => $status === 'failed' ? 'failed' : 'skipped']],
+                'summary' => ['status' => $status, 'succeeded' => 0, 'failed' => 0, 'skipped' => 0, 'failed_steps' => []]],
+            'failure' => $code === null ? null : ['failed_step' => 'rust-inspect-reply', 'detail' => $code, 'stderr_recorded' => false]];
+    }
 
     $projection->apply($op, $data);
     $projection->apply($op->fresh(), $data);
@@ -48,7 +55,7 @@ it('records a native image terminal result without the retired completion contra
         ->and($op->fresh()->lock_key)->toBeNull()
         ->and($build->fresh()->state)->toBe(TaskVmImageBuildState::Failed);
     if ($provider === 'incus') {
-        expect($build->fresh()->steps[0]['error'])->toBe($code ?? 'operation.cancelled');
+        expect(array_last($build->fresh()->steps)['error'])->toBe($code ?? 'operation.cancelled');
     } else {
         expect($build->fresh()->finished_at)->not->toBeNull();
     }
