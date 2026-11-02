@@ -11,7 +11,6 @@ use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
-use App\Domain\DatabaseServers\DatabaseConnectionUpdateProjection;
 use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
@@ -78,21 +77,15 @@ function connection_hook_worker(): void
     app()->instance(WebSocketClient::class, $socket);
 }
 
-it('validates the proposal before admission and writes only after the native result', function (): void {
+it('validates the proposal inside the admission transaction, then writes a record-only change at once', function (): void {
     connection_hook_worker();
     $connection = DatabaseConnection::query()->create(['slug' => 'cache', 'driver' => 'redis', 'host' => 'old.example.test', 'port' => 6379]);
     $hook = connection_hook();
     $level = DB::transactionLevel();
     $operation = app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update());
     expect($hook->calls)->toBe([['validate', 'new.example.test', 'old.example.test', $level + 1]])
-        ->and($connection->fresh()->host)->toBe('old.example.test');
-
-    app(DatabaseConnectionUpdateProjection::class)->apply($operation, [
-        'run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
-        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
-    ]);
-    expect($connection->fresh()->host)->toBe('new.example.test')
-        ->and(array_column($hook->calls, 0))->toBe(['validate']);
+        ->and($operation->status->value)->toBe('succeeded')
+        ->and($connection->fresh()->host)->toBe('new.example.test');
 });
 
 it('leaves the connection and events unchanged when a tagged hook refuses', function (): void {
@@ -105,18 +98,6 @@ it('leaves the connection and events unchanged when a tagged hook refuses', func
         ->toThrow(ResourceOperationException::class, 'Connection is in use.');
     expect($connection->refresh()->host)->toBe('old.example.test')->and($hook->calls)->toHaveCount(1);
     Event::assertNotDispatched(RecordBroadcast::class);
-});
-
-it('does not change the connection or run a Gateway execution hook after native failure', function (): void {
-    connection_hook_worker();
-    $connection = DatabaseConnection::query()->create(['slug' => 'cache', 'driver' => 'redis', 'host' => 'old.example.test', 'port' => 6379]);
-    $hook = connection_hook();
-    $operation = app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update());
-    app(DatabaseConnectionUpdateProjection::class)->apply($operation, [
-        'run_id' => $operation->state['swamp_run_id'], 'status' => 'failed', 'error_code' => 'database.server_command_failed',
-        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['error_code' => 'database.server_command_failed'],
-    ]);
-    expect($connection->fresh()->host)->toBe('old.example.test')->and(array_column($hook->calls, 0))->toBe(['validate']);
 });
 
 it('calls a tagged removal guard before deleting or broadcasting', function (): void {
