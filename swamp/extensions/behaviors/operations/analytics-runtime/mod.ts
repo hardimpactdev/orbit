@@ -18,8 +18,32 @@ export const Input = z.object({
     health_url: z.string().url(),
     ssh_execution: z.record(z.string(), z.unknown()),
 }).strict();
-export function plan(raw: unknown, directory: string) {
-    const i = Input.parse(raw);
+const RunId = z.string().regex(/^[a-f0-9-]{36}$/);
+// One `docker run --rm` of the new image per initialization phase; the private env arrives on stdin.
+const initialize = (
+    d: z.infer<typeof Definition>,
+    runId: string,
+    phase: "createdb" | "migrate",
+) => [
+    "/usr/bin/docker",
+    "--host=unix:///var/run/docker.sock",
+    "run",
+    "--rm",
+    "--name",
+    `orbit-analytics-${runId}-${phase}`,
+    "--env-file",
+    "/dev/stdin",
+    ...d.mounts.flatMap((m) => [
+        "--volume",
+        `${m.source}:${m.target}${m.read_only ? ":ro" : ""}`,
+    ]),
+    d.image,
+    "/entrypoint.sh",
+    "db",
+    phase,
+];
+export function plan(raw: unknown, rawRunId: string) {
+    const i = Input.parse(raw), runId = RunId.parse(rawRunId);
     if (
         i.before.process_id !== i.process_id ||
         i.after.process_id !== i.process_id ||
@@ -59,11 +83,11 @@ export function plan(raw: unknown, directory: string) {
         },
     });
     return {
-        directory,
         control,
         before: intent(i.before),
         after: intent(i.after),
-        definition_json: JSON.stringify(i.after),
+        createdb_argv: initialize(i.after, runId, "createdb"),
+        migrate_argv: initialize(i.after, runId, "migrate"),
     };
 }
 export function observe(raw: unknown, stdout: string) {
@@ -78,7 +102,7 @@ export function observe(raw: unknown, stdout: string) {
 }
 export const behavior = {
     type: "@nckrtl/analytics-runtime",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     resources: {
         metadata: {
             schema: z.record(z.string(), z.unknown()),
@@ -89,12 +113,11 @@ export const behavior = {
     methods: {
         plan: {
             description:
-                "Validate captured public runtime and resolve initialization asset",
-            arguments: z.object({ intent: Input }),
+                "Validate captured public runtime and render the initialization commands",
+            arguments: z.object({ intent: Input, run_id: RunId }),
             execute: async (
-                args: { intent: z.infer<typeof Input> },
+                args: { intent: z.infer<typeof Input>; run_id: string },
                 ctx: {
-                    extensionFile(n: string): string;
                     writeResource(
                         s: string,
                         n: string,
@@ -102,13 +125,7 @@ export const behavior = {
                     ): Promise<unknown>;
                 },
             ) => {
-                const v = plan(
-                    args.intent,
-                    ctx.extensionFile("scripts/initialize.py").replace(
-                        /\/[^/]+$/,
-                        "",
-                    ),
-                );
+                const v = plan(args.intent, args.run_id);
                 await ctx.writeResource("metadata", "metadata", v);
                 return v;
             },

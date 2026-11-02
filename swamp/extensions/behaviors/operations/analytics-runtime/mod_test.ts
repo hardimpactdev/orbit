@@ -16,6 +16,7 @@ const container = {
     desired: "running",
     spec: "b".repeat(64),
 };
+const runId = "0198e15c-bf97-7c23-8f1f-61b8fe67a844";
 export const intent = {
     version: "3.3.0",
     previous_version: "3.2.1",
@@ -41,7 +42,7 @@ export const intent = {
     },
 };
 Deno.test("public plan matches the canonical Process lifecycle schema for before and after", async () => {
-    const value = plan(intent, "/shipped/scripts");
+    const value = plan(intent, runId);
     for (const child of [value.before, value.after]) {
         const result = await lifecycleAssets(
             LifecycleArgs.parse({
@@ -69,7 +70,7 @@ Deno.test("public plan matches the canonical Process lifecycle schema for before
         );
     }
     assertEquals(value.control.name, "orbit-process-9-plausible");
-    assertEquals(JSON.parse(value.definition_json).spec, intent.after.spec);
+    assertEquals(value.after.installation.spec, intent.after.spec);
 });
 Deno.test("owned current spec selects replacement and already-current spec skips it", () => {
     const row = (spec: string) => `true\nprocess\n9\n${spec}\nrunning\n`;
@@ -88,4 +89,38 @@ Deno.test("runtime plan refuses mismatched Process and image before host effects
             after: { ...container, image: "foreign/image:v3.3.0" },
         }, "/scripts")
     );
+});
+Deno.test("initialization runs the new image once per phase with the private env on stdin", () => {
+    const value = plan(
+        {
+            ...intent,
+            after: {
+                ...intent.after,
+                mounts: [{
+                    source: "plausible-data",
+                    target: "/var/lib/plausible",
+                    read_only: false,
+                }],
+            },
+        },
+        runId,
+    );
+    assertEquals(value.createdb_argv, [
+        "/usr/bin/docker",
+        "--host=unix:///var/run/docker.sock",
+        "run",
+        "--rm",
+        "--name",
+        `orbit-analytics-${runId}-createdb`,
+        "--env-file",
+        "/dev/stdin",
+        "--volume",
+        "plausible-data:/var/lib/plausible",
+        "ghcr.io/plausible/community-edition:v3.3.0",
+        "/entrypoint.sh",
+        "db",
+        "createdb",
+    ]);
+    assertEquals(value.migrate_argv.slice(-2), ["db", "migrate"]);
+    assertThrows(() => plan(intent, "not-a-run"));
 });
