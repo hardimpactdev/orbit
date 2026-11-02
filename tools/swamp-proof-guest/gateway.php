@@ -11,8 +11,9 @@ declare(strict_types=1);
  *            subscriber in production, is not part of the minimal topology.
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
- *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?}: the records a kind
- *            fixture needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet.
+ *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes]}:
+ *            the records a kind fixture needs beyond the seed, such as the VPN hub, peers with keys and the VPN
+ *            subnet, or a Project under the fixed id its Swamp configuration names.
  */
 
 use App\Domain\Gateway\GatewayQueue;
@@ -22,6 +23,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
@@ -85,6 +87,10 @@ if ($argv[1] === 'fixture') {
         foreach ($roles as $role) {
             Node::query()->findOrFail((int) $id)->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
         }
+    }
+    // A Project under a fixed id, for kinds whose Swamp side keys source-owned configuration by Project id.
+    foreach ($input['projects'] ?? [] as $project) {
+        (new Project)->forceFill($project)->save();
     }
     foreach ($input['wireguard_keys'] ?? [] as $id => $key) {
         Node::query()->findOrFail((int) $id)->update(['wireguard_public_key' => $key]);
