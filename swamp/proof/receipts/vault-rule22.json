@@ -1,7 +1,8 @@
 {
   "topology": "minimal@10",
   "execution_commit": "bf8c71ad51ac47abbfde83848bcc771e94a0c0bc",
-  "vault_execution_files_identical_after_rebase": true,
+  "vault_workflows_and_behaviors_identical_after_rebase": true,
+  "post_proof_declaration_fix": "Declare the already-proven native credential grant in both Vault kinds; no rendered authority or workflow execution changes.",
   "vm": {
     "group_id": 2631,
     "provision_operation_id": 8052,

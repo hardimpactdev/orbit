@@ -222,3 +222,5 @@ One temporary CLI app-data directory belongs to each run. Its derived session ke
 Failure summaries ignore unavailable write outputs and keep the run failed; they never publish a partial ledger. Logout and cache removal follow success or failure. Native resume must restart from the workspace step to rebuild this disposable session and inventory; it must not reuse a cleaned-up session. There is no custom retry loop or lock.
 
 Account and sync CLI actions use one plain command per step. Typed data methods select public account and cipher metadata from private files. Swamp stores credentials and session keys as sensitive fields in the vault; later commands resolve their key names into the environment. Native failures carry the public refusal code, without shell exit-code dispatch.
+
+Both Vault kind declarations include the native credential-field grant in their execution-copy policy. The Gateway registry check requires this declaration to match the intended Swamp grants; native Swamp configuration validation checks the rendered expressions separately.
