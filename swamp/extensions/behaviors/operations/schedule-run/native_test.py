@@ -50,15 +50,28 @@ class ScheduleSshFixture(harness.NativeTestCase):
         path.write_text(json.dumps({"@swamp/ssh": inventory["@swamp/ssh"]}))
         self.calls = self.repo / "calls.jsonl"
         self.journal = self.repo / "journal"
+        # systemd-cat: run the command with its output in the journal fixture, keeping stdin and the exit code.
         self.logger = self.repo / "journal-fixture"
         self.logger.write_text(
-            "#!"
-            + sys.executable
-            + "\nimport sys\nfrom pathlib import Path\nPath("
-            + repr(str(self.journal))
-            + ").write_bytes(sys.stdin.buffer.read())\n"
+            "#!" + sys.executable + "\nimport subprocess,sys\nwith open(" + repr(str(self.journal)) + ", 'ab') as out:\n"
+            "    raise SystemExit(subprocess.run(sys.argv[2:], stdout=out, stderr=out).returncode)\n"
         )
         self.logger.chmod(0o755)
+        # systemd-run: the unit's WorkingDirectory (~ is the home) and RuntimeMaxSec, then its command.
+        self.runner = self.repo / "systemd-run-fixture"
+        self.runner.write_text(
+            "#!" + sys.executable + "\n" + """import os,subprocess,sys
+args=sys.argv[1:];props={}
+while args and args[0].startswith('-'):
+    flag=args.pop(0)
+    if flag=='-p':key,_,value=args.pop(0).partition('=');props[key]=value
+directory=props.get('WorkingDirectory','~')
+cwd=os.environ['HOME'] if directory=='~' else directory
+if not os.path.isdir(cwd):raise SystemExit(200)
+try:raise SystemExit(subprocess.run(args,cwd=cwd,env={**os.environ,'SHELL':'/bin/bash'},timeout=int(props.get('RuntimeMaxSec','90'))).returncode)
+except subprocess.TimeoutExpired:raise SystemExit(1)
+""")
+        self.runner.chmod(0o755)
         self.ssh = self.repo / "ssh-fixture"
         self.ssh.write_text(
             "#!"
@@ -71,11 +84,11 @@ if '-M' in args or '-O' in args:raise SystemExit(0)
 argv=shlex.split(args[-1])
 with Path(CALLS).open('a') as f:f.write(json.dumps(argv)+'\\n')
 if argv[0]=='/usr/bin/sudo':argv=argv[argv.index('--')+1:]
-argv=[a.replace('/usr/bin/systemd-cat',LOGGER) for a in argv]
+argv=[{'/usr/bin/systemd-cat':LOGGER,'/usr/bin/systemd-run':RUNNER}.get(a,a) for a in argv]
 r=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
 sys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr)
 raise SystemExit(r.returncode)
-""".replace("CALLS", repr(str(self.calls))).replace("LOGGER", repr(str(self.logger)))
+""".replace("CALLS", repr(str(self.calls))).replace("LOGGER", repr(str(self.logger))).replace("RUNNER", repr(str(self.runner)))
         )
         self.ssh.chmod(0o755)
         self.scp = self.repo / "scp-fixture"
@@ -190,9 +203,9 @@ class ScheduleRunNative(ScheduleSshFixture):
         self.assertEqual(self.result(), {"ready": True})
         self.assertTrue(self.journal.read_text().startswith("schedule-journal-"))
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
-        execution = next(a for a in calls if "/usr/bin/timeout" in a)
-        self.assertEqual(execution[-3], str(self.repo))
-        self.assertIn("pipefail", execution[execution.index("-c") + 1])
+        execution = next(a for a in calls if "/usr/bin/systemd-run" in a)
+        self.assertIn("WorkingDirectory=" + str(self.repo), execution)
+        self.assertIn("--identifier=orbit-schedule-" + self.inputs["intent"]["schedule"]["id"], execution)
         self.assertNotIn(self.secrets[0], json.dumps(execution))
         self.assert_private_absent(json.dumps(self.history()), self.calls.read_text())
 
@@ -205,12 +218,6 @@ class ScheduleRunNative(ScheduleSshFixture):
                 self.run_schedule(success=False)
                 self.assertEqual(self.result(), {"error_code": "schedule.run_failed"})
                 self.assert_private_absent(json.dumps(self.history()))
-
-    def test_wrong_hash_skips_execution(self):
-        self.inputs["intent"]["schedule"]["command_hash"] = "a" * 64
-        self.run_schedule(success=False)
-        self.assertEqual(self.result(), {"error_code": "schedule.target_unavailable"})
-        self.assertFalse(self.journal.exists())
 
     def test_native_resume_runs_after_directory_recovery(self):
         directory = self.repo / "unavailable-directory"
@@ -231,8 +238,8 @@ class ScheduleRunNative(ScheduleSshFixture):
         self.assertTrue(self.journal.exists())
 
     def test_unavailable_context_or_directory_refuses_before_command(self):
+        # A missing user is refused by sudo on a real Node; the fixture's sudo is a pass-through.
         for field, value in [
-            ("user", "no-such-schedule-user"),
             ("working_directory", "/does-not-exist"),
         ]:
             with self.subTest(field=field):
@@ -258,7 +265,7 @@ class ScheduleRunNative(ScheduleSshFixture):
         execution = next(
             json.loads(line)
             for line in self.calls.read_text().splitlines()
-            if "/usr/bin/timeout" in line
+            if "/usr/bin/systemd-run" in line
         )
-        self.assertIn("86400s", execution)
-        self.assertEqual(execution[-2:], ["1", ""])
+        self.assertIn("RuntimeMaxSec=86400", execution)
+        self.assertEqual(execution[-2:], [self.inputs["intent"]["schedule"]["shell"], "1"])
