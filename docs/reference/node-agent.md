@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
   - apps/gateway/{app/Infrastructure/AgentCommands/**,database/migrations/2027_01_02_000000_add_agent_failed_pin_to_nodes.php}
   - apps/gateway/app/{Http/Controllers/Api/AgentRealtimeController,Actions/Gateway/BootstrapGatewayAction}.php
-  - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
+  - {apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php,swamp/extensions/behaviors/operations/node-scripts/scripts/agent_key*.py}
   - apps/gateway/app/{Domain/Nodes/{NodeAgentRekey*,NodeConverge*},Actions/Nodes/StartNodeConvergeAction,Console/Commands/RekeyNodeAgentCommand}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
@@ -401,25 +401,25 @@ Every Unix user on a Node reaches the Gateway from the Node's WireGuard address,
 
 The agent reads the file when it starts. It exits with an error when the file is missing or malformed, and systemd starts it again after 2 seconds. The Gateway compares the hashes in constant time.
 
-Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone `node:converge` only compares the secret with the recorded verifier: a missing or mismatched secret refuses before writes. Deleting the secret and running `node:converge` does not rotate it. Coordinate planned rotation through the credential owner; there is no scheduled rotation.
+Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone `node:converge` only compares the secret with the recorded verifier: a missing or mismatched secret refuses before writes. Deleting the secret and running `node:converge` does not rotate it. Run [`orbit:node-agent-rekey`](#make-a-new-agent-key) for a new key; there is no scheduled rotation.
 
 Retained configuration that permits rotation writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. The next converge verifies and repairs any mismatch.
 
 Retained Gateway enrollment and role callers serialize agent configuration under a lock in a file cache store under `ORBIT_HOME`. Native direct convergence uses Swamp concurrency and the agent update lock instead. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 7 minutes, which covers the wait for the Node's update lock below. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
 
-### Recover a lost agent secret reply
+### Make a new agent key
 
-The frozen `agent.configure` command returns a public SHA-256 verifier. The Gateway stores it encrypted on the owning Node. The secret itself stays on the Node. If a configure response is lost before projection, keep the uncertain Operation open and run this operator command on the Gateway:
+Run this on the Gateway when the Gateway refuses the agent's reports because its key is missing or does not match, when `node:converge` fails with `agent.secret_mismatch`, or for a planned rotation:
 
 ```bash
-php artisan orbit:node-agent-rekey <node-id> <operation-id>
+php artisan orbit:node-agent-rekey <node-id> [--attempt=N]
 ```
 
-Use the unfinished `node.converge` Operation that owns the admitted Node footprint. Recovery requires an active managed Linux Node, its stored SSH host keys, and an exact native binding on that source Operation. Finished or foreign Operations cannot authorize recovery. Admission captures public configuration and the approved 209 SSH descriptor without contacting the Node.
+The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey and `node:converge` share one lock per Node. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.agent_rekey.mmd) shows the steps.
 
-The recovery workflow runs on 209 and invokes the frozen agent's existing `agent.configure` command through official pinned SSH. It generates the secret on the Node, where the secret remains. Only the SHA-256 verifier leaves the Node, as public result stdout. The Gateway records that verifier from terminal projection. No private-output callback, execution-copy vault, worker credential or target worker is needed.
+The run reaches the Node over official SSH from 209 with the shipped `agent_key.py`; it calls no agent command. `Make a new agent key` keeps the old key as `secret.previous`, writes 32 random bytes as 64 hex characters with one rename, and prints only the SHA-256 verifier. `Restart the Node agent` restarts `orbit-agent.service`. `Check the Node agent` checks that the agent is active and the key matches the verifier, removes `secret.previous`, and is the terminal result. The Gateway stores the verifier only from that result; until then the old verifier stays valid.
 
-Observe the returned Operation through the normal API. The default `--attempt=1` retains its idempotent admission identity; an explicit later attempt requests a fresh recovery. Native cancellation and resume own execution. A lost command response remains uncertain; do not infer a verifier or completion from host health. The original configure Operation retains its own outcome.
+When the restart or the check fails, `Restore the old key` puts `secret.previous` back and restarts the agent, so it matches the verifier the Gateway still has. The key never leaves the Node, a task, a log or the vault.
 
 ## Gateway view
 

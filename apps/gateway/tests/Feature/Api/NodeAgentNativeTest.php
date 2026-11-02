@@ -6,7 +6,6 @@ use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeStorageAppsData;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\NodeAgentRekeyInput;
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
@@ -68,36 +67,6 @@ it('prepares settings from a public SSH intent and stores them only at terminal 
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null]);
     expect($this->node->fresh()->settings['apps']['path'])->toBe('/srv/new');
 });
-
-it('captures recovery from its exact unfinished native source without worker credentials', function (): void {
-    $source = app(StartNodeConvergeAction::class)->execute($this->node, true);
-    expect($source->input['_converge']['payloads']['agent']['user'] ?? $source->input['_converge'])->toBe($this->node->user);
-    $snapshot = $source->input;
-    $snapshot['_converge']['agent_sha256'] = str_repeat('b', 64);
-    $source->update(['input' => $snapshot]);
-    $input = app(NodeAgentRekeyInput::class)->capture($this->node, $source->id);
-    expect($input['configure_operation_id'])->toBe($source->id)
-        ->and($input['agent_sha256'])->toBe(str_repeat('b', 64))
-        ->and($input['ssh']['control_node_id'])->toBe(209)
-        ->and($input)->not->toHaveKeys(['secret_hash', 'worker_credentials'])
-        ->and($this->agents->calls)->toBe([]);
-    $source->update(['status' => OperationStatus::Failed]);
-    expect(fn () => app(NodeAgentRekeyInput::class)->capture($this->node, $source->id))->toThrow(ResourceOperationException::class);
-});
-
-it('refuses foreign, unbound and missing-config sources without changing their outcomes', function (string $case): void {
-    $source = app(StartNodeConvergeAction::class)->execute($this->node, true);
-    if ($case === 'foreign') {
-        $other = FleetFixtures::node('agent-native-foreign');
-        $source->update(['node_id' => $other->id]);
-    } elseif ($case === 'unbound') {
-        $source->update(['state' => []]);
-    } else {
-        $source->update(['input' => []]);
-    }
-    expect(fn () => app(NodeAgentRekeyInput::class)->capture($this->node, $source->id))->toThrow(ResourceOperationException::class);
-    expect($source->fresh()->status)->toBe(OperationStatus::Running);
-})->with(['foreign', 'unbound', 'missing-config']);
 
 it('records only the public verifier on bound terminal success and ignores duplicate delivery', function (): void {
     $op = Operation::query()->create(['kind' => 'node.agent_rekey', 'target_type' => 'node', 'target_id' => $this->node->id,

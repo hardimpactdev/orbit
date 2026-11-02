@@ -624,8 +624,7 @@ The Gateway does not load those deleted interfaces.
 
 Synchronous Cluster changes that would move an Analytics tracking Route return
 `route.analytics_native_required` before changing records, LAN rules or DNS.
-Those changes require the native Route workflow. Agent recovery returns
-`node.agent_rekey_unavailable` until native configure ownership can be proved.
+Those changes require the native Route workflow.
 Task workspace removal waits for native publication when approved work has not
 been pushed.
 

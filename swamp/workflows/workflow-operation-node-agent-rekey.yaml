@@ -1,20 +1,101 @@
-# deno-fmt-ignore-file
-id: "8ae4fb17-d77a-4fb3-8ecb-cf6f5384e65e"
-name: "operation-node-agent-rekey"
-description: "Frozen agent commands and native footprint actions from209 through official pinned SSH."
+id: 8ae4fb17-d77a-4fb3-8ecb-cf6f5384e65e
+name: operation-node-agent-rekey
+description: Make a new Node agent key on the Node from 209 over official SSH; only its verifier leaves the Node.
 vaults: []
-inputs: {"type":"object","properties":{"operation_id":{"type":"integer","minimum":1},"node_id":{"type":"integer","minimum":1},"kind":{"type":"string","enum":["node.agent_rekey"]},"intent":{"type":"object"},"execution_secrets":{"type":"object","additionalProperties":false}},"required":["operation_id","node_id","kind","intent","execution_secrets"],"additionalProperties":false}
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [node.agent_rekey]}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-- name: recovery
+- name: rekey
+  labels: {role: swamp}
   steps:
-  - {"name":"account_input","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":'${{ "account_input" }}',"methodName":"envelope","inputs":{"command":"account.lookup","pin":"${{ inputs.intent.agent_sha256 }}","input":{"user":"${{ inputs.intent.configuration.user }}"}}},"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
-  - {"name":"account_command","labels":{"role":"swamp"},"writes":true,"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":'${{ ("ssh-account_command-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}',"methodName":"exec","globalArgs":{"name":'${{ ("ssh-account_command-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}',"transport":{"kind":"ssh","user":"${{ inputs.intent.ssh.target.user }}","port":"${{ inputs.intent.ssh.target.port }}","identityFile":"${{ inputs.intent.ssh.identity_file }}"},"hosts":[{"name":"target","address":"${{ inputs.intent.ssh.target.host }}","transport":{"hostKeys":"${{ inputs.intent.ssh.target.host_keys }}"}}]},"inputs":{"hosts":"name:target","sudo":false,"argv":["/usr/local/bin/orbit-agent","command","account.lookup"],"stdin":"${{ steps[\"account_input\"].outputs.stdin }}","timeoutSec":"${{ steps[\"account_input\"].outputs.timeoutSec }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
-  - {"name":"account","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":'${{ "account" }}',"methodName":"decode","inputs":{"stdout":"${{ steps[\"account_command\"].outputs.stdout }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
-  - {"name":"observer_input","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":'${{ "observer_input" }}',"methodName":"configure","inputs":{"configuration":"${{ inputs.intent.configuration }}","pin":"${{ inputs.intent.agent_sha256 }}","account":"${{ steps.account.outputs }}","changed":false,"rotate":true,"verifier_hash":null}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}},{"step":"account","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
-  - {"name":"observer_command","labels":{"role":"swamp"},"writes":true,"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":'${{ ("ssh-observer_command-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}',"methodName":"exec","globalArgs":{"name":'${{ ("ssh-observer_command-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}',"transport":{"kind":"ssh","user":"${{ inputs.intent.ssh.target.user }}","port":"${{ inputs.intent.ssh.target.port }}","identityFile":"${{ inputs.intent.ssh.identity_file }}"},"hosts":[{"name":"target","address":"${{ inputs.intent.ssh.target.host }}","transport":{"hostKeys":"${{ inputs.intent.ssh.target.host_keys }}"}}]},"inputs":{"hosts":"name:target","sudo":true,"argv":["/usr/local/bin/orbit-agent","command","agent.configure"],"stdin":"${{ steps.observer_input.outputs.stdin }}","timeoutSec":"${{ steps.observer_input.outputs.timeoutSec }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}},{"step":"account","condition":{"type":"always"}},{"step":"observer_input","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
-  - {"name":"observer","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":'${{ "observer" }}',"methodName":"decode","inputs":{"stdout":"${{ steps.observer_command.outputs.stdout }}"}},"dependsOn":[{"step":"account_input","condition":{"type":"always"}},{"step":"account_command","condition":{"type":"always"}},{"step":"account","condition":{"type":"always"}},{"step":"observer_input","condition":{"type":"always"}},{"step":"observer_command","condition":{"type":"always"}}],"guard":"${{ steps.exists(k,!k.startsWith(\"residue_\") && steps[k].status in [\"failed\",\"cancelled\"]) }}"}
-- name: result
-  dependsOn: [{"job":"recovery","condition":{"type":"always"}}]
-  steps:
-  - {"name":"result","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/node-agent-native","behaviorName":'${{ "result-node-agent-native" }}',"methodName":"result","inputs":{"kind":"node.agent_rekey","intent":"${{ inputs.intent }}","steps":"${{ steps }}"}}}
-  - {"name":"proven","labels":{"role":"swamp"},"task":{"type":"assert","expr":"!has(steps.result.outputs.error_code)","severity":"high","message":"The native Node action must complete"},"dependsOn":[{"step":"result","condition":{"type":"always"}}]}
+  - name: 'Read the scripts'
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-scripts'
+      behaviorName: node-rekey-scripts
+      methodName: read
+      inputs: {script: agent_key, input: {}}
+    # The new key stays on the Node; only its SHA-256 verifier is printed.
+  - name: 'Make a new agent key'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', rekey]
+        timeoutSec: 40
+    # The agent reads its key only when it starts.
+  - name: 'Restart the Node agent'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Make a new agent key', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '60', /usr/bin/systemctl, restart, orbit-agent.service]
+        timeoutSec: 70
+    # The terminal result: the agent is active and the key matches the new verifier.
+  - name: 'Check the Node agent'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', check, '${{ steps["Make a new agent key"].outputs.stdout }}']
+        timeoutSec: 40
+    # Only after a failure past the new key: the old key and the verifier the Gateway still has match again.
+  - name: 'Restore the old key'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Make a new agent key', condition: {type: succeeded}}
+    - {step: 'Restart the Node agent', condition: {type: always}}
+    - {step: 'Check the Node agent', condition: {type: always}}
+    guard: '${{ !steps.exists(k, (k == "Restart the Node agent" || k == "Check the Node agent") && steps[k].status == "failed") }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '60', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', restore]
+        timeoutSec: 70

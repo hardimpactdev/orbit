@@ -1,0 +1,64 @@
+{
+  "kind": "node.agent_rekey",
+  "workflow": "operation-node-agent-rekey",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "if test -f /usr/local/bin/orbit-agent.proof; then mv /usr/local/bin/orbit-agent.proof /usr/local/bin/orbit-agent && systemctl restart orbit-agent.service; fi"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/converge",
+      "body": {
+        "force": true
+      }
+    }
+  ],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "cp /etc/orbit/agent/secret /tmp/proof-secret-${proof.run}"
+    ]
+  ],
+  "request": {
+    "artisan": "orbit:node-agent-rekey",
+    "arguments": {
+      "node": "${node.target}",
+      "--attempt": "1"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Make a new agent key",
+      "job": "rekey",
+      "step": "Make a new agent key",
+      "budget_seconds": 40
+    },
+    {
+      "name": "Restart the Node agent",
+      "job": "rekey",
+      "step": "Restart the Node agent",
+      "budget_seconds": 70
+    },
+    {
+      "name": "Check the Node agent",
+      "job": "rekey",
+      "step": "Check the Node agent",
+      "budget_seconds": 40
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.agent_rekey/parity.py",
+    "rekeyed"
+  ]
+}

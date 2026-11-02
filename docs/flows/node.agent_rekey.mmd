@@ -42,6 +42,9 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - follow the task with `orbit operation:show`
+  Note over SW: Read the scripts<br/>@nckrtl/node-scripts read
+  %%> What it does:
+  %%> - reads the shipped `agent_key.py` script on 209
   SW->>N: Make a new agent key<br/>on the Node · keep the old one
   %%> What it does:
   %%> - creates 32 random bytes on Node 12 and writes them as 64 hex characters to `/etc/orbit/agent/secret`, `root:root`, mode `0600`
@@ -50,8 +53,8 @@ sequenceDiagram
   %%> Never:
   %%> - the key leaves Node 12, enters the task, a log or the vault
   %%> How:
-  %%> - a tracked script through `@swamp/ssh` from 209, with sudo
-  SW->>N: Restart the Node agent<br/>@swamp/cfgmgmt/systemd restart
+  %%> - the shipped script through `@swamp/ssh` from 209, with sudo
+  SW->>N: Restart the Node agent<br/>@swamp/ssh exec · systemctl
   %%> What it does:
   %%> - restarts `orbit-agent.service`
   %%> Why a restart:
