@@ -19,6 +19,7 @@ const intent = {
     repository_identity: "github:acme/test",
     branch: "task-30",
     default_branch: "main",
+    start_commit: "c".repeat(40),
     user: "orbit",
     project_type: "monorepo",
     entry_point: "artisan",
@@ -196,4 +197,33 @@ Deno.test("proof provision requires private delivery before group readiness but 
   assertEquals("source" in refused, false);
   steps.proof_club.status = "succeeded";
   assertEquals(result(input, steps).error_code, undefined);
+});
+
+Deno.test("profile refuses a checkout that is not on the admitted start commit", async () => {
+  const { behavior, Intent } = await import("./provision.ts");
+  const admitted = Intent.parse(intent);
+  const ctx = {
+    extensionFile: () => "unused",
+    writeResource: () => Promise.resolve({}),
+  };
+  const observation = (commit: string) =>
+    JSON.stringify({
+      branch: "task-30",
+      commit,
+      analysis_base: commit,
+      profile: null,
+    });
+  await behavior.methods.profile.execute({
+    intent: admitted,
+    observation: observation("c".repeat(40)),
+  }, ctx);
+  assertThrows(
+    () =>
+      behavior.methods.profile.execute({
+        intent: admitted,
+        observation: observation("d".repeat(40)),
+      }, ctx),
+    Error,
+    "instance.source_identity_changed",
+  );
 });

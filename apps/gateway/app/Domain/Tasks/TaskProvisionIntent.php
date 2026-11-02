@@ -39,15 +39,18 @@ final readonly class TaskProvisionIntent
         private TaskVmEnrollmentIntent $enrollment, private AllocateTaskVmAction $allocate,
         private TaskVmProvisionIntent $vms, private StorageRootResolver $roots,
         private NodeSettingsNormalizer $settings, private ManagedCheckoutOverlap $overlap,
-        private ProjectLifecycleStepStore $steps, private InstancePhpVersionCatalog $php) {}
+        private ProjectLifecycleStepStore $steps, private InstancePhpVersionCatalog $php,
+        private TaskStartCommit $startCommit) {}
 
     public function start(Task $group, string $caller, ?string $request): Operation
     {
         if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
             return $replay;
         }
+        // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
+        $startCommit = $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request): Operation {
+        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
                 return $replay;
@@ -114,7 +117,7 @@ final readonly class TaskProvisionIntent
                 'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
                 'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
                     'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
-                    'branch' => $instance->branch_override, 'default_branch' => $project->default_branch,
+                    'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
                     'setup' => $setup], 'execution_secrets' => $copies,

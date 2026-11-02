@@ -14,6 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAnalysisIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskProvisionProjection;
+use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
@@ -29,8 +30,10 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\FakeTaskStartCommit;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -116,6 +119,23 @@ it('admits one Tasks root with canonical placement, enrollment and checkout inte
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning)
         ->and(TaskWorkspaceLeaseRecord::query()->count())->toBe(0)
         ->and(Instance::query()->sole()->status->value)->toBe('reserved');
+});
+
+it('pins the workspace to the start commit read before the admission transaction', function (): void {
+    $start = new FakeTaskStartCommit(str_repeat('f', 40));
+    app()->instance(TaskStartCommit::class, $start);
+    $level = DB::transactionLevel();
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    expect($operation->input['workspace']['start_commit'])->toBe(str_repeat('f', 40))
+        ->and($start->transactionLevels)->toBe([$level]);
+});
+
+it('refuses without a green start commit before it captures any guest or workspace', function (): void {
+    app()->instance(TaskStartCommit::class, new FakeTaskStartCommit(refusal: new ResourceOperationException('tasks.no_green_commit', 'No green commit.', 409)));
+    expect(fn () => app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null))
+        ->toThrow(ResourceOperationException::class, 'No green commit.');
+    expect($this->vm->fresh()->node_id)->toBeNull()->and(Instance::query()->count())->toBe(0)
+        ->and(Operation::query()->count())->toBe(0)->and($this->group->fresh()->status->value)->toBe('todo');
 });
 
 it('replays before group validation and starts no second native run', function (): void {

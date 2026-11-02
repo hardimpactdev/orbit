@@ -32,11 +32,15 @@ sequenceDiagram
   %%> - group 42 is `todo`, every subtask has a deliverable, and the Project reads its repository through the GitHub App
   %%> - or, for a rerun, group 42 is open and no root task runs for it
   %%> - no other task holds `task_group:42`
+  %%> Start commit:
+  %%> - before the transaction, the Gateway pins the newest commit of the default branch whose Project `merge_check` passed, walking first parents from the head, at most 20 commits
+  %%> - a Project without a `merge_check` pins the branch head, as automatic deploys do
+  %%> - no green commit refuses with `tasks.no_green_commit`; a Project not read through the GitHub App refuses with `tasks.source_unreadable`; a failed GitHub read refuses with `tasks.source_unavailable`
   %%> Capacity:
   %%> - the Gateway picks a host with room and the promoted image of the current recipe, for example Node 14
   %%> - with no room, the task waits (`waiting`, reason `capacity`); the Gateway starts it when a task VM is destroyed or an image is promoted
   %%> Result:
-  %%> - task #5140 recorded as the group's root task, driver `workflow`, with the full intent: Project, repository, branch `task-42`, subtasks, deliverables, setup and teardown steps
+  %%> - task #5140 recorded as the group's root task, driver `workflow`, with the full intent: Project, repository, branch `task-42`, its pinned start commit, subtasks, deliverables, setup and teardown steps
   %%> - VM 88 reserved on Node 14 (Placement)
   %%> - budgets: 60 min idle and 2 h waiting for a person, the token cap per Pi turn
   GW->>SW: Push the VM secrets<br/>vault: model key, Pi token
@@ -70,9 +74,9 @@ sequenceDiagram
   %%> - records the VM's SSH host key for the next steps
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
   %%> What it does:
-  %%> - clones the repository on 209 and copies it as a Git bundle, on branch `task-42` from the default branch
+  %%> - clones the repository on 209 and copies it as a Git bundle, on branch `task-42` from the pinned start commit
   %%> - runs the Project setup steps in order, each with its own timeout
-  %%> - captures the start commit as the fixed analysis base
+  %%> - checks the checkout is on the pinned commit and captures it as the fixed analysis base
   Note over GW: Board follows the run<br/>step events → group, subtasks
   %%> How:
   %%> - the Gateway's run reader turns each finished step into board state: `running`, subtask status, thread links, check rows and turn receipts

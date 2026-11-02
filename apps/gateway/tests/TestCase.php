@@ -9,6 +9,7 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Domain\Tasks\TaskStartCommit;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -23,6 +24,7 @@ use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Config;
 use Tests\Support\FakeProjectSourceReader;
+use Tests\Support\FakeTaskStartCommit;
 use Tests\Support\HostPathGuardedProcessRunner;
 use Tests\Support\LocalTaskGitAgent;
 use Tests\Support\TestDatabaseGuard;
@@ -70,6 +72,8 @@ abstract class TestCase extends BaseTestCase
 
         // Project source facts read committed files; tests that need them set a FakeProjectSourceReader's files.
         $app->instance(ProjectSourceReader::class, new FakeProjectSourceReader);
+        // Task provision pins its start commit from GitHub; tests that need another answer set a FakeTaskStartCommit.
+        $app->instance(TaskStartCommit::class, new FakeTaskStartCommit);
 
         return $app;
     }
