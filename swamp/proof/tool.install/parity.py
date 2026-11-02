@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 result, kind, status = operation.get('result') or {}, operation['kind'], operation['status']
 outputs = Path(os.environ['PROOF_OUTPUTS']).read_text()
 package = operation['input']['package']

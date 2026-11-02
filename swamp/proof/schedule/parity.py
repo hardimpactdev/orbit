@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 expected, *detail = (argument.replace('${proof.run}', os.environ['PROOF_RUN']) for argument in sys.argv[1:])
 schedule = operation['input']['id']
 workflow = 'schedule-' + schedule

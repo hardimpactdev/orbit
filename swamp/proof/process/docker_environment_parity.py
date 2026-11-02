@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-operation = json.loads(os.environ["PROOF_OPERATION"])
+operation = json.load(open(os.environ["PROOF_OPERATION_FILE"]))
 node = os.environ["PROOF_TARGET"]
 name = operation["input"]["name"]
 reply = subprocess.run(
@@ -23,7 +23,7 @@ assert container["Config"]["Cmd"] == ["sleep", "infinity"]
 assert container["Config"]["WorkingDir"] == "/tmp"
 assert container["Config"]["Labels"]["orbit.process.id"] == str(operation["target_id"])
 assert token not in Path(os.environ["PROOF_OUTPUTS"]).read_text()
-assert token not in os.environ["PROOF_OPERATION"]
+assert token not in Path(os.environ["PROOF_OPERATION_FILE"]).read_text()
 files = subprocess.run(
     [
         "incus",

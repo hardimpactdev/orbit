@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-operation = json.loads(os.environ["PROOF_OPERATION"])
+operation = json.load(open(os.environ["PROOF_OPERATION_FILE"]))
 result = operation["result"]
 assert operation["kind"] == "vault.setup" and operation["status"] == "succeeded"
 assert result["outcome"] == "succeeded"

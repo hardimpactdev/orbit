@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 result = operation['result']
 plan = operation['input']['direct_environment']
 outputs = Path(os.environ['PROOF_OUTPUTS']).read_text()

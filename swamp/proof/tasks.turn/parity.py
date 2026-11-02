@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-operation = json.loads(os.environ["PROOF_OPERATION"])
+operation = json.load(open(os.environ["PROOF_OPERATION_FILE"]))
 result = operation["result"]
 outputs = Path(os.environ["PROOF_OUTPUTS"]).read_text()
 credential = "a1" * 32

@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 server = operation['input']['direct_destroy']['database']['servers'][0]
 names = server['intent']['databases']
 

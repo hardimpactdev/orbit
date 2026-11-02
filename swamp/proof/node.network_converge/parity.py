@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 outputs = Path(os.environ['PROOF_OUTPUTS']).read_text()
 result = operation['result'] or {}
 hub_public = Path('/root/proof-network/hub.public').read_text().strip()

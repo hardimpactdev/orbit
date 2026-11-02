@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 workspace = f"/srv/proof-task-{os.environ['PROOF_RUN']}"
 
 

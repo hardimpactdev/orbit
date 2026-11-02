@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 outputs = Path(os.environ['PROOF_OUTPUTS']).read_text()
 keys = set(operation['input']['intent']['peer_keys'])
 state = Path('/root/proof-hub')

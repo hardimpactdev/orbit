@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 outputs = open(os.environ['PROOF_OUTPUTS']).read()
 run = os.environ['PROOF_RUN']
 clone = '/home/orbit/apps/proof-clone/k-' + run

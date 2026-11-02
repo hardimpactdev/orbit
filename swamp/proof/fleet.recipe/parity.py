@@ -3,7 +3,7 @@ import json
 import os
 import subprocess
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 assert operation['status'] == 'succeeded', operation.get('error_code')
 result = operation['result']
 assert result['footprint']['footprint_proven'] is True

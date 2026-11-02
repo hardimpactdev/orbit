@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 outputs = open(os.environ['PROOF_OUTPUTS']).read()
 checkout = '/home/orbit/apps/proof-source/r-' + os.environ['PROOF_RUN']
 branch = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'runuser', '-u', 'orbit', '--', 'git', '-C', checkout,

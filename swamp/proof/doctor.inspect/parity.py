@@ -3,7 +3,7 @@ import json
 import os
 import subprocess
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 assert operation['status'] == 'succeeded', operation['status']
 assert 'logs' not in operation['input'], 'the run still receives a log intent'
 code = r'''require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $log=storage_path("logs/laravel.log"); clearstatcache(); $state=App\Models\ProblemCollectorState::query()->sole(); if ($state->log_path!==$log || $state->log_inode!==fileinode($log) || $state->log_offset<=0) exit(1);'''
