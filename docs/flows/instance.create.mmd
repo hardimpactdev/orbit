@@ -61,6 +61,15 @@ sequenceDiagram
   %%> - checks out the branch
   %%> Runs as:
   %%> - the Node's own user, not root
+  SW->>N: Prepare the web root<br/>setfacl as the Node user
+  %%> What it does:
+  %%> - grants Caddy read access to the web root, and passage through the directories above it
+  %%> - denies Caddy the rest of the checkout and its Git directory
+  %%> - converges the shared PHP-FPM pool for Instance 42
+  %%> Why here:
+  %%> - a one-time Instance setup; every Route of Instance 42 then serves without touching the checkout
+  %%> Runs as:
+  %%> - the Node's managed user; root only above every checkout
   SW->>N: Write .env<br/>vault.get env-5121 · Vite+ store
   %%> What it does:
   %%> - writes the rendered `.env` from the vault into the checkout
