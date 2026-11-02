@@ -7,6 +7,8 @@ namespace App\Console\Commands;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Operations\OperationIdempotency;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use Illuminate\Console\Command;
@@ -18,9 +20,10 @@ final class RekeyNodeAgentCommand extends Command
     protected $signature = 'orbit:node-agent-rekey {node : Node ID} {--attempt=1 : Request number; a higher number makes a new key again}';
 
     #[\Override]
-    protected $description = 'Make a new Node agent key on the Node through official SSH; only its verifier is recorded.';
+    protected $description = 'Write a new Node agent key on the Node through the vault and official SSH; only its verifier is recorded.';
 
-    public function handle(StartOperationAction $operations, OperationIdempotency $identity, SwampSshExecutionInput $ssh): int
+    public function handle(StartOperationAction $operations, OperationIdempotency $identity, SwampSshExecutionInput $ssh,
+        SwampCommandStep $steps, SwampScheduleWorkflows $vault): int
     {
         [$nodeId, $attempt] = array_map(static fn ($value) => filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]),
             [$this->argument('node'), $this->option('attempt')]);
@@ -30,15 +33,26 @@ final class RekeyNodeAgentCommand extends Command
 
             return self::FAILURE;
         }
+        $key = "node-agent-rekey-{$nodeId}-{$attempt}";
+        $copy = null;
         try {
             $identity->kind = 'node.agent_rekey';
-            $identity->key = "node-agent-rekey-{$nodeId}-{$attempt}";
+            $identity->key = $key;
             $identity->fingerprint = hash('sha256', json_encode([$nodeId, $attempt], JSON_THROW_ON_ERROR));
-            // Converge and rekey share one lock per Node.
-            $operation = $identity->replay('node.agent_rekey') ?? $operations->execute('node.agent_rekey', 'node', $nodeId, $nodeId,
-                ['_agent_rekey' => ['node_id' => $nodeId, 'ssh' => $ssh->forNode($node)]],
-                'operator-recovery', null, lockKey: 'node-converge:node:'.$nodeId);
+            $operation = $identity->replay('node.agent_rekey');
+            if ($operation === null) {
+                // The key reaches the Node only through this vault copy; the task keeps its verifier.
+                $secret = bin2hex(random_bytes(32));
+                $copy = $steps->executionCopy('orbit-control-inputs', $key, $secret);
+                // Converge and rekey share one lock per Node.
+                $operation = $operations->execute('node.agent_rekey', 'node', $nodeId, $nodeId,
+                    ['_agent_rekey' => ['node_id' => $nodeId, 'ssh' => $ssh->forNode($node), 'verifier_hash' => hash('sha256', $secret), 'agent_key' => $copy]],
+                    'operator-recovery', null, lockKey: 'node-converge:node:'.$nodeId);
+            }
         } catch (Throwable) {
+            if ($copy !== null) {
+                rescue(fn () => $vault->deleteSecret('orbit-control-inputs', $key), report: false);
+            }
             $this->error('The rekey was not admitted. Check the Node and the request number.');
 
             return self::FAILURE;

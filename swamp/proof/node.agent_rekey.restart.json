@@ -1,5 +1,5 @@
 {
-  "kind": "node.agent_rekey.restore",
+  "kind": "node.agent_rekey.restart",
   "workflow": "operation-node-agent-rekey",
   "topology": "minimal",
   "budget_seconds": 120,
@@ -31,14 +31,14 @@
   },
   "phases": [
     {
-      "name": "Make a new agent key",
+      "name": "Write the new agent key",
       "job": "rekey",
-      "step": "Make a new agent key",
+      "step": "Write the new agent key",
       "budget_seconds": 40
     }
   ],
   "parity": [
     "swamp/proof/node.agent_rekey/parity.py",
-    "restored"
+    "failed"
   ]
 }

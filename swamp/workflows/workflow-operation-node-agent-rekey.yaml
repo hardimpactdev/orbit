@@ -1,7 +1,7 @@
 id: 8ae4fb17-d77a-4fb3-8ecb-cf6f5384e65e
 name: operation-node-agent-rekey
-description: Make a new Node agent key on the Node from 209 over official SSH; only its verifier leaves the Node.
-vaults: []
+description: Write a new Node agent key with official cfgmgmt from 209, restart the agent and prove the key.
+vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
   type: object
@@ -10,31 +10,59 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, enum: [node.agent_rekey]}
     intent: {type: object}
-    execution_secrets: {type: object, additionalProperties: false}
+    execution_secrets:
+      type: object
+      properties:
+        agent_key:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^node-agent-rekey-[1-9][0-9]*-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [agent_key]
+      additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: rekey
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
+    # The key from the vault, root:root 0600; the Gateway keeps the old verifier until the end check passes.
+  - name: 'Write the new agent key'
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-scripts'
-      behaviorName: node-rekey-scripts
-      methodName: read
-      inputs: {script: agent_key, input: {}}
-    # The new key stays on the Node; only its SHA-256 verifier is printed.
-  - name: 'Make a new agent key'
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "node-rekey-key-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {path: /etc/orbit/agent/secret, ensure: present, content: '${{ vault.get(inputs.execution_secrets.agent_key.vault, inputs.execution_secrets.agent_key.key) }}',
+        owner: root, group: root, mode: '0600', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # The agent reads its key only when it starts.
+  - name: 'Restart the Node agent'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    writes: true
+    dependsOn: [{step: 'Write the new agent key', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ "node-rekey-agent-" + string(inputs.node_id) }}
+      methodName: restart
+      globalArgs: {service: orbit-agent.service, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Check the Node agent'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: &ssh
+      globalArgs:
         name: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
@@ -48,54 +76,34 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', rekey]
+        argv: [timeout, '30', /usr/bin/systemctl, is-active, orbit-agent.service]
         timeoutSec: 40
-    # The agent reads its key only when it starts.
-  - name: 'Restart the Node agent'
+  - name: 'Check the new key'
     labels: {role: swamp}
-    dependsOn: [{step: 'Make a new agent key', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Check the Node agent', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: *ssh
+      globalArgs:
+        name: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '60', /usr/bin/systemctl, restart, orbit-agent.service]
-        timeoutSec: 70
-    # The terminal result: the agent is active and the key matches the new verifier.
-  - name: 'Check the Node agent'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', check, '${{ steps["Make a new agent key"].outputs.stdout }}']
+        argv: [timeout, '30', /usr/bin/sha256sum, /etc/orbit/agent/secret]
         timeoutSec: 40
-    # Only after a failure past the new key: the old key and the verifier the Gateway still has match again.
-  - name: 'Restore the old key'
+  - name: 'Prove the new key'
     labels: {role: swamp}
-    dependsOn:
-    - {step: 'Make a new agent key', condition: {type: succeeded}}
-    - {step: 'Restart the Node agent', condition: {type: always}}
-    - {step: 'Check the Node agent', condition: {type: always}}
-    guard: '${{ !steps.exists(k, (k == "Restart the Node agent" || k == "Check the Node agent") && steps[k].status == "failed") }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-rekey-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '60', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', restore]
-        timeoutSec: 70
+    dependsOn: [{step: 'Check the new key', condition: {type: succeeded}}]
+    task: {type: assert, severity: high, message: The agent key on the Node is not the new key.,
+      expr: 'steps["Check the new key"].outputs.stdout in [inputs.intent.verifier_hash + "  /etc/orbit/agent/secret", inputs.intent.verifier_hash + "  /etc/orbit/agent/secret\n"]'}

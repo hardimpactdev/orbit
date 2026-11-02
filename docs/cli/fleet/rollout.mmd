@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, agent-frozen-until-swamp-port, single-swamp-node. docs/reference/gateway-recovery.md#fleet-rollout.
+  %% Tightened: flow-tighten 2026-11-02, rule 22 (cfgmgmt fetch and link name the install steps).
   %% status: draft
   %% command: none · after each verified Gateway release
   %% kind: fleet.rollout
@@ -32,15 +33,15 @@ sequenceDiagram
   %%> - the Nodes in order, each with its address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> - the CLI release URL and digests, and the Node agent pin
   loop each Node, one at a time
-    SW->>N: Install the CLI release<br/>download · sha256 · switch link
+    SW->>N: Install the CLI release<br/>@swamp/cfgmgmt fetch · link
     %%> How:
     %%> - Swamp reaches Node 12 over SSH from 209, with `@swamp/ssh`
     %%> What it does:
-    %%> - downloads the admitted release, checks its SHA-256 and reported version, publishes the root-owned binary and switches the link atomically
+    %%> - downloads the admitted release with `@swamp/cfgmgmt/fetch` and its `checksum`, publishes the root-owned binary and switches the link atomically with `@swamp/cfgmgmt/link`
     %%> - a Node that already runs this release is left as it is
     %%> Refuses:
     %%> - a foreign file at `/usr/local/bin/orbit`; that Node is skipped as `foreign_cli`, not failed
-    SW->>N: Install the Node agent<br/>shared step · node.converge
+    SW->>N: Install the Node agent<br/>@swamp/cfgmgmt/fetch · sha256
     %%> What it does:
     %%> - the same step `node.converge` uses: installs the pinned Node agent only when its digest differs, then restarts `orbit-agent`
     %%> Today:
