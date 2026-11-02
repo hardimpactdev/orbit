@@ -146,6 +146,22 @@ Step count is the dominant cost of a run: op 6639 took 957 s for 4.6 s of SSH wo
 
 Count the native steps of a typical run against the legacy calls, where a call is one host command or API request within a phase. More than about two steps per legacy call needs a written reason in the PR, and each extra step names the Node change or guard it serves. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. Guide rule 3 says "one action group is one step", following PLAN F9 and "How a kind converts" item 2.
 
+## Run on the swamp workers
+
+Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`labels: {role: swamp}`) and reaches its target over SSH. The workflows below still place steps on the target Node's own worker with `labels: {node: ...}`. That worker stays enrolled until its port moves these steps, so `orbit-node-4`, `orbit-node-12` and `orbit-node-14` cannot retire yet. The deploy and Node lifecycle ports own them; each port moves its rows and deletes them here.
+
+| Workflow | Node-placed steps |
+| --- | --- |
+| `operation-instance-deploy-direct`, `operation-instance-rollback-direct` | 6: `@nckrtl/instance-deploy-direct` prepare, finish, rollback and failure |
+| `operation-node-role-add-direct`, `-relocate-direct`, `-remove-direct` | 193: node role add, removal, metrics, publication and certificate steps |
+| `operation-fleet-rollout`, `operation-fleet-cli-converge` | 2: `@nckrtl/fleet-release` |
+| `operation-node-bootstrap-host`, `-install`, `-probe`, `-verify`, `operation-node-macos-inspect`, `operation-node-prepare-php-packages` | 8: Node bootstrap |
+| `operation-node-wireguard-hub-converge` | 3: `@nckrtl/node-wireguard-direct` |
+| `operation-ai-router-account-update`, `ai-router-remove-source` | 3: AI router accounts and sources |
+| `operation-conn-direct`, `operation-vault-direct`, `operation-dependency-merge`, `node-worker-canary` | 4: one step each |
+
+Task VM hosts keep a Node worker for image work: `operation-task-vm-image-build`, `operation-task-vm-upcloud-image-build`, `operation-task-vm-cache-fill` and `task-vm-image-reaper` run on the host itself. Shark keeps `orbit-node-13` for them.
+
 ## Test layout
 
 Put each test where its project's CI runs it.
