@@ -348,6 +348,6 @@ Both minimal@10 proofs pass at `657b9c4f40901c1de647d5eee7bd706b8942b2f7`: `evid
 
 Five native workflow tests, six data tests and 109 Gateway tests pass, as do PHPStan, Pint, registry, chart, documentation, shape, naming and placement checks. Pinned serve accepts both rendered grant files and their 65 grants in an isolated repository with the normal signed-in account.
 
-When the first success receipts failed parity, the native Operation had succeeded: the metadata CLI needed the harness account environment and an absolute launcher, the missing-key reply says `vault_inspect_failed` with “does not exist”, and expected HTTP refusals return a nonzero driver status. These fixture checks were corrected before the passing receipt; the production path was unchanged.
+When the first success receipts failed parity, the native Operation had succeeded. The metadata CLI needed the harness account environment and an absolute launcher. Its missing-key reply says `vault_inspect_failed` with “does not exist”. Expected HTTP refusals return a nonzero driver status. These fixture checks were corrected before the passing receipt; the production path was unchanged.
 
 Cancellation 8268 destroyed task VM 356 at 2026-11-02T20:08:43Z. The lane holds no VM. The rebased workflow, data type, Conn Gateway code and shared native read/delete helpers match the proven source.
