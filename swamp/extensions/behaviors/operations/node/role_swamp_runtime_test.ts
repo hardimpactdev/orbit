@@ -66,10 +66,13 @@ Deno.test("the swamp runtime intent carries the rendered units and SSH input, an
     );
     const { assignment_id: _a, user: _u, units: _units, ...removal } = intent;
     assertThrows(() =>
-    SwampWorkersRemoval.parse({ ...removal, purge_data: false })
-  );
-  const { ssh_execution: _s, ...plain } = removal;
-  assertEquals(SwampWorkersRemoval.parse({ ...plain, purge_data: false }).workers, ["a", "b"]);
+        SwampWorkersRemoval.parse({ ...removal, purge_data: false })
+    );
+    const { ssh_execution: _s, ...plain } = removal;
+    assertEquals(
+        SwampWorkersRemoval.parse({ ...plain, purge_data: false }).workers,
+        ["a", "b"],
+    );
 });
 
 for (
@@ -234,12 +237,41 @@ Deno.test("grants mode renders the Gateway manifest and serve's other grants fro
             await Deno.readTextFile(`${repo}/grants/orbit-serve.yaml`),
         ).grants;
         assertEquals(others, JSON.parse(await Deno.readTextFile(serve)).grants);
-        assertEquals(
-            others.some((grant: { subject: string }) =>
-                grant.subject === "user:orbit-gateway"
-            ),
-            false,
+        // Native resource outputs have generated keys, separate from Gateway execution-input copies.
+        const outputs = others.filter((grant: { subject: string }) =>
+            grant.subject === "user:orbit-gateway"
         );
+        assertEquals(outputs.length, 1);
+        const output = outputs[0];
+        assertEquals(output.resource, "vault:orbit-control-inputs");
+        assertEquals(output.effect, "allow");
+        assertEquals(output.actions, ["read", "write"]);
+        const expression = /^key\.matches\((.+)\)$/.exec(output.condition);
+        if (!expression) {
+            throw new Error(
+                "Native output grants must be scoped to their generated keys",
+            );
+        }
+        const pattern = new RegExp(JSON.parse(expression[1]));
+        const prefix =
+            "swamp-cfgmgmt-docker_container-75e257b4-7510-425b-867e-a25f62829390-";
+        for (const method of ["apply", "check"]) {
+            assertEquals(
+                pattern.test(
+                    prefix + method + "-state-10.231.0.10-current.env",
+                ),
+                true,
+            );
+        }
+        for (
+            const key of [
+                "process-create-operation-17",
+                "schedule-command-c1bb62f0-a2d9-48ae-92b1-740fa3619933",
+                prefix + "restart-state-10.231.0.10-current.env",
+                prefix + "check-state-10.231.0.10-current.volumes",
+                "swamp-cfgmgmt-file-75e257b4-7510-425b-867e-a25f62829390-check-state-10.231.0.10-current.env",
+            ]
+        ) assertEquals(pattern.test(key), false, key);
     } finally {
         await Deno.remove(repo, { recursive: true });
     }
