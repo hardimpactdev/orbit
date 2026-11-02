@@ -44,7 +44,7 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
     }
 
     expect($writers)->toBe([
-        'ci.yml:publish-ci-cache' => ['actions' => 'read', 'contents' => 'write'],
+        'docs-site.yml:publish' => ['contents' => 'write'],
         'git-build-watch.yml:publish' => ['issues' => 'write'],
         'orbit-cli-release.yml:publish' => ['contents' => 'write', 'actions' => 'read', 'id-token' => 'write', 'attestations' => 'write'],
         'php-build-mirror.yml:mirror' => ['contents' => 'write'],
@@ -107,6 +107,15 @@ it('limits the recipe mirror write token to main and never triggers it for pull 
     expect(array_keys($workflow['on']))->toBe(['push', 'workflow_dispatch']);
     expect($workflow['on']['push']['branches'])->toBe(['main']);
     expect($workflow['jobs']['mirror']['if'])->toBe("github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main'");
+});
+
+it('publishes docs-site only from green CI on main pushes or a manual main run', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/docs-site.yml'));
+
+    expect(array_keys($workflow['on']))->toBe(['workflow_run', 'workflow_dispatch'])
+        ->and($workflow['on']['workflow_run'])->toBe(['workflows' => ['CI'], 'types' => ['completed'], 'branches' => ['main']])
+        ->and($workflow['jobs']['publish']['if'])->toBe("github.repository == 'hardimpactdev/orbit' && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))")
+        ->and($workflow['jobs']['publish']['steps'][0]['with']['persist-credentials'])->toBeFalse();
 });
 
 it('groups all five Composer projects, three Bun projects and action pins with a seven-day cooldown', function (): void {
