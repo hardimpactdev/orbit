@@ -1,3 +1,4 @@
+import { nativeFootprintJob, nativeFootprintOutcome, nativeFootprintStages } from "./role_footprint_workflow.ts";
 import {
   roleRemovalJobs,
 } from "./role_removal_workflow.ts";
@@ -11,7 +12,7 @@ import { BaselineStage } from "./role_direct_local.ts";
 import { Stage } from "./converge_direct_contract.ts";
 
 type Fields = Record<string, unknown>;
-const expression = (value: string) => "${{ " + value + " }}";
+const expression = (value: string) => "${{ " + value.replaceAll("}}", "} }") + " }}";
 const key = (stage: string) => stage.replaceAll("-", "_");
 const root = Object.fromEntries(
   ["operation_id", "node_id", "kind"].map((
@@ -25,6 +26,7 @@ const baseline: readonly string[] = BaselineStage.options;
 const outputs = (stages: readonly string[]) =>
   expression(
     stages.map((stage) => {
+      if ((nativeFootprintStages as readonly string[]).includes(stage)) return nativeFootprintOutcome(stage);
       const name = key(stage);
       return `(has(steps.${name}) && has(steps.${name}.outputs) ? [steps.${name}.outputs] : [])`;
     }).join(" + "),
@@ -121,6 +123,12 @@ export function footprintWorkflow(
       });
       previous = "prepare_footprint_job";
       prepared = true;
+    }
+    if ((nativeFootprintStages as readonly string[]).includes(stage)) {
+      const native = nativeFootprintJob(stage, previous);
+      jobs.push(native);
+      previous = String(native.name);
+      continue;
     }
     const name = key(stage);
     const isBaseline = role && baseline.includes(stage);

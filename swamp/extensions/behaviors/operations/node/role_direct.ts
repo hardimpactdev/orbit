@@ -19,6 +19,7 @@ import {
 } from "./manager_parent.ts";
 import { footprintProof } from "./footprint_proof.ts";
 import { convergeFootprintStage } from "./converge_footprint.ts";
+import { nativeFootprintStages } from "./role_footprint_workflow.ts";
 import {
     Outcome as FootprintOutcome,
     Stage as FootprintStage,
@@ -65,7 +66,7 @@ const StepArgs = EffectArgs.extend({
 });
 const FootprintArgs = EffectArgs.extend({
     admission: Admission,
-    stage: FootprintStage,
+    stage: FootprintStage.exclude(nativeFootprintStages),
     binary_changed: z.boolean().default(false),
 });
 const FollowUpArgs = RoleArgs.extend({
@@ -503,20 +504,6 @@ export function nodeRoleAdd(
                                 gateway(args, ctx),
                                 args.binary_changed,
                                 ctx.signal,
-                                footprint === convergeFootprintStage
-                                    ? {
-                                        php: await Deno.readTextFile(
-                                            ctx.extensionFile(
-                                                "scripts/php_runtime.py",
-                                            ),
-                                        ),
-                                        footprint: await Deno.readTextFile(
-                                            ctx.extensionFile(
-                                                "scripts/footprint.py",
-                                            ),
-                                        ),
-                                    }
-                                    : undefined,
                             ),
                     );
                     if (

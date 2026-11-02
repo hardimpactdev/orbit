@@ -36,6 +36,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
         $snapshot = $this->snapshot($operation);
         if (isset($operation->state['role_footprint'])) {
             $snapshot['footprint'] = $operation->state['role_footprint'];
+            $snapshot['footprint_resources'] = $operation->state['role_footprint_resources'];
         }
         if (isset($snapshot['publication']) && in_array($operation->node_id,
             NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])), true)) {
@@ -97,9 +98,9 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                     app(NodeRolePublicationState::class)->record(ValidatedData::object($snapshot['certificates']), ValidatedData::string($phase['phase']), ValidatedData::integer($phase['node_id']));
                 }
                 if (($result['prepare_footprint'] ?? false) === true && ! isset($operation->state['role_footprint'])) {
-                    $footprint = app(NodeConvergeInput::class)->capture(Node::query()->findOrFail($operation->node_id), false, false);
-                    unset($footprint['secret_hash']);
-                    $projected->state = [...($projected->state ?? []), 'role_footprint' => $footprint];
+                    $footprint = app(NodeRoleDirectInput::class)->footprintSnapshot(Node::query()->findOrFail($operation->node_id));
+                    $projected->state = [...($projected->state ?? []), 'role_footprint' => $footprint['footprint'],
+                        'role_footprint_resources' => $footprint['footprint_resources']];
                     $projected->save();
                 }
 

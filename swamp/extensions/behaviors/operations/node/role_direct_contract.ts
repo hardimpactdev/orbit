@@ -1,4 +1,4 @@
-import { RoleCertificates } from "./role_certificates.ts";
+import { Connection, RoleCertificates } from "./role_certificates.ts";
 import { ProxyNodeIds, RoleMetricsPlan } from "./role_metrics.ts";
 import { RolePublication } from "./role_publication.ts";
 import { ParentManagerInput } from "./manager_parent.ts";
@@ -73,6 +73,15 @@ export const RoleSnapshot = z.object({
   prerequisites: Prerequisites,
   firewall: Firewall.nullable(),
   footprint: Footprint,
+  footprint_resources: z.object({
+    ssh: Connection.shape.ssh,
+    user: AccountName,
+    home: Path,
+    php_configurations: z.array(z.object({version: z.string().regex(/^[0-9]+\.[0-9]+$/), runtime_ini: z.string()}).strict()).max(16),
+    tmpfiles: z.string().nullable(),
+    dns: z.record(z.string(), z.unknown()).nullable(),
+    residue: z.record(z.string(), z.unknown()).nullable(),
+  }).strict(),
   cli: CliPlan,
   runtime: RoleRuntime.nullable().optional(),
   javascript: z.record(z.string(), z.unknown()).nullable().optional(),

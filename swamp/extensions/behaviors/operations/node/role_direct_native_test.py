@@ -1,5 +1,10 @@
 """One native role root with injected local effects; no fleet access."""
 import json
+import yaml
+import os
+import pwd
+import grp
+import shutil
 import subprocess
 from pathlib import Path
 import re
@@ -21,6 +26,20 @@ class DirectRoleNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'node-worker', 'operations')
+        inventory = json.loads((ROOT / 'extensions/models/upstream_extensions.json').read_text())
+        self.cli('extension', 'pull', '@swamp/cfgmgmt@' + inventory['@swamp/cfgmgmt']['version'])
+        self.tmpfiles = self.repo / 'orbit-tmpfiles.conf'
+        tools = self.repo / 'tools'
+        tools.mkdir()
+        scripts = {
+            'ssh': "import subprocess,sys\nif '-M' in sys.argv or '-O' in sys.argv:sys.exit(0)\nsys.exit(subprocess.call(['/bin/sh','-c',sys.argv[-1]]))\n",
+            'scp': "import shutil,sys\nshutil.copyfile(sys.argv[-2],sys.argv[-1].split(':',1)[1])\n",
+        }
+        for name, source in scripts.items():
+            binary = tools / name
+            binary.write_text('#!' + sys.executable + '\n' + source)
+            binary.chmod(0o700)
+        self.native_env['PATH'] = str(tools) + ':' + os.environ['PATH']
         module = self.repo / 'extensions/behaviors/operations/fleet-recipe/node_role.ts'
         module.write_text('import {fixtureHttp, fixtureBaseline, fixtureFootprint, fixtureCli} from "../node/role_direct_native_fixture.ts";\n' +
                           module.read_text().replace('export const behavior = nodeRoleAdd();',
@@ -32,14 +51,7 @@ class DirectRoleNative(NativeTestCase):
             helper.write_text('import {fixtureHttp} from "./role_direct_native_fixture.ts";\n' + helper.read_text().replace(f'export const behavior = {factory}();', f'export const behavior = {factory}(() => fixtureHttp);'))
         source = ROOT / ('workflows/workflow-' + getattr(self, 'workflow_name', 'operation-node-role-add-direct') + '.yaml')
         self.source = source.read_text()
-        parsed = subprocess.run(['/tmp/lane0d-deno/deno', 'eval',
-            'import {parse} from "jsr:@std/yaml@1.0.12"; console.log(JSON.stringify(parse(await new Response(Deno.stdin.readable).text())));'],
-            input=self.source, capture_output=True, text=True, check=True)
-        def local(value):
-            if isinstance(value, list): return [local(entry) for entry in value]
-            if isinstance(value, dict): return {key:local(entry) for key,entry in value.items() if key not in ['target','labels']}
-            return value
-        (self.repo / 'workflows' / source.name).write_text(json.dumps(local(json.loads(parsed.stdout))))
+        (self.repo / 'workflows' / source.name).write_text(json.dumps(self.local_workflow(yaml.safe_load(self.source))))
         self.state = {'operation': {'id': 91, 'kind': 'node.role_add', 'node_id': 13,
             'status': 'queued', 'result': None, 'cancel_requested': False, 'input': {
             'certificates': {'leaves': [], 'withdrawals': []}, 'metrics_fleet': None, 'runtime': None, 'schema_version': 1, 'node_id': 13, 'agent_sha256': 'a' * 64,
@@ -48,11 +60,28 @@ class DirectRoleNative(NativeTestCase):
             'firewall': {'desired': [], 'remove': [], 'enable': False},
             'cli': {'user': 'nckrtl', 'release': {'version': '1.2.3', 'url': 'https://example.test/orbit', 'sha256': 'c' * 64},
                     'profile': '{}', 'skip_reason': None, 'plan_error': None},
+            'footprint_resources': {'ssh': {'control_node_id': 209, 'identity_file': '/etc/orbit/swamp-role-worker/ssh-identity', 'public_key': 'ssh-ed25519 fixture',
+                'target': {'name': 'target', 'host': 'dev.invalid', 'user': 'nckrtl', 'port': 22, 'host_keys': ['ssh-ed25519 fixture']}},
+                'user': 'nckrtl', 'home': '/home/nckrtl', 'php_configurations': [], 'tmpfiles': 'e /tmp/orbit-* - - - 1d\n', 'dns': None, 'residue': None},
             'footprint': {'schema_version': 1, 'node_id': 13, 'agent_sha256': 'a' * 64,
                 'force_artifacts': False, 'first_visit': False, 'network': None, 'refusal': None,
                 'artifacts': [{'name': name, 'digest': 'd' * 64, 'required': True, 'repair': False} for name in ['agent', 'tmpfiles']],
                 'payloads': {}}}}, 'effects': [], 'calls': []}
         self.save()
+
+    def local_workflow(self, value):
+        if isinstance(value, list): return [self.local_workflow(entry) for entry in value]
+        if isinstance(value, dict):
+            if value.get('behaviorType') == '@swamp/cfgmgmt/file':
+                value['globalArgs']['path'] = str(self.tmpfiles)
+                value['globalArgs']['nodeHost'] = 'fixture'
+                value['globalArgs']['owner'] = pwd.getpwuid(os.getuid()).pw_name
+                value['globalArgs']['nodeUser'] = pwd.getpwuid(os.getuid()).pw_name
+                value['globalArgs']['group'] = grp.getgrgid(os.getgid()).gr_name
+                for key in ['nodePort', 'nodeIdentityFile', 'become']:
+                    value['globalArgs'].pop(key, None)
+            return {key:self.local_workflow(entry) for key,entry in value.items() if key not in ['target','labels']}
+        return value
 
     def save(self):
         (self.repo / 'native-role.json').write_text(json.dumps(self.state))
@@ -74,10 +103,43 @@ class DirectRoleNative(NativeTestCase):
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertEqual(state['effects'][:5], ['agent-install', 'caddy-package', 'prerequisites', 'ci-host', 'firewall'])
         self.assertEqual(state['effects'][-1], 'native-cli-install')
-        self.assertEqual(len(state['effects']), 13)
+        self.assertEqual(len(state['effects']), 9)
+        self.assertEqual(self.tmpfiles.read_text(), 'e /tmp/orbit-* - - - 1d\n')
         self.assertEqual(len(state['operation']['result']['footprint']['artifacts']), 2)
         self.assertIsNone(state['operation']['result']['follow_up'])
         self.assertTrue(all('/direct-operations/91' in call['path'] for call in state['calls']))
+
+    def test_php_versions_are_native_children_and_a_failed_version_is_not_proven(self):
+        child = {'id': '47b3bd2e-815e-412b-a3e1-5e608e6b107d', 'name': 'node-php-runtime',
+                 'inputs': {'type': 'object'}, 'jobs': [{'name': 'php', 'steps': [{
+                     'name': 'Test PHP-FPM', 'task': {'type': 'assert', 'severity': 'high',
+                         'expr': 'inputs.intent.php.runtime_ini != "refuse"', 'message': 'refused PHP version'}}]}]}
+        (self.repo / 'workflows/workflow-node-php-runtime.yaml').write_text(json.dumps(child))
+        snapshot = self.state['operation']['input']
+        snapshot['footprint_resources'].update(php_configurations=[{'version': '8.4', 'runtime_ini': 'ready'}, {'version': '8.5', 'runtime_ini': 'refuse'}])
+        snapshot['footprint']['artifacts'].append({'name': 'php-runtime', 'digest': 'd' * 64, 'required': True, 'repair': False})
+        self.save()
+
+        self.run_workflow(success=False)
+
+        state = self.read()
+        proof = state['operation']['result']['footprint']
+        self.assertFalse(proof['footprint_proven'])
+        self.assertEqual(proof['failed_artifact'], 'php-runtime')
+        self.assertIn('role-footprint:', state['operation']['result']['follow_up'])
+        self.assertFalse(self.tmpfiles.exists())
+
+    def test_cached_tmpfiles_are_unchanged_without_a_node_write(self):
+        snapshot = self.state['operation']['input']
+        snapshot['footprint_resources']['tmpfiles'] = None
+        snapshot['footprint']['artifacts'][1]['required'] = False
+        self.save()
+
+        self.run_workflow()
+
+        state = self.read()
+        self.assertFalse(self.tmpfiles.exists())
+        self.assertIn({'name': 'tmpfiles', 'status': 'unchanged'}, state['operation']['result']['footprint']['artifacts'])
 
     def test_exact_node_label_places_dynamic_participants(self):
         self.assertNotIn('"orbit-node-" + string(', self.source)

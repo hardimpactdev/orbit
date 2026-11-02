@@ -35,6 +35,10 @@ const snapshot = (): RoleSnapshot => ({
     composer_home: false,
   },
   firewall: { desired: [], remove: [], enable: false },
+  footprint_resources: {
+    ssh: { control_node_id: 209, identity_file: "/etc/orbit/swamp-role-worker/ssh-identity", public_key: "ssh-ed25519 fixture", target: { name: "target", host: "dev.invalid", user: "nckrtl", port: 22, host_keys: ["ssh-ed25519 fixture"] } },
+    user: "nckrtl", home: "/home/nckrtl", php_configurations: [], tmpfiles: null, dns: null, residue: null,
+  },
   footprint: {
     schema_version: 1,
     node_id: 13,

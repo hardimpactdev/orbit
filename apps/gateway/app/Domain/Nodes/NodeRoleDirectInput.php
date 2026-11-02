@@ -37,13 +37,12 @@ final readonly class NodeRoleDirectInput
         $prerequisites = $this->prerequisites->input($node, $role,
             new ManagedUserAccount($node->user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken));
         unset($prerequisites['user'], $prerequisites['group'], $prerequisites['home']);
-        $footprint = $this->footprint->capture($node, false, false);
-        unset($footprint['secret_hash']);
+        $footprint = $this->footprintSnapshot($node);
 
         return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
             'assignment_id' => $assignment->id, 'role' => $role->value, 'created' => $created, 'user' => $node->user,
             'prerequisites' => $prerequisites, 'firewall' => $role === RoleName::Database ? null : $this->firewall->converge($node, $role),
-            'footprint' => $footprint,
+            ...$footprint,
             'javascript' => in_array($role, [RoleName::AppDev, RoleName::AppProd], true) ? NodeRecipeProgram::javascript($node, $role) : null,
             'storage_root' => $role === RoleName::AppDev ? (ValidatedData::object($node->settings['apps'] ?? [])['path'] ?? null) : null,
             'router_lan' => $role === RoleName::Router ? $this->firewall->routerLan($node) : null,
@@ -57,6 +56,20 @@ final readonly class NodeRoleDirectInput
             'gateway_dns' => $role === RoleName::Gateway && ($dns = app(GatewayPrivateDnsResolver::class)->vpnDnsAddress(app(VpnSettings::class))) !== null
                 ? ['operation' => 'converge', 'address' => $dns, 'domain' => app(VpnSettings::class)->domain()] : null,
             'cli' => $this->cli->input($node), 'runtime' => $this->runtime->capture($node, $assignment)];
+    }
+
+    /** @return array{footprint:array<string,mixed>,footprint_resources:array<string,mixed>} */
+    public function footprintSnapshot(Node $node): array
+    {
+        $footprint = $this->footprint->captureNative($node, false, false);
+        $parts = $this->footprint->roles($node, ValidatedData::object($footprint['payloads']));
+        $php = (array) $parts['php'];
+        $parts['php_configurations'] = array_map(static fn (string $version): array => ['version' => $version, 'runtime_ini' => $php[$version]], ValidatedData::stringList($parts['php_versions']));
+        unset($parts['caddy'], $parts['caddy_package'], $parts['php'], $parts['php_versions']);
+        $resources = ['ssh' => $footprint['ssh'], ...$parts];
+        unset($footprint['ssh'], $footprint['user'], $footprint['agent']);
+
+        return ['footprint' => $footprint, 'footprint_resources' => $resources];
     }
 
     /** Canonical read-only ownership check for the role root and its protected hash source. */

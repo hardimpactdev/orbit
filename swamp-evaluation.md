@@ -2,6 +2,10 @@
 
 Pinned package: `@swamp/cfgmgmt@2026.10.27.1`.
 
+## Role footprint candidates
+
+The retained role path reuses the native PHP-FPM, private DNS and Route-residue workflows. PHP settings need separate file, link, line, validation and service operations. Could systemd support a validated reload of an active service when a referenced configuration changes? Private DNS still needs a query and a native assertion of its loaded catalog digest. Could a service check accept an application readiness probe and fail on drift? These are candidates for official behaviors; no wrapper or retained script was added.
+
 Process creation uses one `@swamp/ssh exec` argv: `docker run -d --name NAME ... IMAGE ARGV`. The image is pulled with `docker_image`; the end check uses `docker_container`.
 
 The container behavior lacks an env-file option, working directory, labels and a command argument list. Its command is one string. These gaps prevent faithful Process creation through its apply method. No shipped script is needed. The official check includes the observed environment in state, so Process stores that resource in the execution vault and projects only the native assertion.

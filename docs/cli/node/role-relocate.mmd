@@ -1,0 +1,79 @@
+sequenceDiagram
+  %% Target design: native role footprint boundaries and source removal after target readiness.
+  %% status: draft
+  %% command: node:role:relocate
+  %% kind: node.role_relocate
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane S icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>gets the role
+  participant S as Source Node<br/>sheds the role
+  CLI->>GW: node:role:relocate<br/>18 websocket --from=12 --force
+  %%> Command:
+  %%> - orbit node:role:relocate 18 websocket --from=12 --force
+  %%> - syntax: <node> <role> [--from=NODE] [--force] [--json]
+  Note over GW: Admit the move
+  %%> What it does:
+  %%> - claims the target assignment and captures the source cleanup intent
+  GW->>SW: Start one role run<br/>full public intent
+  %%> What it does:
+  %%> - passes the role intent and vault key names to the native root
+  GW-->>CLI: 202 Accepted<br/>operation recorded
+  %%> Result:
+  %%> - the CLI follows the recorded operation
+  SW->>N: runtime<br/>target role prerequisites
+  %%> What it does:
+  %%> - installs the role prerequisites, publishes certificates and converges the target runtime
+  opt private DNS listener applies
+    SW->>N: Install private DNS<br/>node-private-dns
+    %%> What it does:
+    %%> - writes the listener and catalog, queries DNS and asserts the loaded catalog digest
+  end
+  opt Route residue exists
+    SW->>N: Clear Route residue<br/>node-route-residue
+    %%> What it does:
+    %%> - removes retired pools and publications, with failures recorded as footprint follow-ups
+  end
+  opt PHP versions apply
+    SW->>N: Configure PHP-FPM<br/>node-php-runtime · per version
+    %%> What it does:
+    %%> - runs Configure PHP-FPM with the version appended to its step name
+    %%> - writes settings, tests PHP-FPM and reloads valid running masters
+  end
+  opt tmpfiles rule applies
+    SW->>N: Write the tmpfiles rule<br/>@swamp/cfgmgmt/file
+    %%> What it does:
+    %%> - writes and verifies the admitted 0644 rule
+  end
+  SW->>N: target_ready<br/>confirm target footprint
+  %%> What it does:
+  %%> - confirms the target before source cleanup starts
+  SW->>S: source_withdrawal<br/>unpublish before cleanup
+  %%> What it does:
+  %%> - withdraws the source publications and observes their grace period
+  SW->>S: source_runtime<br/>remove the retired runtime
+  %%> What it does:
+  %%> - removes source runtime files, services and certificates while preserving user data
+  alt all required steps pass
+    SW-->>GW: Run succeeded
+    %%> Result:
+    %%> - records the active target assignment and completed source cleanup
+  else a required step fails
+    SW--xGW: Run failed<br/>step and error code
+    %%> Result:
+    %%> - keeps completed work; a rerun can finish source cleanup
+  end
+  loop until terminal
+    CLI->>GW: operation:show
+    %%> What it does:
+    %%> - reads recorded progress
+    GW-->>CLI: status and result
+    %%> Result:
+    %%> - returns the terminal outcome when complete
+  end

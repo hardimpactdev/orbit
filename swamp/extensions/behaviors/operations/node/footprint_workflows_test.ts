@@ -55,10 +55,6 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
                     ...BaselineStage.options,
                     "caddy",
                     "peer-dns",
-                    "private-dns",
-                    "route-residue",
-                    "php-runtime",
-                    "tmpfiles",
                     "agent",
                 ]
                 : [
@@ -66,10 +62,6 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
                     "caddy-package",
                     "caddy",
                     "peer-dns",
-                    "private-dns",
-                    "route-residue",
-                    "php-runtime",
-                    "tmpfiles",
                     "agent",
                 ],
         );
@@ -98,17 +90,14 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
         const children = jobs.flatMap((job) => job.steps).filter((step) =>
             step.task.type === "workflow"
         );
-        assertEquals(children.length, 1);
-        for (const child of children) {
-            assertEquals(
-                (child.task as Record<string, unknown>).workflowIdOrName,
-                "node-role-certificate-publish",
-            );
-            assertEquals(
-                child.task.inputs?.parent_run_id,
-                "${{ (has(inputs.parent_run_id) ? inputs.parent_run_id : run.id) }}",
-            );
-        }
+        assertEquals(children.length, 4);
+        assertEquals(children.map(child => (child.task as Record<string, unknown>).workflowIdOrName), [
+            "node-role-certificate-publish", "node-private-dns", "node-route-residue", "node-php-runtime",
+        ]);
+        const certificate = children[0];
+        assertEquals(certificate.task.inputs?.parent_run_id,
+            "${{ (has(inputs.parent_run_id) ? inputs.parent_run_id : run.id) }}");
+
     }
 });
 

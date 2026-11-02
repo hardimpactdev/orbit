@@ -155,6 +155,7 @@ it('recaptures footprint once and records terminal artifacts against that refres
     app()->instance(NodeConvergeInput::class, new NodeConvergeInput($footprint, app(AgentDelivery::class), [$artifact]));
     $assignment = $this->node->roles()->create(['role' => RoleName::Database, 'status' => 'provisioning']);
     $snapshot = app(NodeRoleDirectInput::class)->capture($this->node->refresh(), $assignment, true);
+    $snapshot['footprint_resources']['tmpfiles'] = '# before-publication';
     $operation = nodeNativeCompositionOperation($this->node, $assignment, $snapshot);
     $admittedDigest = $snapshot['footprint']['artifacts'][0]['digest'];
     $artifact->desired = 'after-publication';
@@ -165,7 +166,9 @@ it('recaptures footprint once and records terminal artifacts against that refres
     $afterFirst = $artifact->calls;
     expect($refreshed['artifacts'][0]['digest'])->not->toBe($admittedDigest)
         ->and($operation->input['_role']['footprint'])->toBe($snapshot['footprint'])
-        ->and($projection->input($operation)['footprint'])->toBe($refreshed);
+        ->and($projection->input($operation)['footprint'])->toBe($refreshed)
+        ->and($projection->input($operation)['footprint_resources']['tmpfiles'])->toContain('e /tmp/orbit-')
+        ->and($operation->state['role_footprint_resources'])->toBe($projection->input($operation)['footprint_resources']);
 
     $artifact->desired = 'later-unrelated-change';
     $projection->apply($operation, $prepare);

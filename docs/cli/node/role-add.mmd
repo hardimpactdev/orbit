@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, DECISIONS R1-R4 + 5 (shared SSH identity), metrics.exporter_enable decisions, single-swamp-node. docs/cli/node.mdx#orbit-noderoleadd, docs/reference/node-provisioning.md.
+  %% Native role footprint: shared node-php-runtime, node-private-dns and node-route-residue boundaries.
   %% Tightened: flow-tighten 2026-11-02, rules 9, 22 (cfgmgmt behaviors named; their checks are the end check, no file read-back).
   %% status: draft
   %% command: node:role:add
@@ -70,8 +71,6 @@ sequenceDiagram
   %%> - runs the same steps as role converge (`node.role_converge`): files, units and services of the role
   %%> Per role:
   %%> - Caddy roles: the Caddyfile, validated first, then a graceful Caddy reload
-  %%> - `app-dev`, `app-prod`: the managed PHP-FPM module; a graceful reload of valid running masters
-  %%> - `app-dev`: the `/etc/tmpfiles.d/orbit.conf` rule for `/tmp/orbit-*` and `/dev/shm/orbit-*`
   %%> - `websocket`: the Reverb service
   %%> - `analytics`: Plausible, beside the given storage Processes
   %%> - `swamp`: Orbit's Caddy and the 2 worker services `orbit-swamp-worker@a` and `@b`
@@ -80,6 +79,30 @@ sequenceDiagram
   %%> - official `@swamp/cfgmgmt` behaviors (file, systemd, docker) over SSH from 209
   %%> Not included:
   %%> - the Node agent, its files and the Orbit CLI; `node:converge` owns them
+  opt private DNS listener applies
+    SW->>N: Install private DNS<br/>node-private-dns
+    %%> What it does:
+    %%> - writes the listener release, units, records and catalog with official file and systemd behaviors
+    %%> - queries the listener, then asserts the loaded catalog digest
+  end
+  opt Route residue exists
+    SW->>N: Clear Route residue<br/>node-route-residue
+    %%> What it does:
+    %%> - removes retired pool files, sites, certificate files and firewall rules
+    %%> - keeps unrelated data; reports a failed cleanup as a footprint follow-up
+  end
+  opt PHP versions apply
+    SW->>N: Configure PHP-FPM<br/>node-php-runtime · per version
+    %%> What it does:
+    %%> - runs Configure PHP-FPM for each version, with the version appended to its step name
+    %%> - writes the runtime ini, enables its link, tests PHP-FPM and reloads running masters
+  end
+  opt app-dev tmpfiles rule applies
+    SW->>N: Write the tmpfiles rule<br/>@swamp/cfgmgmt/file
+    %%> What it does:
+    %%> - writes the admitted rule to /etc/tmpfiles.d/orbit.conf with mode 0644
+    %%> - the file behavior confirms content and mode
+  end
   opt role needs a certificate
     SW->>GW: Sign the role certificate<br/>operation:direct:certificate-sign
     %%> When:

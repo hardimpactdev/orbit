@@ -8,7 +8,7 @@ import {
 } from "../_lib/direct.ts";
 import { RoleLeaf } from "../certificates/role-input.ts";
 
-const Connection = z.object({
+export const Connection = z.object({
   node_id: z.number().int().positive(),
   ssh: z.object({
     control_node_id: z.literal(209),

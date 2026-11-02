@@ -244,9 +244,8 @@ export function convergeFootprintStage(
     gateway: GatewayOperation,
     binaryChanged: boolean,
     signal?: AbortSignal,
-    scripts?: { php: string; footprint: string },
 ) {
-    return footprintActions(convergeDependencies(scripts))(
+    return footprintActions(convergeDependencies())(
         stage,
         snapshot,
         gateway,

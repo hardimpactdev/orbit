@@ -26,6 +26,9 @@ it('captures a public role snapshot without account probes effects or private by
     $input = app(NodeRoleDirectInput::class)->capture($node, $node->roles->sole(), false);
 
     expect($input['node_id'])->toBe($node->id)->and($input['role'])->toBe($role->value)
+        ->and($input['footprint_resources']['ssh']['target']['host'])->toBe($node->wireguard_ip)
+        ->and($input['footprint_resources']['user'])->toBe($node->user)
+        ->and($input['footprint_resources']['php_configurations'])->toBe([])
         ->and($input['footprint']['node_id'])->toBe($node->id)
         ->and($input['footprint'])->not->toHaveKey('secret_hash')
         ->and($input['prerequisites'])->not->toHaveKeys(['user', 'group', 'home'])
