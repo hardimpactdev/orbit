@@ -245,13 +245,15 @@ it('retains confirmed VM readiness when terminal source preparation fails', func
 
 it('reads the workspace receipt when the failed end check kept no stdout', function (): void {
     $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
-    $receipt = [...taskProvisionVmReceipt($operation), 'error_code' => 'tasks.provision_failed', 'failed_step' => 'setup-0'];
+    $receipt = [...taskProvisionVmReceipt($operation), 'error_code' => 'app-dev.php_version_unsupported', 'failed_step' => 'profile'];
     app(TaskProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'failed',
         'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:01:00.000Z',
-        'error_code' => 'tasks.provision_failed', 'result' => ['receipt' => ['result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]]);
+        'error_code' => 'operation.native_failed', 'result' => ['receipt' => ['result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]]);
     expect($this->vm->fresh()->state)->toBe(TaskVmState::Ready)
-        ->and($this->group->fresh()->taskable->failed_step)->toBe('setup-0')
-        ->and($operation->fresh()->result['failed_step'])->toBe('setup-0')
+        ->and($this->group->fresh()->taskable->failed_step)->toBe('profile')
+        ->and($this->group->fresh()->taskable->error_code)->toBe('app-dev.php_version_unsupported')
+        ->and($operation->fresh()->error_code)->toBe('app-dev.php_version_unsupported')
+        ->and($operation->fresh()->result['failed_step'])->toBe('profile')
         ->and($operation->fresh()->result)->not->toHaveKey('receipt');
 });
 

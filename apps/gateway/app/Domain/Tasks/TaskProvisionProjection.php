@@ -37,6 +37,9 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
+            if (in_array($data['status'], ['failed', 'interrupted'], true) && is_string($result['error_code'] ?? null)) {
+                $data['error_code'] = $result['error_code'];
+            }
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, $result);
             }
