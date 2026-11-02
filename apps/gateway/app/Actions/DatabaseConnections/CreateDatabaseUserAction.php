@@ -11,6 +11,7 @@ use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
@@ -74,6 +75,7 @@ final readonly class CreateDatabaseUserAction
             );
         }
 
+        app(SwampSshExecutionInput::class)->forNode($server->node);
         $knownUser = DatabaseUser::query()->where('database_connection_id', $connection->id)->where('username', $data->username)->exists();
         $readOnly = $data->readOnly || $data->replication;
         $safe = ['driver' => $server->driver->value,
@@ -84,9 +86,10 @@ final readonly class CreateDatabaseUserAction
 
         return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
             ['connection_id' => $connection->id, ...$safe],
-            ['database-apply' => ['name' => 'database_user.create', 'input' => [...$safe, 'password' => $server->root_password,
+            // The run reads the admin login from the server's own vault key (R3); only the user's password is recorded here.
+            ['database-apply' => ['name' => 'database_user.create', 'input' => [...$safe,
                 'payload' => ['password' => $data->password, 'salt' => base64_encode(random_bytes(16))]],
-                'protected' => ['password', 'payload'], 'redactions' => [$server->root_password, $data->password]]], ['upsert_user' => [
+                'protected' => ['payload'], 'redactions' => [$data->password]]], ['upsert_user' => [
                     'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
                     'privileges' => $this->privileges->text($server->driver, $connection->database, $readOnly), 'replication' => $data->replication,
                     'created_by' => $createdBy,

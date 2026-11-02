@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseExecutionIntent;
+use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-/** Safe admitted identity and record projection; the Node owns all SQL execution. */
+/** The admitted user as rendered batches behind stdin logins, and the user record from the native result. */
 final readonly class DatabaseUserProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
@@ -34,19 +37,31 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
             $this->invalid();
         }
 
-        $node = Node::query()->findOrFail($operation->node_id);
-        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-user-create-intent-'.$intent->id];
-        if (! $operation->status->terminal()) {
-            $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'],
-                json_encode(array_intersect_key($input, array_flip(['password', 'payload'])), JSON_THROW_ON_ERROR));
+        $driver = DatabaseDriver::from($input['driver']);
+        $payload = ValidatedData::object($input['payload'] ?? null);
+        $password = ValidatedData::string($payload['password'] ?? null);
+        $statements = app(DatabaseStatements::class)->user(['driver' => $driver->value, 'username' => $username, 'database' => $input['database'],
+            'owner_username' => $input['owner_username'], 'read_only' => $input['read_only'], 'replication' => $input['replication'],
+            'known_user' => $input['known_user']], $password, ValidatedData::string($payload['salt'] ?? null));
+        $secrets = [];
+        foreach (['apply', 'check'] as $batch) {
+            $secrets[$batch] = ['vault' => 'orbit-control-inputs', 'key' => "database-user-create-{$batch}-{$intent->id}"];
         }
+        if (! $operation->status->terminal()) {
+            // Each login reads its password from the first stdin line: the admin's for the server work, the user's own for
+            // the check (Q-DBAUTH). The apply batch carries the user's password too.
+            $root = DatabaseServer::query()->findOrFail($operation->target_id)->root_password;
+            $copy = app(SwampCommandStep::class);
+            $secrets['apply'] = $copy->executionCopy('orbit-control-inputs', $secrets['apply']['key'], "{$root}\n{$statements['apply']}");
+            $secrets['check'] = $copy->executionCopy('orbit-control-inputs', $secrets['check']['key'], "{$password}\n{$statements['check']}");
+        }
+        [$admin, $adminDatabase] = $driver === DatabaseDriver::Pgsql ? ['postgres', 'postgres'] : ['root', 'mysql'];
 
-        return ['intent' => ['driver' => $input['driver'], 'container' => $container,
-            'database' => $input['database'], 'owner_username' => $input['owner_username'], 'read_only' => $input['read_only'],
-            'username' => $username, 'replication' => $input['replication'], 'known_user' => $input['known_user'],
-            'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
-                'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
-                    ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]], 'execution_secrets' => ['user_create' => $copy]];
+        return ['intent' => ['driver' => $driver->value, 'username' => $username, 'replication' => $input['replication'],
+            'admin_client' => DatabaseStatements::login($driver, $container, $admin, $adminDatabase),
+            'user_client' => DatabaseStatements::login($driver, $container, $username, $input['database']),
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
+            'execution_secrets' => $secrets];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -56,11 +71,7 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
         if ($user === null) {
             $this->invalid();
         }
-        $raw = ValidatedData::object($data['result'] ?? []);
-        $result = ($raw['backend'] ?? null) === 'active' ? ['backend' => 'active'] : [];
-        if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
-            $result['error_code'] = $raw['error_code'];
-        }
+        [$data, $result] = $this->outcome($operation, $data);
         $status = ValidatedData::string($data['status']);
 
         return DB::transaction(function () use ($operation, $data, $result, $status, $user): Operation {
@@ -73,6 +84,44 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /**
+     * The native result decides: a WAL level other than logical or a foreign role (the batch's markers), a failed
+     * batch, or a user that cannot log in with its own password fails the run with its code.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{0: array<string, mixed>, 1: array<string, string>}
+     */
+    private function outcome(Operation $operation, array $data): array
+    {
+        if (($data['status'] ?? null) !== 'succeeded') {
+            return [$data, ['error_code' => ValidatedData::nullableString($data['error_code'] ?? null) ?? 'database.server_admin_failed']];
+        }
+        $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
+        $read = static function (string $step) use ($steps): array {
+            $entry = ValidatedData::object($steps[$step] ?? []);
+
+            return [is_int($entry['exit_code'] ?? null) ? $entry['exit_code'] : null,
+                array_values(array_filter(array_map(trim(...), explode("\n", ValidatedData::nullableString($entry['stdout'] ?? null) ?? ''))))];
+        };
+        $input = $this->intent($operation)->payload['commands']['database-apply']['input'];
+        [$applyExit, $applyLines] = $read('Apply login and grants');
+        [$checkExit, $checkLines] = $read('Check the user');
+        $user = ValidatedData::string($input['username'] ?? null);
+        $expected = $input['driver'] === 'mysql' ? $user.'@%' : $user;
+        [$step, $code] = match (true) {
+            in_array('database.wal_level_not_logical', $applyLines, true) => ['Apply login and grants', 'database.wal_level_not_logical'],
+            in_array('database.name_conflict', $applyLines, true) => ['Apply login and grants', 'database.name_conflict'],
+            $applyExit !== 0 => ['Apply login and grants', 'database.server_admin_failed'],
+            $checkExit !== 0 || ($checkLines[0] ?? null) !== $expected => ['Check the user', 'database.user_login_failed'],
+            default => [null, null],
+        };
+        if ($code === null) {
+            return [$data, ['backend' => 'active']];
+        }
+
+        return [[...$data, 'status' => 'failed', 'error_code' => $code, 'failure' => ['failed_step' => $step, 'stderr_recorded' => true]], ['error_code' => $code]];
     }
 
     private function intent(Operation $operation): DatabaseExecutionIntent

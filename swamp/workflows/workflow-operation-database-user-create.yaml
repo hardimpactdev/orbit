@@ -1,348 +1,75 @@
 id: 2c8195ba-b28b-4bb1-9c65-abda5b48a477
 name: operation-database-user-create
 queueTimeout: 30
-description: Create an admitted SQL login and replace exact database grants using shipped scripts over official SSH from209.
-writes: true
-vaults:
-- orbit-control-inputs
+description: database:user:create from 209, one docker exec -i per batch; each login reads its password from the vault as the first stdin line.
+vaults: [orbit-control-inputs]
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database_user.create
-    intent:
-      type: object
-      properties:
-        driver:
-          type: string
-          enum:
-          - mysql
-          - pgsql
-        container:
-          type: string
-        username:
-          type: string
-        replication:
-          type: boolean
-        known_user:
-          type: boolean
-        ssh:
-          type: object
-        database:
-          type: string
-        owner_username:
-          type: string
-        read_only:
-          type: boolean
-      required:
-      - driver
-      - container
-      - username
-      - replication
-      - known_user
-      - ssh
-      - database
-      - owner_username
-      - read_only
-      additionalProperties: false
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: database_user.create}
+    intent: {type: object}
+    # Names only: apply (the admin password line and the batch) and check (the user's password line and its check),
+    # each one whole value.
     execution_secrets:
       type: object
-      properties:
-        user_create:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^database-user-create-intent-[1-9][0-9]*$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-      required:
-      - user_create
-      additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^database-user-create-(apply|check)-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: user
   labels: {role: swamp}
   steps:
-  - name: assets
+    # One batch: the checks, the login, then the exact grants. A non-logical WAL level for a replication login or a
+    # foreign PostgreSQL role stops it before any change and prints its code for the Gateway.
+  - name: 'Apply login and grants'
     labels: {role: swamp}
-    writes: false
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: '${{ "database-user-assets" }}'
-      methodName: read
-      inputs:
-        intent: ${{ inputs.intent }}
-  - name: directory
-    labels: {role: swamp}
-    writes: false
-    allowFailure: true
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs: &id002
-        name: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
+      behaviorName: ${{ "database-user-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "database-user-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
-          user: ${{ inputs.intent.ssh.user }}
-          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         hosts:
-        - name: server
-          address: ${{ inputs.intent.ssh.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh.host_keys }}
-      methodName: exec
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/mkdir
-        - -p
-        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) }}
-        okExitCodes:
-        - 0
-        - 1
-  - name: copy
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "120"] + inputs.intent.admin_client }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.apply.vault, inputs.execution_secrets.apply.key) }}
+        okExitCodes: [0, 1, 3]
+        timeoutSec: 130
+    # The user logs in over TCP with its own password; only then is it recorded.
+  - name: 'Check the user'
     labels: {role: swamp}
-    writes: false
-    allowFailure: true
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
-    - step: directory
-      condition:
-        type: succeeded
+    dependsOn: [{step: 'Apply login and grants', condition: {type: succeeded}}]
+    guard: '${{ steps["Apply login and grants"].outputs.exitCode != 0 }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs: *id002
-      methodName: copy
-      inputs:
-        hosts: name:server
-        src: ${{ steps.assets.outputs.directory + "/." }}
-        dst: ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) }}
-        direction: to
-        recursive: true
-  - name: prepared
-    labels: {role: swamp}
-    writes: false
-    dependsOn:
-    - step: copy
-      condition:
-        type: always
-    task:
-      type: assert
-      expr: steps.directory.outputs.exitCode == 0 && steps.copy.status == "succeeded"
-      severity: high
-      message: SQL user command files unavailable.
-  - name: wal
-    labels: {role: swamp}
-    guard: ${{ !(inputs.intent.driver == "pgsql" && inputs.intent.replication) }}
-    writes: false
-    allowFailure: true
-    dependsOn:
-    - step: prepared
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs: *id002
+      behaviorName: ${{ "database-user-ssh-" + string(inputs.node_id) }}
       methodName: exec
+      globalArgs: *ssh
       inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/sudo
-        - -n
-        - --
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) + "/user_wal.py" }}
-        - ${{ steps.assets.outputs.intent_json }}
-        okExitCodes:
-        - 0
-        - 1
-        stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
-  - name: wal_checked
-    labels: {role: swamp}
-    writes: false
-    dependsOn:
-    - step: wal
-      condition:
-        type: always
-    - step: prepared
-      condition:
-        type: succeeded
-    task:
-      type: assert
-      expr: '!(inputs.intent.driver == "pgsql" && inputs.intent.replication) || (has(steps.wal) && has(steps.wal.outputs)
-        && steps.wal.outputs.exitCode == 0)'
-      severity: high
-      message: Replication user WAL check refused.
-  - name: apply
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    dependsOn:
-    - step: wal_checked
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs: *id002
-      methodName: exec
-      inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/sudo
-        - -n
-        - --
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) + "/user_apply.py" }}
-        - ${{ steps.assets.outputs.intent_json }}
-        okExitCodes:
-        - 0
-        - 1
-        stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
-  - name: grant
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    dependsOn:
-    - step: apply
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs:
-        name: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh.user }}
-          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
-        hosts:
-        - name: server
-          address: ${{ inputs.intent.ssh.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh.host_keys }}
-      methodName: exec
-      inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/sudo
-        - -n
-        - --
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) + "/user_grant.py" }}
-        - ${{ steps.assets.outputs.intent_json }}
-        okExitCodes:
-        - 0
-        - 1
-        stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key) }}
-    guard: ${{ !has(steps.apply.outputs) || steps.apply.outputs.exitCode != 0 }}
-  - name: result
-    labels: {role: swamp}
-    dependsOn:
-    - step: assets
-      condition:
-        type: always
-    - step: directory
-      condition:
-        type: always
-    - step: copy
-      condition:
-        type: always
-    - step: prepared
-      condition:
-        type: always
-    - step: wal
-      condition:
-        type: always
-    - step: wal_checked
-      condition:
-        type: always
-    - step: apply
-      condition:
-        type: always
-    - step: grant
-      condition:
-        type: always
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: '${{ "database-user-assets" }}'
-      methodName: result
-      inputs:
-        completed: ${{ has(steps.grant) && has(steps.grant.outputs) && steps.grant.outputs.exitCode == 0 }}
-        failure_code: database.user_create_outcome_unknown
-        steps: ${{ steps }}
-  - name: cleanup
-    labels: {role: swamp}
-    allowFailure: true
-    writes: true
-    dependsOn:
-    - step: result
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-user-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs: *id002
-      methodName: exec
-      inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/rm
-        - -rf
-        - --
-        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) }}
-        okExitCodes:
-        - 0
-        - 1
-    guard: ${{ steps.result.outputs.exitCode != 0 }}
-  - name: accept_result
-    labels: {role: swamp}
-    dependsOn:
-    - step: result
-      condition:
-        type: succeeded
-    - step: cleanup
-      condition:
-        type: always
-    writes: false
-    task:
-      type: assert
-      expr: steps.result.outputs.exitCode == 0
-      severity: high
-      message: SQL user creation did not complete.
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.user_client }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.check.vault, inputs.execution_secrets.check.key) }}
+        okExitCodes: [0, 1, 2]
+        timeoutSec: 70

@@ -35,11 +35,11 @@ sequenceDiagram
   %%> Result:
   %%> - task #5123 recorded with the database, owner, username and grant policy
   %%> - the password stored encrypted; nothing has happened on the Node yet
-  GW->>SW: Store the user password<br/>database-user-create-intent-5123
+  GW->>SW: Store the batches<br/>database-user-create-apply-5123
   %%> What it does:
-  %%> - puts the user's password, and on PostgreSQL a stable SCRAM salt, into the Swamp vault on Node 209 (R3)
-  %%> Not included:
-  %%> - the server's admin password; it is already in the vault under the server's own key `database-server-3-admin`
+  %%> - puts two whole values into the Swamp vault on Node 209 (R3)
+  %%> - `database-user-create-apply-5123`: the admin password line, then the batch with the user's password (a SCRAM verifier on PostgreSQL)
+  %%> - `database-user-create-check-5123`: the user's password line, then the check
   GW->>SW: Start run, full intent<br/>operation-database-user-create
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
@@ -52,35 +52,26 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  opt --replication on PostgreSQL
-    SW->>N: Check logical WAL<br/>docker exec -i · SHOW
-    %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the `swamp` role's SSH identity; nothing is copied to the Node
-    %%> - one `docker exec -i … psql` with `SHOW wal_level` on stdin
-    %%> What it does:
-    %%> - checks that the live server has `wal_level=logical`, before any change
-    %%> Refuses:
-    %%> - another level gives `database.wal_level_not_logical`; nothing changes
-    %%> Not included:
-    %%> - Orbit never changes the server configuration or creates publications
-  end
   SW->>N: Apply login and grants<br/>docker exec -i · SQL on stdin
   %%> How:
-  %%> - one `docker exec -i` with the statement batch on stdin; the user password from `vault.get` sits inside the SQL, never in argv
-  %%> - admin login: the 0600 option file for MySQL, local trust for PostgreSQL
+  %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the `swamp` role's SSH identity; nothing is copied to the Node
+  %%> - one `docker exec -i`; inside the container the first stdin line is the admin password, read into the client's password variable, then the batch; never in argv or a file
   %%> What it does:
+  %%> - with `--replication` on PostgreSQL: first checks that the live server has `wal_level=logical`
   %%> - creates the login, or sets the password of a user Orbit recorded before
   %%> - PostgreSQL: adds or removes the replication attribute
   %%> - replaces the user's privileges with exactly the requested ones, in the same batch
   %%> Refuses:
-  %%> - an existing PostgreSQL role outside this connection (`database.name_conflict`); the create statement refuses by itself
+  %%> - another WAL level (`database.wal_level_not_logical`) or an existing PostgreSQL role outside this connection (`database.name_conflict`); the batch stops before any change and prints the code for the Gateway
   %%> - MySQL: escapes underscores, so the grant covers only `shop`
   %%> - PostgreSQL replication: also owner defaults for future public tables
-  SW->>N: Check the user<br/>docker exec -i · login, grants
+  %%> Not included:
+  %%> - Orbit never changes the server configuration or creates publications
+  SW->>N: Check the user<br/>docker exec -i · as the user
   %%> What it does:
-  %%> - reads the live role or user back and checks its login, attributes and grants
+  %%> - the user logs in over TCP with its own password, from the first stdin line, and reads its own name
   %%> Why:
-  %%> - the user only counts as created when the server shows it
+  %%> - the user only counts as created when it can log in; the Gateway reads the answer in the native result
   alt every step passes
     N-->>SW: reporting matches
     %%> Returns:

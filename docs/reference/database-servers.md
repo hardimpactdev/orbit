@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/{database-server-commands/{assets,create_assets}.ts,database/local_sql_effect_fixture.ts},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
+  - swamp/{extensions/behaviors/operations/{database-server-commands/{assets,create_assets}.ts,database/local_sql_effect_fixture.ts},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy,user-create}.yaml}
 ---
 
 # Database servers
@@ -253,7 +253,7 @@ The user has `LOGIN REPLICATION`, database `CONNECT`, public-schema `USAGE`, and
 
 Repeating the command sets the password and replaces privileges and owner defaults. Omit `--replication` on a later call to remove the replication attribute. The same name-conflict rules apply: Orbit refuses any connection owner on the server, or an existing PostgreSQL role outside this connection. Orbit does not adopt hand-created replication roles. Use an unused name when moving an existing client to managed credentials.
 
-User create returns an Operation. Its completion records the credentials and grants. List responses include the recorded `replication` boolean. The native user operation validates the live PostgreSQL role before returning its result.
+User create returns an Operation. Its run sends one batch with one `docker exec -i`: the WAL and name checks, the login, then the grants. The user then logs in over TCP with its own password. Each login reads its password from the first stdin line of a vault value, never from argv or a file. Completion records the credentials and grants. List responses include the recorded `replication` boolean.
 
 Application migrations create and alter logical publications and select their tables. Orbit does not create publications or replication slots.
 
@@ -318,6 +318,7 @@ The server commands return these codes.
 | `database.server_remove_failed` | 502 | Docker could not stop or remove a server container. |
 | `database.server_remove_incomplete` | 502 | A container of the server's Process is still present after removal. |
 | `database.owner_login_failed` | 502 | The new owner could not log in after creation. |
+| `database.user_login_failed` | 502 | The new user could not log in with its own password after `database:user:create`. |
 | `database.create_outcome_unknown` | 502 | The create run ended without a readable result; run the command again. |
 | `database.server_create_failed` | 502 | The create run ended without reaching the admin login check. |
 | `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process; nothing changed. |

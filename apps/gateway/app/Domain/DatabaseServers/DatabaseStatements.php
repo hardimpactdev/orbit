@@ -164,6 +164,56 @@ final readonly class DatabaseStatements
         return ['login' => "SELECT CURRENT_USER();\n", 'owner_password' => $password, 'create' => $guard.$create];
     }
 
+    /**
+     * The statements of `database:user:create`: `apply` (the WAL and name checks, the login and exact grants in one
+     * batch, with the password, so it travels Gateway → vault → stdin) and the user's own login check (Q-DBAUTH).
+     *
+     * @param  array{driver: string, username: string, database: string, owner_username: string, read_only: bool, replication: bool, known_user: bool}  $input
+     * @return array{apply: string, check: string}
+     */
+    public function user(array $input, #[\SensitiveParameter] string $password, string $salt): array
+    {
+        foreach ([$input['username'], $input['database'], $input['owner_username']] as $name) {
+            if (preg_match(self::NAME, $name) !== 1) {
+                $this->invalid();
+            }
+        }
+        ['username' => $user, 'database' => $database, 'owner_username' => $owner] = $input;
+        if ($input['driver'] === DatabaseDriver::Mysql->value) {
+            $account = "'{$user}'@'%'";
+            $secret = "'".str_replace(['\\', "'"], ['\\\\', "''"], $password)."'";
+            $grant = '`'.str_replace('_', '\\_', $database).'`.*';
+            $privilege = $input['read_only'] ? 'SELECT' : 'ALL PRIVILEGES';
+
+            return ['apply' => "CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$secret};\nALTER USER {$account} IDENTIFIED BY {$secret};\n"
+                ."GRANT SELECT ON {$grant} TO {$account};\nREVOKE ALL PRIVILEGES ON {$grant} FROM {$account};\nGRANT {$privilege} ON {$grant} TO {$account};\n",
+                'check' => "SELECT CURRENT_USER();\n"];
+        }
+        $verifier = self::scram($password, $salt);
+        // A role this connection does not know, with another password, belongs to someone else.
+        // A role this connection does not know, with another password, belongs to someone else: the batch prints the
+        // refusal for the Gateway and stops before any change.
+        $foreign = "SELECT FROM pg_authid WHERE rolname='{$user}' AND rolpassword IS DISTINCT FROM '{$verifier}'";
+        $guard = $input['known_user'] ? '' : "SELECT 'database.name_conflict' WHERE EXISTS ({$foreign});\nDO \$orbit\$ BEGIN IF EXISTS ({$foreign}) THEN RAISE EXCEPTION 'database.name_conflict'; END IF; END \$orbit\$;\n";
+        // A replication login needs live wal_level=logical; Orbit never changes server configuration.
+        $wal = "current_setting('wal_level') <> 'logical'";
+        $guard = ($input['replication'] ? "SELECT 'database.wal_level_not_logical' WHERE {$wal};\nDO \$orbit\$ BEGIN IF {$wal} THEN RAISE EXCEPTION 'database.wal_level_not_logical'; END IF; END \$orbit\$;\n" : '').$guard;
+        $attributes = 'LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE '.($input['replication'] ? 'REPLICATION' : 'NOREPLICATION')." PASSWORD '{$verifier}'";
+        $tables = $input['read_only'] ? 'SELECT' : 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
+        $sequences = $input['read_only'] ? 'SELECT' : 'USAGE, SELECT, UPDATE';
+
+        return ['apply' => $guard."DO \$orbit\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{$user}') THEN CREATE ROLE \"{$user}\" {$attributes}; ELSE ALTER ROLE \"{$user}\" {$attributes}; END IF; END \$orbit\$;\n"
+                ."BEGIN;\nREVOKE ALL ON DATABASE \"{$database}\" FROM \"{$user}\";\nGRANT CONNECT ON DATABASE \"{$database}\" TO \"{$user}\";\nCOMMIT;\n\\connect {$database}\n"
+                ."BEGIN;\nREVOKE ALL ON SCHEMA public FROM \"{$user}\";\nGRANT USAGE ON SCHEMA public TO \"{$user}\";\n"
+                ."REVOKE ALL ON ALL TABLES IN SCHEMA public FROM \"{$user}\";\nREVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM \"{$user}\";\n"
+                ."ALTER DEFAULT PRIVILEGES FOR ROLE \"{$owner}\" IN SCHEMA public REVOKE ALL ON TABLES FROM \"{$user}\";\n"
+                ."ALTER DEFAULT PRIVILEGES FOR ROLE \"{$owner}\" IN SCHEMA public REVOKE ALL ON SEQUENCES FROM \"{$user}\";\n"
+                ."GRANT {$tables} ON ALL TABLES IN SCHEMA public TO \"{$user}\";\nGRANT {$sequences} ON ALL SEQUENCES IN SCHEMA public TO \"{$user}\";\n"
+                ."ALTER DEFAULT PRIVILEGES FOR ROLE \"{$owner}\" IN SCHEMA public GRANT {$tables} ON TABLES TO \"{$user}\";\n"
+                ."ALTER DEFAULT PRIVILEGES FOR ROLE \"{$owner}\" IN SCHEMA public GRANT {$sequences} ON SEQUENCES TO \"{$user}\";\nCOMMIT;\n",
+            'check' => "SELECT current_user;\n"];
+    }
+
     /** PostgreSQL's SCRAM-SHA-256 verifier, so the plaintext password never reaches the server's SQL log. */
     public static function scram(#[\SensitiveParameter] string $password, string $salt): string
     {
