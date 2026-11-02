@@ -47,14 +47,16 @@ beforeEach(function (): void {
     $this->runId = 'c175eb23-7ac4-4487-80d1-57a038a92676';
 });
 
-function nativeScheduleFireHistory(object $test, string $status): void
+function nativeScheduleFireHistory(object $test, string $status, ?string $code = null): void
 {
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
         'id' => $test->runId, 'workflowId' => $test->workflowId, 'workflowName' => 'schedule-'.$test->scheduleId, 'status' => $status,
         'tags' => ['orbit_schedule_id' => $test->scheduleId, 'orbit_node_id' => (string) $test->node->id,
             'orbit_target_type' => 'node_schedules', 'orbit_target_id' => (string) $test->node->id],
-        'startedAt' => '2026-11-02T03:00:00Z', 'completedAt' => $status === 'running' ? null : '2026-11-02T03:00:04Z', 'jobs' => [],
+        'startedAt' => '2026-11-02T03:00:00Z', 'completedAt' => $status === 'running' ? null : '2026-11-02T03:00:04Z',
+        'jobs' => $code === null ? [] : [['name' => 'fire', 'steps' => [['name' => 'Run the Schedule', 'status' => 'failed',
+            'outputs' => ['Report the result' => ['stdout' => json_encode(['error_code' => $code])]]]]]],
     ]]]];
     app()->instance(WebSocketClient::class, $socket);
 }
@@ -87,12 +89,19 @@ it('records a finished fire once as a task with trigger schedule and sets the la
         ->and($this->schedule->fresh()->last_run_status?->value)->toBe($last);
 })->with([['succeeded', OperationStatus::Succeeded, 'success'], ['failed', OperationStatus::Failed, 'error']]);
 
-it('waits for a running fire and records a fire that outlived its Schedule from the workflow tags', function (): void {
+it('records a fire as a running task when it starts and gives the same task its result after its Schedule is gone', function (): void {
     nativeScheduleFireHistory($this, 'running');
     expect(app(SwampCommandStep::class)->projectScheduleFire($this->workflowId, $this->runId))->toBeFalse();
-    expect(Operation::query()->count())->toBe(0);
+    $running = Operation::query()->sole();
+    expect($running->status)->toBe(OperationStatus::Running)
+        ->and($running->triggered_by)->toBe('schedule')
+        ->and($running->input['run_budget_seconds'])->toBe(60 + 120);
     $this->schedule->delete();
-    nativeScheduleFireHistory($this, 'succeeded');
+    nativeScheduleFireHistory($this, 'failed', 'schedule.target_unavailable');
     expect(app(SwampCommandStep::class)->projectScheduleFire($this->workflowId, $this->runId))->toBeTrue();
-    expect(Operation::query()->sole()->node_id)->toBe($this->node->id);
+    $ended = Operation::query()->sole();
+    expect($ended->id)->toBe($running->id)
+        ->and($ended->status)->toBe(OperationStatus::Failed)
+        ->and($ended->error_code)->toBe('schedule.target_unavailable')
+        ->and($ended->node_id)->toBe($this->node->id);
 });

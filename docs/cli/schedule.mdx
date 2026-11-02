@@ -22,7 +22,7 @@ Writes return an Operation. Create, enable and destroy answer with an Operation 
 | `--instance=ID` | Instance | The command runs as the Instance's runtime user in its checkout or `current` release. The Schedule can start disabled. |
 | `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Schedule. |
 
-`schedule:list`, `schedule:show`, `schedule:update`, and `schedule:destroy` take `--project` to work on definitions. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule.
+`schedule:list`, `schedule:show`, `schedule:update`, and `schedule:destroy` take `--project` to work on definitions. `schedule:run`, `schedule:logs`, `schedule:enable` and `schedule:disable` take the UUID of an installed Schedule.
 
 ## Commands
 
@@ -34,7 +34,8 @@ Writes return an Operation. Create, enable and destroy answer with an Operation 
 | [`schedule:update`](#orbit-scheduleupdate) | Replace one Project Schedule definition. |
 | [`schedule:run`](#orbit-schedulerun) | Run one Schedule now without changing its calendar. |
 | [`schedule:logs`](#orbit-schedulelogs) | Return the newest journal lines. |
-| [`schedule:enable`](#orbit-scheduleenable) | Set the trigger of a disabled Instance Schedule. |
+| [`schedule:enable`](#orbit-scheduleenable) | Set the trigger of a disabled Schedule. |
+| [`schedule:disable`](#orbit-scheduledisable) | Remove the trigger of a Schedule. |
 | [`schedule:destroy`](#orbit-scheduledestroy) | Remove one Schedule or one definition. |
 
 Every command accepts `--json`. Output shows `desired_timer_state` apart from the lifecycle `status`, and every result includes the request ID. `schedule:destroy` asks for confirmation, and the default is No.
@@ -122,10 +123,18 @@ The Gateway returns at most 1 MiB and sets `truncated` when that limit removed o
 
 ## orbit schedule:enable
 
-Set the trigger of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation created disabled. `schedule` is the UUID of an installed Schedule.
+Set the trigger of one Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation created disabled. `schedule` is the UUID of an installed Schedule.
 
 ```bash
 orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
+```
+
+## orbit schedule:disable
+
+Remove the trigger of one Schedule, so its calendar starts no new fire. The Schedule and its workflow stay; `schedule:enable` sets the trigger again. A fire that already started finishes and is still recorded. The command is idempotent. A per-minute production scheduler keeps its Node timer and returns `schedule.state_invalid`.
+
+```bash
+orbit schedule:disable <schedule> [--idempotency-key=KEY] [--json]
 ```
 
 ## orbit schedule:destroy

@@ -306,6 +306,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'schedule:create' => ServingNode::ScheduleOwning,
         'schedule:destroy' => ServingNode::ScheduleOwning,
         'schedule:enable' => ServingNode::ScheduleOwning,
+        'schedule:disable' => ServingNode::ScheduleOwning,
         'schedule:list' => ServingNode::Collection,
         'schedule:logs' => ServingNode::ScheduleOwning,
         'schedule:run' => ServingNode::ScheduleOwning,

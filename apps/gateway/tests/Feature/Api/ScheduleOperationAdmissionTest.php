@@ -199,7 +199,8 @@ it('removes the trigger, then the workflow, and deletes the record with a succee
     $before = count($this->socket->sent);
     $id = $this->deleteJson('/api/v1/schedules/'.$schedule->id)->assertAccepted()->assertJsonPath('data.kind', 'schedule.destroy')->json('data.id');
     $sent = array_slice($this->socket->sent, $before);
-    expect(array_column($sent, 'type'))->toBe(['workflow.trigger.remove', 'workflow.delete'])
+    expect(array_column($sent, 'type'))->toBe(['workflow.trigger.remove', 'workflow.delete', 'vault.delete'])
+        ->and($sent[2]['payload'])->toBe(['vaultName' => 'orbit-control-inputs', 'key' => 'schedule-command-'.$schedule->id])
         ->and($sent[0]['payload'])->toBe(['workflowName' => 'schedule-'.$schedule->id])
         ->and($sent[1]['payload'])->toBe(['workflowIdOrName' => $schedule->swamp_workflow_id])
         ->and(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded)
@@ -223,7 +224,7 @@ it('sets the trigger again on enable without touching the Node', function (): vo
     $schedule = Schedule::query()->sole();
     $before = count($this->socket->sent);
     $id = $this->postJson('/api/v1/schedules/'.$schedule->id.'/activate')->assertAccepted()->assertJsonPath('data.kind', 'schedule.enable')->json('data.id');
-    expect(array_column(array_slice($this->socket->sent, $before), 'type'))->toBe(['workflow.trigger.set'])
+    expect(array_column(array_slice($this->socket->sent, $before), 'type'))->toBe(['workflow.edit', 'workflow.trigger.set'])
         ->and(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded)
         ->and($schedule->fresh()->desired_timer_state->value)->toBe('enabled');
 });
@@ -263,4 +264,26 @@ it('answers a calendar serve refuses with schedule.calendar_invalid and keeps th
     $this->postJson('/api/v1/schedules', [...$this->payload, 'calendar' => 'TZ=Europe/Amsterdam 0 4 * * *'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'schedule.calendar_invalid');
     expect(Schedule::query()->sole()->status->value)->toBe('failed')->and(Operation::query()->count())->toBe(0);
+});
+
+it('disables a Schedule by removing its trigger and keeps its workflow', function (): void {
+    $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
+    $schedule = Schedule::query()->sole();
+    $before = count($this->socket->sent);
+    $id = $this->postJson('/api/v1/schedules/'.$schedule->id.'/disable')->assertAccepted()->assertJsonPath('data.kind', 'schedule.disable')->json('data.id');
+    expect(array_column(array_slice($this->socket->sent, $before), 'type'))->toBe(['workflow.trigger.remove'])
+        ->and(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded)
+        ->and($schedule->fresh()->desired_timer_state->value)->toBe('disabled');
+    $schedule->update(['trigger' => 'node']);
+    $this->postJson('/api/v1/schedules/'.$schedule->id.'/disable')->assertConflict()->assertJsonPath('error.code', 'schedule.state_invalid');
+});
+
+it('writes the workflow of a native definition copy on its first enable', function (): void {
+    $schedule = Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id,
+        'name' => 'nightly-copy', 'calendar' => '0 3 * * *', 'command' => 'php artisan report:send', 'timeout_seconds' => 600,
+        'desired_timer_state' => 'disabled', 'status' => 'active', 'trigger' => 'swamp']);
+    $this->postJson('/api/v1/schedules/'.$schedule->id.'/activate')->assertAccepted();
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.create', 'workflow.edit', 'workflow.trigger.set'])
+        ->and($schedule->fresh()->swamp_workflow_id)->not->toBeNull()
+        ->and($schedule->fresh()->desired_timer_state->value)->toBe('enabled');
 });

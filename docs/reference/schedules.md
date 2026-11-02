@@ -16,7 +16,7 @@ covers:
 
 A Schedule runs one command on a calendar for one Node or one Instance. The Gateway stores the Schedule. Swamp serve on Node 209 holds one small workflow per Schedule, `schedule-<uuid>`, with the Schedule's cron trigger and its intent fixed inside. Each fire runs the shared `task-command-run` workflow, which reaches the Node over SSH. Nothing is installed on the Node (ADR 0244). macOS is not a Schedule target. A Schedule mutation there returns `schedule.platform_unsupported` (HTTP 422).
 
-Per-minute schedulers on production Instances, such as `laravel-scheduler` and `powersync-health`, keep a systemd timer on their Node until the serve load and outage test passes. Today every Schedule that production preparation copies from a Project definition keeps the timer path; [Node timers](#node-timers) describes it. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
+Per-minute schedulers on production Instances, such as `laravel-scheduler` and `powersync-health`, keep a systemd timer on their Node until the serve load and outage test passes. The calendar's form picks the path: a cron expression makes a native Schedule, and a systemd calendar keeps the [Node timer](#node-timers). Production preparation copies each Project definition this way; a native copy starts active and disabled, and its workflow is written when it is first enabled. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
 
 An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization, Horizon metrics snapshots, and batch and failed-job pruning. Hourly `problems:file` stays in the Gateway scheduler with its lock.
 
@@ -36,7 +36,7 @@ The Gateway prunes failed queue jobs and batch metadata daily. [Gateway disk ret
 
 ## Execution
 
-Create, enable and destroy touch no Node. The Gateway changes the Schedule's workflow or trigger on serve, waits for serve to confirm, and answers at once: HTTP 202 with an Operation that has already succeeded (R1). When serve does not confirm, the request fails with `swamp.schedule_publish_unavailable` (503) and records no Operation; repeat the same request. A manual run starts `task-command-run` and returns its running Operation with HTTP 202. An Idempotency-Key replays the original Operation.
+Create, enable, disable and destroy touch no Node. The Gateway changes the Schedule's workflow or trigger on serve, waits for serve to confirm, and answers at once: HTTP 202 with an Operation that has already succeeded (R1). When serve does not confirm, the request fails with `swamp.schedule_publish_unavailable` (503) and records no Operation; repeat the same request. A manual run starts `task-command-run` and returns its running Operation with HTTP 202. An Idempotency-Key replays the original Operation.
 
 The SDK exposes the Operation through `ScheduleMutationResponse.result`; the CLI follows the HTTP 202 Operation, which has already ended for create, enable and destroy. Schedules stay immutable. `schedule:update` changes only a Project definition in Gateway state.
 
@@ -71,7 +71,8 @@ Every endpoint is under `/api/v1/schedules` and needs an access grant to the Nod
 | Show | `GET /api/v1/schedules/{uuid}` | One Schedule, with `command`. |
 | Run | `POST /api/v1/schedules/{uuid}/run` | Starts one `task-command-run` and returns its Operation with HTTP 202. The trigger does not change. |
 | Logs | `GET /api/v1/schedules/{uuid}/logs?lines=N` | The newest observed Schedule journal lines. |
-| Enable | `POST /api/v1/schedules/{uuid}/activate` | Sets the trigger of an Instance Schedule and returns its succeeded Operation with HTTP 202. |
+| Enable | `POST /api/v1/schedules/{uuid}/activate` | Sets the trigger of a Schedule and returns its succeeded Operation with HTTP 202. |
+| Disable | `POST /api/v1/schedules/{uuid}/disable` | Removes the trigger of a native Schedule and returns its succeeded Operation with HTTP 202. |
 | Destroy | `DELETE /api/v1/schedules/{uuid}` | Removes the trigger and the workflow, deletes the record, and returns its succeeded Operation with HTTP 202. |
 | Complete | `POST /api/v1/schedules/{uuid}/complete` | A Node timer reports a run result. Returns 204. |
 
@@ -109,11 +110,11 @@ Serve fires the trigger and starts one root run of `schedule-<uuid>`. Serve runs
 
 `task-command-run` runs on Node 209 in four steps: `Read the check script`, `Check user and directory`, `Run the command` and `Report the result`. The check, over official `@swamp/ssh`, confirms the account, its home, shell and group, that the user can enter the working directory, and the command's hash, with the command on stdin. The command then runs as the Schedule's user through `sudo`, `timeout` and `env -i`, with the command on stdin. Its output goes to the Node journal under `orbit-schedule-{uuid}`; it is absent from native history. `Report the result` prints `{"ready":true}`, `schedule.target_unavailable` when the check failed, or `schedule.run_failed`.
 
-The Gateway's shared run reader sees each root run of `schedule-<uuid>` on the commit feed. When the run ends, it records one `schedule.run` Operation with `triggered_by: schedule`, its native status, and the run ID, and sets `last_run_at` and `last_run_status`. Swamp never calls the Gateway. A manual run starts `task-command-run` directly, because its own run carries the Operation ID; the shared terminal subscriber projects it like any Operation.
+The Gateway's shared run reader sees each root run of `schedule-<uuid>` on the commit feed. When the run starts, it records one running `schedule.run` Operation with `triggered_by: schedule` and the run ID, with the Schedule's timeout plus 120 seconds as its run budget. When the run ends, the same Operation gets the result of the nested `Report the result` step, such as `schedule.target_unavailable` or `schedule.run_failed`, and the Gateway sets `last_run_at` and `last_run_status`. Swamp never calls the Gateway. A manual run starts `task-command-run` directly, because its own run carries the Operation ID; the shared terminal subscriber projects it like any Operation.
 
 ## Enable
 
-Enable sets the trigger of an active Schedule and stores `enabled` after serve confirms; a repeat sets it again. If serve does not confirm, the desired state stays unchanged. A Node timer Schedule refuses enable with `schedule.target_invalid`, because its timer is always on. Production Schedules resolve `current` each time they run, so a new release changes later runs.
+Enable writes the command copy and the Schedule's workflow, sets its trigger, and stores `enabled` after serve confirms; a repeat does it again. Disable removes the trigger and stores `disabled`; the workflow stays, and a fire that already started finishes. If serve does not confirm, the desired state stays unchanged. A Node timer Schedule refuses enable with `schedule.target_invalid`, because its timer is always on. Production Schedules resolve `current` each time they run, so a new release changes later runs.
 
 ## Node timers
 
@@ -138,7 +139,7 @@ The Gateway stores only the latest run, from a recorded fire or a manual run's t
 
 ## Remove
 
-Destroy marks the Schedule `removing`, removes its trigger, then deletes its workflow, and deletes the record. Removing a trigger or a workflow that is gone is safe, so a disabled Schedule takes the same path. A fire that already started runs to its end, and the Gateway still records it. When serve does not confirm, the Schedule stays `removing` with `swamp.schedule_publish_unavailable`; repeat destroy. The vault key stays until a later create overwrites it; it starts nothing.
+Destroy marks the Schedule `removing`, removes its trigger, then deletes its workflow, and deletes the record. Removing a trigger or a workflow that is gone is safe, so a disabled Schedule takes the same path. A fire that already started runs to its end, and the Gateway still records it. When serve does not confirm, the Schedule stays `removing` with `swamp.schedule_publish_unavailable`; repeat destroy. Destroy also deletes the command's vault key with `vault.delete`; a fire that already started read it when it began.
 
 [Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It leaves Node Schedules and the Schedules of other Instances in place.
 

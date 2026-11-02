@@ -49,7 +49,7 @@ sequenceDiagram
     %%> - its tasks stay, so past fires remain visible
     %%> - task #5141 is recorded as succeeded at once (R1)
     %%> Vault key:
-    %%> - the command's vault key stays until it is overwritten; it starts nothing
+    %%> - the command's vault key is deleted; a fire that already started read it when it began
     GW-->>CLI: Schedule destroyed<br/>204 No Content
     %%> What you get:
     %%> - the result at once; there is nothing to follow

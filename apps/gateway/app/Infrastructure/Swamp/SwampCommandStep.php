@@ -181,16 +181,36 @@ final readonly class SwampCommandStep
             || ! is_string($run['workflowName'] ?? null) || preg_match('/\Aschedule-([0-9a-f-]{36})\z/D', $run['workflowName'], $name) !== 1) {
             throw $this->unavailable();
         }
-        if (in_array($run['status'] ?? null, ['pending', 'running', 'suspended'], true)) {
-            return false;
-        }
-        if (! in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)
-            || ! is_string($run['startedAt'] ?? null) || ! is_string($run['completedAt'] ?? null)) {
+        $running = in_array($run['status'] ?? null, ['pending', 'running', 'suspended'], true);
+        if (! is_string($run['startedAt'] ?? null) || (! $running && (! is_string($run['completedAt'] ?? null)
+            || ! in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)))) {
             throw $this->unavailable();
         }
-        app(ScheduleFires::class)->record($name[1], $run);
+        // A fire is a task from its start; the same task gets the result when the run ends.
+        app(ScheduleFires::class)->record($name[1], $run, $running ? null : $this->fireResult($run));
 
-        return true;
+        return ! $running;
+    }
+
+    /** The nested task-command-run's public result, which its parent step exposes by child step name.
+     * @param  array<string,mixed>  $run
+     * @return array<string,mixed>
+     */
+    private function fireResult(array $run): array
+    {
+        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                $child = is_array($step) && ($step['name'] ?? null) === 'Run the Schedule' && is_array($step['outputs'] ?? null)
+                    ? ($step['outputs']['Report the result'] ?? null) : null;
+                $stdout = is_array($child) ? ($child['stdout'] ?? null) : null;
+                $result = is_string($stdout) ? json_decode($stdout, true) : null;
+                if (is_array($result) && (($result['ready'] ?? null) === true || is_string($result['error_code'] ?? null))) {
+                    return $result;
+                }
+            }
+        }
+
+        return $run['status'] === 'succeeded' ? ['ready' => true] : ['error_code' => 'schedule.run_failed'];
     }
 
     /** A terminal scheduled root observes existing pending Operations; it never replaces their admission roots.

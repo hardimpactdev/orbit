@@ -47,6 +47,9 @@ final readonly class ScheduleOperationAdmission
         $input += $this->specification->input($schedule, $target);
         $input['command_hash'] = hash('sha256', $schedule->command);
         $input['command'] = ['$secret' => 'schedule.command', 'id' => $schedule->target_id];
+        if ($verb === 'run') {
+            $input['run_budget_seconds'] = $schedule->timeout_seconds + ScheduleFires::MarginSeconds;
+        }
         if ($verb === 'destroy') {
             $input['cascade'] = $cascade;
         }

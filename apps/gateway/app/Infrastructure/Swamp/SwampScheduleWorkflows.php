@@ -35,6 +35,13 @@ final readonly class SwampScheduleWorkflows
         $this->request('workflow.delete', ['workflowIdOrName' => $workflowId], missingIsDone: true);
     }
 
+    /** Deletes a vault key on serve; a key that is gone is done. */
+    public function deleteSecret(string $vault, string $key): void
+    {
+        $this->request('vault.delete', ['vaultName' => $vault, 'key' => $key], missingIsDone: true);
+        SwampVaultExecutionCopy::forget($vault, $key);
+    }
+
     public function setTrigger(string $name, string $schedule): void
     {
         $data = $this->request('workflow.trigger.set', ['workflowName' => $name, 'schedule' => $schedule]);

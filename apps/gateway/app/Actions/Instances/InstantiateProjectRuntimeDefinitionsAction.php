@@ -14,6 +14,7 @@ use App\Domain\Processes\ProcessTargetType;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -21,6 +22,7 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
+use App\Support\ValidatedData;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -190,7 +192,9 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 'command' => $specification['command'],
                 'timeout_seconds' => $specification['timeout_seconds'],
                 'desired_timer_state' => DesiredTimerState::Disabled,
-                'status' => LifecycleStatus::Provisioning,
+                // A native copy needs no Node work while disabled; enable writes its workflow and trigger.
+                'trigger' => $trigger = ScheduleTrigger::forCalendar(ValidatedData::string($specification['calendar'])),
+                'status' => $trigger === ScheduleTrigger::Swamp ? LifecycleStatus::Active : LifecycleStatus::Provisioning,
             ]);
         } catch (UniqueConstraintViolationException $exception) {
             throw new ResourceOperationException(

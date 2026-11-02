@@ -45,7 +45,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
 });
 
-it('exposes exactly eight UUID-keyed Schedule routes and returns 404 for unknown identities', function (): void {
+it('exposes exactly nine UUID-keyed Schedule routes and returns 404 for unknown identities', function (): void {
     $routes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (RoutingRoute $route): bool => str_starts_with($route->uri(), 'api/v1/schedules'))
         ->mapWithKeys(static fn (RoutingRoute $route): array => [
@@ -60,6 +60,7 @@ it('exposes exactly eight UUID-keyed Schedule routes and returns 404 for unknown
         'schedule:complete' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/complete'],
         'schedule:create' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules'],
         'schedule:destroy' => ['methods' => ['DELETE'], 'uri' => 'api/v1/schedules/{schedule}'],
+        'schedule:disable' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/disable'],
         'schedule:enable' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/activate'],
         'schedule:list' => ['methods' => ['GET', 'HEAD'], 'uri' => 'api/v1/schedules'],
         'schedule:logs' => ['methods' => ['GET', 'HEAD'], 'uri' => 'api/v1/schedules/{schedule}/logs'],

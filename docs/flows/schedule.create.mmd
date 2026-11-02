@@ -39,7 +39,7 @@ sequenceDiagram
   %%> - an identical create returns the existing Schedule
   %%> With `--project`:
   %%> - only a Project Schedule definition is recorded (R1); the answer comes at once
-  %%> - production preparation later copies it into a disabled Instance Schedule
+  %%> - production preparation later copies it into a disabled Instance Schedule; a cron calendar makes a native copy, a systemd calendar a Node timer
   %%> Exception:
   %%> - production's per-minute schedulers (`laravel-scheduler`, `powersync-health`) keep their systemd timer on the Node until the serve load and outage test passes (ADR 0244)
   %%> - all other Node and Instance Schedules are native Swamp schedules on 209
@@ -115,5 +115,6 @@ sequenceDiagram
     Note over GW: Record the fire<br/>task #5141 · trigger: schedule
     %%> Result:
     %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
+    %%> - when it ends, the task gets the nested result, such as `schedule.target_unavailable` or `schedule.run_failed`
     %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set when it ends
   end

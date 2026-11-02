@@ -40,12 +40,7 @@ final readonly class NativeSchedules
     {
         $input = $this->input($schedule, $caller, ['created' => $created]);
         try {
-            $target = $this->targets->placementOf($schedule);
-            app(SwampCommandStep::class)->executionCopy(self::Vault, self::commandKey($schedule), $schedule->command);
-            $workflowId = $this->workflows->write($schedule->swamp_workflow_id, self::workflowName($schedule),
-                fn (string $id): string => $this->content($schedule, $target, $id));
-            $schedule->update(['swamp_workflow_id' => $workflowId]);
-            $this->applyTrigger($schedule, $schedule->desired_timer_state);
+            $this->publish($schedule, $schedule->desired_timer_state);
         } catch (ResourceOperationException $exception) {
             $schedule->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'publish', 'error_code' => $exception->errorCode]);
 
@@ -59,11 +54,24 @@ final readonly class NativeSchedules
 
     public function enable(Schedule $schedule, ?Node $caller, ?string $requestId): Operation
     {
-        $this->targets->placementOf($schedule);
         $input = $this->input($schedule, $caller);
-        $this->applyTrigger($schedule, DesiredTimerState::Enabled);
+        // A copy from a Project definition starts with no workflow; enable writes it first.
+        $this->publish($schedule, DesiredTimerState::Enabled);
 
         return $this->record($schedule, 'enable', $input, $requestId, ['desired_timer_state' => DesiredTimerState::Enabled], RecordEventType::ScheduleUpdated);
+    }
+
+    /** Removes the trigger; the workflow stays, and a fire that already started finishes. */
+    public function disable(Schedule $schedule, ?Node $caller, ?string $requestId): Operation
+    {
+        if ($schedule->trigger !== ScheduleTrigger::Swamp || $schedule->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException(ScheduleErrorCode::StateInvalid->value, 'Only an active native Schedule can be disabled.', 409);
+        }
+        $this->targets->placementOf($schedule);
+        $input = $this->input($schedule, $caller);
+        $this->applyTrigger($schedule, DesiredTimerState::Disabled);
+
+        return $this->record($schedule, 'disable', $input, $requestId, ['desired_timer_state' => DesiredTimerState::Disabled], RecordEventType::ScheduleUpdated);
     }
 
     public function destroy(Schedule $schedule, ?Node $caller, ?string $requestId): Operation
@@ -90,6 +98,8 @@ final readonly class NativeSchedules
             if ($schedule->swamp_workflow_id !== null) {
                 $this->workflows->delete($schedule->swamp_workflow_id);
             }
+            // A fire that already started read the command when it began.
+            $this->workflows->deleteSecret(self::Vault, self::commandKey($schedule));
         } catch (ResourceOperationException $exception) {
             $schedule->update(['failed_step' => 'remove', 'error_code' => $exception->errorCode]);
 
@@ -116,6 +126,17 @@ final readonly class NativeSchedules
     public static function commandKey(Schedule $schedule): string
     {
         return 'schedule-command-'.$schedule->id;
+    }
+
+    /** Writes the command copy and the Schedule's own workflow, then sets or removes its trigger. */
+    private function publish(#[SensitiveParameter] Schedule $schedule, DesiredTimerState $desired): void
+    {
+        $target = $this->targets->placementOf($schedule);
+        app(SwampCommandStep::class)->executionCopy(self::Vault, self::commandKey($schedule), $schedule->command);
+        $workflowId = $this->workflows->write($schedule->swamp_workflow_id, self::workflowName($schedule),
+            fn (string $id): string => $this->content($schedule, $target, $id));
+        $schedule->update(['swamp_workflow_id' => $workflowId]);
+        $this->applyTrigger($schedule, $desired);
     }
 
     private function applyTrigger(Schedule $schedule, DesiredTimerState $desired): void

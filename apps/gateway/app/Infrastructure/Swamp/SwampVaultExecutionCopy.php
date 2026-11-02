@@ -31,7 +31,7 @@ final readonly class SwampVaultExecutionCopy
             throw $this->unavailable();
         }
         $reference = ['vault' => $vault, 'key' => $key];
-        $stamp = 'swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0".$vault."\0".$key);
+        $stamp = self::stamp($vault, $key);
         $digest = hash('sha256', $value);
         if (Cache::get($stamp) !== $digest) {
             $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
@@ -39,6 +39,17 @@ final readonly class SwampVaultExecutionCopy
         }
 
         return $reference;
+    }
+
+    /** Forget the pushed digest of a key that was deleted on serve, so a later copy pushes it again. */
+    public static function forget(string $vault, string $key): void
+    {
+        Cache::forget(self::stamp($vault, $key));
+    }
+
+    private static function stamp(string $vault, string $key): string
+    {
+        return 'swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0".$vault."\0".$key);
     }
 
     /** One native vault.put. It never runs under the SQLite write lock; SwampDispatch defers it past commit. */

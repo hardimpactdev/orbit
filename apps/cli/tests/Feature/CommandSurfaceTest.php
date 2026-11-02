@@ -209,6 +209,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'route:update',
         'schedule:create',
         'schedule:destroy',
+        'schedule:disable',
         'schedule:enable',
         'schedule:list',
         'schedule:logs',
@@ -959,6 +960,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'route:target:unset' => [['route'], ['yes' => false, 'json' => false]],
         'route:target:set' => [['route', 'target'], ['targets' => [], 'reassign' => [], 'remove' => [], 'idempotency-key' => null, 'json' => false]],
         'route:update' => [['route'], ['domain' => null, 'publication' => null, 'web-root' => null, 'idempotency-key' => null, 'json' => false]],
+        'schedule:disable' => [['schedule'], ['idempotency-key' => null, 'json' => false]],
         'schedule:enable' => [['schedule'], ['idempotency-key' => null, 'json' => false]],
         'schedule:create' => [[
             'name',
@@ -1360,6 +1362,9 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'route:target:unset' => [['route' => '1'], ...$profileMissing],
         'route:target:set' => [['route' => '1', 'target' => '2'], ...$profileMissing],
         'route:update' => [['route' => '1', '--publication' => 'private'], ...$profileMissing],
+        'schedule:disable' => [[
+            'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ], ...$profileMissing],
         'schedule:enable' => [[
             'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], ...$profileMissing],
