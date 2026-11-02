@@ -148,7 +148,6 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
-| `review_and_merge` and `--review-and-merge=true\|false` | Switches the [review-and-merge flow](/reference/tasks#review-and-merge). It applies at the next tick, to open tasks too. |
 | `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges, and on each handoff commit. Send null or `--clear-merge-check` to clear it. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
@@ -169,13 +168,14 @@ Each task workspace keeps its recorded routing mode after a settings change. Ren
 
 ### Review and merge
 
-`PATCH /api/v1/projects/{project}` accepts `review_and_merge` as a JSON boolean and `merge_check` as a string of at most 255 characters, or null. The flow is on only while `review_and_merge` is true, `merge_check` is set, and `source_access` is `github_app`. A request that would leave the switch on without one of these fails with HTTP 422 `validation.failed` on `merge_check` or `review_and_merge`, and changes nothing. CLI human detail output labels the fields `Review and merge` and `Merge check`. An invalid CLI value returns `project.review_and_merge_invalid`, `project.merge_check_conflict`, or `project.merge_check_invalid` before a request.
+`POST /api/v1/projects/{project}/review-and-merge/enable` and `/disable` switch the flow; it applies at the next tick, to open tasks too. `PATCH /api/v1/projects/{project}` accepts `merge_check` as a string of at most 255 characters, or null, and refuses `review_and_merge`. The flow is on only while `review_and_merge` is true, `merge_check` is set, and `source_access` is `github_app`. Enabling without the check or the App, or an update that would leave an enabled Project without one of these, fails with HTTP 422 `validation.failed` on `merge_check` or `review_and_merge`, and changes nothing. CLI human detail output labels the fields `Review and merge` and `Merge check`. An invalid CLI value returns `project.review_and_merge_invalid`, `project.merge_check_conflict`, or `project.merge_check_invalid` before a request.
 
 ```bash
-orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
+orbit project:update 46 --merge-check="Required checks"
+orbit project:review-and-merge:enable 46
 ```
 
-Enabling review and merge requires readable branch rules that do not require an up-to-date branch. Orbit reads rulesets with `Metadata: read` and classic branch protection with `Administration: read`. A 404 for classic protection means none is set. A strict rule returns `project.strict_base`; an unreadable policy returns `project.branch_policy_unavailable`. Both refuse the update. Projects already enabled are not read again.
+Enabling review and merge requires readable branch rules that do not require an up-to-date branch. Orbit reads rulesets with `Metadata: read` and classic branch protection with `Administration: read`. A 404 for classic protection means none is set. A strict rule returns `project.strict_base`; an unreadable policy returns `project.branch_policy_unavailable`. Both refuse to enable. Projects already enabled are not read again.
 
 [Tasks: Review and merge](/reference/tasks#review-and-merge) describes what the switch changes.
 

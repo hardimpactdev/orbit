@@ -12,6 +12,8 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
 use Orbit\Sdk\Requests\Projects\DestroyProjectRequest;
+use Orbit\Sdk\Requests\Projects\DisableProjectReviewAndMergeRequest;
+use Orbit\Sdk\Requests\Projects\EnableProjectReviewAndMergeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Projects\ShowProjectRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
@@ -745,7 +747,7 @@ describe('project:update', function (): void {
         'missing value' => null,
     ]);
 
-    it('sends the review-and-merge switch and the merge check only when given', function (array $arguments, array $body): void {
+    it('sends the merge check only when given', function (array $arguments, array $body): void {
         $mockClient = MockClient::global([
             UpdateProjectRequest::class => app_mock_response(),
         ]);
@@ -754,12 +756,22 @@ describe('project:update', function (): void {
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe($body);
     })->with([
-        'switch on with a check' => [['--review-and-merge' => 'true', '--merge-check' => 'Required checks'], ['review_and_merge' => true, 'merge_check' => 'Required checks']],
-        'switch off' => [['--review-and-merge' => 'false'], ['review_and_merge' => false]],
+        'set the check' => [['--merge-check' => 'Required checks'], ['merge_check' => 'Required checks']],
         'clear the check' => [['--clear-merge-check' => true], ['merge_check' => null]],
     ]);
 
-    it('rejects an invalid review-and-merge value or conflicting merge check flags before a request', function (array $arguments, string $code): void {
+    it('switches review and merge through its own commands', function (string $command, string $request): void {
+        $mockClient = MockClient::global([$request => app_mock_response()]);
+
+        $this->artisan($command, ['project' => '3', '--json' => true])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())->toBeInstanceOf($request);
+    })->with([
+        ['project:review-and-merge:enable', EnableProjectReviewAndMergeRequest::class],
+        ['project:review-and-merge:disable', DisableProjectReviewAndMergeRequest::class],
+    ]);
+
+    it('rejects conflicting or blank merge check flags before a request', function (array $arguments, string $code): void {
         $mockClient = MockClient::global();
 
         $this->artisan('project:update', ['project' => '3', '--json' => true, ...$arguments])
@@ -768,8 +780,6 @@ describe('project:update', function (): void {
 
         expect($mockClient->getLastPendingRequest())->toBeNull();
     })->with([
-        'yes' => [['--review-and-merge' => 'yes'], 'project.review_and_merge_invalid'],
-        'missing value' => [['--review-and-merge' => null], 'project.review_and_merge_invalid'],
         'both check flags' => [['--merge-check' => 'Required checks', '--clear-merge-check' => true], 'project.merge_check_conflict'],
         'blank check' => [['--merge-check' => '  '], 'project.merge_check_invalid'],
     ]);

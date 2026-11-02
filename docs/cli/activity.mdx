@@ -17,7 +17,7 @@ Every result that the CLI prints carries a Gateway request ID. That ID is the li
 
 [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) records the caller, target, outcome, and request ID with empty Activity input, including refused or invalid submissions. Neither the submitted public key nor unknown body fields are retained. A failed or interrupted request can leave the desired key stored before hub convergence finishes; the Activity outcome does not imply rollback. Follow the command's recovery steps and replay the desired key after restoring an authorized management path.
 
-`instance:update` records the requested `branch` in Activity input, including a refused update with a valid branch. Shared paths stay omitted. `instance:auto-deploy:enable` and `:disable` take no input, so their Activity records only the command and outcome. The outcome says whether the request succeeded; `instance:show` reports the stored `deployment_branch`.
+`instance:update` records the requested `branch` in Activity input, including a refused update with a valid branch. Shared paths stay omitted. `instance:auto-deploy:enable` and `:disable` take no input, so their Activity records only the command and outcome; so do `project:review-and-merge:enable` and `:disable`. `project:update` records its setting fields, including `merge_check`. The outcome says whether the request succeeded; `instance:show` reports the stored `deployment_branch`.
 
 Project development deploy step changes record `project:dev-deploy-step:create`, `project:dev-deploy-step:update`, or `project:dev-deploy-step:destroy`. Their Activity input omits commands, including on refused requests. Use the request ID to find a step edit without exposing its shell command.
 

@@ -7,6 +7,8 @@ use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
 use Orbit\Sdk\Requests\Projects\DestroyProjectRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Projects\ShowProjectRequest;
+use Orbit\Sdk\Requests\Projects\DisableProjectReviewAndMergeRequest;
+use Orbit\Sdk\Requests\Projects\EnableProjectReviewAndMergeRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
 use Orbit\Sdk\Responses\Projects\ProjectResponse;
 use Orbit\Sdk\Responses\Projects\ProjectsResponse;
@@ -278,10 +280,15 @@ describe('project requests', function (): void {
             ->and($update(true)->body()->all())->toBe(['task_workspace_routed' => true]);
     });
 
-    it('serializes the review-and-merge switch and the merge check only when given', function (): void {
-        expect(new UpdateProjectRequest(projectId: 3, reviewAndMerge: true, mergeCheck: 'Required checks', mergeCheckProvided: true)->body()->all())
-            ->toBe(['review_and_merge' => true, 'merge_check' => 'Required checks'])
-            ->and(new UpdateProjectRequest(projectId: 3, reviewAndMerge: false)->body()->all())->toBe(['review_and_merge' => false])
+    it('switches review and merge through its own requests and sends the merge check only when given', function (): void {
+        $enable = new EnableProjectReviewAndMergeRequest(3);
+        $disable = new DisableProjectReviewAndMergeRequest(3);
+
+        expect($enable->getMethod())->toBe(Method::POST)
+            ->and($enable->resolveEndpoint())->toBe('/api/v1/projects/3/review-and-merge/enable')
+            ->and($disable->getMethod())->toBe(Method::POST)
+            ->and($disable->resolveEndpoint())->toBe('/api/v1/projects/3/review-and-merge/disable')
+            ->and(new UpdateProjectRequest(projectId: 3, mergeCheck: 'Required checks', mergeCheckProvided: true)->body()->all())->toBe(['merge_check' => 'Required checks'])
             ->and(new UpdateProjectRequest(projectId: 3, mergeCheckProvided: true)->body()->all())->toBe(['merge_check' => null])
             ->and(new UpdateProjectRequest(projectId: 3, mergeCheck: 'Ignored')->body()->all())->toBe([]);
     });

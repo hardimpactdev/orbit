@@ -99,10 +99,10 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's display name, type, source access, source defaults, task check, task workspace routing, or review and merge. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's display name, type, source access, source defaults, task check, task workspace routing, or merge check. Review and merge has its own commands: [`project:review-and-merge:enable`](#orbit-projectreview-and-mergeenable) and [`project:review-and-merge:disable`](#orbit-projectreview-and-mergedisable). Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
+orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--merge-check=NAME] [--clear-merge-check]
 ```
 
 | Option | Meaning |
@@ -117,9 +117,36 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
-| `--review-and-merge=true\|false` | Switch the [review-and-merge flow](/reference/tasks#review-and-merge). Invalid values return `project.review_and_merge_invalid` before a request. |
 | `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
 | `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |
+
+## orbit project:review-and-merge:enable
+
+Turn on the [review-and-merge flow](/reference/tasks#review-and-merge): Orbit reviews every push and incoming pull request, and merges reviewed green heads. The flow keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not a `project:update` option. Set the merge check first with `project:update --merge-check`.
+
+```bash
+orbit project:review-and-merge:enable <project> [--json]
+orbit project:update 46 --merge-check="Required checks"
+orbit project:review-and-merge:enable 46
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
+
+The Gateway refuses with HTTP 422 `validation.failed` when the Project has no merge check, on `merge_check`, or does not read through the GitHub App, on `review_and_merge`. It refuses a strict or unreadable branch policy as [Review and merge](/reference/projects#review-and-merge) describes.
+
+## orbit project:review-and-merge:disable
+
+Turn off the review-and-merge flow. The merge check stays. Open tasks follow at the next tick.
+
+```bash
+orbit project:review-and-merge:disable <project> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
 
 ## orbit project:destroy
 

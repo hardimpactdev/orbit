@@ -30,6 +30,8 @@ Route::middleware([
     Route::get('projects/{project}', [ProjectsController::class, 'show'])->name('project:show');
     Route::post('projects', [ProjectsController::class, 'store'])->name('project:create');
     Route::patch('projects/{project}', [ProjectsController::class, 'update'])->name('project:update');
+    Route::post('projects/{project}/review-and-merge/enable', [ProjectsController::class, 'enableReviewAndMerge'])->name('project:review-and-merge:enable');
+    Route::post('projects/{project}/review-and-merge/disable', [ProjectsController::class, 'disableReviewAndMerge'])->name('project:review-and-merge:disable');
     Route::delete('projects/{project}', [ProjectsController::class, 'destroy'])->name('project:destroy');
     Route::get('projects/{project}/excluded-nodes', [ProjectExcludedNodesController::class, 'index'])
         ->whereNumber('project')

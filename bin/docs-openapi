@@ -696,7 +696,7 @@ SUMMARIES = {
     'project:dev-deploy-step:update': 'Update a development deploy step',
     'project:dev-deploy-step:destroy': 'Remove a development deploy step',
     'project:dependency-read-token': 'Mint a short-lived, one-repository GitHub App read token for the configured Services peer only. Never persist the reply. Disabled until ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID is configured.',
-    'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:destroy': 'Remove a Project',
+    'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:review-and-merge:enable': 'Enable review and merge', 'project:review-and-merge:disable': 'Disable review and merge', 'project:destroy': 'Remove a Project',
     'project:process-definition:list': 'List process definitions', 'project:process-definition:create': 'Create a process definition',
     'project:process-definition:show': 'Show a process definition', 'project:process-definition:update': 'Replace a process definition',
     'project:process-definition:destroy': 'Remove a process definition',

@@ -8,6 +8,7 @@ use App\Data\Projects\UpdateProjectData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Projects\ReviewAndMergeRequirements;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
@@ -35,7 +36,6 @@ final class UpdateProjectRequest extends FormRequest
             'root' => ['sometimes', 'required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
-            'review_and_merge' => ['sometimes', 'boolean:strict'],
             'merge_check' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
@@ -46,7 +46,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check'],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -68,7 +68,6 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('root')
                 && ! $this->exists('task_check')
                 && ! $this->exists('task_workspace_routed')
-                && ! $this->exists('review_and_merge')
                 && ! $this->exists('merge_check')
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
@@ -128,36 +127,25 @@ final class UpdateProjectRequest extends FormRequest
             sourceAccess: is_string($validated['source_access'] ?? null) ? ProjectSourceAccess::tryFrom($validated['source_access']) : null,
             taskWorkspaceRoutedProvided: array_key_exists('task_workspace_routed', $validated),
             taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
-            reviewAndMergeProvided: array_key_exists('review_and_merge', $validated),
-            reviewAndMerge: ($validated['review_and_merge'] ?? false) === true,
             mergeCheckProvided: array_key_exists('merge_check', $validated),
             mergeCheck: is_string($validated['merge_check'] ?? null) && trim($validated['merge_check']) !== '' ? trim($validated['merge_check']) : null,
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
         );
     }
 
-    /**
-     * ADR 0203: the review-and-merge flow names the check that must pass and publishes through the
-     * App. The rule reads the values this request leaves on the Project.
-     */
+    /** An update may not leave a Project with review and merge on without what it needs. */
     private function validateReviewAndMerge(Validator $validator): void
     {
         $project = $this->route('project');
-        $enabled = $this->exists('review_and_merge')
-            ? $this->input('review_and_merge') === true
-            : ($project instanceof Project && $project->review_and_merge);
-        if (! $enabled) {
+        if (! $project instanceof Project || ! $project->review_and_merge) {
             return;
         }
-        $check = $this->exists('merge_check') ? $this->input('merge_check') : ($project instanceof Project ? $project->merge_check : null);
-        if (! is_string($check) || trim($check) === '') {
-            $validator->errors()->add('merge_check', 'Review and merge needs a merge check, such as "Required checks".');
-        }
+        $check = $this->exists('merge_check') ? $this->input('merge_check') : $project->merge_check;
         $access = is_string($this->input('source_access'))
             ? ProjectSourceAccess::tryFrom($this->string('source_access')->toString())
-            : ($project instanceof Project ? $project->source_access : null);
-        if ($access !== ProjectSourceAccess::GitHubApp) {
-            $validator->errors()->add('review_and_merge', 'Review and merge needs source access through the GitHub App.');
+            : $project->source_access;
+        foreach (ReviewAndMergeRequirements::missing(is_string($check) ? $check : null, $access) as $field => $message) {
+            $validator->errors()->add($field, $message);
         }
     }
 

@@ -295,6 +295,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'project:schedule-definition:update' => ServingNode::ProjectOwning,
         'project:show' => ServingNode::ProjectOwning,
         'project:update' => ServingNode::ProjectOwning,
+        'project:review-and-merge:enable' => ServingNode::ProjectOwning,
+        'project:review-and-merge:disable' => ServingNode::ProjectOwning,
         'realtime:auth' => ServingNode::Gateway,
         'realtime:show' => ServingNode::Gateway,
         'route:create' => ServingNode::RouteOwning,
