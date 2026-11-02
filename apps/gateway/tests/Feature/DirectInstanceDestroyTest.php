@@ -166,6 +166,7 @@ it('stores the owning SQLite artifact and records desired state without executin
     expect($recorded['direct_destroy']['database']['owner_instance_id'])->toBe($this->instance->id)
         ->and($recorded['direct_destroy']['database']['sqlite'])->toBe([[
             'connection_id' => $connection->id, 'node_id' => $this->node->id, 'checkout' => $this->instance->checkout_path, 'path' => $connection->path,
+            'ssh' => ['host' => $this->node->wireguard_ip, 'user' => $this->node->user, 'host_keys' => [$this->node->ssh_host_key_type.' '.$this->node->ssh_host_key]],
         ]])->and($recorded['direct_destroy']['runtime'])->toBe(['processes' => [], 'schedules' => []])
         ->and($recorded['direct_destroy']['node_user'])->toBe($this->node->user)
         ->and($recorded['direct_destroy']['teardown'][0]['user'])->toBe($this->node->user)

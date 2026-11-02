@@ -187,6 +187,8 @@ it('drops an owned server database through the server child, with its password c
     expect(collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.key')->all())->toContain($key)
         ->and($run['execution_secrets']['server_'.$server->id])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
         ->and(array_column($run['intent']['direct_destroy']['database']['servers'], 'server_id'))->toBe([$server->id])
+        ->and($run['intent']['direct_destroy']['database']['servers'][0]['intent']['ssh'])->toBe(['host' => '10.44.0.9', 'user' => 'orbit',
+            'host_keys' => ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']])
         ->and(json_encode($run))->not->toContain('fixture-private-password')->not->toContain('fixture-connection-password')
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing);
 });
