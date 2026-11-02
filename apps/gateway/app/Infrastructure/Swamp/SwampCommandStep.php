@@ -100,7 +100,7 @@ final readonly class SwampCommandStep
 
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false,native?:true}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
     {
@@ -319,7 +319,7 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false}  $selector
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false,native?:true}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
@@ -357,7 +357,13 @@ final readonly class SwampCommandStep
             return [];
         }
         $result = [];
-        if (is_string($stdout) && trim($stdout) !== '') {
+        // A kind without a result-reporting step reads Swamp's own run data; its named end check must have succeeded.
+        if (($selector['native'] ?? false) === true) {
+            if ($run['status'] === 'succeeded' && $selected !== 'succeeded') {
+                throw $this->unavailable();
+            }
+            $result = app(NativeRunResult::class)->fromRun($run);
+        } elseif (is_string($stdout) && trim($stdout) !== '') {
             try {
                 if (! is_object(json_decode($stdout, flags: JSON_THROW_ON_ERROR))) {
                     throw $this->unavailable();

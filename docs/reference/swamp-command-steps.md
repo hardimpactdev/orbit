@@ -2,7 +2,7 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult}.php
   - apps/gateway/app/Jobs/Operations/ProjectSwampTerminal.php
 ---
 
@@ -40,6 +40,17 @@ A `completed` event can carry a failed run status. Native `interrupted` remains 
 A successful run requires its public JSON object, unless the declaration sets `'outputs' => false`. That form selects an end check that prints nothing, such as a native `assert`: a successful run must show that step succeeded, and the result is empty. `node.wireguard_hub_converge` uses it.
 
 Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
+
+### Read Swamp's run data instead of a result step
+
+Flow-tighten rule 14 removes the step that reports a result. A kind without one declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:
+
+- `steps`: each step of the run, keyed by its name. An entry holds `status`, trimmed `stdout` up to 4 KiB, and `exit_code`. Stderr is left out.
+- `summary`: the run status, the step counts by status, and `failed_steps`.
+
+The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
+
+A successful run must show the named step succeeded; otherwise the result is unavailable. Unlike `'outputs' => false`, which gives an empty result, `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it. A declaration sets one of the two, not both. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work the same way in both modes. A declaration without `native` keeps the result-step contract above, so existing kinds are unchanged; new ports drop the result step and declare `native`.
 
 ### Scheduled observations
 

@@ -1,0 +1,65 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\NativeRunResult;
+use App\Infrastructure\Swamp\SwampCommandStep;
+
+function nativeRunResultFixture(string $status, array $steps): array
+{
+    return ['id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => $status, 'jobs' => [['name' => 'settings', 'steps' => $steps]]];
+}
+
+function nativeRunResultTerminal(array $run, array $selector): array
+{
+    return (new ReflectionMethod(SwampCommandStep::class, 'terminalOutput'))->invoke(app(SwampCommandStep::class), $run, $selector);
+}
+
+it('keys Swamp run data by step name, with the summary of the workflow-summary report', function (): void {
+    $result = app(NativeRunResult::class)->fromRun(nativeRunResultFixture('failed', [
+        ['name' => 'Create the apps folder', 'status' => 'succeeded', 'outputs' => ['stdout' => str_repeat('x', 5000), 'exitCode' => 0, 'stderr' => 'private']],
+        ['name' => 'Check owner and mode', 'status' => 'failed', 'outputs' => null],
+        ['name' => 'Best effort', 'status' => 'failed', 'allowedFailure' => true],
+        ['name' => 'Prove the apps folder', 'status' => 'skipped'],
+    ]));
+
+    expect($result['steps']['Create the apps folder'])->toBe(['status' => 'succeeded', 'stdout' => str_repeat('x', 4096), 'exit_code' => 0])
+        ->and($result['steps']['Check owner and mode'])->toBe(['status' => 'failed'])
+        ->and($result['summary'])->toBe(['status' => 'failed', 'succeeded' => 1, 'failed' => 2, 'skipped' => 1, 'failed_steps' => ['Check owner and mode']])
+        ->and(json_encode($result))->not->toContain('private');
+});
+
+it('reads the native run data for a declaration without a result-reporting step', function (): void {
+    $run = nativeRunResultFixture('succeeded', [['name' => 'Check owner and mode', 'status' => 'succeeded', 'outputs' => ['stdout' => 'directory orbit:orbit 755']],
+        ['name' => 'Prove the apps folder', 'status' => 'succeeded']]);
+
+    $result = nativeRunResultTerminal($run, ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]);
+
+    expect($result['steps']['Check owner and mode']['stdout'])->toBe('directory orbit:orbit 755')
+        ->and($result['steps']['Prove the apps folder'])->toBe(['status' => 'succeeded'])
+        ->and(nativeRunResultTerminal(nativeRunResultFixture('failed', [['name' => 'Create the apps folder', 'status' => 'failed']]),
+            ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true])['summary']['failed_steps'])->toBe(['Create the apps folder']);
+    expect(fn () => nativeRunResultTerminal(nativeRunResultFixture('succeeded', [['name' => 'Other', 'status' => 'succeeded']]),
+        ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]))->toThrow(ResourceOperationException::class);
+});
+
+it('keeps a result-reporting step as it was: its JSON is the result and anything else is unavailable', function (): void {
+    $selector = ['job' => 'settings', 'step' => 'result'];
+
+    expect(nativeRunResultTerminal(nativeRunResultFixture('succeeded', [['name' => 'result', 'status' => 'succeeded', 'outputs' => ['stdout' => '{"ready":true}']]]), $selector))->toBe(['ready' => true])
+        ->and(nativeRunResultTerminal(nativeRunResultFixture('failed', [['name' => 'result', 'status' => 'skipped']]), $selector))->toBe([]);
+    expect(fn () => nativeRunResultTerminal(nativeRunResultFixture('succeeded', [['name' => 'result', 'status' => 'succeeded', 'outputs' => ['stdout' => 'plain']]]), $selector))
+        ->toThrow(ResourceOperationException::class);
+});
+
+it('accepts native only as true in a family declaration', function (): void {
+    $normalize = new ReflectionMethod(DirectOperation::class, 'terminalResult');
+
+    expect($normalize->invoke(null, ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]))
+        ->toBe(['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true])
+        ->and($normalize->invoke(null, ['job' => 'settings', 'step' => 'result']))->toBe(['job' => 'settings', 'step' => 'result']);
+    expect(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'native' => false]))->toThrow(LogicException::class)
+        ->and(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'native' => true, 'outputs' => false]))->toThrow(LogicException::class);
+});
