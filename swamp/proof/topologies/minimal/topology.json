@@ -5,5 +5,6 @@
   "network": {"name": "oeproof", "gateway": "10.231.0.1", "prefix": 24},
   "operator": {"address": "10.231.0.2"},
   "nodes": [{"key": "target", "address": "10.231.0.10", "memory": "2GiB",
-             "roles": ["app-dev"], "settings": {"apps": {"path": "/home/orbit/apps"}}}]
+             "roles": ["app-dev"], "settings": {"apps": {"path": "/home/orbit/apps"}}},
+            {"key": "metrics", "address": "10.231.0.11", "memory": "1GiB", "roles": []}]
 }

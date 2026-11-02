@@ -1,4 +1,4 @@
-"""Minimal Swamp proof topology: one task VM runs Gateway plus Swamp, one nested VM plays the Node.
+"""Swamp proof topology: one task VM runs Gateway plus Swamp, nested VMs play the Nodes.
 
 up       provision one Project 62 task VM (or keep the held one), stage this commit, bring up the topology
 run      run kind fixtures in the held topology and write a receipt per kind
@@ -154,7 +154,8 @@ def up(gateway, name='minimal'):
     state.setdefault('receipts', [])
     state.setdefault('up_started_at', utc())
     state.setdefault('up_started_epoch', time.time())
-    state.update(commit=commit, ready=False, last_up_started_at=utc(), last_up_started_epoch=time.time())
+    # A restage of a held VM serves the staged commit's topology version; each receipt records the one it ran on.
+    state.update(commit=commit, topology_version=topology(name)['version'], ready=False, last_up_started_at=utc(), last_up_started_epoch=time.time())
     save(SESSION, state)
     guest = provision(gateway, state)
     started = time.time()
@@ -168,13 +169,19 @@ def up(gateway, name='minimal'):
     guest.call(['runuser', '-u', 'orbit', '--', 'git', 'clone', '-q', '--no-checkout', '/home/orbit/swamp-proof/source.bundle', SOURCE])
     guest.call(['runuser', '-u', 'orbit', '--', 'git', '-C', SOURCE, 'checkout', '-q', '--detach', commit])
     staged = time.time() - started
-    facts = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/up.py', SOURCE, state['topology']], timeout=2700))
+    bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
+    return state
+
+
+def bring_up(guest, state, commit, timings, fresh=False):
+    """Run the guest's up on the staged commit: fresh Swamp credentials and Gateway database, and with fresh, new Nodes."""
+    facts = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/up.py', SOURCE, state['topology'],
+                                  *(['--fresh'] if fresh else [])], timeout=2700))
     if not facts.get('ready') or facts['commit'] != commit:
         raise ProofError('The topology did not come up on the staged commit.')
-    state.update(ready=True, ready_at=utc(), ready_epoch=time.time(), facts=facts,
-                 timings=[{'step': 'stage', 'seconds': round(staged, 1)}, *facts['timings']])
+    state.update(ready=True, ready_at=utc(), ready_epoch=time.time(), facts=facts, runs_since_up=0,
+                 timings=[*timings, *facts['timings']])
     save(SESSION, state)
-    return state
 
 
 FIXTURE_ONLY = ('swamp/proof/', 'tools/swamp-proof-guest/run.py', 'tools/swamp-proof-guest/gateway.php', 'tools/swamp_proof.py')
@@ -213,6 +220,11 @@ def run(state, kind):
         raise ProofError(f'{kind} needs topology {fixture.get("topology", "minimal")}; this session holds {state["topology"]}.')
     guest = Guest(state['guest_host'], state['vm']['name'])
     refresh(guest, state)
+    # Consecutive kinds share one up. A fixture that needs a clean end state gets fresh Nodes and a fresh
+    # Gateway database on the same VM, but only when an earlier fixture ran since the last up.
+    if fixture.get('clean') is True and state.get('runs_since_up', 0) > 0:
+        state['last_up_started_epoch'] = time.time()
+        bring_up(guest, state, state['commit'], [{'step': 'clean restage', 'seconds': 0}], fresh=True)
     started = time.time()
     body = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/run.py', SOURCE, kind], timeout=3600))
     receipt = {'kind': kind, 'proof_pass': body.get('proof_pass') is True, 'topology': state['topology'],
@@ -227,16 +239,25 @@ def run(state, kind):
     save(destination, receipt)
     state['receipts'].append(str(destination))
     state['last_run_epoch'] = time.time()
+    state['runs_since_up'] = state.get('runs_since_up', 0) + 1
     save(SESSION, state)
     return destination, receipt
 
 
 def cancel(gateway, state, session):
-    """Cancel the proof group once; a cancel still running, or whose reply was lost, is followed under its key."""
+    """Cancel the proof group; a cancel still running, or whose reply was lost, is followed under its key.
+
+    A cancel that ended without success is not replayed: the next down admits a new one under the next key.
+    """
     vm = state['vm']
     operation = gateway.request('GET', f'operations/{vm["cancel_operation_id"]}') if vm.get('cancel_operation_id') else None
+    if operation is not None and operation['status'] in ('failed', 'cancelled'):
+        vm['cancel_attempt'] = vm.get('cancel_attempt', 0) + 1
+        operation = None
     if operation is None:
-        operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {}, f'swamp-proof:{state["nonce"]}:cancel')
+        attempt = vm.get('cancel_attempt', 0)
+        operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {},
+                                    f'swamp-proof:{state["nonce"]}:cancel' + (f':{attempt}' if attempt else ''))
         vm['cancel_operation_id'] = operation['id']
         save(session, state)
     return gateway.wait(operation, 'tasks.cancel', vm['group_id'])

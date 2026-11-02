@@ -64,9 +64,11 @@ if ($argv[1] === 'seed') {
         array_map(static fn (array $target): Node => node($target['key'], $target['address'], $target['host_key'],
             $target['roles'] ?? [], settings: $target['settings'] ?? []), $input['targets']),
     ]);
-    // The verifier of the agent key up.py wrote on the target, as after enrollment.
-    // No WireGuard in this topology: the target is no private DNS peer.
-    $target->forceFill(['agent_secret_hash' => $input['target']['agent_secret_hash'] ?? null, 'wireguard_public_key' => null])->saveQuietly();
+    // The verifier of the agent key up.py wrote on each target, as after enrollment.
+    // No WireGuard in this topology: no target is a private DNS peer.
+    foreach ($targets as $index => $target) {
+        $target->forceFill(['agent_secret_hash' => $input['targets'][$index]['agent_secret_hash'], 'wireguard_public_key' => null])->saveQuietly();
+    }
     app(GatewayServingHost::class)->remember($gateway);
     $operator->accessibleNodes()->attach([$gateway->id, ...array_map(static fn (Node $target): int => $target->id, $targets)]);
     app(WorkerKnownHostsPublisher::class)->publish();
