@@ -4,7 +4,7 @@ description: "How a Project becomes an Instance on a Node: create or adopt a dev
 covers:
   - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,CopyInstanceDependenciesAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
   - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
-  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*,InstanceLifecycle*,RegistrationLifecycleExecution,InstanceDatabaseIntent}.php
+  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*,InstanceLifecycle*,RegistrationLifecycleExecution,InstanceDatabaseIntent,InstanceRegisterResult}.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteDevelopmentInstanceConfigurator,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier}.php
   - apps/gateway/{app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php},database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/{Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php,Services/Git/**}
@@ -180,13 +180,13 @@ cd /fast/apps/acme/feature
 orbit instance:register --project=12 --name=feature --yes
 ```
 
-Admission reserves an Instance and returns an `instance.register` Operation. Swamp inspects the real checkout on the admitted Node, verifies its origin against the Project, and adopts it in place. It preserves Git HEAD, the index, dirty files and private environment contents. It removes public permissions from an existing `.env`.
+Admission reserves an Instance and returns an `instance.register` Operation. A Swamp run reads the real checkout on the admitted Node over SSH: its files digest, Git layout, origin with credentials masked, branch and commit. It then removes group and public access from an existing `.env`. The Gateway checks the read facts against the admitted path and the Project repository, and adopts the checkout in place. It preserves Git HEAD, the index, dirty files and private environment contents. The [`instance:register` chart](/cli/instance/register) shows each step.
 
-Native registration also classifies the application metadata and records its PHP version and Laravel marker, including an explicit false marker for non-PHP source. These facts make the registered Instance usable by environment synchronization and cloning. Source facts in the native result activate the Instance; a failed adoption leaves it reserved for a later request.
+The Gateway also classifies the application metadata and records its PHP version and Laravel marker, including an explicit false marker for non-PHP source. These facts make the registered Instance usable by environment synchronization and cloning. Matching facts activate the Instance. A mismatch fails the Operation with `instance.registration_conflict` or `instance.source_identity_invalid`, and a failed read with `instance.source_invalid`. Each leaves the Instance reserved for a later request.
 
 Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
 
-The CLI refuses a directory outside Git and an unsafe origin before sending a request. Swamp independently checks the source's path, owner, Git layout, origin, branch and content digest. It never uses the CLI's inspection as proof. Registration creates no Project. Use [`project:create`](/cli/project/create) first, then supply its ID.
+The CLI refuses a directory outside Git and an unsafe origin before sending a request. The Gateway independently checks the source's path, Git layout, origin, branch and content digest from the run's reads. It never uses the CLI's inspection as proof. Registration creates no Project. Use [`project:create`](/cli/project/create) first, then supply its ID.
 
 The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override.
 
@@ -336,4 +336,4 @@ The Instance is the only runnable application model. Orbit keeps no conversion t
 
 ## Native source inspection
 
-Development registration and branch rename run from Node 209 through official SSH using captured checkout intent and pinned host keys. Git observations and environment-file protection are separate native steps. The Gateway records the terminal source result from the commits feed; steps do not read intent or report progress through callbacks. Registration adopts the checkout in place. Rename records a branch that is already checked out and never changes Git HEAD.
+Development registration and branch rename run from Node 209 through official SSH using captured checkout intent and pinned host keys. Git observations and environment-file protection are separate native steps. For registration the Gateway checks the read facts itself; for rename it records the terminal source result from the commits feed. In both, steps do not read intent or report progress through callbacks. Registration adopts the checkout in place. Rename records a branch that is already checked out and never changes Git HEAD.

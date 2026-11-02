@@ -2,6 +2,7 @@ sequenceDiagram
   %% Target design: rule 1 (read-only from Node agent reports, like tool.adopt), R1 record-only branch, R4 Node-work branch like tool.remove; .env stays the user's file; Processes from Project definitions for development (instance.create). docs/domains/applications.md#register-an-existing-checkout.
   %% Tightened: flow-tighten 2026-11-02, rules 5, 16, 22 (no Node re-read of admitted facts; cfgmgmt file mode, ssh exec setup, cfgmgmt systemd Processes).
   %% status: draft
+  %% Interim: until the Node agent reports checkouts, every registration starts a run that reads the checkout over @swamp/ssh, and the Gateway checks the read facts at the end. --setup stays refused (operation.kind_unavailable).
   %% command: instance:register
   %% kind: instance.register
   autonumber
@@ -91,39 +92,58 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    opt .env readable by others
-      SW->>N: Protect the .env file<br/>@swamp/ssh exec · chmod 600
-      %%> How:
-      %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh`; one `chmod 600` argv, safe to repeat
-      %%> What it does:
-      %%> - removes group and public read access from `.env`
-      %%> Not included:
-      %%> - never reads or changes the content; the file stays the user's
-    end
-    opt --setup given
-      SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
-      %%> What it does:
-      %%> - runs the Project's setup steps in order, as the Node's managed user, from the repository root
-      %%> Typical steps:
-      %%> - `composer install`, `vp install`, `php artisan migrate`
-      SW->>N: Create, start Processes<br/>@swamp/cfgmgmt/systemd · forEach
-      %%> What it does:
-      %%> - creates the Instance's Processes from the Project's Process definitions for `development`
-      %%> - starts them, for example the Vite dev server (`vp-dev`)
-      %%> Why here:
-      %%> - after the setup steps, because Processes need the installed dependencies
-    end
+    SW->>N: Read the checkout files<br/>sh -c · digest, profile
+    %%> Interim:
+    %%> - these eight reads replace the agent's report until its observer pass lands; each is one `@swamp/ssh` exec argv
+    %%> What it reads:
+    %%> - one read of the file tree digest, the `artisan` entry point and `composer.json`
+    SW->>N: Read the Git top level<br/>git rev-parse · interim
+    %%> What it reads:
+    %%> - the checkout's top-level directory
+    SW->>N: Read the Git common dir<br/>git rev-parse · interim
+    %%> What it reads:
+    %%> - the shared `.git` directory; a linked worktree has another one
+    SW->>N: List the worktrees<br/>git worktree list · interim
+    %%> What it reads:
+    %%> - every worktree of the repository
+    SW->>N: Read the origin<br/>git config · masked · interim
+    %%> What it reads:
+    %%> - the origin URL, with any embedded credential masked before it leaves the Node
+    SW->>N: Read the branch<br/>git branch · interim
+    %%> What it reads:
+    %%> - the checked-out branch, empty when `HEAD` is detached
+    SW->>N: Read the commit<br/>git rev-parse HEAD · interim
+    %%> What it reads:
+    %%> - the `HEAD` commit
+    SW->>N: Read the default branch<br/>git for-each-ref · interim
+    %%> What it reads:
+    %%> - the remote default branch
+    SW->>N: Protect the .env file<br/>@swamp/ssh exec · go-rwx
+    %%> How:
+    %%> - one `chmod go-rwx` argv on a regular `.env`, safe to repeat
+    %%> What it does:
+    %%> - removes group and public access from `.env`
+    %%> Interim:
+    %%> - runs after the reads, before the Gateway checks them; a refused source keeps the tighter mode
+    %%> Not included:
+    %%> - never reads or changes the content; the file stays the user's
+    %%> Later, with --setup:
+    %%> - Run Project setup steps (`@swamp/ssh` exec, in order), then Create, start Processes (`@swamp/cfgmgmt/systemd`, forEach)
     alt all steps pass
       N-->>SW: steps passed
       %%> Returns:
-      %%> - every step passed; the commit is the one the agent reported at admission
+      %%> - every step passed
       SW-->>GW: Run succeeded<br/>terminal event
       %%> How the Gateway learns it:
       %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-      Note over GW: Record result<br/>Instance 42 → active
+      Note over GW: Check facts, record<br/>Instance 42 → active
+      %%> What it checks (interim):
+      %%> - the top level is the checkout, its `.git` is its own, and it is the only worktree
+      %%> - the origin is Project 7's repository; a masked origin is refused (`instance.source_identity_invalid`)
+      %%> - `composer.json` and the entry point give a supported PHP version and the Laravel flag
       %%> Result:
-      %%> - Instance 42 becomes active, with its Processes when `--setup` was given
-      %%> - task #5131 succeeds
+      %%> - Instance 42 becomes active with the read branch, commit and application facts; task #5131 succeeds
+      %%> - a mismatch fails task #5131 and keeps Instance 42 reserved (`instance.registration_conflict`)
     else a step fails
       N--xSW: mismatch or exit ≠ 0
       %%> When:

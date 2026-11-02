@@ -1,10 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import {
-    branchAvailable,
-    checkoutRead,
-    profileRead,
-    sourceResult,
-} from "./assets.ts";
+import { branchAvailable, profileRead, sourceResult } from "./assets.ts";
 const intent = {
     checkout: "/srv/apps/project/main",
     repository_identity: "github.com/example/project",
@@ -27,36 +22,13 @@ const facts = {
     default: out("refs/remotes/origin/main"),
     filesystem: out("b".repeat(64)),
 };
-Deno.test("registration retains admitted checkout, detached state, profile and source digest", () => {
-    assertEquals(sourceResult("instance.register", intent, facts), {
-        registered: true,
-        branch: "main",
-        commit: "a".repeat(40),
-        detached: false,
-        digest: "b".repeat(64),
-        common: intent.checkout + "/.git",
-        default_branch: "main",
-        inferred_slug: "project",
-        php_version: null,
-        laravel: false,
-    });
-    assertEquals(
-        (sourceResult("instance.register", intent, {
-            ...facts,
-            branch: out(""),
-        }) as Record<string, unknown>)
-            .detached,
-        true,
-    );
-});
 Deno.test("rename records only an already checked out branch", () => {
-    assertEquals(sourceResult("instance.rename", intent, facts), {
+    assertEquals(sourceResult(intent, facts), {
         branch: "main",
     });
     assertThrows(
         () =>
             sourceResult(
-                "instance.rename",
                 { ...intent, branch: "feature" },
                 facts,
             ),
@@ -64,7 +36,7 @@ Deno.test("rename records only an already checked out branch", () => {
         "instance.branch_not_checked_out",
     );
     assertEquals(
-        sourceResult("instance.rename", { ...intent, branch: null }, {
+        sourceResult({ ...intent, branch: null }, {
             ...facts,
             branch: out(""),
         }),
@@ -84,12 +56,10 @@ Deno.test("source comparison refuses a foreign origin, layout and sibling worktr
             },
         ]
     ) {
-        assertThrows(() =>
-            sourceResult("instance.register", intent, { ...facts, ...change })
-        );
+        assertThrows(() => sourceResult(intent, { ...facts, ...change }));
     }
     assertThrows(() =>
-        sourceResult("instance.register", intent, {
+        sourceResult(intent, {
             ...facts,
             origin: out("https://secret@github.com/example/project.git"),
         })
@@ -155,26 +125,6 @@ Deno.test("source refuses occupied branches before target preparation and keeps 
     }
 });
 
-Deno.test("the checkout read keeps only the PHP and Laravel requirements of an application", () => {
-    const composer = JSON.stringify({
-        require: { php: "^8.4", "laravel/framework": "^12", other: "1" },
-    });
-    const read = checkoutRead(
-        ["c".repeat(64), "regular", composer].join("\n"),
-        "laravel-app",
-    );
-    assertEquals(read.digest, "c".repeat(64));
-    assertEquals(
-        JSON.parse(atob((read.profile as { composer: string }).composer)),
-        {
-            require: { php: "^8.4", "laravel/framework": "^12" },
-            "require-dev": {},
-        },
-    );
-    assertEquals(checkoutRead("c".repeat(64), "monorepo").profile, {
-        kind: "none",
-    });
-});
 Deno.test("the clone profile read reports partial, unsafe and composer checkouts", () => {
     const intent = { project_type: "laravel-app" };
     assertEquals(profileRead("regular\nmissing", intent), { kind: "partial" });

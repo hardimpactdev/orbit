@@ -61,43 +61,45 @@ raise SystemExit(result.returncode)
         run = json.loads(self.cli(*argv, success=success).stdout)
         return run, json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
 
-    def test_register_then_rename_projects_public_facts_and_protects_environment(self):
+    def stdout(self, history, name):
+        return next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == name)
+
+    def test_register_then_rename_reads_public_facts_and_protects_environment(self):
         run, history = self.run_source("register")
         self.assertEqual(run["status"], "succeeded")
-        output = next(step["outputs"] for step in history["jobs"][0]["steps"] if step["name"] == "result")
-        result = json.loads(output["stdout"])
-        self.assertTrue(result["registered"])
-        self.assertEqual(result["branch"], "main")
-        self.assertEqual(result["commit"], self.git("rev-parse", "HEAD"))
+        self.assertEqual(self.stdout(history, "Read the commit").strip(), self.git("rev-parse", "HEAD"))
+        self.assertEqual(self.stdout(history, "Read the Git top level").strip(), str(self.checkout))
+        self.assertEqual(self.stdout(history, "Read the branch").strip(), "main")
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(history))
-        self.assertEqual((self.checkout / ".env").stat().st_mode & 0o777, 0o640)
+        self.assertEqual((self.checkout / ".env").stat().st_mode & 0o777, 0o600)
         run, history = self.run_source("rename")
         self.assertEqual(run["status"], "succeeded")
         self.assertEqual(json.loads(history["jobs"][0]["steps"][-1]["outputs"]["stdout"]), {"branch": "main"})
         self.assertEqual(self.git("branch", "--show-current"), "main")
 
-    def test_foreign_origin_refuses_without_changing_environment_or_recording_success(self):
-        self.git("remote", "set-url", "origin", "https://github.com/foreign/proof.git")
-        run, history = self.run_source("register", success=False)
-        self.assertEqual(run["status"], "failed")
-        self.assertEqual((self.checkout / ".env").stat().st_mode & 0o777, 0o644)
-        self.assertEqual(history["jobs"][0]["steps"][-1]["status"], "skipped")
-
-    def test_authenticated_origin_refuses_before_private_url_enters_history(self):
+    def test_authenticated_origin_is_masked_before_it_enters_history(self):
         self.git("remote", "set-url", "origin", "https://PRIVATE_ORIGIN_SENTINEL@github.com/example/proof.git")
+        run, history = self.run_source("register")
+        self.assertEqual(run["status"], "succeeded")
+        self.assertNotIn("PRIVATE_ORIGIN_SENTINEL", json.dumps(history))
+        self.assertIn("REDACTED@github.com", self.stdout(history, "Read the origin"))
+
+    def test_a_missing_checkout_fails_before_the_environment_step(self):
+        self.intent["checkout"] = str(self.repo / "missing")
         run, history = self.run_source("register", success=False)
         self.assertEqual(run["status"], "failed")
-        self.assertNotIn("PRIVATE_ORIGIN_SENTINEL", json.dumps(history))
+        self.assertEqual(history["jobs"][0]["steps"][-1]["status"], "skipped")
         self.assertEqual((self.checkout / ".env").stat().st_mode & 0o777, 0o644)
 
-    def test_register_reads_the_laravel_profile_from_composer_json(self):
-        (self.checkout / "composer.json").write_text(json.dumps({"require": {"php": "^8.4", "laravel/framework": "^12.0", "other/pkg": "1"}}))
+    def test_register_reads_the_entry_point_and_composer_json(self):
+        composer = json.dumps({"require": {"php": "^8.4", "laravel/framework": "^12.0"}})
+        (self.checkout / "composer.json").write_text(composer)
         (self.checkout / "artisan").write_text("#!/usr/bin/env php\n")
         self.git("add", "composer.json", "artisan")
         self.git("commit", "-qm", "laravel")
         self.intent["project_type"] = "laravel-app"
         run, history = self.run_source("register")
         self.assertEqual(run["status"], "succeeded")
-        result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
-        self.assertEqual(result["php_version"], "8.5")
-        self.assertRegex(result["digest"], "^[a-f0-9]{64}$")
+        digest, entry_point, *rest = self.stdout(history, "Read the checkout files").split("\n")
+        self.assertRegex(digest, "^[a-f0-9]{64}$")
+        self.assertEqual((entry_point, "\n".join(rest).strip()), ("regular", composer))

@@ -6,6 +6,7 @@ use App\Actions\Instances\RegisterInstanceAction;
 use App\Data\Instances\RegisterInstanceData;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\InstanceRegisterResult;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -22,13 +23,28 @@ beforeEach(function (): void {
     $this->node = Node::query()->create(['name' => 'register-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'settings' => ['apps' => ['path' => '/srv/apps']]]);
     orbit_test_set_app_placement_role($this->node, false);
     $this->instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'proof', 'checkout_path' => '/srv/apps/register-proof/proof', 'source_layout' => 'checkout', 'status' => 'reserved']);
-    $this->operation = Operation::query()->create(['status' => 'queued', 'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'kind' => 'instance.register', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'input' => ['checkout' => $this->instance->checkout_path, 'repository' => $this->project->repository_url, 'repository_identity' => $this->project->repository_identity]]);
-    $this->result = ['registered' => true, 'php_version' => null, 'laravel' => false, 'branch' => 'feature', 'commit' => str_repeat('a', 40), 'detached' => false, 'digest' => str_repeat('b', 64), 'common' => $this->instance->checkout_path.'/.git', 'default_branch' => 'main', 'inferred_slug' => 'proof'];
+    $this->operation = Operation::query()->create(['status' => 'queued', 'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'kind' => 'instance.register', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'input' => ['checkout' => $this->instance->checkout_path, 'repository' => $this->project->repository_url, 'repository_identity' => $this->project->repository_identity, 'project_type' => 'node-package']]);
+    $this->reads = register_reads($this->instance->checkout_path);
 });
 
+/** The read steps' stdout for one plain checkout of github.com/example/proof on branch feature. */
+function register_reads(string $checkout, array $change = []): array
+{
+    return [...['filesystem' => str_repeat('b', 64)."\nabsent\n", 'top' => $checkout."\n", 'common' => $checkout."/.git\n",
+        'worktrees' => "worktree {$checkout}\nHEAD ".str_repeat('a', 40)."\nbranch refs/heads/feature\n", 'origin' => "https://github.com/example/proof.git\n",
+        'branch' => "feature\n", 'commit' => str_repeat('a', 40)."\n", 'default' => "refs/remotes/origin/main\n"], ...$change];
+}
+
+/** @param array<string,mixed> $result */
+function register_terminal(string $status, array $result): array
+{
+    return ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => $status, 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $result];
+}
+
 it('projects native adoption and source facts into the reserved Instance', function (): void {
-    $hook = app(InstanceRegisterResult::class);
-    $hook->apply($this->operation, ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $this->result]);
+    $operation = app(InstanceRegisterResult::class)->apply($this->operation, register_terminal('succeeded', $this->reads));
+    expect($operation->result)->toBe(['registered' => true, 'branch' => 'feature', 'commit' => str_repeat('a', 40), 'detached' => false, 'digest' => str_repeat('b', 64),
+        'common' => $this->instance->checkout_path.'/.git', 'default_branch' => 'main', 'inferred_slug' => 'proof', 'php_version' => null, 'laravel' => false]);
     expect($this->instance->refresh()->source_is_laravel)->toBeFalse();
     expect($this->instance->status->value)->toBe('active')
         ->and($this->instance->branch)->toBe('feature')->and($this->instance->starting_commit)->toBe(str_repeat('a', 40))
@@ -36,8 +52,34 @@ it('projects native adoption and source facts into the reserved Instance', funct
 });
 
 it('keeps failed adoption reserved for a later retry', function (): void {
-    app(InstanceRegisterResult::class)->apply($this->operation, ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'failed', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'error_code' => 'instance.source_invalid', 'result' => ['error_code' => 'instance.source_invalid']]);
-    expect($this->instance->refresh()->status->value)->toBe('reserved')->and($this->instance->registration_completed_at)->toBeNull();
+    $operation = app(InstanceRegisterResult::class)->apply($this->operation, register_terminal('failed', ['steps' => ['Read the Git top level' => ['status' => 'failed', 'exit_code' => 128]]]));
+    expect($operation->error_code)->toBe('instance.source_invalid')
+        ->and($this->instance->refresh()->status->value)->toBe('reserved')->and($this->instance->registration_completed_at)->toBeNull();
+});
+
+it('fails a checkout whose read facts do not match the admitted source', function (array $change, string $code): void {
+    $operation = app(InstanceRegisterResult::class)->apply($this->operation, register_terminal('succeeded', register_reads($this->instance->checkout_path, $change)));
+    expect($operation->status->value)->toBe('failed')->and($operation->error_code)->toBe($code)
+        ->and($this->instance->refresh()->status->value)->toBe('reserved');
+})->with([
+    'another top level' => [['top' => "/srv/apps/other\n"], 'instance.registration_conflict'],
+    'a linked worktree' => [['common' => "/srv/apps/main/.git\n"], 'instance.registration_conflict'],
+    'a second worktree' => [['worktrees' => "worktree /srv/apps/register-proof/proof\n\nworktree /srv/apps/other\n"], 'instance.registration_conflict'],
+    'another repository' => [['origin' => "https://github.com/example/other.git\n"], 'instance.source_identity_invalid'],
+    'a masked credential' => [['origin' => "https://REDACTED@github.com/example/proof.git\n"], 'instance.source_identity_invalid'],
+    'no commit' => [['commit' => "\n"], 'instance.source_invalid'],
+]);
+
+it('selects the PHP version from composer.json and refuses an entry point the source does not declare', function (): void {
+    $composer = json_encode(['require' => ['php' => '^8.4']]);
+    $read = fn (string $entryPoint): array => register_reads($this->instance->checkout_path, ['filesystem' => str_repeat('b', 64)."\n{$entryPoint}\n{$composer}\n"]);
+    $operation = app(InstanceRegisterResult::class)->apply($this->operation, register_terminal('succeeded', $read('regular')));
+    expect($operation->status->value)->toBe('failed')->and($operation->error_code)->toBe('app-dev.laravel_source_invalid');
+
+    $this->operation->update(['status' => 'running', 'error_code' => null, 'result' => null, 'finished_at' => null]);
+    $operation = app(InstanceRegisterResult::class)->apply($this->operation, register_terminal('succeeded', $read('absent')));
+    expect($operation->result['php_version'])->toBeString()->and($operation->result['laravel'])->toBeFalse()
+        ->and($this->instance->refresh()->selected_php_version)->toBe($operation->result['php_version']);
 });
 
 it('refuses unsupported registration before another row or Operation is reserved', function (array $change): void {
@@ -80,17 +122,19 @@ it('admits and completes in-place registration through one real native HTTP root
         ->and($socket->sent[0]['payload']['inputs']['intent']['checkout'])->toBe($operation->input['checkout']);
     $this->postJson('/api/v1/instances/register', $body)->assertAccepted()->assertJsonPath('data.id', $id);
     $this->withoutHeader('Idempotency-Key');
-    $result = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
-        'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'),
-        'result' => [...$this->result, 'common' => $instance->checkout_path.'/.git']];
-    $history = ['id' => $result['run_id'], 'workflowName' => 'operation-instance-register',
+    $steps = ['Read the checkout files' => 'filesystem', 'Read the Git top level' => 'top', 'Read the Git common dir' => 'common', 'List the worktrees' => 'worktrees',
+        'Read the origin' => 'origin', 'Read the branch' => 'branch', 'Read the commit' => 'commit', 'Read the default branch' => 'default', 'Protect the .env file' => null];
+    $reads = register_reads($instance->checkout_path);
+    $history = ['id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'workflowName' => 'operation-instance-register',
         'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
-        'status' => 'succeeded', 'startedAt' => $result['started_at'], 'completedAt' => $result['finished_at'],
-        'jobs' => [['name' => 'source', 'status' => 'succeeded', 'steps' => [['name' => 'result', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode($result['result']), 'exitCode' => 0]]]]]];
+        'status' => 'succeeded', 'startedAt' => now()->format('Y-m-d\TH:i:s.v\Z'), 'completedAt' => now()->format('Y-m-d\TH:i:s.v\Z'),
+        'jobs' => [['name' => 'source', 'status' => 'succeeded', 'steps' => array_map(static fn (string $name, ?string $read): array => ['name' => $name, 'status' => 'succeeded',
+            'outputs' => ['stdout' => $read === null ? '' : $reads[$read], 'exitCode' => 0]], array_keys($steps), $steps)]]];
     config(['swamp.read_token' => 'fixture.read']);
     $socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $history]]];
-    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $result['run_id'], 'status' => 'succeeded'], ['job' => 'source', 'step' => 'result']);
-    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $result['run_id'], 'status' => 'succeeded'], ['job' => 'source', 'step' => 'result']);
+    $selector = app(DirectOperation::class)->definition('instance.register')['terminal_result'];
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $history['id'], 'status' => 'succeeded'], $selector);
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $history['id'], 'status' => 'succeeded'], $selector);
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get']);
     expect($operation->refresh()->lock_key)->toBeNull();
     expect($instance->refresh()->source_is_laravel)->toBeFalse();

@@ -1,4 +1,4 @@
-"""register parity on the target: the .env loses other-user access, the result names the checkout's commit and a
+"""register parity on the target: the .env loses group and other-user access, the result names the checkout's commit and a
 digest, and the checkout's private value never enters native history."""
 import json
 import os
@@ -21,6 +21,6 @@ def check(condition, message):
 
 
 check('proof-private-' not in outputs, 'a private value reached native history')
-check(target('stat', '-c', '%a', checkout + '/.env') == '640', '.env lost other-user access')
-check(result.get('commit') == target('runuser', '-u', 'orbit', '--', 'git', '-C', checkout, 'rev-parse', 'HEAD'), 'the result names the checkout commit')
+check(target('stat', '-c', '%a', checkout + '/.env') == '600', '.env lost group and other-user access')
+check(result.get('registered') is True and result.get('commit') == target('runuser', '-u', 'orbit', '--', 'git', '-C', checkout, 'rev-parse', 'HEAD'), 'the result names the checkout commit')
 print('parity: register contract holds')

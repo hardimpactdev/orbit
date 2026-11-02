@@ -1,6 +1,6 @@
 id: c0791777-2696-430c-a78e-97b9289a655f
 name: operation-instance-register
-description: Read admitted development source through official SSH from209; project its terminal result.
+description: Read the admitted development checkout over official SSH from 209 and protect its .env; the Gateway checks the facts.
 vaults: []
 inputs:
   type: object
@@ -11,10 +11,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - instance.register
+    kind: {type: string, const: instance.register}
     intent:
       type: object
     execution_secrets:
@@ -32,7 +29,7 @@ jobs:
   labels:
     role: swamp
   steps:
-  - name: filesystem
+  - name: 'Read the checkout files'
     labels:
       role: swamp
     task:
@@ -67,11 +64,11 @@ jobs:
         - ${{ inputs.intent.checkout }}
         - ${{ inputs.intent.application }}
         - ${{ inputs.intent.project_type }}
-  - name: top
+  - name: 'Read the Git top level'
     labels:
       role: swamp
     dependsOn:
-    - step: filesystem
+    - step: 'Read the checkout files'
       condition:
         type: succeeded
     task:
@@ -92,11 +89,11 @@ jobs:
         - ${{ inputs.intent.checkout }}
         - rev-parse
         - --show-toplevel
-  - name: common
+  - name: 'Read the Git common dir'
     labels:
       role: swamp
     dependsOn:
-    - step: top
+    - step: 'Read the Git top level'
       condition:
         type: succeeded
     task:
@@ -118,11 +115,11 @@ jobs:
         - rev-parse
         - --path-format=absolute
         - --git-common-dir
-  - name: worktrees
+  - name: 'List the worktrees'
     labels:
       role: swamp
     dependsOn:
-    - step: common
+    - step: 'Read the Git common dir'
       condition:
         type: succeeded
     task:
@@ -144,11 +141,11 @@ jobs:
         - worktree
         - list
         - --porcelain
-  - name: origin
+  - name: 'Read the origin'
     labels:
       role: swamp
     dependsOn:
-    - step: worktrees
+    - step: 'List the worktrees'
       condition:
         type: succeeded
     task:
@@ -168,11 +165,11 @@ jobs:
           s#^(https?://)[^/@]+@#\1REDACTED@#"
         - sh
         - ${{ inputs.intent.checkout }}
-  - name: branch
+  - name: 'Read the branch'
     labels:
       role: swamp
     dependsOn:
-    - step: origin
+    - step: 'Read the origin'
       condition:
         type: succeeded
     task:
@@ -193,11 +190,11 @@ jobs:
         - ${{ inputs.intent.checkout }}
         - branch
         - --show-current
-  - name: commit
+  - name: 'Read the commit'
     labels:
       role: swamp
     dependsOn:
-    - step: branch
+    - step: 'Read the branch'
       condition:
         type: succeeded
     task:
@@ -219,11 +216,11 @@ jobs:
         - rev-parse
         - --verify
         - HEAD^{commit}
-  - name: default
+  - name: 'Read the default branch'
     labels:
       role: swamp
     dependsOn:
-    - step: commit
+    - step: 'Read the commit'
       condition:
         type: succeeded
     task:
@@ -245,35 +242,11 @@ jobs:
         - for-each-ref
         - --format=%(symref)
         - refs/remotes/origin/HEAD
-  - name: result
+  - name: 'Protect the .env file'
     labels:
       role: swamp
     dependsOn:
-    - step: default
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-result" }}
-      methodName: result
-      inputs:
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        facts:
-          filesystem: ${{ steps.filesystem.outputs }}
-          top: ${{ steps.top.outputs }}
-          common: ${{ steps.common.outputs }}
-          worktrees: ${{ steps.worktrees.outputs }}
-          origin: ${{ steps.origin.outputs }}
-          branch: ${{ steps.branch.outputs }}
-          commit: ${{ steps.commit.outputs }}
-          default: ${{ steps.default.outputs }}
-  - name: protect-environment
-    labels:
-      role: swamp
-    dependsOn:
-    - step: result
+    - step: 'Read the default branch'
       condition:
         type: succeeded
     writes: true
@@ -290,6 +263,6 @@ jobs:
         - '60'
         - /bin/sh
         - -c
-        - '[ ! -f "$1/.env" ] || [ -L "$1/.env" ] || chmod o-rwx -- "$1/.env"'
+        - '[ ! -f "$1/.env" ] || [ -L "$1/.env" ] || chmod go-rwx -- "$1/.env"'
         - sh
         - ${{ inputs.intent.application }}

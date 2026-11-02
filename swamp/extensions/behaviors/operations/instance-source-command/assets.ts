@@ -33,43 +33,6 @@ export function branchAvailable(
         : { available: true };
 }
 
-/** The checkout read: its digest line, then the artisan entry point and composer.json for an application. */
-export function checkoutRead(stdout: string, projectType: string) {
-    const [digest, entryPoint, ...composer] = stdout.split("\n");
-    z.string().regex(/^[a-f0-9]{64}$/).parse(digest);
-    if (projectType === "monorepo" || entryPoint === undefined) {
-        return { digest, profile: { kind: "none" } };
-    }
-    const json = composer.join("\n");
-    if (json.trim() === "") return { digest, profile: { kind: "none" } };
-    if (new TextEncoder().encode(json).length > 1048576) {
-        throw new Error("app-dev.source_metadata_unsafe");
-    }
-    const source = z.record(z.string(), z.unknown()).parse(JSON.parse(json));
-    const kept: Record<string, Record<string, unknown>> = {};
-    for (const section of ["require", "require-dev"]) {
-        const row = source[section] ?? {};
-        if (typeof row !== "object" || row === null || Array.isArray(row)) {
-            throw new Error("app-dev.php_version_unsupported");
-        }
-        kept[section] = Object.fromEntries(
-            Object.entries(row).filter(([key]) =>
-                key === "php" || key === "laravel/framework"
-            ),
-        );
-    }
-    return {
-        digest,
-        profile: {
-            kind: "composer",
-            composer: btoa(JSON.stringify(kept)),
-            entry_point: z.enum(["unsafe", "regular", "absent"]).parse(
-                entryPoint,
-            ),
-        },
-    };
-}
-
 /** The clone profile read: the entry point, the composer.json state, then its content when it is a regular file. */
 export function profileRead(stdout: string, intent: Record<string, unknown>) {
     if (intent.skip_profile || intent.project_type === "monorepo") {
@@ -108,9 +71,8 @@ export function profileRead(stdout: string, intent: Record<string, unknown>) {
     };
 }
 
-/** Compare public facts only. Native SSH owns every read and effect. */
+/** Rename compares public facts only. Native SSH owns every read and effect. */
 export function sourceResult(
-    kind: string,
     intent: Record<string, unknown>,
     facts: Record<string, unknown>,
 ) {
@@ -135,43 +97,14 @@ export function sourceResult(
         throw new Error("instance.source_identity_invalid");
     }
     const branch = text(facts.branch) || null;
-    if (kind === "instance.rename") {
-        if (intent.branch !== null && intent.branch !== branch) {
-            throw new Error("instance.branch_not_checked_out");
-        }
-        return { branch };
+    if (intent.branch !== null && intent.branch !== branch) {
+        throw new Error("instance.branch_not_checked_out");
     }
-    const commit = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/).parse(
-        text(facts.commit),
-    );
-    const inspected = checkoutRead(
-        text(facts.filesystem),
-        z.string().parse(intent.project_type),
-    );
-    const profile = classifyProvisioningProfile(inspected.profile, {
-        php_versions: z.array(z.string()).min(1).parse(intent.php_versions),
-        project_type: z.string().parse(intent.project_type),
-    });
-    const origin = text(facts.origin);
-    return {
-        registered: true,
-        branch,
-        commit,
-        detached: branch === null,
-        digest: inspected.digest,
-        common: `${checkout}/.git`,
-        default_branch:
-            text(facts.default).replace(/^refs\/remotes\/origin\//, "") || null,
-        inferred_slug: origin.replace(/\/+$/, "").split(/[/:]/).at(-1)!.replace(
-            /\.git$/,
-            "",
-        ).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, ""),
-        ...profile,
-    };
+    return { branch };
 }
 export const behavior = {
     type: "@nckrtl/instance-source-command",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         result: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
     },
@@ -546,7 +479,7 @@ export const behavior = {
             description:
                 "Compare native public source observations and expose the terminal result",
             arguments: z.object({
-                kind: z.enum(["instance.register", "instance.rename"]),
+                kind: z.literal("instance.rename"),
                 intent: ObjectInput,
                 facts: z.record(z.string(), z.unknown()),
             }),
@@ -565,7 +498,6 @@ export const behavior = {
                             "result",
                             (() => {
                                 const result = sourceResult(
-                                    args.kind,
                                     args.intent,
                                     args.facts,
                                 );
