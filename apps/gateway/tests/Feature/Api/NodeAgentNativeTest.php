@@ -11,7 +11,6 @@ use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
