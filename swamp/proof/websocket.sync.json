@@ -1,0 +1,11 @@
+{
+  "kind": "websocket.sync",
+  "workflow": null,
+  "topology": "minimal",
+  "budget_seconds": 90,
+  "before_gateway": [["php", "swamp/proof/websocket/check.php", "prepare", "${proof.run}"]],
+  "request": {"method": "POST", "path": "websocket-sync"},
+  "expect": {"status": "succeeded", "run": false},
+  "phases": [],
+  "parity": "swamp/proof/websocket/parity.py"
+}

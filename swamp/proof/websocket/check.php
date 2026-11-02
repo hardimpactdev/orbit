@@ -3,6 +3,7 @@
 // Disposable topology checks. Credentials stay in this Gateway process and never enter a receipt or argv.
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Models\Node;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
@@ -101,6 +102,8 @@ if ($mode === 'observe') {
         $client->send(['event' => 'pusher:subscribe', 'data' => ['channel' => 'proof-orbit']]);
     }
     $state = ['pid' => processId(), 'boots' => WebSocketRuntime::query()->where('required', true)->pluck('boot_id', 'id')->all(),
+        'registry' => app(WebSocketRegistry::class)->version(),
+        'snapshot_digest' => hash('sha256', json_encode(app(WebSocketRegistry::class)->snapshot(), JSON_THROW_ON_ERROR)),
         'received' => false, 'ready' => [], 'app_closed' => false, 'old' => isset($apps['changed']) ? credentials($apps['changed']) : null];
     $deadline = microtime(true) + 180;
     do {
@@ -158,9 +161,13 @@ try {
         verify($runtime->state === 'serving' && $runtime->epoch === $operation['input']['epoch'] && $runtime->applied_revision >= $operation['input']['revision'], 'each required boot applied this registry revision');
     }
     $kind = $operation['kind'];
-    $changed = WebSocketApp::query()->where('app_id', $operation['input']['app']['app_id'])->first();
+    $changed = $kind === 'websocket.sync' ? null : WebSocketApp::query()->where('app_id', $operation['input']['app']['app_id'])->first();
     $old = $saved['old'];
-    if ($kind === 'websocket.app_destroy') {
+    if ($kind === 'websocket.sync') {
+        verify($saved['registry'] === app(WebSocketRegistry::class)->version(), 'sync keeps the registry epoch and revision');
+        verify($saved['snapshot_digest'] === hash('sha256', json_encode(app(WebSocketRegistry::class)->snapshot(), JSON_THROW_ON_ERROR)), 'sync keeps every app and credential unchanged');
+        verify($operation['input']['epoch'] === $saved['registry']['epoch'] && $operation['input']['revision'] === $saved['registry']['revision'], 'sync confirms the existing registry revision');
+    } elseif ($kind === 'websocket.app_destroy') {
         verify($changed === null && $old !== null, 'the app and its stored credentials are gone');
         verify(in_array(publishStatus($old, $nonce), [401, 403, 404], true), 'Reverb refuses the deleted app credentials');
     } else {

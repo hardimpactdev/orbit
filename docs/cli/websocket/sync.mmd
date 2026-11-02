@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task; DECISIONS R1 + round 2 websocket.sync (no polling step, the Gateway closes the task from Reverb's own reports, no run).
-  %% status: draft
+  %% status: migrated
   %% command: websocket:sync
   %% kind: websocket.sync
   autonumber
@@ -48,7 +48,7 @@ sequenceDiagram
     %%> Result:
     %%> - every serving Reverb process runs revision 18 or later with the same apps
     %%> - task #5125 succeeds
-  else stale, superseded, timeout
+  else no fresh report in 5 min
     Note over GW: Close the task, failed<br/>websocket.registry_pending
     %%> When:
     %%> - a serving process is stale or missing after 5 minutes
