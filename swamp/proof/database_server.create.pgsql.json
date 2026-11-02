@@ -19,40 +19,82 @@
   },
   "phases": [
     {
-      "name": "Read the scripts",
-      "job": "server",
-      "step": "Read the scripts",
-      "budget_seconds": 30
-    },
-    {
       "name": "Pull the image",
       "job": "server",
       "step": "Pull the image",
       "budget_seconds": 600
     },
     {
+      "name": "Write the first login",
+      "job": "server",
+      "step": "Write the first login",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Remove the old container",
+      "job": "server",
+      "step": "Remove the old container",
+      "budget_seconds": 30
+    },
+    {
       "name": "Start the container",
       "job": "server",
       "step": "Start the container",
-      "budget_seconds": 120
+      "budget_seconds": 60
     },
     {
-      "name": "Wait until healthy",
+      "name": "Wait until ready",
       "job": "server",
-      "step": "Wait until healthy",
-      "budget_seconds": 420
+      "step": "Wait until ready",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Stop the first container",
+      "job": "server",
+      "step": "Stop the first container",
+      "budget_seconds": 70
+    },
+    {
+      "name": "Remove the first container",
+      "job": "server",
+      "step": "Remove the first container",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Start the final container",
+      "job": "server",
+      "step": "Start the final container",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Wait for the final server",
+      "job": "server",
+      "step": "Wait for the final server",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Write the client login",
+      "job": "server",
+      "step": "Write the client login",
+      "budget_seconds": 30
     },
     {
       "name": "Check the admin login",
       "job": "server",
       "step": "Check the admin login",
-      "budget_seconds": 60
+      "budget_seconds": 30
     },
     {
-      "name": "Remove the first-start env",
+      "name": "Remove the first login",
       "job": "server",
-      "step": "Remove the first-start env",
-      "budget_seconds": 540
+      "step": "Remove the first login",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Remove the client login",
+      "job": "server",
+      "step": "Remove the client login",
+      "budget_seconds": 30
     },
     {
       "name": "Report the result",

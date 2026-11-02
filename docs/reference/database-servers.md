@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/create_assets.ts},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
+  - swamp/{extensions/behaviors/operations/database-server-commands/create_assets.ts,workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
 ---
 
 # Database servers
@@ -38,11 +38,19 @@ The SQL user parent resolves private data inside its existing read boundary. The
 
 ## Create a server
 
-`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. Every step runs on Node 209. The official `@swamp/cfgmgmt/docker_image` behavior pulls the image; the other steps reach the server Node over official SSH with its recorded host key. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd): pull the image, write the Valkey ACL file, start the container, wait until healthy, check the admin login, and remove the first-start environment. Each step sends one shipped script phase in argv, so nothing is copied to the Node.
+`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. The intent holds each docker command the run needs, rendered by the Gateway. Every step runs on Node 209 and reaches the server Node with its recorded host key. Each step is one official `@swamp/cfgmgmt` behavior or one docker command over official SSH; nothing is copied to the Node. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd).
 
-The admin password goes to the vault under the server's own key, `database-server-<id>-admin`. Every database kind that logs in as the admin reads that key by name. A Valkey ACL file goes to the vault under `database-server-create-intent-<operation>`. Neither value enters the workflow inputs, a step output, or a command argument; scripts pass them to Docker in a 0600 env file or on standard input.
+| Step | What it does |
+| --- | --- |
+| Pull the image | `@swamp/cfgmgmt/docker_image` keeps the image present. |
+| Create the volume, Write the ACL file | Valkey only. The ACL file holds password hashes and goes into the data volume with `@swamp/cfgmgmt/file` (0600). |
+| Write the first login | MySQL and PostgreSQL on an empty volume. The password variable goes into a 0600 env file. |
+| Remove the old container, Start the container | `docker rm --force`, then `docker run` with the env file. A rerun starts over from the data volume. |
+| Wait until ready | One bounded probe loop (`timeout 60`). The server accepts TCP only after its first-start initialization. |
+| Stop, remove and start the final container | MySQL and PostgreSQL. The final container runs without the password variable, on the same volume. |
+| Check the admin login | The admin logs in over TCP with the password from a 0600 env file. |
 
-Docker owns the health probe. The wait step reads Docker's health events for the container: healthy succeeds; unhealthy or an exit fails. The step timeout bounds the wait. The result names the failed step and its error code, for example `database.server_unhealthy`, and the server record keeps both.
+The password reaches the vault under two server keys: `database-server-<id>-client-env` holds the admin login for clients, and `database-server-<id>-first-env` holds the first-start variable. A Valkey ACL file goes under `database-server-create-intent-<operation>`. No value enters the workflow inputs, a step output, or a command argument. Always-run steps remove both env files from the Node. The result names the failed step and its error code, for example `database.server_unhealthy`, and the server record keeps both.
 
 `database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent, and a Node without a stored SSH host key (`swamp.ssh_target_unavailable`).
 
