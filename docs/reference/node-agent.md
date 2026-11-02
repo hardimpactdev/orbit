@@ -215,7 +215,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-Gateway releases and desired fleet state use the pinned `cli-v0.8887.0` delivery, the first [agent release](#releases) of the observer pass. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
+Gateway releases and desired fleet state use the pinned `cli-v0.8928.0` delivery, the observer pass agent release that reports checkouts. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
 `instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
 
@@ -556,7 +556,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Every Gateway release uses the pinned `cli-v0.8887.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
+Every Gateway release uses the pinned `cli-v0.8928.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {

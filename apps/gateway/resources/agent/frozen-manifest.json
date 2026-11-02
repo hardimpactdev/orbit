@@ -1,21 +1,21 @@
 {
-  "commit": "63c88dcc8a1331566584fbbb06771c983d9f239b",
-  "version": "0.6.0",
+  "commit": "5aaf308c36bd667a7c72e3868c605812c2902751",
+  "version": "0.7.0",
   "artifacts": {
     "linux-x86_64": {
       "path": "orbit-agent-linux-x86_64",
-      "sha256": "b51658d7d3ba5468ac437b8f0b8855d188a83ed9c1bd13d3bf69bd15544dbe73",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.8887.0/orbit-agent-linux-x86_64"
+      "sha256": "8bb3aa313f81a84e6816d523de981da25eb4421a7d86f7bff45985766a7ee428",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.8928.0/orbit-agent-linux-x86_64"
     },
     "macos-aarch64": {
       "path": "orbit-agent-macos-aarch64",
-      "sha256": "906ca6afdb93f37ca50cd63386ad26a5b7fd860746b26220b069a4f4f75ac28f",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.8887.0/orbit-agent-macos-aarch64"
+      "sha256": "e73cd5fc058555747e1c761177065faf0cd24d18f58d241a5afc348963928ecc",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.8928.0/orbit-agent-macos-aarch64"
     },
     "macos-x86_64": {
       "path": "orbit-agent-macos-x86_64",
-      "sha256": "f3a785f5ee8003b07f75769a4ad52797d58e769ebdd9a327512a7cdabdf6b1b7",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.8887.0/orbit-agent-macos-x86_64"
+      "sha256": "872051cb11903e9ee5043f7943e90b88a7d38ec6dfb645478d68a91f9d221634",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.8928.0/orbit-agent-macos-x86_64"
     }
   }
 }
