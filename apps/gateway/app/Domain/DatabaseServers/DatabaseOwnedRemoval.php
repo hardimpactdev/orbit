@@ -34,7 +34,7 @@ final readonly class DatabaseOwnedRemoval
             $container = ValidatedData::string($snapshot['container']);
             $server = DatabaseServer::query()->findOrFail($serverId);
             $run = DatabaseDestroyRun::render($server, $container, app(DatabaseStatements::class)->destroy($driver,
-                ValidatedData::stringList($snapshot['databases']), ValidatedData::stringList($snapshot['users'])), "{$intentId}-{$serverId}", $push);
+                ValidatedData::stringList($snapshot['databases']), ValidatedData::stringList($snapshot['users'])), "owned-{$intentId}-{$serverId}", $push);
             $servers[] = ['server_id' => $serverId, 'node_id' => $nodeId, 'intent' => $run['intent']];
             foreach ($run['execution_secrets'] as $batch => $copy) {
                 $copies["server_{$serverId}_{$batch}"] = $copy;

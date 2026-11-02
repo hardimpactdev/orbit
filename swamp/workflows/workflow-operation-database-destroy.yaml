@@ -17,7 +17,7 @@ inputs:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^database-destroy-[1-9][0-9]*(-[1-9][0-9]*)?-(fence|drop|gone|restore)$'}
+          key: {type: string, pattern: '^database-destroy-(owned-[1-9][0-9]*-)?[1-9][0-9]*-(fence|drop|gone|restore)$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]

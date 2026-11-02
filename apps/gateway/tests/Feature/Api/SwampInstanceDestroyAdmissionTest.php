@@ -183,7 +183,7 @@ it('drops an owned server database through a database:destroy child with one vau
         'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
     $this->withHeader('Idempotency-Key', 'destroy-managed')->deleteJson($this->path, ['force' => true])->assertAccepted();
     $run = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs'];
-    $key = 'database-destroy-'.$run['intent']['direct_destroy']['database']['intent_id'].'-'.$server->id.'-drop';
+    $key = 'database-destroy-owned-'.$run['intent']['direct_destroy']['database']['intent_id'].'-'.$server->id.'-drop';
     $child = $run['intent']['direct_destroy']['database']['servers'][0];
 
     expect(collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.key')->all())->toContain($key)

@@ -16,9 +16,10 @@ use App\Models\Node;
  */
 final readonly class DatabaseDestroyRun
 {
-    public const string KEY_PATTERN = '^database-destroy-[1-9][0-9]*(-[1-9][0-9]*)?-(fence|drop|gone|restore)$';
+    // Two plain patterns: Swamp refuses a grant pattern with an optional group after a quantifier.
+    public const array EXECUTION_COPY = ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-destroy-[1-9][0-9]*-(fence|drop|gone|restore)$'];
 
-    public const array EXECUTION_COPY = ['vault' => 'orbit-control-inputs', 'key_pattern' => self::KEY_PATTERN];
+    public const array OWNED_EXECUTION_COPY = ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-destroy-owned-[1-9][0-9]*-[1-9][0-9]*-(fence|drop|gone|restore)$'];
 
     /**
      * @param  array{fence: string, drop: string, gone: string, restore: string}  $statements
