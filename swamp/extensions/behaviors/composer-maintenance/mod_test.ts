@@ -2,7 +2,12 @@ import {
   emptyExceptions,
   type Exceptions,
 } from "../_lib/maintenance/exceptions.ts";
-import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { behavior, MaintenanceFailure } from "./mod.ts";
 import type { z } from "npm:zod@4";
@@ -469,4 +474,63 @@ test("detect ignores repository exception files and never overwrites them", asyn
     await Deno.readTextFile(`${r.cwd}/maintainer-exceptions.json`),
     original,
   );
+});
+async function commit(r: Repo) {
+  for (
+    const args of [["init", "-b", "main"], ["add", "."], [
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "user.name=Test",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-m",
+      "base",
+    ]]
+  ) {
+    const out = await new Deno.Command(git, {
+      cwd: r.cwd,
+      args,
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(out.code, 0, new TextDecoder().decode(out.stderr));
+  }
+}
+test("plan accepts an update failure with output over 8 MiB and reports its command", async (r) => {
+  await commit(r);
+  const raw = "x".repeat(8388609);
+  const fetch = globalThis.fetch;
+  globalThis.fetch = () =>
+    Promise.resolve(
+      Response.json({
+        packages: {
+          "dev/tool": [{ version: "v2.0.0", time: "2020-01-01T00:00:00Z" }],
+        },
+      }),
+    );
+  const command =
+    "composer update dev/tool --with dev/tool:2.0.0 --with-dependencies --no-interaction --no-install --no-scripts --no-plugins";
+  try {
+    const plan = await r.execute("plan", {
+      candidates: [{
+        path: ".",
+        manager: "composer",
+        package: "dev/tool",
+        reasons: ["major"],
+        advisories: [],
+      }],
+    }, { [command]: [{ code: 17, raw }] }) as {
+      targets: unknown[];
+      blocked: { reason: string }[];
+    };
+    assertEquals(plan.targets, []);
+    assertEquals(plan.blocked.length, 1);
+    assertStringIncludes(plan.blocked[0].reason, `${command} failed:`);
+    assertStringIncludes(plan.blocked[0].reason, raw);
+    assertStringIncludes(await r.log(), `composer|${command.slice(9)}|`);
+  } finally {
+    globalThis.fetch = fetch;
+  }
 });

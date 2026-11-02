@@ -785,3 +785,60 @@ test("detect ignores repository exception files and never overwrites them", asyn
     original,
   );
 });
+async function commit(r: Repo) {
+  for (
+    const args of [["init", "-b", "main"], ["add", "."], [
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "user.name=Test",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-m",
+      "base",
+    ]]
+  ) {
+    const out = await new Deno.Command(git, {
+      cwd: r.cwd,
+      args,
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(out.code, 0, new TextDecoder().decode(out.stderr));
+  }
+}
+test("plan accepts an install failure with output over 8 MiB and reports its command", async (r) => {
+  await commit(r);
+  const raw = "x".repeat(8388609);
+  const plan = await r.execute("plan", {
+    candidates: [{
+      path: ".",
+      manager: "js",
+      package: "shadcn",
+      reasons: ["major"],
+      advisories: [],
+      current: "4.21.0",
+      latest: "5.0.0",
+    }],
+  }, {
+    "npm view shadcn --json": [{
+      data: {
+        versions: ["5.0.0"],
+        time: { "5.0.0": "2020-01-01T00:00:00Z" },
+      },
+    }],
+    "npm install --package-lock-only --ignore-scripts": [{ code: 23, raw }],
+  }) as { targets: unknown[]; blocked: { reason: string }[] };
+  assertEquals(plan.targets, []);
+  assertEquals(plan.blocked.length, 1);
+  assertStringIncludes(
+    plan.blocked[0].reason,
+    "npm install --package-lock-only --ignore-scripts failed:",
+  );
+  assertStringIncludes(plan.blocked[0].reason, raw);
+  assertStringIncludes(
+    await r.log(),
+    "npm|install --package-lock-only --ignore-scripts|",
+  );
+});
