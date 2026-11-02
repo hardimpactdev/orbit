@@ -170,7 +170,7 @@ export async function settleGroupRun(
 
 export const behavior = {
   type: "@nckrtl/orbit-group-run",
-  version: "2026.11.02.1",
+  version: "2026.11.02.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     ...driver.resources,
@@ -377,7 +377,7 @@ export const behavior = {
           throw error;
         }
         await ctx.writeResource("activity", "activity", {
-          idle: (item.waiting ?? "").startsWith("assistance:"),
+          idle: /^(assistance|blocked): /.test(item.waiting ?? ""),
           fingerprint: await groupFingerprint(
             ctx,
             request.factory,
@@ -386,8 +386,9 @@ export const behavior = {
           ),
         });
         const terminal = (item.waiting ?? "").startsWith("terminal (");
-        // At a human gate the chain stops; an event (wake) or reconcile restarts it.
-        const idle = (item.waiting ?? "").startsWith("assistance:");
+        // At a human gate, or blocked on operator input (a plan, an answer), the chain stops; an event
+        // (wake) or the reconcile restarts it. Only a running Gateway operation keeps it going.
+        const idle = /^(assistance|blocked): /.test(item.waiting ?? "");
         const handle = await ctx.writeResource("result", "result", { terminal, idle });
         if (!terminal && !idle) {
           await handoffGroupRun(request, {

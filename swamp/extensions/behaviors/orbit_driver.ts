@@ -81,12 +81,24 @@ export function preapprovalName(workItem: string, gateId: string, stage: string,
 }
 
 /** The gate ids a parked status waits on: its pending human-approval gates and cycle overrides. */
+/**
+ * A gate that only a human decision can open: the human gate itself, or a CEL gate that reads that gate's
+ * approvals (plan-authorized checks its exact consent note) and fails because no decision exists yet.
+ */
+function awaitsHuman(t: Transition, g: Gate): boolean {
+  if (g.type === "human-approval") return true;
+  if (g.type !== "cel") return false;
+  const humans = t.gates.flatMap((h) => h.type === "human-approval" ? h.reasons : [])
+    .flatMap((r) => [.../awaiting human approval '([^']+)'/.exec(r)?.slice(1) ?? []]).map((id) => id.replaceAll("-", "_"));
+  return g.reasons.length > 0 && g.reasons.every((r) => humans.some((id) => r.includes(`No such key: ${id}`)));
+}
+
 export function pendingGateIds(status: Pick<Status, "transitions">): string[] {
   const ids = new Set<string>();
   for (const t of status.transitions) {
     if (t.name === "abort") continue;
     if (t.cycleLimitBlocked && t.gates.every((g) => g.pass)) ids.add(`cycle-override:${t.to}`);
-    if (!t.gates.every((g) => g.pass || g.type === "human-approval")) continue;
+    if (!t.gates.every((g) => g.pass || awaitsHuman(t, g))) continue;
     for (const g of t.gates) {
       if (g.type !== "human-approval" || g.pass) continue;
       for (const r of g.reasons) {
@@ -438,11 +450,11 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
     return { status, action: null, waiting: `assistance: cycle limit; approve gateId=cycle-override:${limited[0].to}` };
   }
   const human = status.transitions.filter((t) =>
-    t.name !== "abort" && t.gates.every((g) => g.pass || g.type === "human-approval") &&
+    t.name !== "abort" && t.gates.every((g) => g.pass || awaitsHuman(t, g)) &&
     t.gates.some((g) => !g.pass)
   );
   if (human.length > 0) {
-    const ids = human.flatMap((t) => t.gates.filter((g) => !g.pass).map((g) => g.reasons.join("; ")));
+    const ids = human.flatMap((t) => t.gates.filter((g) => !g.pass && g.type === "human-approval").map((g) => g.reasons.join("; ")));
     return { status, action: null, waiting: `assistance: ${ids.join(" | ")}` };
   }
   const reasons = status.transitions.filter((t) => t.name !== "abort")
@@ -452,7 +464,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.11.02.4",
+  version: "2026.11.02.5",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {

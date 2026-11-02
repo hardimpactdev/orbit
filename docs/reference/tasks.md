@@ -782,7 +782,9 @@ swamp workflow run group-plan --input-file plan.yaml --server wss://swamp.orbit
 Each group run is one bounded generation. Its drive starts the next generation, so an active group needs no poll:
 
 - While a Gateway operation runs, the next generation waits 60 seconds before it looks again.
-- At a human gate, the chain stops and holds no run. An event such as `group-plan` starts the next generation.
+- A group at a human gate holds no run. A group that needs input, such as a plan, holds none either.
+- An event such as `group-plan` or `group-approve` starts the next generation.
+- A gate that checks an approval's note, such as `plan-authorized`, counts as waiting on that approval, so a stored consent applies at once.
 - `groups-driver` runs every 10 minutes. It only restarts a group whose run chain broke.
 
 ## Workspace lease

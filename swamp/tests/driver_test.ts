@@ -28,6 +28,19 @@ Deno.test("pending gate ids come from human gates on otherwise passing transitio
   assertEquals(pendingGateIds(status), ["baseline-retry", "cycle-override:implement"]);
 });
 
+Deno.test("a consent gate that reads its own approval waits on that human gate, not on itself", () => {
+  const noKey = "CEL gate evaluation failed: No such key: plan_authorized\n\n>    1 | [approvals.plan_authorized.filter(a,";
+  const status = {
+    transitions: [
+      { name: "authorized", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("artifact-exists", true), gate("human-approval", false, [awaiting("plan-authorized")]), gate("cel", false, [noKey])] },
+      { name: "other", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("human-approval", false, [awaiting("other-gate")]), gate("cel", false, ["No such key: plan_authorized"])] },
+    ],
+  };
+  assertEquals(pendingGateIds(status), ["plan-authorized"], "a CEL gate on another gate's key still blocks");
+});
+
 Deno.test("evidence counts for the current entry only when it was recorded in this run's era", () => {
   const ev = { stageId: "provision", cycle: 1, recordedAt: "2026-10-23T08:00:00Z" };
   assert(recordedThisEntry(ev, "provision", 1, "2026-10-23T07:00:00Z"));

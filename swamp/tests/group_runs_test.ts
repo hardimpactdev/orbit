@@ -883,3 +883,43 @@ Deno.test("only the owning run hands its group to the next generation, without a
   assertEquals(next, { ...intent, generation: 4, key: "tg-2314.g4", runId: "run-4" });
   assertEquals(saved, next);
 });
+
+Deno.test("a group blocked on operator input stops its chain until an event wakes it", async () => {
+  const { behavior: groupRun } = await import("../extensions/behaviors/orbit_group_run.ts");
+  const request = { workItem: "tg-2348", factory: "factory", generation: 4, key: "tg-2348.g4", runId: "owner-4" };
+  const definition = "orbit-group-tg-2348";
+  const records = new Map<string, unknown>([
+    [`${definition}/intent`, request],
+    [`${definition}/owner`, request],
+    ["factory/state-tg-2348", { startedAt: "2026-11-02T06:22:00Z" }],
+    ["factory/status-tg-2348", {
+      started: true, stage: { id: "plan", cycle: 1, terminal: false }, unresolvedBindings: [],
+      transitions: [{ name: "authorized", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [{ type: "artifact-exists", pass: false, reasons: ["artifact 'plan' is missing"] }] }],
+    }],
+  ]);
+  const launched: unknown[] = [];
+  const context = {
+    globalArgs: groupRun.globalArguments.parse({ factory: "factory", preapprovalModel: "original" }),
+    repoDir: "/fixture",
+    definition: { name: definition },
+    queryData: recordQuery((predicate: string) => {
+      const match = /modelName == "([^"]+)" && name == "([^"]+)"/.exec(predicate);
+      const value = match ? records.get(`${match[1]}/${match[2]}`) : undefined;
+      return Promise.resolve(value ? [value] : []);
+    }),
+    invokeModel: () => Promise.resolve({ ok: true }),
+    writeResource: (_spec: string, name: string, value: Record<string, unknown>) => {
+      records.set(`${definition}/${name}`, value);
+      return Promise.resolve({ name });
+    },
+    logger: { info() {}, warning() {} },
+    launchRun: (input: Record<string, unknown>) => {
+      launched.push(input);
+      return Promise.resolve("successor");
+    },
+  };
+  await groupRun.methods.drive.execute(request, context);
+  assertEquals(launched, [], "no generation polls a group that waits for a plan");
+  assertEquals(records.get(`${definition}/result`), { terminal: false, idle: true });
+});
