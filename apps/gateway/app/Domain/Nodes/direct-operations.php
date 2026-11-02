@@ -16,7 +16,7 @@ use App\Domain\Nodes\WorkerKnownHostsProjection;
 return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-worker-known-hosts',
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'known_hosts', 'step' => 'write'],
+    'terminal_result' => ['job' => 'known_hosts', 'step' => 'Write known hosts', 'native' => true],
     'projection' => WorkerKnownHostsProjection::class,
 ], 'node.ssh_access_converge' => [
     'workflow' => 'operation-node-ssh-access-converge',

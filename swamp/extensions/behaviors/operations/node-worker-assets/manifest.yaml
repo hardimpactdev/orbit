@@ -1,11 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/node-worker-assets"
-version: 2026.11.02.1
+version: 2026.11.02.2
 visibility: private
 license: MIT
-description: Public worker script assets for the sole Swamp Node209.
+description: Swamp credential expiry classification for the sole Swamp Node209.
 behaviors:
   - operations/node-worker-assets/assets.ts
-additionalFiles:
-  - scripts/write_known_hosts.py
-  - scripts/credential_check.py

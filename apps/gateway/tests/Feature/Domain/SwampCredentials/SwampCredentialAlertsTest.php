@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\SwampCredentials\SwampCredentialAlerts;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     config(['orbit.releases.alert_webhook_url' => 'https://hooks.example.test/credential-alert',
@@ -32,9 +35,29 @@ function credentialAlert(string $name, string $reason, string $expiresAt = '2026
 
 it('declares the native schedule as one standalone scheduled result', function (): void {
     expect(app(DirectOperation::class)->scheduledResultDefinitions()[SwampCredentialAlerts::Workflow])->toBe([
-        'workflow' => 'swamp-credential-monitor', 'terminal_result' => ['job' => 'monitor', 'step' => 'check'],
+        'workflow' => 'swamp-credential-monitor', 'terminal_result' => ['job' => 'monitor', 'step' => 'check',
+            'captures' => ['alerts' => ['job' => 'monitor', 'step' => 'check', 'field' => 'alerts']], 'native' => true],
         'projection' => SwampCredentialAlerts::class, 'workflow_id' => SwampCredentialAlerts::Workflow,
     ]);
+});
+
+it('reads the alerts from the report step of the terminal run', function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        ...credentialRun(), 'workflowId' => SwampCredentialAlerts::Workflow, 'workflowName' => 'swamp-credential-monitor', 'completedAt' => '2026-11-02T06:07:05.000Z',
+        'jobs' => [['name' => 'monitor', 'steps' => [
+            ['name' => 'access', 'status' => 'succeeded', 'outputs' => ['stdout' => '[]', 'exitCode' => 0]],
+            ['name' => 'check', 'status' => 'succeeded', 'outputs' => ['checked_at' => '2026-11-02T06:07:04.000Z',
+                'alerts' => [credentialAlert('orbit-node-13-access', 'within_72h')]]],
+        ]]],
+    ]]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
+
+    app(SwampCommandStep::class)->projectScheduledTerminal(SwampCredentialAlerts::Workflow, ['id' => credentialRun()['id']]);
+
+    Http::assertSent(fn (Request $request): bool => $request['event'] === 'swamp.credential_expiring'
+        && $request['credentials'] === [credentialAlert('orbit-node-13-access', 'within_72h')]);
 });
 
 it('sends one signed alert per credential expiry and reason', function (): void {

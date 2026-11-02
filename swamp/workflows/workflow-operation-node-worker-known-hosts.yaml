@@ -32,26 +32,16 @@ jobs:
   - name: known_hosts
     labels: {role: swamp}
     steps:
-      - name: assets
-        labels: {role: swamp}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/node-worker-assets'
-          behaviorName: worker-known-hosts-assets
-          methodName: known_hosts
-          inputs: {node_id: 209}
-      - name: write
+      - name: Write known hosts
         labels: {role: swamp}
         writes: true
-        dependsOn:
-          - step: assets
-            condition: {type: succeeded}
         task:
           type: behavior
           behaviorType: command/shell
           behaviorName: worker-known-hosts-writer
           methodName: execute
           inputs:
-            run: /usr/bin/python3 '${{ steps.assets.outputs.script_path }}'
+            # OpenSSH reads the passwd home (/home/<user>), not the worker unit's HOME; systemd sets USER.
+            run: printf '%s' "$ORBIT_KNOWN_HOSTS_CONTENT" | install -D -m 0600 /dev/stdin "/home/$USER/.ssh/known_hosts"
             env:
               ORBIT_KNOWN_HOSTS_CONTENT: '${{ inputs.intent.known_hosts_content }}'

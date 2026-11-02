@@ -52,10 +52,10 @@ it('admits each pin change immediately with the complete current snapshot', func
     foreach ([$second, $first] as $operation) {
         $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
             'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-            'result' => ['known_hosts_ready' => true, 'digest' => $operation->input['intent']['digest'], 'changed' => true, 'path' => '/home/fixture/.ssh/known_hosts']];
+            'result' => ['steps' => ['Write known hosts' => ['status' => 'succeeded', 'stdout' => '', 'exit_code' => 0]]]];
         app(WorkerKnownHostsProjection::class)->apply($operation, $data);
         app(WorkerKnownHostsProjection::class)->apply($operation, $data);
-        expect($operation->fresh()->result['digest'])->toBe($operation->input['intent']['digest']);
+        expect($operation->fresh()->result)->toBe(['known_hosts_ready' => true, 'digest' => $operation->input['intent']['digest']]);
     }
     expect(Operation::query()->count())->toBe(2);
     expect($this->socket->sent)->toHaveCount(2);
