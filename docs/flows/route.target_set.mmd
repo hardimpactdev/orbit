@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4 + 2 (DNS hold) + round 2 (target_set single path, R2), Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Create and change targets, Change a production target set).
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 + round 2 (target_set single path, R2), Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Create and change targets, Change a production target set).
   %% status: draft
   %% command: route:target:set
   autonumber
@@ -100,10 +100,6 @@ sequenceDiagram
     %%> - a Node-scoped Route whose new target runs on another Node
     %%> What it does:
     %%> - points the Route domain at the new Node and checks a DNS reply
-    Note over V: open: Nick decides<br/>DNS hold · native-dns-takeover
-    %%> Open:
-    %%> - DNS publication is under the DNS hold; Nick decides (rule 9)
-    %%> - until then, the run skips this step and Route work stays same-Node work
   end
   alt every step succeeds
     SW-->>GW: Run succeeded<br/>terminal event + outputs

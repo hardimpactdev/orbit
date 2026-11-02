@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp (disable keeps the Plausible site), DECISIONS 2 (DNS hold), R1-R4. docs/reference/analytics.md.
+  %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp (disable keeps the Plausible site), DECISIONS, R1-R4. docs/reference/analytics.md.
   %% status: draft
   %% command: instance:analytics:disable
   autonumber
@@ -52,11 +52,11 @@ sequenceDiagram
     %%> - over SSH from 209 with `@swamp/ssh`
     %%> What it does:
     %%> - removes only the tracking sections; other sites stay; validates, then reloads Caddy without a restart
-    Note over SW: Remove private DNS<br/>open: Nick decides (DNS hold)
+    Note over SW: Remove private DNS<br/>Node 1 over @swamp/ssh
     %%> What it does:
     %%> - removes the hosts' private DNS records and waits the 31-second grace
-    %%> Open:
-    %%> - the DNS hold (`native-dns-takeover-held`) is in force; Nick decides how Route DNS is published
+    %%> How:
+    %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
     SW->>N: Remove unused certificates<br/>checks loaded Caddy first
     %%> When:
     %%> - only on a Router; tracking hosts on a Node-scoped Route have no Orbit certificate

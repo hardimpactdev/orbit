@@ -97,8 +97,6 @@ sequenceDiagram
   %%> How:
   %%> - official `@swamp/cfgmgmt/firewall` over SSH from 209
   SW->>G: Publish metrics.orbit<br/>validate, reload Caddy · DNS
-  %%> Open:
-  %%> - the DNS part is under the DNS hold; Nick decides
   %%> What it does:
   %%> - adds the `metrics.orbit` site to the Gateway Node's Caddyfile, validates it, and reloads Caddy gracefully
   %%> - Caddy asks the Gateway to authorize each request, then proxies over WireGuard to Grafana
