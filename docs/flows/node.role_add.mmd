@@ -1,0 +1,154 @@
+sequenceDiagram
+  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4 + 5 (shared SSH identity), metrics.exporter_enable decisions, single-swamp-node. docs/cli/node.mdx#orbit-noderoleadd, docs/reference/node-provisioning.md.
+  %% status: draft
+  %% command: node:role:add
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane M icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>gets the role
+  participant M as Metrics Node<br/>Prometheus
+  CLI->>GW: node:role:add 12 app-dev<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - `orbit node:role:add 12 app-dev`
+  %%> - syntax: `<node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node, by id or exact name, and the role, such as `app-dev`, `app-prod`, `ingress`, `database`, `websocket`, `analytics`, `ci-runner`, `gateway` or `swamp`
+  %%> - for `analytics` only: the PostgreSQL and ClickHouse Processes; in a terminal the CLI asks for them
+  %%> - `--converge` converges a role the Node already has; that is `node.role_converge`, with its own chart
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, claim the role<br/>role: provisioning · task #5170
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active, managed Linux Node
+  %%> - the role is not `vpn` or `router`; those are protected from this command
+  %%> - Node 12 doesn't have the role yet, and holds no role it conflicts with, such as `app-prod` beside `app-dev`
+  %%> - a singleton role, such as `gateway` or `swamp`, has no holder yet; to move one, use `node:role:relocate`
+  %%> - one role operation per Node: the Gateway holds a role lock for Node 12 and waits up to 2 minutes for a busy one, then refuses with `node_role.node_busy`
+  %%> Builds:
+  %%> - the role plan: packages, files, units, Caddy sites, PHP settings, firewall rules and certificate requests
+  %%> - the Metrics fleet change, when Node 12 becomes a selected exporter
+  %%> Secrets:
+  %%> - role credentials go to the Swamp vault as execution copies; the inputs hold only their key names
+  %%> Result:
+  %%> - the `app-dev` assignment recorded with status provisioning
+  %%> - task #5170 recorded with the full intent
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-node-role-add
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the role plan with its files and digests
+  %%> - the vault key names of the role credentials
+  %%> - Node 12's and the Metrics Node's addresses and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5170
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Install prerequisites<br/>@swamp/cfgmgmt/apt · Tool Managers
+  %%> What it does:
+  %%> - checks the Ubuntu release the role supports, then installs the role's packages
+  %%> - waits for a busy apt lock within the run's time budget
+  %%> Per role:
+  %%> - `app-dev`, `app-prod`: the pinned PHP build and JavaScript runtimes, the `vp` and `composer` Tool Managers through the shared Tool Manager setup step, and `<home>/apps` for `app-dev`
+  %%> - Caddy roles: the pinned Caddy release, only when Caddy is missing or below the floor
+  %%> - `database`, `analytics`: the Docker engine
+  %%> - `ci-runner`: the Incus host boundary
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors (apt, fetch, file) over SSH from 209
+  SW->>N: Apply the role runtime<br/>shared role converge steps
+  %%> What it does:
+  %%> - runs the same steps as role converge (`node.role_converge`): files, units and services of the role
+  %%> Per role:
+  %%> - Caddy roles: the Caddyfile, validated first, then a graceful Caddy reload
+  %%> - `app-dev`, `app-prod`: the managed PHP-FPM module; a graceful reload of valid running masters
+  %%> - `app-dev`: the `/etc/tmpfiles.d/orbit.conf` rule for `/tmp/orbit-*` and `/dev/shm/orbit-*`
+  %%> - `websocket`: the Reverb service
+  %%> - `analytics`: Plausible, beside the given storage Processes
+  %%> - `swamp`: Orbit's Caddy and the 2 worker services `orbit-swamp-worker@a` and `@b`
+  %%> - `metrics`: Prometheus and Grafana, with the same steps as `metrics:enable`
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors (file, systemd, docker) over SSH from 209
+  %%> Not included:
+  %%> - the Node agent, its files and the Orbit CLI; `node:converge` owns them
+  opt role needs a certificate
+    SW->>GW: Sign the role certificate<br/>operation:direct:certificate-sign
+    %%> When:
+    %%> - the role serves TLS with an Orbit certificate, for example `database` or `websocket`
+    %%> How:
+    %%> - a step creates the key on Node 12 and reads only the CSR
+    %%> - the Gateway signs the CSR with the Orbit CA; this is the one call a step may make to the Gateway
+    %%> Why:
+    %%> - the private key never leaves Node 12, and the CA key never leaves the Gateway
+    GW-->>SW: Signed certificate<br/>leaf + chain
+    %%> What happens next:
+    %%> - Swamp writes the certificate beside its key on Node 12 and activates it
+  end
+  SW->>N: Publish and open ports<br/>Caddy, PHP, DNS · ufw
+  %%> What it does:
+  %%> - publishes the role's Caddy sites and PHP pools, validates them, and reloads gracefully
+  %%> - adds the role's managed firewall rules with `@swamp/cfgmgmt/firewall`
+  %%> - publishes the role's private DNS names, such as the Reverb host, through the shared DNS step on the `vpn` Node
+  %%> First role:
+  %%> - removes the public SSH rule, so Node 12 is reached only over WireGuard from then on
+  opt Node 12 joins Metrics
+    SW->>N: Add the exporters<br/>node-exporter · cAdvisor
+    %%> When:
+    %%> - a Metrics role exists, and this role makes Node 12 a selected exporter; every role takes part except `swamp`
+    %%> What it does:
+    %%> - the same steps as `metrics:exporter:enable`: the exporters, their WireGuard listeners, and the Metrics Node's firewall allows
+    SW->>M: Publish the config<br/>validate, reload Prometheus
+    %%> What it does:
+    %%> - validates the new Prometheus configuration with `promtool`, publishes it, and reloads Prometheus while it runs
+    %%> - no restart, so collection from other Nodes continues
+  end
+  SW->>N: Check the role<br/>units active · files match
+  %%> What it does:
+  %%> - checks the role's services are active and answer, such as Caddy, PHP-FPM or Reverb
+  %%> - reads each applied file back and compares it with its digest
+  %%> Why:
+  %%> - the role only counts as active when Node 12 shows it
+  alt every step passes
+    N-->>SW: role services ready
+    %%> Returns:
+    %%> - the check passed for every part of the role
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway for a result
+    Note over GW: Record result<br/>role: active · task succeeded
+    %%> Result:
+    %%> - the `app-dev` role on Node 12 becomes active, with the digest of each applied part
+    %%> - Node 12's exporter is recorded as active, when it joined Metrics
+    %%> - task #5170 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0 or no match
+    %%> When:
+    %%> - a package, file, unit, Caddy validation, certificate, firewall or check step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the role failed<br/>converge:STEP · rerun --converge
+    %%> Result:
+    %%> - the role stays recorded, marked failed at `converge:STEP` with the step's own error code
+    %%> - task #5170 fails
+    %%> On the Node:
+    %%> - finished steps stay; there is no rollback
+    %%> - that is safe: every step is idempotent and Caddy is never reloaded with a config that fails validation
+    %%> Retry:
+    %%> - run `orbit node:role:add 12 app-dev --converge` after fixing the cause
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5170
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

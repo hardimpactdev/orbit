@@ -1,0 +1,143 @@
+sequenceDiagram
+  %% Target design: ADR 0243/0244 task, DECISIONS R1 (offline removal starts no run), R2-R4, metrics.exporter_disable order, single-swamp-node. docs/cli/node.mdx#orbit-noderoleremove, docs/reference/node-provisioning.md#native-role-lifecycle.
+  %% status: draft
+  %% command: node:role:remove
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane M icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>loses the role
+  participant M as Metrics Node<br/>Prometheus
+  CLI->>GW: node:role:remove 12<br/>app-dev --force --purge-data
+  %%> Command:
+  %%> - `orbit node:role:remove 12 app-dev --force`
+  %%> - syntax: `<node> <role> [--force] [--purge-data] [--offline] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node, by id or exact name, and the role to remove
+  %%> - `--force` confirms the removal and its dependent cleanup
+  %%> - `--purge-data` also deletes role data: for `metrics` the Prometheus and Grafana volumes and the stored credentials, for `websocket` the Reverb checkout
+  %%> - `--offline` removes the role from a Node the Gateway can't reach
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, lock the role<br/>task #5172 · app-dev on Node 12
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - `--force` is given
+  %%> - the role is not `vpn` or `router`; those are protected from this command
+  %%> - the role is `active` or `failed`; `provisioning` or `removing` is refused until its claim is stale
+  %%> - `app-dev`: Node 12 owns no Instances
+  %%> - no Route depends on the role
+  %%> - `swamp`: its workers don't run this removal; a Node's own Swamp role can't remove itself
+  %%> - one role operation per Node: the Gateway waits up to 2 minutes for Node 12's role lock, then refuses with `node_role.node_busy`
+  %%> Decides:
+  %%> - whether Swamp must reach Node 12, or only the record changes
+  alt --offline
+    Note over GW: Delete only the record<br/>R1: no run · Node unchanged
+    %%> When:
+    %%> - Node 12 can't be reached, so nothing can change on it
+    %%> Result:
+    %%> - the `app-dev` assignment on Node 12 is deleted
+    %%> - no Swamp run starts (R1)
+    %%> On the Node:
+    %%> - the role's packages, units and files stay as they are
+    %%> - when Node 12 leaves the Metrics selection, the next Metrics change drops it from Prometheus
+    GW-->>CLI: Role removed<br/>offline · Node not changed
+    %%> What you get:
+    %%> - the final result at once; there is nothing to follow
+  else Node 12 is reachable
+    Note over GW: Mark the role removing<br/>role: removing · plan the rest
+    %%> Builds:
+    %%> - the publication of the roles that stay: Caddy sites, PHP pools, private DNS names
+    %%> - what to remove: the role's units, containers, certificates and firewall rules
+    %%> - the Metrics fleet change, when Node 12 leaves the selection
+    %%> Result:
+    %%> - the role marked removing, and task #5172 recorded with the full intent
+    GW->>SW: Start run, full intent<br/>operation-node-role-remove
+    %%> What it does:
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the removal plan and the publication of the remaining roles
+    %%> - Node 12's and the Metrics Node's addresses and SSH host keys; the SSH identity comes from the `swamp` role
+    GW-->>CLI: 202 Accepted<br/>task #5172
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    opt Node 12 leaves Metrics
+      SW->>M: Drop Node 12, reload<br/>validate, reload Prometheus
+      %%> When:
+      %%> - this was Node 12's last role that takes part in Metrics, and it has no `enabled` exporter preference
+      %%> What it does:
+      %%> - publishes the Prometheus configuration without Node 12 and reloads it; no restart
+      %%> Why first:
+      %%> - Prometheus never scrapes an exporter that is already gone
+      SW->>N: Remove the exporters<br/>node-exporter · cAdvisor
+      %%> What it does:
+      %%> - the same steps as `metrics:exporter:disable`: stops and removes both exporters and their firewall allows
+    end
+    SW->>N: Publish remaining roles<br/>Caddy, PHP, DNS · reload
+    %%> What it does:
+    %%> - publishes the Caddy sites, PHP pools and private DNS names of the roles that stay, without this role's parts
+    %%> - validates first, then reloads Caddy and PHP-FPM gracefully
+    %%> - private DNS names go through the shared DNS step on the `vpn` Node
+    SW->>N: Remove the role runtime<br/>units, containers, certificates
+    %%> What it does:
+    %%> - stops and removes the role's own units and containers, and its certificates
+    %%> - with `--purge-data`: also deletes the role's data
+    %%> Kept:
+    %%> - shared packages, Tool Managers and their Tools, and anything another role still uses
+    %%> How:
+    %%> - official `@swamp/cfgmgmt` behaviors (systemd, docker_container, file, directory) over SSH from 209
+    SW->>N: Remove role firewall rules<br/>@swamp/cfgmgmt/firewall
+    %%> What it does:
+    %%> - removes the role's managed `orbit:` rules; operator rules stay
+    %%> Last role:
+    %%> - restores `orbit:public-ssh-recovery` first, so Node 12 stays reachable over public SSH
+    SW->>N: Check it is gone<br/>no units, rules or sites
+    %%> What it does:
+    %%> - checks the role's units, containers, firewall rules and Caddy sites are absent
+    %%> - checks the remaining roles' services still answer
+    alt every step passes
+      N-->>SW: role absent
+      %%> Returns:
+      %%> - the check passed
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Delete the assignment<br/>role gone · task succeeded
+      %%> Result:
+      %%> - the `app-dev` assignment on Node 12 is deleted
+      %%> - Node 12's exporter is recorded as removed, when it left Metrics
+      %%> - with `--purge-data`: the stored role credentials are deleted
+      %%> - task #5172 succeeds
+    else a step fails
+      N--xSW: exit ≠ 0 or still present
+      %%> When:
+      %%> - a reload, removal, firewall or check step fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code
+      Note over GW: Mark the role failed<br/>remove:STEP · rerun after a fix
+      %%> Result:
+      %%> - the role stays recorded, marked failed at `remove:STEP` with the step's own error code
+      %%> - task #5172 fails
+      %%> On the Node:
+      %%> - parts removed before the failure stay removed; there is no rollback
+      %%> - that is safe: each removal step skips what is already gone
+      %%> Retry:
+      %%> - run the same command again after fixing the cause
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5172
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  end

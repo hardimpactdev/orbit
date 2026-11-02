@@ -1,0 +1,142 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 + 1 (certificate signing is the one step call), metrics.exporter_enable decisions (reload, don't restart), single-swamp-node. docs/reference/metrics.md.
+  %% status: draft
+  %% command: metrics:enable
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane G icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>Prometheus·Grafana
+  participant G as Gateway Node<br/>Caddy for Grafana
+  CLI->>GW: metrics:enable 12<br/>Node id or name
+  %%> Command:
+  %%> - `orbit metrics:enable 12`
+  %%> - syntax: `[node] [--json]`
+  %%> Input:
+  %%> - the Node that runs Prometheus and Grafana; in a terminal the CLI lists the active Nodes and asks
+  %%> - with `--json` or without a terminal, the Node is required (`metrics.node_required`)
+  %%> What it does:
+  %%> - gives Node 12 the `metrics` role, and shows its dashboards at `https://metrics.orbit`
+  Note over GW: Check, claim the role<br/>role: provisioning · task #5173
+  %%> Requirements:
+  %%> - exactly one active Gateway Node, and your Node has an access grant to it
+  %%> - Node 12 is an active, managed Linux Node
+  %%> - no Node has the `metrics` role yet, not even a failed one (`node.role_conflict`)
+  %%> - no other Metrics change runs; the Gateway holds one Metrics lock
+  %%> Builds:
+  %%> - the Prometheus configuration with every selected exporter Node as a target
+  %%> - Grafana's datasource and 3 dashboards, and both container specs with pinned images
+  %%> - the Grafana firewall rules, the Caddy site on the Gateway Node, and the private DNS name
+  %%> Secrets:
+  %%> - creates the Grafana `admin` password once, stored encrypted; a later enable reuses it
+  %%> - pushes it to the Swamp vault as key `metrics-role-operation-5173`; the inputs hold only that name
+  %%> Result:
+  %%> - the `metrics` assignment on Node 12 recorded with status provisioning
+  %%> - task #5173 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-metrics-role
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the configuration files, container specs, exporter list and publication
+  %%> - the vault key name of the Grafana password
+  %%> - Node 12's and the Gateway Node's addresses and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5173
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Install Docker<br/>@swamp/cfgmgmt/apt · systemd
+  %%> What it does:
+  %%> - installs `docker.io` when no healthy Docker is present, and keeps it running
+  %%> - waits for a busy apt lock within the run's time budget
+  SW->>N: Write the configuration<br/>promtool check, then publish
+  %%> What it does:
+  %%> - writes the Prometheus configuration as a candidate and validates it with `promtool` first
+  %%> - publishes it and the Grafana provisioning files in `/etc/orbit/metrics`
+  %%> How:
+  %%> - official `@swamp/cfgmgmt/directory` and `@swamp/cfgmgmt/file` behaviors over SSH from 209
+  SW->>N: Write the Grafana password<br/>vault.get → stdin · mode 0400
+  %%> What it does:
+  %%> - reads the password from the vault and writes the protected password file through stdin
+  %%> Why:
+  %%> - the password never appears in inputs, outputs or logs (R3)
+  SW->>N: Start the containers<br/>Prometheus · Grafana
+  %%> What it does:
+  %%> - pulls the pinned images and starts `orbit-metrics-prometheus` and `orbit-metrics-grafana`
+  %%> - keeps the named data volumes, so a re-enable continues with the old data
+  %%> Gentle:
+  %%> - a container whose spec is unchanged keeps running; only a changed configuration is applied, with a Prometheus reload
+  %%> - a container is recreated only when its spec or image changes
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors (docker_image, systemd, docker_container) over SSH from 209
+  SW->>N: Check health once<br/>/-/ready · Grafana /api/user
+  %%> What it does:
+  %%> - checks Prometheus answers ready, and Grafana accepts the `admin` login
+  Note over SW: Add the fleet exporters<br/>same steps as exporter:enable
+  %%> What it does:
+  %%> - for each selected Node: the exporters, their WireGuard listeners and the firewall allows for Node 12
+  %%> - the same steps that `metrics:exporter:enable` runs for one Node
+  %%> Which Nodes:
+  %%> - every eligible Node with a role that takes part in Metrics, or an `enabled` preference, and Node 12 itself
+  SW->>GW: Sign metrics.orbit cert<br/>operation:direct:certificate-sign
+  %%> How:
+  %%> - a step creates the key on the Gateway Node and reads only the CSR
+  %%> - the Gateway signs it with the Orbit CA; this is the one call a step may make to the Gateway
+  GW-->>SW: Signed certificate<br/>leaf + chain
+  %%> What happens next:
+  %%> - Swamp writes the certificate beside its key on the Gateway Node
+  SW->>N: Allow the Gateway in<br/>ufw · Grafana port 3000
+  %%> What it does:
+  %%> - allows only the Gateway Node to reach Grafana on port 3000, and denies other peers
+  %%> - places the allow above the deny, and both above broad WireGuard trust
+  %%> How:
+  %%> - official `@swamp/cfgmgmt/firewall` over SSH from 209
+  SW->>G: Publish metrics.orbit<br/>validate, reload Caddy · DNS
+  %%> Open:
+  %%> - the DNS part is under the DNS hold; Nick decides
+  %%> What it does:
+  %%> - adds the `metrics.orbit` site to the Gateway Node's Caddyfile, validates it, and reloads Caddy gracefully
+  %%> - Caddy asks the Gateway to authorize each request, then proxies over WireGuard to Grafana
+  %%> - publishes `metrics.orbit` to the Gateway's WireGuard address through the shared DNS step on the `vpn` Node
+  alt every step passes
+    G-->>SW: metrics.orbit answers
+    %%> Returns:
+    %%> - Caddy serves the site with the new certificate
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway for a result
+    Note over GW: Record result<br/>role: active · task succeeded
+    %%> Result:
+    %%> - the `metrics` role on Node 12 becomes active
+    %%> - each fleet exporter is recorded as active
+    %%> - task #5173 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0 or not ready
+    %%> When:
+    %%> - a package, config validation, container, health check, exporter, certificate, firewall or Caddy step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the role failed<br/>keep assignment · resume step
+    %%> Result:
+    %%> - the assignment and the Grafana password stay; the role is marked failed with the step's error code
+    %%> - task #5173 fails
+    %%> On the Node:
+    %%> - finished steps stay, so a publication failure keeps the running containers; there is no rollback
+    %%> Retry:
+    %%> - Swamp resumes from the failed step; finished steps don't run again
+    %%> - a new enable is refused while the failed assignment exists; converge it with `orbit node:role:add 12 metrics --converge`
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5173
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
