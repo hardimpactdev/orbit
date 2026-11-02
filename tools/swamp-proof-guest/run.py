@@ -166,7 +166,9 @@ def main():
         receipt['proof_pass'] = (operation.get('status') == fixture['expect']['status'] and not operation.get('swamp_run_id')
                                  and receipt['parity']['exit'] == 0 and (receipt['total_seconds'] or 0) <= fixture['budget_seconds']
                                  and (fire is None or ((fire.get('fire') or {}).get('status') == fixture['expect']['fire']
-                                                       and (fire.get('native') or {}).get('status') == fixture['expect']['fire'])))
+                                                       and (fire.get('native') or {}).get('status') == fixture['expect']['fire']
+                                                       and ((fire.get('fire') or {}).get('result') or {}).get('error_code')
+                                                       == fixture['expect'].get('fire_error_code'))))
         return receipt
     if not operation.get('swamp_run_id'):
         receipt.update(proof_pass=False, error='no native run was bound', reply=reply)

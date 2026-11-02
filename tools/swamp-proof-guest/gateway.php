@@ -68,7 +68,8 @@ if ($argv[1] === 'seed') {
 }
 
 if ($argv[1] === 'fires') {
-    $started = microtime(true);
+    $begun = microtime(true);
+    $started = null;
     $subscriber = app(SwampRunSubscriber::class);
     $fire = null;
     do {
@@ -80,16 +81,20 @@ if ($argv[1] === 'fires') {
                 $job->release(10);
             }
         }
-        $fire = Operation::query()->where('kind', 'schedule.run')->where('triggered_by', 'schedule')->get()
-            ->first(static fn (Operation $operation): bool => ($operation->input['id'] ?? null) === $input['schedule']);
+        $fires = Operation::query()->where('kind', 'schedule.run')->where('triggered_by', 'schedule')->get()
+            ->filter(static fn (Operation $operation): bool => ($operation->input['id'] ?? null) === $input['schedule']);
+        // A fire is a task from its start; note one seen running, then wait for the first one to end.
+        $started = $started ?? ($fires->contains(static fn (Operation $operation): bool => ! $operation->status->terminal()) ? microtime(true) : null);
+        $fire = $fires->first(static fn (Operation $operation): bool => $operation->status->terminal());
         if ($fire !== null) {
             break;
         }
         sleep(2);
-    } while (microtime(true) < $started + (int) $input['seconds']);
+    } while (microtime(true) < $begun + (int) $input['seconds']);
     $subscriber->close();
     echo json_encode(['fire' => $fire === null ? null : ['id' => $fire->id, 'status' => $fire->status->value, 'result' => $fire->result,
-        'run_id' => $fire->state['swamp_fire']['run_id'] ?? null], 'seconds' => round(microtime(true) - $started, 2)]), PHP_EOL;
+        'run_id' => $fire->state['swamp_fire']['run_id'] ?? null], 'seen_running' => $started !== null,
+        'seconds' => round(microtime(true) - $begun, 2)]), PHP_EOL;
     exit($fire === null ? 2 : 0);
 }
 
