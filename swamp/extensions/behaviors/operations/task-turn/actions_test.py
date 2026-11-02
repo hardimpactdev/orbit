@@ -3,10 +3,13 @@
 import ast
 import json
 import os
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,6 +17,7 @@ from pathlib import Path
 import yaml
 
 SCRIPTS = Path(__file__).with_name("scripts")
+TURN = Path(__file__).resolve().parent.parent / "tasks/turn.ts"
 TOKEN = "synthetic-pi-test-token-with-at-least-32-characters"
 
 
@@ -105,26 +109,37 @@ class TurnActions(unittest.TestCase):
             ["git", *args], cwd=self.repo, text=True, stderr=subprocess.DEVNULL
         ).strip()
 
-    def run_step(self, name, *, ok=True, **extra):
+    def worker_path(self):
+        """The task VM image's tools for 209 commands: sh, curl and awk, and no jq."""
+        tools = Path(self.temp.name) / "worker-tools"
+        if not tools.exists():
+            tools.mkdir()
+            for name, choices in {
+                "sh": ["sh"],
+                "curl": ["curl"],
+                "awk": ["mawk", "awk"],
+            }.items():
+                found = next(filter(None, map(shutil.which, choices)))
+                (tools / name).symlink_to(found)
+        return str(tools)
+
+    def run_step(self, name, *, ok=True, terminal_ok=True, **extra):
+        if name in {"receipt_read", "difference"}:
+            return self.reader(
+                "receipt" if name == "receipt_read" else "difference",
+                {"path": str(self.repo / ".git/orbit/receipt.json")}
+                if name == "receipt_read"
+                else {
+                    "counts": str(self.repo / ".git/orbit/counts"),
+                    "patch": str(self.repo / ".git/orbit/patch"),
+                },
+                ok,
+            )
         remote = name == "receipt_prepare"
         args = [sys.executable, "-B", str(SCRIPTS / (name + ".py"))]
-        if name == "receipt_read":
-            args.append(str(self.repo / ".git/orbit/receipt.json"))
-        if name == "difference":
-            args.extend(
-                [
-                    str(self.repo / ".git/orbit/counts"),
-                    str(self.repo / ".git/orbit/patch"),
-                ]
-            )
-        if name in {
-            "session_create",
-            "message_send",
-            "interrupt",
-            "observe",
-            "receipt_read",
-            "difference",
-        }:
+        env = {**os.environ, "ORBIT_TURN_INPUT": json.dumps(self.value)}
+        terminal = Path(self.temp.name) / "local/terminal.json"
+        if name in {"session_create", "message_send", "interrupt", "observe"}:
             flow = yaml.safe_load(
                 (
                     Path(__file__).resolve().parents[4]
@@ -136,16 +151,9 @@ class TurnActions(unittest.TestCase):
             )
             # command/shell runs `sh -c`, without errexit or pipefail.
             args = ["sh", "-c", step["task"]["inputs"]["run"]]
-            extra = {
-                "ORBIT_PUBLIC_MODE": "receipt"
-                if name == "receipt_read"
-                else "difference",
-                "ORBIT_RECEIPT": str(self.repo / ".git/orbit/receipt.json"),
-                "ORBIT_COUNTS": str(self.repo / ".git/orbit/counts"),
-                "ORBIT_PATCH": str(self.repo / ".git/orbit/patch"),
-                **extra,
-            }
-            extra = {
+            terminal.parent.mkdir(exist_ok=True)
+            env = {
+                "PATH": self.worker_path(),
                 "ORBIT_PI_PATH": {
                     "session_create": "/sessions",
                     "message_send": "/sessions/session-14/messages",
@@ -154,16 +162,12 @@ class TurnActions(unittest.TestCase):
                 "ORBIT_PI_SESSION": self.value["session_id"],
                 "ORBIT_PI_TURN": "operation-" + str(self.value["operation_id"]),
                 "ORBIT_PI_BODY": "{}",
-                **extra,
+                "ORBIT_TERMINAL": str(terminal),
             }
         result = subprocess.run(
             args,
             input=json.dumps(self.value) if remote else None,
-            env={
-                **os.environ,
-                "ORBIT_TURN_INPUT": json.dumps(self.value),
-                **extra,
-            },
+            env={**env, **extra},
             text=True,
             capture_output=True,
             check=False,
@@ -171,11 +175,45 @@ class TurnActions(unittest.TestCase):
         )
         self.assertNotIn(TOKEN, result.stdout + result.stderr)
         self.assertEqual(result.returncode == 0, ok, result.stderr)
+        if name == "observe" and result.returncode == 0:
+            self.assertEqual(result.stdout, "")
+            return self.reader(
+                "terminal",
+                {
+                    "path": str(terminal),
+                    "turn": "operation-" + str(self.value["operation_id"]),
+                },
+                terminal_ok,
+            )
         return (
             json.loads(result.stdout)
             if result.returncode == 0 and result.stdout.strip()
             else result
         )
+
+    def reader(self, method, args, ok=True):
+        """Run one private-file reader of tasks/turn.ts as the worker does."""
+        result = subprocess.run(
+            [
+                "deno",
+                "eval",
+                (
+                    "const [file, method, args] = Deno.args;"
+                    "try { console.log(await (await import(file))[method](JSON.parse(args))); }"
+                    "catch (error) { console.error(error.message); Deno.exit(1); }"
+                ),
+                TURN.as_uri(),
+                method,
+                json.dumps(args),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=120,
+        )
+        self.assertNotIn(TOKEN, result.stdout + result.stderr)
+        self.assertEqual(result.returncode == 0, ok, result.stderr)
+        return json.loads(result.stdout) if result.returncode == 0 else result
 
     def pi_server(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), PiHandler)
@@ -319,13 +357,13 @@ class TurnActions(unittest.TestCase):
         tools = Path(self.temp.name) / "tools"
         tools.mkdir()
         record = Path(self.temp.name) / "curl-argv"
-        real = subprocess.check_output(["which", "curl"], text=True).strip()
+        real = shutil.which("curl")
         (tools / "curl").write_text(
             '#!/bin/sh\nprintf "%s\\n" "$@" >> "' + str(record) + '"\n'
             'exec "' + real + '" "$@"\n'
         )
         (tools / "curl").chmod(0o755)
-        path = str(tools) + ":" + os.environ["PATH"]
+        path = str(tools) + ":" + self.worker_path()
         for name in ["session_create", "message_send", "observe", "interrupt"]:
             self.run_step(name, **env, PATH=path)
         self.assertEqual(len(server.calls), 4)
@@ -334,10 +372,47 @@ class TurnActions(unittest.TestCase):
 
     def test_malformed_pi_event_reports_one_fixed_code(self):
         server, env = self.pi_server()
-        server.malformed = "not json private-pi-text"
-        result = self.run_step("observe", ok=False, **env)
+        server.disconnect = True
+        server.malformed = '{"state": "done", "turnId": "operation-15", private-pi-text'
+        result = self.run_step("observe", terminal_ok=False, **env)
         self.assertEqual(result.stderr, "tasks.pi_event_invalid\n")
         self.assertNotIn("private-pi-text", result.stdout)
+
+    def test_observe_runs_on_the_task_vm_image_tools_against_the_proof_fixture(self):
+        # The proof's Swamp worker is a task VM: sh, curl and awk, no jq.
+        source = (
+            Path(__file__).resolve().parents[4] / "proof/tasks.turn/pi_fixture.py"
+        ).read_text()
+        listen = 'HTTPServer(("0.0.0.0", 3774), Handler)'
+        self.assertIn(listen, source)
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        fixture = Path(self.temp.name) / "pi_fixture.py"
+        fixture.write_text(
+            source.replace(
+                listen,
+                'turn = "operation-15"\nHTTPServer(("127.0.0.1", '
+                + str(port)
+                + "), Handler)",
+            )
+        )
+        server = subprocess.Popen([sys.executable, "-I", str(fixture)])
+        self.addCleanup(server.wait)
+        self.addCleanup(server.kill)
+        for _ in range(100):
+            with socket.socket() as client:
+                if client.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            time.sleep(0.05)
+        terminal = self.run_step(
+            "observe",
+            ORBIT_PI_TOKEN=TOKEN,
+            ORBIT_PI_URL="http://127.0.0.1:" + str(port),
+        )
+        self.assertEqual(terminal["state"], "done")
+        self.assertEqual(terminal["usage"]["total"], 4)
+        self.assertEqual(shutil.which("jq", path=self.worker_path()), None)
 
     def test_malformed_receipt_and_counts_report_one_fixed_code(self):
         root = self.repo / ".git/orbit"

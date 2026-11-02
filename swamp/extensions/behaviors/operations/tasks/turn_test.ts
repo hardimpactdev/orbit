@@ -1,5 +1,16 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { finish, Input, prepare } from "./turn.ts";
+import {
+    assertEquals,
+    assertRejects,
+    assertThrows,
+} from "jsr:@std/assert@1";
+import {
+    difference,
+    finish,
+    Input,
+    prepare,
+    receipt,
+    terminal,
+} from "./turn.ts";
 
 const head = "a".repeat(40), tree = "b".repeat(40);
 export function turnInput(role = "implementer") {
@@ -148,4 +159,42 @@ Deno.test("a mismatched worker Node is refused before any placed action", () => 
         Error,
         "tasks.node_mismatch",
     );
+});
+
+Deno.test("private worker readers return fixed codes and never quote their input", async () => {
+    const dir = await Deno.makeTempDir();
+    const path = dir + "/terminal.json";
+    const turn = "operation-15";
+    const write = (value: unknown) =>
+        Deno.writeTextFile(path, typeof value === "string" ? value : JSON.stringify(value));
+    await assertRejects(() => terminal({ path, turn }), Error, "tasks.pi_completion_unconfirmed");
+    await write("{private-pi-text");
+    const invalid = await assertRejects(() => terminal({ path, turn }), Error);
+    assertEquals(invalid.message, "tasks.pi_event_invalid");
+    await write({ state: "done", turnId: "operation-14", usage: {} });
+    await assertRejects(() => terminal({ path, turn }), Error, "tasks.pi_completion_unconfirmed");
+    for (const usage of [{ total: -1 }, { total: "4" }, { total: true }, []]) {
+        await write({ state: "done", turnId: turn, usage });
+        await assertRejects(() => terminal({ path, turn }), Error, "tasks.pi_usage_invalid");
+    }
+    await write({ state: "failed", turnId: turn, usage: { total: 4, provider_key: "x" } });
+    assertEquals(JSON.parse(await terminal({ path, turn })), {
+        state: "failed",
+        turnId: turn,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 4, calls: 0, peakContext: 0 },
+    });
+    assertEquals(await receipt({ path: dir + "/missing.json" }), "null");
+    await Deno.symlink(path, dir + "/link.json");
+    await assertRejects(() => receipt({ path: dir + "/link.json" }), Error, "tasks.receipt_invalid");
+    await Deno.writeTextFile(dir + "/big.json", " ".repeat(65537));
+    await assertRejects(() => receipt({ path: dir + "/big.json" }), Error, "tasks.receipt_invalid");
+    await Deno.writeTextFile(dir + "/counts", "1\t2\ta\tb\0-\t-\tbinary\0");
+    await Deno.writeTextFile(dir + "/patch", "token=private-patch-text\n");
+    const shaped = JSON.parse(await difference({ counts: dir + "/counts", patch: dir + "/patch" }));
+    assertEquals(shaped.files, [
+        { path: "a\tb", insertions: 1, deletions: 2 },
+        { path: "binary", insertions: 0, deletions: 0 },
+    ]);
+    assertEquals(shaped.diff, "token=[REDACTED]\n");
+    await Deno.remove(dir, { recursive: true });
 });

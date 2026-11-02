@@ -344,32 +344,35 @@ jobs:
     - step: message_send
       condition:
         type: succeeded
+    - step: prepare_local
+      condition:
+        type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        # The first matching terminal event ends the read, so curl may then get EPIPE: only
-        # jq's status counts. jq diagnostics can quote Pi text and never reach history.
+        # The worker has no jq. awk keeps the first terminal event of this turn, unparsed, in
+        # the run's private directory; the terminal step parses it. Nothing from the stream
+        # reaches history. The match ends the read, so curl may get EPIPE: only awk's status counts.
         run: |
           set -u
+          umask 077
           status=0
           curl --fail --silent --location --max-redirs 0 --max-time 1800 --no-buffer \
             --variable %ORBIT_PI_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_PI_TOKEN}}' \
             "$ORBIT_PI_URL/sessions/$ORBIT_PI_SESSION/stream?max_bytes=1048576" |
-            jq -cRn --arg turn "$ORBIT_PI_TURN" -f /dev/fd/3 3<<'PI_FILTER' 2>/dev/null || status=$?
-          def fail($status): "" | halt_error($status);
-          (first(inputs | if utf8bytelength > 1048576 then fail(21) else (try fromjson catch fail(24)) end
-            | select(type == "object" and .turnId == $turn and (.state == "done" or .state == "failed"))) // fail(22)) as $event |
-          ["input","output","cacheRead","cacheWrite","total","calls","peakContext"] as $keys |
-          (reduce $keys[] as $key ({}; .[$key] = (if ($event.usage | type) == "object" and ($event.usage | has($key)) then $event.usage[$key] else 0 end))) as $usage |
-          if all($usage[]; type == "number" and isfinite and . >= 0) then {state:$event.state, turnId:$turn, usage:$usage} else fail(23) end
-          PI_FILTER
+            awk -v turn="$ORBIT_PI_TURN" -v out="$ORBIT_TERMINAL" '
+              BEGIN { code = 22 }
+              length($0) > 1048576 { code = 21; exit }
+              $0 ~ ("\"turnId\"[ \t]*:[ \t]*\"" turn "\"") && $0 ~ /"state"[ \t]*:[ \t]*"(done|failed)"/ {
+                print > out; code = 0; exit
+              }
+              END { exit code }' 2>/dev/null || status=$?
           case $status in
             0) exit 0 ;;
             21) code=tasks.pi_event_too_large ;;
             22) code=tasks.pi_completion_unconfirmed ;;
-            23) code=tasks.pi_usage_invalid ;;
             *) code=tasks.pi_event_invalid ;;
           esac
           printf '%s\n' "$code" >&2
@@ -379,8 +382,23 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_SESSION: ${{ inputs.intent.session_id }}
           ORBIT_PI_TURN: ${{ "operation-" + string(inputs.operation_id) }}
+          ORBIT_TERMINAL: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
         timeout: 1800000
       behaviorName: ${{ "task-turn-observe" }}
+  - name: terminal
+    labels: {role: swamp}
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: task-turn-terminal
+      methodName: terminal
+      inputs:
+        path: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
+        turn: ${{ "operation-" + string(inputs.operation_id) }}
   - name: snapshot_after_index
     labels: {role: swamp}
     dependsOn:
@@ -683,56 +701,10 @@ jobs:
         type: succeeded
     task:
       type: behavior
-      behaviorType: command/shell
-      methodName: execute
+      behaviorType: '@nckrtl/task-turn-data'
+      methodName: receipt
       inputs:
-        # One redaction filter for receipt and diff text. jq diagnostics can quote private
-        # input, so they never reach history: a failure prints one fixed code.
-        run: &public_output |
-          set -u
-          if [ "$ORBIT_PUBLIC_MODE" = receipt ]; then
-            if [ ! -e "$ORBIT_RECEIPT" ]; then printf 'null\n'; exit 0; fi
-            if [ -L "$ORBIT_RECEIPT" ] || [ "$(stat -c %s -- "$ORBIT_RECEIPT")" -gt 65536 ]; then
-              printf 'tasks.receipt_invalid\n' >&2
-              exit 1
-            fi
-            set -- --arg counts "" --arg patch "" --rawfile receipt "$ORBIT_RECEIPT"
-          else
-            set -- --arg receipt "" --rawfile counts "$ORBIT_COUNTS" --rawfile patch "$ORBIT_PATCH"
-          fi
-          status=0
-          jq -cn --arg mode "$ORBIT_PUBLIC_MODE" "$@" -f /dev/fd/3 3<<'PUBLIC_FILTER' 2>/dev/null || status=$?
-          def fail: "" | halt_error(1);
-          def redact:
-            gsub("(?<![A-Za-z0-9])[a-fA-F0-9]{64}(?![A-Za-z0-9])"; "[REDACTED]") |
-            gsub("\u001b\\[[0-?]*[ -/]*[@-~]"; "") |
-            gsub("-----BEGIN [A-Z0-9 ]+-----[\\s\\S]*?(?:-----END [A-Z0-9 ]+-----|$)"; "[REDACTED]") |
-            (if contains("-----END ") then split("-----END ")[-1] | sub("^[\\s\\S]*?-----"; "") else . end) |
-            gsub("(?i)(?<scheme>\\b[a-z][a-z0-9+.-]*://)[^/@\\s]+@"; "\(.scheme)[REDACTED]@") |
-            gsub("(?i)(?:Proxy-)?Authorization\\s*:[^\\r\\n]*"; "Authorization: [REDACTED]") |
-            gsub("(?i)\\bBearer\\s+[A-Za-z0-9._+/=-]+"; "Bearer [REDACTED]") |
-            gsub("(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})"; "[REDACTED]") |
-            gsub("(?<q>[\"']?)(?<name>[A-Za-z][A-Za-z0-9_-]{0,255})\\k<q>(?<sep>\\s*[:=]\\s*)(?<value>\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,}&{\\[\\]]+)";
-              "\(.q)\(.name)\(.q)\(.sep)" +
-              (if .name | test("TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|APIKEY|APPKEY|PRIVATEKEY|KEYS?"; "i") then "[REDACTED]" else .value end));
-          def public: walk(if type == "string" then redact else . end);
-          def count: if . == "-" then 0 elif test("^[0-9]+$") then tonumber else fail end;
-          if $mode == "receipt" then
-            $receipt | try fromjson catch fail | public
-          else
-            [$counts | split("\u0000")[] | select(length > 0) | split("\t") | if length < 3 then fail else . end |
-              {path: .[2:] | join("\t"), insertions: (.[0] | count), deletions: (.[1] | count)}] as $files |
-            ($patch | redact) as $diff |
-            {files: $files[:500], diff: $diff[:65536], files_complete: ($files | length <= 500), diff_available: ($diff | length <= 65536),
-             summary: {files: ($files | length), insertions: ([$files[].insertions] | add // 0), deletions: ([$files[].deletions] | add // 0)}} | public
-          end
-          PUBLIC_FILTER
-          [ "$status" -eq 0 ] && exit 0
-          if [ "$ORBIT_PUBLIC_MODE" = receipt ]; then printf 'tasks.receipt_invalid\n' >&2; else printf 'tasks.difference_invalid\n' >&2; fi
-          exit 1
-        env:
-          ORBIT_RECEIPT: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/receipt.json" }}
-          ORBIT_PUBLIC_MODE: receipt
+        path: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/receipt.json" }}
       behaviorName: task-turn-receipt-read
   - name: difference
     labels: {role: swamp}
@@ -745,14 +717,11 @@ jobs:
         type: succeeded
     task:
       type: behavior
-      behaviorType: command/shell
-      methodName: execute
+      behaviorType: '@nckrtl/task-turn-data'
+      methodName: difference
       inputs:
-        run: *public_output
-        env:
-          ORBIT_COUNTS: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.numstat" }}
-          ORBIT_PATCH: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.patch" }}
-          ORBIT_PUBLIC_MODE: difference
+        counts: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.numstat" }}
+        patch: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.patch" }}
       behaviorName: task-turn-difference
     guard: ${{ inputs.intent.role == "implementer" }}
   - name: interrupt
@@ -918,6 +887,9 @@ jobs:
     - step: snapshot_before
       condition:
         type: always
+    - step: terminal
+      condition:
+        type: always
     - step: observe
       condition:
         type: always
@@ -952,13 +924,13 @@ jobs:
           : "" }}'
         after: '${{ has(steps.snapshot_after) && has(steps.snapshot_after.outputs) && has(steps.snapshot_after.outputs.stdout) ? steps.snapshot_after.outputs.stdout
           : "" }}'
-        terminal: '${{ has(steps.observe) && has(steps.observe.outputs) && has(steps.observe.outputs.stdout) ? steps.observe.outputs.stdout : "" }}'
+        terminal: '${{ has(steps.terminal) && has(steps.terminal.outputs) && has(steps.terminal.outputs.stdout) ? steps.terminal.outputs.stdout : "" }}'
         receipt: '${{ has(steps.receipt_read) && has(steps.receipt_read.outputs) && has(steps.receipt_read.outputs.stdout) ? steps.receipt_read.outputs.stdout
           : "" }}'
         difference: '${{ has(steps.difference) && has(steps.difference.outputs) && has(steps.difference.outputs.stdout) ? steps.difference.outputs.stdout
           : "" }}'
         restored: '${{ has(steps.restore) && has(steps.restore.outputs) && has(steps.restore.outputs.stdout) ? steps.restore.outputs.stdout : "" }}'
-        failure: ${{ !has(steps.observe) || steps.observe.status != "succeeded" || !has(steps.receipt_read) || steps.receipt_read.status != "succeeded"
+        failure: ${{ !has(steps.terminal) || steps.terminal.status != "succeeded" || !has(steps.receipt_read) || steps.receipt_read.status != "succeeded"
           || (inputs.intent.role == "reviewer" && (!has(steps.restore) || steps.restore.status != "succeeded")) || (inputs.intent.role != "implementer"
           && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
         failure_code: '${{ has(steps.prepare.outputs) ? steps.prepare.outputs.error_code : null }}'

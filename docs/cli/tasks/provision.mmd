@@ -109,8 +109,8 @@ sequenceDiagram
       SW->>VM: Implementer turn<br/>pi driver · new thread
       %%> What it does:
       %%> - a fresh Pi implementer writes the subtask in the checkout and returns a receipt
-      %%> - `session_create`, `message_send` and `observe` use bounded curl and jq on 209; curl reads the Pi token from its environment, and redirects fail
-      %%> - `receipt_read` and `difference` redact downloaded private data with one jq filter before native history; a jq failure prints one fixed code
+      %%> - `session_create`, `message_send` and `observe` use bounded curl on 209; curl reads the Pi token from its environment, and redirects fail
+      %%> - `observe` keeps the turn's terminal event in a private worker file with awk; `terminal`, `receipt_read` and `difference` read and redact private files in TypeScript; a failure prints one fixed code
       %%> Rules:
       %%> - the agent never fetches or pushes; Durable retries provider errors inside the turn
       %%> Replaces:

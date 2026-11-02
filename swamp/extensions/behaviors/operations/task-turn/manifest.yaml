@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/task-turn-scripts'
-version: 2026.11.02.1
+version: 2026.11.02.2
 visibility: private
 license: MIT
 description: Pi turn metadata and separate native workspace and API actions.

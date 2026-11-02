@@ -56,9 +56,16 @@ class NativeTurn(harness.NativeTestCase):
         shutil.copytree(
             source, target, ignore=shutil.ignore_patterns("*test*", "__pycache__")
         )
-        module = self.repo / "extensions/behaviors/operations/tasks/turn.ts"
-        module.parent.mkdir(parents=True)
-        shutil.copy(ROOT / "extensions/behaviors/operations/tasks/turn.ts", module)
+        # turn.ts and the repository redaction rule it imports, with that rule's imports.
+        for name in [
+            "operations/tasks/turn.ts",
+            "operations/task-repository/program.ts",
+            "operations/task-repository/input.ts",
+            "_lib/repository_analysis.ts",
+        ]:
+            module = self.repo / "extensions/behaviors" / name
+            module.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / "extensions/behaviors" / name, module)
         inventory = json.loads(
             (ROOT / "extensions/models/upstream_extensions.json").read_text()
         )

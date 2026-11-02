@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { redactText } from "../task-repository/program.ts";
 
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/);
@@ -153,6 +154,133 @@ export function finish(raw: unknown) {
     };
     return { result_json: JSON.stringify(result), successful: !failed };
 }
+const USAGE_KEYS = [
+    "input",
+    "output",
+    "cacheRead",
+    "cacheWrite",
+    "total",
+    "calls",
+    "peakContext",
+] as const;
+const HEX_CREDENTIAL = /(?<![A-Za-z0-9])[a-fA-F0-9]{64}(?![A-Za-z0-9])/g;
+
+/** The repository redaction rule, plus the task VM's 32-byte hex Pi and router credentials. */
+export function redactTurnText(raw: string): string {
+    return redactText(raw.replace(HEX_CREDENTIAL, "[REDACTED]"));
+}
+
+function publicValue(value: unknown): unknown {
+    if (typeof value === "string") return redactTurnText(value);
+    if (Array.isArray(value)) return value.map(publicValue);
+    if (value !== null && typeof value === "object") {
+        return Object.fromEntries(
+            Object.entries(value).map(([key, item]) => [key, publicValue(item)]),
+        );
+    }
+    return value;
+}
+
+/*
+ * The three readers below run on the Swamp worker against files that only
+ * official SSH copy or the observe step wrote into the run's private local
+ * directory. Raw text never leaves them: parser and file errors become one
+ * fixed code, because their messages can quote the private input.
+ */
+async function readPrivate(path: string, code: string): Promise<string> {
+    try {
+        return await Deno.readTextFile(path);
+    } catch {
+        throw new Error(code);
+    }
+}
+function parsePrivate(raw: string, code: string): unknown {
+    try {
+        return JSON.parse(raw);
+    } catch {
+        throw new Error(code);
+    }
+}
+
+/** The matching terminal Pi event: its state and seven finite nonnegative usage counts. */
+export async function terminal(args: { path: string; turn: string }) {
+    const event = parsePrivate(
+        await readPrivate(args.path, "tasks.pi_completion_unconfirmed"),
+        "tasks.pi_event_invalid",
+    ) as Record<string, unknown> | null;
+    if (
+        event === null || typeof event !== "object" ||
+        event.turnId !== args.turn ||
+        (event.state !== "done" && event.state !== "failed")
+    ) throw new Error("tasks.pi_completion_unconfirmed");
+    const raw = event.usage ?? {};
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new Error("tasks.pi_usage_invalid");
+    }
+    const usage: Record<string, number> = {};
+    for (const key of USAGE_KEYS) {
+        const value = (raw as Record<string, unknown>)[key] ?? 0;
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+            throw new Error("tasks.pi_usage_invalid");
+        }
+        usage[key] = value;
+    }
+    return JSON.stringify({ state: event.state, turnId: args.turn, usage });
+}
+
+/** The agent's receipt, redacted, or `null` when the agent wrote none. */
+export async function receipt(args: { path: string }) {
+    let info: Deno.FileInfo;
+    try {
+        info = await Deno.lstat(args.path);
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return "null";
+        throw new Error("tasks.receipt_invalid");
+    }
+    if (!info.isFile || info.size > 65536) {
+        throw new Error("tasks.receipt_invalid");
+    }
+    return JSON.stringify(publicValue(parsePrivate(
+        await readPrivate(args.path, "tasks.receipt_invalid"),
+        "tasks.receipt_invalid",
+    )));
+}
+
+/** File counts from `git diff --numstat -z` and the redacted patch, both bounded. */
+export async function difference(args: { counts: string; patch: string }) {
+    const count = (value: string) => {
+        if (value === "-") return 0;
+        if (!/^[0-9]+$/.test(value)) throw new Error("tasks.difference_invalid");
+        return Number(value);
+    };
+    const files = (await readPrivate(args.counts, "tasks.difference_invalid"))
+        .split("\0").filter((row) => row.length > 0).map((row) => {
+            const [added, removed, ...name] = row.split("\t");
+            if (removed === undefined || name.length === 0) {
+                throw new Error("tasks.difference_invalid");
+            }
+            return {
+                path: name.join("\t"),
+                insertions: count(added),
+                deletions: count(removed),
+            };
+        });
+    const diff = redactTurnText(
+        await readPrivate(args.patch, "tasks.difference_invalid"),
+    );
+    return JSON.stringify(publicValue({
+        files: files.slice(0, 500),
+        diff: diff.slice(0, 65536),
+        files_complete: files.length <= 500,
+        diff_available: diff.length <= 65536,
+        summary: {
+            files: files.length,
+            insertions: files.reduce((sum, file) => sum + file.insertions, 0),
+            deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+        },
+    }));
+}
+
 type PublicContext = {
     extensionFile(name: string): string;
     writeResource(
@@ -179,6 +307,12 @@ export const turnDataResources = {
         lifetime: "infinite",
         garbageCollection: 10,
         schema: z.object({ stdout: z.string(), head: Sha, tree: Sha }),
+    },
+    publicOutput: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        description: "Redacted public JSON read from the run's private worker files",
+        schema: z.object({ stdout: z.string() }),
     },
     turnResult: {
         lifetime: "infinite",
@@ -223,6 +357,48 @@ export const turnDataMethods = {
                             tree: args.tree.trim(),
                         }),
                     ),
+                }),
+            ],
+        }),
+    },
+    terminal: {
+        description: "Read the matching terminal Pi event from the private worker file",
+        arguments: z.object({ path: z.string().startsWith("/"), turn: z.string() }),
+        execute: async (
+            args: { path: string; turn: string },
+            ctx: PublicContext,
+        ) => ({
+            dataHandles: [
+                await ctx.writeResource("publicOutput", "terminal", {
+                    stdout: await terminal(args),
+                }),
+            ],
+        }),
+    },
+    receipt: {
+        description: "Read and redact the agent receipt from the private worker file",
+        arguments: z.object({ path: z.string().startsWith("/") }),
+        execute: async (args: { path: string }, ctx: PublicContext) => ({
+            dataHandles: [
+                await ctx.writeResource("publicOutput", "receipt", {
+                    stdout: await receipt(args),
+                }),
+            ],
+        }),
+    },
+    difference: {
+        description: "Read and redact the turn diff from the private worker files",
+        arguments: z.object({
+            counts: z.string().startsWith("/"),
+            patch: z.string().startsWith("/"),
+        }),
+        execute: async (
+            args: { counts: string; patch: string },
+            ctx: PublicContext,
+        ) => ({
+            dataHandles: [
+                await ctx.writeResource("publicOutput", "difference", {
+                    stdout: await difference(args),
                 }),
             ],
         }),

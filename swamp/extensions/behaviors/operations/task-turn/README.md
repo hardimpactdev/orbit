@@ -28,15 +28,22 @@ token from its own environment with `--variable %ORBIT_PI_TOKEN` and
 `--expand-header`, so the token is never in argv or the run string. Request bodies
 travel the same way. Redirects fail without forwarding the credential. The
 Gateway checks the token length at admission (`tasks.pi_credential_unavailable`).
-A streaming jq filter accepts only the matching turn's terminal event and seven
-finite nonnegative usage fields; disconnects fail without a retry.
+
+The worker commands use only `sh`, `curl` and `awk`. The task VM image, which also
+runs the proof topology's Swamp worker, has no `jq`. `observe` streams the Pi
+events through `awk`, which writes the first terminal event of this turn, unparsed,
+into the run's private worker directory. A disconnect fails without a retry. The
+`terminal` step (TypeScript, `tasks/turn.ts`) then parses that file and keeps only
+the state and seven finite nonnegative usage counts.
 
 Raw receipt and diff text stays out of native history. Official SSH copy downloads
-the files into a private worker directory. One jq filter, shared by `receipt_read`
-and `difference`, redacts text before it emits the public receipt or diff.
+the files into the same private directory. The `receipt_read` and `difference`
+steps are TypeScript readers. They apply the repository redaction rule
+(`redactText` in `task-repository/program.ts`) plus the VM's 64-hex credential
+format before they emit the public receipt or diff.
 
-jq diagnostics can quote their input, so every jq step discards them. A failed
-step prints one fixed code: `tasks.pi_event_too_large`,
+Parser and file errors can quote private input, so every reader and `observe` fail
+with one fixed code only: `tasks.pi_event_too_large`,
 `tasks.pi_completion_unconfirmed`, `tasks.pi_usage_invalid`,
 `tasks.pi_event_invalid`, `tasks.receipt_invalid` or `tasks.difference_invalid`.
 
@@ -45,13 +52,15 @@ It replaces `outcome.py`; the public result and failure codes stay the same.
 
 ## Verification status
 
-Ten pinned native tests, eleven action tests, eight data tests and four Gateway tests
+Ten pinned native tests, twelve action tests, nine data tests and four Gateway tests
 pass, including failed/interrupted turns, private receipt/diff text, the token outside
-curl argv and fixed codes for malformed Pi events, receipts and counts.
+curl argv, fixed codes for malformed Pi events, receipts and counts, and `observe`
+against the proof's Pi fixture with only the task VM image's tools.
 The native outcome conversion passes on shared minimal@9 at `f41a857e5b`:
 `~/swamp-execution/evidence/proof/tasks.turn/20261102T151441Z-minimal.json`,
 51.39 seconds against a 180-second budget and `queueTimeout: 60`.
 The proof uses real Gateway, vault, SSH and Git with a synthetic Pi server.
-That proof predates the curl and jq Pi actions, which have no live receipt yet.
+The minimal@10 proof of `ac06c3561a` failed: its `observe` needed `jq`, which the
+task VM image lacks. The curl and awk actions have no live receipt yet.
 This is a partial conversion; the image-owned receipt tool remains. It is not a
 rule 22 completion claim.
