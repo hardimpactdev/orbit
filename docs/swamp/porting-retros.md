@@ -233,3 +233,19 @@ Node and role removal use official cfgmgmt behaviors and SSH argv. Eleven shippe
 Four passing minimal@10 receipts cover online Node removal, offline consent, WebSocket role removal and a drained CI host. Operation p95 and maximum are 42.89 seconds across four samples, with queueTimeout 30 seconds. The receipt index is `swamp/proof/receipts/node-removal.json`. Task VM 322 is destroyed. The WebSocket fixture uses a disposable sleep service; no production data is involved.
 
 Proof failures found a nested Caddy field and sparse Route block metadata passed to the strict full-publication contract. Admission now captures that contract directly. Routed UFW deletion uses one shared argv builder with `route` before `delete`. Fixture checks follow the recorded keys and role firewall catalog, and offline parity removes its test SSH block. Eleven native removal tests and 25 Gateway removal tests pass.
+
+## Fleet observer and role files (rule 22, partial)
+
+Fleet recipe and role callers replace five scripts with official file resources, bounded identity and checkout argv, and the shared native PHP, private DNS and Route residue workflows. The Gateway captures their public file intent and SSH descriptor. DNS rollback is removed. The final CLI script remains queued; recipe.py is the approved open gap. The release checkout owns its worker renderer; extension manifests omit it. No new kind is declared done.
+
+| Fresh receipt on minimal@10 | Runtime, one sample | Run budget / queue timeout |
+| --- | --- | --- |
+| `evidence/proof/node.converge/20261102T163119Z-minimal.json` | 64.13 s | 1800 / 30 s |
+| `evidence/proof/node.role_converge/20261102T164744Z-minimal.json` | 37.01 s | 1800 / 60 s |
+| `evidence/proof/fleet.recipe/20261102T165733Z-minimal.json` | 104.38 s | 1800 / 60 s |
+
+Each row's p95 equals its one sample. The recipe proof uses the existing topology-only StaticCliRelease catalog with real public CLI 0.8725.0, downloaded and checked on the Node. Package pins and the agent use the normal recipe and frozen manifest. The retained add/relocate callers have native graph coverage; their whole roots still require target workers and are not proved on minimal.
+
+The role proof found a missing kind input in the native child; its dispatcher now forwards it. The recipe run succeeded before parity exposed Linux's environment size limit. Parity now reads the full Operation from a JSON file. A real subprocess test covers a 1 MiB intent. Ten Fleet, eight role and two retained role graph tests pass, alongside 193 Node Deno and 50 Gateway tests.
+
+Before this note, Orbit shrinks by 1256 lines. Swamp behaviors shrink by 411, workflows by 4, shipped scripts by 789 and tests by 423. Fixtures grow by 184 for the native transport boundaries and real Gateway proofs. Chart, harness and validation changes account for the remainder.

@@ -21,6 +21,8 @@ Porting happens in a production-equivalent dev topology, never against productio
 
 A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet.
 
+Parity receives the full Operation through the JSON file named by `PROOF_OPERATION_FILE`, keeping large recipe intents out of the process environment.
+
 Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
 A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even titled "retire" or "remove" (#2257, #2259). So does a Gateway change to a kind's admission, intent, inputs, vault pushes, minting, signing or projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and lane 26 review. Only deletion, docs and test PRs fix forward without a receipt, after a deletion-speed review of tests and docs. An outage fix skips the receipt only if its PR body says "merges without a topology receipt" and names the live check that follows the load (#2332).
