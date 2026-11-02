@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4 + 2 (DNS hold), firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Change an existing Route).
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Change an existing Route).
   %% status: draft
   %% command: route:update
   autonumber
@@ -107,10 +107,6 @@ sequenceDiagram
     %%> - checks the loaded catalog and a DNS reply
     %%> Cutover:
     %%> - from here the new domain is the one that serves; a later failure recovers forward
-    Note over V: open: Nick decides<br/>DNS hold · native-dns-takeover
-    %%> Open:
-    %%> - DNS publication is under the DNS hold; Nick decides (rule 9)
-    %%> - until then, the run skips this step and Route work stays same-Node work
     Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
     %%> Why:
     %%> - resolvers that honor the TTL stop asking for the old name before its site leaves
