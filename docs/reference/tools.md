@@ -67,7 +67,9 @@ Removal runs these steps in order. It stops at the first step that fails, except
 
 When the apt source cannot be removed, the removal still succeeds and the Tool is deleted. The apt repository record stays, and the next install from that source reuses it.
 
-There is no separate manager kind. `Set up the Tool Manager` is one shared child workflow, `operation-tool-manager-setup`: `tool:install` runs it on a Linux first use, and a development deploy runs it for Vite+. `node:add` needs no apt setup: when `node.bootstrap_host` succeeds, the Gateway records apt as a ready Tool Manager. Role convergence keeps its own local manager prerequisite for Composer and Vite+. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
+There is no separate manager kind. `Set up the Tool Manager` is one shared child workflow, `operation-tool-manager-setup`: `tool:install` runs it on a Linux first use, and a development deploy runs it for Vite+. Native role add uses that child for Composer and Vite+, with convergence enabled so an existing manager receives the recipe's pinned resources. Ordinary first use still skips a ready manager.
+
+`node:add` needs no apt setup: when `node.bootstrap_host` succeeds, the Gateway records apt as ready. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
 

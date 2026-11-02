@@ -1554,7 +1554,7 @@ export function analyzeYaml(
     const steps = object(jobs[Number(path[1])]).steps;
     const task = object(object(Array.isArray(steps) ? steps[Number(path[3])] : undefined).task);
     return task.type === "behavior" && task.behaviorType === "@swamp/cfgmgmt/file" &&
-      task.methodName === "apply" && object(task.globalArgs).mode === "0600" && worker209(path);
+      ["apply", "check"].includes(String(task.methodName)) && object(task.globalArgs).mode === "0600" && worker209(path);
   };
   const wholeVault = (value: unknown) => {
     if (typeof value !== "string") return false;

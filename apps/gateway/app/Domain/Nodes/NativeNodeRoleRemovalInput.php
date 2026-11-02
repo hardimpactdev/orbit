@@ -105,6 +105,9 @@ final readonly class NativeNodeRoleRemovalInput
                 $units[] = 'orbit-websocket.service';
             }
         }
+        if ($assignment->role === RoleName::Gateway) {
+            $units[] = 'orbit-gateway-dns.service';
+        }
         $files = [];
         $directories = [];
         $reloads = $units === [] ? [] : [['ssh' => $ssh, 'input' => []]];

@@ -35,6 +35,8 @@ The workflow uses native dependencies and resume. It validates Prometheus config
 
 The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
 
+Native `node:role:add <node> metrics` uses the same public container specification. It pulls images with cfgmgmt, starts each container with one Docker argv, and checks it with `docker_container check`. A vault-backed cfgmgmt file supplies Grafana's password at mode `0600`; the host's `orbit-grafana` system account uses the container's UID and GID, `472`.
+
 ## Enable and recover
 
 Enable the role with `orbit metrics:enable <node>`. The Node must be active. The role is a singleton and can share a Node with any other role. A second enable returns `node.role_conflict`, even when the existing assignment failed.

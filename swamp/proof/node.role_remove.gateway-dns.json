@@ -1,0 +1,45 @@
+{
+  "kind": "node.role_remove.gateway-dns",
+  "workflow": "operation-node-role-remove-direct",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "cd apps/gateway && printf '%s' '{\"replace_roles\":{\"${node.metrics}\":[\"gateway\"]}}' | php ../../tools/swamp-proof-guest/gateway.php fixture"
+    ]
+  ],
+  "before_node": {
+    "metrics": [
+      [
+        "sh",
+        "-c",
+        "mkdir -p /etc/systemd/system/wg-quick@orbit.service.d; printf '[Unit]\\nDescription=Proof Gateway DNS\\n[Service]\\nType=oneshot\\nExecStart=/usr/bin/true\\n[Install]\\nWantedBy=multi-user.target\\n' > /etc/systemd/system/orbit-gateway-dns.service; touch /etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf; systemctl daemon-reload; systemctl enable orbit-gateway-dns.service"
+      ]
+    ]
+  },
+  "request": {
+    "method": "DELETE",
+    "path": "nodes/${node.metrics}/roles/gateway",
+    "body": {
+      "force": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Confirm role removal",
+      "job": "remove",
+      "step": "Confirm role removal",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_add/gateway_dns_removal_parity.py"
+  ]
+}

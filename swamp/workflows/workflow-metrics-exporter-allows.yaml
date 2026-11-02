@@ -1,6 +1,7 @@
 id: f1bfc018-2d18-431d-a8f7-8554b869a580
 name: metrics-exporter-allows
 description: Apply the exporter Node's captured firewall rules for the Metrics Node with the official firewall behavior.
+queueTimeout: 30
 inputs:
   properties:
     operation_id: {type: integer, minimum: 1}

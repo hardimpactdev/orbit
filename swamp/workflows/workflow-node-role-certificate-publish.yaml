@@ -2,6 +2,7 @@ id: 4ae59518-f877-4ab7-9a51-069cd462a7ec
 name: node-role-certificate-publish
 description: 'A fixed role: a Node-made key and CSR, signed from 209, installed by official steps, then a Caddy reload.'
 vaults: []
+queueTimeout: 30
 inputs:
   type: object
   properties:

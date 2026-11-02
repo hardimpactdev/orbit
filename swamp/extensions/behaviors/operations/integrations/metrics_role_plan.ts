@@ -17,6 +17,7 @@ const Service = z.object({
   image: z.string(),
   unit: z.string(),
   volume_args: z.array(z.string()),
+  argv: z.array(z.string()),
 });
 const Plan = z.object({
   services: z.array(Service),
@@ -67,6 +68,7 @@ export const behavior = {
           return {
             name: name(s),
             image: image(s),
+            argv: ["timeout", "60", "/usr/bin/docker", ...spec.args],
             volume_args: [
               "/usr/bin/docker",
               "volume",

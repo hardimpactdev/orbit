@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/node-role-resources'
+version: 2026.11.02.1
+visibility: private
+license: MIT
+description: Public CI and ClickHouse resource plans for native Node role workflows.
+behaviors:
+  - operations/node/role_resources.ts

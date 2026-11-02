@@ -949,6 +949,7 @@ Deno.test("a vault value may be the whole content of a 0600 cfgmgmt file on a 20
   const file = "workflows/workflow-database-login.yaml";
   const source = JSON.stringify(workflow);
   assertEquals(analyzeYaml(file, source).findings.filter((f) => f.rule === "vault-placement"), []);
+  assertEquals(analyzeYaml(file, source.replace('"methodName":"apply"', '"methodName":"check"')).findings.filter((f) => f.rule === "vault-placement"), []);
   for (const changed of [source.replace('"mode":"0600"', '"mode":"0644"'), source.replace(vault, "prefix " + vault)]) {
     assert(analyzeYaml(file, changed).findings.some((f) => f.rule === "vault-placement"));
   }

@@ -1,0 +1,42 @@
+{
+  "kind": "node.role_add.websocket",
+  "workflow": "operation-node-role-add",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.metrics}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {
+      "role": "websocket"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Check the role",
+      "job": "role",
+      "step": "Check the role",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "metrics",
+    "websocket"
+  ]
+}

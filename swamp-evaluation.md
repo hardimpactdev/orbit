@@ -51,6 +51,16 @@ The removal family uses official cfgmgmt and direct SSH argv, with no shipped sc
 | Verify removal | Resource check methods and native assert. Could checks optionally fail on drift while retaining their state? |
 | Purge role data | Guarded official exec covers Docker volumes and ordered Incus project/network/ACL deletion. Could native resource behaviors cover these absent operations? |
 
+## Node role lifecycle candidates
+
+| Chart action | Separate pinned operations and candidate question |
+| --- | --- |
+| Install prerequisites | Refresh APT, apply packages, fetch pinned PHP packages, install them in one transaction, check exact versions. Could apt accept verified local package sets and bounded lock options? |
+| Apply the role runtime | File and directory apply, systemd apply, restart and check remain separate methods. Could systemd restart only when its binary or configuration changes? |
+| Write private files | File apply and check retain only content hashes and metadata. Numeric owners compare against stat's account names, so Grafana needs a named account at UID/GID 472. Could file resolve numeric owners for its compliance check? |
+| Publish the config | File stages a candidate, SSH validates and copies over the live inode, then sends SIGHUP. Could file preserve the inode for single-file Docker bind mounts? |
+| Check the role | Official checks record non-compliance without failing. A native assertion enforces their statuses. Could an optional fail-on-drift mode remove that extra step? |
+
 ## Fleet resource conversion candidates
 
 The official resources keep file publication, systemd apply and restart, and the final digest check visible as separate operations. Could systemd apply restart only when its unit or binary changed and prove the resulting service state? The shared observer flow currently restarts on every visit.

@@ -9,6 +9,7 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
@@ -61,7 +62,8 @@ final readonly class AdmitNodeRoleOperationAction
             if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
-            $native = $converge && NativeNodeRoleConvergeInput::supports($node, $role);
+            $nativeAdd = ! $converge;
+            $native = $nativeAdd || NativeNodeRoleConvergeInput::supports($node, $role);
             if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
                 || (! $native && ! app(NodeRolePlacement::class)->allows($node))) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);
@@ -85,6 +87,7 @@ final readonly class AdmitNodeRoleOperationAction
                 $this->analyticsStorage->assert($analytics->postgresProcessId, $analytics->clickhouseProcessId);
                 $this->analytics->store($node, $analytics);
             }
+            $beforePublications = $nativeAdd ? app(NativeNodeRoleRemovalInput::class)->publications($node, $role) : [];
             $operation = $this->operations->execute($kind, 'node', $node->id, $node->id,
                 ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge], 'operator', $requestId);
             if (! $operation->wasRecentlyCreated) {
@@ -100,20 +103,22 @@ final readonly class AdmitNodeRoleOperationAction
             }
             app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
             $snapshot = app(NodeRoleDirectInput::class)->capture($node->refresh(), $assignment, $created);
-            if (ValidatedData::object($snapshot['footprint'])['refusal'] !== null) {
+            if (! $nativeAdd && ValidatedData::object($snapshot['footprint'])['refusal'] !== null) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'An applicable footprint contribution has no native action.', 422);
             }
             $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
-            $native = $native && $metrics === null;
+            $native = $nativeAdd || ($native && $metrics === null);
             if (! $native && ! app(NodeRolePlacement::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'This role set requires its existing Node worker.', 422);
             }
             $metricsOwner = $metrics === null ? $node->id : ValidatedData::integer($metrics['metrics_node_id']);
             $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
             $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
-            $nativeInput = $native ? app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot) : null;
+            $nativeInput = $nativeAdd
+                ? app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, $beforePublications, $operation)
+                : ($native ? app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot) : null);
             $this->store->change($operation, ['input' => [...$operation->input, '_role' => $snapshot,
-                ...($nativeInput === null ? [] : ['native_role' => $nativeInput['intent'], 'execution_secrets' => []]),
+                ...($nativeInput === null ? [] : ['native_role' => $nativeInput['intent'], 'execution_secrets' => $nativeInput['execution_secrets'] ?? []]),
                 'participant_node_ids' => array_values(array_unique([$node->id,
                     ...($nativeInput['participant_node_ids'] ?? []),
                     ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),

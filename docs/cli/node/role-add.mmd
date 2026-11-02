@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, DECISIONS R1-R4 + 5 (shared SSH identity), metrics.exporter_enable decisions, single-swamp-node. docs/cli/node.mdx#orbit-noderoleadd, docs/reference/node-provisioning.md.
   %% Tightened: flow-tighten 2026-11-02, rules 9, 22 (cfgmgmt behaviors named; their checks are the end check, no file read-back).
-  %% status: draft
+  %% status: migrated
   %% command: node:role:add
   %% kind: node.role_add
   autonumber
@@ -54,89 +54,257 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Install prerequisites<br/>@swamp/cfgmgmt/apt · Tool Managers
-  %%> What it does:
-  %%> - checks the Ubuntu release the role supports, then installs the role's packages
-  %%> - waits for a busy apt lock within the run's time budget
-  %%> Per role:
-  %%> - `app-dev`, `app-prod`: the pinned PHP build and JavaScript runtimes, the `vp` and `composer` Tool Managers through the shared Tool Manager setup step, and `<home>/apps` for `app-dev`
-  %%> - Caddy roles: the pinned Caddy release, only when Caddy is missing or below the floor
-  %%> - `database`, `analytics`: the Docker engine
-  %%> - `ci-runner`: the Incus host boundary
-  %%> How:
-  %%> - official `@swamp/cfgmgmt` behaviors (apt, fetch, file) over SSH from 209
-  SW->>N: Apply the role runtime<br/>@swamp/cfgmgmt file · systemd
-  %%> What it does:
-  %%> - runs the same steps as role converge (`node.role_converge`): files, units and services of the role
-  %%> Per role:
-  %%> - Caddy roles: the Caddyfile, validated first, then a graceful Caddy reload
-  %%> - `app-dev`, `app-prod`: the managed PHP-FPM module; a graceful reload of valid running masters
-  %%> - `app-dev`: the `/etc/tmpfiles.d/orbit.conf` rule for `/tmp/orbit-*` and `/dev/shm/orbit-*`
-  %%> - `websocket`: the Reverb service
-  %%> - `analytics`: Plausible, beside the given storage Processes
-  %%> - `swamp`: Orbit's Caddy and the 2 worker services `orbit-swamp-worker@a` and `@b`
-  %%> - `metrics`: Prometheus and Grafana, with the same steps as `metrics:enable`
-  %%> How:
-  %%> - official `@swamp/cfgmgmt` behaviors (file, systemd, docker) over SSH from 209
-  %%> Not included:
-  %%> - the Node agent, its files and the Orbit CLI; `node:converge` owns them
-  opt role needs a certificate
-    SW->>GW: Sign the role certificate<br/>operation:direct:certificate-sign
-    %%> When:
-    %%> - the role serves TLS with an Orbit certificate, for example `database` or `websocket`
-    %%> How:
-    %%> - a step creates the key on Node 12 and reads only the CSR
-    %%> - the Gateway signs the CSR with the Orbit CA; this is the one call a step may make to the Gateway
-    %%> Why:
-    %%> - the private key never leaves Node 12, and the CA key never leaves the Gateway
-    GW-->>SW: Signed certificate<br/>leaf + chain
-    %%> What happens next:
-    %%> - Swamp writes the certificate beside its key on Node 12 and activates it
+  %% Each Swamp label below is an actual parent workflow step.
+  %% Official child workflows retain their own resource checks.
+  SW->>N: Read the OS release<br/>SSH argv
+  SW->>SW: Require supported Ubuntu<br/>native assert
+  opt role plan needs this action
+  SW->>N: Install Caddy<br/>native child workflow
   end
-  SW->>N: Publish and open ports<br/>@swamp/cfgmgmt file · firewall
-  %%> What it does:
-  %%> - publishes the role's Caddy sites and PHP pools, validates them, and reloads gracefully
-  %%> - adds the role's managed firewall rules with `@swamp/cfgmgmt/firewall`
-  %%> - publishes the role's private DNS names, such as the Reverb host, through the shared DNS step on the `vpn` Node
-  %%> First role:
-  %%> - removes the public SSH rule, so Node 12 is reached only over WireGuard from then on
-  opt Node 12 joins Metrics
-    SW->>N: Add the exporters<br/>@swamp/cfgmgmt apt · systemd
-    %%> When:
-    %%> - a Metrics role exists, and this role makes Node 12 a selected exporter; every role takes part except `swamp`
-    %%> What it does:
-    %%> - the same steps as `metrics:exporter:enable`: the exporters, their WireGuard listeners, and the Metrics Node's firewall allows
-    SW->>M: Publish the config<br/>validate, reload Prometheus
-    %%> What it does:
-    %%> - validates the new Prometheus configuration with `promtool`, publishes it, and reloads Prometheus while it runs
-    %%> - no restart, so collection from other Nodes continues
+  SW->>N: Refresh package lists<br/>cfgmgmt apt
+  SW->>N: Install prerequisites<br/>cfgmgmt apt
+  opt role plan needs this action
+  SW->>N: Create role folders<br/>cfgmgmt directory
   end
-  opt private DNS footprint is required
-    SW->>N: native_private_dns
-    %%> What it does:
-    %%> - the shared node-private-dns workflow applies listener files, units, records and catalog, then checks the loaded catalog
+  opt role plan needs this action
+  SW->>N: Download Bun<br/>cfgmgmt fetch
   end
-  opt PHP runtime footprint is required
-    SW->>N: native_php_runtime
-    %%> What it does:
-    %%> - one forEach runs node-php-runtime for each admitted PHP version, with official file and link resources, validation and reload
+  opt role plan needs this action
+  SW->>N: Extract Bun<br/>cfgmgmt archive
   end
-  opt tmpfiles footprint is required
-    SW->>N: native_tmpfiles
-    %%> What it does:
-    %%> - official cfgmgmt file applies /etc/tmpfiles.d/orbit.conf
+  opt role plan needs this action
+  SW->>N: Publish Bun<br/>cfgmgmt link
   end
-  opt removed Routes left residue
-    SW->>N: native_route_residue
-    %%> What it does:
-    %%> - the shared node-route-residue workflow removes each admitted leftover; its failed cleanup is recorded as skipped
+  opt role plan needs this action
+  SW->>N: Publish the Bun command<br/>cfgmgmt link
   end
-  SW->>N: Check the role<br/>@swamp/cfgmgmt check
-  %%> What it does:
-  %%> - checks the role's services are active and answer, such as Caddy, PHP-FPM or Reverb
-  %%> - the `check` of each file and systemd behavior confirms its content and state; no separate read-back
+  opt role plan needs this action
+  SW->>N: Check Bun version<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Download PHP packages<br/>cfgmgmt fetch
+  end
+  opt role plan needs this action
+  SW->>N: Install PHP packages<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Set up Tool Managers<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Configure PHP-FPM<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Write role files<br/>cfgmgmt file
+  end
+  SW->>N: Reload role units<br/>SSH argv
+  opt role plan needs this action
+  SW->>N: Start role services<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Create runtime groups<br/>cfgmgmt group
+  end
+  opt role plan needs this action
+  SW->>N: Create runtime users<br/>cfgmgmt user
+  end
+  opt role plan needs this action
+  SW->>N: Create runtime folders<br/>cfgmgmt directory
+  end
+  opt role plan needs this action
+  SW->>N: Check out Reverb<br/>cfgmgmt git
+  end
+  opt role plan needs this action
+  SW->>N: Install Reverb packages<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Write runtime files<br/>cfgmgmt file
+  end
+  opt role plan needs this action
+  SW->>N: Write private files<br/>cfgmgmt file
+  end
+  %%> Secrets:
+  %%> - vault.get supplies the complete private file to cfgmgmt file; owner and mode 0600 apply without logging its content
+  opt role plan needs this action
+  SW->>N: Publish the Reverb release<br/>cfgmgmt link
+  end
+  opt role plan needs this action
+  SW->>N: Apply Gateway DNS policy<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Start Gateway DNS policy<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Check Gateway DNS policy<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Apply runtime units<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Restart Reverb<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>SW: Plan Metrics containers<br/>public resource plan
+  end
+  opt role plan needs this action
+  SW->>N: Pull Metrics images<br/>cfgmgmt docker_image
+  end
+  opt role plan needs this action
+  SW->>N: Create Metrics volumes<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Remove Metrics containers<br/>cfgmgmt docker_container
+  end
+  opt role plan needs this action
+  SW->>N: Start Metrics containers<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Check Metrics containers<br/>cfgmgmt docker_container
+  end
+  opt role plan needs this action
+  SW->>SW: Plan CI resources<br/>public resource plan
+  end
+  opt role plan needs this action
+  SW->>N: Read CI resources<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Create CI resources<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Configure CI resources<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Check CI resources<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>SW: Prepare ClickHouse files<br/>public resource plan
+  end
+  opt role plan needs this action
+  SW->>N: Create ClickHouse folders<br/>cfgmgmt directory
+  end
+  opt role plan needs this action
+  SW->>N: Write ClickHouse config<br/>cfgmgmt file
+  end
+  opt role plan needs this action
+  SW->>N: Pull the Analytics image<br/>cfgmgmt docker_image
+  end
+  opt role plan needs this action
+  SW->>N: Prepare Analytics storage<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Apply Analytics runtime<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Wait for runtime endpoints<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Set the Grafana password<br/>SSH argv
+  end
+  opt Swamp role
+  SW->>N: Apply Swamp identity<br/>SSH argv
+  end
+  opt Swamp role
+  SW->>N: Apply Swamp serve<br/>cfgmgmt systemd
+  end
+  opt Swamp role
+  SW->>N: Apply Swamp worker unit<br/>cfgmgmt systemd
+  end
+  opt Swamp role
+  SW->>N: Start ${{ self.worker }}<br/>cfgmgmt systemd
+  end
+  opt Swamp role
+  SW->>N: Check Swamp serve<br/>cfgmgmt systemd
+  end
+  opt Swamp role
+  SW->>N: Check Swamp worker unit<br/>cfgmgmt systemd
+  end
+  opt Swamp role
+  SW->>N: Check ${{ self.worker }}<br/>cfgmgmt systemd
+  end
+  opt Swamp role
+  SW->>N: Check Swamp identity<br/>cfgmgmt file
+  end
+  opt Swamp role
+  SW->>SW: Check Swamp runtime<br/>native assert
+  end
+  opt role plan needs this action
+  SW->>GW: Sign role certificates<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Publish PHP pools<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Publish Caddy sites<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Open role ports<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Close retired ports<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Publish private DNS<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Add the exporters<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Allow Metrics scrapes<br/>native child workflow
+  end
+  opt role plan needs this action
+  SW->>N: Check exporter endpoints<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>M: Stage Prometheus config<br/>cfgmgmt file
+  end
+  opt role plan needs this action
+  SW->>M: Validate Prometheus config<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>M: Publish Prometheus config<br/>SSH argv
+  end
   %%> Why:
-  %%> - the role only counts as active when Node 12 shows it
+  %%> - copy onto the existing file so the running container reads its bind-mounted inode after SIGHUP
+  opt role plan needs this action
+  SW->>M: Reload Prometheus<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>M: Check Prometheus<br/>SSH argv
+  end
+  opt role plan needs this action
+  SW->>N: Check role services<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Check runtime units<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Check runtime groups<br/>cfgmgmt group
+  end
+  opt role plan needs this action
+  SW->>N: Check runtime users<br/>cfgmgmt user
+  end
+  SW->>N: Check prerequisites<br/>cfgmgmt apt
+  opt role plan needs this action
+  SW->>N: Check role folders<br/>cfgmgmt directory
+  end
+  opt role plan needs this action
+  SW->>N: Check role files<br/>cfgmgmt file
+  end
+  opt role plan needs this action
+  SW->>N: Check runtime folders<br/>cfgmgmt directory
+  end
+  opt role plan needs this action
+  SW->>N: Check runtime files<br/>cfgmgmt file
+  end
+  opt role plan needs this action
+  SW->>N: Check private files<br/>cfgmgmt file
+  end
+  opt role plan needs this action
+  SW->>N: Check PHP package versions<br/>SSH argv
+  end
+  SW->>SW: Check the role<br/>native assert
+  %%> Role boundary:
+  %%> - node:converge owns the Node observer, its configuration and the Orbit CLI
+  %%> End checks:
+  %%> - official package, directory, file, container and systemd checks supply compliance; the native assertion requires it
   alt every step passes
     N-->>SW: role services ready
     %%> Returns:
@@ -165,6 +333,10 @@ sequenceDiagram
     %%> - that is safe: every step is idempotent and Caddy is never reloaded with a config that fails validation
     %%> Retry:
     %%> - run `orbit node:role:add 12 app-dev --converge` after fixing the cause
+  end
+  opt run completed or failed
+    SW->>N: Remove Prometheus staging<br/>best-effort cfgmgmt cleanup
+    SW->>N: Remove init containers<br/>best-effort cfgmgmt cleanup
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5170

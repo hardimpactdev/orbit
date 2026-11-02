@@ -564,7 +564,11 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.de
 
 ### Role prerequisites
 
-Each role installs its prerequisites through the agent's `role.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `node.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`, which waits up to 300 seconds for the dpkg locks. A healthy Docker CE installation replaces `docker.io`.
+New assignments from `node:role:add` run through the native role workflow. It reads the supported Ubuntu release, applies prerequisites with official cfgmgmt resources, and checks the resulting files and services. Application roles fetch the recipe's PHP packages and Bun archive with checksums, install PHP in one APT transaction, and converge the shared Tool Managers. Role add applies role-owned resources even when an earlier Node footprint has the same digest. It leaves the observer and Orbit CLI to `node:converge`.
+
+The native Gateway role installs an enabled `orbit-gateway-dns.service` oneshot. It applies the resolver policy when the Orbit interface exists and no peer-owned DNS policy is present. Role removal disables and removes that unit. Native role failures retain completed resources and the failed assignment; there is no rollback chain.
+
+Retained role paths install prerequisites through `role.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `node.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`, which waits up to 300 seconds for the dpkg locks. A healthy Docker CE installation replaces `docker.io`.
 
 For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`. A path that Orbit did not make fails the step with `role.prerequisite_conflict` before any change.
 
