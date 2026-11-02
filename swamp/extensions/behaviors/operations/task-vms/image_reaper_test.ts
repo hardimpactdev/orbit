@@ -430,7 +430,7 @@ Deno.test("native method enforces exact stable host instance and verifies host i
   assertEquals(f.calls, []);
   assertEquals(resources, []);
 });
-Deno.test("schedule has native thirty-minute cadence and exact discovery/host placement", async () => {
+Deno.test("reaper stays unscheduled with exact discovery/host placement", async () => {
   const workflow = parse(
     await Deno.readTextFile(
       new URL(
@@ -440,7 +440,7 @@ Deno.test("schedule has native thirty-minute cadence and exact discovery/host pl
     ),
   ) as {
     concurrency: number;
-    trigger: { schedule: string };
+    trigger?: unknown;
     jobs: {
       steps: {
         target: string;
@@ -451,7 +451,8 @@ Deno.test("schedule has native thirty-minute cadence and exact discovery/host pl
     }[];
   };
   assertEquals(workflow.concurrency, 1);
-  assertEquals(workflow.trigger.schedule, "0 */30 * * * *");
+  // Unscheduled until its host steps reach hosts through @swamp/ssh from 209 (3f66b05494).
+  assertEquals(workflow.trigger, undefined);
   assertEquals(workflow.jobs[0].steps[0].target, "swamp209-migration-a");
   assertEquals(workflow.jobs[0].steps[0].labels, {
     node: "209",

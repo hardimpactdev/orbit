@@ -1184,8 +1184,11 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy, including the guarded rebuild of a failed App-owned nightly PR on newer main. Closed PRs and PRs modified by a person are never refreshed. A mention from another issue or PR does not count as a modification.
 
-A failed image build blocks readiness, not convergence progress. Run `task-vms:build-recipe --retry` after fixing the build; convergence starts when every host promotes the current identity and generation. A Node visit failure or interrupted visit stays halted for manual recovery, even after an image retry.
+When convergence stops:
 
-A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not change it.
+- If an image build fails, readiness blocks but convergence progress does not. Fix the build, then run `task-vms:build-recipe --retry`.
+- Convergence starts when every host promotes the current identity and generation.
+- If a Node visit fails or is interrupted, it stays halted for manual recovery, even after an image retry.
+- If a Node runs the Docker CE provider, recipe convergence refuses it with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not change it.
 
 Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.

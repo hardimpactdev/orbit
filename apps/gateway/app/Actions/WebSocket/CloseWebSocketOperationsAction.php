@@ -30,9 +30,10 @@ final readonly class CloseWebSocketOperationsAction
                 if ($operation === null || $operation->status->terminal()) {
                     return;
                 }
-                $registry = WebSocketRegistryOperation::query()->find($operation->input['registry_operation_id'] ?? null);
+                $registryId = $operation->input['registry_operation_id'] ?? null;
+                $registry = is_string($registryId) ? WebSocketRegistryOperation::query()->find($registryId) : null;
                 $state = $registry === null ? 'pending' : $this->status->execute($registry)['state'];
-                $expired = $operation->created_at->lessThanOrEqualTo(now()->subSeconds(self::TimeoutSeconds));
+                $expired = $operation->created_at?->lessThanOrEqualTo(now()->subSeconds(self::TimeoutSeconds)) ?? false;
                 $error = match (true) {
                     $state === 'applied' => null,
                     $state === 'superseded' => 'websocket.registry_superseded',
