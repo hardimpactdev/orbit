@@ -259,3 +259,5 @@ Parity reads the full Operation from `PROOF_OPERATION_FILE`, avoiding the operat
 Cancellation 8123 confirms task VM 323 destroyed at 2026-11-02T18:08:51Z. The lane holds no VM. No production serve restart or reload was used.
 
 Orbit shrinks by 974 lines. Swamp behaviors shrink by 337, replaced scripts by 789, tests and fixtures by 440, and configuration by 9. Workflows grow by 11 for native declarations and dependencies. Proof fixtures grow by 217 for the actual recipe, public CLI catalog and receipt index. The other 373 lines cover chart labels, Gateway intent and parity transport.
+
+CI found one remaining consumer of the deleted file script in task VM hub convergence. The parallel fix `aa4362ae72` writes its nft filter and unit with one pinned SSH install argv each, with modes 0600 and 0644. This follow-up preserves that fix, bounds the commands and publishes its exact-label chart. Three native tests cover success, invalid policy, activation failure and missing rules. It adds no full hub receipt and claims no completed hub kind. The seven family receipts remain valid because their execution paths are unchanged.

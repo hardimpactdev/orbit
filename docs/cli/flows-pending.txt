@@ -18,7 +18,6 @@ route.workload_verify
 schedule.install_instance_definitions
 task_vm.destroy
 task_vm.fill_package_cache
-task_vm.hub_converge
 task_vm.image_build
 task_vm.provision
 task_vm.resume

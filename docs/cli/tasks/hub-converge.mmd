@@ -1,0 +1,47 @@
+sequenceDiagram
+  %% status: reviewed
+  %% command: none · task VM hub policy convergence
+  %% kind: task_vm.hub_converge
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as VPN hub<br/>reached over ssh
+  GW->>SW: Admit the hub policy
+  %%> What it does:
+  %%> - capture the hub SSH target, nft filter, unit and exact control and router rules
+  SW->>N: validate
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec
+  SW->>N: filter
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec; one install argv writes the admitted content from stdin
+  SW->>N: unit
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec; one install argv writes the admitted content from stdin
+  SW->>N: control_ssh
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec
+  SW->>N: router_web
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec
+  SW->>N: reload
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec
+  SW->>N: enable
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec
+  SW->>N: activate
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec
+  SW->>N: observe
+  %%> What it does:
+  %%> - uses @swamp/ssh.exec
+  SW->>SW: result
+  %%> What it does:
+  %%> - uses @nckrtl/task-vm-hub-result.decode
+  GW-->>GW: Project terminal result
+  %%> Result:
+  %%> - only the exact observed nft rules can report the hub ready
