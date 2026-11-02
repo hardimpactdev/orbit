@@ -1,4 +1,4 @@
-import projectEnvironmentRuntime from "../development-deploy/scripts/project_environment.py" with { type: "text" };
+import projectEnvironmentRuntime from "./scripts/project_environment.py" with { type: "text" };
 
 /** Shared cache-baseline policy for Instance setup and Task baseline checks. */
 export const ciCacheImportProgram = String
