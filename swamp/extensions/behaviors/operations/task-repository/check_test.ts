@@ -1,8 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
     candidateResult,
+    checkRuns,
     ciResult,
+    finish,
     localResult,
+    minted,
     setupResult,
 } from "./check.ts";
 const commit = "a".repeat(40), start = "2026-10-31T22:00:00Z";
@@ -152,4 +155,98 @@ Deno.test("a failed Project check retains failed evidence when command deliverab
     assertEquals(value.evidence?.commands, {});
     assertEquals(value.deliverables[0].outcome, "failed");
     assertEquals(value.commit, null);
+});
+
+const shell = (exitCode: number, stdout = "", stderr = "") => ({
+    exitCode,
+    stdout,
+    stderr,
+});
+const references = {
+    github_token: { vault: "orbit-control-inputs", key: "task-check-write-a" },
+    checks_token: { vault: "orbit-control-inputs", key: "task-check-read-a" },
+};
+Deno.test("the mint reply must name exactly the admitted vault descriptors", () => {
+    const expected = JSON.stringify(references);
+    const reply = (secrets: unknown) =>
+        JSON.stringify({ data: { execution_secrets: secrets } });
+    assertEquals(
+        minted(
+            shell(
+                0,
+                reply({
+                    checks_token: references.checks_token,
+                    github_token: references.github_token,
+                }),
+            ),
+            expected,
+        ),
+        { minted: true, error_code: "" },
+    );
+    for (
+        const item of [
+            shell(0, reply({ github_token: references.github_token })),
+            shell(22, ""),
+            shell(0, "not json"),
+        ]
+    ) {
+        assertEquals(minted(item, expected), {
+            minted: false,
+            error_code: "tasks.handoff_ci_unavailable",
+        });
+    }
+    assertEquals(minted({}, expected), { minted: false, error_code: "" });
+});
+Deno.test("one Checks read keeps public run fields and refuses an incomplete page", () => {
+    const reply = {
+        total_count: 1,
+        check_runs: [{ ...run, output: { summary: "synthetic-private" } }],
+    };
+    const read = checkRuns(shell(0, JSON.stringify(reply)));
+    assertEquals(read, { runs: [run] });
+    assertEquals(JSON.stringify(read).includes("synthetic-private"), false);
+    for (
+        const item of [
+            shell(0, JSON.stringify({ ...reply, total_count: 101 })),
+            shell(0, JSON.stringify({ ...reply, total_count: 2 })),
+            shell(1, JSON.stringify(reply)),
+        ]
+    ) {
+        assertEquals(checkRuns(item), {
+            error_code: "tasks.handoff_ci_unavailable",
+        });
+    }
+});
+Deno.test("handoff admission maps the mint, push and import outputs to one public code", () => {
+    const local = { outcome: "passed", commit, tree: "b".repeat(40) };
+    const steps = (push: unknown) => ({
+        import: { outputs: shell(0, `${commit}\n${"b".repeat(40)}\n`) },
+        mint_github: {
+            outputs: shell(
+                0,
+                JSON.stringify({ data: { execution_secrets: references } }),
+            ),
+        },
+        push: { outputs: push },
+    });
+    const args = (push: unknown) => ({
+        intent: {
+            ...input,
+            execution_references_json: JSON.stringify(references),
+        },
+        local,
+        after: JSON.stringify({ head: commit, tree: "b".repeat(40) }),
+        steps: steps(push),
+    });
+    const ok = finish(args(shell(0)));
+    assertEquals([ok.pending, ok.minted], [true, true]);
+    assertEquals(
+        finish(args(shell(1, "", "! [rejected] (fetch first)"))).result
+            .error_code,
+        "tasks.not_fast_forward",
+    );
+    assertEquals(
+        finish(args(shell(1, "", "fatal: unable to access"))).result.error_code,
+        "tasks.push_failed",
+    );
 });

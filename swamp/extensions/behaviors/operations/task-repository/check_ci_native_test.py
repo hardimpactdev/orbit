@@ -5,8 +5,7 @@ import json
 import unittest
 
 import yaml
-from publication_actions_test import TOKEN
-from publication_native_test import ROOT, NativePublicationFixture
+from publication_native_test import TOKEN, NativePublicationFixture
 
 
 class NativeCheckCI(NativePublicationFixture):
@@ -73,19 +72,6 @@ class NativeCheckCI(NativePublicationFixture):
         self.server.RequestHandlerClass = type(
             "MintFixture", (self.server.RequestHandlerClass,), {"do_POST": mint_reply}
         )
-        # Only fixture transport changes the canonical Gateway origin/CA.
-        shim = self.repo / "tools/sitecustomize.py"
-        original = shim.read_text().replace(
-            "import subprocess,urllib.request", "import subprocess,urllib.request,ssl"
-        )
-        original = original.replace(
-            "  request.full_url=request.full_url.replace",
-            "  request.full_url=request.full_url.replace('https://gateway.orbit','http://127.0.0.1:"
-            + str(self.server.server_port)
-            + "')\n  request.full_url=request.full_url.replace",
-        )
-        original += "\noriginal_context=ssl.create_default_context\ndef context(*a,**kw):\n kw.pop('cafile',None)\n return original_context(*a,**kw)\nssl.create_default_context=context\n"
-        shim.write_text(original)
         self.flow = self.copy_flow("workflow-operation-task-check.yaml")
         self.flow["name"] = "task-check-fixture"
         (self.repo / "workflows/workflow-check-fixture.yaml").write_text(
@@ -95,29 +81,6 @@ class NativeCheckCI(NativePublicationFixture):
         (self.repo / "workflows/workflow-check-ci.yaml").write_text(
             yaml.safe_dump(schedule, sort_keys=False)
         )
-
-    def copy_flow(self, name):
-        flow = yaml.safe_load((ROOT / "workflows" / name).read_text())
-
-        def rewrite(value):
-            if isinstance(value, str):
-                return value.replace(
-                    "/tmp/orbit-task-check-", str(self.repo / "check-")
-                )
-            if isinstance(value, list):
-                return [rewrite(item) for item in value]
-            if isinstance(value, dict):
-                return {k: rewrite(v) for k, v in value.items()}
-            return value
-
-        flow = rewrite(flow)
-        for job in flow["jobs"]:
-            job.pop("target", None); job.pop("labels", None)
-            job.pop("labels", None)
-            for step in job["steps"]:
-                step.pop("target", None); step.pop("labels", None)
-                step.pop("labels", None)
-        return flow
 
     def execute(self, name, inputs=None, success=True):
         reply = self.cli(

@@ -25,14 +25,17 @@ jobs:
       behaviorName: '${{ "task-check-ci-read-" + string(self._index) }}'
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: |
+          gh api "$ORBIT_PATH"
+        ignoreExitCode: true
+        timeout: 30000
         env:
-          ORBIT_ACTION: ${{ steps.assets.outputs.ci_script }}
-          ORBIT_PENDING_CHECK: ${{ self.check.attributes.input_json }}
-          ORBIT_GITHUB_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
+          GH_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
             }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-ci-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + self.check.attributes.inputs.intent.repository + "/commits/" + self.check.attributes.result.commit + "/check-runs?filter=latest&per_page=100" }}
     forEach: &id001
       item: check
       in: ${{ data.query('modelType == "@nckrtl/task-check-data" && specName == "pending" && tags.task_check == "pending" && attributes.pending == true')
@@ -50,7 +53,7 @@ jobs:
       methodName: ci
       inputs:
         pending: ${{ self.check.attributes }}
-        reading: ${{ steps["read-" + string(self.check.attributes.inputs.operation_id)].outputs.stdout }}
+        read: ${{ steps["read-" + string(self.check.attributes.inputs.operation_id)].outputs }}
     forEach: *id001
     dependsOn:
     - step: read-${{ self.check.attributes.inputs.operation_id }}
@@ -196,13 +199,15 @@ jobs:
       behaviorName: '${{ "task-check-revoke-read-" + string(self._index) }}'
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: |
+          gh api --method DELETE installation/token
+        timeout: 30000
         env:
-          ORBIT_ACTION: ${{ steps.assets.outputs.directory + "/publish_revoke.py" }}
-          ORBIT_GITHUB_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
+          GH_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
             }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-ci-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
     dependsOn:
     - step: settle-${{ self.check.attributes.inputs.operation_id }}
       condition:

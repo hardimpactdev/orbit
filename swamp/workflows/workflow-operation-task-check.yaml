@@ -492,10 +492,13 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/publish_export.py" }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - bundle
+        - create
+        - ${{ "/tmp/orbit-task-check-" + run.id + "/candidate.bundle" }}
+        - HEAD
       globalArgs: *id001
     dependsOn:
     - step: candidate
@@ -503,6 +506,7 @@ jobs:
         type: succeeded
     guard: ${{ has(steps.candidate.outputs.result.error_code) || inputs.intent.check_name == null || steps.candidate.outputs.result.outcome != "passed"
       || steps.candidate.outputs.result.commit == null }}
+    writes: true
   - name: prepare_local
     labels: {role: swamp}
     task:
@@ -545,13 +549,19 @@ jobs:
       behaviorName: '${{ "task-check-import" }}'
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: |
+          set -eu
+          git init --quiet --bare --template= --object-format="$ORBIT_OBJECT_FORMAT" "$ORBIT_REPOSITORY"
+          git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" HEAD:refs/heads/candidate
+          git -C "$ORBIT_REPOSITORY" rev-parse refs/heads/candidate 'refs/heads/candidate^{tree}'
+        ignoreExitCode: true
+        timeout: 60000
         env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_import.py" }}
-          ORBIT_PUBLICATION_INPUT: ${{ steps.candidate.outputs.publication_json }}
-          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-check-" + run.id + "-control" }}
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_OBJECT_FORMAT: ${{ steps.candidate.outputs.object_format }}
+          ORBIT_BUNDLE: ${{ "/tmp/orbit-task-check-" + run.id + "-control/candidate.bundle" }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-check-" + run.id + "-control/repository.git" }}
     dependsOn:
     - step: copy_bundle
       condition:
@@ -562,9 +572,10 @@ jobs:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
       behaviorName: '${{ "task-check-import_result" }}'
-      methodName: decode
+      methodName: imported
       inputs:
-        value: '${{ has(steps.import) && has(steps.import.outputs) && has(steps.import.outputs.stdout) ? steps.import.outputs.stdout : "{}" }}'
+        local: ${{ steps.candidate.outputs.result }}
+        steps: ${{ steps }}
     dependsOn:
     - step: import
       condition:
@@ -577,28 +588,30 @@ jobs:
       behaviorName: '${{ "task-check-mint" }}'
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: |
+          curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \
+            --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \
+            --header 'Content-Type: application/json' --header 'Accept: application/json' \
+            --data "$ORBIT_MINT_REQUEST" "$ORBIT_MINT_URL"
+        ignoreExitCode: true
         env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/check_github_mint.py" }}
-          ORBIT_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_RUN_ID: ${{ run.id }}
-          ORBIT_EXECUTION_REFERENCES: ${{ inputs.intent.execution_references_json }}
+          ORBIT_MINT_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}
+          ORBIT_MINT_REQUEST: ${{ "{\"run_id\":\"" + run.id + "\"}" }}
     dependsOn:
     - step: import_result
       condition:
         type: succeeded
-    guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
+    guard: ${{ !steps.import_result.outputs.imported }}
   - name: mint_result
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
       behaviorName: '${{ "task-check-mint-result" }}'
-      methodName: decode
+      methodName: minted
       inputs:
-        value: ${{ steps.mint_github.outputs.stdout }}
+        expected: ${{ inputs.intent.execution_references_json }}
+        steps: ${{ steps }}
     dependsOn:
     - step: mint_github
       condition:
@@ -611,19 +624,37 @@ jobs:
       behaviorName: '${{ "task-check-push" }}'
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: |
+          git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC"
+        ignoreExitCode: true
+        timeout: 60000
         env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_push.py" }}
-          ORBIT_PUBLICATION_INPUT: ${{ steps.candidate.outputs.publication_json }}
-          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-check-" + run.id + "-control" }}
-          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_ALLOW_PROTOCOL: https
+          GIT_CONFIG_COUNT: '4'
+          GIT_CONFIG_KEY_0: credential.helper
+          GIT_CONFIG_VALUE_0: ''
+          GIT_CONFIG_KEY_1: credential.helper
+          GIT_CONFIG_VALUE_1: '!gh auth git-credential'
+          GIT_CONFIG_KEY_2: core.hooksPath
+          GIT_CONFIG_VALUE_2: /dev/null
+          GIT_CONFIG_KEY_3: http.followRedirects
+          GIT_CONFIG_VALUE_3: 'false'
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-" + run.id + "-control/gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-check-" + run.id + "-control/repository.git" }}
+          ORBIT_REMOTE: ${{ steps.candidate.outputs.remote }}
+          ORBIT_REFSPEC: ${{ steps.candidate.outputs.refspec }}
     dependsOn:
     - step: mint_result
       condition:
         type: succeeded
-    guard: ${{ !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
+    guard: ${{ !steps.mint_result.outputs.minted }}
+    writes: true
   - name: revoke_write
     labels: {role: swamp}
     task:
@@ -632,12 +663,14 @@ jobs:
       behaviorName: '${{ "task-check-revoke-write" }}'
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: |
+          gh api --method DELETE installation/token
+        timeout: 30000
         env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_revoke.py" }}
-          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-" + run.id + "-control/gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
     dependsOn:
     - step: finish
       condition:
@@ -673,12 +706,9 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         local: ${{ steps.candidate.outputs.result }}
-        push: '${{ has(steps.push) && has(steps.push.outputs) && has(steps.push.outputs.stdout) ? steps.push.outputs.stdout : "{}" }}'
-        imported: '${{ has(steps.import) && has(steps.import.outputs) && has(steps.import.outputs.stdout) ? steps.import.outputs.stdout : "{}" }}'
         after: '${{ has(steps.pushed_snapshot) && has(steps.pushed_snapshot.outputs) && has(steps.pushed_snapshot.outputs.stdout) ? steps.pushed_snapshot.outputs.stdout
           : "{}" }}'
-        mint: '${{ has(steps.mint_github) && has(steps.mint_github.outputs) && has(steps.mint_github.outputs.stdout) ? steps.mint_github.outputs.stdout
-          : "{}" }}'
+        steps: ${{ steps }}
     dependsOn:
     - step: candidate
       condition:
@@ -722,12 +752,14 @@ jobs:
       behaviorName: '${{ "task-check-revoke-unused-read" }}'
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: |
+          gh api --method DELETE installation/token
+        timeout: 30000
         env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_revoke.py" }}
-          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.checks_token.vault, inputs.execution_secrets.checks_token.key) }}
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.checks_token.vault, inputs.execution_secrets.checks_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-" + run.id + "-control/gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
     dependsOn:
     - step: finish
       condition:

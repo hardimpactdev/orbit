@@ -8,11 +8,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 SCRIPTS = Path(__file__).parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
-import check_ci_read
 from repository_common import snapshot
 
 
@@ -128,41 +126,6 @@ class Actions(unittest.TestCase):
         self.assertEqual(result["exit_code"], 23)
         self.assertNotIn("synthetic-private-value", result["output"])
         self.assertIn("[REDACTED]", result["output"])
-
-    def test_ci_tick_makes_one_read_and_drops_private_github_fields(self):
-        pending = {
-            "inputs": {"intent": {"repository": "acme/check"}},
-            "result": {"commit": self.base},
-        }
-        reply = {
-            "total_count": 1,
-            "check_runs": [
-                {
-                    "id": 3,
-                    "name": "Required checks",
-                    "head_sha": self.base,
-                    "status": "in_progress",
-                    "conclusion": None,
-                    "app": {"slug": "github-actions"},
-                    "output": {"summary": "synthetic-private-summary"},
-                }
-            ],
-        }
-        with (
-            patch.dict(os.environ, {"ORBIT_PENDING_CHECK": json.dumps(pending)}),
-            patch("check_ci_read.request", return_value=reply) as request,
-        ):
-            result = check_ci_read.observe()
-            request.assert_called_once_with(
-                "repos/acme/check/commits/"
-                + self.base
-                + "/check-runs?filter=latest&per_page=100"
-            )
-            self.assertNotIn("summary", json.dumps(result))
-            reply["total_count"] = 101
-            with self.assertRaisesRegex(Exception, "tasks.handoff_ci_unavailable"):
-                check_ci_read.observe()
-            self.assertEqual(request.call_count, 2)
 
     def test_diff_keeps_added_and_modified_paths(self):
         (self.work / "code").write_text("new\n")

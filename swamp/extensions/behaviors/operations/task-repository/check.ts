@@ -5,6 +5,13 @@ import {
     deliverableResults,
     Local,
 } from "../tasks/check.ts";
+import {
+    imported,
+    pushed,
+    pushTarget,
+    type Run,
+    run,
+} from "../tasks/publish.ts";
 
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
@@ -207,11 +214,85 @@ export function ciResult(
     };
 }
 
+/** JSON with sorted keys, so two descriptor maps compare by content. */
+function canonical(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+    if (value !== null && typeof value === "object") {
+        return `{${
+            Object.keys(value).sort().map((key) =>
+                `${JSON.stringify(key)}:${
+                    canonical((value as Record<string, unknown>)[key])
+                }`
+            ).join(",")
+        }}`;
+    }
+    return JSON.stringify(value);
+}
+
+/** The Gateway mint reply names exactly the admitted vault descriptors, never a token. */
+export function minted(item: Run, expected: string) {
+    if (typeof item.exitCode !== "number") {
+        return { minted: false, error_code: "" };
+    }
+    let received: unknown;
+    try {
+        received = z.object({
+            data: z.object({ execution_secrets: ObjectValue }).passthrough(),
+        }).passthrough().parse(JSON.parse(item.stdout ?? "")).data
+            .execution_secrets;
+    } catch {
+        received = undefined;
+    }
+    return item.exitCode === 0 && received !== undefined &&
+            canonical(received) === canonical(JSON.parse(expected))
+        ? { minted: true, error_code: "" }
+        : { minted: false, error_code: "tasks.handoff_ci_unavailable" };
+}
+
+const CheckRun = z.object({
+    id: z.number().int(),
+    name: z.string(),
+    head_sha: z.string(),
+    status: z.string(),
+    conclusion: z.string().nullable(),
+    app: z.object({ slug: z.string() }).passthrough(),
+}).passthrough();
+
+/** One bounded GitHub Checks read: the latest runs, without private fields, or unavailable. */
+export function checkRuns(item: Run) {
+    const reply = z.object({
+        total_count: z.number().int(),
+        check_runs: z.array(CheckRun),
+    }).passthrough().safeParse(
+        (() => {
+            try {
+                return JSON.parse(item.stdout ?? "");
+            } catch {
+                return undefined;
+            }
+        })(),
+    );
+    if (
+        item.exitCode !== 0 || !reply.success ||
+        reply.data.total_count > 100 ||
+        reply.data.check_runs.length !== reply.data.total_count
+    ) return { error_code: "tasks.handoff_ci_unavailable" };
+    return {
+        runs: reply.data.check_runs.map((row) => ({
+            id: row.id,
+            name: row.name.slice(0, 256),
+            head_sha: row.head_sha,
+            status: row.status,
+            conclusion: row.conclusion,
+            app: { slug: row.app.slug },
+        })),
+    };
+}
+
 export function finish(args: Record<string, unknown>) {
     const input = CheckInput.parse(args.intent),
         local = ObjectValue.parse(args.local);
-    const push = ObjectValue.parse(JSON.parse(String(args.push))),
-        imported = ObjectValue.parse(JSON.parse(String(args.imported)));
+    const steps = ObjectValue.parse(args.steps);
     const after = ObjectValue.parse(JSON.parse(String(args.after)));
     if (
         typeof local.error_code === "string" || local.outcome !== "passed" ||
@@ -224,9 +305,18 @@ export function finish(args: Record<string, unknown>) {
             result_json: JSON.stringify(local),
         };
     }
-    const minted = ObjectValue.parse(JSON.parse(String(args.mint)));
-    let error_code = minted.error_code ?? push.error_code ??
-        imported.error_code;
+    const mint = minted(
+            run(steps, "mint_github"),
+            String(ObjectValue.parse(args.intent).execution_references_json),
+        ),
+        push = pushed(run(steps, "push")),
+        bundle = imported(
+            run(steps, "import"),
+            String(local.commit),
+            String(local.tree),
+        );
+    let error_code = mint.error_code || push.error_code || bundle.error_code ||
+        undefined;
     if (
         !error_code &&
         (typeof local.commit !== "string" || after.head !== local.commit ||
@@ -251,15 +341,15 @@ export function finish(args: Record<string, unknown>) {
         result,
         pending: !error_code,
         pushed_at,
-        minted: minted.minted === true,
+        minted: mint.minted,
         result_json: JSON.stringify({ ...result, pending: !error_code }),
     };
 }
 
-/** Pure public check data and native asset paths. Commands and HTTP are placed steps. */
+/** Pure public check data and the snapshot asset path. Commands and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.01.2",
+    version: "2026.11.02.1",
     resources: {
         public: {
             description: "Public check observations",
@@ -277,11 +367,10 @@ export const behavior = {
     },
     methods: {
         assets: {
-            description: "Resolve the bounded CI read action",
+            description: "Resolve the workspace snapshot action",
             arguments: ObjectValue,
             execute: (_args: unknown, ctx: Context) =>
                 output(ctx, {
-                    ci_script: ctx.extensionFile("scripts/check_ci_read.py"),
                     directory: ctx.extensionFile("scripts/snapshot.py").replace(
                         /\/[^/]+$/,
                         "",
@@ -339,6 +428,34 @@ export const behavior = {
             execute: (args: { value: string }, ctx: Context) =>
                 output(ctx, ObjectValue.parse(JSON.parse(args.value))),
         },
+        imported: {
+            description: "Compare the imported bundle to the checked candidate",
+            arguments: ObjectValue,
+            execute: (args: Record<string, unknown>, ctx: Context) => {
+                const local = ObjectValue.parse(args.local);
+                return output(
+                    ctx,
+                    imported(
+                        run(ObjectValue.parse(args.steps), "import"),
+                        String(local.commit),
+                        String(local.tree),
+                    ),
+                );
+            },
+        },
+        minted: {
+            description:
+                "Compare the Gateway mint reply to the admitted descriptors",
+            arguments: ObjectValue,
+            execute: (args: Record<string, unknown>, ctx: Context) =>
+                output(
+                    ctx,
+                    minted(
+                        run(ObjectValue.parse(args.steps), "mint_github"),
+                        String(args.expected),
+                    ),
+                ),
+        },
         setup: {
             description: "Summarize ordered setup observations",
             arguments: ObjectValue,
@@ -389,12 +506,18 @@ export const behavior = {
                         return {
                             result,
                             result_json: JSON.stringify(result),
-                            publication_json: JSON.stringify({
-                                commit: result.commit,
-                                tree: result.tree,
-                                repository: input.repository,
-                                branch: input.branch,
-                            }),
+                            ...(typeof result.commit === "string" &&
+                                    input.repository !== null
+                                ? pushTarget(
+                                    input.repository,
+                                    result.commit,
+                                    input.branch,
+                                )
+                                : {
+                                    remote: "",
+                                    refspec: "",
+                                    object_format: "",
+                                }),
                         };
                     })(),
                 ),
@@ -466,7 +589,9 @@ export const behavior = {
                     ctx,
                     ciResult(
                         ObjectValue.parse(args.pending),
-                        ObjectValue.parse(JSON.parse(String(args.reading))),
+                        checkRuns(
+                            run({ read: { outputs: args.read } }, "read"),
+                        ),
                         new Date().toISOString(),
                     ),
                 ),

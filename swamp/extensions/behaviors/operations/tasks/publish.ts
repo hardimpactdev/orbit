@@ -1,5 +1,12 @@
 import { z } from "npm:zod@4.4.3";
 
+/*
+ * Typed data for tasks.publish and the handoff push of tasks.check. The task
+ * VM work is one official `@swamp/ssh exec` argv per step and the 209 work is
+ * inline `git` and `gh api` in `command/shell`; this module only builds their
+ * inputs and reads their outputs. It runs nothing and holds no token.
+ */
+
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
 export const PublishInput = z.object({
@@ -18,87 +25,229 @@ export const PublishInput = z.object({
         body: z.string().max(65536),
     }).nullable(),
 });
+type Input = z.infer<typeof PublishInput>;
+type Steps = Record<string, unknown>;
+
+const ObjectValue = z.record(z.string(), z.unknown());
+const Run = z.object({
+    exitCode: z.number().int().nullable().optional(),
+    stdout: z.string().optional(),
+    stderr: z.string().optional(),
+}).passthrough();
+export type Run = z.infer<typeof Run>;
+
+/** Outputs of one step, or an empty record when it was skipped. */
+export function run(steps: Steps, name: string): Run {
+    const step = ObjectValue.safeParse(steps[name]);
+    if (!step.success) return {};
+    const outputs = ObjectValue.safeParse(step.data.outputs);
+    return Run.parse(outputs.success ? outputs.data : {});
+}
+
+const ran = (item: Run) => typeof item.exitCode === "number";
+const json = (text: string | undefined): unknown => {
+    try {
+        return JSON.parse(text ?? "");
+    } catch {
+        return undefined;
+    }
+};
+
+/** The remote and refspec of a push without force; Git refuses a divergent tip by itself. */
+export function pushTarget(repository: string, commit: string, branch: string) {
+    return {
+        remote: `https://github.com/${repository}.git`,
+        refspec: `${commit}:refs/heads/${branch}`,
+        object_format: commit.length === 64 ? "sha256" : "sha1",
+    };
+}
+
+/** The bundled HEAD and its tree, read back from the bare repository on 209. */
+export function imported(item: Run, commit: string, tree: string) {
+    if (!ran(item)) return { imported: false, error_code: "" };
+    if (item.exitCode !== 0) {
+        return {
+            imported: false,
+            error_code: "tasks.repository_execution_unknown",
+        };
+    }
+    const [head, bundled] = (item.stdout ?? "").trim().split("\n");
+    return head === commit && bundled === tree
+        ? { imported: true, error_code: "" }
+        : { imported: false, error_code: "tasks.head_moved" };
+}
+
+/** One `git push` without force: success, or its public refusal code. */
+export function pushed(item: Run) {
+    if (!ran(item)) return { pushed: false, error_code: "" };
+    if (item.exitCode === 0) return { pushed: true, error_code: "" };
+    const text = (item.stdout ?? "") + (item.stderr ?? "");
+    const error_code = text.includes("refusing to allow a GitHub App") &&
+            text.includes(".github/workflows/")
+        ? "tasks.workflows_permission"
+        : text.includes("non-fast-forward") || text.includes("(fetch first)")
+        ? "tasks.not_fast_forward"
+        : "tasks.push_failed";
+    return { pushed: false, error_code };
+}
+
+/** Typed public inputs for the workflow steps. */
 export function prepare(raw: unknown) {
     const args = z.object({ intent: PublishInput, node_id: Id }).parse(raw);
+    const input = args.intent;
     if (
-        args.intent.node_id !== args.node_id ||
-        args.intent.branch !== `task-${args.intent.group_id}`
+        input.node_id !== args.node_id ||
+        input.branch !== `task-${input.group_id}`
     ) {
         throw new Error("Wrong task publication target");
     }
-    return { input_json: JSON.stringify(args.intent) };
-}
-export function verify(raw: unknown) {
-    const { input, value } = z.object({
-        input: PublishInput,
-        value: z.string(),
-    }).parse(raw);
-    const observed = z.object({ head: Sha, tree: Sha }).safeParse(
-        JSON.parse(value),
-    );
     return {
-        admitted: observed.success && observed.data.head === input.commit &&
-            observed.data.tree === input.tree,
+        ...pushTarget(input.repository, input.commit, input.branch),
+        pull_head: `${input.repository.split("/")[0]}:${input.branch}`,
     };
 }
-export function finish(raw: unknown) {
-    const args = z.object({
+
+/** HEAD and the whole working tree must still equal the checked candidate. */
+export function verify(raw: unknown) {
+    const { input, steps } = z.object({
         input: PublishInput,
-        before: z.string(),
-        after: z.string(),
-        exported: z.string(),
-        imported: z.string(),
-        lookup: z.string(),
-        tip: z.string(),
-        push: z.string(),
-        pull: z.string(),
-        failure: z.boolean(),
+        steps: ObjectValue,
     }).parse(raw);
-    const read = (value: string): Record<string, unknown> =>
-        value ? JSON.parse(value) : {};
-    const stages = [args.before, args.tip, args.push, args.after, args.pull]
-        .map(read);
-    const refused = [
-        args.before,
-        args.exported,
-        args.imported,
-        args.tip,
-        args.push,
-        args.after,
-        args.lookup,
-        args.pull,
-    ].map(read).find((row) => typeof row.error_code === "string");
-    const matches = (row: Record<string, unknown>) =>
-        row.head === args.input.commit && row.tree === args.input.tree;
-    let error_code = refused?.error_code;
-    if (
-        !error_code &&
-        (("head" in stages[0] && !matches(stages[0])) ||
-            ("head" in stages[3] && !matches(stages[3])))
-    ) {
-        error_code = "tasks.head_moved";
+    const oid = (name: string) => {
+        const item = run(steps, name);
+        const value = (item.stdout ?? "").trim();
+        return item.exitCode === 0 && Sha.safeParse(value).success
+            ? value
+            : null;
+    };
+    const head = oid("snapshot-head"), tree = oid("snapshot-tree");
+    if (head === null || tree === null) {
+        return {
+            admitted: false,
+            error_code: "tasks.repository_execution_unknown",
+        };
     }
+    return head === input.commit && tree === input.tree
+        ? { admitted: true, error_code: "" }
+        : { admitted: false, error_code: "tasks.head_moved" };
+}
+
+const PullRow = z.object({
+    number: Id,
+    state: z.string(),
+    base: z.object({ ref: z.string() }).passthrough(),
+    head: z.object({
+        ref: z.string(),
+        sha: z.string(),
+        repo: z.object({ full_name: z.string() }).passthrough().nullable(),
+    }).passthrough(),
+}).passthrough();
+
+/** One open PR lookup decides one update or one creation, with caller prose unchanged. */
+export function pullPlan(raw: unknown) {
+    const { input, steps } = z.object({
+        input: PublishInput,
+        steps: ObjectValue,
+    }).parse(raw);
+    const none = { method: "", path: "", body: "", number: 0 };
+    const item = run(steps, "read_pull");
+    if (input.pull_request === null || !ran(item)) {
+        return { ...none, error_code: "" };
+    }
+    const rows = z.array(PullRow).safeParse(json(item.stdout));
+    if (item.exitCode !== 0 || !rows.success) {
+        return { ...none, error_code: "tasks.publish_failed" };
+    }
+    const matches = rows.data.filter((row) =>
+        row.head.ref === input.branch &&
+        row.head.repo?.full_name.toLowerCase() ===
+            input.repository.toLowerCase()
+    );
+    if (matches.length > 1) {
+        return { ...none, error_code: "tasks.publish_failed" };
+    }
+    const path = `repos/${input.repository}/pulls`;
+    if (matches.length === 0) {
+        return {
+            method: "POST",
+            path,
+            body: JSON.stringify({
+                ...input.pull_request,
+                head: input.branch,
+                base: input.base,
+            }),
+            number: 0,
+            error_code: "",
+        };
+    }
+    const row = matches[0];
     if (
-        !error_code &&
-        (args.failure ||
-            !(stages[1].commit === args.input.commit ||
-                stages[2].pushed === true))
-    ) error_code = "tasks.publish_failed";
-    const number = stages[4].number;
-    if (
-        !error_code && args.input.pull_request !== null &&
-        !(typeof number === "number" && Number.isInteger(number) && number > 0)
-    ) error_code = "tasks.publish_failed";
+        row.state !== "open" || row.base.ref !== input.base ||
+        row.head.sha !== input.commit
+    ) return { ...none, error_code: "tasks.head_moved" };
     return {
-        result_json: JSON.stringify(
-            error_code ? { error_code } : {
-                branch: args.input.branch,
-                commit: args.input.commit,
-                pull_request_number: number ?? null,
-                pull_request_url: number
-                    ? `https://github.com/${args.input.repository}/pull/${number}`
-                    : null,
-            },
-        ),
+        method: "PATCH",
+        path: `${path}/${row.number}`,
+        body: JSON.stringify(input.pull_request),
+        number: row.number,
+        error_code: "",
+    };
+}
+
+/** The PR number one write returned; an update must keep its number. */
+function written(item: Run, expected: number): number | null {
+    const reply = z.object({ number: Id }).passthrough().safeParse(
+        json(item.stdout),
+    );
+    if (item.exitCode !== 0 || !reply.success) return null;
+    return expected === 0 || reply.data.number === expected
+        ? reply.data.number
+        : null;
+}
+
+/** The public terminal result, recomputed from the raw step outputs. */
+export function finish(raw: unknown) {
+    const { input, steps } = z.object({
+        input: PublishInput,
+        steps: ObjectValue,
+    }).parse(raw);
+    const outcome = ((): { error_code: string } | { number: number | null } => {
+        const checked = verify({ input, steps });
+        if (!checked.admitted) {
+            return {
+                error_code: run(steps, "snapshot-head").exitCode === undefined
+                    ? "tasks.publish_failed"
+                    : checked.error_code,
+            };
+        }
+        const bundle = imported(run(steps, "import"), input.commit, input.tree);
+        if (!bundle.imported) {
+            return { error_code: bundle.error_code || "tasks.publish_failed" };
+        }
+        const push = pushed(run(steps, "push"));
+        if (!push.pushed) {
+            return { error_code: push.error_code || "tasks.push_failed" };
+        }
+        if (input.pull_request === null) return { number: null };
+        const plan = pullPlan({ input, steps });
+        if (plan.error_code) return { error_code: plan.error_code };
+        const number = plan.method
+            ? written(run(steps, "write_pull"), plan.number)
+            : null;
+        return number === null
+            ? { error_code: "tasks.publish_failed" }
+            : { number };
+    })();
+    const result = "error_code" in outcome ? outcome : {
+        branch: input.branch,
+        commit: input.commit,
+        pull_request_number: outcome.number,
+        pull_request_url: outcome.number === null
+            ? null
+            : `https://github.com/${input.repository}/pull/${outcome.number}`,
+    };
+    return {
+        result_json: JSON.stringify(result),
+        failed: "error_code" in result,
     };
 }
