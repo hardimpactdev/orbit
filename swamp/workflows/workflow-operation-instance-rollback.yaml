@@ -12,13 +12,14 @@ inputs:
     intent:
       type: object
       properties:
-        # The admitted release and the links that select it: each served application's .env link, then `current` last.
+        # The admitted release and the links that select it: each served application's .env link, then `current.next` last.
         rollback:
           type: object
           properties:
             instance_id: {type: integer, minimum: 1}
             release: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'}
             user: {type: string, pattern: '^orbit-app-[1-9][0-9]*$'}
+            home: {type: string, pattern: '^/home/orbit-app-[1-9][0-9]*$'}
             links:
               type: array
               minItems: 1
@@ -29,7 +30,7 @@ inputs:
                   target: {type: string, minLength: 1}
                 required: [path, target]
                 additionalProperties: false
-          required: [instance_id, release, user, links]
+          required: [instance_id, release, user, home, links]
           additionalProperties: false
         # The dedicated PHP-FPM service of the Instance, or null when it serves no PHP.
         php_input: {default: null}
@@ -62,14 +63,14 @@ jobs:
   labels: {role: swamp}
   steps:
   - name: Activate release
-    # In order: each served .env link in the release, then `current`. A link into a removed release fails before `current` moves.
+    # In order: each served .env link in the release, then `current.next`. A link into a removed release fails before `current.next` is written.
     labels: {role: swamp}
     writes: true
     forEach:
       item: link
       in: ${{ inputs.intent.rollback.links }}
     concurrency: 1
-    # `current` moves only when every link before it held, so a removed release keeps the old selection.
+    # `current.next` is written only when every link before it held, so a removed release keeps the old selection.
     guard: ${{ self._index == size(inputs.intent.rollback.links) - 1 && steps.exists(key, key.startsWith("Activate release-") && steps[key].status == "failed") }}
     task:
       type: behavior
@@ -80,10 +81,26 @@ jobs:
         nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ self.link.path }}', ensure: present, target: '${{ self.link.target }}',
         owner: '${{ inputs.intent.rollback.user }}', group: '${{ inputs.intent.rollback.user }}'}
       inputs: {}
+  - name: Swap current
+    # rename(2) of current.next over current is atomic: `current` always exists, and the link keeps its owner.
+    labels: {role: swamp}
+    dependsOn: [{step: Activate release, condition: {type: succeeded}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-current-swap-" + string(inputs.intent.rollback.instance_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: {name: '${{ ("instance-current-swap-" + string(inputs.intent.rollback.instance_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port
+            }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{
+                inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: [timeout, '30', mv, -fT, '${{ inputs.intent.rollback.home + "/current.next" }}', '${{ inputs.intent.rollback.home + "/current" }}'], sudo: true,
+        timeoutSec: 40}
   - name: Refresh PHP cache
     # A graceful reload: running requests finish, the new workers resolve `current` again, and OPcache starts empty.
     labels: {role: swamp}
-    dependsOn: [{step: Activate release, condition: {type: succeeded}}]
+    dependsOn: [{step: Swap current, condition: {type: succeeded}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || inputs.intent.php_input == null }}
     writes: true
     task:
@@ -98,7 +115,7 @@ jobs:
   - name: Restart Processes
     # Each Process reloads when its unit allows it, else restarts; a container restarts.
     labels: {role: swamp}
-    dependsOn: [{step: Activate release, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Swap current, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
     writes: true
     forEach:
@@ -115,16 +132,28 @@ jobs:
               }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: '${{ self.process.runtime == "docker" ? ["timeout", "120", "docker", "restart", self.process.name] : ["timeout", "120", "systemctl", "reload-or-restart",
           self.process.name] }}', sudo: true, timeoutSec: 130}
-  - name: Check the selection
-    # The end check: the link read back after the swap names the admitted release.
+  - name: Read current back
+    # The live link on the Node, after the swap.
     labels: {role: swamp}
-    # An empty forEach records no step, so the check waits on the steps that always run; a failed restart still fails the run.
-    dependsOn: [{step: Activate release, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    # An empty forEach records no step, so the read waits on the steps that always run; a failed restart still fails the run.
+    dependsOn: [{step: Swap current, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-current-read-" + string(inputs.intent.rollback.instance_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: {name: '${{ ("instance-current-read-" + string(inputs.intent.rollback.instance_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port
+            }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{
+                inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: [timeout, '10', readlink, --, '${{ inputs.intent.rollback.home + "/current" }}'], sudo: true, timeoutSec: 20}
+  - name: Check the selection
+    # The end check: the live link read back names the admitted release.
+    labels: {role: swamp}
+    dependsOn: [{step: Read current back, condition: {type: succeeded}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
     task:
       type: assert
-      expr: 'data.latest(("instance-release-link-" + string(inputs.intent.rollback.instance_id) + "-" + string(size(inputs.intent.rollback.links) - 1)).split(".").join("-"), inputs.intent.ssh_execution.target.host).attributes.status
-        in ["applied", "compliant"] && data.latest(("instance-release-link-" + string(inputs.intent.rollback.instance_id) + "-" + string(size(inputs.intent.rollback.links) - 1)).split(".").join("-"),
-        inputs.intent.ssh_execution.target.host).attributes.current.linkTarget == "releases/" + inputs.intent.rollback.release'
+      expr: 'steps["Read current back"].outputs.stdout in ["releases/" + inputs.intent.rollback.release, "releases/" + inputs.intent.rollback.release + "\n"]'
       message: current must select the admitted release.
       severity: high

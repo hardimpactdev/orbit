@@ -31,6 +31,7 @@ check(result['release'] == 'r1' and result['selected_release'] == 'r1' and resul
       'the result names the release, the selection and its commit')
 check(peer('readlink', home + '/current').stdout.strip() == 'releases/r1', 'current selects the rolled-back release')
 check(peer('stat', '-c', '%U', home + '/current').stdout.strip() == 'orbit-app-9001', 'the production account owns current')
+check(peer('test', '-e', home + '/current.next').returncode != 0 and peer('test', '-L', home + '/current.next').returncode != 0, 'current.next was renamed over current')
 check(peer('test', '-e', '/run/orbit-proof-fpm-reloaded').returncode == 0, 'the dedicated PHP-FPM service reloaded')
 check(operation['input']['runtime_definitions'] == {'restart': []}, 'the Instance has no Process to restart')
 row = json.loads(gateway(f'echo json_encode(App\\Models\\InstanceDeployment::query()->findOrFail({result["deployment_id"]})->only(["kind","status","release","selected_release","commit","failed_step","error_code"]));'))

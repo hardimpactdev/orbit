@@ -51,14 +51,20 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task until it ends
-  SW->>N: Activate release<br/>@swamp/cfgmgmt/link · current
+  SW->>N: Activate release<br/>@swamp/cfgmgmt/link · current.next
   %%> How:
   %%> - Swamp reaches Node 12 over `@swamp/ssh` from 209 with `@swamp/cfgmgmt/link`; nothing is copied to the Node
   %%> Why no read first:
   %%> - the Gateway's retained-release records come from deploy results, and Instance 42's lock keeps a deploy's cleanup from removing the release meanwhile
   %%> What it does:
-  %%> - checks each served web root and its `.env` links in the release, and adds a missing link
-  %%> - replaces the `current` link with one atomic rename
+  %%> - adds each served application's missing `.env` link in the release
+  %%> - writes `current.next`, owned by `orbit-app-7`, pointing at `releases/20261030T101500Z`
+  %%> When a link fails:
+  %%> - `current.next` is not written, and `current` keeps the old release
+  SW->>N: Swap current<br/>ssh exec · mv -fT
+  %%> What it does:
+  %%> - renames `current.next` over `current` with one atomic rename, so `current` always exists
+  %%> - the link keeps its owner
   %%> Cancel:
   %%> - a cancel before this step stops the rollback; after it, the rollback finishes
   opt Instance serves PHP
@@ -76,10 +82,13 @@ sequenceDiagram
   %%> Not included:
   %%> - Processes without `restart_on_deploy`, and stopped Processes, stay as they are
   %%> - no deploy step, no Git fetch, no database change
-  SW->>N: Check the selection<br/>@swamp/cfgmgmt check
+  SW->>N: Read current back<br/>ssh exec · readlink
   %%> What it does:
-  %%> - reads `current` back and checks it selects `20261030T101500Z`
-  %%> - checks that each restarted Process is active
+  %%> - reads the live `current` link on Node 12
+  Note over SW: Check the selection<br/>native assert
+  %%> What it does:
+  %%> - checks the link read back is `releases/20261030T101500Z`
+  %%> - each restarted Process was checked by its own restart
   alt all steps pass
     N-->>SW: release, commit
     %%> Returns:

@@ -23,8 +23,10 @@ final readonly class InstanceRollbackProjection implements DirectOperationProjec
     /** Each chart step and the error code its failure records. */
     private const array Codes = [
         'Activate release' => 'rollback.release_invalid',
+        'Swap current' => 'deployment.selection_invalid',
         'Refresh PHP cache' => 'deployment.php_runtime_unconfirmed',
         'Restart Processes' => 'process.restart_failed',
+        'Read current back' => 'deployment.selection_invalid',
         'Check the selection' => 'deployment.selection_invalid',
     ];
 
@@ -40,7 +42,8 @@ final readonly class InstanceRollbackProjection implements DirectOperationProjec
         $deployment = ValidatedData::object($operation->input['deployment']);
         $home = ValidatedData::string($deployment['home']);
         $links = [];
-        // Each served application links its .env in the release; `current` comes last, so a removed release fails first.
+        // Each served application links its .env in the release; `current.next` comes last, so a removed release fails first.
+        // The Swap current step then renames `current.next` over `current` in one atomic rename.
         $served = $deployment['served'];
         if (! is_array($served) || ! array_is_list($served)) {
             throw new \InvalidArgumentException('The admitted served applications must be a list.');
@@ -50,11 +53,11 @@ final readonly class InstanceRollbackProjection implements DirectOperationProjec
             $links[] = ['path' => "{$home}/releases/{$release}/{$directory}/.env",
                 'target' => str_repeat('../', 3 + substr_count($directory, '/'))."env/{$directory}/.env"];
         }
-        $links[] = ['path' => "{$home}/current", 'target' => "releases/{$release}"];
+        $links[] = ['path' => "{$home}/current.next", 'target' => "releases/{$release}"];
         $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
 
         return ['intent' => [
-            'rollback' => ['instance_id' => $operation->target_id, 'release' => $release, 'user' => ValidatedData::string($deployment['user']), 'links' => $links],
+            'rollback' => ['instance_id' => $operation->target_id, 'release' => $release, 'user' => ValidatedData::string($deployment['user']), 'home' => $home, 'links' => $links],
             'php_input' => $operation->input['php_input'], 'runtime_definitions' => $operation->input['runtime_definitions'],
             'ssh_execution' => $this->ssh->forNode($instance->node),
         ], 'execution_secrets' => []];
@@ -75,7 +78,8 @@ final readonly class InstanceRollbackProjection implements DirectOperationProjec
             $of = static fn (string $label): array => array_values(array_map(static fn (mixed $step): ?string => is_array($step) && is_string($step['status'] ?? null) ? $step['status'] : null,
                 array_filter($steps, static fn (string|int $name): bool => str_starts_with((string) $name, $label), ARRAY_FILTER_USE_KEY)));
             $activation = $of('Activate release');
-            $activated = $activation !== [] && array_diff($activation, ['succeeded']) === [];
+            // `current` moved only when every link held and the rename over it succeeded.
+            $activated = $activation !== [] && array_diff($activation, ['succeeded']) === [] && $of('Swap current') === ['succeeded'];
             $code = null;
             $failedStep = null;
             if ($status === 'failed') {

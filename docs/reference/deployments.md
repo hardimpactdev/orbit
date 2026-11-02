@@ -231,12 +231,14 @@ One native run on Node 209 then runs these steps over official SSH ([chart](/cli
 
 | Step | What it does | Error code |
 | --- | --- | --- |
-| `Activate release` | Links each served application's `.env` in the release, then points `current` at it with `@swamp/cfgmgmt/link`. A link into a removed release fails, and `current` does not move | `rollback.release_invalid` |
+| `Activate release` | Links each served application's `.env` in the release, then writes `current.next` with `@swamp/cfgmgmt/link`, owned by the production account. A link into a removed release fails, and `current.next` is not written | `rollback.release_invalid` |
+| `Swap current` | Renames `current.next` over `current` with `mv -fT`, one atomic rename, so `current` always exists and keeps its owner. Skipped when a link failed | `deployment.selection_invalid` |
 | `Refresh PHP cache` | Reloads the dedicated PHP-FPM service gracefully, which also empties its OPcache. Only for an Instance that serves PHP | `deployment.php_runtime_unconfirmed` |
 | `Restart Processes` | Reloads or restarts each running Process with `restart_on_deploy`, captured at admission | `process.restart_failed` |
-| `Check the selection` | Checks that the link read back after the switch names the release | `deployment.selection_invalid` |
+| `Read current back` | Reads the live `current` link with `readlink` | `deployment.selection_invalid` |
+| `Check the selection` | Checks that the link read back names the release | `deployment.selection_invalid` |
 
-When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`, as for a deploy. `release` is the retained release, and `commit` is the commit its deployment recorded. A failed operation names the step in `failed_step` and its error code in `error_code`. `selected_release` is null when `Activate release` failed; the Instance then keeps its recorded selection.
+When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`, as for a deploy. `release` is the retained release, and `commit` is the commit its deployment recorded. A failed operation names the step in `failed_step` and its error code in `error_code`. `selected_release` is null when `Activate release` or `Swap current` failed; the Instance then keeps its recorded selection.
 
 ## Deploy
 

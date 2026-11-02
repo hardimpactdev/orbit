@@ -72,9 +72,9 @@ sys.exit(subprocess.call(args))
         self.inputs = {
             'operation_id': 41, 'node_id': 9, 'kind': 'instance.rollback', 'execution_secrets': {},
             'intent': {
-                'rollback': {'instance_id': 42, 'release': 'r1', 'user': 'orbit-app-7', 'links': [
+                'rollback': {'instance_id': 42, 'release': 'r1', 'user': 'orbit-app-7', 'home': HOME, 'links': [
                     {'path': f'{HOME}/releases/r1/admin/.env', 'target': '../../../env/admin/.env'},
-                    {'path': f'{HOME}/current', 'target': 'releases/r1'}]},
+                    {'path': f'{HOME}/current.next', 'target': 'releases/r1'}]},
                 'php_input': {'service': 'orbit-orbit-app-7-php8.5-fpm.service'},
                 'runtime_definitions': {'restart': [
                     {'process_id': 3, 'runtime': 'systemd', 'name': 'orbit-process-3-horizon.service'},
@@ -100,9 +100,14 @@ sys.exit(subprocess.call(args))
         return {step['name']: step['status'] for job in run['jobs'] for step in job['steps']}
 
     def test_selects_the_release_reloads_php_restarts_processes_and_checks(self):
+        before = os.lstat(self.home / 'current').st_ino
         steps = self.rollback()
 
+        # current.next was renamed over current: a new link inode under the old name, and no current.next left.
         self.assertEqual(os.readlink(self.home / 'current'), 'releases/r1')
+        self.assertNotEqual(os.lstat(self.home / 'current').st_ino, before)
+        self.assertFalse(os.path.lexists(self.home / 'current.next'))
+        self.assertEqual((steps['Swap current'], steps['Read current back']), ('succeeded', 'succeeded'))
         self.assertEqual(os.readlink(self.home / 'releases/r1/admin/.env'), '../../../env/admin/.env')
         self.assertEqual(self.calls(), [
             ['systemctl', 'reload', 'orbit-orbit-app-7-php8.5-fpm.service'],
@@ -130,12 +135,22 @@ sys.exit(subprocess.call(args))
         self.assertEqual(os.readlink(self.home / 'current'), 'releases/r1')
         self.assertEqual(steps['Restart Processes-0'], 'failed')
 
+    def test_check_fails_when_current_does_not_select_the_release(self):
+        # A wrong release name is renamed into place, so the live read-back must catch it.
+        self.inputs['intent']['rollback']['release'] = 'r3'
+        steps = self.rollback(success=False)
+
+        self.assertEqual(steps['Read current back'], 'succeeded')
+        self.assertEqual(steps['Check the selection'], 'failed')
+
     def test_a_removed_release_fails_before_current_moves(self):
         (self.home / 'releases/r1/admin').rmdir()
         (self.home / 'releases/r1').rmdir()
         steps = self.rollback(success=False)
 
         self.assertEqual(os.readlink(self.home / 'current'), 'releases/r2')
+        self.assertFalse(os.path.lexists(self.home / 'current.next'))
         self.assertEqual(self.calls(), [])
         self.assertEqual((steps['Activate release-0'], steps['Activate release-1']), ('failed', 'skipped'))
+        self.assertEqual(steps['Swap current'], 'skipped')
         self.assertNotIn('Check the selection', [name for name, status in steps.items() if status == 'succeeded'])

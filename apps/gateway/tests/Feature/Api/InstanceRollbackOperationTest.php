@@ -94,7 +94,7 @@ describe('admission', function (): void {
         $home = $instance->production_home;
         expect($run['workflowIdOrName'])->toBe('operation-instance-rollback')
             ->and($run['inputs']['intent']['rollback'])->toBe(['instance_id' => $instance->id, 'release' => 'r1', 'user' => $instance->production_user,
-                'links' => [['path' => "{$home}/current", 'target' => 'releases/r1']]])
+                'home' => $home, 'links' => [['path' => "{$home}/current.next", 'target' => 'releases/r1']]])
             ->and($run['inputs']['intent']['php_input'])->toBe($operation->input['php_input'])
             ->and($run['inputs']['intent']['ssh_execution']['target']['host'])->toBe($instance->node->wireguard_ip);
     });
@@ -112,7 +112,7 @@ describe('admission', function (): void {
         $home = $instance->production_home;
         expect(collect($this->socket->sent)->last()['payload']['inputs']['intent']['rollback']['links'])->toBe([
             ['path' => "{$home}/releases/r1/apps/admin/.env", 'target' => '../../../../env/apps/admin/.env'],
-            ['path' => "{$home}/current", 'target' => 'releases/r1']]);
+            ['path' => "{$home}/current.next", 'target' => 'releases/r1']]);
     });
 
     it('sends no PHP refresh for an Instance that serves no PHP', function (): void {
@@ -146,8 +146,8 @@ describe('the native outcome', function (): void {
         $instance = rollbackInstance();
         $operation = startRollback($instance);
 
-        $projected = applyRollback($operation, 'succeeded', ['Activate release-0' => 'succeeded', 'Refresh PHP cache' => 'succeeded',
-            'Restart Processes-0' => 'succeeded', 'Check the selection' => 'succeeded']);
+        $projected = applyRollback($operation, 'succeeded', ['Activate release-0' => 'succeeded', 'Swap current' => 'succeeded', 'Refresh PHP cache' => 'succeeded',
+            'Restart Processes-0' => 'succeeded', 'Read current back' => 'succeeded', 'Check the selection' => 'succeeded']);
         $row = InstanceDeployment::query()->where('kind', InstanceDeployment::Rollback)->sole();
 
         expect($projected->status)->toBe(OperationStatus::Succeeded)
@@ -165,8 +165,8 @@ describe('the native outcome', function (): void {
         $instance = rollbackInstance();
         $operation = startRollback($instance);
 
-        $projected = applyRollback($operation, 'failed', ['Activate release-0' => 'succeeded', 'Refresh PHP cache' => 'succeeded',
-            'Restart Processes-0' => 'failed', 'Check the selection' => 'succeeded']);
+        $projected = applyRollback($operation, 'failed', ['Activate release-0' => 'succeeded', 'Swap current' => 'succeeded', 'Refresh PHP cache' => 'succeeded',
+            'Restart Processes-0' => 'failed', 'Read current back' => 'succeeded', 'Check the selection' => 'succeeded']);
         $row = InstanceDeployment::query()->where('kind', InstanceDeployment::Rollback)->sole();
 
         expect($projected->status)->toBe(OperationStatus::Failed)
@@ -182,9 +182,9 @@ describe('the native outcome', function (): void {
         $instance = rollbackInstance();
         $operation = startRollback($instance);
 
-        // A served .env link failed, so the `current` item never ran.
+        // A served .env link failed, so `current.next` was never written and `current` never moved.
         $projected = applyRollback($operation, 'failed', ['Activate release-0' => 'failed', 'Activate release-1' => 'skipped',
-            'Refresh PHP cache' => 'skipped', 'Check the selection' => 'skipped']);
+            'Swap current' => 'skipped', 'Refresh PHP cache' => 'skipped', 'Check the selection' => 'skipped']);
         $row = InstanceDeployment::query()->where('kind', InstanceDeployment::Rollback)->sole();
 
         expect($projected->error_code)->toBe('rollback.release_invalid')
@@ -192,6 +192,20 @@ describe('the native outcome', function (): void {
             ->and($row->selected_release)->toBeNull()
             ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/r2')
             ->and(new AutomaticDeployHistory($instance->fresh())->pausedBy()?->id)->toBe($row->id);
+    });
+
+    it('keeps the old selection on record when the rename over current fails', function (): void {
+        $instance = rollbackInstance();
+        $operation = startRollback($instance);
+
+        $projected = applyRollback($operation, 'failed', ['Activate release-0' => 'succeeded', 'Swap current' => 'failed',
+            'Refresh PHP cache' => 'skipped', 'Check the selection' => 'skipped']);
+        $row = InstanceDeployment::query()->where('kind', InstanceDeployment::Rollback)->sole();
+
+        expect($projected->error_code)->toBe('deployment.selection_invalid')
+            ->and($row->failed_step)->toBe('Swap current')
+            ->and($row->selected_release)->toBeNull()
+            ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/r2');
     });
 
     it('fails the running row when the run budget expires', function (): void {
