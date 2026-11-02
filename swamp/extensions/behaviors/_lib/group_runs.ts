@@ -105,6 +105,27 @@ export async function ensureGroupRun(
   return { intent, resume: null };
 }
 
+/** The owning run hands its group to the next generation as its last step, so an
+ * active group needs no poll to continue. Only the admitted owner may do this. */
+export async function handoffGroupRun(
+  request: GroupRun & { runId: string },
+  control: Pick<GroupRunControl, "read" | "save" | "owner" | "launch">,
+): Promise<GroupRun> {
+  const intent = await control.read();
+  const owner = await control.owner();
+  if (
+    !intent || intent.key !== request.key || owner?.key !== request.key ||
+    owner.runId !== request.runId
+  ) throw new Error("only the owning run hands off its generation");
+  const generation = intent.generation + 1;
+  const next = { ...intent, generation, key: groupRunKey(intent.workItem, generation), runId: null };
+  await control.save(next);
+  const runId = await control.launch(next);
+  const launched = { ...next, runId };
+  await control.save(launched);
+  return launched;
+}
+
 export const RunFailuresSchema = z.object({
   consecutive: z.number().int().nonnegative(),
   lastKey: z.string().nullable(),

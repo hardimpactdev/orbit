@@ -773,10 +773,16 @@ swamp workflow run group-start --input workItem=tg-<group> --server wss://swamp.
 swamp workflow run group-plan --input-file plan.yaml --server wss://swamp.orbit
 ```
 
-- `group-start` starts the group's work item. The next `groups-driver` tick discovers it and owns it from there.
+- `group-start` starts the group's work item and its first run at once.
 - `group-plan` takes `workItem`, `plan` and `actor` at the plan stage.
 - It records the complete typed plan and its exact consent in one call.
-- The next tick applies the consent and starts analysis.
+- It then wakes the parked run, which applies the consent and starts analysis.
+
+Each group run is one bounded generation. Its last step starts the next generation, so an active group needs no poll:
+
+- While a Gateway operation runs, the run waits 60 seconds before the next generation looks again.
+- At a human gate, the run parks for up to 24 hours. An event such as `group-plan` wakes it.
+- `groups-driver` runs every 10 minutes. It only restarts a group whose run chain broke.
 
 ## Workspace lease
 

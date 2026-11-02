@@ -7,6 +7,7 @@ import {
   claimGroupRun,
   clearedFailures,
   ensureGroupRun,
+  handoffGroupRun,
   failedRun,
   type GroupRun,
   GroupRunSchema,
@@ -73,6 +74,25 @@ const getRun = async (ctx: Context, id: string) =>
     "get",
     id,
   ]) as unknown as NativeGroupRun;
+
+async function launchGroupRun(ctx: Context, intent: GroupRun) {
+  const result = await command(ctx, [
+    "workflow",
+    "run",
+    "group-run",
+    "--detach",
+    "--no-supersede",
+    "--stdin",
+  ], {
+    ...intent,
+    definition: ctx.definition.name,
+    preapprovalModel: ctx.globalArgs.preapprovalModel,
+  });
+  if (typeof result.runId !== "string") {
+    throw new Error("group workflow launch has no run id");
+  }
+  return result.runId;
+}
 
 async function notifyFailure(
   ctx: Context,
@@ -144,7 +164,7 @@ export async function settleGroupRun(
 
 export const behavior = {
   type: "@nckrtl/orbit-group-run",
-  version: "2026.10.28.1",
+  version: "2026.11.02.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     ...driver.resources,
@@ -204,8 +224,8 @@ export const behavior = {
     },
     result: {
       description:
-        "Whether bounded group work reached a terminal factory stage",
-      schema: z.object({ terminal: z.boolean() }),
+        "Whether bounded group work reached a terminal stage, or parked at a human gate",
+      schema: z.object({ terminal: z.boolean(), idle: z.boolean() }),
       lifetime: "30d",
       garbageCollection: 1,
     },
@@ -279,24 +299,7 @@ export const behavior = {
                 ),
               );
             },
-            launch: async (intent) => {
-              const result = await command(ctx, [
-                "workflow",
-                "run",
-                "group-run",
-                "--detach",
-                "--no-supersede",
-                "--stdin",
-              ], {
-                ...intent,
-                definition: ctx.definition.name,
-                preapprovalModel: ctx.globalArgs.preapprovalModel,
-              });
-              if (typeof result.runId !== "string") {
-                throw new Error("group workflow launch has no run id");
-              }
-              return result.runId;
-            },
+            launch: (intent) => launchGroupRun(ctx, intent),
           },
         );
         const handle = await ctx.writeResource("reconcile", "reconcile", {
@@ -378,8 +381,41 @@ export const behavior = {
         });
         const handle = await ctx.writeResource("result", "result", {
           terminal: (item.waiting ?? "").startsWith("terminal ("),
+          // Parked at a human gate: wait long; a wake signal resumes it.
+          idle: (item.waiting ?? "").startsWith("assistance:"),
         });
         return { dataHandles: [handle] };
+      },
+    },
+    handoff: {
+      description: "Start the next generation as the owning run's last step",
+      arguments: RequestSchema,
+      execute: async (request: z.infer<typeof RequestSchema>, ctx: Context) => {
+        await handoffGroupRun(request, {
+          read: () => read<GroupRun>(ctx, "intent"),
+          save: async (intent) => {
+            await ctx.writeResource("intent", "intent", intent);
+          },
+          owner: () => read<GroupRun>(ctx, "owner"),
+          launch: (intent) => launchGroupRun(ctx, intent),
+        });
+        await ctx.writeResource("failures", "failures", clearedFailures(request));
+        return { dataHandles: [] };
+      },
+    },
+    wake: {
+      description: "Wake the group's waiting run after an event (plan, approval)",
+      arguments: z.object({ workItem: GroupRunSchema.shape.workItem }),
+      execute: async (args: { workItem: string }, ctx: Context) => {
+        const intent = await read<GroupRun>(ctx, "intent");
+        if (intent?.workItem !== args.workItem) throw new Error("group has no owning run");
+        const { waits } = await command(ctx, ["workflow", "waits"]) as {
+          waits: { waitId: string; workflowName: string; runId: string; expired: boolean }[];
+        };
+        // A busy owner is not waiting; it reads the new state on its next tick.
+        const wait = waits.find((w) => w.workflowName === "group-run" && w.runId === intent.runId && !w.expired);
+        if (wait) await command(ctx, ["workflow", "signal", wait.waitId, "--payload", "{}"]);
+        return { dataHandles: [] };
       },
     },
     retry: {

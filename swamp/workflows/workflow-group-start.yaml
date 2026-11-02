@@ -24,3 +24,14 @@ jobs:
           methodName: start
           inputs:
             workItem: '${{ inputs.workItem }}'
+      # Supervise at once: the first generation starts now, not at the next reconcile.
+      - name: supervise
+        dependsOn: [{ step: start, condition: { type: succeeded } }]
+        labels: {role: swamp}
+        task:
+          type: workflow
+          workflowIdOrName: group-supervise
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            factory: orbit-groups
+            preapprovalModel: orbit-driver-groups

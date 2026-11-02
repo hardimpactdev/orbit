@@ -44,14 +44,44 @@ jobs:
             generation: '${{ inputs.generation }}'
             key: '${{ inputs.key }}'
             runId: '${{ run.id }}'
+      # Waiting on a running Gateway operation: look again in a minute, or at once on a wake.
       - name: wait
         dependsOn: [{ step: drive, condition: { type: succeeded } }]
-        guard: '${{ steps.drive.outputs.terminal }}'
+        guard: '${{ steps.drive.outputs.terminal || steps.drive.outputs.idle }}'
         allowFailure: true
         labels: {role: swamp}
         task:
           type: wait_for_signal
-          timeout: 10
+          timeout: 60
           schema:
             type: object
             additionalProperties: false
+      # Parked at a human gate: only an event (plan, approval, answer) wakes it.
+      - name: park
+        dependsOn: [{ step: drive, condition: { type: succeeded } }]
+        guard: '${{ steps.drive.outputs.terminal || !steps.drive.outputs.idle }}'
+        allowFailure: true
+        labels: {role: swamp}
+        task:
+          type: wait_for_signal
+          timeout: 86400
+          schema:
+            type: object
+            additionalProperties: false
+      # The owner starts its own next generation; no poll is needed while the group is active.
+      - name: handoff
+        dependsOn:
+          - { step: wait, condition: { type: completed } }
+          - { step: park, condition: { type: completed } }
+        guard: '${{ steps.drive.outputs.terminal }}'
+        labels: {role: swamp}
+        task:
+          type: behavior
+          behavior: '${{ inputs.definition }}'
+          methodName: handoff
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            factory: '${{ inputs.factory }}'
+            generation: '${{ inputs.generation }}'
+            key: '${{ inputs.key }}'
+            runId: '${{ run.id }}'

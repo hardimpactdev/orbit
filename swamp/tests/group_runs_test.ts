@@ -4,6 +4,7 @@ import {
   claimGroupRun,
   clearedFailures,
   ensureGroupRun,
+  handoffGroupRun,
   failedRun,
   type GroupRun,
   type GroupRunControl,
@@ -849,4 +850,28 @@ Deno.test("existing owners hold all four slots across ticks; terminal owners rel
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("only the owning run hands its group to the next generation, without a poll", async () => {
+  const intent = { workItem: "tg-2314", factory: "orbit-groups", generation: 3, key: "tg-2314.g3", runId: "run-3" };
+  let saved: GroupRun = intent;
+  const launched: string[] = [];
+  const control = {
+    read: () => Promise.resolve(saved),
+    owner: () => Promise.resolve(intent),
+    save: (next: GroupRun) => {
+      saved = next;
+      return Promise.resolve();
+    },
+    launch: (next: GroupRun) => {
+      launched.push(next.key);
+      return Promise.resolve("run-4");
+    },
+  };
+  await assertRejects(() => handoffGroupRun({ ...intent, runId: "run-other" }, control), Error, "owning run");
+  assertEquals(launched, []);
+  const next = await handoffGroupRun(intent, control);
+  assertEquals(launched, ["tg-2314.g4"]);
+  assertEquals(next, { ...intent, generation: 4, key: "tg-2314.g4", runId: "run-4" });
+  assertEquals(saved, next);
 });

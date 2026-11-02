@@ -17,7 +17,7 @@ jobs:
   - name: group
     steps:
       - name: plan
-        labels: { pool: migration, node: "209" }
+        labels: {role: swamp}
         task:
           type: model_method
           modelIdOrName: orbit-driver-groups
@@ -26,3 +26,18 @@ jobs:
             workItem: '${{ inputs.workItem }}'
             plan: '${{ inputs.plan }}'
             actor: '${{ inputs.actor }}'
+      # Wake the group's parked run so it applies the consent now.
+      - name: wake
+        dependsOn: [{ step: plan, condition: { type: succeeded } }]
+        labels: {role: swamp}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/orbit-group-run'
+          behaviorName: '${{ "orbit-group-" + inputs.workItem }}'
+          methodName: wake
+          globalArgs:
+            factory: orbit-groups
+            assistanceModel: orbit-gateway
+            preapprovalModel: orbit-driver-groups
+          inputs:
+            workItem: '${{ inputs.workItem }}'
