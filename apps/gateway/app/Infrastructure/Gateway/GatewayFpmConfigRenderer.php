@@ -19,7 +19,7 @@ final readonly class GatewayFpmConfigRenderer
             pm = ondemand
             pm.max_children = 8
             pm.process_idle_timeout = 10s
-            pm.max_requests = 500
+            pm.max_requests = 100
             request_terminate_timeout = 600s
             chdir = {$checkoutPath}
             catch_workers_output = yes

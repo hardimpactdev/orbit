@@ -524,6 +524,8 @@ The scheduler phase:
 5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
 6. resets OPcache, described below.
 
+The managed Gateway FPM pool recycles each worker after 100 requests to limit retained memory. It allows eight workers. This pool setting is applied by the release handoff.
+
 The handoff sends the rendered pool and contributed [start hooks](/reference/extensions#plug-in-points) to `gateway.converge-fpm`. The agent compares the pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` under the shared PHP-FPM publication lock. A matching active pool keeps serving without a reload; hook configuration still converges. For a changed pool, the agent validates a private candidate with every other enabled pool, installs and runs the hooks, publishes the pool atomically, and activates PHP-FPM. A failed activation restores the prior pool bytes, permissions, and service state; a failed restoration has its own refusal. An inactive service starts even when the pool matches.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.

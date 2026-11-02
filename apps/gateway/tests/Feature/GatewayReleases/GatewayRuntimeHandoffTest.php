@@ -179,6 +179,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FakeA
     $units = new RecordingHandoffUnits('units');
     $orbitHome = sys_get_temp_dir().'/orbit-handoff-'.bin2hex(random_bytes(4));
     $rendered = new GatewayFpmConfigRenderer()->renderPool(HANDOFF_APP, $orbitHome);
+    expect($rendered)->toContain('pm.max_requests = 100');
 
     return [
         new GatewayRuntimeHandoff(
