@@ -710,20 +710,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/bootstrap_program.ts",
-      "rule": "custom-control",
-      "count": 8,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/bootstrap_program.ts",
-      "rule": "inline-script",
-      "count": 187,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
       "rule": "custom-control",
       "count": 5,
@@ -760,40 +746,6 @@
         "/usr/bin/python3",
         "/usr/bin/sudo"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/enrollment_configure.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/enrollment_configure.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/enrollment_configure.ts",
-      "rule": "secret-argv",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/enrollment_readiness.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/id",
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/firewall_native_program.ts",
-      "rule": "inline-script",
-      "count": 160,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/node/footprint_local_actions.ts",
@@ -1309,16 +1261,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/provider_incus.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/bin/bash",
-        "/usr/bin/incus",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/upcloud_image_api.ts",
       "rule": "custom-control",
       "count": 3,
@@ -1365,22 +1307,6 @@
       "rule": "private-material",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/cancellation.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/cancellation.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/tools/local.ts",

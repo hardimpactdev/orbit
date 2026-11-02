@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { BootstrapInstallProgram } from "./bootstrap_program.ts";
+import { BootstrapInstallProgram } from "../node-bootstrap/bootstrap_program.ts";
 import { localSystemCommand, type SystemTransport } from "./system_command.ts";
 
 const Hash = z.string().regex(/^[a-f0-9]{64}$/);
