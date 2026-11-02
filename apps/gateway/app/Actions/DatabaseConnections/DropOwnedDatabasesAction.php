@@ -4,39 +4,21 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
-use App\Models\Node;
 
-/** Admission for one native DAG, including databases on other Nodes and SQLite files.
+/** The databases and SQLite files a removal set of Instances owns, including databases on other Nodes.
  * @phpstan-type Server array{server_id:int,node_id:int,intent:array<string,mixed>}
- * @phpstan-type Sqlite array{connection_id:int,node_id:int,checkout:string,path:string,ssh:array{host:string|null,user:string|null,host_keys:list<string>}}
+ * @phpstan-type Sqlite array{connection_id:int,node_id:int,checkout:string,path:string}
  */
 final readonly class DropOwnedDatabasesAction
 {
-    public function __construct(private DropServerDatabaseAction $servers, private RecordDatabaseOperationAction $operations) {}
+    public function __construct(private DropServerDatabaseAction $servers) {}
 
-    public function prepare(Instance $owner): PreparedDatabaseOperation
-    {
-        $snapshot = $this->snapshot([$owner]);
-        $passwords = $snapshot['passwords'];
-        unset($snapshot['passwords']);
-        $readerNodes = array_values(array_unique(array_column($snapshot['servers'], 'node_id')));
-
-        return $this->operations->prepare('database.destroy_owned', 'instance', $owner->id, $owner->node_id,
-            [...$snapshot,
-                'participant_node_ids' => array_values(array_unique([$owner->node_id, ...$readerNodes]))],
-            ['database-apply' => ['name' => 'database.destroy_owned', 'input' => ['participant_passwords' => $passwords]]],
-            ['delete_connections' => $snapshot['connection_ids']]);
-    }
-
-    /** Protected values are returned only to the owning encrypted-intent recorder.
-     * @param  list<Instance>  $owners
-     * @return array{connection_ids:list<int>,servers:list<Server>,sqlite:list<Sqlite>,passwords:array<int,array<int,string>>}
+    /** @param  list<Instance>  $owners
+     * @return array{connection_ids:list<int>,servers:list<Server>,sqlite:list<Sqlite>}
      */
     public function snapshot(array $owners): array
     {
@@ -48,10 +30,8 @@ final readonly class DropOwnedDatabasesAction
         }
         $managed = $connections->filter(static fn (DatabaseConnection $connection): bool => $connection->database_server_id !== null)->values()->all();
         $servers = [];
-        $passwords = [];
         foreach ($this->servers->snapshots(array_values($managed), ownerInstanceIds: $ownerIds) as $snapshot) {
             $servers[] = ['server_id' => $snapshot['server_id'], 'node_id' => $snapshot['node_id'], 'intent' => $snapshot['input']];
-            $passwords[$snapshot['node_id']][$snapshot['server_id']] = $snapshot['password'];
         }
         $sqlite = [];
         foreach ($connections as $connection) {
@@ -73,23 +53,6 @@ final readonly class DropOwnedDatabasesAction
             }
         }
 
-        // Each child reaches its Node over SSH with the host pin captured here, at admission.
-        foreach ($servers as $index => $row) {
-            $servers[$index]['intent']['ssh'] = $this->ssh($row['node_id']);
-        }
-        foreach ($sqlite as $index => $row) {
-            $sqlite[$index]['ssh'] = $this->ssh($row['node_id']);
-        }
-
-        return ['connection_ids' => array_map(static fn (DatabaseConnection $connection): int => $connection->id, array_values($connections->all())), 'servers' => $servers, 'sqlite' => $sqlite, 'passwords' => $passwords];
-    }
-
-    /** @return array{host:string|null,user:string|null,host_keys:list<string>} */
-    private function ssh(int $nodeId): array
-    {
-        $node = Node::query()->findOrFail($nodeId);
-
-        return ['host' => $node->wireguard_ip, 'user' => $node->user,
-            'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key) ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
+        return ['connection_ids' => array_map(static fn (DatabaseConnection $connection): int => $connection->id, array_values($connections->all())), 'servers' => $servers, 'sqlite' => $sqlite];
     }
 }

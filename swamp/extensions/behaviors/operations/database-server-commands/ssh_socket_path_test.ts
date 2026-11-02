@@ -5,7 +5,6 @@ Deno.test("Database SSH child names fit OpenSSH temporary control sockets with u
     for (
         const [file, prefixes] of [
             ["workflow-database-create-action.yaml", ["dbc-"]],
-            ["workflow-database-owned-sqlite-remove.yaml", ["dbos-"]],
             ["workflow-database-clone-mysql.yaml", ["dbmq-"]],
             ["workflow-database-sqlite-action.yaml", ["dbsi-"]],
             ["workflow-database-sqlite-seed.yaml", ["dbss-", "dbst-"]],

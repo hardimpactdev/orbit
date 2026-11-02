@@ -50,15 +50,13 @@ it('refuses system database prefixes before recording an intent', function (): v
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
 
-it('holds create admission while a native owned removal includes the server', function (bool $lifecycle): void {
-    $servers = [['server_id' => $this->server->id]];
-    $input = $lifecycle ? ['direct_destroy' => ['database' => ['servers' => $servers]]] : ['servers' => $servers];
-    $operation = Operation::query()->create(['kind' => $lifecycle ? 'instance.destroy' : 'database.destroy_owned', 'target_type' => 'instance', 'target_id' => $this->instance->id,
-        'node_id' => $this->instance->node_id, 'status' => 'running', 'input' => $input]);
+it('holds create admission while an Instance removal drops databases on the server', function (): void {
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'status' => 'running', 'input' => ['direct_destroy' => ['database' => ['servers' => [['server_id' => $this->server->id]]]]]]);
     expect(fn () => app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server))->toThrow(ResourceOperationException::class, 'removal is unfinished');
     $operation->update(['status' => 'succeeded']);
     app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server);
-})->with([false, true]);
+});
 
 it('refuses destruction while creation on the same server is unfinished', function (): void {
     $connection = DatabaseConnection::query()->create(['slug' => 'proof', 'driver' => 'mysql', 'database_server_id' => $this->server->id, 'database' => 'proof', 'username' => 'proof']);

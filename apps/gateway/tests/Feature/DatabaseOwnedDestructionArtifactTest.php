@@ -31,7 +31,7 @@ it('records one aggregate encrypted intent without starting another Operation', 
         ->and(Operation::query()->count())->toBe(0)->and(DatabaseExecutionIntent::query()->count())->toBe(1);
 });
 
-it('combines admitted owners on the same server and keeps its password encrypted', function (): void {
+it('combines admitted owners on the same server and records no password', function (): void {
     $other = $this->instance->replicate();
     $other->name = 'other-database-owner';
     $other->checkout_path .= '-other';
@@ -45,7 +45,7 @@ it('combines admitted owners on the same server and keeps its password encrypted
     $intent = DatabaseExecutionIntent::recorded($artifact['intent_id']);
     expect($artifact['connection_ids'])->toHaveCount(3)->and($artifact['servers'])->toHaveCount(1)
         ->and($artifact['servers'][0]['intent']['databases'])->toHaveCount(2)
-        ->and($intent->payload['commands']['database-apply']['input']['participant_passwords'][$this->server->node_id][$this->server->id])->toBe($this->server->root_password)
+        ->and(json_encode($intent->payload))->not->toContain($this->server->root_password)
         ->and(json_encode($artifact))->not->toContain($this->server->root_password);
 });
 

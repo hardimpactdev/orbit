@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
-use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
+use App\Domain\DatabaseServers\DatabaseOwnedRemoval;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,8 +31,8 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         unset($native['execution_secrets']);
         $detail = ValidatedData::object($input['direct_destroy']);
         $database = ValidatedData::object($detail['database']);
-        // Owned server databases drop through the canonical server child; its password copies are named after the database intent.
-        [$database['servers'], $serverCopies] = DatabaseDestroyOwnedProjection::servers(ValidatedData::integer($database['intent_id']),
+        // Owned server databases drop through one database:destroy child per server, with that server's admin login.
+        [$database['servers'], $serverCopies] = DatabaseOwnedRemoval::servers(ValidatedData::integer($database['intent_id']),
             $database['servers'] ?? [], ! $operation->status->terminal());
         $detail['database'] = $database;
         $public = [...Arr::only($input, ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members']), 'direct_destroy' => $detail];

@@ -278,27 +278,14 @@ class InstanceDestroyNative(InstanceNativeFixture):
         self.assertEqual(run['status'], 'succeeded')
         self.assertFalse(any(name.startswith('Remove DNS records') for name in self.steps))
 
-    def test_destroy_composes_real_owned_sqlite_child_before_source_removal(self):
-        import sqlite3
-        from contextlib import closing
-        self.copy_behaviors('operations/database-server-commands')
-        database = self.application/'owned.sqlite'
-        with closing(sqlite3.connect(database)) as connection:
-            connection.execute('CREATE TABLE proof(value)')
-        workflow = yaml.safe_load((ROOT/'workflows/workflow-database-owned-sqlite-remove.yaml').read_text())
-        workflow = json.loads(json.dumps(workflow).replace('/tmp/orbit-db-owned-', str(self.control)+'/db-owned-').replace('/etc/orbit/swamp-role-worker/ssh-identity',str(self.identity)))
-        for job in workflow['jobs']:
-            job.pop('target', None); job.pop('labels', None)
-            for step in job['steps']:
-                step.pop('target', None); step.pop('labels', None)
-                if step['task'].get('behaviorType') == '@swamp/ssh':
-                    step['task']['globalArgs'].update(sshBinary=str(self.repo/'ssh'),scpBinary=str(self.repo/'scp'))
-        (self.repo/'workflows/workflow-sqlite.yaml').write_text(yaml.safe_dump(workflow,sort_keys=False))
-        self.input['intent']['direct_destroy']['database']['sqlite'] = [{'connection_id':23,'node_id':9,'checkout':str(self.application),'path':str(database)}]
-        run,_ = self.destroy()
-        self.assertEqual(run['status'], 'succeeded')
-        self.assertFalse(database.exists())
-
+    def test_destroy_removes_owned_databases_with_official_steps(self):
+        workflow = yaml.safe_load((ROOT/'workflows/workflow-operation-instance-destroy.yaml').read_text())
+        steps = {step['name']: step for step in workflow['jobs'][0]['steps']}
+        sqlite = steps['Remove SQLite files']['task']
+        self.assertEqual((sqlite['behaviorType'], sqlite['globalArgs']['ensure'], sqlite['globalArgs']['become']), ('@swamp/cfgmgmt/file', 'absent', False))
+        servers = steps['Drop owned databases']['task']
+        self.assertEqual((servers['workflowIdOrName'], servers['inputs']['kind']), ('operation-database-destroy', 'database.destroy'))
+        self.assertEqual(list(servers['inputs']['execution_secrets']), ['client_env'])
 
 SSH = '''import os,shlex,subprocess,sys
 if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv: sys.exit(0)

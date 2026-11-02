@@ -132,24 +132,24 @@ jobs:
     - {step: 'Stop, remove Processes', condition: {type: always}}
     - {step: 'Run teardown steps', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     guard: '${{ steps["Verify the source"].outputs.exitCode != 0 || ("Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" && steps["Check work is pushed"].outputs.exitCode != 0) || ("Run teardown steps" in steps && steps["Run teardown steps"].status == "succeeded" && steps["Run teardown steps"].outputs.exitCode != 0) || steps.exists(k, k.startsWith("Stop, remove Processes") && steps[k].status == "failed") }}'
+    writes: true
     forEach: {item: database, in: '${{ inputs.intent.direct_destroy.database.sqlite }}'}
+    # The Gateway admitted each path inside its Instance checkout; the Node account removes it, never root.
     task:
-      type: workflow
-      workflowIdOrName: database-owned-sqlite-remove
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: database.destroy_owned
-        intent:
-          connection_id: '${{ self.database.connection_id }}'
-          node_id: '${{ self.database.node_id }}'
-          checkout: '${{ self.database.checkout }}'
-          path: '${{ self.database.path }}'
-          ssh:
-            host: '${{ inputs.intent.ssh_execution.target.host }}'
-            user: '${{ inputs.intent.ssh_execution.target.user }}'
-            host_keys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
-    # One canonical server child per Database server; each drops the databases and users this Instance owns there.
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-destroy-sqlite-" + string(self.database.connection_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        path: ${{ self.database.path }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: false
+      inputs: {}
+    # One database:destroy child per Database server; each drops the databases and users this Instance owns there.
   - name: 'Drop owned databases'
     labels: {role: swamp}
     dependsOn:
@@ -162,14 +162,13 @@ jobs:
     forEach: {item: server, in: '${{ inputs.intent.direct_destroy.database.servers }}'}
     task:
       type: workflow
-      workflowIdOrName: database-destroy-actions
+      workflowIdOrName: operation-database-destroy
       inputs:
         operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ self.server.node_id }}'
-        kind: database.destroy_owned
-        scope: '${{ "server-" + string(self.server.server_id) }}'
+        kind: database.destroy
         intent: '${{ self.server.intent }}'
-        execution_secrets: {database_destroy: '${{ inputs.execution_secrets["server_" + string(self.server.server_id)] }}'}
+        execution_secrets: {client_env: '${{ inputs.execution_secrets["server_" + string(self.server.server_id)] }}'}
   - name: 'Withdraw the Route'
     labels: {role: swamp}
     dependsOn:

@@ -104,7 +104,7 @@ final readonly class ProcessLifecycleInput
     /** Docker env files preserve single-line values without shell expansion.
      * @param  array<string, mixed>  $environment
      */
-    private function dockerEnvironment(array $environment): string
+    public function dockerEnvironment(array $environment): string
     {
         $lines = [];
         foreach ($environment as $name => $value) {

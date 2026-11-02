@@ -36,7 +36,7 @@ class AnalyticsRuntimeNative(NativeTestCase):
             )
         self.secret = "native-runtime-private-" + uuid.uuid4().hex
         self.secrets = (self.secret,)
-        environment = json.dumps({"SECRET_KEY_BASE": self.secret})
+        environment = "SECRET_KEY_BASE=" + self.secret + "\n"
         self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
         self.cli(
             "vault",
@@ -63,7 +63,7 @@ class AnalyticsRuntimeNative(NativeTestCase):
         ).read_text()
         fixture = fixture.replace(
             "FIXTURE_STATE_PATH", json.dumps(str(self.state))
-        ).replace("FIXTURE_ENV_HASH", hashlib.sha256(environment.encode()).hexdigest())
+        ).replace("FIXTURE_ENV_HASH", hashlib.sha256(environment.rstrip("\n").encode()).hexdigest())
         (self.repo / "extensions/behaviors/fixture.ts").write_text(fixture)
         for filename in (
             "workflow-operation-analytics-update-direct.yaml",

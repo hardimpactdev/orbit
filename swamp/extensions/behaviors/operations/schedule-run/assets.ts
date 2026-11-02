@@ -7,7 +7,6 @@ const LifecycleArgs = z.object({
   schedule: PublicInstall,
 }).strict();
 type Context = {
-  extensionFile(name: string): string;
   writeResource(
     schema: string,
     name: string,
@@ -18,15 +17,10 @@ type Context = {
 /** Public native file metadata only; no intent reads or execution. */
 export const behavior = {
   type: "@nckrtl/schedule-run-assets",
-  version: "2026.11.02.1",
+  version: "2026.11.02.2",
   resources: {
     lifecycle: {
       schema: z.object({ service: z.string(), timer: z.string() }).strict(),
-      lifetime: "infinite",
-      garbageCollection: 10,
-    },
-    assets: {
-      schema: z.object({ script: z.string(), runner: z.string() }).strict(),
       lifetime: "infinite",
       garbageCollection: 10,
     },
@@ -42,25 +36,6 @@ export const behavior = {
         const result = renderScheduleUnits(args.schedule);
         await ctx.writeResource("lifecycle", "lifecycle", result);
         return result;
-      },
-    },
-    read: {
-      description: "Resolve the shipped Schedule check script and command runner",
-      arguments: z.object({}).strict(),
-      execute: async (_args: Record<string, never>, ctx: {
-        extensionFile(name: string): string;
-        writeResource(
-          schema: string,
-          name: string,
-          value: unknown,
-        ): Promise<unknown>;
-      }) => {
-        const assets = {
-          script: await Deno.readTextFile(ctx.extensionFile("scripts/check.py")),
-          runner: await Deno.readTextFile(ctx.extensionFile("scripts/run.sh")),
-        };
-        await ctx.writeResource("assets", "assets", assets);
-        return assets;
       },
     },
   },

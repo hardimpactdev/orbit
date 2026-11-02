@@ -43,24 +43,21 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  Note over SW: Read the check script<br/>@nckrtl/schedule-run-assets
+  SW->>N: Check user and directory<br/>@swamp/ssh · sudo -u user, cd
   %%> What it does:
-  %%> - reads the shipped check script on 209, to send it over SSH in argv
-  SW->>N: Check user and directory<br/>@swamp/ssh · getent, test -d
-  %%> What it does:
-  %%> - checks that the Schedule's user exists on Node 12, with its home, shell and group
-  %%> - checks that the user can enter the working directory, for example the Instance's application directory
-  %%> - checks the command's hash against the recorded one, with the command on stdin
+  %%> - checks, as the Schedule's user on Node 12, that the user exists and can enter the working directory, for example the Instance's application directory
+  %%> - an empty working directory is the user's home
   %%> Why:
   %%> - the command fails early with a clear error instead of half-running
-  SW->>N: Run the command<br/>sudo -u user, timeout, stdin
+  SW->>N: Run the command<br/>systemd-run · stdin · journal
   %%> How:
   %%> - reads the command with `vault.get` and sends it to Node 12 on stdin, never in argv
+  %%> - one transient systemd unit runs it; `systemd-cat` sends its output to the Node journal as `orbit-schedule-<uuid>`
   %%> Runs as:
-  %%> - the Schedule's user, in its working directory, with its shell
+  %%> - the Schedule's user, in its working directory, with its shell (a login shell when the Schedule says so)
   %%> - production Instances resolve `current` at start, so a new release changes later runs
   %%> Timeout:
-  %%> - the Schedule's timeout is the run's time budget
+  %%> - the Schedule's timeout is the unit's runtime limit; systemd stops it then, and kills it 5 seconds later
   Note over SW: Report the result<br/>error_code of the failed step
   %%> What it does:
   %%> - prints the public result on 209: ready, or `schedule.target_unavailable`, `schedule.artifact_conflict` or `schedule.run_failed`

@@ -1,11 +1,8 @@
 manifestVersion: 1
 name: '@nckrtl/schedule-run-scripts'
-version: 2026.11.02.1
+version: 2026.11.02.2
 visibility: private
 license: MIT
-description: Canonical public Schedule units and command validation assets.
+description: Canonical public Schedule units.
 behaviors:
   - operations/schedule-run/assets.ts
-additionalFiles:
-  - scripts/check.py
-  - scripts/run.sh

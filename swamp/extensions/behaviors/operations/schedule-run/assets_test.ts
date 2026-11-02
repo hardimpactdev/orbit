@@ -30,7 +30,6 @@ Deno.test("lifecycle assets contain canonical public units and no private comman
     schedule,
   });
   const result = await behavior.methods.lifecycle.execute(args, {
-    extensionFile: (path) => "/bundle/" + path,
     writeResource: async (...args: unknown[]) => {
       writes.push(args);
     },
