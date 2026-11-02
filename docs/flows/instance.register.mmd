@@ -13,8 +13,11 @@ sequenceDiagram
   participant A as Node agent<br/>orbit-agent
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
-  loop continuously, on change
+  loop continuously, on change (later)
     Note over A: Observe checkouts<br/>under the apps root
+    %%> Later:
+    %%> - this observation lands in the Node agent's observer pass; today the agent watches only task checkouts, at most 64 per Node
+    %%> - until then, `instance:register` keeps its Swamp read of the checkout over `@swamp/ssh`
     %%> What it observes:
     %%> - each Git checkout under `<apps-root>/<project-slug>/<name>`
     %%> - its owner, Git layout, origin, branch and `HEAD` commit, and whether it is dirty

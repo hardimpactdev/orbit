@@ -1,98 +1,84 @@
 sequenceDiagram
-  %% Target design: DECISIONS scope (instance.rename record-only, R1); rule 1 (checkout read from Node agent reports); a new domain admits route.update (own chart); DECISIONS 2 (DNS held).
+  %% Target design: docs/cli/instance.mdx#orbit-instancerename (Swamp reads the checkout, the Gateway records the branch after success), ADR 0244 task, R2-R4; DECISIONS instance.rename as corrected 2026-11-02 (keep the Swamp read of HEAD; Node agent observations later, in the observer pass); DECISIONS 2 (DNS held).
   %% status: draft
   %% command: instance:rename
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
-  %% lane A icon=server pill=observer tone=amber
   %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant A as Node agent<br/>orbit-agent
   participant SW as Swamp<br/>serve on Node 209
-  loop continuously, on change
-    Note over A: Observe checkouts<br/>branch, HEAD, origin
-    %%> What it observes:
-    %%> - each Instance checkout on Node 12: its symbolic `HEAD`, origin, owner and layout
-    %%> Runs as:
-    %%> - read-only; the Node agent never changes a Node
-    A->>GW: Report observations<br/>with observed_at
-    %%> What it sends:
-    %%> - what changed since the last report, with the time it was observed
-    Note over GW: Store latest facts<br/>per Node, per checkout
-    %%> Result:
-    %%> - the Gateway knows which branch each checkout has checked out
-  end
+  participant N as app-dev Node<br/>reached over ssh
   CLI->>GW: instance:rename 42<br/>--branch=t3code/login-redirect
   %%> Command:
   %%> - `orbit instance:rename 42 --branch=t3code/login-redirect`
-  %%> - syntax: `<instance> [--branch=BRANCH] [--domain=HOST] [--idempotency-key=KEY] [--json]`
-  %%> Before:
-  %%> - rename the branch in the checkout first: `git branch -m t3code/login-redirect`
-  %%> What it does not do:
-  %%> - rename the Instance, move its directory, or change Git `HEAD`
-  %%> With `--domain`:
-  %%> - also moves the Instance's Route to the new domain
-  Note over GW: Check against the facts<br/>HEAD names the branch
+  %%> - syntax: `instance:rename <instance> --branch=BRANCH [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - a local branch you already checked out, for example after `git branch -m t3code/login-redirect`
+  %%> Not included:
+  %%> - it does not rename the Instance, move its directory or change Git `HEAD`
+  %%> - `--domain` returns `operation.kind_unavailable`
+  Note over GW: Validate, record intent<br/>Instance 42 · task #5160
   %%> Requirements:
-  %%> - your Node has an access grant to Node 12, which runs Instance 42
-  %%> - Instance 42 is an active development checkout, not a linked worktree or production
-  %%> - no other lifecycle change holds Instance 42
-  %%> Checks in the agent's latest report:
-  %%> - symbolic `HEAD` names `t3code/login-redirect`
-  %%> - the origin still is Project 7's repository
-  %%> - the report is fresh enough to trust
-  %%> Allowed:
-  %%> - dirty or unpublished source
-  alt branch is checked out
-    Note over GW: Record the branch<br/>R1: no task, no run
+  %%> - Instance 42 is an active development checkout on Node 12
+  %%> - your Node has an access grant to Node 12
+  %%> - the branch is a valid local branch name
+  %%> Result:
+  %%> - task #5160 recorded with the full intent; nothing is recorded on the Instance yet
+  %%> Later:
+  %%> - in the observer pass, the Gateway checks the Node agent's checkout facts and records the branch with no run
+  GW->>SW: Start run, full intent<br/>operation-instance-rename
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the checkout path, its recorded identity and the requested branch
+  GW-->>CLI: 202 Accepted<br/>task #5160
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Read the checkout<br/>@swamp/ssh · top, origin, HEAD
+  %%> What it does:
+  %%> - checks the checkout's top level, common Git directory, worktrees and origin against its recorded identity
+  %%> - reads symbolic `HEAD` and its commit
+  %%> How:
+  %%> - Git commands run with hooks and filesystem monitors off, with no origin access
+  %%> Not included:
+  %%> - changes nothing on the Node; a dirty or unpublished branch can be recorded
+  alt HEAD names the branch
+    N-->>SW: branch, commit
+    %%> Returns:
+    %%> - the checked-out branch and its commit
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the branch<br/>selected_branch · override
     %%> Result:
     %%> - `selected_branch` and `branch_override` of Instance 42 become `t3code/login-redirect`
-    %%> - the already recorded branch keeps its existing override
-    %%> - no Swamp run starts (R1)
-    %%> Later:
-    %%> - removal, cloning and doctor check the new branch
-    opt --domain given
-      Note over GW: Admit a route.update<br/>task #5160 · own chart
-      %%> What it does:
-      %%> - admits a `route.update` task for the Route of Instance 42, with the new domain
-      %%> - the Route change has its own chart; rename only starts it
-      %%> Today:
-      %%> - `--domain` returns `operation.kind_unavailable`
-      GW->>SW: Start route.update run<br/>operation-route-update
-      %%> What it does:
-      %%> - starts one Swamp run on serve (Node 209) for the Route change
-      Note over SW: DNS publication held<br/>open: Nick decides
-      %%> Open:
-      %%> - DNS publication for Routes is on hold (`native-dns-takeover-held`)
-      %%> - until Nick decides, the Route change is same-Node work only
-    end
-    GW-->>CLI: Branch recorded<br/>Instance 42 · task #5160 if any
-    %%> What you get:
-    %%> - the result at once
-    %%> - with `--domain`, also the `route.update` task number to follow
-  else not checked out or refused
-    GW--xCLI: 422 Refused<br/>instance.branch_not_checked_out
+    %%> - recording the already recorded branch keeps its existing override
+    %%> - task #5160 succeeds
+  else not checked out or identity changed
+    N--xSW: other branch or detached
     %%> When:
-    %%> - `HEAD` names another branch or is detached
-    %%> - or Instance 42 is not an active development checkout
+    %%> - symbolic `HEAD` names another branch or is detached
+    %%> - or the checkout no longer matches its recorded identity
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Record nothing<br/>task failed · rerun is safe
     %%> Result:
-    %%> - nothing is recorded
-  else agent silent too long
-    GW--xCLI: Can't verify<br/>Node 12 facts too old
-    %%> When:
-    %%> - the Node agent hasn't reported recently, so the Gateway can't trust what it knows
-    %%> Result:
-    %%> - nothing is recorded; try again when the agent reports
+    %%> - Instance 42 keeps its recorded branch; task #5160 fails
+    %%> Retry:
+    %%> - check out the branch, then run `instance:rename` again; it is a new task
   end
-  opt route.update admitted
-    loop every 2 s until terminal
-      CLI->>GW: operation:show #5160
-      %%> What it does:
-      %%> - follows the Route change every 2 seconds until it has ended
-      GW-->>CLI: status + result
-      %%> Returns:
-      %%> - the current status, and the result once the task has ended
-    end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5160
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
