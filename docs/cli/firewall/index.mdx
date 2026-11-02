@@ -27,7 +27,9 @@ orbit-agent will be the only collector of live UFW facts, with `observed_at`, an
 | [`firewall:list`](/cli/firewall/list) | List the operator rules of one Node. |
 | [`firewall:remove`](/cli/firewall/remove) | Remove the one rule that matches a port. |
 
-The `ci-runner` role owns the routed allowance on `orbitci0`, with the comment `orbit-ci-runners`. This is the same comment used by the former host setup step, so adding the role adopts that rule through the managed catalog. Role removal closes it; the Incus ACL enforces the runner egress boundary.
+The `ci-runner` role owns the routed allowance on `orbitci0`, with the comment `orbit-ci-runners`. This is the same comment used by the former host setup step, so adding the role adopts that rule through the managed catalog. Role removal closes it with `ufw route delete`; direct host rules use `ufw delete`. The Incus ACL enforces the runner egress boundary.
+
+CI role removal refuses a project that still has guests. It retains the drained project, image cache, bridge and ACL unless removal explicitly requests a data purge. Removing the last role restores public SSH recovery. Unrelated operator rules remain in place.
 
 ## Read the managed and live rules
 

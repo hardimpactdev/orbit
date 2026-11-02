@@ -51,6 +51,8 @@ A failed route on the target does not stop the move, and `follow_up` names the r
 
 Relocate moves no files. It does not stop Caddy or PHP-FPM on the source, so the old address keeps working during the cutover.
 
+After the assignment moves, Swamp removes the Gateway role's recorded firewall rules from the source, using each rule's recorded direction. Rules for other roles and operator rules stay in place. Caddy and PHP-FPM keep serving while clients move to the target.
+
 ### After the move
 
 1. Confirm that `orbit node:role:list gateway` shows `gateway` and `orbit node:role:list vpn` still shows `vpn`.
