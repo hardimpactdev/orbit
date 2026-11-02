@@ -31,7 +31,7 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Swamp datastore watch
 
-The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
+The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `step_leases`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
 
 The Gateway reads the terminal `measure` output through the shared scheduled-result reader and raises a [problem](/reference/tasks#fingerprints) with source `swamp` for each crossed bound:
 
@@ -39,6 +39,7 @@ The Gateway reads the terminal `measure` output through the shared scheduled-res
 | --- | --- |
 | `datastore\|auto_definitions\|<type>` | One auto-definition type other than `swamp/grant` holds more than 2,000 files |
 | `datastore\|outputs` | `outputs` holds more than 50,000 files |
+| `datastore\|step_leases` | `data/swamp/step-lease` holds more than 60,000 files; bookkeeping keeps leases 2 hours, so the count should level off near 2 hours of dispatches |
 | `datastore\|grants` | Serve holds more than 500 grant records, the auto-definitions of type `swamp/grant` |
 | `serve\|cpu` | Serve used more than 50% CPU over the sample |
 | `watch\|failed` | A watch run did not succeed, so the datastore is unwatched |
