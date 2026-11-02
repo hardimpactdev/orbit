@@ -184,6 +184,13 @@ class VaultSetupNative(NativeTestCase):
                 )
                 self.state.write_text(original)
 
+    def test_account_metadata_cannot_echo_a_credential_into_history(self):
+        self.intent["organization"] = "org"
+        state = json.loads(self.state.read_text())
+        state["echo_secret"] = "organizations"
+        self.state.write_text(json.dumps(state))
+        self.assertEqual(self.run_setup(False), {"error_code": "vault.result_invalid"})
+
     def test_collection_change_refuses_before_the_test_write(self):
         self.intent.update(
             previous={"organization_id": "old-org", "collection_id": "old-collection"},

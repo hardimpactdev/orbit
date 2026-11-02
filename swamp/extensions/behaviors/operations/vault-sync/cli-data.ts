@@ -48,6 +48,24 @@ function configuration(intent: Record<string, unknown>, raw: string) {
     }
     return value;
 }
+const Exclusions = z.object({
+    ORBIT_CLIENT_SECRET: PrivateText,
+    ORBIT_MASTER_PASSWORD: PrivateText,
+});
+type ExclusionValues = {
+    ORBIT_CLIENT_SECRET: string;
+    ORBIT_MASTER_PASSWORD: string;
+};
+function publicMetadata(value: Record<string, string>, env: ExclusionValues) {
+    if (
+        Object.values(value).some((text) =>
+            Object.values(env).some((secret) =>
+                secret !== "" && text.includes(secret)
+            )
+        )
+    ) throw new Error("vault.result_invalid");
+    return value;
+}
 export const cliDataResources = {
     inputs: resource(
         "CLI credentials stored as native sensitive fields",
@@ -109,7 +127,10 @@ export const cliDataMethods = {
             env: z.object({ ORBIT_VAULT_CONFIGURATION: PrivateText }),
         }),
         async execute(
-            args: { intent: Record<string, unknown>; configuration: string },
+            args: {
+                intent: Record<string, unknown>;
+                env: { ORBIT_VAULT_CONFIGURATION: string };
+            },
             ctx: Context,
         ) {
             const config = configuration(
@@ -277,8 +298,11 @@ export const cliDataMethods = {
     account: {
         description:
             "Shape public account metadata and enforce the supported CLI KDF",
-        arguments: z.object({ directory: Directory }),
-        async execute(args: { directory: string }, ctx: Context) {
+        arguments: z.object({ directory: Directory, env: Exclusions }),
+        async execute(
+            args: { directory: string; env: ExclusionValues },
+            ctx: Context,
+        ) {
             const status = await read(args.directory, "status");
             const data = await read(args.directory, "data.json");
             const kdf = data[`user_${status.userId}_kdfConfig_kdfConfig`];
@@ -286,16 +310,28 @@ export const cliDataMethods = {
                 kdf?.kdfType !== 0 || !Number.isSafeInteger(kdf.iterations) ||
                 kdf.iterations < 1 || kdf.iterations > 2000000
             ) throw new Error("vault.kdf_unsupported");
-            return await save(ctx, "account", {
-                email: z.string().max(1024).parse(status.userEmail),
-            });
+            return await save(
+                ctx,
+                "account",
+                publicMetadata({
+                    email: z.string().max(1024).parse(status.userEmail),
+                }, args.env),
+            );
         },
     },
     organization: {
         description: "Select the admitted organization from private CLI data",
-        arguments: z.object({ directory: Directory, intent: ObjectData }),
+        arguments: z.object({
+            directory: Directory,
+            intent: ObjectData,
+            env: Exclusions,
+        }),
         async execute(
-            args: { directory: string; intent: Record<string, unknown> },
+            args: {
+                directory: string;
+                intent: Record<string, unknown>;
+                env: ExclusionValues;
+            },
             ctx: Context,
         ) {
             const rows = (await read(args.directory, "organizations") as {
@@ -308,10 +344,14 @@ export const cliDataMethods = {
             if (rows.length !== 1) {
                 throw new Error("vault.organization_missing");
             }
-            return await save(ctx, "organization", {
-                id: rows[0].id,
-                name: rows[0].name,
-            });
+            return await save(
+                ctx,
+                "organization",
+                publicMetadata({
+                    id: rows[0].id,
+                    name: rows[0].name,
+                }, args.env),
+            );
         },
     },
     collection: {
@@ -321,12 +361,14 @@ export const cliDataMethods = {
             directory: Directory,
             intent: ObjectData,
             organization: z.string(),
+            env: Exclusions,
         }),
         async execute(
             args: {
                 directory: string;
                 intent: Record<string, unknown>;
                 organization: string;
+                env: ExclusionValues;
             },
             ctx: Context,
         ) {
@@ -361,6 +403,7 @@ export const cliDataMethods = {
                 encodeBase64(JSON.stringify(payload)),
                 { mode: 0o600 },
             );
+            publicMetadata({ id: rows[0].id, name: rows[0].name }, args.env);
             return await save(ctx, "collection", {
                 id: rows[0].id,
                 name: rows[0].name,

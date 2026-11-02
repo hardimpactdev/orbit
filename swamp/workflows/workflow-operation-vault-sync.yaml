@@ -124,6 +124,23 @@ jobs:
       condition:
         type: succeeded
     writes: true
+  - name: Prepare session file
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: workspace
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-sync-session-file
+      methodName: execute
+      inputs:
+        run: timeout 30 install -m 0600 /dev/null "$BITWARDENCLI_APPDATA_DIR/session"
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
   - name: configure
     labels:
       role: swamp
@@ -141,7 +158,7 @@ jobs:
         timeout: 60000
       behaviorName: ${{ "vault-sync-configure" }}
     dependsOn:
-    - step: workspace
+    - step: Prepare session file
       condition:
         type: succeeded
     writes: true

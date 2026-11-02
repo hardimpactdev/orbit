@@ -18,6 +18,7 @@ if state.get("fail") == args[0] or (state.get("readonly") and args[0] == "create
 if args[0] == "login":
     assert os.environ["BW_CLIENTSECRET"] == os.environ["FIXTURE_CLIENT_SECRET"]
 elif args[0] == "unlock":
+    assert (Path(os.environ["BITWARDENCLI_APPDATA_DIR"]) / "session").stat().st_mode & 0o777 == 0o600
     assert os.environ["BW_PASSWORD"] == os.environ["FIXTURE_MASTER_PASSWORD"]
     print(os.environ["FIXTURE_SESSION"])
     (Path(os.environ["BITWARDENCLI_APPDATA_DIR"]) / "data.json").write_text(
@@ -33,7 +34,10 @@ elif args[0] == "unlock":
     sys.exit(0)
 elif args[0] == "list":
     assert os.environ["BW_SESSION"] == os.environ["FIXTURE_SESSION"]
-    print(json.dumps(state[args[1]]))
+    rows = state[args[1]]
+    if state.get("echo_secret") == args[1]:
+        rows = [{**row, "name": os.environ["FIXTURE_CLIENT_SECRET"]} for row in rows]
+    print(json.dumps(rows))
     sys.exit(0)
 elif args[0] == "status":
     print('{"userId":"account","userEmail":"setup@example.test"}')

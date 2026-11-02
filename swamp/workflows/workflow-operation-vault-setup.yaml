@@ -111,6 +111,23 @@ jobs:
     - step: Prepare public data
       condition:
         type: succeeded
+  - name: Prepare session file
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: workspace
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-session-file
+      methodName: execute
+      inputs:
+        run: timeout 30 install -m 0600 /dev/null "$BITWARDENCLI_APPDATA_DIR/session"
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
   - name: Configure the server
     labels:
       role: swamp
@@ -129,7 +146,7 @@ jobs:
           ORBIT_URL: ${{ inputs.intent.url }}
         timeout: 60000
     dependsOn:
-    - step: workspace
+    - step: Prepare session file
       condition:
         type: succeeded
   - name: Log in
@@ -266,6 +283,9 @@ jobs:
       methodName: account
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
+        env:
+          ORBIT_CLIENT_SECRET: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.client_secret_key) }}
+          ORBIT_MASTER_PASSWORD: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.master_password_key) }}
     dependsOn:
     - step: Read account status
       condition:
@@ -281,6 +301,9 @@ jobs:
       inputs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
         intent: ${{ inputs.intent }}
+        env:
+          ORBIT_CLIENT_SECRET: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.client_secret_key) }}
+          ORBIT_MASTER_PASSWORD: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.master_password_key) }}
     dependsOn:
     - step: Read organizations
       condition:
@@ -297,6 +320,9 @@ jobs:
         directory: ${{ steps.workspace.outputs.stdout.trim() }}
         intent: ${{ inputs.intent }}
         organization: ${{ steps["Select the organization"].outputs.id }}
+        env:
+          ORBIT_CLIENT_SECRET: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.client_secret_key) }}
+          ORBIT_MASTER_PASSWORD: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.master_password_key) }}
     dependsOn:
     - step: Read collections
       condition:

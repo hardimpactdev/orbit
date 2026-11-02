@@ -185,11 +185,11 @@ The existing setup program derives the account's keys with PBKDF2 and refuses an
 
 ### Sync uses the official CLI
 
-Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.6.0 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup and teardown retain their existing implementation until their owning rewrite.
+Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.6.0 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup uses the same CLI primitives; teardown retains its existing collection implementation.
 
 ### TLS verifies the server
 
-Admission accepts only HTTPS `.orbit` origins. Sync uses the official CLI's default trust store plus the public Orbit root through `NODE_EXTRA_CA_CERTS`; it never disables certificate verification. Setup and teardown retain their existing Orbit-root-only TLS context and request deadlines until their owning rewrite.
+Admission accepts only HTTPS `.orbit` origins. Sync uses the official CLI's default trust store plus the public Orbit root through `NODE_EXTRA_CA_CERTS`; it never disables certificate verification. Setup uses the same CLI trust configuration; teardown retains its existing Orbit-root-only TLS context and request deadlines.
 
 ### Removed credentials are deleted
 
@@ -197,7 +197,7 @@ When a credential is removed, its item is deleted permanently instead of moved t
 
 ## Operation execution
 
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Sync uses the native CLI workflow described below. Setup and teardown still run their existing collection program on the recorded Gateway Node, with the shared run-bound private-material endpoint and protected stdin. Their terminal completion deletes the encrypted snapshot.
+Setup, synchronization, and teardown record an Operation and return HTTP 202. Sync uses the native CLI workflow described below. Setup uses the native account workflow described below. Teardown still runs its existing collection program on the recorded Gateway Node, with the shared run-bound private-material endpoint and protected stdin. Terminal completion deletes the encrypted snapshot.
 
 A retry reconciles the collection by `orbit.source` before it creates an item. It adopts a wanted marker only when that source has no ledger entry. A missing recorded cipher creates a replacement and preserves unrecorded copies. Only recorded orphans are eligible for deletion. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
 
@@ -207,7 +207,7 @@ Direct setup, sync, and teardown results carry only collection identifiers and l
 
 `vault.setup` uses `operation-vault-setup`. The Gateway pushes one execution copy into the Swamp vault and passes the full public intent and names-only descriptor. A Swamp role worker verifies the account and collection with the official Bitwarden CLI. It creates a harmless test item because CLI collection exports omit write permissions. Native cleanup deletes that item, logs out and removes the private scratch directory. A native assert checks verification and cleanup. A cleanup failure marks the Operation failed, even after successful account verification.
 
-Only the successful terminal result stores the setup; a failure preserves the previous configuration and publishing ledger. Each new setup verifies its supplied credentials; native resume retains completed steps. Verification fails with its own native exit code; the Gateway maps it to the public Vault refusal code without reading failed-step output.
+Only the successful terminal result stores the setup; a failure preserves the previous configuration and publishing ledger. Each new setup verifies its supplied credentials; native resume retains completed steps. Typed checks fail with a public refusal code. The Gateway maps that code or a failed CLI step to the public Vault error without reading failed-step output.
 
 The pinned CLI caches the account KDF as public disk-state metadata. Setup reads that metadata to preserve the PBKDF2-SHA256 constraint and iteration limit, without a second HTTP client or cryptography implementation.
 
@@ -215,11 +215,11 @@ The pinned CLI caches the account KDF as public disk-state metadata. Setup reads
 
 ### Native sync with the official Bitwarden CLI
 
-The Gateway starts `operation-vault-sync` with full public intent. All steps run on Node 209; the Gateway Node ID identifies the Operation target. This integration calls Vaultwarden over HTTPS and needs no worker or CLI installation on the Gateway Node. The configuration descriptor contains only its vault and key names. Intent contains the server, organization and collection IDs, wanted source/fingerprint pairs and the publishing ledger. Credentials and wanted item contents stay in the shared Swamp vault and reach action scripts through the whole environment expression. Steps make no Gateway calls. The fixed sync/result public JSON uses the existing terminal subscriber.
+The Gateway starts `operation-vault-sync` with full public intent. All steps run on Node 209; the Gateway Node ID identifies the Operation target. This integration calls Vaultwarden over HTTPS and needs no worker or CLI installation on the Gateway Node. The configuration descriptor contains only its vault and key names. Intent contains the server, organization and collection IDs, wanted source/fingerprint pairs and the publishing ledger. Credentials and wanted item contents stay in the shared Swamp vault and reach only the typed method or CLI action that needs them. Steps make no Gateway calls. The fixed sync/result public JSON uses the existing terminal subscriber.
 
 Swamp core workflows and command execution fit. Official extensions were checked at d6f7afdcd6d04a63fdbc6ed56c403832770f67a6: the vault backends cover cloud secret stores, not Vaultwarden item reconciliation. The official bw CLI supplies API-key login, password-env unlock, item JSON on stdin and permanent deletion. Sync has no custom Vaultwarden HTTP or cryptography client. Node.js/npm must be available on the placed worker; normal npm package execution/cache resolves the pinned official CLI.
 
-One temporary CLI app-data directory belongs to each run. Its derived session key stays in a file with mode `0600`. The CLI receives it through `BW_SESSION`; it never enters step output or arguments. Only public item metadata leaves the CLI boundary. Item steps use native concurrency 1 because they share the official CLI's writable cache. Each write item has its own native behavior identity, so the default ten-result retention keeps its public write receipt available for native recovery.
+One temporary CLI app-data directory belongs to each run. Its derived session key stays in a file with mode `0600`. Native sensitive-field storage encrypts the session and leaves only a vault reference in step output. The CLI resolves that key into `BW_SESSION`; the value never enters arguments. Only public item metadata leaves the CLI boundary. Item steps use native concurrency 1 because they share the official CLI's writable cache. Each write item has its own native behavior identity, so the default ten-result retention keeps its public write receipt available for native recovery.
 
 Failure summaries ignore unavailable write outputs and keep the run failed; they never publish a partial ledger. Logout and cache removal follow success or failure. Native resume must restart from the workspace step to rebuild this disposable session and inventory; it must not reuse a cleaned-up session. There is no custom retry loop or lock.
 

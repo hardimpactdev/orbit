@@ -55,6 +55,12 @@
       "budget_seconds": 60
     },
     {
+      "name": "Prepare session file",
+      "job": "prepare",
+      "step": "Prepare session file",
+      "budget_seconds": 30
+    },
+    {
       "name": "configure",
       "job": "prepare",
       "step": "configure",

@@ -48,6 +48,12 @@
       "budget_seconds": 60
     },
     {
+      "name": "Prepare session file",
+      "job": "setup",
+      "step": "Prepare session file",
+      "budget_seconds": 30
+    },
+    {
       "name": "Configure the server",
       "job": "setup",
       "step": "Configure the server",

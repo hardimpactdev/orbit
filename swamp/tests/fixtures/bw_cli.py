@@ -23,6 +23,7 @@ elif args[0] == "login":
     assert os.environ["BW_CLIENTSECRET"] == os.environ["FIXTURE_CLIENT_SECRET"]
     output = {}
 elif args[0] == "unlock":
+    assert (Path(os.environ["BITWARDENCLI_APPDATA_DIR"]) / "session").stat().st_mode & 0o777 == 0o600
     assert args == ["unlock", "--passwordenv", "BW_PASSWORD", "--raw"]
     assert os.environ["BW_PASSWORD"] == os.environ["FIXTURE_MASTER_PASSWORD"]
     state_path.write_text(json.dumps(state))
