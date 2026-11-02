@@ -66,6 +66,7 @@ class ProjectStep(unittest.TestCase):
     def test_overlapping_secrets_redact_the_union_without_short_remainders(self):
         for first, second, output in [
             ('abcdefgh', 'fghijk', 'abcdefghijk'),
+            ('xab', 'abcdefghi', 'xabcdefghi'),
             ('abcde', 'defghijk', 'abcdefghijk'),
             ('aba', 'bab', 'ababa'),
             ('abc', 'def', 'abcdef'),
