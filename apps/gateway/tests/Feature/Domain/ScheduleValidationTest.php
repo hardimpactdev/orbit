@@ -68,16 +68,17 @@ it('rejects timeout values outside the closed range', function (int $timeout): v
         ->toThrow(ResourceOperationException::class, 'Schedule timeout is invalid');
 })->with([0, 86401]);
 
-it('rejects a disabled Node timer at admission', function (): void {
+it('accepts a disabled Node Schedule at admission', function (): void {
     $data = new AddScheduleData(
         ScheduleTargetType::Node,
         1,
         'backup',
-        'daily',
+        '@daily',
         'true',
         start: false,
     );
 
-    expect(fn () => new ScheduleSpecificationValidator()->validate($data))
-        ->toThrow(ResourceOperationException::class, 'Node Schedule timer must start enabled');
+    new ScheduleSpecificationValidator()->validate($data);
+
+    expect($data->start)->toBeFalse();
 });

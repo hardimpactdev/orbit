@@ -31,7 +31,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         {--calendar= : Cron expression, such as "0 3 * * *" or @daily; a systemd calendar for a Project definition}
         {--command= : Command to run}
         {--timeout=3600 : Execution timeout in seconds, from 1 to 86400}
-        {--no-start : Install an Instance Schedule with its timer disabled and stopped}
+        {--no-start : Create a Node or Instance Schedule without its trigger}
         {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
@@ -176,7 +176,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         if ($this->option('no-start') === true) {
             return $this->renderGatewayFailure(
                 'schedule.option_invalid',
-                'The --no-start option requires --instance.',
+                'The --no-start option requires --node or --instance.',
             );
         }
 
@@ -252,15 +252,6 @@ final class CreateScheduleCommand extends ScheduleCommand
         }
 
         if ($node !== null) {
-            if ($this->option('no-start') === true) {
-                $this->renderGatewayFailure(
-                    'schedule.option_invalid',
-                    'The --no-start option requires --instance.',
-                );
-
-                return null;
-            }
-
             $nodeId = $this->positiveOptionId($node, 'Node', 'schedule.node_id_invalid');
 
             return $nodeId === null ? null : new NodeScheduleTarget($nodeId);

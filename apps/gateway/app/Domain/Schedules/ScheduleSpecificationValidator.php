@@ -46,9 +46,6 @@ final readonly class ScheduleSpecificationValidator
             $this->invalid(ScheduleErrorCode::TargetInvalid, 'The Schedule target is invalid.');
         }
 
-        if ($data->targetType === ScheduleTargetType::Node && ! $data->start) {
-            $this->invalid(ScheduleErrorCode::StateInvalid, 'A Node Schedule timer must start enabled.');
-        }
     }
 
     private function invalid(ScheduleErrorCode $error, string $message): never

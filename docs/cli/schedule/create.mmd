@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1-R3.
-  %% status: draft
+  %% status: migrated
   %% command: schedule:create
   %% kind: schedule.create
   autonumber
@@ -24,7 +24,7 @@ sequenceDiagram
   %%> - a cron expression, the format Swamp schedules use, for example `0 3 * * *`, a 6-field form with seconds such as `20 * * * * *`, or a shorthand such as `@hourly` or `@daily`
   %%> - it fires in serve's time zone (UTC); a Swamp trigger carries no time zone
   %%> - existing systemd calendars are converted once during the migration
-  %%> - optionally `--no-start`, to create the Schedule disabled
+  %%> - optionally `--no-start`, to create a Node or Instance Schedule disabled
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, record Schedule<br/>Schedule 7f3c… · Instance 42

@@ -74,11 +74,22 @@ it('marks the Schedule failed and records no task when serve does not confirm', 
         ->and(collect($this->socket->sent)->where('type', 'workflow.create')->count())->toBe(1);
 });
 
-it('refuses changed specifications and disabled Node timers before recording another Operation', function (): void {
-    $this->postJson('/api/v1/schedules', [...$this->payload, 'start' => false])->assertUnprocessable();
+it('refuses changed specifications before recording another Operation', function (): void {
     $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
     $this->postJson('/api/v1/schedules', [...$this->payload, 'command' => 'false'])->assertConflict()->assertJsonPath('error.code', 'schedule.retry_conflict');
     expect(Operation::query()->count())->toBe(1);
+});
+
+it('creates a disabled native Node Schedule without a trigger or Node work', function (): void {
+    $this->postJson('/api/v1/schedules', [...$this->payload, 'calendar' => '@daily', 'start' => false])
+        ->assertAccepted()->assertJsonPath('data.status', 'succeeded');
+
+    $schedule = Schedule::query()->sole();
+    expect($schedule->status->value)->toBe('active')
+        ->and($schedule->desired_timer_state->value)->toBe('disabled')
+        ->and($schedule->swamp_workflow_id)->not->toBeNull()
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.create', 'workflow.edit', 'workflow.trigger.remove'])
+        ->and(Operation::query()->sole()->state)->not->toHaveKey('swamp_run_id');
 });
 
 it('admits a manual run without changing desired timer state', function (): void {

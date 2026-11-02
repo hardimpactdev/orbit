@@ -21,7 +21,7 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=pro
 | `--calendar=CALENDAR` | none | A cron expression that Swamp accepts, such as `0 3 * * *`, `20 * * * * *` with seconds, or `@daily`. It fires in UTC. A Project definition takes a systemd calendar, such as `daily` or `Mon..Fri 02:00`. |
 | `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
 | `--timeout=SECONDS` | `3600` | Execution timeout, 1 through 86,400 seconds. |
-| `--no-start` | off | Create an Instance Schedule disabled, without a trigger. |
+| `--no-start` | off | Create a Node or Instance Schedule disabled, without a trigger. |
 
 The CLI checks the name, calendar, command, and timeout before it sends a request. Swamp then accepts or refuses the calendar. A definition has no host yet, so its calendar is checked when production preparation copies the definition.
 

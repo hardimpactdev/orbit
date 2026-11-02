@@ -80,8 +80,10 @@ it('adds one Node Schedule through exactly one typed request and renders human o
         ]);
 });
 
-it('adds one stopped Instance Schedule and renders exact json', function (): void {
+it('adds one disabled native Schedule and renders exact json', function (string $type, int $id): void {
     $payload = schedule_cli_payload([
+        'target_type' => $type,
+        'target_id' => $id,
         'desired_timer_state' => 'disabled',
         'status' => 'active',
     ]);
@@ -91,7 +93,7 @@ it('adds one stopped Instance Schedule and renders exact json', function (): voi
 
     $this
         ->artisan('schedule:create', schedule_cli_add_arguments([
-            '--instance' => '7',
+            '--'.$type => (string) $id,
             '--no-start' => true,
             '--json' => true,
         ]))
@@ -104,15 +106,15 @@ it('adds one stopped Instance Schedule and renders exact json', function (): voi
     $mock->assertSentCount(1, CreateScheduleRequest::class);
     expect($mock->getLastRequest()?->body()->all())
         ->toBe([
-            'target_type' => 'instance',
-            'target_id' => 7,
+            'target_type' => $type,
+            'target_id' => $id,
             'name' => 'daily-report',
             'calendar' => 'daily',
             'command' => 'php artisan report:send',
             'timeout_seconds' => 900,
             'start' => false,
         ]);
-});
+})->with(['Instance' => ['instance', 7], 'Node' => ['node', 3]]);
 
 it('omits start when an Instance Schedule uses the default enabled state', function (): void {
     $mock = MockClient::global([
@@ -440,10 +442,11 @@ it('applies explicit selector validation before HTTP in every output and interac
         'malformed Instance ID' => [[
             '--instance' => '7.5',
         ], 'schedule.instance_id_invalid', 'Instance ID must be a positive integer.'],
-        'Node with Instance option' => [[
-            '--node' => '3',
+        'Project with disabled trigger option' => [[
+            '--project' => '7',
+            '--for' => 'production',
             '--no-start' => true,
-        ], 'schedule.option_invalid', 'The --no-start option requires --instance.'],
+        ], 'schedule.option_invalid', 'The --no-start option requires --node or --instance.'],
     ];
     $modes = ['interactive', 'non-interactive', 'json'];
     $datasets = [];

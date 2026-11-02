@@ -148,7 +148,7 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
         ->toBe(DesiredTimerState::Disabled);
 });
 
-it('activates an Instance Schedule from an empty body idempotently and rejects invalid Node requests', function (): void {
+it('activates an Instance Schedule idempotently and allows a disabled native Node Schedule', function (): void {
     $schedule = schedules_api_record($this->instance, $this->targetNode, start: false);
 
     for ($attempt = 0; $attempt < 2; $attempt++) {
@@ -168,10 +168,10 @@ it('activates an Instance Schedule from an empty body idempotently and rejects i
         ->assertJsonPath('error.code', 'schedule.target_invalid');
 
     $this->postJson('/api/v1/schedules', schedules_api_payload($this->targetNode, start: false))
-        ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'schedule.state_invalid');
+        ->assertAccepted()
+        ->assertJsonPath('data.status', 'succeeded');
 
-    expect(Schedule::query()->where('name', 'daily-report')->count())->toBe(1);
+    expect(Schedule::query()->where('name', 'daily-report')->count())->toBe(2);
 });
 
 it('replays a keyed destroy after the Schedule record is removed', function (): void {
