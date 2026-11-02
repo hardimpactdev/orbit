@@ -8,33 +8,6 @@ const read = async () => JSON.parse(await Deno.readTextFile(statePath));
 const save = (state: unknown) =>
   Deno.writeTextFile(statePath, JSON.stringify(state));
 const token = () => Deno.env.get("ORBIT_RECIPE_FIXTURE_SENTINEL")!;
-export const fixtureMint = async (
-  _ctx: unknown,
-  args: { operation_id: number; run_id: string },
-) => {
-  const s = await read();
-  s.calls.push({
-    method: "POST",
-    path: `/api/v1/direct-operations/${args.operation_id}/github-token`,
-    body: { run_id: args.run_id },
-  });
-  s.mints++;
-  await save(s);
-  return {
-    data: {
-      github: {
-        token: token(),
-        expires_at: new Date(Date.now() + 3600000).toISOString(),
-        repository: Repository,
-        permissions: {
-          contents: s.mode === "scope" ? "read" : "write",
-          pull_requests: "write",
-          checks: "read",
-        },
-      },
-    },
-  };
-};
 export const github: typeof fetch = async (raw, init) => {
   const u = new URL(String(raw)),
     method = init?.method ?? "GET",
@@ -43,11 +16,6 @@ export const github: typeof fetch = async (raw, init) => {
     u.origin !== "https://api.github.com" ||
     new Headers(init?.headers).get("Authorization") !== "Bearer " + token()
   ) throw new Error("Invalid fixture credential");
-  if (u.pathname === "/installation/token" && method === "DELETE") {
-    s.revokes++;
-    await save(s);
-    return new Response(null, { status: 204 });
-  }
   const path = u.pathname.replace("/repos/" + Repository, "");
   s.github.push({ method, path });
   const body = init?.body ? JSON.parse(String(init.body)) : {};

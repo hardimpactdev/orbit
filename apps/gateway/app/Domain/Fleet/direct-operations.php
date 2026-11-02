@@ -31,8 +31,8 @@ return [
     'fleet.recipe_pr' => [
         'workflow' => 'operation-fleet-recipe-pr',
         'projection' => RecipePrProjection::class,
-        'github_token' => ['repository' => 'hardimpactdev/orbit', 'permissions' => ['contents' => 'write', 'pull_requests' => 'write', 'checks' => 'read']],
         'workflow_inputs' => true,
         'terminal_result' => ['job' => 'github', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^fleet-recipe-pr-[1-9][0-9]*$']],
     ],
 ];

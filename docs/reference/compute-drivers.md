@@ -5,7 +5,7 @@ covers:
   - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
+  - apps/gateway/{app/Domain/Fleet/RecipePrProjection.php,app/Actions/Fleet/AdmitRecipePrAction.php,app/Actions/Fleet/RecipePrPlanAction.php,app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
@@ -1198,7 +1198,9 @@ Every Ubuntu pin follows the named snapshot, including `resolute-updates`. Swamp
 
 Signed indexes and digests authenticate the inputs. CI verifies every Ubuntu pin, and the merge accepts only the regenerated bump on the checked head. Verified images gate rollout. Ordered Node inventory, health, and Doctor checks stop a faulty rollout. These checks make automation safe without promising that an upstream package cannot regress.
 
-At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), Swamp requests a recipe PR Operation. The Gateway captures its public intent and starts `operation-fleet-recipe-pr` on 209. Native steps prepare the authenticated candidate, create the branch, publish the recipe and open the PR. Refresh creates its tree and commit before an expected-head reference update. Retirement, merge and the optional comment have separate steps.
+At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), Swamp requests a recipe PR Operation. The Gateway captures its public intent and starts `operation-fleet-recipe-pr` on 209. At run start the Gateway mints one token with `contents: write`, `pull_requests: write` and `checks: read` for `hardimpactdev/orbit` and puts it in the vault as `fleet-recipe-pr-<task>`.
+
+The first step prepares the candidate. One step then runs the chosen action: open (branch, recipe file, PR), refresh (tree, commit, expected-head reference update), merge on green, or close. Each write carries its expected head, so a rerun repeats it safely. A cleanup job revokes the token. A failed run revokes its token too, so a retry is a new task.
 
 Each GitHub step uses the exact mint-only primitive for the fixed `hardimpactdev/orbit` repository, keeps its short-lived token in memory and attempts revocation before returning public data. The App key stays in the Gateway. Native outputs retain the first prepared candidate; failed writes stop the run for inspection. No step reads intent or projects results through a Gateway callback.
 

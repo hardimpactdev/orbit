@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\GitHub\NativeGitHubTokenIssuer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -18,7 +17,7 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}> */
+    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}> */
     private array $definitions;
 
     /** @param iterable<DirectOperationContribution> $contributions */
@@ -32,7 +31,7 @@ final readonly class DirectOperation
         foreach ($families as $family) {
             foreach ($family as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'workflow_inputs', 'execution_copies', 'terminal_result', 'scheduled_result', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token', 'github_token_issuer', 'result_hook']) !== []
+                    || array_diff(array_keys($definition), ['workflow', 'workflow_inputs', 'execution_copies', 'terminal_result', 'scheduled_result', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token_issuer', 'result_hook']) !== []
                     || (array_key_exists('workflow_inputs', $definition) && ! is_bool($definition['workflow_inputs']))
                     || ! is_string($definition['workflow'] ?? null) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $definition['workflow']) !== 1
                     || ! isset($definition['projection'])
@@ -60,9 +59,6 @@ final readonly class DirectOperation
                         throw new LogicException('Scheduled observations require the original terminal result declaration.');
                     }
                     $definition['scheduled_result'] = self::scheduledResult($definition['scheduled_result']);
-                }
-                if (isset($definition['github_token'])) {
-                    GitHubTokenGrant::from($definition['github_token']);
                 }
                 $definitions[$kind] = $definition;
             }
@@ -214,7 +210,7 @@ final readonly class DirectOperation
         return $this->definitions;
     }
 
-    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
+    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
@@ -297,16 +293,6 @@ final readonly class DirectOperation
         $projection = $this->projection($operation);
 
         return ! $projection instanceof NativeOperationProjection || $projection->native($operation);
-    }
-
-    public function githubTokenGrant(Operation $operation): GitHubTokenGrant
-    {
-        $grant = $this->definitions[$operation->kind]['github_token'] ?? null;
-        if ($grant === null) {
-            throw new ResourceOperationException('operation.github_token_forbidden', 'This intent declares no GitHub credential.', 403);
-        }
-
-        return GitHubTokenGrant::from($grant);
     }
 
     /**

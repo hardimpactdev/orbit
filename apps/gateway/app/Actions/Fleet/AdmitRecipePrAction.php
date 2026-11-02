@@ -34,7 +34,6 @@ final readonly class AdmitRecipePrAction
         Node::query()->findOrFail(209);
 
         return $this->start->execute('fleet.recipe_pr', $number === 0 ? 'recipe_'.$variant : 'recipe_pr', $number === 0 ? $nodeId : $number, 209, [
-            'github' => ['$secret' => 'github.installation', 'id' => 209],
             'action' => $action, 'variant' => $variant, 'pull_number' => $number, 'head_sha' => $head, 'date' => $date,
             'author' => $author.'[bot]', 'required_check' => config()->string('orbit.gateway_releases.check'), 'deployed_recipe' => $recipe,
         ], 'swamp', null);

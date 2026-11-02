@@ -2,68 +2,70 @@ import { z } from "npm:zod@4.4.3";
 import { RecipeIntent, type RecipePlan, RecipePrPlanner } from "./actions.ts";
 import { RecipeGitHub } from "./api.ts";
 import { effect } from "./effects.ts";
-import { Repository, requirePolicy } from "./policy.ts";
-const Globals = z.object({
-  gatewayUrl: z.string().url().default("https://gateway.orbit"),
-  caFile: z.string().min(1).default("/usr/local/share/ca-certificates/orbit-root.crt"),
-});
+import { requirePolicy } from "./policy.ts";
 const Args = z.object({
   operation_id: z.number().int().positive(),
   node_id: z.literal(209),
   kind: z.literal("fleet.recipe_pr"),
-  run_id: z.uuid(),
   intent: RecipeIntent,
   plan: z.record(z.string(), z.unknown()).optional(),
-  tree: z.string().optional(),
-  commit: z.string().optional(),
   url: z.string().optional(),
+  // The Gateway minted this scoped token at run start; the step reads it from the vault.
+  env: z.object({ GITHUB_TOKEN: z.string().min(1) }).strict().optional(),
 });
 type Context = {
-  globalArgs: z.infer<typeof Globals>;
-  signal?: AbortSignal;
   writeResource(spec: string, name: string, data: unknown): Promise<unknown>;
 };
-/** The mint-only primitive needs private in-memory response handling, not persisted HTTP data. */
-async function mint(ctx: Context, args: z.infer<typeof Args>) {
-  const client = Deno.createHttpClient({
-    caCerts: [await Deno.readTextFile(ctx.globalArgs.caFile)],
-  });
-  try {
-    const response = await fetch(
-      new URL(
-        `/api/v1/direct-operations/${args.operation_id}/github-token`,
-        ctx.globalArgs.gatewayUrl,
-      ),
-      {
-        method: "POST",
-        redirect: "error",
-        client,
-        signal: ctx.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: args.run_id }),
-      },
-    );
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error("fleet.recipe_pr_credential_unavailable");
-    }
-    return await response.json();
-  } finally {
-    client.close();
-  }
-}
+/** One chart action: each GitHub write the action needs, in order. Writes carry their own expected head. */
+const Actions: Record<string, string[]> = {
+  open: ["branch", "file", "pull"],
+  update: ["tree", "commit", "ref", "comment"],
+  merge: ["merge"],
+  retire: ["close", "comment"],
+};
 export function recipePr(
-  requestMint = mint,
   makeApi = (token: string) => new RecipeGitHub(token),
   makePlanner: (api: RecipeGitHub) => Pick<RecipePrPlanner, "prepare"> = (
     api: RecipeGitHub,
   ) => new RecipePrPlanner(api),
-  revoke: typeof fetch = fetch,
 ) {
+  async function act(method: string, args: z.infer<typeof Args>) {
+    const token = args.env?.GITHUB_TOKEN;
+    requirePolicy(token !== undefined);
+    const api = makeApi(token!);
+    let output: Record<string, unknown> = { completed: true };
+    try {
+      if (method === "prepare") output = await makePlanner(api).prepare(args.intent);
+      else {
+        const plan = args.plan as RecipePlan;
+        let tree: string | undefined, commit: string | undefined;
+        for (const write of Actions[method]) {
+          if (write === "comment") {
+            // The explanation comment is best effort, as before; the action itself already landed.
+            if (plan.comment !== undefined) await effect(write, api, plan).catch(() => undefined);
+            continue;
+          }
+          const result = await effect(write, api, plan, tree, commit);
+          if (write === "tree") tree = z.string().parse(result.sha);
+          if (write === "commit") commit = z.string().parse(result.sha);
+          if (write === "pull") output = result;
+        }
+      }
+      requirePolicy(!JSON.stringify(output).includes(token!));
+    } catch (error) {
+      throw new Error(
+        error instanceof Error &&
+            /^fleet\.recipe_(?:pr_(?:stale|policy_refused)|pending_deployment|github_unavailable|github_truncated)$/
+              .test(error.message)
+          ? error.message
+          : "fleet.recipe_pr_policy_refused",
+      );
+    }
+    return output;
+  }
   return {
     type: "@nckrtl/fleet-recipe-pr",
-    version: "2026.11.01.1",
-    globalArguments: Globals,
+    version: "2026.11.02.1",
     resources: {
       result: {
         schema: z.record(z.string(), z.unknown()),
@@ -72,113 +74,21 @@ export function recipePr(
       },
     },
     methods: Object.fromEntries(
-      [
-        "prepare",
-        "branch",
-        "file",
-        "pull",
-        "tree",
-        "commit",
-        "ref",
-        "close",
-        "merge",
-        "comment",
-        "result",
-      ].map((method) => [method, {
+      ["prepare", "open", "update", "merge", "retire", "result"].map((method) => [method, {
         description: "Recipe PR " + method,
         arguments: Args,
-        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-          let output: Record<string, unknown>;
-          if (method === "result") {
-            const plan = args.plan!;
-            output = {
+        execute: async (raw: z.infer<typeof Args>, ctx: Context) => {
+          const args = Args.parse(raw);
+          const output = method === "result"
+            ? {
               stdout: JSON.stringify({
                 completed: true,
-                outcome: plan.outcome ?? "checked",
-                ...(args.url || plan.url ? { url: args.url || plan.url } : {}),
+                outcome: args.plan!.outcome ?? "checked",
+                ...(args.url || args.plan!.url ? { url: args.url || args.plan!.url } : {}),
               }),
-            };
-          } else {
-            let token: string | undefined;
-            try {
-              const minted = await requestMint(ctx, args);
-              const raw = z.object({
-                data: z.object({
-                  github: z.object({
-                    token: z.string().min(1),
-                    expires_at: z.string(),
-                    repository: z.string(),
-                    permissions: z.record(
-                      z.string(),
-                      z.string(),
-                    ),
-                  }),
-                }),
-              }).parse(minted).data.github;
-              token = raw.token;
-              requirePolicy(
-                raw.repository === Repository &&
-                  JSON.stringify(
-                      Object.entries(raw.permissions)
-                        .sort(),
-                    ) ===
-                    JSON.stringify(
-                      Object.entries({
-                        contents: "write",
-                        pull_requests: "write",
-                        checks: "read",
-                      }).sort(),
-                    ) &&
-                  Date.parse(raw.expires_at) > Date.now() &&
-                  Date.parse(raw.expires_at) <=
-                    Date.now() + 3605000,
-              );
-              const api = makeApi(token);
-              output = method === "prepare"
-                ? await makePlanner(api).prepare(args.intent)
-                : await effect(
-                  method,
-                  api,
-                  args.plan as RecipePlan,
-                  args.tree,
-                  args.commit,
-                );
-              requirePolicy(
-                !JSON.stringify(output).includes(token),
-              );
-            } catch (error) {
-              const code = error instanceof Error &&
-                  /^fleet\.recipe_(?:pr_(?:stale|policy_refused|credential_unavailable)|pending_deployment|github_unavailable|github_truncated)$/
-                    .test(error.message)
-                ? error.message
-                : "fleet.recipe_pr_policy_refused";
-              throw new Error(code);
-            } finally {
-              if (token) {
-                try {
-                  const response = await revoke(
-                    "https://api.github.com/installation/token",
-                    {
-                      method: "DELETE",
-                      redirect: "error",
-                      headers: {
-                        Authorization: "Bearer " +
-                          token,
-                      },
-                    },
-                  );
-                  await response.body?.cancel();
-                } catch {
-                  /* Short-lived credential; no action retry. */
-                }
-              }
             }
-          }
-          return {
-            dataHandles: [
-              await ctx.writeResource("result", method, output),
-            ],
-          };
+            : await act(method, args);
+          return { dataHandles: [await ctx.writeResource("result", method, output)] };
         },
       }]),
     ),

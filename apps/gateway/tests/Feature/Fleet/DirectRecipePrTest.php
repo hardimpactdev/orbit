@@ -36,45 +36,45 @@ beforeEach(function (): void {
     $this->input = ['action' => 'retire', 'variant' => 'snapshot', 'date' => now('Europe/Amsterdam')->format('Ymd'), 'pull_number' => 99,
         'head_sha' => str_repeat('a', 40), 'author' => 'orbit-acme[bot]', 'required_check' => 'Required checks', 'deployed_recipe' => file_get_contents(resource_path('machine-software/recipe.json'))];
     $this->operation = Operation::query()->create(['kind' => 'fleet.recipe_pr', 'target_type' => 'recipe_pr', 'target_id' => 99, 'node_id' => $this->gateway->id,
-        'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => [...$this->input, 'github' => ['$secret' => 'github.installation', 'id' => $this->gateway->id]], 'state' => ['swamp_run_id' => $this->run]]);
+        'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => $this->input, 'state' => ['swamp_run_id' => $this->run]]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id.'/result';
     $this->body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z',
         'result' => ['completed' => true, 'outcome' => 'checked', 'url' => 'https://github.com/hardimpactdev/orbit/pull/99']];
 });
 
-it('admits through the owning API into one direct start without credential hydration', function (): void {
+it('admits through the owning API and mints one scoped token into the vault at run start', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     config(['dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $m): array => [['type' => 'event', 'id' => $m['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-fleet-recipe-pr', 'runId' => $this->run]]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fake.token']);
+    $socket = recipe_pr_start($this->run);
     $response = $this->postJson('/api/v1/fleet/recipe-pr', array_intersect_key($this->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha'])))->assertAccepted();
     $operation = Operation::findOrFail($response->json('data.id'));
-    expect($socket->sent)->toHaveCount(1)->and($socket->sent[0]['payload']['inputs']['intent'])->toEqual($this->input)
-        ->and($socket->sent[0]['payload']['inputs']['node_id'])->toBe(209)
-        ->and($socket->sent[0]['payload']['inputs']['operation_id'])->toBe($operation->id)
+    $start = $socket->sent[1]['payload']['inputs'];
+    expect($socket->sent)->toHaveCount(2)->and($socket->sent[0]['payload'])->toMatchArray(['vaultName' => 'orbit-control-inputs',
+        'key' => 'fleet-recipe-pr-'.$operation->id, 'value' => 'private-recipe-sentinel'])
+        ->and($start['intent'])->toEqual($this->input)
+        ->and($start['execution_secrets'])->toBe(['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'fleet-recipe-pr-'.$operation->id]])
+        ->and(json_encode($start))->not->toContain('private-recipe-sentinel')
+        ->and($start['node_id'])->toBe(209)
+        ->and($start['operation_id'])->toBe($operation->id)
         ->and($operation->state['swamp_run_id'])->toBe($this->run)
         ->and($operation->input)->not->toHaveKey('token')->and($operation->input['author'])->toBe('orbit-acme[bot]')
         ->and($operation->input['deployed_recipe'])->toBe($this->input['deployed_recipe'])
-        ->and($operation->input['github'])->toBe(['$secret' => 'github.installation', 'id' => 209])
+        ->and($operation->input)->not->toHaveKey('github')
         ->and($operation->attempts)->toBe(0)->and($operation->worker)->toBeNull()->and($operation->lock_key)->toBeNull();
     expect(app(OperationKinds::class)->definition('fleet.recipe_pr'))->not->toBeNull();
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
+        && $request->data() === ['repositories' => ['orbit'], 'permissions' => RecipePrProjection::Grant['permissions']]);
 });
 
 it('accepts a stable producer key within the HTTP contract and replays its original direct intent', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $m): array => [['type' => 'event', 'id' => $m['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-fleet-recipe-pr', 'runId' => $this->run]]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fake.token']);
+    $socket = recipe_pr_start($this->run);
     $key = 'fleet:recipe-pr:'.$this->input['date'].':retire:99:'.hash('sha256', json_encode([$this->input['head_sha'], ['observation']], JSON_THROW_ON_ERROR));
     $body = array_intersect_key($this->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha']));
     $first = $this->withHeader('Idempotency-Key', $key)->postJson('/api/v1/fleet/recipe-pr', $body)->assertAccepted()->json('data.id');
     $this->withHeader('Idempotency-Key', $key)->postJson('/api/v1/fleet/recipe-pr', $body)->assertAccepted()->assertJsonPath('data.id', $first);
-    expect($socket->sent)->toHaveCount(1);
+    // One run start: one vault copy and one workflow start; the replay starts nothing.
+    expect($socket->sent)->toHaveCount(2);
 });
 
 it('reports the serving recipe revision without execution state', function (): void {
@@ -171,23 +171,12 @@ it('exposes only safe admitted input and refuses any family execution primitive'
     expect(array_keys(app(RecipePrProjection::class)->input($this->operation)))->not->toContain('token');
 });
 
-it('mints only the fixed recipe repository grant for its bound own-Node run', function (): void {
+it('refuses a per-step mint because the run reads its run-start token from the vault', function (): void {
     Http::preventStrayRequests();
-    $permissions = ['contents' => 'write', 'pull_requests' => 'write', 'checks' => 'read'];
-    Http::fake(['*/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 7]),
-        '*/access_tokens' => Http::response(['token' => 'recipe-ephemeral-sentinel', 'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'),
-            'permissions' => [...$permissions, 'metadata' => 'read']], 201),
-        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
-    $this->getJson('/api/v1/direct-operations/'.$this->operation->id.'/private-material?run_id='.$this->run)->assertUnprocessable();
-    Http::assertNothingSent();
     $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', ['run_id' => $this->run])
-        ->assertOk()->assertHeader('Cache-Control', 'no-store, private')
-        ->assertJsonPath('data.github.repository', 'hardimpactdev/orbit')->assertJsonPath('data.github.permissions', $permissions);
-    Http::assertSentCount(3);
-    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
-        && $request->data() === ['repositories' => ['orbit'], 'permissions' => $permissions]);
-    expect(json_encode($this->operation->fresh()->toArray(), JSON_THROW_ON_ERROR))->not->toContain('recipe-ephemeral-sentinel');
+        ->assertForbidden()->assertJsonPath('error.code', 'operation.github_token_forbidden');
+    Http::assertNothingSent();
 });
 
 it('projects an idempotent bounded result and discards undeclared diagnostics', function (): void {
@@ -221,18 +210,28 @@ it('projects only matching bounded refusal codes and cancellation', function (st
     ['cancelled', null],
 ]);
 
-it('ends mint authority after failed projection and preserves the original outcome on fresh admission', function (): void {
-    Http::preventStrayRequests();
+it('preserves a failed outcome and admits a fresh run with its own token', function (): void {
     $this->operation->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.native_failed', 'finished_at' => now()]);
-    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', ['run_id' => $this->run])->assertConflict();
-    Http::assertNothingSent();
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-fleet-recipe-pr', 'runId' => 'f55044a2-bde6-482d-84c9-87fae6fe3269']]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fixture-token']);
+    recipe_pr_start('f55044a2-bde6-482d-84c9-87fae6fe3269');
     $body = array_intersect_key($this->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha']));
     $response = $this->withHeader('Idempotency-Key', 'recipe-explicit-fresh-admission')->postJson('/api/v1/fleet/recipe-pr', $body)->assertAccepted();
     expect($response->json('data.id'))->not->toBe($this->operation->id);
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Failed);
 });
+
+/** A Swamp socket that accepts the run-start vault copy and the start, with GitHub minting one scoped token. */
+function recipe_pr_start(string $run): FakeRoutePublicationSocket
+{
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $m): array => $m['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $m['id'], 'payload' => ['data' => ['vaultName' => $m['payload']['vaultName'], 'secretKey' => $m['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $m['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-fleet-recipe-pr', 'runId' => $run]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token']);
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response(['token' => 'private-recipe-sentinel', 'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'),
+        'permissions' => [...RecipePrProjection::Grant['permissions'], 'metadata' => 'read']], 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])]);
+
+    return $socket;
+}

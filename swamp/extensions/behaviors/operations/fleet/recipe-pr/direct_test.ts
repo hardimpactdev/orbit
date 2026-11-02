@@ -6,57 +6,25 @@ import { author, source } from "./fixture.ts";
 import { currentDate } from "./policy.ts";
 const token = "fixture-ephemeral-value";
 function fixture(mode = "ok") {
-  const calls: unknown[] = [];
   const stored: unknown[] = [];
+  const tokens: string[] = [];
   const behavior = recipePr(
-    async (_ctx, args) => {
-      calls.push([
-        "POST",
-        `/api/v1/direct-operations/${args.operation_id}/github-token`,
-        { run_id: args.run_id },
-      ]);
-      return {
-        data: {
-          github: {
-            token,
-            expires_at: new Date(Date.now() + 3600000)
-              .toISOString(),
-            repository: "hardimpactdev/orbit",
-            permissions: {
-              contents: mode === "scope" ? "read" : "write",
-              pull_requests: "write",
-              checks: "read",
-            },
-          },
-        },
-      };
+    (secret) => {
+      tokens.push(secret);
+      return new RecipeGitHub(secret);
     },
-    () => new RecipeGitHub(token),
-    (api) => ({
+    () => ({
       prepare: () => {
-        if (mode === "secret") {
-          return Promise.resolve({
-            action: "none",
-            token,
-          });
-        }
+        if (mode === "secret") return Promise.resolve({ action: "none", token });
         if (mode === "throw") throw new Error(token);
         return Promise.resolve({ action: "none", outcome: "checked" });
       },
     } as Pick<RecipePrPlanner, "prepare">),
-    async (_url, init) => {
-      calls.push([
-        "revoke",
-        new Headers(init?.headers).get("Authorization"),
-      ]);
-      return new Response(null, { status: 204 });
-    },
   );
   const args = {
     operation_id: 71,
     node_id: 209 as const,
     kind: "fleet.recipe_pr" as const,
-    run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
     intent: {
       action: "open" as const,
       variant: "snapshot" as const,
@@ -67,49 +35,39 @@ function fixture(mode = "ok") {
       required_check: "Required checks",
       deployed_recipe: source(),
     },
+    env: { GITHUB_TOKEN: token },
   };
   const ctx = {
-    globalArgs: {
-      gatewayUrl: "https://gateway.orbit",
-      caFile: "/fixture-ca",
-    },
     writeResource: (_spec: string, _name: string, value: unknown) => {
       stored.push(value);
       return Promise.resolve(value);
     },
   };
-  return { behavior, args, ctx, calls, stored };
+  return { behavior, args, ctx, stored, tokens };
 }
-Deno.test("exact mint-only request, public result and attempted token revocation", async () => {
+Deno.test("the planner uses the run-start vault token and stores only the public plan", async () => {
   const f = fixture();
   await f.behavior.methods.prepare.execute(f.args, f.ctx);
-  assertEquals(f.calls, [[
-    "POST",
-    "/api/v1/direct-operations/71/github-token",
-    { run_id: f.args.run_id },
-  ], ["revoke", "Bearer " + token]]);
+  assertEquals(f.tokens, [token]);
   assertEquals(f.stored, [{ action: "none", outcome: "checked" }]);
 });
-for (const mode of ["scope", "secret", "throw"]) {
-  Deno.test(`recipe ${mode} refuses without private output and revokes`, async () => {
+for (const mode of ["secret", "throw"]) {
+  Deno.test(`recipe ${mode} refuses without private output`, async () => {
     const f = fixture(mode);
-    const error = await assertRejects(
-      () => f.behavior.methods.prepare.execute(f.args, f.ctx),
-      Error,
-    );
-    assertEquals(error.message.includes(token), false);
+    const error = await assertRejects(() => f.behavior.methods.prepare.execute(f.args, f.ctx), Error);
+    assertEquals(error.message, "fleet.recipe_pr_policy_refused");
     assertEquals(f.stored, []);
-    assertEquals(f.calls.length, 2);
   });
 }
-Deno.test("native result projects no Gateway callback and needs no credential", async () => {
+Deno.test("an action without the vault token refuses before any GitHub request", async () => {
   const f = fixture();
-  await f.behavior.methods.result.execute({
-    ...f.args,
-    plan: { action: "none", outcome: "absent" },
-  }, f.ctx);
-  assertEquals(f.calls, []);
-  assertEquals(f.stored, [{
-    stdout: JSON.stringify({ completed: true, outcome: "absent" }),
-  }]);
+  const error = await assertRejects(() => f.behavior.methods.open.execute({ ...f.args, env: undefined, plan: { action: "open" } }, f.ctx), Error);
+  assertEquals(error.message, "fleet.recipe_pr_policy_refused");
+  assertEquals(f.tokens, []);
+});
+Deno.test("native result needs no credential", async () => {
+  const f = fixture();
+  await f.behavior.methods.result.execute({ ...f.args, env: undefined, plan: { action: "none", outcome: "absent" } }, f.ctx);
+  assertEquals(f.tokens, []);
+  assertEquals(f.stored, [{ stdout: JSON.stringify({ completed: true, outcome: "absent" }) }]);
 });
