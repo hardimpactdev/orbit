@@ -67,12 +67,12 @@ sequenceDiagram
     %%> What it does:
     %%> - removes the old runtime before publishing its replacement
   end
+  opt environment values exist
+    SW->>N: Write the environment<br/>@swamp/cfgmgmt/file
+    %%> What it does:
+    %%> - writes vault content as a root-owned 0600 file; Q-SECRET proved no content in data, diff or logs
+  end
   alt systemd
-    opt environment values exist
-      SW->>N: Write the environment<br/>@swamp/ssh exec · install
-      %%> What it does:
-      %%> - installs the vault value from stdin as a root-owned 0600 file
-    end
     SW->>N: Write the unit<br/>@swamp/cfgmgmt/file
     %%> What it does:
     %%> - converges the rendered unit file
@@ -104,16 +104,24 @@ sequenceDiagram
     SW->>N: Pull the image<br/>@swamp/cfgmgmt/docker_image
     %%> What it does:
     %%> - ensures the image exists before changing the container
-    SW->>N: Create the container<br/>SSH · named Docker argv gap
+    SW->>N: Read container spec<br/>@swamp/ssh exec · docker ls
     %%> What it does:
-    %%> - converges the exact argv, working directory and environment from stdin
-    %%> Why:
-    %%> - the official container model has one command string and exposes env in argv
-    SW->>N: Create container, no env<br/>SSH · named Docker argv gap
-    %%> What it does:
-    %%> - runs the same creation gap when no environment values exist
-    %%> Why:
-    %%> - only the environment branch resolves a vault key
+    %%> - reads only the public spec label to skip settled creation on reruns
+    opt container exists with a changed spec
+      SW->>N: Remove the old container<br/>@swamp/cfgmgmt/docker_container
+      %%> What it does:
+      %%> - removes the changed container and preserves volumes
+    end
+    opt the spec is not already installed
+      SW->>N: Create the container<br/>@swamp/ssh exec · docker create
+      %%> What it does:
+      %%> - uses exact argv, working directory, labels and a private env file
+    end
+    opt a private Docker env file was staged
+      SW->>N: Remove staged env file<br/>@swamp/cfgmgmt/file · completed
+      %%> What it does:
+      %%> - removes the exact env file after creation completes, including failure
+    end
     SW->>N: Apply the container state<br/>@swamp/ssh exec · docker
     %%> What it does:
     %%> - starts or stops the container to match the intent

@@ -31,9 +31,9 @@
       "budget_seconds": 120
     },
     {
-      "name": "Create container, no env",
+      "name": "Create the container",
       "job": "process",
-      "step": "Create container, no env",
+      "step": "Create the container",
       "budget_seconds": 20
     },
     {

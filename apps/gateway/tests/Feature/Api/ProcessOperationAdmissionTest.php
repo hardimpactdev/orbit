@@ -96,7 +96,7 @@ it('supplies full public Docker intent and only environment values through a nat
         ->and($input['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'process-create-operation-'.$operation->id]);
     $puts = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'vault.put'));
     expect($puts)->toHaveCount(1)
-        ->and(json_decode($puts[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['PASSWORD' => $secret]);
+        ->and($puts[0]['payload']['value'])->toBe('PASSWORD='.$secret."\n");
     $runs = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'workflow.run'));
     expect($runs)->toHaveCount(1)->and($runs[0]['payload']['workflowIdOrName'])->toBe('operation-process-create')
         ->and(json_encode($runs[0], JSON_THROW_ON_ERROR))->not->toContain($secret);
@@ -149,7 +149,7 @@ it('passes public update intent and only environment bytes through its own nativ
         ->and($input['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'process-update-operation-'.$operation->id]);
     $puts = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'vault.put'));
     expect($puts)->toHaveCount(1)
-        ->and(json_decode($puts[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['PASSWORD' => $secret]);
+        ->and($puts[0]['payload']['value'])->toBe('PASSWORD='.$secret."\n");
     $runs = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'workflow.run'));
     expect(end($runs)['payload']['workflowIdOrName'])->toBe('operation-process-create')
         ->and(end($runs)['payload']['inputs']['kind'])->toBe('process.update')
