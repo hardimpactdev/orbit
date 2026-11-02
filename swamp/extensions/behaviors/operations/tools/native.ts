@@ -53,7 +53,7 @@ export function inventory(input: Input, version: Step, query: Step, os: Step = n
       if (selected.length > 1) throw new ToolRefusal("tool.version_probe_failed");
       const record = selected[0];
       versions = !record ? [] : input.manager === "brew" ? z.array(z.object({ version: z.string() })).parse(record.installed).map((r) => r.version) : record.installed ? [record.installed] : [];
-      extra = { homebrew: record ?? null, prefix: c.prefix, home: c.home, token_count: selected.length, os_major: input.platform === "macos" ? Number(stdout(os).trim().split(".")[0]) : 0 };
+      extra = { homebrew: record ?? null, prefix: c.prefix, home: c.home, token_count: selected.length, os_major: input.platform === "macos" && os !== null ? Number(stdout(os).trim().split(".")[0]) : 0 };
     } else {
       const rows = z.array(z.object({ name: z.string(), version: z.string().optional() })).parse(input.manager === "vp" ? raw : raw.installed ?? []);
       versions = rows.filter((r) => r.name === input.package).map((r) => r.version);

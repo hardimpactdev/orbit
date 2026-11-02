@@ -29,3 +29,12 @@ Deno.test("Composer and Vite+ observations are parsed on the worker", () => {
     assertEquals([...c.inventory, ...c.candidate, ...c.write, ...c.remove].includes("-c"), false);
   }
 });
+
+Deno.test("Homebrew end observations decode the installed version without another OS read", () => {
+  const value = WriteInput.parse({ ...input("brew"), platform: "macos", architecture: "arm64" });
+  assertEquals(after(value, { exitCode: 0, stdout: '{"formulae":[{"name":"hello","installed":[{"version":"2.0"}]}]}' }).versions, ["2.0"]);
+  const command = commands(value).write;
+  assertEquals(command.includes("--force-bottle"), true);
+  assertEquals(command.includes("HOMEBREW_NO_AUTOREMOVE=1"), true);
+  assertEquals(command.includes("/opt/homebrew/bin/brew"), true);
+});
