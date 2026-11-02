@@ -29,22 +29,10 @@
   },
   "phases": [
     {
-      "name": "Check user and directory",
-      "job": "run",
-      "step": "Check user and directory",
-      "budget_seconds": 30
-    },
-    {
       "name": "Run the command",
       "job": "run",
       "step": "Run the command",
       "budget_seconds": 70
-    },
-    {
-      "name": "Report the result",
-      "job": "run",
-      "step": "Report the result",
-      "budget_seconds": 20
     }
   ],
   "parity": [

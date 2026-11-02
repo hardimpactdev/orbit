@@ -191,3 +191,12 @@ The shared minimal@8 receipt is `~/swamp-execution/evidence/proof/tasks.turn/202
 This is not rule 22 done. Only `receipt_prepare.py` and its agent-facing `receipt_helper.py` still reach the Node, pending a way to install the tool in the image. No new shipped script was added. The task-turn chart is still pending. The assigned tighten2 charts follow this conversion.
 
 Orbit grows by 788 lines. Swamp grows by 775: workflows +569 declare Git commands, data copies and cleanup; proof fixtures +290 exercise the Gateway and real SSH without model calls. Behavior metadata and documentation grow by 51 lines to expose public hashes and name the remaining gap. Scripts shrink by 122 lines and tests by 13, removing replaced actions and their mirrored tests. TypeScript still only shapes public data.
+
+
+## L22-TIGHTEN3-PROCESS: chart labels follow native primitives
+
+Decision 5 and pass 3 are proved for all six Process lifecycle kinds, Horizon handoff and Schedule run on minimal@8 on Beast. Seventeen passing receipts cover both Horizon branches, Docker lifecycle and environment cases, stopped creation, and missing-unit refusal. The receipt index is `swamp/proof/receipts/process-tighten3.json`. Operation p95 and maximum were 16.49 seconds across these 17 samples; Process/Horizon queueTimeout stays 30 seconds, and Schedule stays 300. Task VM 289 was destroyed by operation 7881.
+
+Pinned systemd apply publishes unitFile but does not restart an active process after a change or stop an activating unit. Keep those native actions separate, along with check and native assert. The charts show their exact labels; the commit maps each expansion. No wrapper or shipped script was added. Process and Horizon have removed 29 scripts in total, with no retained script gap. Candidate improvements are recorded in `swamp-evaluation.md`.
+
+Docker checks store their observed environment in the vault under a bounded native-output grant. Proof now loads serve's production grants as well as Gateway execution-input grants. Earlier receipt failures exposed that missing grant, then outdated phase labels and an obsolete env-file cleanup expectation. The corrected proofs verify root-owned 0600 managed env files until destroy. Schedule setup and command failures share `schedule.run_failed` with native diagnostics; target admission retains `schedule.target_unavailable`.

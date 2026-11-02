@@ -206,18 +206,12 @@ final readonly class SwampCommandStep
         $data = $reply['data'] ?? null;
         $rows = is_array($data) && is_array($data['results'] ?? null) ? $data['results'] : [];
         $child = is_array($rows[0] ?? null) && is_string($rows[0]['runId'] ?? null) ? $this->history($rows[0]['runId']) : [];
-        foreach (is_array($child['jobs'] ?? null) ? $child['jobs'] : [] as $job) {
-            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
-                $stdout = is_array($step) && ($step['name'] ?? null) === 'Report the result' && is_array($step['outputs'] ?? null)
-                    ? ($step['outputs']['stdout'] ?? null) : null;
-                $result = is_string($stdout) ? json_decode($stdout, true) : null;
-                if (is_array($result) && (($result['ready'] ?? null) === true || is_string($result['error_code'] ?? null))) {
-                    return $result;
-                }
-            }
+        $result = app(NativeRunResult::class)->fromRun($child);
+        if (($child['status'] ?? null) === 'succeeded' && NativeRunResult::stepStatus($result, 'Run the command') === 'succeeded') {
+            return ['ready' => true];
         }
 
-        return $run['status'] === 'succeeded' ? ['ready' => true] : ['error_code' => 'operation.native_failed'];
+        return $run['status'] === 'succeeded' ? ['ready' => true] : ['error_code' => 'schedule.run_failed'];
     }
 
     /** A terminal scheduled root observes existing pending Operations; it never replaces their admission roots.

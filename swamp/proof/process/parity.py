@@ -28,6 +28,8 @@ if operation['input']['runtime'] == 'docker':
     running = expected == 'running'
     check(state == ('running' if running else 'exited'), f'the container is {state}')
     check(operation['result'] == {'ready': True, 'state': state}, 'the projected state is the observed state')
+    if command:
+        check(json.loads(target('docker', 'container', 'inspect', '--format', '{{json .Config.Cmd}}', unit)) == command, 'the command matches the admitted argv')
     print(f'parity: {operation["kind"]} leaves container {unit} {expected}')
     sys.exit(0)
 active = target('systemctl', 'is-active', unit)

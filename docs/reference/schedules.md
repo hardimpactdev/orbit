@@ -2,14 +2,14 @@
 title: "Schedules"
 description: "How the Gateway stores a Schedule as its own Swamp workflow with a cron trigger, records each fire as a task, and removes it."
 covers:
-  - apps/gateway/app/Actions/Schedules/**
-  - apps/gateway/app/Domain/Schedules/**
+  - apps/gateway/app/{Actions,Domain}/Schedules/**
   - apps/gateway/app/Infrastructure/Schedules/**
   - apps/gateway/app/Data/Schedules/**
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
   - apps/gateway/{app/Models/Schedule.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2027_01_10_120000_add_native_trigger_to_schedules.php}
   - apps/gateway/app/{Infrastructure/Swamp/SwampScheduleWorkflows.php,Jobs/Operations/ProjectSwampScheduleFire.php}
   - packages/php-sdk/src/{Requests,Responses}/Schedules/**
+  - swamp/workflows/workflow-task-command-run.yaml
 ---
 
 # Schedules
@@ -108,11 +108,11 @@ The trigger is the workflow's trigger override on serve, set with `workflow.trig
 
 Serve fires the trigger and starts one root run of `schedule-<uuid>`. Serve runs a limited number of scheduled runs at once, and a Schedule never overlaps itself, so a fire can start late, and a fire that is due while the last one runs waits. Commands must allow for a late or extra run.
 
-`task-command-run` runs on Node 209 in three steps: `Check user and directory`, `Run the command` and `Report the result`. Both Node steps are official `@swamp/ssh` exec argv; no script is shipped. The check runs `cd` into the working directory as the Schedule's user through `sudo`, so it fails when the user is missing or cannot enter it; an empty working directory is the user's home.
+`task-command-run` has one step, `Run the command`, using official `@swamp/ssh` exec argv from Node 209. It runs a transient `systemd-run --pipe --wait --collect` unit with the admitted user, working directory and `RuntimeMaxSec`. The unit enforces its user and directory as it starts; no separate context probe or script is shipped.
 
-The command then runs in one transient unit, `systemd-run --pipe --wait` with the user's UID, its working directory and the Schedule's timeout as `RuntimeMaxSec`, with the command on stdin and the user's shell, or the Schedule's fixed shell. `systemd-cat` sends its output to the Node journal under `orbit-schedule-{uuid}`; it is absent from native history. `Report the result` prints `{"ready":true}`, `schedule.target_unavailable` when the check failed, or `schedule.run_failed`.
+The command arrives on stdin from `vault.get` and runs in the user's shell, or the Schedule's fixed shell. `systemd-cat` sends output to the Node journal under `orbit-schedule-{uuid}`; it stays out of native history. A failed setup, transport or command records `schedule.run_failed`, with the native failed-step diagnostic. Admission still refuses a missing or moved target with `schedule.target_unavailable`.
 
-The Gateway's shared run reader sees each root run of `schedule-<uuid>` on the commit feed. When the run starts, it records one running `schedule.run` Operation with `triggered_by: schedule` and the run ID, with the Schedule's timeout plus 120 seconds as its run budget. When the run ends, the same Operation gets the result of the nested `Report the result` step, such as `schedule.target_unavailable` or `schedule.run_failed`, and the Gateway sets `last_run_at` and `last_run_status`. Swamp never calls the Gateway. A manual run starts `task-command-run` directly, because its own run carries the Operation ID; the shared terminal subscriber projects it like any Operation.
+The Gateway's shared reader records a running `schedule.run` Operation when a root `schedule-<uuid>` run starts. Its trigger is `schedule`, and its budget is the Schedule timeout plus 120 seconds. When it ends, the Gateway reads the nested command's native history and updates the same Operation, `last_run_at` and `last_run_status`. A manual run starts `task-command-run` directly with its Operation ID. Swamp never reports the result back to the Gateway.
 
 ## Enable
 

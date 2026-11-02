@@ -55,7 +55,7 @@ function nativeScheduleFireHistory(object $test, string $status, ?string $code =
         $request['type'] === 'workflow.run.search' => [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['data' => [
             'results' => $code === null || $request['payload']['inputs'] !== ['fire_run_id' => $test->runId] ? [] : [['runId' => $child]]]]]],
         ($request['payload']['workflowIdOrName'] ?? null) === $child => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
-            'id' => $child, 'jobs' => [['name' => 'run', 'steps' => [['name' => 'Report the result', 'outputs' => ['stdout' => json_encode(['error_code' => $code])]]]]]]]]],
+            'id' => $child, 'status' => $status, 'jobs' => [['name' => 'run', 'steps' => [['name' => 'Run the command', 'status' => $status]]]]]]]],
         default => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
             'id' => $test->runId, 'workflowId' => $test->workflowId, 'workflowName' => 'schedule-'.$test->scheduleId, 'status' => $status,
             'tags' => ['orbit_schedule_id' => $test->scheduleId, 'orbit_node_id' => (string) $test->node->id,
@@ -103,11 +103,11 @@ it('records a fire as a running task when it starts and gives the same task its 
         ->and($running->triggered_by)->toBe('schedule')
         ->and($running->input['run_budget_seconds'])->toBe(60 + 120);
     $this->schedule->delete();
-    nativeScheduleFireHistory($this, 'failed', 'schedule.target_unavailable');
+    nativeScheduleFireHistory($this, 'failed', 'schedule.run_failed');
     expect(app(SwampCommandStep::class)->projectScheduleFire($this->workflowId, $this->runId))->toBeTrue();
     $ended = Operation::query()->sole();
     expect($ended->id)->toBe($running->id)
         ->and($ended->status)->toBe(OperationStatus::Failed)
-        ->and($ended->error_code)->toBe('schedule.target_unavailable')
+        ->and($ended->error_code)->toBe('schedule.run_failed')
         ->and($ended->node_id)->toBe($this->node->id);
 });

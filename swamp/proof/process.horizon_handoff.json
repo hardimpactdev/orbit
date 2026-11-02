@@ -42,15 +42,9 @@
   },
   "phases": [
     {
-      "name": "Inspect the unit",
+      "name": "Publish, reload, enable",
       "job": "horizon",
-      "step": "Inspect the unit",
-      "budget_seconds": 20
-    },
-    {
-      "name": "Write and enable unit",
-      "job": "horizon",
-      "step": "Write and enable unit",
+      "step": "Publish, reload, enable",
       "budget_seconds": 30
     },
     {
@@ -60,9 +54,9 @@
       "budget_seconds": 30
     },
     {
-      "name": "Accept Horizon",
+      "name": "Check Horizon runs",
       "job": "horizon",
-      "step": "Accept Horizon",
+      "step": "Check Horizon runs",
       "budget_seconds": 10
     }
   ],

@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task (automatic, Gateway release serve phase), R1-R4, single-swamp-node, docs/reference/gateway-recovery.md#runtime-handoff; DECISIONS round 2 bug fix (terminate only when active, start only when not active; one test per branch); rule 7 (graceful handoff).
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02, rules 16, 20, 22 (no inspect step: cfgmgmt systemd writes the unit only on change, and guards pick the branch; one bounded wait).
+  %% status: migrated
   %% command: gateway:release:handoff
   %% kind: process.horizon_handoff
   autonumber
@@ -34,31 +35,41 @@ sequenceDiagram
   %%> Inputs:
   %%> - Node 3's address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> - the unit content, its hash, the command, directory and user
-  SW->>N: Inspect the unit<br/>@swamp/cfgmgmt/systemd check
+  SW->>N: Publish, reload, enable<br/>@swamp/cfgmgmt/systemd
+  %%> How:
+  %%> - Swamp reaches Node 3 over `@swamp/ssh` from 209 with the official `@swamp/cfgmgmt/systemd` behavior; nothing is copied to the Node
   %%> What it does:
-  %%> - observes current state and unit-file drift for the rerun guards
-  opt unit content or boot policy differs
-    SW->>N: Write and enable unit<br/>@swamp/cfgmgmt/systemd apply
-    %%> What it does:
-    %%> - writes the unit, reloads systemd and enables it without changing running state
-  end
+  %%> - writes the rendered unit with `unitFile`, reloads systemd and enables it
+  %%> - an identical unit is left as it is, so no inspection runs first
+  %%> Not included:
+  %%> - no start: the next step picks hand-off or start by a `guard`
   alt Horizon is active
-    SW->>N: Hand off to new release<br/>SSH exec · horizon:terminate
+    SW->>N: Hand off to new release<br/>ssh exec · horizon:terminate
+    %%> When:
+    %%> - a `guard` finds Horizon active at the step, so a rerun picks the right branch
     %%> What it does:
-    %%> - asks Horizon to finish its jobs and exit; systemd brings it back
-    %%> Result:
-    %%> - termination accepted; the handoff does not wait for current jobs to finish
+    %%> - asks Horizon to stop after its current jobs
+    %%> - systemd starts it again from the new release
+    %%> Why:
+    %%> - the gentle action: no job is cut off
+    %%> Fix:
+    %%> - this guard was inverted; one test covers this branch
   else Horizon is not active
-    SW->>N: Start Horizon<br/>@swamp/cfgmgmt/systemd apply
+    SW->>N: Start Horizon<br/>@swamp/cfgmgmt/systemd
+    %%> When:
+    %%> - a `guard` finds Horizon inactive, the normal case after the drain; `ensure: running`
     %%> What it does:
-    %%> - converges the inactive unit to running
-    SW->>N: Check Horizon runs<br/>@swamp/cfgmgmt/systemd check
-    %%> Result:
-    %%> - the newly started unit is active and enabled
+    %%> - starts the unit from the new release
+    %%> Fix:
+    %%> - this guard was inverted; one test covers this branch
   end
-  SW->>SW: Accept Horizon<br/>native assert
+  SW->>N: Read Horizon state<br/>@swamp/cfgmgmt/systemd.check
+  %%> The pinned check reports drift without failing; the next native assertion enforces it.
+  SW->>N: Check Horizon runs<br/>native assert
   %%> What it does:
-  %%> - accepts graceful termination or the checked started state
+  %%> - the native assertion requires the enabled unit to be active after handoff or start
+  %%> Why:
+  %%> - the handoff only counts when Horizon runs again
   alt Horizon is active
     N-->>SW: active
     %%> Returns:
@@ -73,7 +84,7 @@ sequenceDiagram
   else a step fails
     N--xSW: exit ≠ 0 or not active
     %%> When:
-    %%> - the systemd action or handoff command fails, or the started Horizon unit is not active
+    %%> - the unit does not verify, a command fails, or Horizon is not active at the end check
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
@@ -82,7 +93,7 @@ sequenceDiagram
     %%> - Process 418 marked failed; task #5153 fails
     %%> - the release handoff reports the failure; the release failure rules apply
     %%> On the Node:
-    %%> - a published unit stays; a rerun converges
+    %%> - a published unit stays; the old unit is not restored
     %%> Retry:
     %%> - run the handoff again after a fix; an unchanged unit is skipped, and Horizon starts only when it is not active
   end

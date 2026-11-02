@@ -259,15 +259,15 @@ describe(GatewayHorizon::class, function (): void {
     it('projects Horizon terminal results with no Horizon queue consumer', function (string $status, bool $terminated): void {
         $admitted = app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
         $operation = Operation::query()->findOrFail($admitted['operation_id']);
-        $result = $status === 'succeeded' ? ['ready' => true, 'state' => $terminated ? 'unknown' : 'active', 'outcome' => $terminated ? 'terminated' : 'created', 'process_id' => $operation->target_id] : [];
+        $result = $status === 'succeeded' ? ['ready' => true, 'state' => 'active', 'outcome' => $terminated ? 'terminated' : 'created', 'process_id' => $operation->target_id] : [];
         $runId = $operation->state['swamp_run_id'];
         $history = ['id' => $runId, 'workflowName' => 'operation-process-horizon-handoff', 'status' => $status,
             'inputs' => $this->socket->sent[0]['payload']['inputs'],
             'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(),
             'jobs' => [['name' => 'horizon', 'steps' => [
-                ['name' => 'Accept Horizon', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped'],
+                ['name' => 'Check Horizon runs', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped'],
                 ['name' => 'Hand off to new release', 'status' => $status === 'succeeded' && $terminated ? 'succeeded' : 'skipped'],
-                ['name' => 'Check Horizon runs', 'status' => $status === 'succeeded' && ! $terminated ? 'succeeded' : 'skipped'],
+                ['name' => 'Read Horizon state', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped'],
             ]]],
         ];
         $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
@@ -276,7 +276,7 @@ describe(GatewayHorizon::class, function (): void {
 
         if ($status === 'succeeded') {
             expect($operation->refresh()->result)->toMatchArray(['ready' => true,
-                'state' => $terminated ? 'unknown' : 'active', 'outcome' => $terminated ? 'terminated' : 'created']);
+                'state' => 'active', 'outcome' => $terminated ? 'terminated' : 'created']);
         }
         expect(DB::table('jobs')->count())->toBe(0);
         expect($this->socket->sent)->toHaveCount(2)

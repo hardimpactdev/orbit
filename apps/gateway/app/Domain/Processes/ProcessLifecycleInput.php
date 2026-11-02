@@ -64,7 +64,7 @@ final readonly class ProcessLifecycleInput
     public function forRenderedInstallation(array $input, ?array $material, Node $node, string $environmentKey): array
     {
         $processId = ValidatedData::integer($input['process_id']);
-        $control = Arr::only($input, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
+        $control = Arr::only($input, ['process_id', 'runtime', 'name', 'image', 'on_demand', 'directory', 'vite']);
         $intent = ['control' => $control, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node)];
         $copies = [];
         if ($material !== null) {

@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 one task system, native Swamp schedules; DECISIONS Schedules (Nick 2026-11-02), R2-R4.
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02, rules 5, 14, 15, 22 (no check script, no report step; context enforced by the transient unit).
+  %% status: migrated
   %% command: schedule:run
   %% kind: schedule.run
   autonumber
@@ -26,6 +27,7 @@ sequenceDiagram
   %%> - your Node has an access grant to Node 12, which runs Instance 42
   %%> - Schedule 7f3c… is active, enabled or disabled
   %%> - Instance 42 is still on Node 12
+  %%> - the Schedule still targets the recorded Node, user and working directory
   %%> Result:
   %%> - task #5140 recorded from the Schedule's template, with trigger `operator`
   %%> - the same intent a calendar fire gets: user, working directory, shell, timeout and command
@@ -44,24 +46,15 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Check user and directory<br/>@swamp/ssh · sudo -u user, cd
-  %%> What it does:
-  %%> - checks, as the Schedule's user on Node 12, that the user exists and can enter the working directory, for example the Instance's application directory
-  %%> - an empty working directory is the user's home
-  %%> Why:
-  %%> - the command fails early with a clear error instead of half-running
-  SW->>N: Run the command<br/>systemd-run · stdin · journal
+  SW->>N: Run the command<br/>@swamp/ssh exec · sudo -u
   %%> How:
-  %%> - reads the command with `vault.get` and sends it to Node 12 on stdin, never in argv
-  %%> - one transient systemd unit runs it; `systemd-cat` sends its output to the Node journal as `orbit-schedule-<uuid>`
+  %%> - one `@swamp/ssh exec`: `sudo systemd-run --uid=<user> --wait --pipe --collect` with the admitted directory and timeout
+  %%> - reads the command with `vault.get` and sends it to Node 12 on stdin, never in argv; systemd-cat journals output on the Node
   %%> Runs as:
-  %%> - the Schedule's user, in its working directory, with its shell (a login shell when the Schedule says so)
+  %%> - the Schedule's user, in its working directory, with its shell
   %%> - production Instances resolve `current` at start, so a new release changes later runs
   %%> Timeout:
-  %%> - the Schedule's timeout is the unit's runtime limit; systemd stops it then, and kills it 5 seconds later
-  Note over SW: Report the result<br/>error_code of the failed step
-  %%> What it does:
-  %%> - prints the public result on 209: ready, or `schedule.target_unavailable`, `schedule.artifact_conflict` or `schedule.run_failed`
+  %%> - the Schedule's timeout is the run's time budget
   alt exit 0 in time
     N-->>SW: exit 0, output
     %%> Returns:
@@ -76,10 +69,12 @@ sequenceDiagram
   else fails or times out
     N--xSW: exit ≠ 0 or timeout
     %%> When:
-    %%> - the user or directory is missing, SSH fails, the command exits non-zero, or it runs past its timeout
+    %%> - SSH fails, `sudo` or `cd` fails, the command exits non-zero, or it runs past its timeout
+    %%> How:
+    %%> - the step ends the run with its own exit code; there is no report step
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - which step failed and its error code
+    %%> - the exit code, mapped to `schedule.run_failed`; the failed step preserves native setup or transport diagnostics
     Note over GW: Mark the task failed<br/>Schedule state unchanged
     %%> Result:
     %%> - task #5140 fails; the Schedule's last run is marked as an error

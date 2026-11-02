@@ -66,6 +66,10 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
+        if ($operation->kind === 'schedule.run' && $code === 'operation.native_failed') {
+            $code = 'schedule.run_failed';
+            $data['error_code'] = $code;
+        }
         $result = match ($status) {
             OperationStatus::Succeeded => ['ready' => true],
             OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],

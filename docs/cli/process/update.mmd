@@ -1,6 +1,8 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs). Update shares operation-process-create.
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (cfgmgmt file/systemd/docker_*, no shipped scripts, no report step).
+  %% Decided: Nick 2026-11-02, a Docker Process runs as one plain docker run through @swamp/ssh exec; pull with cfgmgmt docker_image, check with the docker_container check.
+  %% status: migrated
   %% command: process:update
   %% kind: process.update
   autonumber
@@ -34,117 +36,75 @@ sequenceDiagram
   %%> Inputs:
   %%> - `kind`: process.update
   %%> - the rendered unit, or the container definition without its environment values
-  %%> - the desired state, mounts and a retired name when the runtime or name changed
+  %%> - the desired state, required mounts, and a retired name when the runtime or name changed, all from recorded state
   %%> - vault key names for the environment, never the values
   %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> Checked by the input schema:
+  %%> - no step reads or re-checks the intent
   GW-->>CLI: 202 Accepted<br/>task #5130
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Check the account<br/>@swamp/ssh exec · getent
-  %%> What it does:
-  %%> - resolves the admitted account home for the rendered unit
-  SW->>SW: Prepare the definition<br/>@nckrtl/process-command-assets
-  %%> What it does:
-  %%> - substitutes the observed account home in public unit content
-  opt production, running
-    SW->>N: Check the release<br/>@swamp/ssh exec · test -d
-    %%> What it does:
-    %%> - checks the admitted release directory before activation
+  opt certificate account home is not recorded
+    SW->>N: Check the account<br/>ssh exec · getent
   end
-  opt systemd, running
-    SW->>N: Check required mounts<br/>@swamp/ssh exec · stat
-    %%> What it does:
-    %%> - checks all admitted mount paths with one argv command
+  Note over SW: Prepare the definition<br/>public rendering only
+  %%> Resolves the observed home in certificate paths and shapes Docker argv; no Node effects.
+  opt required mounts set and running
+    SW->>N: Check required mounts<br/>ssh exec · stat
   end
   opt runtime or name changed
-    SW->>N: Remove the retired unit<br/>child operation-process-destroy
-    %%> What it does:
-    %%> - removes the old runtime before publishing its replacement
+    SW->>N: Remove the retired unit<br/>native destroy workflow
   end
-  opt environment values exist
-    SW->>N: Write the environment<br/>@swamp/cfgmgmt/file
-    %%> What it does:
-    %%> - writes vault content as a root-owned 0600 file; Q-SECRET proved no content in data, diff or logs
+  opt environment values set
+    SW->>N: Write the environment<br/>cfgmgmt/file · 0600
+    %%> vault.get content, root owner; no secret in public run data.
+  end
+  opt Vite dev Process
+    SW->>N: Publish the dev route<br/>native Vite workflow
+    %%> Publishes the Vite environment before its unit starts.
   end
   alt systemd
-    SW->>N: Write the unit<br/>@swamp/cfgmgmt/file
-    %%> What it does:
-    %%> - converges the rendered unit file
-    SW->>N: Reload systemd<br/>@swamp/ssh exec · daemon-reload
-    %%> What it does:
-    %%> - reloads systemd after a unit change or pending activation
-    opt Vite dev Process
-      SW->>N: Publish the dev route<br/>child operation-process-vite
-      %%> What it does:
-      %%> - prepares the Vite environment and publishes the Route
+    SW->>N: Apply the unit<br/>cfgmgmt/systemd.apply
+    %%> Publishes unitFile, reloads on content change, and applies the admitted boot and active state.
+    opt previous activation is pending
+      SW->>N: Reload systemd<br/>ssh exec · daemon-reload
+      %%> Covers a prior publish that failed before daemon-reload.
     end
-    SW->>N: Apply the unit state<br/>@swamp/cfgmgmt/systemd
-    %%> What it does:
-    %%> - converges the running state and boot policy
-    opt desired stopped
-      SW->>N: Stop the unit<br/>@swamp/ssh exec · systemctl stop
-      %%> What it does:
-      %%> - also stops a transitioning unit
+    opt desired state is stopped
+      SW->>N: Stop the unit<br/>ssh exec · stop
+      %%> Cancels activating units too; pinned apply stops only active units.
     end
-    opt changed running unit
-      SW->>N: Restart if changed<br/>@swamp/cfgmgmt/systemd restart
-      %%> What it does:
-      %%> - restarts when the definition or activation changed
+    opt changed unit is already running
+      SW->>N: Restart if changed<br/>cfgmgmt/systemd.restart
+      %%> Pinned apply leaves an already active process running after unitFile changes.
     end
-    SW->>N: Check the unit<br/>@swamp/cfgmgmt/systemd check
-    %%> Result:
-    %%> - records the running and boot state for the native end check
-  else docker
-    SW->>N: Pull the image<br/>@swamp/cfgmgmt/docker_image
-    %%> What it does:
-    %%> - ensures the image exists before changing the container
-    SW->>N: Read container spec<br/>@swamp/ssh exec · docker ls
-    %%> What it does:
-    %%> - reads only the public spec label to skip settled creation on reruns
-    opt container exists with a changed spec
-      SW->>N: Remove the old container<br/>@swamp/cfgmgmt/docker_container
-      %%> What it does:
-      %%> - removes the changed container and preserves volumes
+    SW->>N: Check the unit<br/>cfgmgmt/systemd.check
+  else Docker
+    SW->>N: Pull the image<br/>cfgmgmt/docker_image
+    SW->>N: Remove the old container<br/>ssh exec · docker rm -f
+    SW->>N: Replace the container<br/>ssh exec · docker run -d
+    %%> One argv command, env-file, workdir, image and exact command arguments.
+    opt desired state is stopped
+      SW->>N: Stop the container<br/>ssh exec · docker stop
+      %%> The detached run starts it; this step converges a stopped creation or update.
     end
-    opt the spec is not already installed
-      SW->>N: Create the container<br/>@swamp/ssh exec · docker create
-      %%> What it does:
-      %%> - uses exact argv, working directory, labels and a private env file
-    end
-    opt a private Docker env file was staged
-      SW->>N: Remove staged env file<br/>@swamp/cfgmgmt/file · completed
-      %%> What it does:
-      %%> - removes the exact env file after creation completes, including failure
-    end
-    SW->>N: Apply the container state<br/>@swamp/ssh exec · docker
-    %%> What it does:
-    %%> - starts or stops the container to match the intent
-    SW->>N: Check the container<br/>@swamp/ssh exec · docker inspect
-    %%> Result:
-    %%> - records the container state for the native end check
+    SW->>N: Check the container<br/>cfgmgmt/docker_container
   end
   opt Vite dev Process, running
-    SW->>N: Check the listener<br/>@swamp/ssh exec · ss -H -ltn
-    %%> Result:
-    %%> - requires a listener before marking the Instance awake; no ownership check
+    SW->>N: Check the listener<br/>ssh exec · ss
+    SW->>N: Mark it awake<br/>cfgmgmt/file
   end
-  opt Vite dev Process, running
-    SW->>N: Mark it awake<br/>@swamp/cfgmgmt/file
-    %%> What it does:
-    %%> - creates the awake marker after activation
-  end
-  SW->>SW: Accept the Process<br/>native assert
-  %%> What it does:
-  %%> - accepts only the expected runtime and boot state
+  SW->>N: Verify it runs<br/>native assert
+  %%> Requires the admitted active/stopped state and boot policy, and any Vite listener.
   alt Process running
     N-->>SW: active (running)
     %%> Returns:
     %%> - the Process has its desired state
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    %%> - its shared run reader sees the terminal event and reads the end check's output; Swamp never calls the Gateway
     Note over GW: Store the new spec<br/>Process 418: active
     %%> Result:
     %%> - the stored definition becomes the new spec
@@ -152,14 +112,17 @@ sequenceDiagram
   else a step fails
     N--xSW: exit ≠ 0
     %%> When:
-    %%> - SSH fails, a refusal, or the state does not match
+    %%> - SSH fails, a required mount is missing, or the state does not match
+    %%> How:
+    %%> - the failing step ends the run with its own exit code; there is no report step
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - which step failed and its error code
+    %%> - which step failed and its exit code, mapped to `error_code`
     Note over GW: Keep the old spec<br/>task failed · rerun converges
     %%> Result:
     %%> - Process 418 keeps its old definition and is marked failed
-    %%> - work done on the Node stays; run the update again to converge
+    %%> - work done on the Node stays; nothing was copied, so nothing needs cleanup
+    %%> - run the update again to converge: each behavior skips state that is already right
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5130

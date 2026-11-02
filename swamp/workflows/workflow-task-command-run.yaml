@@ -1,17 +1,21 @@
 id: 2c34c217-ce35-4fde-87ca-1fe4fee45bc7
 name: task-command-run
 description: Run one Schedule command on its Node as a transient systemd unit of the Schedule's user, through official SSH from 209; the command arrives from the vault on stdin.
-vaults: [orbit-control-inputs]
-# A calendar fire may wait for a free scheduled slot; an operator run starts at once.
+vaults:
+- orbit-control-inputs
 queueTimeout: 300
 inputs:
   type: object
   properties:
-    # Absent on a calendar fire of schedule-<id>; the Gateway records that fire as its own task.
-    operation_id: {type: integer, minimum: 1}
-    # On a calendar fire, the root run of schedule-<id>; the Gateway finds this run's result by it.
-    fire_run_id: {type: string, format: uuid}
-    node_id: {type: integer, minimum: 1}
+    operation_id:
+      type: integer
+      minimum: 1
+    fire_run_id:
+      type: string
+      format: uuid
+    node_id:
+      type: integer
+      minimum: 1
     kind: {type: string, enum: [schedule.run]}
     intent:
       type: object
@@ -19,19 +23,43 @@ inputs:
         schedule:
           type: object
           properties:
-            id: {type: string, format: uuid}
-            command_hash: {type: string, pattern: '^[a-f0-9]{64}$'}
-            user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,255}$'}
-            # Empty runs in the user's home; the Node's account database supplies home, shell and group.
-            working_directory: {type: string, pattern: '^(?:/[^\x00-\x1f\x7f]*)?$', maxLength: 4096}
-            # Empty uses the user's shell; a production Instance runs /bin/bash whatever its account's shell is.
-            shell: {type: string, pattern: '^(?:/[^\x00-\x1f\x7f]*)?$', maxLength: 4096}
-            login_shell: {type: boolean}
-            timeout_seconds: {type: integer, minimum: 1, maximum: 86400}
-          required: [id, command_hash, user, working_directory, shell, login_shell, timeout_seconds]
+            id:
+              type: string
+              format: uuid
+            command_hash:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+            user:
+              type: string
+              pattern: ^[a-z_][a-z0-9_-]{0,255}$
+            working_directory:
+              type: string
+              pattern: ^(?:/[^\x00-\x1f\x7f]*)?$
+              maxLength: 4096
+            shell:
+              type: string
+              pattern: ^(?:/[^\x00-\x1f\x7f]*)?$
+              maxLength: 4096
+            login_shell:
+              type: boolean
+            timeout_seconds:
+              type: integer
+              minimum: 1
+              maximum: 86400
+          required:
+          - id
+          - command_hash
+          - user
+          - working_directory
+          - shell
+          - login_shell
+          - timeout_seconds
           additionalProperties: false
-        ssh_execution: {type: object}
-      required: [schedule, ssh_execution]
+        ssh_execution:
+          type: object
+      required:
+      - schedule
+      - ssh_execution
       additionalProperties: false
     execution_secrets:
       type: object
@@ -39,86 +67,45 @@ inputs:
         command:
           type: object
           properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^schedule-(?:run-operation-[1-9][0-9]*|command-[0-9a-f-]{36})$'}
-          required: [vault, key]
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^schedule-(?:run-operation-[1-9][0-9]*|command-[0-9a-f-]{36})$
+          required:
+          - vault
+          - key
           additionalProperties: false
-      required: [command]
+      required:
+      - command
       additionalProperties: false
-  required: [node_id, kind, intent, execution_secrets]
+  required:
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
 - name: run
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
-  - name: 'Check user and directory'
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("schedule-run-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: &ssh
-        name: '${{ ("schedule-run-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
-      inputs:
-        hosts: name:target
-        # The user can enter the working directory; an empty one is the user's home.
-        argv: [/usr/bin/sudo, -n, -H, --user, '${{ inputs.intent.schedule.user }}', --, /usr/bin/timeout, '30', /bin/sh, -c, 'cd -- "${1:-$HOME}"',
-          sh, '${{ inputs.intent.schedule.working_directory }}']
-        timeoutSec: 40
-  - name: 'Run the command'
-    labels: {role: swamp}
+  - name: Run the command
+    labels:
+      role: swamp
     writes: true
-    dependsOn: [{step: 'Check user and directory', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("schedule-run-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("schedule-run-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        # One transient unit as the Schedule's user: the command arrives on stdin, systemd-cat sends its output to the
-        # Node journal, never into native history. An empty working directory is the user's home, an empty shell the
-        # user's own; the unit stops at the admitted timeout and is killed 5 s later.
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/systemd-run, --quiet, --wait, --pipe, --collect, '${{ "--uid=" + inputs.intent.schedule.user }}',
-          -p, '${{ "WorkingDirectory=" + (inputs.intent.schedule.working_directory == "" ? "~" : inputs.intent.schedule.working_directory) }}',
-          -p, '${{ "RuntimeMaxSec=" + string(inputs.intent.schedule.timeout_seconds) }}', -p, TimeoutStopSec=5,
-          /usr/bin/systemd-cat, '${{ "--identifier=orbit-schedule-" + inputs.intent.schedule.id }}',
-          /bin/sh, -c, 'exec "${1:-$SHELL}" ${2:+--login} -s', sh, '${{ inputs.intent.schedule.shell }}',
-          '${{ inputs.intent.schedule.login_shell ? "1" : "" }}']
-        stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
-        timeoutSec: ${{ inputs.intent.schedule.timeout_seconds + 10 }}
-        captureOutput: false
-  - name: 'Report the result'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Check user and directory', condition: {type: always}}
-    - {step: 'Run the command', condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "schedule-run-result" }}'
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          if [ "$EXECUTED" = succeeded ]; then
-            printf '%s\n' '{"ready":true}'
-          elif [ "$CHECKED" != succeeded ]; then
-            printf '%s\n' '{"error_code":"schedule.target_unavailable"}'
-          else
-            printf '%s\n' '{"error_code":"schedule.run_failed"}'
-          fi
-        env:
-          EXECUTED: '${{ "Run the command" in steps ? steps["Run the command"].status : "skipped" }}'
-          CHECKED: '${{ "Check user and directory" in steps ? steps["Check user and directory"].status : "skipped" }}'
+      globalArgs: {name: '${{ ("schedule-run-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:target', argv: [/usr/bin/sudo, -n, --, /usr/bin/systemd-run, --quiet, --wait, --pipe, --collect, '${{ "--uid=" + inputs.intent.schedule.user }}', -p, '${{
+            "WorkingDirectory=" + (inputs.intent.schedule.working_directory == "" ? "~" : inputs.intent.schedule.working_directory) }}', -p, '${{ "RuntimeMaxSec=" + string(inputs.intent.schedule.timeout_seconds)
+            }}', -p, TimeoutStopSec=5, /usr/bin/systemd-cat, '${{ "--identifier=orbit-schedule-" + inputs.intent.schedule.id }}', /bin/sh, -c, 'exec "${1:-$SHELL}" ${2:+--login} -s',
+          sh, '${{ inputs.intent.schedule.shell }}', '${{ inputs.intent.schedule.login_shell ? "1" : "" }}'], stdin: '${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key)
+          }}', timeoutSec: '${{ inputs.intent.schedule.timeout_seconds + 10 }}', captureOutput: false}

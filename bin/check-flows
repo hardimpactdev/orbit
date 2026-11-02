@@ -65,7 +65,7 @@ if (process.env.BASE) {
 // For a migrated kind, the Swamp lane's calls and notes are the workflow's steps, by the same names.
 const workflows = readdirSync(`${root}/swamp/workflows`).filter((n) => n.endsWith('.yaml')).map((n) => readFileSync(`${root}/swamp/workflows/${n}`, 'utf8'))
 const declares = (yaml, kind) => (yaml.match(/^ {4}kind: \{type: string, (?:const: ([\w.]+)|enum: \[([^\]]+)\])\}/m) ?? []).slice(1).some((v) => v?.split(/,\s*/).includes(kind))
-const stepNames = (yaml) => {
+const stepNames = (yaml, kind) => {
   const names = []; let steps = null, item = null
   for (const line of yaml.split('\n')) {
     const indent = line.search(/\S/); if (indent < 0) continue
@@ -74,6 +74,9 @@ const stepNames = (yaml) => {
     if (indent < steps || (indent === steps && !line.trimStart().startsWith('- '))) { steps = null; continue }
     const m = line.match(/^(\s*)- name:\s*['"]?(.+?)['"]?\s*$/)
     if (m && (item ?? m[1].length) === m[1].length) { item = m[1].length; names.push(m[2]) }
+    // An OR term which guards every other kind makes this step exclusive to one kind.
+    const exclusive = line.match(/^\s*guard:.*\|\|\s*\(?inputs\.kind\s*!=\s*"([\w.]+)"\s*\|\|/)
+    if (exclusive && exclusive[1] !== kind) names.pop()
   }
   return names
 }
@@ -85,7 +88,7 @@ for (const kind of list(readFileSync(`${dir}/flows-migrated.txt`, 'utf8'))) {
   const swamp = src.match(/^\s*participant (\w+) as Swamp\b/m)?.[1]
   const labels = [...src.matchAll(/^\s*(?:(\w+)\s*->>\s*\w+|Note over (\w+))\s*:\s*([^<\n]+)/gm)]
     .filter((m) => (m[1] ?? m[2]) === swamp).map((m) => m[3].trim())
-  const names = stepNames(yaml[0])
+  const names = stepNames(yaml[0], kind)
   if ([...labels].sort().join('\n') !== [...names].sort().join('\n')) fail(`${kind}: chart steps [${labels.join(', ')}] differ from workflow steps [${names.join(', ')}]`)
 }
 console.log(bad ? `${bad} problem(s)` : `all flows ok; ${pending.length} kinds pending`)

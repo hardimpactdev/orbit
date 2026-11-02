@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (cfgmgmt absent applies, mirror of process:create, no shipped scripts, no report step).
+  %% status: migrated
   %% command: process:destroy
   %% kind: process.destroy
   autonumber
@@ -37,56 +38,37 @@ sequenceDiagram
   %%> - `kind`: process.destroy
   %%> - the unit or container name and runtime, and for Vite the Instance environment path
   %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> Checked by the input schema:
+  %%> - no step reads or re-checks the intent
   GW-->>CLI: 202 Accepted<br/>task #5130
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   alt systemd
-    SW->>N: Disable and stop the unit<br/>@swamp/cfgmgmt/systemd
-    %%> What it does:
-    %%> - converges stopped and disabled; an absent unit is already done
-    SW->>N: Stop the unit<br/>@swamp/ssh exec · systemctl stop
-    %%> What it does:
-    %%> - stops a loaded unit, including one that is transitioning
-    SW->>N: Remove the unit<br/>@swamp/cfgmgmt/file
-    %%> What it does:
-    %%> - removes the admitted unit file
-    SW->>N: Remove env files<br/>@swamp/cfgmgmt/directory
-    %%> What it does:
-    %%> - removes the Process environment directory
-    opt Vite dev Process
-      SW->>N: Remove the dev environment<br/>@swamp/cfgmgmt/file
-      %%> What it does:
-      %%> - removes the Instance Vite environment file
-    end
-    SW->>N: Reload systemd<br/>@swamp/ssh exec · daemon-reload
-    %%> What it does:
-    %%> - reloads systemd after unit removal
-    SW->>N: Check the unit<br/>@swamp/cfgmgmt/systemd check
-    %%> Result:
-    %%> - records that the removed unit is inactive
-    SW->>N: Check unit removal<br/>@swamp/cfgmgmt/file check
-    %%> Result:
-    %%> - records whether the unit file is absent
-  else docker
-    SW->>N: Remove the container<br/>@swamp/cfgmgmt/docker_container
-    %%> What it does:
-    %%> - removes the container with ensure absent; volumes stay
-    SW->>N: Check container removal<br/>cfgmgmt/docker_container check
-    %%> Result:
-    %%> - records whether the container is absent
+    SW->>N: Disable and stop the unit<br/>cfgmgmt/systemd.apply
+    SW->>N: Stop the unit<br/>ssh exec · stop
+    SW->>N: Remove the unit<br/>cfgmgmt/file absent
+    SW->>N: Reload systemd<br/>ssh exec · daemon-reload
+    SW->>N: Check the unit<br/>cfgmgmt/systemd.check
+    SW->>N: Check unit removal<br/>cfgmgmt/file.check
+  else Docker
+    SW->>N: Remove the container<br/>cfgmgmt/docker_container
+    SW->>N: Check container removal<br/>cfgmgmt/docker_container
   end
-  SW->>SW: Accept the Process<br/>native assert
-  %%> What it does:
-  %%> - accepts only absent runtime files or an absent container
+  SW->>N: Remove the environment<br/>cfgmgmt/directory absent
+  opt Vite dev Process
+    SW->>N: Remove the dev environment<br/>cfgmgmt/file absent
+  end
+  SW->>N: Verify it is gone<br/>native assert
+  %%> Asserts absent unit/container and stopped service; data volumes remain.
   alt all removed
     N-->>SW: unit gone
     %%> Returns:
     %%> - nothing of Process 417 is left on the Node
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    %%> - its shared run reader sees the terminal event and reads the end check's output; Swamp never calls the Gateway
     Note over GW: Delete the record<br/>Process 417 removed
     %%> Result:
     %%> - the Process record is deleted
@@ -94,10 +76,12 @@ sequenceDiagram
   else a step fails
     N--xSW: exit ≠ 0
     %%> When:
-    %%> - SSH or a runtime action fails
+    %%> - SSH fails, or something of Process 417 is still there after the removal
+    %%> How:
+    %%> - the failing step ends the run with its own exit code; there is no report step
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - which step failed and its error code
+    %%> - which step failed and its exit code, mapped to `error_code`
     Note over GW: Keep the record, failed<br/>task failed · repeat destroy
     %%> Result:
     %%> - Process 417 keeps its record, marked with the error code

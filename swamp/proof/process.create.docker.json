@@ -31,21 +31,15 @@
       "budget_seconds": 120
     },
     {
-      "name": "Create the container",
+      "name": "Run the container",
       "job": "process",
-      "step": "Create the container",
+      "step": "Run the container",
       "budget_seconds": 20
     },
     {
-      "name": "Apply the container state",
+      "name": "Verify it runs",
       "job": "process",
-      "step": "Apply the container state",
-      "budget_seconds": 20
-    },
-    {
-      "name": "Accept the Process",
-      "job": "process",
-      "step": "Accept the Process",
+      "step": "Verify it runs",
       "budget_seconds": 20
     }
   ],

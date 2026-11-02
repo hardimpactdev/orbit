@@ -31,15 +31,15 @@
   },
   "phases": [
     {
-      "name": "Apply the unit state",
+      "name": "Start the Process",
       "job": "runtime",
-      "step": "Apply the unit state",
+      "step": "Start the Process",
       "budget_seconds": 20
     },
     {
-      "name": "Accept the Process",
+      "name": "Verify the state",
       "job": "runtime",
-      "step": "Accept the Process",
+      "step": "Verify the state",
       "budget_seconds": 20
     }
   ],

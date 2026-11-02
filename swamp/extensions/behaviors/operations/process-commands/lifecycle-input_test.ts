@@ -106,3 +106,47 @@ Deno.test("Docker public input refuses private environment and shell image synta
         );
     }
 });
+
+Deno.test("Docker creation is one detached run with exact public argv and an env-file path", async () => {
+    const name = "orbit-process-17-worker";
+    const result = await lifecycleAssets(LifecycleArgs.parse({
+        control: { ...control, runtime: "docker", name },
+        installation: {
+            process_id: 17,
+            runtime: "docker",
+            name,
+            desired: "running",
+            on_demand: false,
+            spec: "a".repeat(64),
+            retired: null,
+            has_environment: true,
+            environment_path: "/etc/orbit/processes/17/" + "b".repeat(64) +
+                ".env",
+            definition: {
+                image: "alpine:3",
+                command: ["printf", "two words", "$VALUE"],
+                restart: "unless-stopped",
+                working_directory: "/work dir",
+                ports: [],
+                mounts: [],
+            },
+        },
+    }));
+    assertEquals(result.container_argv.slice(0, 7), [
+        "timeout",
+        "20",
+        "docker",
+        "run",
+        "-d",
+        "--name",
+        name,
+    ]);
+    assertEquals(result.container_argv.slice(-4), [
+        "alpine:3",
+        "printf",
+        "two words",
+        "$VALUE",
+    ]);
+    assertEquals(result.container_argv.includes("--env-file"), true);
+    assertEquals(result.container_argv.includes("/work dir"), true);
+});

@@ -1,7 +1,7 @@
 ---
 title: "orbit schedule:run"
 sidebarTitle: "schedule:run"
-description: "Run the Schedule once now, as a task, and follow it until it ends. The calendar does not change. A failed command returns `schedule.run_failed`; a missing user, directory or command copy returns `schedule.target_unavailable`."
+description: "Run the Schedule once now, as a task, and follow it until it ends. The calendar does not change. A native setup, transport or command failure returns `schedule.run_failed`. Admission refuses a missing target or command copy with `schedule.target_unavailable`."
 ---
 
 ```bash

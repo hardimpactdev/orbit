@@ -238,6 +238,17 @@ class ProcessNative(ProcessFixture):
         self.assertFalse(self.unit.exists())
         self.assertEqual(self.current(), {"active": "inactive", "enabled": False})
 
+    def test_create_leaves_retirement_to_update(self):
+        docker = self.repo / "tools/docker"
+        docker.write_text("#!/bin/sh\nexit 99\n")
+        docker.chmod(0o700)
+        self.inputs["intent"]["installation"]["retired"] = {
+            "runtime": "docker", "name": "orbit-process-17-worker",
+        }
+        self.run_kind("create")
+        self.assertTrue(self.unit.exists())
+        self.assertEqual(self.current()["active"], "active")
+
     def test_start_failure_retains_effects_then_rerun_converges(self):
         self.save(failures=["start"])
         self.run_kind("create", success=False)
@@ -318,8 +329,9 @@ else:
  if action=='ls':
   if container:print('fixture '+container['Config']['Labels']['orbit.process.spec'])
   sys.exit(0)
- if action=='create':
-  options={};i=1
+ if action=='run':
+  options={};i=2
+  assert args[1]=='-d'
   while args[i].startswith('--'):
    options.setdefault(args[i],[]).append(args[i+1]);i+=2
   environment=[]
@@ -329,9 +341,9 @@ else:
   for value in options.get('--mount',[]):
    fields=dict(field.split('=',1) if '=' in field else (field,'true') for field in next(csv.reader([value])))
    mounts.append({'Type':fields['type'],'Source':fields['source'],'Target':fields['target'],'ReadOnly':fields.get('readonly')=='true'})
-  body={'Image':args[i],'Cmd':args[i+1:],'Env':environment,'WorkingDir':options.get('--workdir',[''])[0], 'Labels':labels,'HostConfig':{'Mounts':mounts}}
+  body={'Image':args[i],'Cmd':args[i+1:],'Env':environment,'WorkingDir':options.get('--workdir',[''])[0], 'Labels':labels,'HostConfig':{'Mounts':mounts,'RestartPolicy':{'Name':options['--restart'][0]}}}
   s['body']=body;s['creates']=s.get('creates',0)+1
-  s['container']={'Config':body,'State':{'Status':'created'},'Image':'sha256:fixture','HostConfig':body['HostConfig'],'Mounts':[]}
+  s['container']={'Config':body,'State':{'Status':'running'},'Image':'sha256:fixture','HostConfig':body['HostConfig'],'Mounts':[]}
  elif action=='rm':s.pop('container',None)
  elif not container:sys.exit(1)
  elif action=='inspect':
@@ -351,7 +363,7 @@ p.write_text(json.dumps(s))
             input="TOKEN=" + secret + "\n",
         )
         control = self.inputs["intent"]["control"]
-        control.update(runtime="docker", name="orbit-process-17-worker")
+        control.update(runtime="docker", name="orbit-process-17-worker", image="alpine:fixture")
         self.inputs["intent"]["installation"] = {
             **control,
             "desired": "running",
@@ -369,6 +381,7 @@ p.write_text(json.dumps(s))
             },
         }
         self.inputs["intent"]["installation"].pop("vite")
+        self.inputs["intent"]["installation"].pop("image")
         self.inputs["execution_secrets"] = {
             "environment": {
                 "vault": "orbit-control-inputs",
@@ -383,7 +396,6 @@ p.write_text(json.dumps(s))
         )
         self.assertEqual(state["body"]["WorkingDir"], "/tmp")
         self.assertEqual(state["body"]["Env"], ["TOKEN=" + secret])
-        self.run_kind("create")
         self.assertEqual(json.loads(self.state.read_text())["creates"], 1)
         self.inputs["intent"]["installation"]["spec"] = "b" * 64
         self.inputs["intent"]["installation"]["definition"]["command"] = [
@@ -394,10 +406,10 @@ p.write_text(json.dumps(s))
         self.assertEqual(json.loads(self.state.read_text())["creates"], 2)
         self.inputs["intent"]["installation"]["spec"] = "c" * 64
         original = docker.read_text()
-        docker.write_text(original.replace("if action=='create':", "if action=='create':\n  sys.exit(1)"))
+        docker.write_text(original.replace("if action=='run':", "if action=='run':\n  sys.exit(1)"))
         self.run_kind("update", success=False)
         env_file = self.host / "orbit/processes/17" / ("a" * 64 + ".env")
-        self.assertFalse(env_file.exists(), "Docker env file survived failed creation")
+        self.assertEqual(env_file.read_text().splitlines(), ["TOKEN=" + secret])
         docker.write_text(original)
         self.run_kind("update")
         self.inputs["intent"].pop("installation")
@@ -414,7 +426,7 @@ p.write_text(json.dumps(s))
         self.run_kind("destroy")
         self.assertNotIn("container", json.loads(self.state.read_text()))
         for path in self.repo.rglob("*"):
-            if path.is_file() and not path.is_symlink() and path != self.state:
+            if path.is_file() and not path.is_symlink() and path != self.state and not path.is_relative_to(self.host):
                 self.assertNotIn(secret.encode(), path.read_bytes(), str(path))
 
     def test_vite_listener_must_exist_before_awake_marker(self):

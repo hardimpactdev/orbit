@@ -190,10 +190,7 @@ raise SystemExit(r.returncode)
         return json.loads(self.cli("workflow", "history", "get", self.run["id"]).stdout)
 
     def result(self):
-        step = next(
-            s for s in self.history()["jobs"][0]["steps"] if s["name"] == "Report the result"
-        )
-        return json.loads(step["outputs"]["stdout"])
+        return {"ready": True} if self.history()["status"] == "succeeded" else {"error_code": "schedule.run_failed"}
 
 
 class ScheduleRunNative(ScheduleSshFixture):
@@ -223,7 +220,7 @@ class ScheduleRunNative(ScheduleSshFixture):
         directory = self.repo / "unavailable-directory"
         self.inputs["intent"]["schedule"]["working_directory"] = str(directory)
         self.run_schedule(success=False)
-        self.assertEqual(self.result(), {"error_code": "schedule.target_unavailable"})
+        self.assertEqual(self.result(), {"error_code": "schedule.run_failed"})
         directory.mkdir()
         self.cli(
             "workflow",
@@ -232,7 +229,7 @@ class ScheduleRunNative(ScheduleSshFixture):
             "--run",
             self.run["id"],
             "--from",
-            "Check user and directory",
+            "Run the command",
         )
         self.assertEqual(self.result(), {"ready": True})
         self.assertTrue(self.journal.exists())
@@ -247,7 +244,7 @@ class ScheduleRunNative(ScheduleSshFixture):
                 self.inputs["intent"]["schedule"][field] = value
                 self.run_schedule(success=False)
                 self.assertEqual(
-                    self.result(), {"error_code": "schedule.target_unavailable"}
+                    self.result(), {"error_code": "schedule.run_failed"}
                 )
                 self.assertFalse(self.journal.exists())
                 self.inputs["intent"]["schedule"][field] = original

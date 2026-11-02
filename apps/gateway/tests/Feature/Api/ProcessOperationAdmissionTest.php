@@ -226,7 +226,7 @@ it('submits complete public control inputs and waits for native completion befor
     expect($request['payload']['workflowIdOrName'])->toBe('operation-process-'.($verb === 'restart' ? 'control' : $verb));
     expect($request['payload']['inputs']['intent']['control'])->toEqual([
         'process_id' => $process->id, 'runtime' => 'docker',
-        'name' => 'orbit-process-'.$process->id.'-throwaway', 'on_demand' => false, 'vite' => null,
+        'name' => 'orbit-process-'.$process->id.'-throwaway', 'image' => 'example:1', 'on_demand' => false, 'vite' => null,
     ]);
     expect($request['payload']['inputs']['intent']['ssh_execution']['target']['user'])->toBe('orbit');
     expect($request['payload']['inputs']['intent']['ssh_execution']['target'])->toBe(['name' => 'target', 'host' => $this->node->wireguard_ip, 'user' => 'orbit', 'port' => 22, 'host_keys' => ['ssh-ed25519 fixture-public-host-key']]);
@@ -249,8 +249,8 @@ it('projects explicit stop from one terminal history read without a Gateway resu
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-10-31T18:00:00Z', 'completedAt' => '2026-10-31T18:00:01Z',
         'jobs' => [['name' => 'runtime', 'steps' => [
-            ['name' => 'Accept the Process', 'status' => $status === 'succeeded' ? 'succeeded' : 'pending', 'outputs' => []],
-            ['name' => 'Check the container', 'status' => 'succeeded', 'outputs' => ['stdout' => "exited\n"]],
+            ['name' => 'Verify the state', 'status' => $status === 'succeeded' ? 'succeeded' : 'pending', 'outputs' => []],
+            ['name' => 'Check the container', 'status' => 'succeeded', 'outputs' => []],
         ]]],
     ];
     $this->socket = $socket = new FakeRoutePublicationSocket;
@@ -289,8 +289,8 @@ it('projects lifecycle terminal history and preserves a failed Process for fix f
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-11-01T00:00:00Z', 'completedAt' => '2026-11-01T00:00:01Z',
         'jobs' => [['name' => 'process', 'steps' => $status === 'failed' ? [] : [
-            ['name' => 'Accept the Process', 'status' => 'succeeded', 'outputs' => []],
-            ['name' => 'Check the container', 'status' => 'succeeded', 'outputs' => ['stdout' => "created\n"]],
+            ['name' => $verb === 'destroy' ? 'Verify it is gone' : 'Verify it runs', 'status' => 'succeeded', 'outputs' => []],
+            ['name' => 'Check the container', 'status' => 'succeeded', 'outputs' => []],
         ]]],
     ];
     $socket = new FakeRoutePublicationSocket;
@@ -344,7 +344,7 @@ it('projects a systemd start or restart as active when admission captured a stop
     $history = ['id' => $runId, 'workflowName' => $definition['workflow'], 'status' => 'succeeded',
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-11-02T00:00:00Z', 'completedAt' => '2026-11-02T00:00:01Z',
-        'jobs' => [['name' => 'runtime', 'steps' => [['name' => 'Accept the Process', 'status' => 'succeeded']]]],
+        'jobs' => [['name' => 'runtime', 'steps' => [['name' => 'Verify the state', 'status' => 'succeeded']]]],
     ];
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];

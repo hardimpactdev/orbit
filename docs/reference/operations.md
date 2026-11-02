@@ -344,6 +344,8 @@ A cancelled deploy or rollback records its history row as `failed` with `deploym
 
 A deploy or rollback ignores a cancel request once its `activation` step succeeded: the selected release is live, so a deploy still refreshes PHP, restarts Processes, runs the `after_activation` steps, and cleans up, and a rollback still refreshes PHP and restarts Processes. It then ends `succeeded`, or `failed` when a later step fails, and `cancel_requested` stays true.
 
+Process lifecycle workflows use official cfgmgmt resources and SSH argv. Native assertions enforce the observed runtime and boot state. Docker creation uses one detached run; update removes the existing container before its replacement. Environment files remain root-owned 0600 until destroy. Horizon handoff publishes through systemd apply, chooses graceful termination or start, and checks the enabled unit is active before recording success.
+
 ## How an operation runs
 
 The job `RunOperation` runs on the `operations` queue, which has one worker. One operation job runs at a time in the fleet: an operation on another target stays `queued` until the running one ends. The job claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host and process ID, for people. While the attempt runs, it holds the operation's attempt lease, an exclusive lock on a file under `ORBIT_HOME/locks/operations`. The lease ends with the attempt's code, also when an error escapes it, and with the worker process.

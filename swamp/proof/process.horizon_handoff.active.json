@@ -50,21 +50,15 @@
   },
   "phases": [
     {
-      "name": "Inspect the unit",
-      "job": "horizon",
-      "step": "Inspect the unit",
-      "budget_seconds": 20
-    },
-    {
       "name": "Hand off to new release",
       "job": "horizon",
       "step": "Hand off to new release",
       "budget_seconds": 60
     },
     {
-      "name": "Accept Horizon",
+      "name": "Check Horizon runs",
       "job": "horizon",
-      "step": "Accept Horizon",
+      "step": "Check Horizon runs",
       "budget_seconds": 20
     }
   ],

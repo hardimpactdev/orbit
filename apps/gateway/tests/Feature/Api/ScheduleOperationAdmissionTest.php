@@ -131,7 +131,7 @@ it('projects the fixed native run result once and preserves disabled timer inten
         'id' => $runId, 'workflowName' => 'task-command-run', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'schedule.run'],
         'startedAt' => '2026-10-31T20:00:00Z', 'completedAt' => '2026-10-31T20:00:01Z',
-        'jobs' => [['name' => 'run', 'steps' => [['name' => 'Report the result', 'outputs' => ['stdout' => json_encode($code === null ? ['ready' => true] : ['error_code' => $code], JSON_THROW_ON_ERROR)]]]]],
+        'jobs' => [['name' => 'run', 'steps' => [['name' => 'Run the command', 'status' => $status]]]],
     ]]]];
     $step = app(SwampCommandStep::class);
     $selector = app(DirectOperation::class)->definition('schedule.run')['terminal_result'];
@@ -140,11 +140,12 @@ it('projects the fixed native run result once and preserves disabled timer inten
     $step->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
     expect($projected->status->value)->toBe($status)
         ->and($operation->fresh()->sequence)->toBe($sequence)
+        ->and($operation->fresh()->error_code)->toBe($code)
         ->and($schedule->fresh()->desired_timer_state->value)->toBe('disabled')
         ->and($schedule->fresh()->last_run_status?->value)->toBe($status === 'succeeded' ? 'success' : 'error')
         ->and($this->socket->sent)->toHaveCount(7)
         ->and(array_last($this->socket->sent)['type'])->toBe('workflow.history.get');
-})->with([['succeeded', null], ['failed', 'schedule.run_failed'], ['interrupted', 'operation.native_failed']]);
+})->with([['succeeded', null], ['failed', 'schedule.run_failed'], ['interrupted', 'schedule.run_failed']]);
 
 it('refuses a command changed after admission before making another execution copy', function (): void {
     $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();

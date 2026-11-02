@@ -163,10 +163,8 @@ def grants(manifest):
                        'resource': 'vault:' + entry['vault'], 'condition': 'key.matches(' + json.dumps(entry['key_pattern']) + ')'})
     for entry in manifest['workflows']:
         result.append({'subject': manifest['principal'], 'effect': 'allow', 'actions': entry['actions'], 'resource': 'workflow:' + entry['workflow']})
-    # The Gateway's separate reader, as in gateway-environment.md: read on workflow:* and data:*, so terminal
-    # projection sees step outputs.
-    for resource in ('workflow:*', 'data:*'):
-        result.append({'subject': 'user:orbit-gateway-read', 'effect': 'allow', 'actions': ['read'], 'resource': resource})
+    # Mirror serve's production grants too: native sensitive-output keys are separate from execution inputs.
+    result.extend(json.loads((REPO / 'config/serve-grants.json').read_text())['grants'])
     return {'grants': result}
 
 

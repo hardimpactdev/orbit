@@ -34,7 +34,7 @@ final readonly class HorizonOperation implements DirectOperationProjection
             $native = ValidatedData::object($data['result'] ?? []);
             $terminated = NativeRunResult::stepStatus($native, 'Hand off to new release') === 'succeeded';
             $result = $data['status'] === OperationStatus::Succeeded->value
-                ? ['ready' => true, 'state' => $terminated ? 'unknown' : 'active',
+                ? ['ready' => true, 'state' => 'active',
                     'outcome' => $terminated ? 'terminated' : ($operation->input['created'] ? 'created' : 'started'),
                     'process_id' => $operation->input['process_id']]
                 : [];

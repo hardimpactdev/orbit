@@ -9,7 +9,7 @@ operation = json.loads(os.environ["PROOF_OPERATION"])
 result = operation["result"]
 expected = sys.argv[1]
 assert result["ready"] is True and result["outcome"] == expected, result
-assert result["state"] == ("unknown" if expected == "terminated" else "active"), result
+assert result["state"] == "active", result
 assert operation["kind"] == "process.horizon_handoff"
 unit = operation["input"]["unit"]
 subprocess.run(

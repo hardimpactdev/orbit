@@ -8,7 +8,7 @@ The public rendering method substitutes the observed account home in a systemd u
 
 Q-SECRET passed in a shared minimal@6 proof VM on Beast. The official file behavior received `vault.get` as `content`; create, changed content, drift, compliant checks and a refused write exposed no test content in data, the file changes array, histories, definitions or logs. See `swamp/proof/receipts/qsecret-file.json` and the reproducible `swamp/tests/cfgmgmt_file_vault_proof.py` probe.
 
-Both runtimes write their environment with cfgmgmt file, root owner and mode 0600. Systemd keeps its immutable EnvironmentFile. Docker receives a raw env file path in one SSH `docker container create` argv, along with exact command argv, labels, working directory, ports and mounts. A native spec-label observation skips settled creation on reruns; a changed spec removes the old container without removing volumes. A completed dependency deletes the Docker env file even when creation fails. No Process Node script remains.
+Both runtimes write their environment with cfgmgmt file, root owner and mode 0600. Systemd keeps its immutable EnvironmentFile. Docker receives a raw env file path in one SSH `docker run -d` argv, along with exact command argv, labels, working directory, ports and mounts. Create performs one detached run; duplicate requests join the admitted operation and native resume skips its completed steps. Update removes the old container without removing volumes before one detached run. A stopped desired state uses a separate stop. The managed env file remains 0600 until destroy, including after a failed run. The official docker_container check confirms image, restart policy and state; its private current environment is stored only in the vault. No Process Node script remains.
 
 ## Script audit
 
@@ -23,12 +23,12 @@ Both runtimes write their environment with cfgmgmt file, root owner and mode 060
 | `remove_environment.py` | cfgmgmt directory absent |
 | `pull_image.py` | cfgmgmt docker_image present |
 | `remove_container.py` | cfgmgmt docker_container absent |
-| `check_release.py` | SSH test -d argv |
+| `check_release.py` | redundant pre-read removed; runtime start enforces its directory |
 | `publish_environment.py`, `lifecycle_environment.py` | cfgmgmt file with vault content |
-| `stage_unit.py`, `publish_unit.py` | cfgmgmt file present |
+| `stage_unit.py`, `publish_unit.py` | cfgmgmt systemd unitFile |
 | `validate_unit.py` | systemd loads the rendered unit; native end check |
 | `backup_unit.py`, `restore_unit.py`, `rename_container.py`, `cleanup_checkpoint.py` | rollback machinery removed |
-| `create_container.py`, `lifecycle_container.py` | SSH Docker create argv and private env file |
+| `create_container.py`, `lifecycle_container.py` | SSH docker run argv and private env file |
 | `check_health.py` | Analytics uses SSH curl argv |
 | `lifecycle_listener.py` | SSH ss argv plus native readiness assert; ownership removed |
 | `process_common.py`, `unit_files.py`, `docker_files.py` | obsolete script support removed |

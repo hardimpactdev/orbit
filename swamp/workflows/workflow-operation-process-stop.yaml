@@ -1,7 +1,8 @@
 id: 4aa5723b-c035-4c41-b315-a34c812ec60f
 name: operation-process-stop
 description: 'Rule 22 Process control: official cfgmgmt, SSH argv and a native end check.'
-vaults: []
+vaults:
+- orbit-control-inputs
 queueTimeout: 30
 inputs:
   type: object
@@ -30,6 +31,9 @@ inputs:
             name:
               type: string
               pattern: ^orbit-process-[1-9][0-9]*-[a-z0-9-]+(?:\.service)?$
+            image:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9._/:@-]*$
             on_demand:
               type: boolean
             directory:
@@ -68,7 +72,7 @@ jobs:
 - name: runtime
   labels: {role: swamp}
   steps:
-  - name: Apply the unit state
+  - name: Stop the Process
     labels: {role: swamp}
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
@@ -78,13 +82,12 @@ jobs:
       behaviorName: ${{ "process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', ensure: '${{ inputs.kind ==
-          "process.stop" ? "stopped" : "running" }}', enabled: '${{ (inputs.kind == "process.stop" ? "stopped" : "running") == "running" && !inputs.intent.control.on_demand
-          }}'}
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', ensure: '${{ inputs.kind == "process.stop"
+          ? "stopped" : "running" }}', enabled: '${{ (inputs.kind == "process.stop" ? "stopped" : "running") == "running" && !inputs.intent.control.on_demand }}'}
       inputs: {}
   - name: Stop the unit
     labels: {role: swamp}
-    dependsOn: [{step: Apply the unit state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Stop the Process, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.kind != "process.stop") }}
     writes: true
     task:
@@ -93,13 +96,13 @@ jobs:
       behaviorName: ${{ "process-stop-the-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
       globalArgs: {name: '${{ "process-stop-the-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
-            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{
-              inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', systemctl, stop, '${{ inputs.intent.control.name }}'], sudo: true, timeoutSec: 25}
   - name: Check the unit
     labels: {role: swamp}
-    dependsOn: [{step: Apply the unit state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Stop the unit, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Stop the Process, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Stop the unit, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
@@ -107,11 +110,10 @@ jobs:
       behaviorName: ${{ "process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: check
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', ensure: '${{ inputs.kind ==
-          "process.stop" ? "stopped" : "running" }}', enabled: '${{ (inputs.kind == "process.stop" ? "stopped" : "running") == "running" && !inputs.intent.control.on_demand
-          }}'}
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', ensure: '${{ inputs.kind == "process.stop"
+          ? "stopped" : "running" }}', enabled: '${{ (inputs.kind == "process.stop" ? "stopped" : "running") == "running" && !inputs.intent.control.on_demand }}'}
       inputs: {}
-  - name: Control the container
+  - name: Stop the container
     labels: {role: swamp}
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
     writes: true
@@ -120,36 +122,37 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-control-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
-      globalArgs: {name: '${{ "process-control-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
-      inputs: {hosts: [target], argv: [timeout, '20', docker, container, '${{ inputs.kind == "process.stop" ? "stop" : (inputs.kind == "process.start" ? "start" : "restart")
-            }}', '${{ inputs.intent.control.name }}'], sudo: true, timeoutSec: 25}
+      globalArgs: {name: '${{ "process-control-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: [timeout, '20', docker, container, '${{ inputs.kind == "process.stop" ? "stop" : (inputs.kind == "process.start" ? "start" : "restart") }}', '${{
+            inputs.intent.control.name }}'], sudo: true, timeoutSec: 25}
   - name: Check the container
     labels: {role: swamp}
-    dependsOn: [{step: Control the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Stop the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "docker" }}
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-check-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
-      methodName: exec
-      globalArgs: {name: '${{ "process-check-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
-      inputs: {hosts: [target], argv: [timeout, '20', docker, container, inspect, --format, '{{.State.Status}}', '${{ inputs.intent.control.name }}'], sudo: true, timeoutSec: 25}
-  - name: Accept the Process
+      behaviorType: '@swamp/cfgmgmt/docker_container'
+      behaviorName: ${{ "process-container-check-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: check
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, name: '${{ inputs.intent.control.name }}', image: '${{ inputs.intent.control.runtime
+          == "docker" ? inputs.intent.control.image : "unused" }}', ensure: '${{ inputs.kind == "process.stop" ? "stopped" : "running" }}'}
+      inputs: {}
+    dataOutputOverrides: [{specName: state, vaultName: orbit-control-inputs}]
+  - name: Verify the state
     labels: {role: swamp}
-    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}]
     task:
       type: assert
       expr: 'inputs.intent.control.runtime == "systemd" ? (data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
         == "compliant" && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.loaded
         && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.active
-        == (inputs.kind == "process.stop" ? "inactive" : "active")) : steps["Check the container"].outputs.stdout == (inputs.kind == "process.stop" ? "exited\n" : "running\n")'
+        == (inputs.kind == "process.stop" ? "inactive" : "active")) : (data.latest("process-container-check-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id),
+        inputs.intent.ssh_execution.target.host).attributes.status == "compliant" && data.latest("process-container-check-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id),
+        inputs.intent.ssh_execution.target.host).attributes.current.containerStatus == (inputs.kind != "process.stop" ? "running" : "exited"))'
       message: The Process must have its admitted runtime and boot state.
       severity: high
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}

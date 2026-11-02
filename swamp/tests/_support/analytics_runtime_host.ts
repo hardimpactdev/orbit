@@ -52,7 +52,7 @@ async function execute(
         stdout = argv.includes("{{.State.Status}}")
             ? `${state.state}\n`
             : `true\nprocess\n9\n${state.spec}\n${state.state}\n`;
-    } else if (argv.includes("create")) {
+    } else if (argv.includes("run")) {
         const install = {
             spec: argv.find((value) =>
                 value.startsWith("orbit.process.spec=")
@@ -66,7 +66,7 @@ async function execute(
         ) fail("fixture.create_failed");
         state.spec = install.spec;
         state.present = true;
-        state.state = "created";
+        state.state = "running";
     } else if (argv.includes("start")) state.state = "running";
     else if (argv.includes("stop")) state.state = "exited";
     else if (
@@ -85,6 +85,21 @@ async function execute(
         await ctx.writeResource("state", String(ctx.globalArgs.nodeHost), {
             status: state.present ? "non_compliant" : "compliant",
             current: { containerExists: state.present },
+            changes: [],
+        });
+    }
+    if (
+        method === "check" && ctx.globalArgs.ensure !== "absent" &&
+        typeof ctx.globalArgs.image === "string"
+    ) {
+        await ctx.writeResource("state", String(ctx.globalArgs.nodeHost), {
+            status: state.present && state.state === "running"
+                ? "compliant"
+                : "non_compliant",
+            current: {
+                containerExists: state.present,
+                containerStatus: state.state,
+            },
             changes: [],
         });
     }

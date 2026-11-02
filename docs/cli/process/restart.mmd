@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (one cfgmgmt systemd apply, its check as the end check, no shipped scripts; rule 21: only this command's branches).
+  %% status: migrated
   %% command: process:restart
   %% kind: process.restart
   autonumber
@@ -24,7 +25,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to the Node that runs Process 417
   %%> - Process 417 exists and is not being removed
-  %%> - the Process can start: it is installed on its Node
+  %%> - a production Process's release is checked against the recorded releases, not on the Node
   %%> Result:
   %%> - task #5130 recorded with the full intent: unit or container name, runtime, on-demand flag, Vite plan
   %%> - Process 417 marked provisioning; its desired state does not change yet
@@ -36,58 +37,37 @@ sequenceDiagram
   %%> - `kind`: process.restart
   %%> - the Process unit or container name, runtime and on-demand flag
   %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
-  %%> - for a production Instance, its release directory
-  %%> - for a Vite dev Process, the Vite plan and the Caddy publication for its Route
+  %%> Checked by the input schema:
+  %%> - no step reads or re-checks the intent
   GW-->>CLI: 202 Accepted<br/>task #5130
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  opt start or restart, production
-    SW->>N: Check the release<br/>@swamp/ssh exec · test -d
-    %%> What it does:
-    %%> - checks the admitted release directory before starting
-  end
-  opt start or restart, Vite
-    SW->>N: Publish the dev route<br/>child operation-process-vite
-    %%> What it does:
-    %%> - prepares the Vite environment and publishes the Route
+  opt Vite dev Process
+    SW->>N: Publish the dev route<br/>native Vite workflow
   end
   alt systemd
-    SW->>N: Set boot policy<br/>@swamp/cfgmgmt/systemd
-    %%> What it does:
-    %%> - converges boot policy; on-demand Processes stay disabled
-    opt explicit restart
-      SW->>N: Restart the unit<br/>@swamp/cfgmgmt/systemd restart
-      %%> What it does:
-      %%> - restarts the unit once
-    end
-    SW->>N: Check the unit<br/>@swamp/cfgmgmt/systemd check
-    %%> Result:
-    %%> - records the running and boot state for the native end check
-  else docker
-    SW->>N: Control the container<br/>@swamp/ssh exec · docker
-    %%> What it does:
-    %%> - starts, stops or restarts the admitted container once
-    SW->>N: Check the container<br/>@swamp/ssh exec · docker inspect
-    %%> Result:
-    %%> - records the container state for the native end check
+    SW->>N: Set boot policy<br/>cfgmgmt/systemd.apply
+    SW->>N: Restart the Process<br/>cfgmgmt/systemd.restart
+    SW->>N: Check the unit<br/>cfgmgmt/systemd.check
+  else Docker
+    SW->>N: Restart the container<br/>ssh exec · docker restart
+    SW->>N: Check the container<br/>cfgmgmt/docker_container
   end
-  opt Vite dev Process, running
-    SW->>N: Check the listener<br/>@swamp/ssh exec · ss -H -ltn
-    %%> Result:
-    %%> - requires a listener before marking the Instance awake; no ownership check
+  opt Vite dev Process
+    SW->>N: Check the listener<br/>ssh exec · ss
+    SW->>N: Mark it awake<br/>cfgmgmt/file
   end
-  SW->>SW: Accept the Process<br/>native assert
-  %%> What it does:
-  %%> - accepts only the expected runtime and boot state
+  SW->>N: Verify the state<br/>native assert
+  %%> The pinned checks report compliance; native assert fails the run on drift.
   alt Process active
     N-->>SW: active
     %%> Returns:
     %%> - the Process is active
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    %%> - its shared run reader sees the terminal event and reads the end check's output; Swamp never calls the Gateway
     Note over GW: Record result<br/>Process: active · task succeeded
     %%> Result:
     %%> - Process 417 desired state becomes running; its status becomes active
@@ -96,14 +76,16 @@ sequenceDiagram
     N--xSW: exit ≠ 0
     %%> When:
     %%> - SSH fails, the unit is missing, or the state does not match
+    %%> How:
+    %%> - the failing step ends the run with its own exit code; there is no report step
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - which step failed and its error code
+    %%> - which step failed and its exit code, mapped to `error_code`
     Note over GW: Mark the Process failed<br/>task failed · rerun after a fix
     %%> Result:
     %%> - Process 417 is marked failed with the error code; its desired state does not change
     %%> - task #5130 fails
-    %%> - there is no rollback; run the same command again after fixing the cause
+    %%> - there is no rollback and nothing to clean up; run the same command again after fixing the cause
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5130

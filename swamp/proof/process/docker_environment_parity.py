@@ -39,7 +39,17 @@ files = subprocess.run(
     text=True,
     check=True,
 )
-assert files.stdout == "", "Docker env file was not cleaned up"
+paths = files.stdout.splitlines()
+assert len(paths) == 1, "Expected one managed Docker environment file"
+metadata = subprocess.run(
+    ["incus", "exec", node, "--", "stat", "-c", "%a:%U:%G", paths[0]],
+    capture_output=True, text=True, check=True,
+)
+assert metadata.stdout.strip() == "600:root:root", "Docker environment must remain root-owned 0600"
+content = subprocess.run(
+    ["incus", "exec", node, "--", "cat", paths[0]], capture_output=True, text=True, check=True,
+)
+assert "TOKEN=" + token in content.stdout.splitlines(), "Managed environment differs from the container"
 print(
-    "PASS: exact Docker definition, private env file removed, native output contains no token"
+    "PASS: exact Docker definition, managed env file is root-owned 0600, native output contains no token"
 )

@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (one cfgmgmt systemd apply, its check as the end check, no shipped scripts; rule 21: only this command's branches).
+  %% status: migrated
   %% command: process:stop
   %% kind: process.stop
   autonumber
@@ -24,52 +25,43 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to the Node that runs Process 417
   %%> - Process 417 exists and is not being removed
+  %%> - a production Process's release is checked against the recorded releases, not on the Node
   %%> Result:
   %%> - task #5130 recorded with the full intent: unit or container name, runtime, on-demand flag, Vite plan
   %%> - Process 417 marked provisioning; its desired state does not change yet
   %%> - nothing has happened on the Node yet
-  GW->>SW: Start run, full intent<br/>operation-process-stop
+  GW->>SW: Start run, full intent<br/>operation-process-control
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209); every step runs there
   %%> Inputs:
   %%> - `kind`: process.stop
   %%> - the Process unit or container name, runtime and on-demand flag
   %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> Checked by the input schema:
+  %%> - no step reads or re-checks the intent
   GW-->>CLI: 202 Accepted<br/>task #5130
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   alt systemd
-    SW->>N: Apply the unit state<br/>@swamp/cfgmgmt/systemd
-    %%> What it does:
-    %%> - converges boot policy and running state; on-demand starts stay disabled
-    opt explicit stop
-      SW->>N: Stop the unit<br/>@swamp/ssh exec · systemctl stop
-      %%> What it does:
-      %%> - also stops a unit that is activating or deactivating
-    end
-    SW->>N: Check the unit<br/>@swamp/cfgmgmt/systemd check
-    %%> Result:
-    %%> - records the running and boot state for the native end check
-  else docker
-    SW->>N: Control the container<br/>@swamp/ssh exec · docker
-    %%> What it does:
-    %%> - starts, stops or restarts the admitted container once
-    SW->>N: Check the container<br/>@swamp/ssh exec · docker inspect
-    %%> Result:
-    %%> - records the container state for the native end check
+    SW->>N: Stop the Process<br/>cfgmgmt/systemd.apply
+    SW->>N: Stop the unit<br/>ssh exec · stop
+    %%> Also cancels an activating unit, which pinned apply does not stop.
+    SW->>N: Check the unit<br/>cfgmgmt/systemd.check
+  else Docker
+    SW->>N: Stop the container<br/>ssh exec · docker stop
+    SW->>N: Check the container<br/>cfgmgmt/docker_container
   end
-  SW->>SW: Accept the Process<br/>native assert
-  %%> What it does:
-  %%> - accepts only the expected runtime and boot state
+  SW->>N: Verify the state<br/>native assert
+  %%> The pinned checks report compliance; native assert fails the run on drift.
   alt Process inactive
     N-->>SW: inactive
     %%> Returns:
     %%> - the Process is inactive
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    %%> - its shared run reader sees the terminal event and reads the end check's output; Swamp never calls the Gateway
     Note over GW: Record result<br/>Process: active · task succeeded
     %%> Result:
     %%> - Process 417 desired state becomes stopped; its status becomes active
@@ -78,14 +70,16 @@ sequenceDiagram
     N--xSW: exit ≠ 0
     %%> When:
     %%> - SSH fails, the unit is missing, or the state does not match
+    %%> How:
+    %%> - the failing step ends the run with its own exit code; there is no report step
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - which step failed and its error code
+    %%> - which step failed and its exit code, mapped to `error_code`
     Note over GW: Mark the Process failed<br/>task failed · rerun after a fix
     %%> Result:
     %%> - Process 417 is marked failed with the error code; its desired state does not change
     %%> - task #5130 fails
-    %%> - there is no rollback; run the same command again after fixing the cause
+    %%> - there is no rollback and nothing to clean up; run the same command again after fixing the cause
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5130

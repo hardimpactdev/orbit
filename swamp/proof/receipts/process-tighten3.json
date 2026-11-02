@@ -1,0 +1,29 @@
+{
+  "topology": "minimal@8",
+  "execution_commit": "54ad8075fb3ef845ec16e396bd465e44f324432a",
+  "rebased_execution_files_identical": true,
+  "vm": {"group_id": 2561, "provision_operation_id": 7875, "task_vm_id": 289, "node_id": 317, "name": "tvm-289", "host_node_id": 9, "seed": "be24c38acde6625497454520211f354ed5842da83cb490809f6099291ed65f4d", "provisioned_at": "2026-11-02T14:14:02Z", "cancel_operation_id": 7881, "destroyed": true, "destroyed_at": "2026-11-02T14:29:14Z"},
+  "sample": 17,
+  "p95_seconds": 16.49,
+  "script_gap": null,
+  "scripts_deleted_total": 29,
+  "receipts": [
+    {"kind": "process.create.docker", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.create.docker/20261102T141847Z-minimal.json", "seconds": 10.59, "fixture_seconds": 13.1, "source": "c23901692a1d41d66e999163dba01c582d961619"},
+    {"kind": "process.create.docker.environment", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.create.docker.environment/20261102T142002Z-minimal.json", "seconds": 6.46, "fixture_seconds": 8.7, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.create", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.create/20261102T142011Z-minimal.json", "seconds": 6.4, "fixture_seconds": 8.7, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.start", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.start/20261102T142027Z-minimal.json", "seconds": 4.26, "fixture_seconds": 15.0, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.stop", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.stop/20261102T142040Z-minimal.json", "seconds": 4.23, "fixture_seconds": 12.9, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.restart", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.restart/20261102T142057Z-minimal.json", "seconds": 4.4, "fixture_seconds": 16.5, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.update", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.update/20261102T142116Z-minimal.json", "seconds": 8.41, "fixture_seconds": 19.5, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.destroy", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.destroy/20261102T142136Z-minimal.json", "seconds": 8.33, "fixture_seconds": 19.5, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.create.docker.stopped", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.create.docker.stopped/20261102T142155Z-minimal.json", "seconds": 16.49, "fixture_seconds": 18.6, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.update.docker", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.update.docker/20261102T142320Z-minimal.json", "seconds": 6.38, "fixture_seconds": 15.3, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.restart.missing-unit", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.restart.missing-unit/20261102T142332Z-minimal.json", "seconds": 2.23, "fixture_seconds": 11.4, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.horizon_handoff", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.horizon_handoff/20261102T142345Z-minimal.json", "seconds": 4.31, "fixture_seconds": 13.5, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.horizon_handoff.active", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.horizon_handoff.active/20261102T142404Z-minimal.json", "seconds": 4.24, "fixture_seconds": 18.2, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "schedule.run", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/schedule.run/20261102T142410Z-minimal.json", "seconds": 2.23, "fixture_seconds": 5.7, "source": "ad1c02fa42bbda591dd2ac67fb87cce918defaba"},
+    {"kind": "process.start.docker", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.start.docker/20261102T142517Z-minimal.json", "seconds": 4.24, "fixture_seconds": 22.8, "source": "d8bd9cae114ec55a5debd17ebc6818c742f0408e"},
+    {"kind": "process.stop.docker", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.stop.docker/20261102T142540Z-minimal.json", "seconds": 14.29, "fixture_seconds": 23.0, "source": "d8bd9cae114ec55a5debd17ebc6818c742f0408e"},
+    {"kind": "process.restart.docker", "receipt": "/home/nckrtl/swamp-execution/evidence/proof/process.restart.docker/20261102T142603Z-minimal.json", "seconds": 14.29, "fixture_seconds": 22.9, "source": "d8bd9cae114ec55a5debd17ebc6818c742f0408e"}
+  ]
+}

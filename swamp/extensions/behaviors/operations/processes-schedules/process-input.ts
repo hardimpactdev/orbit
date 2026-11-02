@@ -13,6 +13,7 @@ export const Input = z.object({
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   runtime: z.enum(["systemd", "docker"]),
   name: z.string().regex(/^orbit-process-[0-9]+-[a-z0-9-]+(?:\.service)?$/),
+  image: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._\/:@-]*$/).optional(),
   on_demand: z.boolean(),
   directory: z.string().startsWith("/").max(4096).optional(),
   vite: Removal.nullable(),

@@ -24,9 +24,9 @@
   },
   "phases": [
     {
-      "name": "Write the unit",
+      "name": "Apply the unit",
       "job": "process",
-      "step": "Write the unit",
+      "step": "Apply the unit",
       "budget_seconds": 20
     },
     {
@@ -36,15 +36,9 @@
       "budget_seconds": 20
     },
     {
-      "name": "Apply the unit state",
+      "name": "Verify it runs",
       "job": "process",
-      "step": "Apply the unit state",
-      "budget_seconds": 20
-    },
-    {
-      "name": "Accept the Process",
-      "job": "process",
-      "step": "Accept the Process",
+      "step": "Verify it runs",
       "budget_seconds": 20
     }
   ],

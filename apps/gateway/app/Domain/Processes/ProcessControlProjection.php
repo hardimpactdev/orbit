@@ -30,7 +30,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
      */
     public function inputFor(string $kind, array $intent, int $nodeId): array
     {
-        $input = Arr::only($intent, ['process_id', 'agent_sha256', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
+        $input = Arr::only($intent, ['process_id', 'agent_sha256', 'runtime', 'name', 'image', 'on_demand', 'directory', 'vite']);
         if (in_array($kind, ['process.start', 'process.restart', 'process.create', 'process.update'], true) && isset($intent['vite_plan'])) {
             $input['vite_plan'] = $intent['vite_plan'];
             $input['caddy_publication'] = CaddyPublicationPlan::forNode(Node::query()->findOrFail($nodeId));
@@ -51,7 +51,6 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        $reported = ValidatedData::object($data['result'] ?? []);
         $desired = match ($operation->kind) {
             'process.stop', 'process.destroy' => 'stopped',
             'process.start', 'process.restart' => 'running',
@@ -61,7 +60,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
         $state = $status === OperationStatus::Succeeded && $operation->kind !== 'process.destroy'
             ? ($operation->input['runtime'] === 'systemd'
                 ? ($desired === 'running' ? 'active' : 'inactive')
-                : trim(ValidatedData::string($reported['state'])))
+                : ($desired === 'running' ? 'running' : 'exited'))
             : null;
         $result = match ($status) {
             OperationStatus::Succeeded => ['ready' => true, ...($operation->kind === 'process.destroy' ? [] : ['state' => $state])],
