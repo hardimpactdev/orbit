@@ -18,6 +18,10 @@
         "command": "true",
         "timeout_seconds": 60
       }
+    },
+    {
+      "method": "POST",
+      "path": "schedules/${schedule.id}/disable"
     }
   ],
   "request": {
