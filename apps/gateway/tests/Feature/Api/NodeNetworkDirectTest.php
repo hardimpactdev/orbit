@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeConvergeInput;
 use App\Domain\Nodes\NodeNetworkConvergeInput;
 use App\Domain\Nodes\NodeNetworkParticipantInput;
 use App\Domain\Nodes\NodeNetworkProjection;
@@ -68,6 +69,14 @@ it('renders the peer and hub WireGuard files with no private key and leaves the 
         ->and($intent['hub']['section'])->toBe("[Peer]\n# {$peer->name}\nPublicKey = @KEY@\nAllowedIPs = {$peer->wireguard_ip}/32\n")
         ->and($intent['hub']['ssh']['target']['host'])->toBe($hub->wireguard_ip);
     expect(json_encode($intent))->not->toContain('PrivateKey')->not->toContain(base64_encode(str_repeat('p', 32)));
+});
+
+it('gives node.converge the peer DNS hook the native peer-DNS workflow writes', function (): void {
+    [, $context] = nativeNetworkFixture();
+    $policy = app(NodeConvergeInput::class)->peerDns($context->fresh(), '10.44.0.1');
+    expect($policy)->toMatchArray(['dns_server' => '10.44.0.1', 'public_key' => $context->wireguard_public_key])
+        ->and($policy['dns_hook'])->toBe(NodeNetworkConvergeInput::dnsHook('10.44.0.1', $policy['domains']))
+        ->and($policy['dns_hook'])->toContain('\\~orbit');
 });
 
 it('captures removal router and DNS policy without children or peer installation', function (): void {

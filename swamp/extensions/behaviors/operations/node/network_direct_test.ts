@@ -18,6 +18,7 @@ const input: NodeNetworkInputV1 = {
     dns_server: "10.44.0.1",
     public_key: btoa("a".repeat(32)),
     domains: ["orbit", "test"],
+    dns_hook: "PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~orbit \\~test",
   },
 };
 
@@ -29,7 +30,12 @@ Deno.test("converge network uses only the native DNS system program and public s
   }))(input);
   assertEquals(calls, [{
     name: "wireguard.repair-peer-dns",
-    input: input.peer_dns,
+    // The participant gets only the policy; dns_hook is for the native peer-DNS workflow.
+    input: {
+      dns_server: input.peer_dns.dns_server,
+      public_key: input.peer_dns.public_key,
+      domains: input.peer_dns.domains,
+    },
   }]);
   assertEquals(result, {
     schema_version: 1,

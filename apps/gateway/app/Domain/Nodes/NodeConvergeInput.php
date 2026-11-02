@@ -197,6 +197,19 @@ final readonly class NodeConvergeInput
             'ingress_commands' => $residue['ingress_commands'] ?? null];
     }
 
+    /**
+     * The peer DNS policy node.converge hands the native peer-DNS workflow, with the wg-quick hook it writes.
+     *
+     * @return array{dns_server:string,public_key:?string,domains:list<string>,dns_hook:string}
+     */
+    public function peerDns(Node $node, string $server): array
+    {
+        $domains = app(PeerDnsPolicy::class)->domains($node);
+
+        return ['dns_server' => $server, 'public_key' => $node->wireguard_public_key, 'domains' => $domains,
+            'dns_hook' => NodeNetworkConvergeInput::dnsHook($server, $domains)];
+    }
+
     /** @return array<string,mixed> */
     public function capture(Node $node, bool $force, bool $firstVisit): array
     {
@@ -248,7 +261,7 @@ final readonly class NodeConvergeInput
                     continue;
                 }
                 $network = ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
-                    'peer_dns' => ['dns_server' => $server, 'public_key' => $node->wireguard_public_key, 'domains' => $policy->domains($node)]];
+                    'peer_dns' => $this->peerDns($node, $server)];
 
                 continue;
             }

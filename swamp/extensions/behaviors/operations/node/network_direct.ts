@@ -36,6 +36,7 @@ export const NodeNetworkInputV1 = z.object({
     dns_server: z.ipv4(),
     public_key: PublicKey,
     domains: Domains,
+    dns_hook: z.string().startsWith("PostUp = resolvectl dns %i "),
   }).strict(),
 }).strict();
 export type NodeNetworkInputV1 = z.infer<typeof NodeNetworkInputV1>;
@@ -69,7 +70,12 @@ export function nodeNetwork(invoke: NetworkSystem = runNetworkSystem) {
         node_id: input.node_id,
         agent_sha256: input.agent_sha256,
         router_lan: null,
-        peer_dns: input.peer_dns,
+        // The participant program writes the policy itself; dns_hook is for the native peer-DNS workflow.
+        peer_dns: {
+          dns_server: input.peer_dns.dns_server,
+          public_key: input.peer_dns.public_key,
+          domains: input.peer_dns.domains,
+        },
       },
       invoke,
       signal,
