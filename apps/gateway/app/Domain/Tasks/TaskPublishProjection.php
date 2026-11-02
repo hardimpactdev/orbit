@@ -57,5 +57,4 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
             return $projected;
         });
     }
-
 }
