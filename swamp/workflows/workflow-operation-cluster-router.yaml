@@ -114,10 +114,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("cluster-router-probe-" + string(self.probe.node_id) + "-" + self.probe.domain.split("/").join("-")).split(".").join("-") }}'
+      behaviorName: '${{ ("cluster-router-probe-" + string(self.probe.from)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("cluster-router-probe-" + string(self.probe.node_id) + "-" + self.probe.domain.split("/").join("-")).split(".").join("-") }}'
+        name: '${{ ("cluster-router-probe-" + string(self.probe.from)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.nodes[string(self.probe.from)].user }}'
