@@ -35,4 +35,6 @@ elif mode == 'online':
 else:
     check(operation['result'].get('removed') is True and operation['result'].get('offline') is True, 'offline consent is projected')
     check(run('test', '-f', '/etc/orbit/agent/secret').returncode == 0, 'offline target configuration remains')
+    check(run('ufw', '--force', 'delete', 'deny', 'proto', 'tcp', 'from', '10.231.0.1', 'to', 'any', 'port', '22').returncode == 0,
+          'the fixture SSH block is removed after the offline checks')
 print('parity: removal ' + mode)
