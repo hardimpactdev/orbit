@@ -27,7 +27,7 @@ Install, update, remove, and adopt return HTTP 202 with an [Operation](/referenc
 
 Every step runs on control Node 209. Install, update and removal use official cfgmgmt resources and one bounded SSH argv per manager command. Official package checks supply the installed version or absence. Typed worker steps apply constraints and decode package observations; their contract test reads its version table from `composer-constraints.json`, one constraint per line. The Gateway reads the native run and fixed public captures; no result-reporting step runs. Package phases send no Python source to the Node.
 
-A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. Adoption retains its shared scripts. The shared manager setup uses one version argv for readiness and official apt prerequisites; it retains the canonical pinned bootstrap installers.
+A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. Adoption retains its shared scripts. The shared manager setup uses one version argv for readiness and official apt prerequisites. It installs each manager from pinned downloads with official `@swamp/cfgmgmt` resources and SSH argv; no installer script ships.
 
 | Workflow | Steps |
 | --- | --- |
@@ -107,7 +107,7 @@ Native Composer package operations use fixed shared-scope arguments through offi
 
 The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
-The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. A development deploy runs the same shared setup for the Instance's account.
+The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It fetches each pinned artifact, checks its digest, extracts it and writes the managed launchers with official resources. It runs no downloaded installer. A failed step has no rollback; run the install again after you fix the cause. A development deploy runs the same shared setup for the Instance's account.
 
 Managed-account recipe commands run from that account's home directory, including JavaScript installation, inventory, launcher checks, and image verification. They change directory after switching accounts and set `VP_HOME` to the resolved store. A caller's working directory cannot select workspace configuration or prevent the account from running a tool.
 

@@ -54,6 +54,8 @@ Deno.test("VP graph gates machine installer to absent manager and uses read-only
     const steps = jobs[2].steps as Record<string, any>[];
     const manager = steps.find((row) => row.name === "vp-manager")!;
     assertEquals(manager.forEach.in.includes(".manager_required"), true);
+    assertEquals(manager.task.type, "workflow");
+    assertEquals(manager.task.workflowIdOrName, "operation-tool-manager-setup");
     const install = steps.find((row) => row.name === "vp-install")!;
     assertEquals(install.dependsOn[0].step, "vp-cli-ready");
     const inventory = steps.find((row) => row.name === "vp-inventory")!;
@@ -63,7 +65,7 @@ Deno.test("VP graph gates machine installer to absent manager and uses read-only
         "--json",
     ]);
     assertEquals(steps.every((row) => (row.labels as { role?: unknown } | undefined)?.role === "swamp"), true);
-    for (const step of steps.filter((row) => row.forEach)) {
+    for (const step of steps.filter((row) => row.forEach && row.task.type === "behavior")) {
         assertEquals(
             step.task.behaviorName.includes("string(self._index)"),
             true,

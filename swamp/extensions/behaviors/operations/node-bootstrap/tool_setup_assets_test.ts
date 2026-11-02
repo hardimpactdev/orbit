@@ -1,29 +1,133 @@
-import { assertEquals } from "jsr:@std/assert@1";
-import { behavior, Setup } from "./tool_setup_assets.ts";
-
-Deno.test("manager setup accepts only admitted public pins and binds shipped files as data", async () => {
-  const ctx = { extensionFile: (p: string) => new URL(p, import.meta.url).pathname, writeResource: () => Promise.resolve(null) };
-  const pin = { version: "1.0.0", url: "https://example.invalid/artifact", algorithm: "sha256", digest: "a".repeat(64) };
-  const values = [
-    { manager: "javascript", input: { user: "orbit", tools: { node: pin, "vp-cli": pin, pnpm: pin, vp: { ...pin, lock_sha256: "b".repeat(64) } }, vp_lock: "{}" }, apt: null, packages: [] },
-    { manager: "composer", input: { user: "orbit", version: "2.9.5-1" }, apt: { snapshot: "20260101T000000Z", packages: [] }, packages: [] },
-    { manager: "homebrew", input: { user: "orbit", revision: "c".repeat(40), version: "7.0.0" }, apt: null, packages: [] },
-  ];
-  for (const value of values) {
-    const setup = Setup.parse(value);
-    assertEquals(Setup.safeParse({ ...value, input: { ...value.input, user: "root" } }).success, false);
-    assertEquals(Setup.safeParse({ ...value, input: { ...value.input, script: "unapproved" } }).success, false);
-    const assets = await behavior.methods.read.execute({ setup }, ctx);
-    for (const body of [assets.manager_body, assets.apt_body].filter((s): s is string => s !== null)) {
-      assertEquals(body.includes("json.load(sys.stdin)"), false);
-      const child = new Deno.Command("python3", { args: ["-c", "import ast,sys;ast.parse(sys.stdin.read())"], stdin: "piped", stderr: "piped" }).spawn();
-      const writer = child.stdin.getWriter(); await writer.write(new TextEncoder().encode(body)); await writer.close();
-      const result = await child.output(); assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
-    }
-  }
+import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { toolSetupPlan } from "./tool_setup_plan.ts";
+import { Setup } from "./tool_setup_input.ts";
+const pin = {
+    version: "1.0.0",
+    url: "https://example.invalid/artifact.tar.gz",
+    algorithm: "sha256",
+    digest: "a".repeat(64),
+};
+const composer = {
+    manager: "composer",
+    input: { user: "orbit", version: "2.9.5-1" },
+    apt: {
+        snapshot: "20260101T000000Z",
+        packages: [{ name: "composer", version: "2.9.5-1", artifact: null }],
+    },
+    packages: [],
+};
+Deno.test("Composer setup preserves its scope and installs exact snapshot packages without removing others", async () => {
+    const plan = await toolSetupPlan(composer, "/home/orbit");
+    assertEquals(
+        plan.directories.some((d) =>
+            d.path === "/opt/orbit/composer/vendor/bin" && d.owner === "orbit"
+        ),
+        true,
+    );
+    assertEquals(
+        plan.files.some((f) => f.path === "/opt/orbit/composer/composer.json"),
+        false,
+    );
+    assertEquals(plan.apt_install.includes("--no-remove"), true);
+    assertEquals(plan.apt_install.at(-1), "composer=2.9.5-1");
+    assertEquals(
+        plan.apt_update.includes("APT::Get::List-Cleanup=false"),
+        true,
+    );
+    assertEquals(
+        plan.files.some((f) =>
+            String(f.content).includes(
+                "snapshot.ubuntu.com/ubuntu/20260101T000000Z/",
+            )
+        ),
+        true,
+    );
 });
-
-Deno.test("manager setup scripts refuse foreign launchers and recover interrupted owned scopes", async () => {
-  const result = await new Deno.Command("python3", { args: [new URL("tool_setup_scripts_test.py", import.meta.url).pathname], env: { PYTHONDONTWRITEBYTECODE: "1" }, stderr: "piped" }).output();
-  assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+Deno.test("Homebrew setup describes one pinned repository and retains other package managers", async () => {
+    const plan = await toolSetupPlan({
+        manager: "homebrew",
+        input: { user: "orbit", revision: "c".repeat(40), version: "7.0.0" },
+        apt: null,
+        packages: [],
+    }, "/home/orbit");
+    assertEquals(
+        plan.links.some((l) =>
+            l.path === "/home/linuxbrew/.linuxbrew/bin/brew"
+        ),
+        true,
+    );
+    assertEquals(plan.sha256_fetches, []);
+    assertEquals(plan.apt_install, []);
+});
+Deno.test("JS setup verifies the lock before exposing paths and keeps SHA512 checks separate from extraction", async () => {
+    const lock = JSON.stringify({
+        name: "orbit-vp",
+        version: "1.0.0",
+        lockfileVersion: 3,
+    });
+    const digest = Array.from(
+        new Uint8Array(
+            await crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(lock),
+            ),
+        ),
+        (n) => n.toString(16).padStart(2, "0"),
+    ).join("");
+    const setup = {
+        manager: "javascript",
+        input: {
+            user: "orbit",
+            tools: {
+                node: { ...pin, url: "https://example.invalid/node.tar.xz" },
+                "vp-cli": pin,
+                pnpm: { ...pin, algorithm: "sha512", digest: "b".repeat(128) },
+                vp: { ...pin, lock_sha256: digest },
+            },
+            vp_lock: lock,
+        },
+        apt: null,
+        packages: [],
+    };
+    const plan = await toolSetupPlan(setup, "/home/orbit");
+    assertEquals(plan.sha512.length, 1);
+    assertEquals(
+        plan.sha512[0].stdin,
+        "b".repeat(128) +
+            "  /var/cache/orbit/tool-setup/javascript/pnpm.tar.gz\n",
+    );
+    assertEquals(
+        plan.archives.find((a) => String(a.source).includes("node.tar.xz"))
+            ?.format,
+        "tar.xz",
+    );
+    assertEquals(
+        plan.commands.some((c) =>
+            (c.argv as string[]).includes("--ignore-scripts")
+        ),
+        true,
+    );
+    assertEquals(
+        plan.launchers.some((f) =>
+            f.path === "/usr/local/bin/node" &&
+            String(f.content).includes(
+                'exec "/home/orbit/.local/share/vite-plus/bin/node"',
+            )
+        ),
+        true,
+    );
+    await assertRejects(
+        () =>
+            toolSetupPlan({
+                ...setup,
+                input: { ...setup.input, vp_lock: lock + " " },
+            }, "/home/orbit"),
+        Error,
+        "node.tool_lock_mismatch",
+    );
+    assertEquals(
+        Setup.safeParse({ ...setup, input: { ...setup.input, user: "root" } })
+            .success,
+        false,
+    );
 });

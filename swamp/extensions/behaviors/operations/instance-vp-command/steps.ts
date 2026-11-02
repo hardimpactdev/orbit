@@ -90,19 +90,21 @@ export function vpInstallSteps(name: string, intent: string): Fields[] {
             ),
         },
     };
-    a.metadata(
-        "manager-assets",
-        "read",
-        { setup: e(intent + ".vp_setup") },
-        "@nckrtl/node-tool-setup-assets",
-        setup,
-    );
-    a.sshAction("manager", "script", {
-        interpreter: "python3",
-        script: e(
-            'steps["' + name + '-manager-assets-0"].outputs.manager_body',
-        ),
-        sudo: true,
+    a.add("manager", {
+        type: "workflow",
+        workflowIdOrName: "operation-tool-manager-setup",
+        inputs: {
+            operation_id: e("inputs.operation_id"),
+            node_id: e("inputs.node_id"),
+            ssh: e(intent + ".ssh_execution"),
+            intent: {
+                manager: "vp",
+                user: e(intent + ".vp_setup.input.user"),
+                platform: "linux",
+                architecture: "x86_64",
+                setup: e(intent + ".vp_setup"),
+            },
+        },
     }, setup);
     a.add("manager-ready", {
         type: "assert",

@@ -39,7 +39,7 @@ export function instanceActions(
             task,
             ...extra,
         };
-        if (extra.forEach) {
+        if (extra.forEach && task.type === "behavior") {
             const name = String(task.behaviorName);
             // The index goes inside the dot-free wrapper, so the name still starts with a letter.
             task.behaviorName = name.includes(').split(".").join("-")')
