@@ -9,4 +9,3 @@ behaviors:
 additionalFiles:
   - scripts/agent.py
   - scripts/agent_key.py
-  - scripts/authorized_keys.py

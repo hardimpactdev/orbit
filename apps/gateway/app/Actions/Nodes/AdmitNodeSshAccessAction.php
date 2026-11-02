@@ -8,46 +8,34 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\NodeSshAccessProjection;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-/** Writes Orbit's marked authorized_keys block on a Node: the swamp role key, then operator keys Orbit records (none yet). */
+/** Adds Orbit's SSH keys to a Node's managed account: the swamp role key, then operator keys Orbit records (none yet). */
 final readonly class AdmitNodeSshAccessAction
 {
     public function __construct(private StartOperationAction $operations, private OperationIdempotency $idempotency,
-        private SwampSshExecutionInput $ssh, private SshKeyProvider $keys, private SwampCommandStep $steps) {}
+        private SwampSshExecutionInput $ssh) {}
 
     public function execute(Node $node, ?string $requestId = null): Operation
     {
         if (($existing = $this->idempotency->replay('node.ssh_access_converge')) !== null) {
             return $existing;
         }
-        if (($existing = $this->existing($node, $this->intent($node))) !== null) {
-            return $existing;
-        }
-        // The identity the Node already accepts, Gateway -> vault -> step (R3), pushed before the transaction under the
-        // one key name the Gateway's vault grant allows.
-        $identity = @file_get_contents($this->keys->privateKeyPath());
-        if (! is_string($identity) || $identity === '') {
-            throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The bootstrap SSH identity is unavailable.', 503);
-        }
-        $access = $this->steps->executionCopy('orbit-control-inputs', 'bootstrap-identity-node-14', $identity);
 
-        return DB::transaction(function () use ($node, $requestId, $access): Operation {
+        return DB::transaction(function () use ($node, $requestId): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             $intent = $this->intent($node);
 
             return $this->existing($node, $intent) ?? $this->operations->execute('node.ssh_access_converge', 'node', $node->id, $node->id,
-                ['intent' => $intent, 'execution_secrets' => ['bootstrap_identity' => $access],
+                ['intent' => $intent, 'execution_secrets' => [],
                     'participant_node_ids' => array_values(array_unique([209, $node->id]))], 'operator', $requestId);
         });
     }
 
-    /** @return array<string,mixed> The SSH target and the block's keys: the swamp role key, then operator keys Orbit records (none yet). */
+    /** @return array<string,mixed> The SSH target and Orbit's keys: the swamp role key, then operator keys Orbit records (none yet). */
     private function intent(Node $node): array
     {
         $intent = $this->ssh->forNode($node);

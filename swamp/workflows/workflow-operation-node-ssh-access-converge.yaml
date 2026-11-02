@@ -1,8 +1,8 @@
 id: d672c246-33c1-4fc7-b8b4-ae37f4885b1e
 name: operation-node-ssh-access-converge
-description: Write Orbit's marked authorized_keys block from 209 over official SSH; keys outside the block stay.
+description: Add Orbit's SSH keys to a Node's managed account with official cfgmgmt from 209; other keys stay.
 queueTimeout: 30
-vaults: [orbit-control-inputs]
+vaults: []
 inputs:
   type: object
   properties:
@@ -10,77 +10,30 @@ inputs:
     node_id: {type: integer}
     kind: {type: string, enum: [node.ssh_access_converge]}
     intent: {type: object}
-    execution_secrets:
-      type: object
-      properties:
-        bootstrap_identity:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^bootstrap-identity-node-14$'}
-          required: [vault, key]
-          additionalProperties: false
-      required: [bootstrap_identity]
-      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: ssh_access
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
+    # One official authorized_key per key Orbit owns; it adds a missing line and never touches another.
+  - name: 'Add the Orbit keys'
     labels: {role: swamp}
+    writes: true
+    forEach: {item: key, in: '${{ inputs.intent.keys }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-scripts'
-      behaviorName: node-ssh-access-scripts
-      methodName: read
-      inputs: {script: authorized_keys, input: {keys: '${{ inputs.intent.keys }}'}}
-    # The identity Node 12 already accepts, from the vault; the Swamp identity may not be accepted yet.
-  - name: 'Write the Orbit block'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-ssh-access-" + string(inputs.node_id) + "-bootstrap" }}
-      methodName: exec
-      globalArgs: &access
-        name: ${{ "node-ssh-access-" + string(inputs.node_id) + "-bootstrap" }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.target.user }}
-          port: ${{ inputs.intent.target.port }}
-          hostKeys: ${{ inputs.intent.target.host_keys }}
-          identityContent: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.target.host }}
-      inputs:
-        hosts: name:target
-        sudo: false
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', write, '${{ steps["Read the scripts"].outputs.input }}']
-        timeoutSec: 40
-    # The block holds exactly the keys and every line outside it is unchanged.
-  - name: 'Read the file back'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Write the Orbit block', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-ssh-access-" + string(inputs.node_id) + "-bootstrap" }}
-      methodName: exec
-      globalArgs: *access
-      inputs:
-        hosts: name:target
-        sudo: false
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', verify, '${{ steps["Read the scripts"].outputs.input }}',
-          '${{ steps["Write the Orbit block"].outputs.stdout }}']
-        timeoutSec: 40
-    # A new session with the swamp role identity only.
+      behaviorType: '@swamp/cfgmgmt/authorized_key'
+      behaviorName: ${{ "node-ssh-access-key-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: apply
+      globalArgs: {user: '${{ inputs.intent.target.user }}', key: '${{ self.key }}', ensure: present, nodeHost: '${{ inputs.intent.target.host }}',
+        nodeUser: '${{ inputs.intent.target.user }}', nodePort: '${{ inputs.intent.target.port }}', nodeIdentityFile: '${{ inputs.intent.identity_file }}'}
+      inputs: {}
+    # The end check: a new session with the swamp role identity only.
   - name: 'Log in with Swamp identity'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the file back', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Add the Orbit keys', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -100,5 +53,5 @@ jobs:
           address: ${{ inputs.intent.target.host }}
       inputs:
         hosts: name:target
-        argv: [/usr/bin/printf, '%s\n', '{"ssh_access_ready":true}']
+        argv: [/usr/bin/true]
         timeoutSec: 30
