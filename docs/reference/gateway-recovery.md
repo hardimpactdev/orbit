@@ -666,14 +666,13 @@ Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts
 
 Each tick of `gateway:release:auto` takes these steps and stops at the first that ends it:
 
-1. It decides the pending [tick confirmations](#post-release-tick-confirmation).
-2. It stops when automatic releases are disabled or paused. A stall ends then.
-3. A requested release that waits for its unit goes first. The tick stops.
-4. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
-5. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
-6. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
-7. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
-8. It deploys that commit with the trigger `auto`, under the release lock.
+1. It stops when automatic releases are disabled or paused. A stall ends then.
+2. A requested release that waits for its unit goes first. The tick stops.
+3. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
+4. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
+5. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
+6. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
+7. It deploys that commit with the trigger `auto`, under the release lock.
 
 The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts. Waiting for published agent delivery is not a failed attempt and spends no retry budget.
 

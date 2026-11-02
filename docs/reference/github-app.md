@@ -353,9 +353,3 @@ The Gateway is private, so GitHub cannot reach it. It lists installations and pu
 ### Cache the installation for the branch list
 
 The Gateway is private, so GitHub cannot push a merge event to it. Swamp owns task PR polling and lifecycle decisions. Gateway read primitives cache the installation identity and renew a refused token.
-
-## Production smoke permission
-
-The repository registration manifest requests `Actions: write` for production-smoke dispatch. This affects new registrations only. The Gateway operator updates Actions to read and write in the existing GitHub App's repository permissions, saves the change, then accepts the permission update on each installation that will run smoke. This is an operator step; Orbit never changes an existing App registration or accepts installation permissions. Keep all other permissions unchanged. Enable no Project until the paired Gateway and Swamp feature ships.
-
-A dispatch uses a token scoped to that Project repository with only Actions write. Result reads keep a separate Actions-read token. An installation without Actions write receives `422 instance.smoke_invalid` with an instruction to complete this upgrade. CI receives only the tested commit, deployment ID and HTTPS base URL; no Gateway, Swamp, production or maintainer credential is sent.

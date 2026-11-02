@@ -1470,46 +1470,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/production-smoke/failure.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/production-smoke/mod.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/production-smoke/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/production-smoke/recovery.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/production-smoke/repair.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -1555,18 +1515,6 @@
     {
       "file": "workflows/workflow-groups-driver.yaml",
       "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-behavior",
-      "count": 4,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-workflow",
       "count": 1,
       "evidence": []
     }

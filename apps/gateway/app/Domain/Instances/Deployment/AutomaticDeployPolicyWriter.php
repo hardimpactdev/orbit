@@ -42,9 +42,6 @@ enum AutomaticDeployPolicyWriter: string
                 && $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active)
                     ? null : self::InactiveRole;
         }
-        if (AutomaticDeployState::of($instance)->smokeHeld()) {
-            return 'instance.smoke_held';
-        }
         $instance->loadMissing('node.roles');
         if (! $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd && $role->status === LifecycleStatus::Active)) {
             return self::InactiveRole;

@@ -24,5 +24,3 @@ A default development Instance treats an `interrupted` deployment Operation with
 
 Use native step outputs and terminal run projection. Swamp owns execution and
 recovery; the Gateway does not regain a deploy loop or executor fallback.
-[Smoke failure policy](production-smoke-failure-contract.md) owns
-verified-failure classification and code/data preservation.
