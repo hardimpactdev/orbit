@@ -122,9 +122,7 @@ PY"""
                 candidate=dict(probes=[]),
                 old_nodes=[
                     dict(
-                        firewall=dict(
-                            node_id=9, rules=[], migrate=True, legacy_router=True
-                        ),
+                        firewall=dict(node_id=9, rules=[]),
                         connection=connection,
                         host_keys=["fixture"],
                     )

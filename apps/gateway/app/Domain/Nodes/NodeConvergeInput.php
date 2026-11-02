@@ -53,7 +53,7 @@ final readonly class NodeConvergeInput
         if (isset($payloads['route-residue'])) {
             $residue = ValidatedData::object($payloads['route-residue']);
             $lan = app(NativeRouteLanInput::class);
-            $residue['lan'] = ['node_id' => $node->id, 'rules' => $lan->changes([], $lan->forSites($node, app(DevelopmentSiteRepository::class)->all())), 'migrate' => true];
+            $residue['lan'] = ['node_id' => $node->id, 'rules' => $lan->changes([], $lan->forSites($node, app(DevelopmentSiteRepository::class)->all()))];
             $residue['ingress_commands'] = $residue['ingress'] === null ? null : app(NodeRoleFirewallInput::class)->convergeCommands($node, RoleName::Ingress);
             unset($residue['ingress'], $residue['firewall']);
             $payloads['route-residue'] = $residue;

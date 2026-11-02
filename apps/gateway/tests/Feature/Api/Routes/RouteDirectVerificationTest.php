@@ -6,7 +6,6 @@ use App\Actions\Routes\StartRouteNodeOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Routes\NativeCaddyPublicationInput;
-use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\NativeRouteLanRemovalProjection;
 use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -128,7 +127,7 @@ it('refuses a workload without a published WireGuard endpoint before recording i
 it('admits LAN removal directly only for its withdrawn Route and records no Gateway effect', function (): void {
     $this->route->update(['status' => 'retiring', 'sites_published' => false]);
     $operation = app(StartRouteNodeOperationAction::class)->execute('route.lan_remove', $this->instance->node, ['route_id' => $this->route->id]);
-    $intent = ['route_id' => $this->route->id, 'node_id' => $this->instance->node_id, 'migrate' => true, 'rules' => [['port' => 443, 'protocol' => 'tcp', 'source' => '192.168.6.9', 'ensure' => 'absent', 'model_name' => '94980c57a7e648b2']]];
+    $intent = ['route_id' => $this->route->id, 'node_id' => $this->instance->node_id, 'rules' => [['port' => 443, 'protocol' => 'tcp', 'source' => '192.168.6.9', 'ensure' => 'absent', 'model_name' => '94980c57a7e648b2']]];
     expect($operation->input['lan_removal'])->toBe($intent)
         ->and($operation->worker)->toBeNull()->and($operation->lock_key)->toBeNull()->and($this->agents->calls)->toBe([]);
     $inputs = $this->socket->sent[0]['payload']['inputs'];
@@ -137,10 +136,10 @@ it('admits LAN removal directly only for its withdrawn Route and records no Gate
         ->and(json_encode($inputs['execution_secrets'], JSON_THROW_ON_ERROR))->toBe('{}')
         ->and(app(DirectOperation::class)->definition('route.lan_remove')['terminal_result'])->toBe(['job' => 'withdrawal', 'step' => 'remove-lan']);
     $projected = app(NativeRouteLanRemovalProjection::class)->apply($operation, ['run_id' => $this->runId,
-        'status' => 'succeeded', 'result' => ['ready' => true, 'migrated_node_ids' => [$this->instance->node_id], 'stderr' => 'private-diagnostic'],
+        'status' => 'succeeded', 'result' => ['ready' => true, 'stderr' => 'private-diagnostic'],
         'started_at' => '2026-10-31T03:00:00.000Z', 'finished_at' => '2026-10-31T03:00:01.000Z']);
-    expect($projected->result)->toBe(['ready' => true, 'migrated_node_ids' => [$this->instance->node_id]])->and($projected->status->value)->toBe('succeeded')
-        ->and(app(NativeRouteLanInput::class)->migrationPending($this->instance->node_id))->toBeFalse()->and($this->agents->calls)->toBe([]);
+    expect($projected->result)->toBe(['ready' => true])->and($projected->status->value)->toBe('succeeded')
+        ->and($this->agents->calls)->toBe([]);
 });
 
 it('refuses LAN removal on a foreign Node or a Route still publishing sites', function (): void {
@@ -164,7 +163,6 @@ it('keeps the admission snapshot through dispatch and projects terminal output w
         'result' => ['error_code' => 'firewall.withdrawal_failed'], 'error_code' => 'firewall.withdrawal_failed',
         'started_at' => '2026-10-31T03:00:00Z', 'finished_at' => '2026-10-31T03:00:01Z']);
     expect($projected->status->value)->toBe('failed')->and($projected->error_code)->toBe('firewall.withdrawal_failed')
-        ->and(app(NativeRouteLanInput::class)->migrationPending($this->instance->node_id))->toBeTrue()
         ->and($this->agents->calls)->toBe([]);
 });
 

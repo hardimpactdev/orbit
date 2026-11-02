@@ -2,7 +2,6 @@ import { z } from "npm:zod@4.4.3";
 const Id = z.number().int().positive();
 const Phase = z.object({
     ready: z.boolean(),
-    migrated_node_ids: z.array(Id),
 });
 const States = z.record(
     z.string(),
@@ -42,15 +41,6 @@ export function phaseResult(raw: unknown) {
     const { mode, steps } = PhaseArgs.parse(raw);
     return {
         ready: succeeded(steps, `${mode}-0`),
-        migrated_node_ids: [
-            ...new Set(
-                Object.values(steps).flatMap((step) =>
-                    step.status === "succeeded"
-                        ? step.outputs?.result?.migrated_node_ids ?? []
-                        : []
-                ),
-            ),
-        ],
     };
 }
 export function updateResult(raw: unknown) {
@@ -84,9 +74,6 @@ export function updateResult(raw: unknown) {
             ));
     const restored = !ready && restore?.ready === true &&
         all("restore-workload");
-    const preparedMigrations = Object.entries(steps).filter(([name, step]) =>
-        name.startsWith("prepare-lan-") && step.status === "succeeded"
-    ).flatMap(([, step]) => step.outputs?.result?.migrated_node_ids ?? []);
     return {
         stdout: JSON.stringify({
             ready,
@@ -95,16 +82,6 @@ export function updateResult(raw: unknown) {
             route_id,
             result_route_id,
             selected: ready ? "after" : restored ? "before" : "unknown",
-            migrated_node_ids: ready || restored
-                ? [
-                    ...new Set([
-                        ...(ready
-                            ? forward?.migrated_node_ids ?? []
-                            : restore?.migrated_node_ids ?? []),
-                        ...preparedMigrations,
-                    ]),
-                ]
-                : [],
             ...(!ready ? { error_code: failure_code } : {}),
         }),
     };
@@ -205,7 +182,7 @@ export const behavior = {
                 "Return the canonical pinned tuple child's proven result",
             arguments: z.object({ ready: z.literal(true) }),
             execute: async (args: { ready: true }, ctx: Context) => {
-                const result = { ...args, migrated_node_ids: [] };
+                const result = { ...args };
                 await ctx.writeResource("phase", "phase", result);
                 return result;
             },

@@ -179,8 +179,7 @@ it('captures official Router ingress families and preserves shared workload tupl
 
     $intent = $capture['cluster_router'];
     $plan = $intent['candidate']['firewall'];
-    expect($plan)->toHaveKeys(['node_id', 'rules', 'migrate', 'legacy_router'])
-        ->and($plan['legacy_router'])->toBeTrue()->and($plan['migrate'])->toBeTrue();
+    expect(array_keys($plan))->toBe(['node_id', 'rules']);
     $fromWorkload = array_values(array_filter($plan['rules'], fn (array $rule): bool => $rule['source'] === '192.168.6.13'));
     expect(array_map(fn (array $rule): array => array_intersect_key($rule, array_flip(['port', 'protocol', 'source', 'ensure'])), $fromWorkload))
         ->toBe([

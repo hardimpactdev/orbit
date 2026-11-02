@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Routes\NativeRouteLanInput;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Models\Node;
 
@@ -41,12 +40,4 @@ it('keeps distinct Router sources and excludes a colocated or WireGuard hop', fu
 it('does not assign an identical LAN address on a Node outside this Route', function (): void {
     $other = Node::query()->create(['name' => 'other-workload', 'public_ssh_host' => '192.0.2.19', 'lan_ip' => '192.168.6.9', 'user' => 'orbit']);
     expect($this->policy->forSites($other, $this->sites))->toBe([]);
-});
-
-it('records a proven migration once and rejects a foreign Node result', function (): void {
-    expect($this->policy->migrationPending($this->workload->id))->toBeTrue();
-    $this->policy->recordMigrations([$this->workload->id], [$this->workload->id]);
-    expect($this->policy->migrationPending($this->workload->fresh()->id))->toBeFalse()
-        ->and(fn () => $this->policy->recordMigrations([$this->workload->id], [$this->router->id]))->toThrow(ResourceOperationException::class)
-        ->and($this->policy->migrationPending($this->router->id))->toBeTrue();
 });

@@ -64,8 +64,6 @@ final readonly class NativeRouteUpdateProjection implements DirectOperationProje
                 foreach (($result['restored'] ?? false) ? ['rollback'] : ['certificates_ready', 'public_verified', 'placement_cleanup', 'complete'] as $stage) {
                     app(AnalyticsRoutePlan::class)->checkpointUpdate(RouteExecutionProof::objects($intent['analytics_changes'] ?? []), $stage);
                 }
-                app(NativeRouteLanInput::class)->recordMigrations(
-                    ValidatedData::integerList($result['migrated_node_ids'] ?? []), ValidatedData::integerList($result['migrated_node_ids'] ?? []));
             }
 
             return $operation;

@@ -119,7 +119,7 @@ class RecipeNative(NativeTestCase):
         fp['payloads']['caddy']={'content':'public candidate','version':'b'*32,'listen_addresses':[],'unserved':False}
         fp['payloads']['php-runtime']={'configurations':[{'version':'8.4'},{'version':'8.5'}]}
         fp['payloads']['private-dns']={'listener':{},'publication':{'records':'public records','catalog':'{}'}}
-        fp['payloads']['route-residue']={'rows':[{'steps':['caddy']}],'caddy':fp['payloads']['caddy'],'php':{'8.5':'user = __orbit_converge_group__'},'certificates':['route-1'],'lan':{'node_id':9,'rules':[],'migrate':True},'ingress_commands':None}
+        fp['payloads']['route-residue']={'rows':[{'steps':['caddy']}],'caddy':fp['payloads']['caddy'],'php':{'8.5':'user = __orbit_converge_group__'},'certificates':['route-1'],'lan':{'node_id':9,'rules':[]},'ingress_commands':None}
         self.intent['php']={'versions':{'8.5':{}}}
         root=self.start()
         history=self.history(root)

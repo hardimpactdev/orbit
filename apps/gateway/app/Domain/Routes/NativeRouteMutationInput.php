@@ -119,9 +119,9 @@ final readonly class NativeRouteMutationInput
             if ($union === []) {
                 continue;
             }
-            $forward['lan'][] = $restore['lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes([], $union), 'migrate' => $lanPolicy->migrationPending($nodeId)];
-            $forward['retire_lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes($union, $desired), 'migrate' => false];
-            $restore['retire_lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes($union, $prior), 'migrate' => false];
+            $forward['lan'][] = $restore['lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes([], $union)];
+            $forward['retire_lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes($union, $desired)];
+            $restore['retire_lan'][] = ['node_id' => $nodeId, 'rules' => $lanPolicy->changes($union, $prior)];
         }
         $forward['ingress'] = $restore['ingress'] = $forward['retire_ingress'] = $restore['retire_ingress'] = [];
         foreach ($publications as $publication) {

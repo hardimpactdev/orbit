@@ -1,6 +1,5 @@
 """Actual Incus power + canonical Node-removal graphs; model HTTP is a public fixture seam."""
 import json
-import shutil
 import sys
 import uuid
 
@@ -13,10 +12,6 @@ from native_harness import ROOT
 class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
     def setUp(self):
         super().setUp()
-        source = ROOT / 'extensions/behaviors/operations/certificates/scripts/role_paths.py'
-        target = self.repo / 'extensions/behaviors/operations/certificates/scripts/role_paths.py'
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(source, target)
         self.state.write_text(json.dumps({'status':'Running','exists':True,'volumes':['tvm-42-topology-seed','tvm-43-topology-seed']}))
         for name in ('task-vm-destroy','operation-task-vm-destroy','node-role-remove','operation-node-remove'):
             value = yaml.safe_load((ROOT / ('workflows/workflow-' + name + '.yaml')).read_text())

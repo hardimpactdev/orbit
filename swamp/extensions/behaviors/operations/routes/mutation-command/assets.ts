@@ -11,8 +11,6 @@ const LanRule = z.object({
 const LanPlan = z.object({
     node_id: Id,
     rules: z.array(LanRule),
-    migrate: z.boolean(),
-    legacy_router: z.literal(true).optional(),
 }).strict();
 function tupleKeys(status: string): Set<string> {
     if (!/^Status: active$/m.test(status)) throw new Error("firewall.inactive");
@@ -91,7 +89,6 @@ export const behavior = {
             garbageCollection: 10,
             schema: z.object({
                 ready: z.literal(true),
-                migrated_node_ids: z.array(Id).optional(),
                 result_json: z.string().optional(),
             }),
         },
@@ -119,7 +116,6 @@ export const behavior = {
                     RouteObservation.extend({ ready: z.literal(true) }),
                 ),
                 contributions: z.record(z.string(), z.number()),
-                migrated_node_ids: z.array(Id),
             }),
         },
         assets: {
@@ -177,43 +173,20 @@ export const behavior = {
         },
         lanResult: {
             description:
-                "Verify every official firewall tuple and the optional one-time migration",
+                "Verify every official firewall tuple",
             arguments: LanOutcomes,
             execute: async (
                 args: LanOutcomes,
                 ctx: Context,
             ) => {
                 verifyLanRules(args.plan, args.outcomes);
-                if (args.plan.migrate) {
-                    z.object({ status: z.literal("succeeded") }).parse(
-                        args.outcomes["migrate-0"],
-                    );
-                }
-                const result = {
-                    ready: true as const,
-                    migrated_node_ids: args.plan.migrate
-                        ? [args.plan.node_id]
-                        : [],
-                };
+                const result = { ready: true as const };
                 return {
                     dataHandles: [
                         await ctx.writeResource("ready", "ready", {
                             ...result,
                             result_json: JSON.stringify(result),
                         }),
-                    ],
-                };
-            },
-        },
-        lanMigrationResult: {
-            description: "Decode the one-time legacy Route rule cleanup",
-            arguments: z.object({ stdout: z.string() }),
-            execute: async (args: { stdout: string }, ctx: Context) => {
-                const result = z.object({ ready: z.literal(true) }).strict()
-                    .parse(JSON.parse(args.stdout));
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("ready", "ready", result),
                     ],
                 };
             },
@@ -255,25 +228,6 @@ export const behavior = {
                 ],
             }),
         },
-        lanMigration: {
-            description:
-                "Resolve the temporary approved old-rule cleanup asset",
-            arguments: z.object({ legacy_router: z.boolean().optional() }),
-            execute: async (
-                args: { legacy_router?: boolean },
-                ctx: Context,
-            ) => ({
-                dataHandles: [
-                    await ctx.writeResource("assets", "assets", {
-                        script: ctx.extensionFile("scripts/route_lan.py"),
-                        scripts_directory: ctx.extensionFile("scripts"),
-                        input_json: JSON.stringify({
-                            legacy_router: args.legacy_router === true,
-                        }),
-                    }),
-                ],
-            }),
-        },
         result: {
             description:
                 "Report every required native contribution for the parent terminal result",
@@ -297,9 +251,6 @@ export const behavior = {
                         string,
                         {
                             status: string;
-                            outputs?: {
-                                result?: { migrated_node_ids?: number[] };
-                            };
                         }
                     >;
                 },
@@ -321,17 +272,6 @@ export const behavior = {
                         ready: true,
                     })),
                     contributions: args.required,
-                    migrated_node_ids: [
-                        ...new Set(
-                            Object.entries(args.outcomes).filter(([name]) =>
-                                Object.keys(args.required).some((prefix) =>
-                                    name.startsWith(prefix + "-")
-                                )
-                            ).flatMap(([, step]) =>
-                                step.outputs?.result?.migrated_node_ids ?? []
-                            ),
-                        ),
-                    ],
                 };
                 return {
                     dataHandles: [

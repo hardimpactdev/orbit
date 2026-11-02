@@ -1,6 +1,6 @@
 id: 7df4d92e-034f-4a2e-bd17-8265aec18b11
 name: operation-route-lan-remove
-description: Withdraw only Route LAN tuples no published Route still needs, migrating legacy rules once.
+description: Withdraw only Route LAN tuples no published Route still needs.
 vaults: []
 inputs:
   properties:
@@ -38,8 +38,6 @@ inputs:
           type: array
           items:
             type: object
-        migrate:
-          type: boolean
       required:
       - route_id
       - node_id
@@ -47,7 +45,6 @@ inputs:
       - connection
       - host_keys
       - rules
-      - migrate
     execution_secrets:
       type: object
       additionalProperties: false
@@ -78,7 +75,6 @@ jobs:
           rule:
             node_id: ${{ inputs.intent.node_id }}
             rules: ${{ inputs.intent.rules }}
-            migrate: ${{ inputs.intent.migrate }}
   - name: remove-lan
     labels: {role: swamp}
     dependsOn:

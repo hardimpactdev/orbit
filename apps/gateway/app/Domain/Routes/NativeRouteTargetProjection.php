@@ -60,11 +60,6 @@ final readonly class NativeRouteTargetProjection implements DirectOperationProje
                 $state->recordFailure($route, 'native-target-set', $operation->error_code ?? 'route.target_set_failed');
             }
 
-            if ($operation->status === OperationStatus::Succeeded || ($result['restored'] ?? false) === true) {
-                app(NativeRouteLanInput::class)->recordMigrations(ValidatedData::integerList($result['migrated_node_ids'] ?? []),
-                    ValidatedData::integerList($result['migrated_node_ids'] ?? []));
-            }
-
             return $operation;
         });
     }

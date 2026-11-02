@@ -124,7 +124,7 @@ it('commits the proposal only from terminal success and accepts identical delive
     target_input_project($operation, 'running', ['checkpoint' => 'database-committed']);
     expect($this->routes['pool']->targets()->pluck('instance_id')->all())->toBe([$this->instances['old']->id]);
 
-    $result = ['ready' => true, 'restored' => false, 'selected' => 'after', 'route_id' => $this->routes['pool']->id, 'result_route_id' => $this->routes['pool']->id, 'migrated_node_ids' => []];
+    $result = ['ready' => true, 'restored' => false, 'selected' => 'after', 'route_id' => $this->routes['pool']->id, 'result_route_id' => $this->routes['pool']->id];
     $done = target_input_project($operation, 'succeeded', $result);
     target_input_project($done, 'succeeded', $result);
 

@@ -92,26 +92,24 @@ final readonly class NativeClusterRouterPublicationInput
             $previous = $this->tuples($lan->forSites($node, $before), $oldRouter);
             $desired = $this->tuples($lan->forSites($node, $after), $newRouter, $oldRouter);
             $union = $this->tuples($previous, $lan->forSites($node, $prepared), $desired);
-            if ($union === [] && ! $lan->migrationPending($node->id)) {
+            if ($union === []) {
                 continue;
             }
-            $forwardLan[] = ['node_id' => $node->id, 'rules' => $lan->changes($previous, $union), 'migrate' => $lan->migrationPending($node->id)];
-            $restoreLan[] = ['node_id' => $node->id, 'rules' => $lan->changes($desired, $union), 'migrate' => $lan->migrationPending($node->id)];
-            $forwardRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $desired), 'migrate' => false];
-            $restoreRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $previous), 'migrate' => false];
+            $forwardLan[] = ['node_id' => $node->id, 'rules' => $lan->changes($previous, $union)];
+            $restoreLan[] = ['node_id' => $node->id, 'rules' => $lan->changes($desired, $union)];
+            $forwardRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $desired)];
+            $restoreRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $previous)];
         }
         if ($candidate !== null) {
             $inventory['candidate']['firewall'] = ['node_id' => $candidate->node_id,
-                'rules' => $lan->changes([], $this->tuples($lan->forSites($candidate->node, $prepared), $this->routerTuples($candidate->node))),
-                'migrate' => true, 'legacy_router' => true];
+                'rules' => $lan->changes([], $this->tuples($lan->forSites($candidate->node, $prepared), $this->routerTuples($candidate->node)))];
         }
         $oldNodes = [];
         foreach (RouteExecutionProof::objects($inventory['old_nodes']) as $old) {
             $node = Node::query()->findOrFail(ValidatedData::integer($old['node_id']));
             $survivors = $lan->forSites($node, $after);
             $old['firewall'] = ['node_id' => $node->id,
-                'rules' => $lan->changes($this->tuples($lan->forSites($node, $prepared), $this->routerTuples($node)), $survivors),
-                'migrate' => true, 'legacy_router' => true];
+                'rules' => $lan->changes($this->tuples($lan->forSites($node, $prepared), $this->routerTuples($node)), $survivors)];
             $oldNodes[] = $old;
         }
         $inventory['old_nodes'] = $oldNodes;

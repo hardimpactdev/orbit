@@ -157,7 +157,7 @@ function lifecycle_project(Operation $op, string $projection, string $status): O
 {
     return app($projection)->apply($op, ['run_id' => $op->state['swamp_run_id'], 'status' => $status, 'started_at' => '2026-11-01T05:00:00Z',
         'finished_at' => $status === 'running' ? null : '2026-11-01T05:01:00Z', 'error_code' => $status === 'failed' ? 'route.lifecycle_failed' : null,
-        'result' => ['ready' => $status === 'succeeded', 'restored' => $status === 'failed', 'migrated_node_ids' => []]]);
+        'result' => ['ready' => $status === 'succeeded', 'restored' => $status === 'failed']]);
 }
 
 it('captures configured Laravel material for an unpublished initial Route', function (): void {

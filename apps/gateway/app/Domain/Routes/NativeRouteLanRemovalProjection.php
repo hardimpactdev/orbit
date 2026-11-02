@@ -25,23 +25,16 @@ final readonly class NativeRouteLanRemovalProjection implements DirectOperationP
             throw new ResourceOperationException('route.lan_removal_invalid', 'The admitted Route LAN tuple plan is missing.', 422);
         }
 
-        return ['intent' => [...array_intersect_key($intent, array_flip(['route_id', 'node_id', 'rules', 'migrate'])),
+        return ['intent' => [...array_intersect_key($intent, array_flip(['route_id', 'node_id', 'rules'])),
             ...app(NativeCaddyPublicationInput::class)->connectionForNode(Node::query()->findOrFail($operation->node_id))], 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['ready', 'error_code', 'migrated_node_ids']));
+        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['ready', 'error_code']));
 
         return DB::transaction(function () use ($operation, $data, $result): Operation {
-            $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            if (($data['status'] ?? null) === 'succeeded' && ($result['ready'] ?? null) === true) {
-                $intent = ValidatedData::object($operation->input['lan_removal'] ?? []);
-                app(NativeRouteLanInput::class)->recordMigrations(($intent['migrate'] ?? false) ? [ValidatedData::integer($operation->node_id)] : [],
-                    ValidatedData::integerList($result['migrated_node_ids'] ?? []));
-            }
-
-            return $projected;
+            return app(DirectOperation::class)->project($operation, $data, $result);
         });
     }
 }

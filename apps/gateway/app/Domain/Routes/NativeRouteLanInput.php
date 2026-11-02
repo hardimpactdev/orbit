@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Domain\Settings\SettingRepository;
-use App\Domain\Settings\SettingScope;
-use App\Domain\Settings\SettingScopeType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -17,24 +14,6 @@ use Illuminate\Support\Collection;
 /** Public Node-wide Route LAN tuples. Caddy sites own placement; Routes share identical allowances. */
 final readonly class NativeRouteLanInput
 {
-    public function migrationPending(int $nodeId): bool
-    {
-        return app(SettingRepository::class)->get(new SettingScope(SettingScopeType::Node, $nodeId), 'route.lan_shape') !== 'source-v1';
-    }
-
-    /** @param list<int> $admitted
-     * @param  list<int>  $observed
-     */
-    public function recordMigrations(array $admitted, array $observed): void
-    {
-        if (array_diff($observed, $admitted) !== []) {
-            throw new ResourceOperationException('route.lan_result_invalid', 'Migration results require their admitted Nodes.', 409);
-        }
-        foreach (array_unique($observed) as $nodeId) {
-            app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Node, $nodeId), 'route.lan_shape', 'source-v1');
-        }
-    }
-
     /** @param Collection<int,DevelopmentSite> $sites
      * @return list<array{port:int,protocol:string,source:string}>
      */

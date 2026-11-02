@@ -59,7 +59,6 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
             if ($operation->kind === 'route.withdraw') {
                 Route::query()->whereKey($operation->target_id)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
             }
-            app(NativeRouteLanInput::class)->recordMigrations(ValidatedData::integerList($result['migrated_node_ids'] ?? []), ValidatedData::integerList($result['migrated_node_ids'] ?? []));
             if ($operation->kind === 'route.destroy') {
                 foreach ($rows as $row) {
                     DB::afterCommit(static fn () => app(RecordEventBroadcaster::class)->broadcast(RecordEventType::RouteDeleted, $row['route_id'], ['id' => $row['route_id'], 'domain' => $row['domain']]));

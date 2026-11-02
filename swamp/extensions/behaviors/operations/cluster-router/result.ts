@@ -2,22 +2,14 @@ import { z } from "npm:zod@4.4.3";
 const Summary = z.object({
     ready: z.boolean(),
     selected: z.boolean(),
-    migrated_node_ids: z.array(z.number().int().positive()),
     failed_step: z.string().optional(),
 });
 const State = z.object({
     status: z.string(),
     outputs: z.object({
-        firewall: z.object({
-            result: z.object({
-                migrated_node_ids: z.array(z.number().int().positive())
-                    .optional(),
-            }).optional(),
-        }).optional(),
         result: z.object({
             ready: z.boolean().optional(),
             selected: z.boolean().optional(),
-            migrated_node_ids: z.array(z.number().int().positive()).optional(),
             failed_step: z.string().optional(),
         }).passthrough().optional(),
     }).passthrough().optional(),
@@ -36,18 +28,6 @@ const PhaseArgs = z.object({
 type Steps = z.infer<typeof States>;
 const succeeded = (steps: Steps, name: string) =>
     steps[name]?.status === "succeeded";
-function migrations(steps: Steps) {
-    return [
-        ...new Set(
-            Object.values(steps).flatMap((
-                step,
-            ) => [
-                ...(step.outputs?.result?.migrated_node_ids ?? []),
-                ...(step.outputs?.firewall?.result?.migrated_node_ids ?? []),
-            ]),
-        ),
-    ];
-}
 export function phaseResult(raw: unknown) {
     const { mode, dns_count, steps } = PhaseArgs.parse(raw);
     const ready = succeeded(steps, `${mode}-0`);
@@ -63,7 +43,6 @@ export function phaseResult(raw: unknown) {
                         { length: dns_count },
                         (_, i) => succeeded(steps, `forward_prepare_dns-${i}`),
                     ).every(Boolean))),
-        migrated_node_ids: migrations(steps),
         ...(!ready
             ? { failed_step: failure?.[0] ?? `${mode}-incomplete` }
             : {}),
@@ -92,8 +71,7 @@ export function routerResult(raw: unknown) {
             selected: !restored && forward?.selected === true,
             restored,
             cleanup_complete: ready,
-            migrated_node_ids: migrations(steps),
-            ...(!ready
+                ...(!ready
                 ? {
                     failed_step: restore?.failed_step ?? forward?.failed_step ??
                         failure?.[0] ?? "router-preparation",

@@ -128,7 +128,7 @@ it('commits the replacement only from the shared terminal result and accepts rep
     $candidate = app(RouteMutationState::class)->reserve($route, 'new.snapshot.test');
     $capture = $this->capture->capture($route, [...$this->input, 'mode' => 'replace_domain', 'candidate_route_id' => $candidate->id]);
     $operation = native_route_update_operation($capture, $this->node->id);
-    $result = ['ready' => true, 'selected' => 'after', 'restored' => false, 'migrated_node_ids' => []];
+    $result = ['ready' => true, 'selected' => 'after', 'restored' => false];
     $done = native_route_update_finish($operation, true, $result);
     expect($done->status->value)->toBe('succeeded')->and($route->fresh())->toBeNull()
         ->and($candidate->fresh()->status->value)->toBe('active')->and($candidate->fresh()->replaces_route_id)->toBeNull();

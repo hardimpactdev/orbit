@@ -1,8 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { phaseResult, updateResult } from "./result.ts";
-const state = (ready: boolean, nodes: number[] = []) => ({
+const state = (ready: boolean) => ({
     status: "succeeded",
-    outputs: { result: { ready, migrated_node_ids: nodes } },
+    outputs: { result: { ready } },
 });
 function result(steps: Record<string, unknown>, effectful = true) {
     return JSON.parse(
@@ -11,10 +11,9 @@ function result(steps: Record<string, unknown>, effectful = true) {
     );
 }
 Deno.test("only complete native contributions prove forward selection", () => {
-    assertEquals(result({ forward: state(true, [9]) }).selected, "after");
-    assertEquals(result({ forward: state(true, [9]) }).migrated_node_ids, [9]);
-    assertEquals(result({ forward: state(false, [9]) }).ready, false);
-    assertEquals(result({ forward: state(false, [9]) }).selected, "unknown");
+    assertEquals(result({ forward: state(true) }).selected, "after");
+    assertEquals(result({ forward: state(false) }).ready, false);
+    assertEquals(result({ forward: state(false) }).selected, "unknown");
     assertEquals(
         phaseResult({
             mode: "forward",
@@ -25,14 +24,13 @@ Deno.test("only complete native contributions prove forward selection", () => {
 });
 Deno.test("complete restoration preserves original failure and reports prior publication", () => {
     const restored = result({
-        forward: state(false, [9]),
-        restore: state(true, [9]),
+        forward: state(false),
+        restore: state(true),
     });
     assertEquals(restored.ready, false);
     assertEquals(restored.restored, true);
     assertEquals(restored.selected, "before");
     assertEquals(restored.error_code, "route.update_failed");
-    assertEquals(restored.migrated_node_ids, [9]);
 });
 Deno.test("incomplete restoration never claims an authoritative physical selection", () => {
     assertEquals(
@@ -49,7 +47,6 @@ Deno.test("an unchanged or pending update needs no host contribution", () => {
     const noop = result({}, false);
     assertEquals(noop.ready, true);
     assertEquals(noop.restored, false);
-    assertEquals(noop.migrated_node_ids, []);
 });
 
 Deno.test("target preparation must contribute every captured action before forward selection", () => {
@@ -77,7 +74,7 @@ Deno.test("target preparation must contribute every captured action before forwa
     );
 });
 
-Deno.test("successful preparation migrations survive forward selection and proved restoration", () => {
+Deno.test("successful preparation survives forward selection and proved restoration", () => {
     for (const restored of [false, true]) {
         const output = JSON.parse(
             updateResult({
@@ -87,13 +84,13 @@ Deno.test("successful preparation migrations survive forward selection and prove
                 failure_code: "route.target_set_failed",
                 preparation_counts: { "prepare-lan": 1 },
                 steps: {
-                    "prepare-lan-0": state(true, [9]),
+                    "prepare-lan-0": state(true),
                     forward: state(!restored),
                     ...(restored ? { restore: state(true) } : {}),
                 },
             }).stdout,
         );
-        assertEquals(output.migrated_node_ids, [9]);
+        assertEquals(output.ready, !restored);
         assertEquals(output.restored, restored);
     }
 });

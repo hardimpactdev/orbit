@@ -45,7 +45,6 @@ jobs:
               host_keys: '${{ inputs.intent.host_keys }}'
               rule:
                 node_id: '${{ inputs.intent.rule.node_id }}'
-                migrate: false
                 rules: >-
                   ${{ inputs.intent.rule.rules.map(r, {"model_name": "public-" +
                   string(r.port), "port": r.port, "protocol": "tcp", "source":

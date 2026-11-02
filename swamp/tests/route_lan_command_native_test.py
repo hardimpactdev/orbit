@@ -77,18 +77,6 @@ else:raise SystemExit(9)
         self.native_env.update(
             FIXTURE_UFW_STATE=str(self.state), FIXTURE_UFW_AUDIT=str(self.audit)
         )
-        script = (
-            self.repo
-            / "extensions/behaviors/operations/routes/mutation-command/scripts/route_lan.py"
-        )
-        script.write_text(
-            script.read_text()
-            .replace('"/usr/sbin/ufw"', repr(str(fake)))
-            .replace(
-                '"/run/lock/orbit-firewall.lock"', repr(str(self.repo / "ufw.lock"))
-            )
-        )
-
         def paths(value):
             if isinstance(value, str):
                 return value.replace(
@@ -103,7 +91,6 @@ else:raise SystemExit(9)
         for name in [
             "operation-route-lan-remove",
             "route-lan-apply",
-            "route-lan-migrate",
         ]:
             workflow = paths(
                 yaml.safe_load((ROOT / f"workflows/workflow-{name}.yaml").read_text())
@@ -120,10 +107,9 @@ else:raise SystemExit(9)
     def run_lan(
         self,
         ensure="present",
-        migrate=True,
         success=True,
         rules=None,
-        legacy_router=None,
+        apply_parent=False,
         host_keys=None,
         input_refused=False,
     ):
@@ -138,14 +124,13 @@ else:raise SystemExit(9)
                 "rules": rules
                 if rules is not None
                 else [{**self.tuple, "ensure": ensure, "model_name": "r1"}],
-                "migrate": migrate,
                 "control_node_id": 209,
                 "connection": self.connection,
                 "host_keys": [PIN] if host_keys is None else host_keys,
             },
         }
         workflow = "operation-route-lan-remove"
-        if legacy_router is not None:
+        if apply_parent:
             workflow = "route-lan-apply"
             old = value["intent"]
             value["intent"] = {
@@ -155,8 +140,6 @@ else:raise SystemExit(9)
                 "rule": {
                     "node_id": 9,
                     "rules": old["rules"],
-                    "migrate": migrate,
-                    **({"legacy_router": True} if legacy_router else {}),
                 },
             }
         process = self.cli(
@@ -180,68 +163,43 @@ else:raise SystemExit(9)
 
 
 class RouteLanCommandNative(RouteLanFixture):
-    def test_present_before_legacy_removal_and_shared_tuple_survives(self):
-        self.initialize(
-            legacy=[
-                "192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-47-lan",
-                "192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-48-lan",
-                "192.168.6.9 443/tcp ALLOW IN 192.168.6.8 # operator-owned",
-            ]
-        )
+    def test_a_tuple_is_added_and_other_rules_are_left_alone(self):
+        legacy = ["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-48-lan"]
+        self.initialize(legacy=legacy)
         result, state, calls = self.run_lan()
         self.assertEqual(state["tuples"], [self.tuple])
-        self.assertEqual(len(state["legacy"]), 1)
-        self.assertLess(
-            next(i for i, c in enumerate(calls) if c[:1] == ["allow"]),
-            next(i for i, c in enumerate(calls) if c[:2] == ["--force", "delete"]),
-        )
+        self.assertEqual(state["legacy"], legacy)
+        self.assertFalse(any(c[:2] == ["--force", "delete"] for c in calls))
         history = json.loads(
             self.cli("workflow", "history", "get", result["id"]).stdout
         )
         terminal = history["jobs"][0]["steps"][-1]
-        self.assertEqual(
-            json.loads(terminal["outputs"]["stdout"]),
-            {"ready": True, "migrated_node_ids": [9]},
-        )
-        self.assertEqual(list(self.repo.glob("remote-*")), [])
+        self.assertEqual(json.loads(terminal["outputs"]["stdout"]), {"ready": True})
 
     def test_last_route_withdraws_the_official_tuple(self):
         self.initialize(tuples=[self.tuple])
-        _, state, calls = self.run_lan(ensure="absent", migrate=False)
+        _, state, calls = self.run_lan(ensure="absent")
         self.assertEqual(state["tuples"], [])
         self.assertTrue(any(c[:2] == ["delete", "allow"] for c in calls))
         self.assertFalse(any("numbered" in c for c in calls))
 
-    def test_already_migrated_rerun_is_compliant_and_skips_custom_cleanup(self):
+    def test_rerun_is_compliant(self):
         self.initialize(tuples=[self.tuple])
-        _, state, calls = self.run_lan(migrate=False)
+        _, state, calls = self.run_lan()
         self.assertEqual(state["tuples"], [self.tuple])
         self.assertTrue(all(c == ["status"] for c in calls))
 
-    def test_official_failure_keeps_old_rules_and_skips_cleanup(self):
-        legacy = ["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-47-lan"]
-        self.initialize(legacy=legacy, fail_apply=True)
-        _, state, calls = self.run_lan(success=False)
-        self.assertEqual(state["legacy"], legacy)
-        self.assertFalse(any("numbered" in c for c in calls))
-
-    def test_successful_no_effect_add_keeps_old_rules(self):
-        legacy = ["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-47-lan"]
-        self.initialize(legacy=legacy, ignore_apply=True)
-        result, state, calls = self.run_lan(success=False)
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(state["tuples"], [])
-        self.assertEqual(state["legacy"], legacy)
-        self.assertFalse(any("numbered" in c for c in calls))
-
-    def test_failed_migration_cannot_emit_success(self):
-        self.initialize(
-            legacy=["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-47-lan"],
-            ignore_delete=True,
-        )
+    def test_official_failure_fails_the_run(self):
+        self.initialize(fail_apply=True)
         result, state, _ = self.run_lan(success=False)
         self.assertEqual(result["status"], "failed")
-        self.assertEqual(state["tuples"], [self.tuple])
+        self.assertEqual(state["tuples"], [])
+
+    def test_a_no_effect_add_fails_the_run(self):
+        self.initialize(ignore_apply=True)
+        result, state, _ = self.run_lan(success=False)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(state["tuples"], [])
 
     def test_multiple_tuples_use_distinct_native_items(self):
         self.initialize()
@@ -250,61 +208,14 @@ class RouteLanCommandNative(RouteLanFixture):
             {**self.tuple, "ensure": "present", "model_name": "r1"},
             {**second, "ensure": "present", "model_name": "r2"},
         ]
-        _, state, _ = self.run_lan(migrate=False, rules=rules)
+        _, state, _ = self.run_lan(rules=rules)
         self.assertCountEqual(state["tuples"], [self.tuple, second])
 
-    def test_empty_desired_set_still_migrates_old_rules(self):
-        self.initialize(
-            legacy=["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:route-47-lan"]
-        )
-        _, state, _ = self.run_lan(rules=[])
-        self.assertEqual(state["legacy"], [])
-        self.assertEqual(state["tuples"], [])
-
-    def test_router_cleanup_requires_explicit_flag_and_keeps_wireguard_and_foreign_tags(
-        self,
-    ):
-        tags = [
-            "192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:2",
-            "192.168.6.9 53/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-dns-tcp",
-            "192.168.6.9 53/udp ALLOW IN 192.168.6.2 # orbit:router-lan-dns-udp:2",
-            "10.44.0.9 ALLOW IN Anywhere on orbit # orbit:wireguard-members",
-            "192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:operator",
-        ]
-        self.initialize(legacy=tags)
-        _, state, _ = self.run_lan(legacy_router=False)
-        self.assertEqual(state["legacy"], tags)
-        result, state, calls = self.run_lan(legacy_router=True)
+    def test_the_apply_child_reports_ready(self):
+        self.initialize()
+        result, state, _ = self.run_lan(apply_parent=True)
         self.assertEqual(result["status"], "succeeded")
-        self.assertEqual(state["legacy"], tags[3:])
         self.assertEqual(state["tuples"], [self.tuple])
-        self.assertTrue(any(c[:2] == ["--force", "delete"] for c in calls))
-
-    def test_router_no_effect_official_add_cannot_remove_legacy_rules(self):
-        legacy = ["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:2"]
-        self.initialize(legacy=legacy, ignore_apply=True)
-        result, state, calls = self.run_lan(legacy_router=True, success=False)
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(state["legacy"], legacy)
-        self.assertFalse(any("numbered" in c for c in calls))
-
-    def test_router_migration_preserves_every_shared_desired_tuple(self):
-        legacy = ["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:2"]
-        dns_tcp = {**self.tuple, "port": 53}
-        dns_udp = {**dns_tcp, "protocol": "udp"}
-        self.initialize(legacy=legacy)
-        desired = [self.tuple, dns_tcp, dns_udp]
-        rules = [
-            {**row, "ensure": "present", "model_name": f"r{index}"}
-            for index, row in enumerate(desired)
-        ]
-        _, state, calls = self.run_lan(legacy_router=True, rules=rules)
-        self.assertEqual(state["legacy"], [])
-        self.assertCountEqual(state["tuples"], desired)
-        first_delete = next(
-            i for i, c in enumerate(calls) if c[:2] == ["--force", "delete"]
-        )
-        self.assertEqual(sum(c[:1] == ["allow"] for c in calls[:first_delete]), 3)
 
     def test_wrong_or_missing_admitted_pins_refuse_before_any_ufw_command(self):
         self.initialize()
