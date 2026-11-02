@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   invokeNativeModel,
+  workerUnit,
 } from "../extensions/behaviors/native_host_method.ts";
 
 const packageInput = {
@@ -85,3 +86,13 @@ Deno.test("nested model invocation refuses CLI option injection before spawning"
   ) await assertRejects(() => invokeNativeModel(request));
 });
 
+
+Deno.test("the worker unit is found directly in system.slice or in its template slice", () => {
+  assertEquals(workerUnit("0::/system.slice/orbit-node-worker.service\n"), "orbit-node-worker.service");
+  assertEquals(
+    workerUnit("0::/system.slice/system-orbit\\x2dswamp\\x2dworker.slice/orbit-swamp-worker@a.service\n"),
+    "orbit-swamp-worker@a.service",
+  );
+  assertEquals(workerUnit("0::/user.slice/user-0.slice/session-3588.scope\n"), undefined);
+  assertEquals(workerUnit("0::/system.slice/a.slice/b.slice/c.service\n"), undefined);
+});

@@ -45,6 +45,13 @@ export async function invokeNativeModel(
     return { ok: true };
 }
 
+/** The worker's own system service, also a templated one in its own slice
+ * (system.slice/system-orbit\x2dswamp\x2dworker.slice/orbit-swamp-worker@a.service). */
+export function workerUnit(membership: string): string | undefined {
+    return /^0::\/system\.slice\/(?:[a-zA-Z0-9@_.\\-]+\.slice\/)?([a-zA-Z0-9@_.-]+\.service)$/m
+        .exec(membership)?.[1];
+}
+
 async function executeInvocation(
     invocation: string[],
     value: Record<string, unknown>,
@@ -66,10 +73,7 @@ async function executeInvocation(
         stderr: "null",
     }).output();
     if (!cgroup.success) throw new Error("native_host_lifetime_unavailable");
-    const membership = new TextDecoder().decode(cgroup.stdout);
-    const parent = /^0::\/system\.slice\/([a-zA-Z0-9@_.-]+\.service)$/m.exec(
-        membership,
-    )?.[1];
+    const parent = workerUnit(new TextDecoder().decode(cgroup.stdout));
     if (!parent) throw new Error("native_host_lifetime_unavailable");
 
     const scratch = await localFilesystem().makeTempDir({
