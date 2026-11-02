@@ -16,7 +16,7 @@ use App\Models\TaskCheck;
 /**
  * Local target ownership and publication intent. Swamp owns operational policy.
  *
- * @phpstan-type Intent array{project_id:int,group_id:int,publish_operation_id:int,repository:string,default_branch:string,smoke_workflow:string,pr_number:int,head_sha:string,token:array{'$secret':string,id:int}}
+ * @phpstan-type Intent array{project_id:int,group_id:int,publish_operation_id:int,repository:string,default_branch:string,smoke_workflow:string,pr_number:int,head_sha:string}
  */
 final readonly class DependencyBatchMergeGuard
 {
@@ -58,7 +58,7 @@ final readonly class DependencyBatchMergeGuard
 
         return ['project_id' => $project->id, 'group_id' => $group->id, 'publish_operation_id' => $publishId,
             'repository' => $repository->owner.'/'.$repository->name, 'default_branch' => $project->default_branch,
-            'smoke_workflow' => $workflow, 'pr_number' => $number, 'head_sha' => $head, 'token' => ['$secret' => 'github.dependency_merge', 'id' => $project->id]];
+            'smoke_workflow' => $workflow, 'pr_number' => $number, 'head_sha' => $head];
     }
 
     /** @phpstan-assert true $condition */

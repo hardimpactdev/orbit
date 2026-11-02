@@ -1,9 +1,8 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { MergeGitHub } from "./policy.ts";
+import { MergeEvidence } from "./policy.ts";
 import { type RecordValue } from "./contents.ts";
 import {
   fixtureInput,
-  fixtureTokens,
   head,
   policyFixture,
   publicPr,
@@ -14,36 +13,15 @@ class Fixture {
   calls: string[] = [];
   fresh: RecordValue | undefined;
   reads = 0;
-  request: typeof fetch = async (url, init) => {
-    await Promise.resolve();
-    const path = String(url).replace("https://api.github.com", "");
-    this.calls.push(path);
-    const token = path.includes("/actions/")
-      ? fixtureTokens.actions_token
-      : path.includes("/check-runs")
-      ? fixtureTokens.checks_token
-      : path.includes("/contents/")
-      ? fixtureTokens.read_token
-      : fixtureTokens.write_token;
-    assertEquals(
-      (init?.headers as Record<string, string>).Authorization,
-      `Bearer ${token}`,
-    );
-    assertEquals(init?.redirect, "error");
-    if (
-      path === "/repos/acme/widgets/pulls/3" && ++this.reads > 1 && this.fresh
-    ) return Response.json(this.fresh);
-    if (!(path in this.rows)) throw new Error("Unexpected endpoint");
-    return Response.json(this.rows[path]);
-  };
   async run() {
-    const github = new MergeGitHub(fixtureInput, fixtureTokens, this.request);
-    await github.policy(await github.pr());
+    const evidence = new MergeEvidence(fixtureInput, this.rows);
+    await evidence.policy(await evidence.pr());
   }
   workflows() {
-    return (this.rows["/repos/acme/widgets/actions/workflows?per_page=100"] as {
-      workflows: RecordValue[];
-    }).workflows;
+    return (this
+      .rows["/repos/acme/widgets/actions/workflows?per_page=100"] as {
+        workflows: RecordValue[];
+      }).workflows;
   }
   runs() {
     return (this
@@ -61,7 +39,7 @@ class Fixture {
 Deno.test("fresh policy reads repository/content/default branch and exact workflow suites", async () => {
   const f = new Fixture();
   await f.run();
-  assertEquals(f.reads, 2);
+  assertEquals(f.pr.head, publicPr().head);
 });
 for (
   const change of [
@@ -90,7 +68,6 @@ for (
     "checksCount",
     "checksDuplicate",
     "staleCheckSuite",
-    "postEvidenceHead",
     "truncatedContent",
     "badBase64",
     "wrongContentPath",
@@ -109,7 +86,8 @@ for (
     if (change === "filesCount") f.pr.changed_files = 2;
     if (change === "filesCapped") f.pr.changed_files = 3000;
     if (change === "filesMissingPage") {
-      delete f.rows["/repos/acme/widgets/pulls/3/files?per_page=100&page=2"];
+      delete f
+        .rows["/repos/acme/widgets/pulls/3/files?per_page=100&page=2"];
     }
     if (change === "filesDuplicate") {
       f.pr.changed_files = 2;
@@ -144,7 +122,9 @@ for (
     if (change === "smokeSuite") f.checks()[1].check_suite = { id: 1 };
     if (change === "actionsPending") f.runs()[0].status = "in_progress";
     if (change === "actionsFailed") f.runs()[0].conclusion = "failure";
-    if (change === "actionsWrongHead") f.runs()[0].head_sha = "c".repeat(40);
+    if (change === "actionsWrongHead") {
+      f.runs()[0].head_sha = "c".repeat(40);
+    }
     if (change === "checkApp") f.checks()[0].app = { slug: "foreign-app" };
     if (change === "checkHead") f.checks()[0].head_sha = "c".repeat(40);
     if (change === "checkFailed") f.checks()[0].conclusion = "failure";
@@ -155,10 +135,8 @@ for (
       ] as RecordValue).total_count = 3;
     }
     if (change === "checksDuplicate") f.checks()[1].id = f.checks()[0].id;
-    if (change === "staleCheckSuite") f.checks()[0].check_suite = { id: 999 };
-    if (change === "postEvidenceHead") {
-      f.fresh = structuredClone(f.pr);
-      (f.fresh.head as RecordValue).sha = "c".repeat(40);
+    if (change === "staleCheckSuite") {
+      f.checks()[0].check_suite = { id: 999 };
     }
     const content = f
       .rows[

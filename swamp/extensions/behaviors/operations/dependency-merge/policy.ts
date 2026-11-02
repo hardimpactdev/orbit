@@ -1,9 +1,7 @@
 import {
-  boundedJson,
-  canonical,
-  packagistVersion,
   record,
   type RecordValue,
+  type RegistryRead,
   validateContents,
 } from "./contents.ts";
 import { requirePolicy } from "./refusal.ts";
@@ -16,55 +14,28 @@ export type MergeInput = {
   head_sha: string;
   group_id: number;
 };
-export type Credentials = {
-  write_token: string;
-  read_token: string;
-  checks_token: string;
-  actions_token: string;
-};
 const sha = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
 const integer = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-export class MergeGitHub {
+/** Pure policy over native CLI observations; no credentials or effects. */
+export class MergeEvidence {
   readonly path: string;
   constructor(
     readonly input: MergeInput,
-    private credentials: Credentials,
-    private request: typeof fetch = fetch,
-    private signal?: AbortSignal,
+    private observations: Record<string, unknown>,
+    private registry: RegistryRead = async () => {
+      throw new Error("dependency_merge.packagist_unavailable");
+    },
   ) {
     this.path = `/repos/${input.repository}`;
   }
-  async call(
-    path: string,
-    scope: keyof Credentials = "write_token",
-    method = "GET",
-    body?: RecordValue,
-  ): Promise<Response> {
-    requirePolicy(path.startsWith(`${this.path}/`) || path === this.path);
-    return await this.request(`https://api.github.com${path}`, {
-      method,
-      redirect: "error",
-      signal: this.signal
-        ? AbortSignal.any([this.signal, AbortSignal.timeout(30000)])
-        : AbortSignal.timeout(30000),
-      headers: {
-        Authorization: `Bearer ${this.credentials[scope]}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  }
-  async json(
-    path: string,
-    scope: keyof Credentials = "write_token",
-  ): Promise<unknown> {
-    const response = await this.call(path, scope);
-    requirePolicy(response.ok, "dependency_merge.checks_unreadable");
-    return await boundedJson(response);
+  async json(path: string, _scope?: string): Promise<unknown> {
+    requirePolicy(
+      Object.hasOwn(this.observations, path),
+      "dependency_merge.checks_unreadable",
+    );
+    return this.observations[path];
   }
   async pr(): Promise<RecordValue> {
     const pr = record(
@@ -72,7 +43,8 @@ export class MergeGitHub {
     );
     const head = record(pr.head), base = record(pr.base);
     requirePolicy(
-      pr.number === this.input.pr_number && head.sha === this.input.head_sha &&
+      pr.number === this.input.pr_number &&
+        head.sha === this.input.head_sha &&
         head.ref === `task-${this.input.group_id}` &&
         record(head.repo).full_name === this.input.repository &&
         record(base.repo).full_name === this.input.repository &&
@@ -84,24 +56,16 @@ export class MergeGitHub {
       "dependency_merge.pr_changed",
     );
     if (pr.merged) {
-      requirePolicy(sha(pr.merge_commit_sha), "dependency_merge.pr_changed");
+      requirePolicy(
+        sha(pr.merge_commit_sha),
+        "dependency_merge.pr_changed",
+      );
     }
     return pr;
   }
   async policy(pr: RecordValue): Promise<void> {
-    const repo = record(await this.json(this.path));
-    requirePolicy(
-      repo.default_branch === this.input.default_branch &&
-        repo.archived === false && repo.allow_squash_merge === true,
-      "dependency_merge.default_branch_changed",
-    );
-    requirePolicy(
-      pr.state === "open" && pr.draft === false && pr.mergeable === true &&
-        ["clean", "has_hooks"].includes(String(pr.mergeable_state)),
-      "dependency_merge.pr_not_ready",
-    );
-    const base = record(pr.base).sha;
-    requirePolicy(sha(base), "dependency_merge.pr_changed");
+    await this.readiness(pr);
+    const base = record(pr.base).sha as string;
     for (const path of await this.files(pr)) {
       const head = await this.content(path, this.input.head_sha),
         before = await this.content(path, base);
@@ -116,29 +80,26 @@ export class MergeGitHub {
         head,
         before,
         manifest,
-        (name, version) =>
-          packagistVersion(name, version, this.request, this.signal),
+        this.registry,
       );
     }
     await this.checks();
-    const fresh = await this.pr();
-    for (
-      const field of [
-        "head",
-        "base",
-        "state",
-        "draft",
-        "merged",
-        "mergeable",
-        "mergeable_state",
-        "changed_files",
-      ]
-    ) {
-      requirePolicy(
-        canonical(fresh[field]) === canonical(pr[field]),
-        "dependency_merge.pr_changed",
-      );
-    }
+  }
+  async readiness(pr: RecordValue): Promise<void> {
+    const repo = record(await this.json(this.path));
+    requirePolicy(
+      repo.default_branch === this.input.default_branch &&
+        repo.archived === false && repo.allow_squash_merge === true,
+      "dependency_merge.default_branch_changed",
+    );
+    requirePolicy(
+      pr.state === "open" && pr.draft === false &&
+        pr.mergeable === true &&
+        ["clean", "has_hooks"].includes(String(pr.mergeable_state)),
+      "dependency_merge.pr_not_ready",
+    );
+    const base = record(pr.base).sha;
+    requirePolicy(sha(base), "dependency_merge.pr_changed");
   }
   async files(pr: RecordValue): Promise<string[]> {
     const count = pr.changed_files;
@@ -215,8 +176,10 @@ export class MergeGitHub {
       ),
     );
     requirePolicy(
-      row.type === "file" && row.path === path && row.encoding === "base64" &&
-        typeof row.content === "string" && typeof row.size === "number" &&
+      row.type === "file" && row.path === path &&
+        row.encoding === "base64" &&
+        typeof row.content === "string" &&
+        typeof row.size === "number" &&
         Number.isSafeInteger(row.size) && row.size >= 0,
       "dependency_merge.contents_unreadable",
     );
@@ -237,7 +200,7 @@ export class MergeGitHub {
   async rows(
     path: string,
     field: string,
-    scope: keyof Credentials,
+    scope: string,
   ): Promise<RecordValue[]> {
     const response = record(await this.json(path, scope)),
       rows = response[field];
@@ -256,8 +219,13 @@ export class MergeGitHub {
     );
     const smoke: number[] = [];
     for (const row of workflows) {
-      requirePolicy(integer(row.id), "dependency_merge.checks_unreadable");
-      if (row.path === this.input.smoke_workflow && row.state === "active") {
+      requirePolicy(
+        integer(row.id),
+        "dependency_merge.checks_unreadable",
+      );
+      if (
+        row.path === this.input.smoke_workflow && row.state === "active"
+      ) {
         smoke.push(row.id);
       }
     }
@@ -270,7 +238,8 @@ export class MergeGitHub {
     const latest = new Map<number, RecordValue>();
     for (const row of runs) {
       requirePolicy(
-        row.head_sha === this.input.head_sha && row.event === "pull_request" &&
+        row.head_sha === this.input.head_sha &&
+          row.event === "pull_request" &&
           row.head_branch === `task-${this.input.group_id}` &&
           integer(row.id) && integer(row.workflow_id) &&
           integer(row.check_suite_id),
@@ -299,7 +268,8 @@ export class MergeGitHub {
       );
       requirePolicy(
         typeof data.total_count === "number" &&
-          Number.isSafeInteger(data.total_count) && data.total_count >= 0 &&
+          Number.isSafeInteger(data.total_count) &&
+          data.total_count >= 0 &&
           data.total_count < 3000 &&
           (count === undefined || count === data.total_count),
         "dependency_merge.checks_unreadable",
@@ -330,7 +300,8 @@ export class MergeGitHub {
       return selected.length > 0 &&
         selected.every((row) =>
           record(row.app).slug === "github-actions" &&
-          row.head_sha === this.input.head_sha && row.status === "completed" &&
+          row.head_sha === this.input.head_sha &&
+          row.status === "completed" &&
           row.conclusion === "success"
         );
     };
@@ -345,7 +316,8 @@ export class MergeGitHub {
         record(row.check_suite).id === run.check_suite_id
       );
       requirePolicy(
-        passed(suite, "smoke") || passed(suite, "Production smoke / smoke"),
+        passed(suite, "smoke") ||
+          passed(suite, "Production smoke / smoke"),
         "dependency_merge.smoke_not_passed",
       );
     }

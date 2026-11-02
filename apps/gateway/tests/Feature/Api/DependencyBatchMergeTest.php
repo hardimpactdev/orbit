@@ -5,7 +5,10 @@ declare(strict_types=1);
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
+use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Tasks\DependencyMergeProjection;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
@@ -29,7 +32,7 @@ beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture.fake']);
     $this->run = '3fc3ad54-423a-4b4b-8187-99514098426b';
     $this->socket = new FakeRoutePublicationSocket;
-    $this->socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-dependency-merge', 'runId' => $this->run]]];
+    $this->socket->reply = fn (array $message): array => $message['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-dependency-merge', 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $this->socket);
     $this->project = $this->fixture->instance->project;
     $this->project->update(['repository_url' => 'https://github.com/acme/widgets.git', 'type' => 'laravel-app']);
@@ -51,9 +54,12 @@ beforeEach(function (): void {
     $this->body = ['publish_operation_id' => $this->publish->id, 'head_sha' => $this->head];
     GitHubTestSupport::storeApp();
     $this->github = Mockery::mock(GitHubApi::class);
-    $this->github->shouldReceive('repositoryInstallation')->andReturn(123);
-    $this->github->shouldReceive('repositoryReadToken')->andReturn('fixture-contents');
-    $this->github->shouldReceive('repositoryChecksToken')->andReturn('fixture-checks');
+    $this->grants = [];
+    $this->github->shouldReceive('scopedRepositoryToken')->andReturnUsing(function ($credentials, GitHubTokenGrant $grant): GitHubAccessToken {
+        $this->grants[] = $grant;
+
+        return new GitHubAccessToken('synthetic-dependency-'.count($this->grants), now()->addHour()->toIso8601String());
+    });
     app()->instance(GitHubApi::class, $this->github);
     Http::preventStrayRequests();
     Http::fake([
@@ -62,11 +68,19 @@ beforeEach(function (): void {
     ]);
 });
 
-it('records and replays one keyed merge intent without GitHub work', function (): void {
+it('mints two exact repository grants once and records only vault descriptors', function (): void {
     $this->withHeader('Idempotency-Key', 'batch-merge')->postJson($this->url, $this->body)->assertAccepted()->assertJsonPath('data.kind', 'tasks.dependency_merge');
     $id = Operation::query()->where('kind', 'tasks.dependency_merge')->sole()->id;
     $this->postJson($this->url, $this->body)->assertAccepted()->assertJsonPath('data.id', $id);
-    expect(Operation::findOrFail($id)->input['token'])->toBe(['$secret' => 'github.dependency_merge', 'id' => $this->project->id]);
+    $operation = Operation::findOrFail($id);
+    expect($this->grants)->toHaveCount(2)
+        ->and($this->grants[0]->permissions)->toBe(['contents' => 'write', 'pull_requests' => 'write'])
+        ->and($this->grants[1]->permissions)->toBe(['contents' => 'read', 'pull_requests' => 'read', 'checks' => 'read', 'actions' => 'read'])
+        ->and($this->grants[0]->repository->owner)->toBe('acme')
+        ->and($this->grants[0]->repository->name)->toBe('widgets')
+        ->and($operation->input)->not->toHaveKey('token')
+        ->and($operation->input['execution_secrets'])->toHaveKeys(['read_token', 'write_token'])
+        ->and(json_encode($operation->toArray()))->not->toContain('synthetic-dependency-');
     Http::assertNothingSent();
 });
 
@@ -129,63 +143,30 @@ function dependencyMergeDirect(object $test): int
     return $id;
 }
 
-it('hydrates only the owned Project credential through the shared private reader', function (): void {
-    $id = dependencyMergeDirect($this);
-    $this->github->shouldReceive('repositorySquashToken')->once()->andReturn('fixture-write-secret');
-    $path = '/api/v1/direct-operations/'.$id;
-    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonMissingPath('data.input.token')
-        ->assertJsonPath('data.node_id', 209);
-    $this->getJson($path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.token', ['write_token' => 'fixture-write-secret', 'read_token' => 'fixture-contents', 'checks_token' => 'fixture-checks', 'actions_token' => 'fixture-actions']);
-    $operation = Operation::findOrFail($id);
-    expect($operation->state['swamp_run_id'])->toBe($this->run);
-    expect(json_encode($operation->toArray()))->not->toContain('fixture-write-secret');
-    Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
+it('refuses a busy group before minting tokens', function (): void {
+    Operation::create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $this->group->id,
+        'node_id' => 209, 'status' => 'running', 'input' => []]);
+    $this->withHeader('Idempotency-Key', 'busy')->postJson($this->url, $this->body)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect($this->grants)->toBe([]);
 });
 
-it('refuses changed local ownership before releasing private material', function (string $change): void {
+it('has no callback credential or result endpoint', function (): void {
     $id = dependencyMergeDirect($this);
-    $this->github->shouldNotReceive('repositorySquashToken');
-    match ($change) {
-        'disabled' => config(['dependency_merge.projects' => []]),
-        'policy' => config(['dependency_merge.projects.'.$this->project->id.'.smoke_workflow' => '.github/workflows/other.yml']),
-        'publication' => $this->publish->update(['status' => 'failed']),
-        'repository' => $this->project->update(['repository_url' => 'https://github.com/acme/foreign.git']),
-    };
-    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertConflict();
-    Http::assertNothingSent();
-})->with(['disabled', 'policy', 'publication', 'repository']);
+    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertUnprocessable();
+    $this->postJson('/api/v1/direct-operations/'.$id.'/result', [])->assertForbidden();
+});
 
-it('refuses a foreign secret owner Node or run before credential resolution', function (string $change): void {
+it('projects the native exact head receipt and bounded policy failure', function (): void {
     $id = dependencyMergeDirect($this);
-    $this->github->shouldNotReceive('repositorySquashToken');
     $operation = Operation::findOrFail($id);
-    if ($change === 'owner') {
-        $operation->update(['input' => [...$operation->input, 'token' => ['$secret' => 'github.dependency_merge', 'id' => $this->project->id + 1]]]);
-    } elseif ($change === 'node') {
-        $operation->update(['node_id' => $this->fixture->owner->id]);
-    }
-    $response = $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.($change === 'run' ? '04ca3c51-31cb-4a99-8408-78f49551fd03' : $this->run));
-    expect($response->status())->toBe(match ($change) {
-        'owner' => 422, 'node' => 403, 'run' => 409
-    });
-})->with(['owner', 'node', 'run']);
-
-it('records the native public result without repeating native policy and replays it', function (): void {
-    $id = dependencyMergeDirect($this);
-    $path = '/api/v1/direct-operations/'.$id.'/result';
-    $proof = ['merged' => true, 'head_sha' => str_repeat('c', 40), 'merge_sha' => str_repeat('b', 40)];
-    $body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => $proof, 'error_code' => null];
-    $this->postJson($path, $body)->assertOk()->assertJsonPath('data.result', $proof);
-    $this->postJson($path, $body)->assertOk()->assertJsonPath('data.status', 'succeeded');
-    $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])->postJson($this->url, $this->body)->assertAccepted()->assertJsonPath('data.id', $id);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-    $this->github->shouldNotReceive('repositorySquashToken');
-    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertConflict();
-    Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
+    $proof = ['merged' => true, 'head_sha' => $this->head, 'merge_sha' => str_repeat('b', 40)];
+    $projection = app(DependencyMergeProjection::class);
+    $projection->apply($operation, ['status' => 'succeeded', 'run_id' => $this->run, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['merge_receipt' => json_encode($proof)]]);
+    expect($operation->refresh()->result)->toBe($proof)->and($operation->status->value)->toBe('succeeded');
 });
 
 it('keeps one failed intent when the native start is refused', function (): void {
-    $this->socket->reply = fn (array $message): array => [['type' => 'error', 'id' => $message['id']]];
+    $this->socket->reply = fn (array $message): array => $message['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'error', 'id' => $message['id']]];
     $this->withHeader('Idempotency-Key', 'start-refused')->postJson($this->url, $this->body)
         ->assertServiceUnavailable()->assertJsonPath('error.code', 'swamp.start_refused');
     $operation = Operation::query()->where('kind', 'tasks.dependency_merge')->sole();
@@ -193,14 +174,6 @@ it('keeps one failed intent when the native start is refused', function (): void
         ->and($operation->state['swamp_run_id'] ?? null)->toBeNull();
     $this->postJson($this->url, $this->body)->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.status', 'failed');
     expect(Operation::query()->where('kind', 'tasks.dependency_merge')->count())->toBe(1)
-        ->and(array_column($this->socket->sent, 'type'))->toBe(['workflow.run']);
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'workflow.run']);
     Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
-});
-
-it('does not release private material before a native root is bound', function (): void {
-    $id = dependencyMergeDirect($this);
-    $operation = Operation::findOrFail($id);
-    $operation->update(['state' => array_diff_key($operation->state, ['swamp_run_id' => true])]);
-    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertConflict();
-    Http::assertNothingSent();
 });

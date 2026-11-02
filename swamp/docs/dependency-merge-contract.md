@@ -7,7 +7,7 @@ callback protocol does not.
 A merge needs the owning Project's enabled policy and exact repository, PR,
 head, default branch and configured smoke workflow. Require an open, non-draft,
 mergeable same-repository PR and complete paginated evidence for every changed
-file. Re-read the PR after checking evidence and refuse a changed head. An
+file. Use the admitted SHA on the squash PUT so a head that moves after evidence collection refuses the write. An
 already-merged exact head is an observation, not a reason to repeat the write.
 
 Every latest exact-head PR workflow must succeed, including `Required checks`.
@@ -27,7 +27,7 @@ not turn numeric ranges into tags or introduce a breaking registry constraint
 boundary. Refuse Composer dev/local/Git constraints and npm aliases.
 
 Verify Composer metadata and executable fields against fresh Packagist records
-and approved HTTPS registry/GitHub endpoints. Verify npm tarballs against exact
+and approved HTTPS registry/GitHub endpoints. Native CLI steps fetch metadata and content; TypeScript applies pure policy to their private replies. Verify npm tarballs against exact
 installed name/version and integrity. Refuse off-registry, local, Git and alias
 dependency edges. Packages must be reachable from the root manifest; JavaScript
 package names and Composer virtual providers must already exist in the base
@@ -39,3 +39,5 @@ boundary. Never forward them to registry reads or arbitrary endpoints. Native
 outputs retain the exact merged head and merge identity; an uncertain write
 needs observation before another mutation. This policy does not deploy or enable
 a Project.
+
+Admission freezes policy and lineage and mints two scoped tokens. Native cleanup revokes both and removes private replies on every outcome. A fresh request observes an already-merged exact head before another PUT; cleaned runs are not resumed.

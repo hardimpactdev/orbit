@@ -5,7 +5,7 @@ import {
 } from "jsr:@std/assert@1.0.19";
 import { stringify } from "jsr:@std/yaml@1.0.12";
 import {
-  packagistVersion,
+  packagistRecord,
   type RecordValue,
   strictJson,
   validateContents,
@@ -321,34 +321,12 @@ Deno.test("Composer attested transitive major is allowed while root major is unc
   );
 });
 Deno.test("P2 inheritance and unset expansion are applied to the selected version", async () => {
-  const value = await packagistVersion(
-    "acme/library",
-    "1.0.0",
-    () =>
-      Promise.resolve(
-        Response.json({
-          minified: "composer/2.0",
-          packages: {
-            "acme/library": [registryPackage("1.0.1", { bin: ["other"] }), {
-              version: "1.0.0",
-              bin: "__unset",
-            }],
-          },
-        }),
-      ),
-  );
+  const value = packagistRecord("acme/library", "1.0.0", {
+    minified: "composer/2.0", packages: { "acme/library": [registryPackage("1.0.1", {bin: ["other"]}), {version: "1.0.0", bin: "__unset"}] },
+  });
   assertEquals(value.bin, undefined);
   assertEquals(value.version, "1.0.0");
-  await assertRejects(() =>
-    packagistVersion(
-      "acme/library",
-      "2.0.0",
-      () =>
-        Promise.resolve(
-          Response.json({ packages: { "acme/library": [registryPackage()] } }),
-        ),
-    )
-  );
+  await assertRejects(async () => packagistRecord("acme/library", "2.0.0", {packages: {"acme/library": [registryPackage()]}}));
 });
 Deno.test("unsupported Yarn and binary Bun refuse the ordinary merge path", async () => {
   for (

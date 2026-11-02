@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 1 (tokens minted at admission, vault; no private-material callback) and R2-R3. docs/reference/tasks.md#dependency-batch-squash-admission.
-  %% Tightened: flow-tighten 2026-11-02, rule 6 (the PR, its checks and its files in one read step).
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02; native command boundaries remain visible, independent reads and content requests fan out.
+  %% status: migrated
   %% command: none · Services API (tasks-dependency-merge)
   %% kind: tasks.dependency_merge
   autonumber
@@ -27,8 +27,8 @@ sequenceDiagram
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> What it does:
   %%> - mints a write token with only `contents: write` and `pull_requests: write`, never `workflows: write`
-  %%> - mints a read token with `contents`, `checks` and `actions` read
-  %%> - pushes both to the vault as `dependency-merge-5166-write` and `-read` after commit (R3); no step fetches them from the Gateway
+  %%> - mints a read token with `contents`, `pull_requests`, `checks` and `actions` read
+  %%> - pushes both to the vault as `dependency-merge-write-<uuid>` and `dependency-merge-read-<uuid>` after commit (R3); no step fetches them from the Gateway
   %%> Result:
   %%> - task #5166 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-dependency-merge
@@ -42,32 +42,44 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller follows the task with `operation:show`
-  SW->>GH: Read the PR<br/>checks · paged files · manifests
+  Note over SW: Create merge scratch
   %%> What it does:
-  %%> - reads the PR fresh, its checks on the exact head, and every changed file, with the read token from `vault.get`
-  %%> - only root `composer.json`, `composer.lock`, `package.json` and the npm, pnpm and Bun text lock files may change; Yarn and `bun.lockb` go the ordinary PR path
+  %%> - creates a private temporary directory for native replies; no repository content enters run data
+  SW->>GH: Read the PR
+  Note over SW: Inspect the PR
+  %%> Recovery:
+  %%> - an already-merged exact head skips metadata, contents, registry reads and the PUT; its merge SHA is kept
+  SW->>GH: Read repository settings
+  %%> Parallel:
+  %%> - repository settings, changed files, workflow definitions, exact-head workflow runs and check runs are independent native reads
+  SW->>GH: Read changed files
+  %%> What it does:
+  %%> - follows all Link pages; count, duplicates and the GitHub truncation boundary are checked before reading contents
+  SW->>GH: Read workflow definitions
+  SW->>GH: Read head workflow runs
+  SW->>GH: Read head check runs
+  Note over SW: Plan exact contents
+  SW->>GH: Read exact contents
+  %%> What it does:
+  %%> - reads every allowed changed file at base and head, and its root manifest, in parallel
+  Note over SW: Plan registry reads
+  SW->>GH: Read registry records
+  Note over SW: Check the dependency diff
   %%> Refuses:
-  %%> - a PR that is not open, is a draft, comes from another repository, or targets another branch
-  %%> - `Required checks` or `Production smoke / smoke` missing, pending, skipped or failed on the exact head
-  %%> - incomplete or capped file evidence, or any other file
-  %%> Why one step:
-  %%> - all three read PR #57 and fail the same way
-  Note over SW: Check the dependency diff<br/>versions only · lock sources
+  %%> - changes outside existing dependency versions, breaking root ranges, untrusted lock sources or unreachable packages
+  %%> - exact-head Required checks or the configured production smoke suite missing, pending or failed
+  SW->>GH: Squash on expected head
   %%> What it does:
-  %%> - compares base and head manifests: only versions of existing dependencies may differ
-  %%> - checks every locked package against Packagist or the npm registry, and that it is reachable from the root manifest
-  %%> Refuses:
-  %%> - a breaking semver bump: `dependency_merge.major_bump`; the PR stays open for hand-testing
-  SW->>GH: Squash on expected head<br/>PUT pulls/57/merge · sha
-  %%> What it does:
-  %%> - squash-merges PR #57 only if its head still equals the expected head, with the write token
-  %%> Lost reply:
-  %%> - the next attempt reads PR #57 first; a merged exact head returns its merge SHA without another write
-  SW->>GH: Revoke the tokens<br/>DELETE /installation/token
-  %%> What it does:
-  %%> - revokes both tokens, on success and on failure
-  %%> If it fails:
-  %%> - the run still reports its result; the tokens expire within one hour
+  %%> - one squash PUT with the admitted sha; a moved head refuses without merging
+  Note over SW: Read merge result
+  SW->>GH: Revoke the read token
+  %%> When:
+  %%> - always, on success and failure; best effort because both tokens expire within one hour
+  SW->>GH: Revoke the write token
+  %%> When:
+  %%> - always, on success and failure; best effort because both tokens expire within one hour
+  Note over SW: Remove merge scratch
+  Note over SW: Confirm the merge
   alt merged
     GH-->>SW: PR #57 merged · sha
     %%> Returns:

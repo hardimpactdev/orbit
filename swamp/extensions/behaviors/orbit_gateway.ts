@@ -7,10 +7,6 @@ import {
 } from "./dependency_scanner.ts";
 import { queryWorkerData } from "./_lib/worker_query.ts";
 import {
-    MergeConfiguration,
-    mergeConfigurationMethod,
-} from "./operations/dependency-merge/configuration.ts";
-import {
     Admission as DependencyMergeAdmission,
     admitBatchMerge,
 } from "./operations/dependency-merge/admission.ts";
@@ -172,16 +168,10 @@ export function curlHttp(
 
 export const behavior = {
     type: "@nckrtl/orbit-gateway",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     globalArguments: GlobalArgsSchema,
     resources: {
         ...scanResources,
-        dependencyMergeConfiguration: {
-            description: "Fresh private dependency merge switch",
-            schema: MergeConfiguration,
-            lifetime: "infinite",
-            garbageCollection: 1,
-        },
         dependencyMergeAdmission: {
             description: "Disabled-by-default exact-head merge admission",
             schema: DependencyMergeAdmission,
@@ -277,7 +267,6 @@ export const behavior = {
         },
     },
     methods: {
-        dependency_merge_configuration: mergeConfigurationMethod,
         scan: scanMethod,
         begin_scan: beginScanMethod,
         finish_scan: finishScanMethod,

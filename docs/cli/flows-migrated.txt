@@ -60,3 +60,4 @@ tasks.check
 task_vm.resume
 conn.gateway_sessions_revoke
 task_vm.upcloud_image_build
+tasks.dependency_merge

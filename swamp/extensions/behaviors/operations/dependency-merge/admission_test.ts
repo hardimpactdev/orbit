@@ -2,10 +2,6 @@ import { recordQuery } from "../../../../tests/fixtures/worker_query.ts";
 import { batchReviewWait } from "./review.ts";
 import type { Job } from "../../_lib/gateway_stage.ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import {
-  MergeConfiguration,
-  mergeConfigurationMethod,
-} from "./configuration.ts";
 import { admitBatchMerge } from "./admission.ts";
 import { DependencyProjectSchema } from "../../_lib/dependency_project_schema.ts";
 const head = "a".repeat(40);
@@ -217,42 +213,6 @@ for (
     assertEquals(f.posts, []);
   });
 }
-
-Deno.test("execution configuration refresh runs the private extension again", async () => {
-  const f = admissionFixture();
-  let enabled = true, reads = 0;
-  const ctx = {
-    globalArgs: {
-      dependencyProjects: [],
-      projectExtensions: [{ projectId: 20, type: "@nckrtl/project-widgets" }],
-    },
-    invokeModel: () => {
-      reads++;
-      return Promise.resolve({ ok: true });
-    },
-    queryData: recordQuery(() =>
-      Promise.resolve([{
-        schema: 3,
-        ...f.project,
-        dependencyAutoMerge: enabled,
-      }])
-    ),
-    writeResource: (
-      _spec: string,
-      _name: string,
-      value: Record<string, unknown>,
-    ) => {
-      f.stored.set("config", value as never);
-      return Promise.resolve({ name: "config" });
-    },
-  };
-  await mergeConfigurationMethod.execute({ projectId: 20 }, ctx);
-  assertEquals(MergeConfiguration.parse(f.stored.get("config")).enabled, true);
-  enabled = false;
-  await mergeConfigurationMethod.execute({ projectId: 20 }, ctx);
-  assertEquals(MergeConfiguration.parse(f.stored.get("config")).enabled, false);
-  assertEquals(reads, 2);
-});
 
 Deno.test("major batches stay open without posting merge admission", async () => {
   const f = admissionFixture();

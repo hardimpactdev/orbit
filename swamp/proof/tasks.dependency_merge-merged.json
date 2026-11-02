@@ -1,0 +1,101 @@
+{
+  "workflow": "operation-dependency-merge",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "python3",
+      "-I",
+      "swamp/proof/tasks.dependency_merge/github_fixture.py",
+      "setup",
+      "merged",
+      "${node.target}",
+      "${node.operator}",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "task-groups/${secret.group}/dependency-merge",
+    "body": {
+      "publish_operation_id": "${secret.publish}",
+      "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "parity": [
+    "swamp/proof/tasks.dependency_merge/github_fixture.py",
+    "parity"
+  ],
+  "phases": [
+    {
+      "name": "Create merge scratch",
+      "job": "merge",
+      "step": "Create merge scratch",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Read the PR",
+      "job": "merge",
+      "step": "Read the PR",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Inspect the PR",
+      "job": "merge",
+      "step": "Inspect the PR",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Plan exact contents",
+      "job": "merge",
+      "step": "Plan exact contents",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Plan registry reads",
+      "job": "registry-plan",
+      "step": "Plan registry reads",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Check the dependency diff",
+      "job": "squash",
+      "step": "Check the dependency diff",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Read merge result",
+      "job": "squash",
+      "step": "Read merge result",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Revoke the read token",
+      "job": "cleanup",
+      "step": "Revoke the read token",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Revoke the write token",
+      "job": "cleanup",
+      "step": "Revoke the write token",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Remove merge scratch",
+      "job": "cleanup",
+      "step": "Remove merge scratch",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Confirm the merge",
+      "job": "cleanup",
+      "step": "Confirm the merge",
+      "budget_seconds": 120
+    }
+  ]
+}

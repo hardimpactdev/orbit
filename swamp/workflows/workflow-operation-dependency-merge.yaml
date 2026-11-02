@@ -1,26 +1,550 @@
 id: 92c89a8c-6487-42f5-a70e-d67be3921b28
 name: operation-dependency-merge
-description: Squash one admitted dependency batch on the admitted Swamp configuration Node.
+description: Squash one admitted dependency batch with native GitHub commands and pure dependency evidence.
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [tasks.dependency_merge] }
-  required: [operation_id, node_id, kind]
-vaults: []
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, enum: [tasks.dependency_merge]}
+    intent:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+        project_id:
+          type: integer
+          minimum: 1
+        group_id:
+          type: integer
+          minimum: 1
+        publish_operation_id:
+          type: integer
+          minimum: 1
+        pr_number:
+          type: integer
+          minimum: 1
+        repository:
+          type: string
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+        default_branch:
+          type: string
+          minLength: 1
+        smoke_workflow:
+          type: string
+          minLength: 1
+        head_sha:
+          type: string
+          minLength: 1
+          pattern: ^[a-f0-9]{40}$
+      required:
+      - node_id
+      - project_id
+      - group_id
+      - publish_operation_id
+      - pr_number
+      - repository
+      - default_branch
+      - smoke_workflow
+      - head_sha
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        read_token: &id001
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^dependency-merge-(read|write)-[a-f0-9-]{36}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        write_token: *id001
+      required:
+      - read_token
+      - write_token
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+vaults:
+- orbit-control-inputs
 jobs:
-  - name: squash
-    labels: {node: '${{ string(inputs.node_id) }}'}
-    steps:
-      - name: squash
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/operation-dependency-merge"
-          behaviorName: operation-dependency-merge
-          methodName: execute
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: merge
+  labels:
+    role: swamp
+  steps:
+  - name: Create merge scratch
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-scratch" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 mktemp -d /tmp/orbit-dependency-merge-XXXXXXXX
+    writes: true
+  - name: Read the PR
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-pr" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api  "$ORBIT_PATH" >"$ORBIT_DIRECTORY/pr.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Create merge scratch
+      condition:
+        type: succeeded
+  - name: Inspect the PR
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/dependency-merge-data'
+      behaviorName: ${{ "dependency-merge-inspect" }}
+      methodName: inspect
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Read the PR
+      condition:
+        type: succeeded
+  - name: Read repository settings
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-repository" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api  "$ORBIT_PATH" >"$ORBIT_DIRECTORY/repository.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Inspect the PR
+      condition:
+        type: succeeded
+    guard: ${{ steps["Inspect the PR"].outputs.merged }}
+  - name: Read changed files
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-files" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api --paginate --slurp "$ORBIT_PATH" >"$ORBIT_DIRECTORY/files.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) + "/files?per_page=100" }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Inspect the PR
+      condition:
+        type: succeeded
+    guard: ${{ steps["Inspect the PR"].outputs.merged }}
+  - name: Read workflow definitions
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-workflows" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api  "$ORBIT_PATH" >"$ORBIT_DIRECTORY/workflows.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/actions/workflows?per_page=100" }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Inspect the PR
+      condition:
+        type: succeeded
+    guard: ${{ steps["Inspect the PR"].outputs.merged }}
+  - name: Read head workflow runs
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-runs" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api  "$ORBIT_PATH" >"$ORBIT_DIRECTORY/runs.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/actions/runs?head_sha=" + inputs.intent.head_sha + "&event=pull_request&per_page=100" }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Inspect the PR
+      condition:
+        type: succeeded
+    guard: ${{ steps["Inspect the PR"].outputs.merged }}
+  - name: Read head check runs
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-checks" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api --paginate --slurp "$ORBIT_PATH" >"$ORBIT_DIRECTORY/checks.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/commits/" + inputs.intent.head_sha + "/check-runs?per_page=100" }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Inspect the PR
+      condition:
+        type: succeeded
+    guard: ${{ steps["Inspect the PR"].outputs.merged }}
+  - name: Plan exact contents
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/dependency-merge-data'
+      behaviorName: ${{ "dependency-merge-plan" }}
+      methodName: plan
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Read repository settings
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Read changed files
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Read workflow definitions
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Read head workflow runs
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Read head check runs
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+- name: contents
+  labels:
+    role: swamp
+  dependsOn:
+  - job: merge
+    condition:
+      type: succeeded
+  steps:
+  - name: Read exact contents
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-content-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api  "$ORBIT_PATH" >"$ORBIT_DIRECTORY/content-$ORBIT_INDEX.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ self.item.path }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+          ORBIT_INDEX: ${{ string(self._index) }}
+    forEach:
+      item: item
+      in: ${{ steps["Plan exact contents"].outputs.requests }}
+- name: registry-plan
+  labels:
+    role: swamp
+  dependsOn:
+  - job: contents
+    condition:
+      type: succeeded
+  steps:
+  - name: Plan registry reads
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/dependency-merge-data'
+      behaviorName: ${{ "dependency-merge-registry" }}
+      methodName: registry
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+- name: registry
+  labels:
+    role: swamp
+  dependsOn:
+  - job: registry-plan
+    condition:
+      type: succeeded
+  steps:
+  - name: Read registry records
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-registry-read-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: timeout 20 curl --fail --silent --max-time 15 --max-filesize 8388608 --output "$ORBIT_DIRECTORY/registry-$ORBIT_INDEX.json" "$ORBIT_URL" 2>/dev/null
+        env:
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+          ORBIT_INDEX: ${{ string(self._index) }}
+          ORBIT_URL: ${{ self.item.url }}
+    forEach:
+      item: item
+      in: ${{ steps["Plan registry reads"].outputs.requests }}
+- name: squash
+  labels:
+    role: swamp
+  dependsOn:
+  - job: registry
+    condition:
+      type: succeeded
+  steps:
+  - name: Check the dependency diff
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/dependency-merge-data'
+      behaviorName: ${{ "dependency-merge-validate" }}
+      methodName: validate
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+  - name: Squash on expected head
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-put" }}
+      methodName: execute
+      inputs:
+        run: timeout 60 gh api --method PUT --input "$ORBIT_DIRECTORY/merge-body.json" "$ORBIT_PATH" >"$ORBIT_DIRECTORY/merge.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls/" + string(inputs.intent.pr_number) + "/merge" }}
+          ORBIT_DIRECTORY: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+        ignoreExitCode: true
+    dependsOn:
+    - step: Check the dependency diff
+      condition:
+        type: succeeded
+    writes: true
+    guard: ${{ steps["Inspect the PR"].outputs.merged }}
+  - name: Read merge result
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/dependency-merge-data'
+      behaviorName: ${{ "dependency-merge-merged" }}
+      methodName: merged
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create merge scratch"].outputs.stdout.trim() }}
+        exit_code: '${{ steps["Inspect the PR"].outputs.merged ? 0 : steps["Squash on expected head"].outputs.exitCode }}'
+    dependsOn:
+    - step: Squash on expected head
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Check the dependency diff
+      condition:
+        type: succeeded
+- name: cleanup
+  labels:
+    role: swamp
+  dependsOn:
+  - job: merge
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: contents
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: registry-plan
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: registry
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: squash
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  steps:
+  - name: Revoke the read token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-revoke-read" }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+    writes: true
+    allowFailure: true
+  - name: Revoke the write token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-revoke-write" }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method DELETE installation/token >/dev/null 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.write_token.vault, inputs.execution_secrets.write_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+    writes: true
+    allowFailure: true
+  - name: Remove merge scratch
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "dependency-merge-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_DIRECTORY" "$ORBIT_GH_DIRECTORY"
+        env:
+          ORBIT_DIRECTORY: '${{ "Create merge scratch" in steps && steps["Create merge scratch"].status == "succeeded" ? steps["Create merge scratch"].outputs.stdout.trim()
+            : "" }}'
+          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
+    writes: true
+  - name: Confirm the merge
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: assert
+      expr: '"Read merge result" in steps && steps["Read merge result"].status == "succeeded" && steps["Remove merge scratch"].status == "succeeded"'
+      message: Dependency merge or private scratch cleanup failed.
+      severity: high
+    dependsOn:
+    - step: Revoke the read token
+      condition:
+        type: completed
+    - step: Revoke the write token
+      condition:
+        type: completed
+    - step: Remove merge scratch
+      condition:
+        type: completed

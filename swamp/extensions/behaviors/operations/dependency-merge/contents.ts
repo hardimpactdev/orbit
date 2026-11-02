@@ -785,30 +785,10 @@ export async function validateContents(
 }
 
 /** Fresh P2 metadata, including Composer's inherited minified records. */
-export async function packagistVersion(
-  key: string,
-  version: string,
-  request: typeof fetch,
-  signal?: AbortSignal,
-): Promise<RecordValue> {
+export function packagistRecord(key: string, version: string, raw: unknown): RecordValue {
   name(key, true);
   exactVersion(version);
-  let body: RecordValue;
-  try {
-    const response = await request(
-      `https://repo.packagist.org/p2/${key}.json`,
-      {
-        redirect: "error",
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(10000)])
-          : AbortSignal.timeout(10000),
-      },
-    );
-    requirePolicy(response.ok, "dependency_merge.packagist_unavailable");
-    body = record(await boundedJson(response, 8 * 1024 * 1024));
-  } catch {
-    throw new Refusal("dependency_merge.packagist_unavailable");
-  }
+  const body = record(raw);
   requirePolicy(
     body.minified === undefined || body.minified === "composer/2.0",
     "dependency_merge.packagist_unavailable",
@@ -828,34 +808,4 @@ export async function packagistVersion(
     ) return expanded;
   }
   throw new Refusal("dependency_merge.contents_forbidden");
-}
-export async function boundedJson(
-  response: Response,
-  limit = 8 * 1024 * 1024,
-): Promise<unknown> {
-  requirePolicy(response.body, "dependency_merge.contents_unreadable");
-  const reader = response.body.getReader(), chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      requirePolicy(size <= limit, "dependency_merge.contents_unreadable");
-      chunks.push(value);
-    }
-  } finally {
-    await reader.cancel();
-  }
-  const joined = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(joined));
-  } catch {
-    throw new Refusal("dependency_merge.contents_unreadable");
-  }
 }

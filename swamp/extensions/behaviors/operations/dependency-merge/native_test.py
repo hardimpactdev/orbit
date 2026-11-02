@@ -1,94 +1,119 @@
-"""Same-root native resume with shared harness; all GitHub effects are disposable fixtures."""
+"""Run the unchanged DAG in pinned Swamp with a disposable gh command boundary."""
+import importlib.util
 import json
-from pathlib import Path
+import os
 import secrets
+from pathlib import Path
+import shutil
 import sys
 import unittest
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT / "tests"))
+sys.path.insert(0, str(ROOT / 'tests'))
 from native_harness import NativeTestCase
+spec = importlib.util.spec_from_file_location('evidence', ROOT / 'proof/tasks.dependency_merge/evidence.py')
+fixture = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fixture)
 
 
 class DependencyMergeNativeTest(NativeTestCase):
-    def prepare(self, boundary):
-        self.copy_behaviors("automatic-deploy", "operations/_lib", "operations/dependency-merge", "_lib")
-        (self.repo / "extensions/behaviors/native_host_method.ts").write_text((ROOT / "extensions/behaviors/native_host_method.ts").read_text())
-        self.secrets = (secrets.token_urlsafe(32),)
-        self.native_env["DEPENDENCY_MERGE_TEST_TOKEN"] = self.secrets[0]
-        family = self.repo / "extensions/behaviors/operations/dependency-merge"
-        source = family / "mod.ts"
-        text = source.read_text().replace('import { callWorkerModel } from "../../_lib/worker_model.ts";',
-            'import { fixtureHttp, fixtureGithub, fixtureQuery as queryWorkerData, fixtureConfiguration as callWorkerModel } from "../../_test/merge.ts";')
-        source.write_text(text.replace('import { queryWorkerData } from "../../_lib/worker_query.ts";', "")
-                          .replace("...dependencyMerge()", "...dependencyMerge(() => fixtureHttp, fixtureGithub)"))
-        fixture = self.repo / "extensions/behaviors/_test/merge.ts"
-        fixture.parent.mkdir()
-        fixture.write_text((ROOT / "extensions/behaviors/operations/dependency-merge/native_fixture.ts").read_text()
-                           .replace('"../../automatic-deploy/gateway.ts"', '"../automatic-deploy/gateway.ts"')
-                           .replace('"./policy_fixture.ts"', '"../operations/dependency-merge/policy_fixture.ts"'))
-        workflow = ROOT / "workflows/workflow-operation-dependency-merge.yaml"
-        # Scratch dispatch is local; production retains exact target AND Node label.
-        (self.repo / "workflows" / workflow.name).write_text("\n".join(
-            line for line in workflow.read_text().splitlines() if not line.strip().startswith(("target:", "labels:"))) + "\n")
-        head = "a" * 40
-        self.state = self.repo / "native-merge.json"
-        self.state.write_text(json.dumps({"operation": {"id": 7, "kind": "tasks.dependency_merge", "node_id": 209,
-            "status": "queued", "result": None, "cancel_requested": False,
-            "input": {"node_id": 209, "project_id": 20, "group_id": 91, "publish_operation_id": 8,
-            "repository": "acme/widgets", "default_branch": "main", "smoke_workflow": ".github/workflows/production-smoke.yml", "pr_number": 3, "head_sha": head}},
-            "pr": {"number": 3, "state": "open", "merged": False, "merge_commit_sha": None,
-            "head": {"sha": head, "ref": "task-91", "repo": {"full_name": "acme/widgets"}},
-            "base": {"ref": "main", "repo": {"full_name": "acme/widgets"}}},
-            "calls": [], "writes": 0, boundary: True}))
+    native_timeout = 120
 
-    def recover(self, boundary):
-        self.prepare(boundary)
-        self.cli("workflow", "validate", "operation-dependency-merge")
-        first = self.cli("workflow", "run", "operation-dependency-merge", "--input",
-                         json.dumps({"operation_id": 7, "node_id": 209, "kind": "tasks.dependency_merge"}), success=False)
-        run_id = json.JSONDecoder().raw_decode(first.stdout.lstrip())[0]["id"]
-        self.assertEqual(json.loads(self.state.read_text())["writes"], 1, first.stdout + first.stderr)
-        state = json.loads(self.state.read_text())
-        state["disabled"] = True
-        self.state.write_text(json.dumps(state))
-        self.cli("workflow", "resume", "operation-dependency-merge", "--run", run_id)
-        final = json.loads(self.state.read_text())
-        self.assertEqual(final["writes"], 1)
-        self.assertEqual(final["refreshes"], 2)
-        self.assertEqual(final["operation"]["status"], "succeeded")
-        self.assertFalse(any("operation-executor" in call for call in final["calls"]))
+    def setUp(self):
+        super().setUp()
+        self.copy_behaviors('operations/dependency-merge')
+        lib=self.repo / 'extensions/behaviors/_lib'
+        lib.mkdir()
+        shutil.copy(ROOT / 'extensions/behaviors/_lib/versions.ts',lib)
+        self.state = self.repo / 'github.json'
+        self.state.write_text(json.dumps({'rows': fixture.evidence(), 'calls': [], 'lost_reply': False}))
+        tools = self.repo / 'tools'
+        tools.mkdir()
+        gh = tools / 'gh'
+        gh.write_text('#!' + sys.executable + '\n' + '''import json,os,sys
+from pathlib import Path
+path=Path(os.environ['FIXTURE_STATE']);data=json.loads(path.read_text());args=sys.argv[1:]
+assert args[0]=='api' and os.environ['GH_TOKEN'] not in ' '.join(args)
+method='GET';endpoint=None;i=1
+while i<len(args):
+    if args[i]=='--method':method=args[i+1];i+=2
+    elif args[i]=='--input':
+        body=json.loads(Path(args[i+1]).read_text());assert body=={'sha':'a'*40,'merge_method':'squash'};i+=2
+    elif args[i].startswith('--'):i+=1
+    else:endpoint='/'+args[i].lstrip('/');i+=1
+data['calls'].append([method,endpoint]);path.write_text(json.dumps(data))
+if method=='DELETE':raise SystemExit(0)
+if method=='PUT':
+    assert os.environ['GH_TOKEN']==os.environ['FIXTURE_WRITE']
+    pr=data['rows']['/repos/hardimpactdev/orbit/pulls/3'];pr['merged']=True;pr['merge_commit_sha']='c'*40
+    path.write_text(json.dumps(data))
+    if data['lost_reply']:raise SystemExit(1)
+    print(json.dumps({'merged':True,'sha':'c'*40}))
+else:
+    assert os.environ['GH_TOKEN']==os.environ['FIXTURE_READ']
+    print(json.dumps(data['rows'][endpoint]))
+''')
+        gh.chmod(0o755)
+        self.native_env.update({'PATH': str(tools) + ':' + os.environ['PATH'], 'FIXTURE_STATE': str(self.state), 'FIXTURE_READ': secrets.token_urlsafe(32), 'FIXTURE_WRITE': secrets.token_urlsafe(32)})
+        self.secrets = (self.native_env['FIXTURE_READ'], self.native_env['FIXTURE_WRITE'])
+        flow = yaml.safe_load((ROOT / 'workflows/workflow-operation-dependency-merge.yaml').read_text())
+        def rewrite(value):
+            if isinstance(value, str):
+                value = value.replace('/tmp/orbit-dependency-merge-', str(self.repo / 'scratch-'))
+                if value.startswith('${{ vault.get('):
+                    return '${{ env.FIXTURE_WRITE }}' if 'write_token' in value else '${{ env.FIXTURE_READ }}'
+                return value
+            if isinstance(value, list):return [rewrite(v) for v in value]
+            if isinstance(value, dict):return {k:rewrite(v) for k,v in value.items()}
+            return value
+        flow = rewrite(flow)
+        for job in flow['jobs']:
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
+            for step in job['steps']:self.assertEqual(step.pop('labels'), {'role': 'swamp'})
+        (self.repo / 'workflows/workflow-merge.yaml').write_text(yaml.safe_dump(flow, sort_keys=False))
+        self.inputs = {'operation_id':7, 'node_id':209, 'kind':'tasks.dependency_merge', 'intent':{
+            'node_id':209, 'project_id':20, 'group_id':91, 'publish_operation_id':8, 'repository':'hardimpactdev/orbit', 'default_branch':'main', 'smoke_workflow':'.github/workflows/production-smoke.yml', 'pr_number':3, 'head_sha':fixture.HEAD},
+            'execution_secrets': {name:{'vault':'orbit-control-inputs', 'key':'dependency-merge-'+scope+'-12345678-1234-4123-8123-123456789012'} for name,scope in [('read_token','read'),('write_token','write')]}}
 
-    def test_resume_refreshes_disabled_switch_before_an_unproven_put(self):
-        self.prepare("loseBeforeMerge")
-        first = self.cli("workflow", "run", "operation-dependency-merge", "--input",
-                         json.dumps({"operation_id": 7, "node_id": 209, "kind": "tasks.dependency_merge"}), success=False)
-        run_id = json.JSONDecoder().raw_decode(first.stdout.lstrip())[0]["id"]
-        state = json.loads(self.state.read_text())
-        self.assertEqual(state["writes"], 0)
-        state["disabled"] = True
-        self.state.write_text(json.dumps(state))
-        self.cli("workflow", "resume", "operation-dependency-merge", "--run", run_id, success=False)
-        final = json.loads(self.state.read_text())
-        self.assertEqual(final["writes"], 0)
-        self.assertEqual(final["refreshes"], 2)
-        self.assertEqual(final["operation"]["result"], {"error_code": "dependency_merge.disabled"})
+    def run_merge(self, success=True):
+        self.cli('workflow', 'validate', 'operation-dependency-merge')
+        run = json.loads(self.cli('workflow','run','operation-dependency-merge','--stdin',input=json.dumps(self.inputs),success=success).stdout)
+        history = json.loads(self.cli('workflow','history','get',run['id']).stdout)
+        self.assertEqual(list(self.repo.glob('scratch-*')), [])
+        data = json.loads(self.state.read_text())
+        self.assertEqual(sum(c[0]=='DELETE' for c in data['calls']), 2)
+        return history, data
 
-    def test_failed_refresh_prevents_credentials_and_effect(self):
-        self.prepare("refreshFail")
-        self.cli("workflow", "run", "operation-dependency-merge", "--input",
-                 json.dumps({"operation_id": 7, "node_id": 209, "kind": "tasks.dependency_merge"}), success=False)
-        final = json.loads(self.state.read_text())
-        self.assertEqual(final["writes"], 0)
-        self.assertFalse(any("private-material" in call for call in final["calls"]))
-        self.assertEqual(final["operation"]["status"], "running")
+    def test_merge_and_native_receipt(self):
+        history,data = self.run_merge()
+        self.assertEqual(sum(c[0]=='PUT' for c in data['calls']),1)
+        step = next(s for j in history['jobs'] for s in j['steps'] if s['name']=='Read merge result')
+        self.assertEqual(json.loads(step['outputs']['stdout']), {'merged':True,'head_sha':fixture.HEAD,'merge_sha':fixture.MERGE})
 
-    def test_lost_merge_reply(self):
-        self.recover("loseMerge")
+    def test_major_change_refuses_and_revokes(self):
+        self.state.write_text(json.dumps({'rows':fixture.evidence(case='major'),'calls':[]}))
+        history,data = self.run_merge(False)
+        self.assertFalse(any(c[0]=='PUT' for c in data['calls']))
+        self.assertIn('dependency_merge.major_bump',json.dumps(history))
 
-    def test_lost_projection_reply(self):
-        self.recover("loseProjection")
+    def test_pending_checks_refuse_before_contents(self):
+        self.state.write_text(json.dumps({'rows':fixture.evidence(case='checks'),'calls':[]}))
+        _,data = self.run_merge(False)
+        self.assertFalse(any('/contents/' in c[1] or c[0]=='PUT' for c in data['calls']))
+
+    def test_already_merged_skips_reads_and_put(self):
+        self.state.write_text(json.dumps({'rows':fixture.evidence(case='merged'),'calls':[]}))
+        _,data = self.run_merge()
+        self.assertEqual([c[0] for c in data['calls']],['GET','DELETE','DELETE'])
+
+    def test_lost_reply_reconciles_on_fresh_run(self):
+        data=json.loads(self.state.read_text());data['lost_reply']=True;self.state.write_text(json.dumps(data))
+        self.run_merge(False)
+        data=json.loads(self.state.read_text());data['calls']=[];self.state.write_text(json.dumps(data))
+        _,data=self.run_merge()
+        self.assertFalse(any(c[0]=='PUT' for c in data['calls']))
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__=='__main__':unittest.main()

@@ -241,24 +241,10 @@
     {
       "file": "extensions/behaviors/operations/dependency-merge/contents.ts",
       "rule": "custom-control",
-      "count": 4,
+      "count": 3,
       "evidence": [
         "lock"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/dependency-merge/mod.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/dependency-merge/mod.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/documents/cleanup_program.ts",
