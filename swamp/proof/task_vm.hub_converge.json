@@ -1,0 +1,70 @@
+{
+  "kind": "task_vm.hub_converge",
+  "workflow": "operation-task-vm-hub-converge",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 300,
+  "queue_timeout_seconds": 60,
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "command -v nft >/dev/null || { DEBIAN_FRONTEND=noninteractive apt-get update -q >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -q nftables >/dev/null; }; systemctl disable --now orbit-task-vms-hub.service >/dev/null 2>&1 || true; nft delete table inet orbit_task_vms 2>/dev/null || true; rm -f /etc/orbit/task-vms/hub.nft /etc/systemd/system/orbit-task-vms-hub.service; systemctl daemon-reload"
+    ]
+  ],
+  "before_gateway": [
+    [
+      "bash",
+      "swamp/proof/task_vm.hub_converge/prepare.sh",
+      "${node.target}",
+      "${node.peer}",
+      "${node.gateway}"
+    ]
+  ],
+  "request": {
+    "artisan": "task-vms:prepare-hub",
+    "arguments": {}
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Check the new ruleset",
+      "job": "hub",
+      "step": "Check the new ruleset",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Write and load the filter",
+      "job": "hub",
+      "step": "Write and load the filter",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Allow 209 SSH",
+      "job": "hub",
+      "step": "Allow 209 SSH, Router web-0",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Allow Router web 80",
+      "job": "hub",
+      "step": "Allow 209 SSH, Router web-1",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Allow Router web 443",
+      "job": "hub",
+      "step": "Allow 209 SSH, Router web-2",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Confirm the filter",
+      "job": "hub",
+      "step": "Confirm the filter",
+      "budget_seconds": 15
+    }
+  ],
+  "parity": "swamp/proof/task_vm.hub_converge/parity.py"
+}

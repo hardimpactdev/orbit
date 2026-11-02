@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Firewall\ListManagedFirewallRulesAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -123,7 +127,7 @@ describe('task-vms:prepare-hub', function (): void {
 
     it('sends typed hub endpoints derived from the fleet', function (): void {
         $this->artisan('task-vms:prepare-hub')
-            ->expectsOutputToContain('Submitted hub [vpn] filter for [10.44.0.128/25] as Operation [')
+            ->expectsOutputToContain('Submitted hub [vpn] filter for [10.44.0.128/25] as Operation #')
             ->assertSuccessful();
 
         $intent = Operation::query()->where('kind', 'task_vm.hub_converge')->sole()->input['intent'];
@@ -135,6 +139,50 @@ describe('task-vms:prepare-hub', function (): void {
             ->and($intent['nft'])->not->toContain('ip saddr 10.44.0.15 ip daddr 10.44.0.128/25 tcp dport {')
             ->and($this->agents->calls)->toBe([]);
         expect($this->ssh->commands)->toBe([]);
+    });
+
+    it('expects exactly the control and Router rule lines that the file holds', function (): void {
+        $this->artisan('task-vms:prepare-hub')->assertSuccessful();
+
+        $intent = Operation::query()->where('kind', 'task_vm.hub_converge')->sole()->input['intent'];
+        expect($intent['live_rules'])->toBe([
+            'ip saddr 10.44.0.15 ip daddr 10.44.0.128/25 tcp dport 22 accept comment "orbit:task-vm-control-ssh"',
+            'ip saddr 10.44.0.7 ip daddr 10.44.0.128/25 tcp dport 80 accept comment "orbit:task-vm-router-web-10-44-0-7-80"',
+            'ip saddr 10.44.0.7 ip daddr 10.44.0.128/25 tcp dport 443 accept comment "orbit:task-vm-router-web-10-44-0-7-443"',
+        ]);
+        $lines = array_map(trim(...), explode("\n", $intent['nft']));
+        foreach ($intent['live_rules'] as $rule) {
+            expect($lines)->toContain($rule);
+        }
+    });
+
+    it('records the hub ready from its intent only after the end check passed', function (): void {
+        $this->artisan('task-vms:prepare-hub')->assertSuccessful();
+        $operation = Operation::query()->where('kind', 'task_vm.hub_converge')->sole();
+        $run = static fn (string $status, array $steps): array => ['run_id' => '07491a2f-25a8-4458-92dd-e58e467ac28c', 'status' => $status,
+            'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null, 'result' => ['steps' => $steps]];
+
+        expect(fn () => app(TaskVmHubProjection::class)->apply($operation, $run('succeeded', [])))
+            ->toThrow(ResourceOperationException::class, 'A succeeded hub run needs its passed end check.');
+        $projected = app(TaskVmHubProjection::class)->apply($operation, $run('succeeded', [TaskVmHubProjection::EndCheck => ['status' => 'succeeded']]));
+
+        expect($projected->status)->toBe(OperationStatus::Succeeded)
+            ->and($projected->result)->toMatchArray(['ready' => true, 'node_id' => $this->hub->id, 'control_ssh_source' => '10.44.0.15',
+                'control_ssh_port' => 22, 'router_sources' => ['10.44.0.7'], 'router_web_ports' => [80, 443]])
+            ->and(app(DirectOperation::class)->definition('task_vm.hub_converge')['terminal_result'])
+            ->toBe(['job' => 'hub', 'step' => 'Confirm the filter', 'native' => true]);
+    });
+
+    it('never records a failed hub run ready', function (): void {
+        $this->artisan('task-vms:prepare-hub')->assertSuccessful();
+        $operation = Operation::query()->where('kind', 'task_vm.hub_converge')->sole();
+
+        $projected = app(TaskVmHubProjection::class)->apply($operation, ['run_id' => '07491a2f-25a8-4458-92dd-e58e467ac28c', 'status' => 'failed',
+            'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
+            'result' => ['steps' => [TaskVmHubProjection::EndCheck => ['status' => 'failed']]]]);
+
+        expect($projected->status)->toBe(OperationStatus::Failed)
+            ->and($projected->result['ready'] ?? null)->toBeNull();
     });
 
     it('shows the same narrow control rule in the managed firewall view', function (): void {

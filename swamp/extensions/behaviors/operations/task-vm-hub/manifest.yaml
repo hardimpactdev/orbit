@@ -1,8 +1,0 @@
-manifestVersion: 1
-name: "@nckrtl/task-vm-hub-result"
-version: 2026.11.01.2
-visibility: private
-license: MIT
-description: Typed public task VM hub filter verification.
-behaviors:
-  - operations/task-vm-hub/result.ts

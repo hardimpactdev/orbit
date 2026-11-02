@@ -14,7 +14,8 @@ use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-hub-converge',
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'hub', 'step' => 'result'],
+    // No result step: the projector reads the end check's status and builds the result from the captured intent.
+    'terminal_result' => ['job' => 'hub', 'step' => TaskVmHubProjection::EndCheck, 'native' => true],
     'projection' => TaskVmHubProjection::class,
 ], 'task_vm.resume' => [
     'workflow' => 'operation-task-vm-resume',

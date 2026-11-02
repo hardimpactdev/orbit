@@ -65,7 +65,7 @@ final class PrepareTaskVmHubCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Submitted hub [{$hub->name}] filter for [{$range->value()}] as Operation [{$operation->id}].");
+        $this->info("Submitted hub [{$hub->name}] filter for [{$range->value()}] as Operation #{$operation->id}.");
 
         return self::SUCCESS;
     }

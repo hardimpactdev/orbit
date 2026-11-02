@@ -1278,7 +1278,11 @@ To remove a host, lower its capacity to stop new placements, wait until all its 
 
 This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb and the private Swamp Route share TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
 
-Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints its ID; submission does not mean the filter is ready. Its native workflow runs on209 and reaches the VPN Node through official SSH with the recorded host pins. It validates the complete nft ruleset, publishes the managed filter and systemd unit, applies the canonical control SSH rule, activates the unit, then verifies the exact live control and Router nft rules. A failed step leaves the Operation failed for native resume. No Swamp binary or worker is installed on the VPN Node.
+Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints `Operation #<id>`; submission does not mean the filter is ready. Its native workflow runs on 209 and reaches the VPN Node through official SSH with the recorded host pins. No Swamp binary or worker is installed on the VPN Node.
+
+The workflow checks the complete nft ruleset with the hub's own `nft`. One step then writes the filter and its systemd unit, enables and restarts the unit, and lists the live chain. After the filter loads, UFW allows TCP 22 from 209 and TCP 80 and 443 from each Cluster Router, one rule at a time.
+
+A native assert is the end check: every expected control and Router rule must be a line of the live chain. Only then does the Gateway record the hub ready, with the sources from its intent. A failed step leaves the Operation failed; a rerun writes and loads the same file again.
 
 The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The nft transaction replaces only `inet orbit_task_vms`; unrelated firewall tables remain unchanged.
 
