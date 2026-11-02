@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, single Swamp Node, DECISIONS 1 (token minted at admission, vault.get), Gateway renders .env from the Project env template (orbit-gateway-renders-create-env; Nick 2026-11-01), budget rule swamp-operation-time-budgets (<10 s, 60 s).
   %% Tightened: flow-tighten 2026-11-02, rules 1-22 (rule 22: cfgmgmt file/systemd, 0600 credential file for the private fetch).
+  %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, rendered by the Gateway and written by the same file step.
   %% status: reviewed
   %% command: instance:create
   %% kind: instance.create
@@ -31,6 +32,10 @@ sequenceDiagram
   %%> Renders .env:
   %%> - from the Project's stored env template, with its placeholders
   %%> - filled with Instance values: `APP_URL`, a new `APP_KEY`, database keys
+  %%> Renders .env.testing:
+  %%> - only when Instance 42 owns a database on a MySQL or PostgreSQL server
+  %%> - the same `.env` with `APP_ENV=testing` and the test database credentials
+  %%> - SQLite: none; `phpunit.xml` (`:memory:`) decides
   %%> Result:
   %%> - Instance 42 recorded as reserved, with its rendered environment
   %%> - task #5121 recorded with the full intent
@@ -42,7 +47,7 @@ sequenceDiagram
   %%> - `.env` can hold secrets, which travel only through the vault
   %%> What it does:
   %%> - mints a read token for this one repository, valid 1 hour
-  %%> - pushes the token and the rendered `.env` into Swamp's vault
+  %%> - pushes the token, the rendered `.env` and any `.env.testing` into Swamp's vault
   %%> Result:
   %%> - the run reads both from the vault; no step calls the Gateway back (decision 1)
   GW->>SW: Start run, full intent<br/>operation-instance-create · 60 s
@@ -87,9 +92,10 @@ sequenceDiagram
   SW->>N: Write .env<br/>@swamp/cfgmgmt/file · 0600
   %%> What it does:
   %%> - writes the rendered `.env` from `vault.get env-5121` into the checkout, owned by the Node user, mode 0600
+  %%> - with an owned MySQL or PostgreSQL database, also writes `.env.testing` in the same `file` step, replacing its content; a Git-tracked `.env.testing` stays untouched
   %%> - selects the Node's Vite+ store for this Project (`VP_HOME`), so `vp` works in the setup steps
   %%> Not included:
-  %%> - renders nothing; the Gateway already rendered `.env`
+  %%> - renders nothing; the Gateway already rendered `.env` and `.env.testing`
   %%> - installs no dependencies; `composer install` and `vp install` are setup steps
   %%> - starts no Process; that happens after the setup steps
   SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
