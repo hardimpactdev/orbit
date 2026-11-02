@@ -1,6 +1,6 @@
 id: 52eb4df2-ee4b-4950-9c46-d6f9fb1836e9
 name: operation-conn-pairing-revoke
-description: Revoke only the captured Conn pairing sessions and links on209.
+description: Revoke admitted Conn sessions and links with native curl steps and private response shaping.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -12,10 +12,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - conn.pairing_revoke
+    kind: {type: string, enum: [conn.pairing_revoke]}
     intent:
       type: object
       properties:
@@ -64,96 +61,190 @@ inputs:
 jobs:
 - name: prepare
   steps:
-  - name: list
+  - name: Create private replies
     labels:
       role: swamp
+    queueTimeout: 30
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "conn-list" }}
+      behaviorName: ${{ "conn-revocation-directory" }}
       methodName: execute
       inputs:
-        run: 'curl --fail --silent --show-error --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}'' "${ORBIT_CONN_URL%/}/api/auth/clients"'
+        run: timeout 5 mktemp -d /tmp/orbit-conn-revoke.XXXXXXXX
+    writes: true
+  - name: Read session inventory
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-revocation-inventory" }}
+      methodName: execute
+      inputs:
+        run: 'timeout 15 curl --fail --silent --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}''
+          --output "$ORBIT_CONN_DIRECTORY/inventory.json" "${ORBIT_CONN_URL%/}/api/auth/clients" 2>/dev/null'
         env:
           ORBIT_CONN_URL: ${{ inputs.intent.url }}
           ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Create private replies
+      condition:
+        type: succeeded
     guard: ${{ inputs.intent.labels.size() == 0 }}
-  - name: select
+  - name: Select the sessions
     labels:
       role: swamp
+    queueTimeout: 30
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-select" }}
+      behaviorName: ${{ "conn-revocation-select" }}
       methodName: select
       inputs:
         intent: ${{ inputs.intent }}
-        stdout: '${{ "list" in steps && steps.list.status == "succeeded" ? steps.list.outputs.stdout : "[]" }}'
+        directory: ${{ steps["Create private replies"].outputs.stdout.trim() }}
     dependsOn:
-    - step: list
+    - step: Read session inventory
       condition:
-        type: always
+        type: or
+        conditions:
+        - type: completed
+        - type: skipped
 - name: sessions
   dependsOn:
   - job: prepare
     condition:
       type: succeeded
   steps:
-  - name: session
+  - name: Revoke the sessions
     labels:
       role: swamp
-    task:
-      type: workflow
-      workflowIdOrName: conn-revoke-session
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        session_id: ${{ self.item }}
-    forEach:
-      item: item
-      in: ${{ steps.select.outputs.sessions }}
-- name: links
-  dependsOn:
-  - job: sessions
-    condition:
-      type: succeeded
-  steps:
-  - name: link
-    labels:
-      role: swamp
+    queueTimeout: 30
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "conn-link-" + string(self._index) }}
+      behaviorName: ${{ "conn-revocation-session-" + string(self._index) }}
       methodName: execute
       inputs:
-        run: 'curl --fail --silent --show-error --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}'' --header ''Content-Type: application/json'' --data "$ORBIT_CONN_BODY" "${ORBIT_CONN_URL%/}/api/auth/pairing-links/revoke"'
+        run: 'timeout 15 curl --fail --silent --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}''
+          --header ''Content-Type: application/json'' --data "$ORBIT_CONN_BODY" --output "$ORBIT_CONN_DIRECTORY/session-$ORBIT_CONN_INDEX.json" "${ORBIT_CONN_URL%/}/api/auth/clients/revoke"
+          2>/dev/null'
         env:
           ORBIT_CONN_URL: ${{ inputs.intent.url }}
           ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private replies"].outputs.stdout.trim() }}
           ORBIT_CONN_BODY: ${{ self.item.body }}
+          ORBIT_CONN_INDEX: ${{ string(self._index) }}
+    writes: true
     forEach:
       item: item
-      in: ${{ steps.select.outputs.links }}
-- name: finish
+      in: ${{ steps["Select the sessions"].outputs.sessions }}
+- name: session-replies
   dependsOn:
-  - job: links
+  - job: sessions
     condition:
-      type: always
+      type: completed
   steps:
-  - name: result
+  - name: Read session revocations
     labels:
       role: swamp
+    queueTimeout: 30
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-result" }}
-      methodName: finish
+      behaviorName: ${{ "conn-revocation-replies" }}
+      methodName: replies
       inputs:
-        successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status == "skipped") }}
-        results: ${{ steps.filter(name, name.startsWith("session-") && steps[name].status == "succeeded").map(name, steps[name].outputs.finish.stdout) }}
-        child: false
-        links: ${{ steps.filter(name, name.startsWith("link-") && steps[name].status == "succeeded").map(name, steps[name].outputs.stdout) }}
+        directory: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+        family: session
+        statuses: ${{ steps["Select the sessions"].outputs.sessions.map(item, steps["Revoke the sessions-" + string(item.index)].status) }}
+- name: links
+  dependsOn:
+  - job: session-replies
+    condition:
+      type: succeeded
+  steps:
+  - name: Revoke unused links
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-revocation-link-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: 'timeout 15 curl --fail --silent --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}''
+          --header ''Content-Type: application/json'' --data "$ORBIT_CONN_BODY" --output "$ORBIT_CONN_DIRECTORY/link-$ORBIT_CONN_INDEX.json" "${ORBIT_CONN_URL%/}/api/auth/pairing-links/revoke"
+          2>/dev/null'
+        env:
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+          ORBIT_CONN_BODY: ${{ self.item.body }}
+          ORBIT_CONN_INDEX: ${{ string(self._index) }}
+    writes: true
+    forEach:
+      item: item
+      in: ${{ steps["Select the sessions"].outputs.links }}
+    guard: ${{ !steps["Read session revocations"].outputs.valid }}
+- name: link-replies
+  dependsOn:
+  - job: links
+    condition:
+      type: completed
+  steps:
+  - name: Read link revocations
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-revocation-plan'
+      behaviorName: ${{ "conn-revocation-replies" }}
+      methodName: replies
+      inputs:
+        directory: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+        family: link
+        statuses: ${{ steps["Select the sessions"].outputs.links.map(item, steps["Revoke unused links-" + string(item.index)].status) }}
+- name: cleanup
+  dependsOn:
+  - job: link-replies
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  steps:
+  - name: Remove private replies
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-revocation-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 rm -rf -- "$ORBIT_CONN_DIRECTORY"
+        env:
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+    writes: true
+    guard: ${{ !("Create private replies" in steps) || steps["Create private replies"].status != "succeeded" }}
+  - name: Confirm revocation
+    labels:
+      role: swamp
+    queueTimeout: 30
+    dependsOn:
+    - step: Remove private replies
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: '"Read session revocations" in steps && steps["Read session revocations"].status == "succeeded" && steps["Read session revocations"].outputs.valid &&
+        "Read link revocations" in steps && steps["Read link revocations"].status == "succeeded" && steps["Read link revocations"].outputs.valid'
+      message: conn.revocation_failed
+      severity: high

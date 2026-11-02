@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -43,13 +44,18 @@ beforeEach(function (): void {
 function projectNativeConnRevoke(object $test, string $status = 'succeeded', ?array $result = null): Operation
 {
     $operation = Operation::query()->sole();
+    $receipts = $result ?? ['session_receipt' => ['valid' => true, 'completed' => [0], 'revoked' => 1], 'link_receipt' => ['valid' => true, 'completed' => [0], 'revoked' => 1]];
     $run = ['id' => $test->run, 'workflowName' => 'operation-conn-pairing-revoke', 'status' => $status,
         'inputs' => ['intent' => $operation->input['intent'], 'execution_secrets' => $operation->input['execution_secrets'], 'operation_id' => $operation->id, 'node_id' => $test->gateway->id, 'kind' => 'conn.pairing_revoke'],
         'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
-        'jobs' => $status === 'cancelled' ? [] : [['name' => 'finish', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result ?? ['backend' => 'revoked', 'revoked_sessions' => 1])]]]]]];
+        'jobs' => $status === 'cancelled' ? [] : [
+            ['name' => 'session-replies', 'steps' => [['name' => 'Read session revocations', 'status' => isset($receipts['session_receipt']) ? 'succeeded' : 'skipped', 'outputs' => ['stdout' => json_encode($receipts['session_receipt'] ?? [])]]]],
+            ['name' => 'link-replies', 'steps' => [['name' => 'Read link revocations', 'status' => isset($receipts['link_receipt']) ? 'succeeded' : 'skipped', 'outputs' => ['stdout' => json_encode($receipts['link_receipt'] ?? [])]]]],
+            ['name' => 'cleanup', 'steps' => [['name' => 'Confirm revocation', 'status' => $status === 'succeeded' ? 'succeeded' : 'failed']]],
+        ]];
     $test->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
 
-    return app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'finish', 'step' => 'result']);
+    return app(SwampCommandStep::class)->projectTerminal($operation, $run, app(OperationKinds::class)->definition('conn.pairing_revoke')['terminal_result']);
 }
 
 it('admits the exact pairing set with public intent and one vault copy on replay', function (): void {
@@ -83,7 +89,7 @@ it('projects terminal revocation only onto the captured pairings and replays onc
 
 it('preserves pairing state after provider failure or cancellation', function (string $status): void {
     $this->postJson($this->url)->assertAccepted();
-    projectNativeConnRevoke($this, $status, $status === 'failed' ? ['error_code' => 'conn.response_invalid'] : []);
+    projectNativeConnRevoke($this, $status, []);
     expect($this->pairing->fresh()->revoked_at)->toBeNull();
     expect($this->pairing->fresh()->credential)->toBe('private-pairing');
     expect(Operation::query()->sole()->status->value)->toBe($status);
@@ -103,15 +109,15 @@ it('settles native failure without result output and preserves captured pairings
     $run = ['id' => $this->run, 'workflowName' => 'operation-conn-pairing-revoke', 'status' => $status,
         'inputs' => ['intent' => $operation->input['intent'], 'execution_secrets' => $operation->input['execution_secrets'], 'operation_id' => $operation->id, 'node_id' => $this->gateway->id, 'kind' => 'conn.pairing_revoke'],
         'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
-        'jobs' => [['name' => 'finish', 'steps' => [['name' => 'result', 'status' => 'skipped']]]]];
+        'jobs' => [['name' => 'cleanup', 'steps' => [['name' => 'Confirm revocation', 'status' => 'skipped']]]]];
     $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
 
-    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'finish', 'step' => 'result']);
-    app(SwampCommandStep::class)->projectTerminal($operation->fresh(), $run, ['job' => 'finish', 'step' => 'result']);
+    app(SwampCommandStep::class)->projectTerminal($operation, $run, app(OperationKinds::class)->definition('conn.pairing_revoke')['terminal_result']);
+    app(SwampCommandStep::class)->projectTerminal($operation->fresh(), $run, app(OperationKinds::class)->definition('conn.pairing_revoke')['terminal_result']);
 
     expect($operation->fresh()->status->value)->toBe($status);
-    expect($operation->fresh()->error_code)->toBe('operation.native_failed');
-    expect($operation->fresh()->result)->toBe(['error_code' => 'operation.native_failed']);
+    expect($operation->fresh()->error_code)->toBe('conn.revocation_failed');
+    expect($operation->fresh()->result)->toBe(['error_code' => 'conn.revocation_failed']);
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->run);
     expect($this->pairing->fresh()->revoked_at)->toBeNull();
     expect($this->pairing->fresh()->credential)->toBe('private-pairing');
@@ -120,3 +126,28 @@ it('settles native failure without result output and preserves captured pairings
     expect(array_count_values(array_column($this->socket->sent, 'type'))['workflow.history.get'])->toBe(1);
     Http::assertNothingSent();
 })->with(['failed', 'interrupted']);
+
+it('records completed pairings on partial link failure and leaves the rest open', function (): void {
+    $second = ConnPairing::query()->create(['node_id' => $this->caller->id, 'conn_environment_id' => $this->environment->id, 'client_label' => 'second-label', 'pairing_link_id' => 'second-link', 'credential' => 'private-second']);
+    $this->postJson($this->url)->assertAccepted();
+    projectNativeConnRevoke($this, 'failed', ['session_receipt' => ['valid' => true, 'completed' => [0, 1], 'revoked' => 2], 'link_receipt' => ['valid' => false, 'completed' => [0], 'revoked' => 1]]);
+    expect($this->pairing->fresh()->revoked_at)->not->toBeNull();
+    expect($this->pairing->fresh()->credential)->toBeNull();
+    expect($second->fresh()->revoked_at)->toBeNull();
+    expect($second->fresh()->credential)->toBe('private-second');
+    expect($this->foreign->fresh()->credential)->toBe('private-foreign');
+});
+
+it('admits one revocation per environment and refuses overlap before a second vault copy', function (): void {
+    $this->postJson($this->url)->assertAccepted();
+    $this->postJson($this->url, ['node_id' => $this->other->id])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Operation::query()->count())->toBe(1);
+    expect($this->copies)->toHaveCount(1);
+});
+
+it('refuses an expired recorded admin session without starting a run', function (): void {
+    $this->environment->update(['admin_session_expires_at' => now()->subMinute()]);
+    $this->postJson($this->url)->assertConflict()->assertJsonPath('error.code', 'conn.session_expired');
+    expect(Operation::query()->count())->toBe(0);
+    expect($this->copies)->toBe([]);
+});

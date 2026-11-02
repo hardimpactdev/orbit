@@ -1,0 +1,9 @@
+# Conn revocation data
+
+Swamp core runs each bounded T3 HTTP request through `command/shell` on the Swamp role worker. The official SSH, cfgmgmt and vault behaviors have no T3 session API. This extension only selects public request bodies and reads private JSON replies. It starts no process and makes no HTTP call. It ships no script.
+
+curl receives the admin session through its step environment and expands the authorization header internally. It writes replies below a private `mktemp` directory. Data methods retain only selected session IDs, public request bodies, completion indices and counts. Cleanup removes the directory after failure too. A native assert checks the end state, and the Gateway projects public captures from the same terminal history read.
+
+Fan-out commands use stable indexed slots (`conn-revocation-session-0`, `conn-revocation-link-0`, and so on). Their input schema bounds the slots at 4,096. The name does not depend on a run or task, and each slot has one behavior type. Per-item names let independent requests run in parallel without sharing Swamp's 60-second behavior lock. Fixed data and scratch-step names serve one target.
+
+After terminal cleanup, repeat the command to reconcile remaining pairings. A direct native resume at a failed HTTP step cannot reuse the removed private directory. There is no custom retry, ownership recheck, result-reporting step or Gateway callback.

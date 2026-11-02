@@ -6,150 +6,83 @@ export const Intent = z.object({
     labels: z.array(z.string().max(1024)).max(4096),
     links: z.array(Id).max(4096),
 }).strict();
-// One raw T3 `GET /api/auth/clients` reply, read by curl on 209.
 const Observed = z.array(z.object({
     sessionId: Id,
     current: z.boolean().optional(),
-    client: z.object({ label: z.string().optional() }).passthrough().nullable().optional(),
-}).passthrough()).max(4096).refine((rows) =>
+    client: z.object({ label: z.string().optional() }).nullable().optional(),
+})).max(4096).refine((rows) =>
     new Set(rows.map((row) => row.sessionId)).size === rows.length
 );
-// One raw T3 revoke reply.
-const Revoked = z.object({ revoked: z.boolean() }).passthrough();
-const Selection = z.object({
-    sessions: z.array(Id),
-    links: z.array(z.object({ id: Id, body: z.string() })),
-});
-const Authorization = z.object({ absent: z.boolean(), body: z.string() });
-const Terminal = z.object({ stdout: z.string() });
-type Context = {
-    writeResource(spec: string, name: string, data: unknown): Promise<unknown>;
-};
+const Candidate = z.object({ index: z.number().int().min(0), body: z.string() });
+const Selection = z.object({ sessions: z.array(Candidate), links: z.array(Candidate) });
+const Replies = z.object({ valid: z.boolean(), stdout: z.string() });
+const Revoked = z.object({ revoked: z.boolean() });
+const Directory = z.string().regex(/^\/tmp\/orbit-conn-revoke\.[A-Za-z0-9]+$/);
+type Context = { writeResource(spec: string, name: string, data: unknown): Promise<unknown> };
 
-function sessions(stdout: string, labels: string[]) {
-    return Observed.parse(JSON.parse(stdout)).map((row) => ({
-        session_id: row.sessionId,
-        current: row.current ?? false,
-        owned: labels.includes(row.client?.label ?? "\u0000"),
-    }));
-}
 export function selectSessions(stdout: string, labels: string[]): string[] {
-    return sessions(stdout, labels).filter((row) => row.owned && !row.current)
-        .map((row) => row.session_id);
+    return Observed.parse(JSON.parse(stdout))
+        .filter((row) => !row.current && labels.includes(row.client?.label ?? "\u0000"))
+        .map((row) => row.sessionId);
 }
-export function authorizeSession(stdout: string, id: string, labels: string[]) {
-    const current = sessions(stdout, labels).find((row) => row.session_id === id);
-    if (current && (!current.owned || current.current)) {
-        throw new Error("conn.session_owner_changed");
+async function read(directory: string, name: string): Promise<string> {
+    const file = `${Directory.parse(directory)}/${name}`;
+    if ((await Deno.stat(file)).size > 4194304) throw new Error("conn.revocation_failed");
+    return await Deno.readTextFile(file);
+}
+/** Parse private HTTP replies into public completion metadata, including partial effects. */
+export async function readReplies(directory: string, family: string, statuses: string[]) {
+    const completed: number[] = [];
+    let valid = true;
+    let revoked = 0;
+    for (const [index, status] of statuses.entries()) {
+        if (status !== "succeeded") {
+            valid = false;
+            continue;
+        }
+        try {
+            const reply = Revoked.parse(JSON.parse(await read(directory, `${family}-${index}.json`)));
+            completed.push(index);
+            revoked += Number(reply.revoked);
+        } catch {
+            valid = false;
+        }
     }
-    return { absent: !current, body: JSON.stringify({ sessionId: id }) };
+    return { valid, stdout: JSON.stringify({ valid, completed, revoked }) };
 }
-/** Child: raw T3 session revoke replies. Parent: each child's terminal output, and the raw link replies. */
-export function terminalResult(
-    successful: boolean,
-    results: string[],
-    child = false,
-    links: string[] = [],
-) {
-    if (!successful) {
-        return { stdout: '{"error_code":"conn.revocation_failed"}' };
-    }
-    for (const reply of links) Revoked.parse(JSON.parse(reply));
-    const revoked = results.map((value) =>
-        child
-            ? Number(Revoked.parse(JSON.parse(value)).revoked)
-            : z.object({ revoked_sessions: z.number().int().min(0).max(1) }).strict()
-                .parse(JSON.parse(value)).revoked_sessions
-    ).reduce((sum, value) => sum + value, 0);
-    return {
-        stdout: JSON.stringify(
-            child
-                ? { revoked_sessions: revoked }
-                : { backend: "revoked", revoked_sessions: revoked },
-        ),
-    };
-}
-
 export const behavior = {
     type: "@nckrtl/conn-revocation-plan",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
-        selection: {
-            schema: Selection,
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
-        authorization: {
-            schema: Authorization,
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
-        terminal: {
-            schema: Terminal,
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
+        selection: { schema: Selection, lifetime: "infinite", garbageCollection: 10 },
+        replies: { schema: Replies, lifetime: "infinite", garbageCollection: 10 },
     },
     methods: {
         select: {
-            description: "Select only admitted non-current session identities",
-            arguments: z.object({ intent: Intent, stdout: z.string() }),
-            execute: async (
-                args: { intent: z.infer<typeof Intent>; stdout: string },
-                ctx: Context,
-            ) => {
-                const value = {
-                    sessions: selectSessions(args.stdout, args.intent.labels),
-                    links: [...new Set(args.intent.links)].map((id) => ({
-                        id,
-                        body: JSON.stringify({ id }),
-                    })),
-                };
-                await ctx.writeResource("selection", "selection", value);
-                return value;
+            description: "Select admitted non-current sessions from the private T3 reply",
+            arguments: z.object({ intent: Intent, directory: Directory }),
+            execute: async (args: { intent: z.infer<typeof Intent>; directory: string }, ctx: Context) => {
+                try {
+                    const ids = args.intent.labels.length
+                        ? selectSessions(await read(args.directory, "inventory.json"), args.intent.labels)
+                        : [];
+                    const value = {
+                        sessions: ids.map((sessionId, index) => ({ index, body: JSON.stringify({ sessionId }) })),
+                        links: args.intent.links.map((id, index) => ({ index, body: JSON.stringify({ id }) })),
+                    };
+                    await ctx.writeResource("selection", "selection", value);
+                    return value;
+                } catch {
+                    throw new Error("conn.revocation_failed");
+                }
             },
         },
-        authorize: {
-            description: "Recheck one session against the fresh T3 observation",
-            arguments: z.object({ intent: Intent, stdout: z.string(), session_id: Id }),
-            execute: async (
-                args: { intent: z.infer<typeof Intent>; stdout: string; session_id: string },
-                ctx: Context,
-            ) => {
-                const value = authorizeSession(args.stdout, args.session_id, args.intent.labels);
-                await ctx.writeResource(
-                    "authorization",
-                    "authorization",
-                    value,
-                );
-                return value;
-            },
-        },
-        finish: {
-            description:
-                "Shape the public terminal result after native steps settle",
-            arguments: z.object({
-                successful: z.boolean(),
-                results: z.array(z.string()),
-                child: z.boolean().default(false),
-                links: z.array(z.string()).default([]),
-            }),
-            execute: async (
-                args: {
-                    successful: boolean;
-                    results: string[];
-                    child: boolean;
-                    links: string[];
-                },
-                ctx: Context,
-            ) => {
-                const value = terminalResult(
-                    args.successful,
-                    args.results,
-                    args.child,
-                    args.links,
-                );
-                await ctx.writeResource("terminal", "terminal", value);
+        replies: {
+            description: "Read private revoke replies and retain only valid public completions",
+            arguments: z.object({ directory: Directory, family: z.enum(["session", "link"]), statuses: z.array(z.string()).max(4096) }),
+            execute: async (args: { directory: string; family: string; statuses: string[] }, ctx: Context) => {
+                const value = await readReplies(args.directory, args.family, args.statuses);
+                await ctx.writeResource("replies", "replies", value);
                 return value;
             },
         },

@@ -7,6 +7,7 @@ namespace Orbit\Extensions\Conn\Actions;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
@@ -27,15 +28,19 @@ final readonly class RevokeConnPairingsAction
 
         return DB::transaction(function () use ($node, $environment, $caller, $gateway): Operation {
             $environment = ConnEnvironment::query()->lockForUpdate()->findOrFail($environment->id);
+            if (! $environment->admin_session_expires_at->isFuture()) {
+                throw new ResourceOperationException('conn.session_expired', 'The Gateway admin session has expired.', 409);
+            }
             $pairings = ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)
                 ->whereNull('revoked_at')->orderBy('id')->get();
             $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-revoke-'.Str::uuid()];
             $operation = $this->operations->execute('conn.pairing_revoke', 'conn_pairing_node', $node->id, $gateway,
                 ['conn_environment_id' => $environment->id, 'pairing_ids' => $pairings->pluck('id')->all(),
+                    'pairing_links' => $pairings->pluck('pairing_link_id')->all(),
                     'subject_node_id' => $node->id, 'caller_node_id' => $caller->id,
                     'intent' => ['url' => $environment->url, 'labels' => $pairings->pluck('client_label')->all(),
                         'links' => $pairings->pluck('pairing_link_id')->filter()->values()->all()],
-                    'execution_secrets' => ['admin_session' => $reference]], 'operator', null);
+                    'execution_secrets' => ['admin_session' => $reference]], 'operator', null, lockKey: OperationStore::lockKey('conn_environment', $environment->id));
             if ($operation->wasRecentlyCreated) {
                 app(SwampCommandStep::class)->executionCopy($reference['vault'], $reference['key'], $environment->admin_session);
             }

@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4. docs/reference/conn.md#native-pairing-revocation.
   %% Tightened: flow-tighten 2026-11-02, rule 16 (the session list only picks the targets, so it folds into the revoke step).
-  %% status: draft
+  %% status: migrated
   %% command: none · Conn API (conn-pairing-revoke)
   %% kind: conn.pairing_revoke
   autonumber
@@ -41,18 +41,36 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller waits on the task and shows its progress
-  SW->>T3: Revoke the sessions<br/>GET clients · POST …/revoke
+  Note over SW: Create private replies
   %%> How:
-  %%> - HTTPS from 209, with the admin session from `vault.get`
+  %%> - mktemp creates a private worker directory; no raw HTTP reply enters run history
+  SW->>T3: Read session inventory
+  %%> How:
+  %%> - one bounded curl request with the admin session from vault.get
+  %%> - no read is needed when no admitted label exists
+  Note over SW: Select the sessions
   %%> What it does:
-  %%> - lists the client sessions on env-beast, selects those with the captured labels, and revokes each; a session already gone counts as revoked
-  %%> Refuses:
-  %%> - a failed or invalid list stops the step before any revoke; it never counts as an empty list
-  %%> Keeps:
-  %%> - the Gateway's own current session and every other label
-  SW->>T3: Revoke unused links<br/>POST pairing-links/revoke
+  %%> - typed data selects admitted labels and keeps the current admin and every other label
+  %%> - an invalid or failed list refuses before any revoke
+  SW->>T3: Revoke the sessions
+  %%> How:
+  %%> - one bounded curl request per selected session, in native forEach
+  %%> - the reply stays in the private directory; no duplicate ownership read
+  Note over SW: Read session revocations
   %%> What it does:
-  %%> - revokes each captured pairing link that was never used, one per step
+  %%> - typed data reads the private replies and keeps valid completions and the revoked count
+  SW->>T3: Revoke unused links
+  %%> How:
+  %%> - one bounded curl request per captured link; a failed session phase blocks these calls
+  Note over SW: Read link revocations
+  %%> What it does:
+  %%> - typed data keeps each valid link completion, including partial failure
+  Note over SW: Remove private replies
+  %%> How:
+  %%> - declared completed or skipped dependencies remove the directory after failure too
+  Note over SW: Confirm revocation
+  %%> Check:
+  %%> - the native assert requires valid replies for every admitted action
   alt every revoke done
     T3-->>SW: 2 sessions revoked
     %%> Returns:
@@ -74,7 +92,7 @@ sequenceDiagram
     %%> - which step failed and its safe error code
     Note over GW: Mark revoked ones only<br/>task failed · rerun is safe
     %%> Result:
-    %%> - pairings whose sessions were revoked are marked revoked; the rest stay open; task #5171 fails
+    %%> - pairings whose sessions and links completed are marked revoked; the rest stay open; task #5171 fails
     %%> Retry:
     %%> - safe: run it again; it lists the sessions again and skips those already gone
   end

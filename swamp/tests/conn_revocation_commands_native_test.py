@@ -1,4 +1,4 @@
-"""Native parent/child DAG against a disposable T3 HTTP API fixture."""
+"""Native flat DAG against a disposable T3 HTTP API fixture."""
 
 import json
 import sys
@@ -23,7 +23,6 @@ class ConnRevocationNative(NativeTestCase):
         self.copy_behaviors("operations/conn-revocation")
         for filename in (
             "workflow-operation-conn-pairing-revoke.yaml",
-            "workflow-conn-revoke-session.yaml",
         ):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:
@@ -34,7 +33,8 @@ class ConnRevocationNative(NativeTestCase):
                 yaml.safe_dump(workflow, sort_keys=False)
             )
         self.secret = "private-admin-" + uuid.uuid4().hex
-        self.secrets = (self.secret,)
+        self.private = "unrelated-private-response-" + uuid.uuid4().hex
+        self.secrets = (self.secret, self.private)
         self.sessions = [
             {"sessionId": "owned", "client": {"label": "phone"}},
             {"sessionId": "self", "current": True, "client": {"label": "phone"}},
@@ -46,6 +46,9 @@ class ConnRevocationNative(NativeTestCase):
         self.fail_list = False
         self.fail_revoke = False
         self.fail_link = False
+        self.fail_link_id = None
+        self.invalid_revoke = False
+        self.already_absent = False
         self.change_owner = False
         self.disappear = False
         self.list_count = 0
@@ -76,7 +79,7 @@ class ConnRevocationNative(NativeTestCase):
                     if case.disappear:
                         rows = [row for row in rows if row["sessionId"] != "owned"]
                 for row in rows:
-                    row["private"] = case.secret
+                    row["private"] = case.private
                 return self.send(200, rows)
 
             def do_POST(self):
@@ -94,10 +97,10 @@ class ConnRevocationNative(NativeTestCase):
                         if row["sessionId"] != body["sessionId"]
                     ]
                 else:
-                    if case.fail_link:
+                    if case.fail_link or body["id"] == case.fail_link_id:
                         return self.send(500, {"private": case.secret})
                     case.revoked_links.append(body["id"])
-                return self.send(200, {"revoked": True, "private": case.secret})
+                return self.send(200, b"invalid-json" if case.invalid_revoke else {"revoked": not case.already_absent, "private": case.private})
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -144,15 +147,14 @@ class ConnRevocationNative(NativeTestCase):
         started = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
         history = self.cli("workflow", "history", "get", started["id"])
         run = json.JSONDecoder().raw_decode(history.stdout.lstrip())[0]
-        terminal = next(
-            step
-            for job in run["jobs"]
-            for step in job["steps"]
-            if step["name"] == "result"
-        )
-        self.assertEqual(run["status"], "succeeded" if success else "failed")
-        self.assertIn("outputs", terminal, json.dumps(run["jobs"]))
-        return run, json.loads(terminal["outputs"]["stdout"])
+        steps = {step['name']: step for job in run['jobs'] for step in job['steps']}
+        self.assertEqual(run["status"], "succeeded" if success else "failed", json.dumps(run))
+        self.assertEqual(steps['Remove private replies']['status'], 'succeeded')
+        self.assertFalse(Path(steps['Create private replies']['outputs']['stdout'].strip()).exists())
+        value = steps.get('Read session revocations', {}).get('outputs', {})
+        receipt = json.loads(value.get('stdout', '{}'))
+        result = {"backend": "revoked", "revoked_sessions": receipt.get('revoked', 0)} if success else {"error_code": "conn.revocation_failed"}
+        return run, result
 
     def test_revokes_only_admitted_sessions_and_links(self):
         self.cli("workflow", "validate", "operation-conn-pairing-revoke")
@@ -163,7 +165,7 @@ class ConnRevocationNative(NativeTestCase):
         self.assertEqual(
             [row["sessionId"] for row in self.sessions], ["self", "foreign"]
         )
-        self.assertEqual(self.list_count, 2)
+        self.assertEqual(self.list_count, 1)
 
     def test_multiple_sessions_fan_out_without_shared_result_conflicts(self):
         self.sessions.append({"sessionId": "owned-two", "client": {"label": "phone"}})
@@ -181,7 +183,7 @@ class ConnRevocationNative(NativeTestCase):
             step
             for job in run["jobs"]
             for step in job["steps"]
-            if step["name"].startswith("link-")
+            if step["name"].startswith("Revoke unused links-")
         ]
         self.assertEqual(len(links), 3)
         resources = [
@@ -202,19 +204,29 @@ class ConnRevocationNative(NativeTestCase):
         self.assertEqual(self.revoked, [])
         self.assertEqual(self.revoked_links, [])
 
-    def test_changed_session_owner_refuses_before_effect(self):
+    def test_no_duplicate_runtime_ownership_read(self):
         self.change_owner = True
-        _, result = self.run_revoke(success=False)
-        self.assertEqual(result, {"error_code": "conn.revocation_failed"})
-        self.assertEqual(self.revoked, [])
-        self.assertEqual(self.revoked_links, [])
+        self.run_revoke()
+        self.assertEqual(self.list_count, 1)
+        self.assertEqual(self.revoked, ["owned"])
 
-    def test_disappeared_session_is_absent_without_another_mutation(self):
-        self.disappear = True
+    def test_already_absent_reply_does_not_count_a_mutation(self):
+        self.already_absent = True
         _, result = self.run_revoke()
         self.assertEqual(result, {"backend": "revoked", "revoked_sessions": 0})
-        self.assertEqual(self.revoked, [])
-        self.assertEqual(self.revoked_links, ["owned-link"])
+
+    def test_invalid_success_reply_refuses_and_cleans_up(self):
+        self.invalid_revoke = True
+        self.run_revoke(success=False)
+        self.assertEqual(self.revoked_links, [])
+
+    def test_partial_link_failure_keeps_the_valid_public_completions(self):
+        self.intent['links'] = ['first', 'second']
+        self.fail_link_id = 'second'
+        run, _ = self.run_revoke(success=False)
+        steps = {step['name']: step for job in run['jobs'] for step in job['steps']}
+        receipt = json.loads(steps['Read link revocations']['outputs']['stdout'])
+        self.assertEqual(receipt, {'valid': False, 'completed': [0], 'revoked': 1})
 
     def test_http_refusal_cannot_leak_private_response_body(self):
         self.fail_revoke = True
@@ -231,22 +243,13 @@ class ConnRevocationNative(NativeTestCase):
         self.assertEqual(self.revoked_links, [])
         self.assertEqual(self.calls, [])
 
-    def test_native_resume_reconciles_after_partial_effects(self):
+    def test_new_run_reconciles_after_partial_effects(self):
         self.fail_link = True
-        first, _ = self.run_revoke(success=False)
+        self.run_revoke(success=False)
         self.assertEqual(self.revoked, ["owned"])
         self.fail_link = False
-        resumed = self.cli(
-            "workflow",
-            "resume",
-            "operation-conn-pairing-revoke",
-            "--run",
-            first["id"],
-            "--from",
-            "link",
-        )
-        run = json.JSONDecoder().raw_decode(resumed.stdout.lstrip())[0]
-        self.assertEqual(run["status"], "succeeded")
+        _, result = self.run_revoke()
+        self.assertEqual(result, {"backend": "revoked", "revoked_sessions": 0})
         self.assertEqual(self.revoked, ["owned"])
         self.assertEqual(self.revoked_links, ["owned-link"])
 

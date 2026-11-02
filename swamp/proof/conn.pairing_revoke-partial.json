@@ -1,0 +1,93 @@
+{
+  "kind": "conn.pairing_revoke",
+  "workflow": "operation-conn-pairing-revoke",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "python3",
+      "-I",
+      "swamp/proof/conn/revocation_fixture.py",
+      "setup",
+      "partial"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "extensions/conn/enable",
+      "body": {},
+      "operation": false
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "conn/environments/revoke-proof/pairings/revoke",
+    "body": {}
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "Create private replies",
+      "job": "prepare",
+      "step": "Create private replies",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Read session inventory",
+      "job": "prepare",
+      "step": "Read session inventory",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Select the sessions",
+      "job": "prepare",
+      "step": "Select the sessions",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Revoke the sessions",
+      "job": "sessions",
+      "step": "Revoke the sessions",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Read session revocations",
+      "job": "session-replies",
+      "step": "Read session revocations",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Revoke unused links",
+      "job": "links",
+      "step": "Revoke unused links",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Read link revocations",
+      "job": "link-replies",
+      "step": "Read link revocations",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Remove private replies",
+      "job": "cleanup",
+      "step": "Remove private replies",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Confirm revocation",
+      "job": "cleanup",
+      "step": "Confirm revocation",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": [
+    "swamp/proof/conn/revocation_fixture.py",
+    "parity"
+  ]
+}

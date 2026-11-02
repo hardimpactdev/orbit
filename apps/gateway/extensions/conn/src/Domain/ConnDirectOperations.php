@@ -22,8 +22,10 @@ final readonly class ConnDirectOperations implements DirectOperationContribution
 
         $kinds['conn.pairing_revoke'] = ['workflow' => 'operation-conn-pairing-revoke',
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$']],
-            'projection' => DirectOperationResultProjection::class, 'result_hook' => ConnDirectResult::class,
-            'workflow_inputs' => true, 'terminal_result' => ['job' => 'finish', 'step' => 'result']];
+            'projection' => ConnRevocationProjection::class, 'result_hook' => ConnDirectResult::class,
+            'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm revocation', 'native' => true,
+                'captures' => ['session_receipt' => ['job' => 'session-replies', 'step' => 'Read session revocations', 'field' => 'stdout'],
+                    'link_receipt' => ['job' => 'link-replies', 'step' => 'Read link revocations', 'field' => 'stdout']]]];
 
         return $kinds;
     }

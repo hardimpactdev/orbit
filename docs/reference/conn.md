@@ -3,6 +3,8 @@ title: "Conn layer"
 description: "How the Gateway signs in Conn devices as Nodes, shares workspaces, appearance, and per-device settings through profiles, holds an admin session for each registered T3 server, and mints and revokes device pairings."
 covers:
   - apps/gateway/extensions/conn/**
+  - swamp/extensions/behaviors/operations/conn-revocation/**
+  - swamp/workflows/workflow-operation-conn-pairing-revoke.yaml
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
@@ -210,9 +212,9 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Session cleanup
 
-Pairing revocation captures its exact pairing IDs, client labels, link IDs and T3 URL at admission. Each session child uses its own native run identity, so concurrent sessions do not share behavior definitions. All native steps run on Node 209.
+Pairing revocation captures its exact pairing IDs, client labels, link IDs and T3 URL at admission. Native fan-out uses fixed behavior names, and the Gateway admits one revocation per T3 environment. All native steps run on Node 209.
 
-The Gateway sends the existing admin session through the shared execution-copy helper; workflow input holds only the vault and key names. Swamp reads the T3 session list, selects the admitted labels, checks each selected session again, and revokes each session and pairing link in a separate native step. It preserves the current admin and every other label. A failed read is a failure, never an empty inventory. The fixed terminal result projects only the admitted pairings.
+The Gateway sends the existing admin session through the shared execution-copy helper; workflow input holds only the vault and key names. Swamp reads the T3 session list once, selects the admitted labels, and revokes each session and pairing link in a separate native step. It preserves the current admin and every other label. A failed read is a failure, never an empty inventory. The native terminal check and captured public reply metadata project only the admitted pairings. Valid link completions are recorded even when a later link fails.
 
 Steps make no Gateway calls.
 
@@ -251,12 +253,12 @@ When a terminal result repeats, Conn returns the recorded result even after the 
 
 ### Native pairing revocation
 
-Swamp core command steps, child workflows and native `forEach` supply the execution. Official SSH, cfgmgmt, datastore and cloud-vault extensions were checked at `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`; they do not implement T3 session APIs.
+Swamp core command steps and native `forEach` supply the execution. Official SSH, cfgmgmt, datastore and cloud-vault extensions were checked at `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`; they do not implement T3 session APIs.
 
-Each command step on 209 is one `curl` request to the existing T3 API. curl reads the admin session from the step environment with `--variable` and `--expand-header`, so it never enters argv. The `@nckrtl/conn-revocation-plan` steps validate each raw reply: the session list, each ownership check and each revoke reply. The extension ships no script. There is no custom transport, authentication protocol, Gateway relay or runtime restart. Since this is an API integration, no worker or SSH step runs on the subject Node.
+Each command step on 209 is one `curl` request to the existing T3 API. curl reads the admin session from the step environment with `--variable` and `--expand-header`, so it never enters argv. curl writes each raw reply into a private worker directory. The `@nckrtl/conn-revocation-plan` data methods read the session list and revoke replies there; they publish only selected request bodies, valid completion indices and counts. The extension ships no script. There is no custom transport, authentication protocol, Gateway relay or runtime restart. Since this is an API integration, no worker or SSH step runs on the subject Node.
 
-A child workflow orders each fresh session read before its ownership check and one revoke request. A missing session is already absent; a changed label or a session that became current refuses.
+Session revocations finish before unused-link revocations begin. A failed list or invalid session reply blocks link effects. The initial list preserves the current admin session. Duplicate runtime ownership checks are removed under rule 22. A valid `revoked: false` reply means the session or link is already absent. The native end check requires valid replies for all actions; declared cleanup removes the private directory after failure too.
 
-Native failure and resume use the original captured pairing set. Resume from the failed action, such as `link`, to retain the original session selection. Starting again at `assets` can change the expanded session list, which the pinned native runner refuses; a new selection needs a new Operation. A terminal Gateway Operation stays terminal; a manual native resume does not change it. Revocation requests are idempotent; resuming may read the list again and does not mint credentials.
+After terminal cleanup, repeat the command to reconcile incomplete revocations. The new Operation captures only open pairings and reads the current session list; already-absent sessions are not selected. Cleanup removes private replies even after failure, so resuming directly at an HTTP step cannot reuse its deleted scratch directory. A terminal Gateway Operation stays terminal after a manual native resume. Revocation requests are idempotent and never mint credentials.
 
 The public terminal result contains only `backend` and `revoked_sessions`, or a bounded `conn.*` error code. The admin token, server response bodies and other client data never enter stdout or workflow resources.
