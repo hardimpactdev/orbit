@@ -111,7 +111,7 @@ A Project without a `merge_check` has no gate, so admission pins the branch head
 
 | Error code | HTTP | When |
 | --- | --- | --- |
-| `tasks.no_green_commit` | 409 | None of the 20 newest first-parent commits passed the `merge_check`. Provision again after a commit turns green. |
+| `tasks.no_green_commit` | 409 | No first-parent commit passed the `merge_check` in the walk. The walk stops after 20 commits or where the branch listing ends. Provision again after a commit turns green. |
 | `tasks.source_unreadable` | 409 | The Project has a `merge_check` but does not read a github.com repository through the GitHub App. |
 | `tasks.source_unavailable` | 502 | GitHub, the App installation, or the branch head could not be read. |
 

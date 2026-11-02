@@ -138,6 +138,15 @@ it('refuses without a green start commit before it captures any guest or workspa
         ->and(Operation::query()->count())->toBe(0)->and($this->group->fresh()->status->value)->toBe('todo');
 });
 
+it('refuses a group that cannot be provisioned before it reads the start commit', function (): void {
+    $start = new FakeTaskStartCommit(refusal: new ResourceOperationException('tasks.no_green_commit', 'No green commit.', 409));
+    app()->instance(TaskStartCommit::class, $start);
+    $this->group->update(['status' => 'backlog']);
+    expect(fn () => app(StartTaskProvisionAction::class)->execute($this->group->fresh(), 'fixture', null))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('tasks.not_todo'));
+    expect($start->transactionLevels)->toBe([]);
+});
+
 it('replays before group validation and starts no second native run', function (): void {
     $key = app(OperationIdempotency::class);
     $key->kind = 'tasks.provision';

@@ -47,6 +47,8 @@ final readonly class TaskProvisionIntent
         if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
             return $replay;
         }
+        // A group that cannot be provisioned is refused before any GitHub read; the locked recheck below stays.
+        $this->assertProvisionable($group);
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $this->startCommit->resolve($group->project()->firstOrFail());
 
@@ -55,15 +57,7 @@ final readonly class TaskProvisionIntent
             if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
                 return $replay;
             }
-            if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
-                throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
-            }
-            if ($group->status === TaskGroupStatus::Backlog) {
-                throw new ResourceOperationException('tasks.not_todo', 'Provision requires a todo task group.', 409);
-            }
-            if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
-                throw TaskGroupGuard::alreadyClaimed();
-            }
+            $this->assertProvisionable($group);
             $project = $group->project;
             if ($project->task_workspace_routed || $project->processDefinitions()->exists() || $project->scheduleDefinitions()->exists()) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace publication and runtime definitions need their native parent steps.', 503);
@@ -127,5 +121,18 @@ final readonly class TaskProvisionIntent
 
             return $this->start->execute('tasks.provision', 'task_group', $group->id, ValidatedData::integer($input['node_id']), $input, $caller, $request);
         }));
+    }
+
+    private function assertProvisionable(Task $group): void
+    {
+        if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
+            throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
+        }
+        if ($group->status === TaskGroupStatus::Backlog) {
+            throw new ResourceOperationException('tasks.not_todo', 'Provision requires a todo task group.', 409);
+        }
+        if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
+            throw TaskGroupGuard::alreadyClaimed();
+        }
     }
 }

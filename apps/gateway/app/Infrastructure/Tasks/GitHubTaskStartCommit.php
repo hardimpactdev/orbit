@@ -38,7 +38,7 @@ final readonly class GitHubTaskStartCommit implements TaskStartCommit
         }
 
         return $green ?? throw new ResourceOperationException('tasks.no_green_commit',
-            'None of the newest '.ProjectGitHubSource::CandidateLimit." commits of [{$branch}] passed [{$check}].", 409);
+            "No first-parent commit of [{$branch}] passed [{$check}] in the walk, which stops after ".ProjectGitHubSource::CandidateLimit.' commits or where the listing ends.', 409);
     }
 
     private static function unavailable(string $branch, \Throwable $previous): ResourceOperationException
