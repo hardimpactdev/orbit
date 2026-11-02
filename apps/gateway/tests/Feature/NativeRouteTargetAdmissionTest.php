@@ -64,6 +64,34 @@ it('records a pending development binding at once, with no run', function (): vo
         ->and($operation->state ?? [])->not->toHaveKey('swamp_run_id');
 });
 
+it('moves a published development site in the one publish step, with no access commands', function (): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
+    $project = Project::query()->create(['name' => 'Moved', 'slug' => 'moved', 'repository_url' => 'https://example.test/moved.git', 'root' => 'public']);
+    $instances = [];
+    foreach (['before', 'after'] as $index => $name) {
+        $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'moved-'.$name, 'public_ssh_host' => '192.0.2.'.(31 + $index),
+            'wireguard_ip' => '10.44.0.'.(31 + $index), 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        $instances[] = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/home/orbit/apps/'.$name, 'source_is_laravel' => false, 'status' => 'active']);
+    }
+    $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $instances[0]->node_id, 'domain' => 'moved.private.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'failed', 'sites_published' => true, 'failed_step' => 'native-create', 'error_code' => 'route.probe_failed']);
+    $route->targets()->create(['instance_id' => $instances[0]->id, 'position' => 0]);
+    // A replaced development target must no longer be active; its site still serves until the run moves it.
+    $instances[0]->update(['status' => 'source_resolved']);
+
+    $operation = app(AdmitRouteOperationAction::class)->setTarget($route->fresh(), $instances[1]->id);
+
+    $plan = $operation->input['route_target']['plan'];
+    expect($operation->input['route_target']['effectful'])->toBeTrue()
+        ->and($this->socket->sent)->toHaveCount(1)
+        ->and($plan['publish']['site_nodes'])->toBe([$instances[0]->node_id, $instances[1]->node_id])
+        ->and($plan['publish']['acl'])->toBe([])
+        ->and(collect($plan['publish']['caddy'])->firstWhere('node_id', $instances[1]->node_id)['content'])->toContain('moved.private.test')
+        ->and(collect($plan['publish']['caddy'])->firstWhere('node_id', $instances[0]->node_id)['content'] ?? '')->not->toContain('moved.private.test')
+        ->and(collect($plan['leaves'])->pluck('node_id')->all())->toContain($instances[1]->node_id)
+        ->and([$plan['stage']['site_nodes'], $plan['router']['site_nodes'], $plan['retire_nodes'], $plan['probes']])->toBe([[], [], [], []]);
+});
+
 it('admits an entire production pool without committing its cutover before the native root runs', function (): void {
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
     $cluster = Cluster::query()->create(['name' => 'admission-pool', 'state' => 'active']);
@@ -93,6 +121,7 @@ it('admits an entire production pool without committing its cutover before the n
         ->and($this->socket->sent)->toHaveCount(1)
         ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-target-set');
     expect($operation->input)->not->toHaveKeys(['environment_fields', 'private_bindings'])
-        ->and($operation->input['route_target']['route_mutations']['forward']['publications'])->not->toBeEmpty()
-        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_target']);
+        ->and($operation->input['route_target']['plan']['stage']['site_nodes'])->toContain($instances[1]->node_id)
+        ->and($operation->input['route_target']['plan']['router']['site_nodes'])->toBe([$router->id])
+        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_target']['plan']);
 });

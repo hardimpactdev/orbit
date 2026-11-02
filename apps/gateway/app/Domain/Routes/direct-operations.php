@@ -22,8 +22,9 @@ return [
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
     ],
     'route.target_set' => [
+        // The end check is the Router switch of a production set, or the one publish step of a development target.
         'workflow' => 'operation-route-target-set', 'projection' => NativeRouteTargetProjection::class,
-        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'Switch the Router pool-0', 'alternatives' => ['Install cert, publish site-0'], 'native' => true],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
     ],
     ...array_fill_keys(['route.destroy', 'route.withdraw'], [

@@ -97,7 +97,7 @@ final readonly class NativeRouteCreatePlan
             $scope = ValidatedData::string($leaf['scope']);
             $version = ValidatedData::string($leaf['version']);
             // The account keeps its own copy for development servers; the run reads the account's home on the Node.
-            $plan['leaves'][] = ['node_id' => $nodeId, 'scope' => $scope, 'domain' => ValidatedData::string($leaf['domain']),
+            $plan['leaves'][] = ['node_id' => $nodeId, 'scope' => $scope, 'domain' => ValidatedData::string($leaf['domain']), 'root_hash' => ValidatedData::string($leaf['root_hash']),
                 'directory' => self::CaddyCertificates.'/'.$scope.'/versions/'.$version, 'current' => self::CaddyCertificates.'/'.$scope.'/current', 'target' => 'versions/'.$version,
                 'user' => app(RouteRenderContext::class)->user(Node::query()->findOrFail($nodeId))];
             $trust[$nodeId] = $nodeId;

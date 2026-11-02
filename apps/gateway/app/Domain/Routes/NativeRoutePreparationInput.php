@@ -39,7 +39,7 @@ final readonly class NativeRoutePreparationInput
             ->filter(static fn (DevelopmentSite $site): bool => in_array($site->scope, $workloadScopes, true) && ! in_array($site->addressKey(), $servingHops, true))->values();
         $addresses = $workloadSites->map(static fn (DevelopmentSite $site): string => $site->addressKey())->all();
         $workloadCatalog = $beforeSites->reject(static fn (DevelopmentSite $site): bool => in_array($site->addressKey(), $addresses, true))->values()->merge($workloadSites);
-        $preparation = ['certificates' => RouteExecutionProof::objects($forward['prepare_certificates']), 'lan' => RouteExecutionProof::objects($forward['lan']), 'publications' => [], 'probes' => []];
+        $preparation = ['certificates' => RouteExecutionProof::objects($forward['prepare_certificates']), 'lan' => RouteExecutionProof::objects($forward['lan']), 'publications' => [], 'probes' => [], 'renders' => []];
         $publications = RouteExecutionProof::objects($forward['publications']);
         foreach ($publications as $publication) {
             $nodeId = ValidatedData::integer($publication['node_id']);
@@ -47,6 +47,8 @@ final readonly class NativeRoutePreparationInput
                 continue;
             }
             $prepared = app(NativeRoutePublicationInput::class)->snapshot(Node::query()->findOrFail($nodeId), $workloadCatalog);
+            // The whole staged Caddyfile: the new workload sites beside the old ones; the Router keeps its pool.
+            $preparation['renders'][(string) $nodeId] = ValidatedData::object($prepared['caddy'])['content'] ?? null;
             $before = app(NativeRoutePublicationInput::class)->snapshot(Node::query()->findOrFail($nodeId), $beforeSites);
             $pair = $compact->scope(['before' => $before, 'after' => $prepared]);
             $resolved = NativeRoutePublicationArtifacts::resolve($artifacts, $publication);

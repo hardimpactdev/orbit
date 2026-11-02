@@ -6,7 +6,6 @@ use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\RouteTargetState;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\NativeRouteTargetInput;
 use App\Domain\Routes\NativeRouteTargetIntent;
 use App\Domain\Routes\NativeRouteTargetProjection;
@@ -62,15 +61,25 @@ afterEach(function (): void {
     unlink($this->manifest);
 });
 
-it('freezes prospective target sites and original restoration without changing associations or markers', function (): void {
-    $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['new']->id);
+/** @return array<string,mixed> */
+function target_input_caddy(array $phase, int $nodeId): ?string
+{
+    return collect($phase['caddy'])->firstWhere('node_id', $nodeId)['content'] ?? null;
+}
 
-    expect($publication['before']['caddy']['content'])->toContain('source.target.test')->not->toContain('pool.target.test')
-        ->and($publication['prepared']['caddy']['content'])->toContain('source.target.test', 'pool.target.test', '-hostname-change')
-        ->and($publication['after']['caddy']['content'])->toContain('pool.target.test')->not->toContain('source.target.test', '-hostname-change')
-        ->and($publication['host_keys'])->toBe(['ssh-ed25519 fixture-target-key'])
-        ->and($publication['control_node_id'])->toBe(209)
+it('splits the change into staged, Router and retire Caddyfiles without changing associations or markers', function (): void {
+    $plan = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal)['intent']['plan'];
+    $new = $this->nodes['new']->id;
+
+    // The staged file keeps the old site beside the new one, under the temporary leaf; the retire file is the lasting state.
+    expect(target_input_caddy($plan['stage'], $new))->toContain('source.target.test', 'pool.target.test', '-hostname-change')
+        ->and(target_input_caddy($plan['retire'], $new))->toContain('pool.target.test')->not->toContain('source.target.test', '-hostname-change')
+        ->and($plan['router']['site_nodes'])->toBe([$this->nodes['router']->id])
+        ->and(target_input_caddy($plan['router'], $this->nodes['router']->id))->toContain('pool.target.test', 'destination.target.test')
+        ->and($plan['stage']['site_nodes'])->toContain($new, $this->nodes['old']->id)
+        ->and(collect($plan['probes'])->pluck('domain', 'node_id')->all())->toBe([$new => 'pool.target.test', $this->nodes['old']->id => 'destination.target.test'])
+        ->and(collect($plan['cleanup'])->pluck('leaf.scope')->all())->toContain('app-instance-'.$this->instances['new']->id.'-hostname-change')
+        ->and($plan['nodes'][(string) $new]['host_keys'])->toBe(['ssh-ed25519 fixture-target-key'])
         ->and($this->routes['pool']->targets()->pluck('instance_id')->all())->toBe([$this->instances['old']->id])
         ->and($this->routes['source']->targets()->pluck('instance_id')->all())->toBe([$this->instances['new']->id])
         ->and($this->routes['destination']->targets()->count())->toBe(0)
@@ -92,11 +101,12 @@ it('freezes environment values in execution copies with the proposed and origina
 
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
 
+    // No rollback: only the proposed side is staged.
     expect(json_encode($capture, JSON_THROW_ON_ERROR))->not->toContain('synthetic-target-private-key')
-        ->and($capture['execution_secrets'])->toHaveCount(4);
+        ->and($capture['execution_secrets'])->toHaveCount(2);
     $values = collect($socket->sent)->pluck('payload.value');
-    expect($values->filter(fn (string $value): bool => str_contains($value, 'pool.target.test')))->toHaveCount(2)
-        ->and($values->filter(fn (string $value): bool => str_contains($value, 'source.target.test')))->toHaveCount(1)
+    expect($values->filter(fn (string $value): bool => str_contains($value, 'pool.target.test')))->toHaveCount(1)
+        ->and($values->filter(fn (string $value): bool => str_contains($value, 'source.target.test')))->toHaveCount(0)
         ->and($values->filter(fn (string $value): bool => str_contains($value, 'destination.target.test')))->toHaveCount(1);
 });
 
@@ -110,12 +120,13 @@ function target_input_operation(array $capture, int $nodeId): Operation
         'input' => ['route_target' => $capture['intent'], 'execution_secrets' => $capture['execution_secrets']]]);
 }
 
-function target_input_project(Operation $operation, string $status, array $result): Operation
+function target_input_project(Operation $operation, string $status, array $result, ?string $failedStep = null): Operation
 {
     return app(NativeRouteTargetProjection::class)->apply($operation, [
         'run_id' => $operation->state['swamp_run_id'], 'status' => $status,
         'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => $status === 'running' ? null : '2026-11-01T04:01:00Z',
-        'error_code' => $status === 'failed' ? 'route.target_set_failed' : null, 'result' => $result]);
+        'error_code' => $status === 'failed' ? 'operation.native_failed' : null, 'result' => $result,
+        'failure' => $failedStep === null ? null : ['failed_step' => $failedStep]]);
 }
 
 it('commits the proposal only from terminal success and accepts identical delivery', function (): void {
@@ -136,46 +147,61 @@ it('commits the proposal only from terminal success and accepts identical delive
         ->and($done->fresh()->state)->not->toHaveKeys(['native_target_preparations', 'native_target_rollback', 'steps']);
 });
 
-it('never commits a failed or cancelled proposal even after proved restoration', function (string $status, bool $restored): void {
+it('keeps the old targets when the run fails before the Router switch', function (string $status, ?string $step, ?string $code): void {
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
     $operation = target_input_operation($capture, $this->nodes['old']->id);
 
-    $done = target_input_project($operation, $status, ['ready' => false, 'restored' => $restored, 'selected' => $restored ? 'before' : 'unknown']);
+    $done = target_input_project($operation, $status, [], $step);
 
     expect($done->status->value)->toBe($status)
+        ->and($done->error_code)->toBe($code)
         ->and($this->routes['pool']->targets()->pluck('instance_id')->all())->toBe([$this->instances['old']->id])
         ->and($this->routes['source']->targets()->pluck('instance_id')->all())->toBe([$this->instances['new']->id])
         ->and($this->routes['destination']->targets()->count())->toBe(0)
         ->and($this->routes['destination']->fresh()->sites_published)->toBeFalse();
-})->with([['failed', true], ['failed', false], ['cancelled', false]]);
+})->with([['failed', 'Probe each new target-1', 'route.probe_failed'], ['failed', 'Switch the Router pool-0', 'route.router_switch_failed'],
+    ['failed', null, 'operation.native_failed'], ['cancelled', null, null]]);
+
+it('writes the new targets when a step after the Router switch fails, and keeps the recorded set for the rerun', function (): void {
+    $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
+    $operation = target_input_operation($capture, $this->nodes['old']->id);
+
+    $done = target_input_project($operation, 'failed', [], 'Retire detached targets-2');
+
+    $route = $this->routes['pool']->fresh();
+    expect($done->error_code)->toBe('route.target_retire_failed')
+        ->and($route->targets()->pluck('instance_id')->all())->toBe([$this->instances['new']->id])
+        ->and($this->routes['destination']->targets()->pluck('instance_id')->all())->toBe([$this->instances['old']->id])
+        ->and($route->target_set_intent['targets'])->toBe([$this->instances['new']->id])
+        ->and($route->failed_step)->toBe('Retire detached targets')
+        ->and($route->error_code)->toBe('route.target_retire_failed');
+});
 
 it('captures a completed no-op without effects or private-material bindings', function (): void {
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), ['mode' => 'state_only', 'targets' => [$this->instances['old']->id], 'dispositions' => []]);
 
-    expect($capture['intent']['effectful'])->toBeFalse()->and($capture['intent']['workloads'])->toBe([])
+    expect($capture['intent']['effectful'])->toBeFalse()
         ->and($capture['certificates'])->toBe([])->and($capture['execution_secrets'])->toBe([])
-        ->and($capture['intent'])->not->toHaveKeys(['environment_fields', 'private_bindings', 'route_mutations']);
+        ->and($capture['intent'])->not->toHaveKeys(['environment_fields', 'private_bindings', 'plan']);
 });
 
-it('keeps co-located Router pools unchanged until workload TLS preparation finishes', function (): void {
+it('keeps a co-located Router pool unchanged in the staged file and switches it in the Router step', function (): void {
     $this->nodes['router']->roles()->where('role', 'router')->delete();
     $this->nodes['new']->roles()->create(['role' => 'router', 'status' => 'active', 'cluster_id' => $this->nodes['new']->cluster_id]);
 
-    $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['new']->id);
-    $preparation = collect($capture['intent']['preparation']['publications'])->firstWhere('node_id', $this->nodes['new']->id);
-    $pool = static function (array $caddy): ?string {
-        preg_match('/^# orbit: [^\n]+\n(?:(?!^# orbit: ).)*pool\.target\.test(?:(?!^# orbit: ).)*/ms', $caddy['content'], $match);
+    $plan = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal)['intent']['plan'];
+    $new = $this->nodes['new']->id;
+    $pool = static function (?string $caddy): ?string {
+        preg_match('/^# orbit: [^\n]+\n(?:(?!^# orbit: ).)*pool\.target\.test(?:(?!^# orbit: ).)*/ms', (string) $caddy, $match);
 
         return $match[0] ?? null;
     };
 
-    expect($pool($capture['intent']['route_mutations']['artifacts']['caddy'][$preparation['after']]))->toBeNull()
-        ->and($pool($publication['before']['caddy']))->not->toBeNull()
-        ->and($pool($publication['prepared']['caddy']))->not->toBe($pool($publication['before']['caddy']))
-        ->and($capture['intent']['preparation']['probes'])->toHaveCount(1)
-        ->and($capture['intent']['preparation']['probes'][0]['probe']['domain'])->toBe('destination.target.test')
-        ->and($capture['intent']['preparation']['probes'][0]['host_keys'])->toBe(['ssh-ed25519 fixture-target-key']);
+    expect($plan['router']['site_nodes'])->toBe([$new])
+        ->and($pool(target_input_caddy($plan['router'], $new)))->not->toBeNull()
+        ->and($pool(target_input_caddy($plan['stage'], $new)))->not->toBe($pool(target_input_caddy($plan['router'], $new)))
+        ->and($plan['probes'])->toHaveCount(1)
+        ->and($plan['probes'][0]['domain'])->toBe('destination.target.test');
 });
 
 it('refuses a missing target pin before publishing execution copies or changing associations', function (): void {
@@ -207,8 +233,8 @@ it('keeps configured environment material for both sides of an unbound productio
 
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
 
-    expect($capture['execution_secrets'])->toHaveCount(2)
-        ->and($capture['intent']['route_mutations']['restore']['url_writes'][0]['instance_id'])->toBe($instance->id)
+    expect($capture['execution_secrets'])->toHaveCount(1)
+        ->and(collect($capture['intent']['plan']['stage']['env_files'])->pluck('node_id')->all())->toBe([$node->id])
         ->and(json_encode($capture, JSON_THROW_ON_ERROR))->not->toContain('synthetic-unbound-private-key');
     expect(collect($socket->sent)->pluck('payload.value')->all())->each->toContain('unbound.target.test', 'synthetic-unbound-private-key');
 });
@@ -218,12 +244,10 @@ it('publishes a pending pool only after terminal success', function (string $sta
     $route->update(['status' => 'pending', 'sites_published' => false]);
     $capture = app(NativeRouteTargetInput::class)->capture($route->fresh(), $this->proposal);
     $operation = target_input_operation($capture, $this->nodes['old']->id);
-    $router = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['router']->id);
-    expect($router['before']['caddy']['content'])->not->toContain('pool.target.test')
-        ->and($router['after']['caddy']['content'])->toContain('pool.target.test')
+    expect(target_input_caddy($capture['intent']['plan']['router'], $this->nodes['router']->id))->toContain('pool.target.test')
         ->and($route->fresh()->status->value)->toBe('pending')->and($route->fresh()->sites_published)->toBeFalse();
 
-    target_input_project($operation, $status, ['ready' => $status === 'succeeded', 'restored' => $status === 'failed']);
+    target_input_project($operation, $status, [], $status === 'failed' ? 'Stage the new targets-0' : null);
 
     expect($route->fresh()->status->value)->toBe($status === 'succeeded' ? 'active' : 'pending')
         ->and($route->fresh()->sites_published)->toBe($status === 'succeeded');

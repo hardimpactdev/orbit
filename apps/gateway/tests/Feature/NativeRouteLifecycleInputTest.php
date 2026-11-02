@@ -227,10 +227,9 @@ it('captures public creation with automatic HTTPS and immutable Process checks',
 })->with([false, true]);
 
 it('preserves the target supplier workload TLS site during shared preparation', function (): void {
-    $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
-    $publication = collect($capture['intent']['preparation']['publications'])->firstWhere('node_id', $this->nodes['new']->id);
-    expect($capture['intent']['route_mutations']['artifacts']['caddy'][$publication['before']]['content'])->toContain('source.target.test')->not->toContain('pool.target.test')
-        ->and($capture['intent']['route_mutations']['artifacts']['caddy'][$publication['after']]['content'])->toContain('source.target.test', 'pool.target.test', 'app-instance-'.$this->instances['new']->id.'-hostname-change');
+    $plan = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal)['intent']['plan'];
+    $staged = collect($plan['stage']['caddy'])->firstWhere('node_id', $this->nodes['new']->id)['content'];
+    expect($staged)->toContain('source.target.test', 'pool.target.test', 'app-instance-'.$this->instances['new']->id.'-hostname-change');
 });
 
 it('probes only staged private workload TLS and verifies the public listener after publication', function (bool $colocated): void {

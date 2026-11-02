@@ -33,9 +33,13 @@ final readonly class NativeRouteTargetInput
         }
         $inventory = $this->targets->forRoute($route, $input);
         $metadata = array_intersect_key($inventory, array_flip(['route_id', 'mode', 'binding_only', 'noop', 'proposal', 'original_associations', 'original_route_states']));
-        $metadata += ['effectful' => ! $inventory['binding_only'] && ! $inventory['noop'], 'result_route_id' => $route->id, 'workloads' => []];
+        // A development target moves a published site; an unpublished Route only records it (R1).
+        $metadata += ['effectful' => $inventory['binding_only'] ? $route->sites_published : ! $inventory['noop'], 'result_route_id' => $route->id];
         if (! $metadata['effectful']) {
             return ['intent' => $metadata, 'participant_node_ids' => [209], 'certificates' => [], 'execution_secrets' => []];
+        }
+        if ($inventory['binding_only']) {
+            return $this->development($route, $input, $metadata);
         }
         $beforeSites = $this->sites->all();
         $owners = RouteExecutionProof::objects($inventory['original_associations']);
@@ -106,8 +110,9 @@ final readonly class NativeRouteTargetInput
                 unset($row);
             }
         }
+        // No rollback: the run never restores, so no previous material is staged.
         $capture = $this->publications->capture($prior, $desired, $staged, $prior, $beforeSites, $beforeSites, [],
-            static fn (Closure $render): array => $render());
+            static fn (Closure $render): array => $render(), restorable: false);
         $workloads = [];
         foreach (RouteExecutionProof::objects($inventory['prepared']) as $member) {
             $instance = $instances->findOrFail(ValidatedData::integer($member['instance_id']));
@@ -117,10 +122,46 @@ final readonly class NativeRouteTargetInput
         }
 
         $prepared = app(NativeRoutePreparationInput::class)->capture($capture, $staged, $desired, $beforeSites, $instances->only(ValidatedData::integerList(array_column(RouteExecutionProof::objects($inventory['prepared']), 'instance_id')))->keyBy('id')->all());
-        $capture = $prepared['capture'];
         $preparation = $prepared['preparation'];
+        $lifecycle = ['effectful' => true, 'route_mutations' => $prepared['capture']['route_mutations'], 'preparation' => $preparation,
+            'renders' => $capture['renders'], 'workloads' => $workloads, 'public_activated' => false];
+        $joining = array_map(static fn (array $member): array => ['node_id' => ValidatedData::integer($member['node_id']),
+            'domain' => $previous->findOrFail(ValidatedData::integer($member['route_id']))->domain], RouteExecutionProof::objects($inventory['prepared']));
+        $plan = app(NativeRouteTargetPlan::class)->build($route, $lifecycle, false, $joining, is_array($preparation['renders']) ? $preparation['renders'] : []);
 
-        return ['intent' => [...$metadata, 'workloads' => $workloads, 'preparation' => $preparation, 'route_mutations' => $capture['route_mutations']],
+        return ['intent' => [...$metadata, 'plan' => $plan],
+            'participant_node_ids' => $capture['participant_node_ids'], 'certificates' => $capture['certificates'],
+            'execution_secrets' => $capture['execution_secrets']];
+    }
+
+    /** One development target: the Route's published site moves from the previous target to the new one.
+     * @param  array<string,mixed>  $input
+     * @param  array<string,mixed>  $metadata
+     * @return array<string,mixed>
+     */
+    private function development(Route $route, array $input, array $metadata): array
+    {
+        $route->loadMissing(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node']);
+        $previousIds = ValidatedData::integerList($input['previous_target_instance_ids'] ?? []);
+        $instances = Instance::query()->with(['node', 'project'])->whereKey($previousIds)->get()->keyBy('id');
+        $members = [];
+        foreach ($previousIds as $position => $id) {
+            $member = new RouteTarget(['route_id' => $route->id, 'instance_id' => $id, 'position' => $position]);
+            $member->setRelation('instance', $instances->findOrFail($id));
+            $members[] = $member;
+        }
+        $prior = clone $route;
+        $prior->setRelation('targets', new Collection($members));
+        $before = $this->publications->route($prior);
+        $after = $this->publications->route($route);
+        // The stored target already changed, so the prior catalog puts the previous target's sites back.
+        $sites = $this->sites->all()->reject(static fn (DevelopmentSite $site): bool => $site->domain === $route->domain)->values()->merge($before['sites']);
+        $capture = $this->publications->capture([$before], [$after], [$after], [$before], $sites, $sites, [],
+            static fn (Closure $render): array => $render(), restorable: false);
+        $lifecycle = ['effectful' => true, 'route_mutations' => $capture['route_mutations'], 'preparation' => ['certificates' => [], 'lan' => []],
+            'renders' => $capture['renders'], 'workloads' => [], 'public_activated' => false];
+
+        return ['intent' => [...$metadata, 'plan' => app(NativeRouteTargetPlan::class)->build($route, $lifecycle, true, [], [])],
             'participant_node_ids' => $capture['participant_node_ids'], 'certificates' => $capture['certificates'],
             'execution_secrets' => $capture['execution_secrets']];
     }

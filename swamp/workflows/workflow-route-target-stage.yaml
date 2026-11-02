@@ -1,0 +1,56 @@
+id: 4496e9e3-8450-58eb-80b5-91201b6b3eff
+name: route-target-stage
+description: "route.target_set: one new target Node, staged before the Router selects it."
+vaults: [orbit-control-inputs]
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+    node_id: {type: integer, minimum: 1}
+    signed: {type: array, items: {type: string}}
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [intent, node_id, signed, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: stage
+  labels: {role: swamp}
+  steps:
+    # The Router's LAN address may reach this workload on 443.
+  - name: 'lan'
+    labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    forEach: {item: rule, in: '${{ inputs.intent.lan.filter(r, string(r.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-lan-" + string(self.rule.node_id) + "-" + string(self.rule.port) + "-" + self.rule.source.split("/").join("-")).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {port: '${{ self.rule.port }}', protocol: '${{ self.rule.protocol }}', action: allow, ensure: present, source: '${{ self.rule.source }}',
+        nodeHost: '${{ inputs.intent.nodes[string(self.rule.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(self.rule.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(self.rule.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # Certificate, pools, the staged Caddyfile and the production .env (route-create-site).
+  - name: 'site'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'lan', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: route-create-site
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ inputs.node_id }}'
+        signed: '${{ inputs.signed }}'
+        execution_secrets: '${{ inputs.execution_secrets }}'

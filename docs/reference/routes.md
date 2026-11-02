@@ -149,13 +149,13 @@ A Route target must have a supported relative web root. An Instance rooted at `.
 | Set a generated target without an effective TLD | `route.tld_required`. |
 | Change a Route of another kind | `route.kind_unsupported`. |
 | Set a target while another operation holds the projection lock | `app-dev.projection_busy`. Nothing changes. |
-| Set a development target when the source access walk fails | `app-dev.source_access_failed` at step `source-access`. The target stays set, and the Gateway still broadcasts [`route.updated`](/reference/events). |
+| Set a development target on a published Route when the publish step fails | `route.publish_failed` at step `Install cert, publish site`. The target stays set. |
 
 Setting a target on a generated Route moves its generation basis, scope, and domain with the target. When the domain changes, a replacement Route takes the target.
 
-Setting a development target on a Route whose sites are published gives Caddy access to the target's web root, as in [Node scope](#node-scope). The walk covers only the target's checkout and checkouts nested in it. A Route whose sites are not published gets the access when it converges.
+Setting a development target on a Route whose sites are published moves the site to the target's checkout with `route:create`'s publish step. `instance:create` already gave Caddy access to that checkout. A Route whose sites are not published only records the target: its Operation has already succeeded, and the Route publishes when it converges. [Native Route targets](/reference/native-route-targets) describes the run.
 
-The Gateway takes the [projection lock](#coordinate-publication) before it reads the Route, so `app-dev.projection_busy` returns before anything changes. The access walk runs after the target is stored. When the walk fails, the new target stays set, and the error message names the Route. Set the same target on that Route again. The retry walks the checkout again and repairs the access.
+The Gateway takes the [projection lock](#coordinate-publication) before it reads the Route, so `app-dev.projection_busy` returns before anything changes. The target is stored before the run starts. When the run fails, the new target stays set. Set the same target on that Route again.
 
 ### Change a production target set
 
@@ -163,9 +163,9 @@ An operator sends the complete ordered Instance set for one explicit, Cluster-sc
 
 A change that detaches an Instance must name it in `dispositions`, also when the Instance is not active. Each disposition either reassigns the Instance to a compatible explicit Route or authorizes its removal. A `pending` destination Route becomes `active` when it receives a reassigned Instance. No request removes an Instance unless `remove` is true for it. The Gateway refuses caller-supplied backend URLs, Node addresses, Caddy directives, and balancing fields.
 
-The Gateway prepares each added target's runtime, certificate, Caddy site, and Laravel URL before the target joins the Router pool. Then it commits the association set, synchronizes `APP_URL` for every kept and reassigned Instance, publishes the destination Router pool, and republishes each vacated Route. It runs authorized Instance removals last. An identical completed request changes nothing.
+One run stages each added target's runtime, certificates, Caddy site and `.env`, and probes it over TLS before the target joins the Router pool. Then it switches the Router pool and retires what no Route needs. An identical completed request changes nothing. [Native Route targets](/reference/native-route-targets) lists the steps and their error codes.
 
-The Gateway records the requested set before it starts. A failure before the association commit restores the original associations and rolls back the prepared projections. A failure after the commit keeps `target_set_step` and `failed_step`. In both cases the recorded set stays until the change completes, so the same request resumes and a different request returns `route.target_set_conflict`. After an authorized removal starts, a retry completes it and never recreates the Instance.
+The Gateway records the requested set before it starts, and writes the new associations from the run's result. A failure before the Router switch keeps the original associations; staged sites serve no traffic. A failure after the switch writes the new associations, because the new pool serves, and keeps the recorded set and `failed_step`. The recorded set stays until the change completes, so the same request runs again and a different request returns `route.target_set_conflict`. There is no rollback.
 
 | Error code | Meaning |
 | --- | --- |
