@@ -69,7 +69,7 @@ sequenceDiagram
     SW->>N: Check Plausible is healthy<br/>@swamp/ssh exec · curl -fsS
     %%> What it does:
     %%> - the `docker_container` check: the container runs the new image
-    %%> - one `curl -fsS --max-time 3` to Plausible's health URL
+    %%> - one bounded wait (`timeout 60`): `curl` retries Plausible's health URL until the new container answers
     alt the check passes
       N-->>SW: Plausible ready
       %%> Returns:

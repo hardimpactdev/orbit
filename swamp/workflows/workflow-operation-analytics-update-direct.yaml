@@ -282,16 +282,23 @@ jobs:
         name: health
         hosts:
         - target
+        # Q-WAIT: one bounded wait; a replaced Plausible refuses connections until it has started.
         argv:
         - timeout
-        - '20'
+        - '60'
         - curl
         - --fail
         - --silent
+        - --retry
+        - '30'
+        - --retry-connrefused
+        - --retry-delay
+        - '2'
         - --output
         - /dev/null
         - ${{ inputs.intent.health_url }}
         sudo: true
+        timeoutSec: 70
     dependsOn:
     - step: install
       condition:
