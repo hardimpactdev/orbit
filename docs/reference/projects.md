@@ -236,6 +236,10 @@ A repository request also re-binds when the URL is already the Project's URL. Us
 orbit project:update 3 --repository=https://github.com/acme/site.git
 ```
 
+## Maintenance
+
+Three Swamp workflows on Node 209 keep a Project's dependencies current. `project.detect` scans the lockfiles of the default branch, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch. The hourly `maintenance-projects` Schedule selects which of them a Project needs; the MCP tools `project-maintenance-detect` and `project-maintenance-routine` start one directly. Each run reads only its admitted intent and GitHub; the Gateway admits any task group from the run's result. Their steps carry the names in [`docs/flows/`](https://github.com/hardimpactdev/orbit/tree/main/docs/flows), so task progress shows names such as `Scan the lockfiles`.
+
 ## Remove a Project
 
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.

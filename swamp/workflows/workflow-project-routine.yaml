@@ -18,10 +18,7 @@ inputs:
       type: integer
       enum:
       - 209
-    kind:
-      type: string
-      enum:
-      - project.routine
+    kind: {type: string, const: project.routine}
     intent:
       type: object
     execution_secrets:
@@ -35,7 +32,7 @@ jobs:
 - name: routine
   labels: {role: swamp}
   steps:
-  - name: input
+  - name: Read the admitted input
     labels: {role: swamp}
     task:
       type: behavior
@@ -47,10 +44,10 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-  - name: select
+  - name: Select this week's routine
     labels: {role: swamp}
     dependsOn:
-    - step: input
+    - step: Read the admitted input
       condition:
         type: succeeded
     task:
@@ -58,13 +55,13 @@ jobs:
       modelIdOrName: orbit-gateway
       methodName: schedule_project
       inputs:
-        project: ${{ steps.input.outputs.project }}
+        project: ${{ steps["Read the admitted input"].outputs.project }}
         groups: ${{ inputs.intent.groups }}
         admitted_at: ${{ inputs.intent.admitted_at }}
-  - name: result
+  - name: Report the result
     labels: {role: swamp}
     dependsOn:
-    - step: select
+    - step: Select this week's routine
       condition:
         type: succeeded
     task:
@@ -77,4 +74,4 @@ jobs:
 
           '
         env:
-          ORBIT_RESULT: ${{ steps.select.outputs.result_json }}
+          ORBIT_RESULT: ${{ steps["Select this week's routine"].outputs.result_json }}

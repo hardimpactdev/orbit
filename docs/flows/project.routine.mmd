@@ -56,6 +56,9 @@ sequenceDiagram
   %%> - one routine group request, or none with the blocking reason
   %%> Why no admission here:
   %%> - steps never call the Gateway; the request travels in the terminal result
+  Note over SW: Report the result<br/>requests · blocking reason
+  %%> Returns:
+  %%> - prints the selection as one JSON object, which the Gateway reads from the run
   alt selection done
     SW-->>GW: Run succeeded<br/>terminal event · requests
     %%> How the Gateway learns it:

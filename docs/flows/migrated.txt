@@ -9,3 +9,6 @@ schedule.run
 instance.sync_environment
 instance.run_steps
 instance.destroy
+project.detect
+project.observe
+project.routine

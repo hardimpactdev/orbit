@@ -45,9 +45,18 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller follows the task with `operation:show`
+  Note over SW: Read the admitted input<br/>project-maintenance-input read
+  %%> What it does:
+  %%> - checks the admitted Project, task groups and pull request URLs, and builds the clone URL
+  %%> Not included:
+  %%> - it reads nothing from the Gateway; the intent is the input
+  Note over SW: Begin the scan<br/>orbit-gateway begin_scan
+  %%> What it does:
+  %%> - records the scan attempt for Project 4 as Swamp data
   SW->>GH: Clone the default branch<br/>git clone --depth=1 · vault.get
   %%> How:
   %%> - a shallow clone into Swamp's scan cache on Node 209
+  %%> - prints the cloned commit, which the scan uses
   %%> - git reads the token with `vault.get` as an HTTP header
   %%> Why:
   %%> - detect reads lockfiles from git; it needs no task VM (Recall swamp-owns-dependencies)
@@ -63,11 +72,25 @@ sequenceDiagram
   %%> Result:
   %%> - findings, kept as Swamp data (`orbit.dependencies.v1`)
   %%> - at most one package group request: every eligible major and advisory fix together
-  SW->>GH: Check head is unchanged<br/>git ls-remote · assert_scan_head
+  SW->>GH: Read the branch head<br/>git ls-remote · vault.get
   %%> What it does:
   %%> - reads the current head of the default branch again
   %%> Why:
   %%> - findings count only for the commit that is still the head
+  Note over SW: Check head is unchanged<br/>orbit-gateway assert_scan_head
+  %%> What it does:
+  %%> - compares the branch head with the scanned commit and checks the scan's policy
+  Note over SW: Finish the scan<br/>orbit-gateway finish_scan
+  %%> What it does:
+  %%> - settles a failed clone, scan or head check as a failed attempt
+  %%> Result:
+  %%> - one result: the package group requests, or the error code
+  Note over SW: Report the result<br/>requests · error_code
+  %%> Returns:
+  %%> - prints the result as one JSON object, which the Gateway reads from the run
+  Note over SW: Remove the clone<br/>rm -rf · always
+  %%> What it does:
+  %%> - deletes the scan checkout from Swamp's cache, after success or failure
   alt scan is current
     GH-->>SW: same head
     %%> Returns:
@@ -89,6 +112,9 @@ sequenceDiagram
     GH--xSW: error or moved head
     %%> When:
     %%> - the token is refused, the clone fails, the scan fails, or the branch moved during the scan
+    Note over SW: Fail on an error<br/>scan_succeeded false · exit 1
+    %%> What it does:
+    %%> - fails the run after the result is reported, so the task fails
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code, for example `project.scan_failed`
