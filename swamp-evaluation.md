@@ -70,3 +70,9 @@ Git bundle export, SSH copy, bare initialization, import and commit/tree reads r
 Pinned e459 discards outputs from failed command steps. Publication captures bounded Git and GitHub replies in private files and uses an immediate typed reader for public refusal codes. The command permits a nonzero exit so that reader can preserve `tasks.not_fast_forward` and `tasks.workflows_permission`; the reader then fails natively. Could failed command output specs retain only a typed public error or a sensitive locator? That could remove these reader steps without exposing raw CLI replies. No final report or wrapper executor is added.
 
 The pinned workflow input validator rejects explicit null before inspecting `anyOf`. `default: null` admits the push-only PR option. Could nullable schemas validate directly while preserving required-field checks?
+
+## Project routine history access
+
+The pass-3 routine design reads unfinished attempts from native Swamp run history and removes begin/finish notes. Pinned Swamp e459 exposes `queryData` to user behaviors, but that API reads resource data, not unfinished execution records. The extension-author context does not expose the internal `outputRepository`, although the internal worker proxy implements it. Could a supported, scoped run-history query be exposed to user behaviors?
+
+Three native draft runs failed with `project.routine_history_unavailable`; one is `b884a2b0-e122-4f4e-8dc6-59294b51ae46`. A pure test that supplied the internal repository hid this missing capability. The official extension catalog has no native Swamp history reader. The unproven draft remains outside the shipped source; no replacement ledger, filesystem scan, token or wrapper was added. Routine still awaits this capability or an explicit design decision.
