@@ -1,6 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { behavior, RemoveInput, removalDecision, removalResult } from "./remove.ts";
-const step = (v: unknown) => ({ status: "succeeded", outputs: { stdout: JSON.stringify(v) } });
+import { behavior, RemoveInput, removalDecision } from "./remove.ts";
 const probe = (input: ReturnType<typeof fixture>["input"], facts: unknown, plan: unknown = { packages: ["hello"] }) => removalDecision(input, { facts, plan });
 function fixture(manager = "apt") {
   const input = RemoveInput.parse({ node_id: 9, manager, package: manager === "composer" ? "vendor/package" : "hello", user: "orbit", platform: manager === "brew-cask" ? "macos" : "linux", architecture: "x86_64", installed_version: "1.0" });
@@ -38,23 +37,6 @@ Deno.test("apt eligibility refuses empty, unread or wider plans", () => {
   const { input, facts } = fixture("apt");
   for (const packages of [[], ["hello", "shared"], ["other"]]) assertEquals(probe(input, facts, { packages }).error_code, "tool.removal_plan_unsafe");
   assertEquals(probe(input, facts, null).error_code, "tool.remove_failed");
-});
-Deno.test("only proven absence deletes the Tool, and dropping the last source is best-effort", () => {
-  const ok = { status: "succeeded" }, failed = { status: "failed" }, skipped = { status: "skipped" };
-  for (const manager of ["apt", "composer", "vp", "brew", "brew-cask"]) {
-    const { input, facts } = fixture(manager);
-    const decision = { status: "succeeded", outputs: probe(input, facts) };
-    assertEquals(removalResult(input, null, decision, ok, ok, skipped).ok, true);
-    assertEquals(JSON.parse(removalResult(input, null, decision, failed, skipped, skipped).stdout).error_code, "tool.remove_failed");
-    assertEquals(removalResult(input, null, decision, ok, failed, skipped).ok, false);
-    assertEquals(removalResult(input, step({ facts: { ...facts, versions: [] } }), skipped, null, null, null).ok, true);
-  }
-  const repository = { name: "vendor", uris: ["https://packages.example.test/apt"], suites: ["preview"], components: ["main"], signing_key: { url: "https://packages.example.test/key.gpg", fingerprint: "A".repeat(40) } };
-  const input = RemoveInput.parse({ ...fixture("apt").input, repository, remove_repository: true });
-  const decision = { status: "succeeded", outputs: { ready: true, remove: true, manager_version: "3.0" } };
-  assertEquals(JSON.parse(removalResult(input, null, decision, ok, ok, ok).stdout), { manager_version: "3.0", installed_version: null, outcome: "applied", repository_removed: true });
-  const kept = removalResult(input, null, decision, ok, ok, failed);
-  assertEquals([kept.ok, JSON.parse(kept.stdout).repository_removed], [true, false]);
 });
 Deno.test("brew refuses while another installed formula depends on it", () => {
   const { input, facts } = fixture("brew");

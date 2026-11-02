@@ -25,14 +25,14 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan and manager list keep their read paths.
 
-Every step runs on control Node 209. Install, update and removal use official cfgmgmt resources and one bounded SSH argv per manager command. Official package checks supply the installed version or absence. Typed worker steps apply constraints and shape the Gateway result. Package phases send no Python source to the Node.
+Every step runs on control Node 209. Install, update and removal use official cfgmgmt resources and one bounded SSH argv per manager command. Official package checks supply the installed version or absence. Typed worker steps apply constraints and decode package observations. The Gateway reads the native run and fixed public captures; no result-reporting step runs. Package phases send no Python source to the Node.
 
 A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. Adoption retains its shared scripts. The separate manager setup keeps the pinned bootstrap installers.
 
 | Workflow | Steps |
 | --- | --- |
-| Install, update | `assets`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `decide`, `Install the package` or `Upgrade the package`, `Check the package`, `result`, `accepted` |
-| Remove | `assets`, parallel manager and package reads, `Plan the removal`, `decide`, `Remove the package`, `Check it is gone`, optional source and preference removal, `result`, `accepted` |
+| Install, update | `assets`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `decide`, `Install the package` or `Upgrade the package`, `Check the package`, `Decode package state`, `Assert package state` |
+| Remove | `assets`, parallel manager and package reads, `Plan the removal`, `decide`, `Remove the package`, `Check it is gone`, optional source and preference removal, `Decode package state`, `Assert package state` |
 | Adopt | `assets`, `query`, `repository`, `result`, `assert`: unchanged until the [observer pass](/swamp/observer-gap) replaces it |
 
 ### Install and update steps

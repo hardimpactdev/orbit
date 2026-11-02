@@ -14,7 +14,7 @@
     {"name": "Check the candidate", "job": "tools", "step": "Check the candidate", "budget_seconds": 120},
     {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
     {"name": "Install the package", "job": "tools", "step": "Install the package", "budget_seconds": 900},
-    {"name": "result", "job": "tools", "step": "result", "budget_seconds": 30}
+    {"name": "Assert package state", "job": "tools", "step": "Assert package state", "budget_seconds": 10}
   ],
   "parity": "swamp/proof/tool.install/parity.py"
 }

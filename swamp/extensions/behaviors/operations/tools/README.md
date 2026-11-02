@@ -1,6 +1,6 @@
 # Native Tool commands
 
-Install, update and removal use official cfgmgmt resources and one SSH argv per manager command. No package phase sends Python source to the Node. The package check provides the installed version or proven absence; the native assert rejects an incomplete result.
+Install, update and removal use official cfgmgmt resources and one SSH argv per manager command. No package phase sends Python source to the Node. The package check provides the installed version or proven absence; a typed decoder reads that observation and the native assert proves the end state. The Gateway reads these fixed native captures without a result-reporting step.
 
 The apt key is fetched to a staging file. One `gpg --with-colons --show-keys` command reads its primary fingerprint. A native assert requires exactly the admitted primary key before the keyring and source are published. Cleanup removes the staging file after completed or skipped publication, including a failed fingerprint check.
 

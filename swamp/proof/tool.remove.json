@@ -18,7 +18,7 @@
     {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
     {"name": "Remove the package", "job": "tools", "step": "Remove the package", "budget_seconds": 120},
     {"name": "Check apt absence", "job": "tools", "step": "Check apt absence", "budget_seconds": 60},
-    {"name": "result", "job": "tools", "step": "result", "budget_seconds": 30}
+    {"name": "Assert package state", "job": "tools", "step": "Assert package state", "budget_seconds": 10}
   ],
   "parity": "swamp/proof/tool.install/parity.py"
 }

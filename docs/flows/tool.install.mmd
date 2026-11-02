@@ -98,6 +98,8 @@ sequenceDiagram
     SW->>N: Check Homebrew formula<br/>official package check
   end
   SW->>N: Check the package<br/>native package check
+  Note over SW: Decode package state<br/>typed package observation
+  Note over SW: Assert package state<br/>native end check
   opt signing key staged
     SW->>N: Remove the staged key<br/>cleanup on completion
   end

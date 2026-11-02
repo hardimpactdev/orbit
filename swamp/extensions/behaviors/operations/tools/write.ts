@@ -1,8 +1,8 @@
 import { z } from "npm:zod@4.4.3";
 import * as native from "./native.ts";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
-import { AdoptInput, type Context, Facts, ManagerFields, phaseAssets, platformSupports, repositoryError } from "./adopt.ts";
-import { allows, normalizeVersion, printed, safeVersion, Step, ToolRefusal, verifyInstalled } from "./contract.ts";
+import { AdoptInput, type Context, Facts, ManagerFields, phaseAssets, platformSupports } from "./adopt.ts";
+import { allows, normalizeVersion, safeVersion, Step, ToolRefusal, verifyInstalled } from "./contract.ts";
 import { homebrewBlock, homebrewCandidateVersion } from "./adopt_homebrew.ts";
 export const WriteInput = AdoptInput.safeExtend({ kind: z.enum(["tool.install", "tool.update"]), setup: Setup.nullable().default(null) });
 /** The shared Tool Manager setup reads only the manager, for a Tool install or the development deploy. */
@@ -63,41 +63,9 @@ export function decide(input: Input, phase: Phase): Decision {
     return refused(error instanceof ToolRefusal ? error.code : "tool.version_probe_failed");
   }
 }
-/** A Node step that ran but did not do its job: it printed its result and exited nonzero. */
-const unfinished = (step: StepValue) => step !== null && step.status !== "skipped" && (step.status !== "succeeded" || (step.outputs?.exitCode !== undefined && step.outputs.exitCode !== 0));
-export type WriteSteps = { setup: StepValue; source: StepValue; check: StepValue; decision: StepValue; write: StepValue };
-/** The terminal result: the first chart step that did not finish, or the version the write left behind. */
-export function writeResult(input: Input, steps: WriteSteps) {
-  const finish = (fields: Record<string, unknown>, code: string | null) => ({ ok: code === null, stdout: JSON.stringify({ ...fields, ...(code ? { error_code: code } : {}) }) });
-  // The shared setup child reports the manager's facts; a manager that is not ready fails it (decision 1: no Tool).
-  if (unfinished(steps.setup)) {
-    const scope = Facts.safeParse(printed(steps.setup)?.facts);
-    const conflict = scope.success && scope.data.scope === "conflict";
-    return finish({ manager_version: null, installed_version: input.installed_version, ...(conflict ? { native_error_code: `tool.${input.manager.replace("-", "_")}_scope_conflict` } : {}) },
-      conflict ? "tool.manager_unavailable" : "tool.manager_provision_failed");
-  }
-  if (unfinished(steps.source)) return finish({ manager_version: null, installed_version: input.installed_version }, repositoryError(printed(steps.source)) ?? "tool.repository_failed");
-  const decided = steps.decision?.status === "succeeded" ? steps.decision.outputs as Decision : decide(input, printed(steps.check));
-  let code = decided.ready ? null : decided.error_code ?? "tool.version_probe_failed", installed = decided.installed_version, outcome = decided.outcome ?? "unchanged";
-  if (code === null && decided.mutate) {
-    const phase = printed(steps.write);
-    try {
-      if (phase?.written !== true) throw new ToolRefusal(input.kind + "_failed");
-      const { facts, present } = writeInventory(phase.facts);
-      if (!present) throw new ToolRefusal("tool.version_probe_failed");
-      verifyInstalled(plain(input), facts.versions![0]!);
-      installed = facts.versions![0]!;
-      outcome = installed === decided.installed_version ? "unchanged" : "applied";
-    } catch (error) {
-      if (!(error instanceof ToolRefusal) && !(error instanceof z.ZodError)) throw error;
-      code = error instanceof ToolRefusal ? error.code : "tool.version_probe_failed";
-    }
-  }
-  return finish({ manager_version: decided.manager_version, installed_version: installed, ...(decided.native_error_code ? { native_error_code: decided.native_error_code } : {}), ...(code ? {} : { outcome }) }, code);
-}
 export const behavior = {
-  type: "@nckrtl/tool-write-command", version: "2026.11.02.4",
-  resources: { assets: { schema: Public, lifetime: "1d", garbageCollection: 10 }, decision: { schema: Public, lifetime: "1d", garbageCollection: 10 }, result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 } },
+  type: "@nckrtl/tool-write-command", version: "2026.11.02.5",
+  resources: { assets: { schema: Public, lifetime: "1d", garbageCollection: 10 }, decision: { schema: Public, lifetime: "1d", garbageCollection: 10 }, observation: { schema: Public, lifetime: "1d", garbageCollection: 10 } },
   methods: {
     assets: { description: "Shape public command argv for the admitted manager", arguments: z.object({ input: WriteInput }),
       execute: async (args: { input: Input }, ctx: Context) => { const value = native.commands(args.input); await ctx.writeResource("assets", "assets", value); return value; } },
@@ -114,16 +82,15 @@ export const behavior = {
         const value = { ...decide(args.input, phase), version: phase?.candidate ? (phase.candidate as { version?: string }).version ?? "" : "" };
         await ctx.writeResource("decision", "decision", value); return value;
       } },
-    result: { description: "Shape the installed version from the native end check for Gateway projection", arguments: z.object({ input: WriteInput, setup: Step.nullable(), source: Step.nullable(), check: Step.nullable(), decision: Step.nullable(), write: Step.nullable(), key: Step.nullable(), after: Public.nullable() }),
-      execute: async (args: { input: Input; key: StepValue; after: Record<string, unknown> | null } & WriteSteps, ctx: Context) => {
-        if (args.key?.status === "failed") args.source = { status: "succeeded", outputs: { exitCode: 1, stdout: JSON.stringify({ ready: false, error_code: "tool.repository_key_mismatch" }) } };
-        let write = args.write;
-        if (write?.status === "succeeded") {
-          let facts: unknown = null;
-          try { facts = native.after(args.input, args.after); } catch { /* An unreadable end check cannot prove success. */ }
-          write = { status: "succeeded", outputs: { exitCode: 0, stdout: JSON.stringify({ written: true, facts }) } };
-        }
-        const value = writeResult(args.input, { ...args, write }); await ctx.writeResource("result", "result", value); return value;
+    observe: { description: "Decode the package state returned by the official end check", arguments: z.object({ input: AdoptInput, after: Public }),
+      execute: async (args: { input: z.infer<typeof AdoptInput>; after: Record<string, unknown> }, ctx: Context) => {
+        const facts = native.after(args.input, args.after);
+        const installed_version = facts.versions.length === 1 ? facts.versions[0] : null;
+        if (installed_version !== null && !safeVersion(installed_version)) throw new ToolRefusal("tool.version_probe_failed");
+        if (typeof installed_version === "string") verifyInstalled(plain(WriteInput.parse({ ...args.input, kind: "tool.install" })), installed_version);
+        const value = { installed_version, present: facts.versions.length === 1, absent: facts.versions.length === 0,
+          compliant: !["apt", "brew"].includes(args.input.manager) || args.after.status === "compliant" };
+        await ctx.writeResource("observation", "observation", value); return value;
       } },
   },
 };

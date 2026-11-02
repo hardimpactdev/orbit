@@ -23,7 +23,8 @@ elif '/usr/bin/apt-cache' in argv: print('hello:\n  Candidate: '+state['candidat
 elif '--simulate' in argv:
     print('Remv hello [1.0]\n'+('Remv other [1.0]\n' if state.get('unsafe') else ''))
 elif 'install' in argv:
-    if state.get('fail_write'): code=1
+    if state.get('no_write'): pass
+    elif state.get('fail_write'): code=1
     else: state['installed']=argv[-1].split('=')[1]
 elif '--remove' in argv: state['installed']=None
 elif '--version' in argv: print('apt 3.0')
@@ -76,9 +77,14 @@ class ToolNative(NativeTestCase):
         self.cli('workflow', 'validate', name)
         run = json.loads(self.cli('workflow', 'run', name, '--stdin', input=json.dumps(inputs), success=success).stdout)
         run = json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
-        result = next(s for s in run['jobs'][0]['steps'] if s['name'] == 'result')
-        self.assertIn('outputs', result, repr([(s['name'], s['status'], s.get('error')) for s in run['jobs'][0]['steps']]))
-        return run, json.loads(result['outputs']['stdout'])
+        steps = {s['name']: s for s in run['jobs'][0]['steps']}
+        self.assertNotIn('result', steps)
+        decision = steps.get('decide', {}).get('outputs', {})
+        observed = steps.get('Decode package state', {}).get('outputs', {})
+        result = {**decision, **observed}
+        if kind == 'tool.remove' and run['status'] == 'succeeded': result['outcome'] = 'applied'
+        if steps.get('Assert the key fingerprint', {}).get('status') == 'failed': result['error_code'] = 'tool.repository_key_mismatch'
+        return run, result
 
     def test_install_uses_native_argv_and_records_the_checked_version(self):
         run, result = self.run_kind()
@@ -86,6 +92,13 @@ class ToolNative(NativeTestCase):
         calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
         self.assertTrue(any('--no-remove' in argv and 'DPkg::Lock::Timeout=300' in argv for argv in calls))
         self.assertFalse(any('-c' in argv or any('.py' in part for part in argv) for argv in calls))
+
+    def test_a_successful_command_without_the_package_fails_the_native_end_assert(self):
+        run, _ = self.run_kind(success=False, state={'no_write': True})
+        steps = {step['name']: step for step in run['jobs'][0]['steps']}
+        self.assertEqual(steps['Install the package']['status'], 'succeeded')
+        self.assertEqual(steps['Assert package state']['status'], 'failed')
+        self.assertIsNone(json.loads(self.state.read_text())['installed'])
 
     def test_constraint_refusal_writes_nothing(self):
         _, result = self.run_kind(success=False, version_constraint='^1.0')

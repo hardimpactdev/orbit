@@ -89,6 +89,8 @@ sequenceDiagram
     %%> - asks the Tool Manager again; the package must be absent
     %%> Why:
     %%> - the Tool only counts as removed when the Node shows it
+    Note over SW: Decode package state<br/>typed package observation
+    Note over SW: Assert package state<br/>native end check
     alt package is gone
       N-->>SW: ripgrep absent
       %%> Returns:

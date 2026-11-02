@@ -1,5 +1,5 @@
 """Legacy Tool contract on the target (F9), for install, update, remove and adopt of one apt package:
-the package state dpkg reports, the version the run returned, and no manager output in native history."""
+the package state dpkg reports, the version the run returned, and no manager output in the API result."""
 import json
 import os
 import subprocess
@@ -21,7 +21,7 @@ query = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'dpkg
                        capture_output=True, text=True, check=False)
 installed = query.returncode == 0 and query.stdout.startswith('install ok installed')
 version = query.stdout.split('\t')[1] if installed else None
-check('Setting up' not in outputs and 'Unpacking' not in outputs, 'apt output reached native history')
+check('Setting up' not in json.dumps(result) and 'Unpacking' not in json.dumps(result), 'apt output reached the API result')
 if status == 'failed':
     check(operation.get('error_code') == 'tool.version_constraint_blocked', 'the constraint blocked the install')
     check(not installed, 'a blocked install writes nothing')
