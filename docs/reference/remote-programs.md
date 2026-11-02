@@ -52,7 +52,7 @@ PHP tests cover the retained bootstrap and result protocol. They start each excl
 
 Tasks monitors share `tasks/unit-state.py` through `TaskUnitProgram`, which replaces `# ORBIT_TASK_UNIT_STATE` before transport. The check lints the assembled source and maps each finding to its original template or library line. This preserves the workspace scripts while they await the separate Tasks migration.
 
-The `Remote programs` CI job runs these checks. The [candidate gate](/reference/implementation-loop#the-candidate-gate) also runs them when a candidate changes Gateway resources, direct program tests, Ruff configuration, or the checker. A missing tool fails the check.
+Each Project check shard installs the pinned linters before running the candidate gate. The shard selected for remote programs runs these checks. The [candidate gate](/reference/implementation-loop#the-candidate-gate) also runs them when a candidate changes Gateway resources, direct program tests, Ruff configuration, or the checker. A missing tool fails the check.
 
 ## Inline scripts
 

@@ -164,6 +164,11 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/program-tools"
           "$RUNNER_TEMP/program-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1
           echo "$RUNNER_TEMP/program-tools/bin" >> "$GITHUB_PATH"
+      - name: Install remote program linters
+        run: |
+          python3 -m venv "$RUNNER_TEMP/program-linters"
+          "$RUNNER_TEMP/program-linters/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1
+          echo "$RUNNER_TEMP/program-linters/bin" >> "$GITHUB_PATH"
       - name: Run the Project check
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
