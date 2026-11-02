@@ -337,3 +337,15 @@ The fresh minimal@10 receipt at `bf68a00fae` enables a disabled Node Schedule in
 ## Native Schedule disable
 
 The fresh minimal@10 receipt at `6c0be3e948` covers initial disable and a repeated disable. The measured request takes 0.11 seconds, its one-sample p95, with a 60-second budget and shared fire queue timeout of 300. The workflow remains, its trigger is absent, no Node units appear and no control run starts. The existing native implementation needs no rewrite or shipped script. The chart is marked migrated; `swamp/proof/receipts/schedule-disable-native.json` indexes the passing receipt. The proof uses a test calendar and proof CA, without production data or scale.
+
+## Conn pairing creation keeps each credential separate
+
+`conn.pairing_create` follows its chart with five native labels. One bounded curl request mints the token; the existing data type reads the private reply and stores a native sensitive field. It performs no HTTP call. Gateway admission supplies the complete request body and the same administrative scopes. The reader keeps every HTTP 2xx success, matching the former fetch path. Declared cleanup removes the private reply, and the native assert is the end check.
+
+Each pairing uses its own resource instance and native vault key. The former fixed instance reused the key across issues and could overwrite an unread credential. A native regression issues two pairings before reading either key and checks both values. Gateway projection imports and deletes the exact admitted pairing's key through the existing native frame helpers. Its owner endpoint returns the encrypted link once; a terminal replay makes no further vault read or delete.
+
+Both minimal@10 proofs pass at `657b9c4f40901c1de647d5eee7bd706b8942b2f7`: `evidence/proof/conn.pairing_create/20261102T200448Z-minimal.json` takes 6.38 seconds, and `evidence/proof/conn.pairing_create-rejected/20261102T200458Z-minimal.json` takes 6.37 seconds. Each has one sample and the same observed nearest-rank p95. The initial budget stays 1,800 seconds, with queueTimeout 30 seconds. The fixture uses a disposable T3 HTTP contract service, a real Gateway and Swamp, and the proof account. It checks key deletion without a second secret read, a foreign Node's refusal, one owner read and a rejected admin session. It exercises no production T3 server, TLS or scale.
+
+Five native workflow tests, six data tests and 109 Gateway tests pass, as do PHPStan, Pint, registry, chart, documentation, shape, naming and placement checks. Pinned serve accepts both rendered grant files and their 65 grants in an isolated repository with the normal signed-in account.
+
+When the first success receipts failed parity, the native Operation had succeeded: the metadata CLI needed the harness account environment and an absolute launcher, the missing-key reply says `vault_inspect_failed` with “does not exist”, and expected HTTP refusals return a nonzero driver status. These fixture checks were corrected before the passing receipt; the production path was unchanged.

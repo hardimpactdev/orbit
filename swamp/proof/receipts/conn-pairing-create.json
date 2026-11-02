@@ -1,0 +1,42 @@
+{
+  "kind": "conn.pairing_create",
+  "topology": "minimal@10",
+  "execution_commit": "657b9c4f40901c1de647d5eee7bd706b8942b2f7",
+  "runtime_files_identical_after_rebase": true,
+  "vm": {
+    "group_id": 2725,
+    "provision_operation_id": 8257,
+    "task_vm_id": 356,
+    "node_id": 384,
+    "name": "tvm-356",
+    "host_node_id": 13,
+    "seed": "b52d9c01d06875e8c37dffc5ed4e9b80cab6d4b35fe709d8a17f0d356571d030",
+    "provisioned_at": "2026-11-02T19:50:53Z",
+    "cancel_operation_id": 8268
+  },
+  "script_files_deleted": 0,
+  "script_gap": null,
+  "receipts": [
+    {
+      "case": "conn.pairing_create",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/conn.pairing_create/20261102T200448Z-minimal.json",
+      "seconds": 6.38,
+      "sample": 1,
+      "p95_seconds": 6.38,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "6f2fdc59-4014-45b7-ae59-3526f942a799"
+    },
+    {
+      "case": "conn.pairing_create-rejected",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/conn.pairing_create-rejected/20261102T200458Z-minimal.json",
+      "seconds": 6.37,
+      "sample": 1,
+      "p95_seconds": 6.37,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "a121530d-6394-4983-b28d-66b814b3fb08"
+    }
+  ],
+  "limits": "One disposable T3 HTTP pairing service, real Gateway and Swamp, proof account. No production T3 server, TLS or scale. Both fixtures reset their own Conn records."
+}

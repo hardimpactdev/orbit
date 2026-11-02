@@ -56,3 +56,9 @@ The removal family uses official cfgmgmt and direct SSH argv, with no shipped sc
 The official resources keep file publication, systemd apply and restart, and the final digest check visible as separate operations. Could systemd apply restart only when its unit or binary changed and prove the resulting service state? The shared observer flow currently restarts on every visit.
 
 The bounded digest argv checks the binary, recorded key and public files together. Could official resources expose a composite check without returning file content? The Gateway now supplies only the public verifier digest; no Secret comparison is needed.
+
+## Conn pairing native data candidates
+
+Curl always records stdout, so an unknown response credential needs a private file, a typed reader and explicit cleanup. Could a native HTTP or command output spec store a response as sensitive data and return only its locator? That could remove private-directory progress steps while preserving one visible API action.
+
+Sensitive-field keys include the resource instance. A fixed instance shared across pairing issues reused its credential key; pairing-specific instances keep unread outputs separate. Could remote `writeResource` handles expose their exact sensitive-field locators? The pinned runtime omits attributes, so the data type currently derives that locator from its documented model, method, resource, instance and field names.
