@@ -153,6 +153,7 @@ def main():
             "python3-cryptography",
             "nodejs",
             "npm",
+            "jq",
         ]
     )
     url = "https://vault-proof.orbit:8443"
@@ -172,6 +173,14 @@ def main():
     from fixtures.vaultwarden_account import provision
 
     configuration = provision(url, secrets.token_urlsafe(32), ca)
+    if len(sys.argv) > 1 and sys.argv[1] == "sync":
+        # An external connection record needs no Database server in this topology.
+        # Its private test credential enters PHP only through stdin.
+        run(
+            ["runuser", "-u", "orbit", "--", "php", "-r", "require 'vendor/autoload.php'; $app = require 'bootstrap/app.php'; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); $v = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR); App\\Models\\DatabaseConnection::query()->create(['slug'=>'vault-proof','driver'=>'mysql','host'=>'192.0.2.44','database'=>'proof','username'=>'proof','password'=>$v['password']]);"],
+            cwd=SOURCE / "apps/gateway",
+            input=json.dumps({"password": secrets.token_urlsafe(32)}).encode(),
+        )
     # The proof driver binds these values only into request bodies, never its receipt.
     print(
         json.dumps(

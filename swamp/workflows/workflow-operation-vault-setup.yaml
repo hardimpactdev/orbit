@@ -1,34 +1,63 @@
 id: 6a0f42e3-1cd3-4d84-8b26-59ea7e7a321f
 name: operation-vault-setup
 description: Verify the account and collection with the official Bitwarden CLI on a Swamp worker.
-vaults: [orbit-control-inputs]
+vaults:
+- orbit-control-inputs
 queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id: {type: integer, minimum: 1}
-    node_id: {type: integer, minimum: 1}
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
     kind: {type: string, const: vault.setup}
     intent:
       type: object
       properties:
-        url: {type: string}
-        client_id: {type: string, minLength: 1}
-        organization: {type: string, minLength: 1}
-        collection: {type: string, minLength: 1}
-        ca_file: {type: string, pattern: '^/'}
-        published: {type: boolean}
+        url:
+          type: string
+        client_id:
+          type: string
+          minLength: 1
+        organization:
+          type: string
+          minLength: 1
+        collection:
+          type: string
+          minLength: 1
+        ca_file:
+          type: string
+          pattern: ^/
+        published:
+          type: boolean
         refusal_exit_codes:
           type: object
-          additionalProperties: {type: integer, minimum: 1, maximum: 123}
+          additionalProperties:
+            type: integer
+            minimum: 1
+            maximum: 123
         previous:
           type: object
           properties:
-            organization_id: {type: string}
-            collection_id: {type: string}
-          required: [organization_id, collection_id]
+            organization_id:
+              type: string
+            collection_id:
+              type: string
+          required:
+          - organization_id
+          - collection_id
           additionalProperties: false
-      required: [url, client_id, organization, collection, ca_file, published, refusal_exit_codes]
+      required:
+      - url
+      - client_id
+      - organization
+      - collection
+      - ca_file
+      - published
+      - refusal_exit_codes
       additionalProperties: false
     execution_secrets:
       type: object
@@ -36,63 +65,156 @@ inputs:
         configuration:
           type: object
           properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^vault-setup-[a-f0-9-]{36}$'}
-          required: [vault, key]
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^vault-setup-[a-f0-9-]{36}$
+          required:
+          - vault
+          - key
           additionalProperties: false
-      required: [configuration]
+      required:
+      - configuration
       additionalProperties: false
-  required: [operation_id, node_id, kind, intent, execution_secrets]
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
 - name: setup
   steps:
-  - name: Resolve CLI assets
-    labels: {role: swamp}
+  - name: Prepare public data
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-assets
-      methodName: setup_assets
-      inputs: {intent: '${{ inputs.intent }}'}
+      behaviorName: vault-setup-inputs
+      methodName: prepare
+      inputs:
+        intent: ${{ inputs.intent }}
   - name: Verify the account
-    labels: {role: swamp}
+    labels:
+      role: swamp
     writes: true
-    dependsOn: [{step: Resolve CLI assets, condition: {type: succeeded}}]
+    dependsOn:
+    - step: Prepare public data
+      condition:
+        type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: vault-setup-verify
       methodName: execute
       inputs:
-        run: timeout 180 python3 -B '${{ steps["Resolve CLI assets"].outputs.scripts.setup }}'
-        env: &environment
-          ORBIT_VAULT_INTENT: '${{ steps["Resolve CLI assets"].outputs.intent_json }}'
-          ORBIT_VAULT_DIRECTORY: '${{ "/tmp/orbit-vault-setup-" + run.id }}'
-          ORBIT_VAULT_CONFIGURATION: '${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key) }}'
+        run: |
+          timeout 180 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          mkdir -m 0700 -p -- "$ORBIT_VAULT_DIRECTORY"
+          BITWARDENCLI_APPDATA_DIR=$ORBIT_VAULT_DIRECTORY
+          BW_CLIENTID=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .client_id' 2>/dev/null)
+          NODE_EXTRA_CA_CERTS=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .ca_file' 2>/dev/null)
+          URL=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .url' 2>/dev/null)
+          export BITWARDENCLI_APPDATA_DIR BW_CLIENTID NODE_EXTRA_CA_CERTS BW_NOINTERACTION=true
+          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw config server "$URL" >/dev/null 2>/dev/null) || exit 10
+          BW_CLIENTSECRET=$(jq -ern 'env.ORBIT_VAULT_CONFIGURATION | fromjson | .client_secret' 2>/dev/null)
+          export BW_CLIENTSECRET
+          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw login --apikey >/dev/null 2>/dev/null) || exit 10
+          BW_PASSWORD=$(jq -ern 'env.ORBIT_VAULT_CONFIGURATION | fromjson | .master_password' 2>/dev/null)
+          export BW_PASSWORD
+          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw unlock --passwordenv BW_PASSWORD --raw >"$ORBIT_VAULT_DIRECTORY/session" 2>/dev/null) || exit 10
+          unset BW_CLIENTSECRET BW_PASSWORD
+          BW_SESSION=$(cat "$ORBIT_VAULT_DIRECTORY/session"); export BW_SESSION
+          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw status >"$ORBIT_VAULT_DIRECTORY/status.json" 2>/dev/null) || exit 10
+          jq -e --slurpfile status "$ORBIT_VAULT_DIRECTORY/status.json" '.[("user_" + $status[0].userId + "_kdfConfig_kdfConfig")] | .kdfType == 0 and (.iterations | type == "number" and . == floor and . >= 1 and . <= 2000000)' "$ORBIT_VAULT_DIRECTORY/data.json" >/dev/null 2>/dev/null || exit 16
+          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw list organizations >"$ORBIT_VAULT_DIRECTORY/organizations.json" 2>/dev/null) || exit 10
+          jq -ce '(env.ORBIT_VAULT_INTENT | fromjson | .organization) as $wanted | map(select(.id == $wanted or .name == $wanted)) | if length == 1 then .[0] else empty end' "$ORBIT_VAULT_DIRECTORY/organizations.json" >"$ORBIT_VAULT_DIRECTORY/organization.json" 2>/dev/null || exit 11
+          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw list collections >"$ORBIT_VAULT_DIRECTORY/collections.json" 2>/dev/null) || exit 10
+          jq -ce --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" '(env.ORBIT_VAULT_INTENT | fromjson | .collection) as $wanted | map(select(.organizationId == $org[0].id and (.id == $wanted or .name == $wanted))) | if length == 1 then .[0] else empty end' "$ORBIT_VAULT_DIRECTORY/collections.json" >"$ORBIT_VAULT_DIRECTORY/collection.json" 2>/dev/null || exit 12
+          jq -en --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" --slurpfile col "$ORBIT_VAULT_DIRECTORY/collection.json" '(env.ORBIT_VAULT_INTENT | fromjson) as $i | if $i.published and $i.previous != null then $i.previous.organization_id == $org[0].id and $i.previous.collection_id == $col[0].id else true end' >/dev/null 2>/dev/null || exit 14
+          jq -nr --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" --slurpfile col "$ORBIT_VAULT_DIRECTORY/collection.json" '{type:2,secureNote:{type:0},name:"Orbit setup check",organizationId:$org[0].id,collectionIds:[$col[0].id]} | @base64' 2>/dev/null |
+           (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw create item >"$ORBIT_VAULT_DIRECTORY/probe.json" 2>/dev/null) || exit 13
+          jq -cne --slurpfile status "$ORBIT_VAULT_DIRECTORY/status.json" --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" --slurpfile col "$ORBIT_VAULT_DIRECTORY/collection.json" '{outcome:"succeeded",data:{backend:"configured",email:$status[0].userEmail,organization_id:$org[0].id,organization_name:$org[0].name,collection_id:$col[0].id,collection_name:$col[0].name}} as $r | (env.ORBIT_VAULT_CONFIGURATION | fromjson | [.client_secret,.master_password]) as $excluded | if all($r.data[]; . as $v | ($v | type == "string") and ($v | utf8bytelength <= 1024) and all($excluded[]; . == "" or (. as $s | $v | contains($s) | not))) then $r else empty end' 2>/dev/null || exit 15
+          BW_COMMAND
+        env: &id001
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ "/tmp/orbit-vault-setup-" + run.id }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+        timeout: 180000
   - name: Clear the session
-    labels: {role: swamp}
+    labels:
+      role: swamp
     writes: true
-    dependsOn: [{step: Verify the account, condition: {type: completed}}]
-    guard: '${{ !("Resolve CLI assets" in steps) || steps["Resolve CLI assets"].status != "succeeded" }}'
+    dependsOn:
+    - step: Verify the account
+      condition:
+        type: completed
+    guard: ${{ !("Prepare public data" in steps) || steps["Prepare public data"].status != "succeeded"
+      }}
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: vault-setup-cleanup
       methodName: execute
       inputs:
-        run: timeout 30 python3 -B '${{ steps["Resolve CLI assets"].outputs.scripts.cleanup }}'
-        env: *environment
-  - name: Confirm the setup
-    labels: {role: swamp}
+        run: |
+          timeout 30 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BITWARDENCLI_APPDATA_DIR=$ORBIT_VAULT_DIRECTORY
+          NODE_EXTRA_CA_CERTS=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .ca_file' 2>/dev/null)
+          export BITWARDENCLI_APPDATA_DIR NODE_EXTRA_CA_CERTS BW_NOINTERACTION=true
+          if [ -f "$ORBIT_VAULT_DIRECTORY/session" ]; then BW_SESSION=$(cat "$ORBIT_VAULT_DIRECTORY/session"); export BW_SESSION; fi
+          unset ORBIT_VAULT_CONFIGURATION
+          if [ -s "$ORBIT_VAULT_DIRECTORY/probe.json" ]; then
+            ID=$(jq -er '.id' "$ORBIT_VAULT_DIRECTORY/probe.json" 2>/dev/null)
+            npx --yes --package=@bitwarden/cli@2026.6.0 bw delete item "$ID" --permanent >/dev/null 2>/dev/null
+          fi
+          if [ -d "$ORBIT_VAULT_DIRECTORY" ]; then npx --yes --package=@bitwarden/cli@2026.6.0 bw logout >/dev/null 2>/dev/null || true; fi
+          BW_COMMAND
+        env: *id001
+        timeout: 30000
+  - name: Remove CLI session
+    labels:
+      role: swamp
+    writes: true
     dependsOn:
-    - {step: Clear the session, condition: {type: completed}}
-    - {step: Verify the account, condition: {type: succeeded}}
+    - step: Clear the session
+      condition:
+        type: completed
+    guard: ${{ !("Prepare public data" in steps) || steps["Prepare public data"].status != "succeeded"
+      }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-remove-session
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_VAULT_DIRECTORY"
+        env:
+          ORBIT_VAULT_DIRECTORY: ${{ "/tmp/orbit-vault-setup-" + run.id }}
+  - name: Confirm the setup
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Clear the session
+      condition:
+        type: completed
+    - step: Verify the account
+      condition:
+        type: succeeded
+    - step: Remove CLI session
+      condition:
+        type: completed
     task:
       type: assert
-      expr: >-
-        steps["Verify the account"].outputs.exitCode == 0 &&
-        steps["Verify the account"].outputs.stdout.contains('"backend":"configured"') &&
-        steps["Clear the session"].status == "succeeded"
+      expr: steps["Verify the account"].outputs.exitCode == 0 && steps["Verify the account"].outputs.stdout.contains('"backend":"configured"')
+        && steps["Clear the session"].status == "succeeded" && steps["Remove CLI session"].status == "succeeded"
       message: Vault account verification or session cleanup failed.
       severity: high

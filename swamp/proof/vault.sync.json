@@ -1,0 +1,125 @@
+{
+  "kind": "vault.sync",
+  "workflow": "operation-vault-sync",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "before_gateway": [
+    [
+      "python3",
+      "-I",
+      "swamp/tests/fixtures/vaultwarden_proof_setup.py",
+      "sync"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "extensions/vault/enable",
+      "body": {},
+      "operation": false
+    },
+    {
+      "method": "PUT",
+      "path": "vault",
+      "body": {
+        "url": "${secret.url}",
+        "client_id": "${secret.client_id}",
+        "client_secret": "${secret.client_secret}",
+        "master_password": "${secret.master_password}",
+        "organization": "${secret.organization}",
+        "collection": "${secret.collection}"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "vault/sync",
+    "body": {}
+  },
+  "phases": [
+    {
+      "name": "Prepare public data",
+      "job": "prepare",
+      "step": "Prepare public data",
+      "budget_seconds": 30
+    },
+    {
+      "name": "workspace",
+      "job": "prepare",
+      "step": "workspace",
+      "budget_seconds": 30
+    },
+    {
+      "name": "configure",
+      "job": "prepare",
+      "step": "configure",
+      "budget_seconds": 60
+    },
+    {
+      "name": "login",
+      "job": "prepare",
+      "step": "login",
+      "budget_seconds": 60
+    },
+    {
+      "name": "unlock",
+      "job": "prepare",
+      "step": "unlock",
+      "budget_seconds": 60
+    },
+    {
+      "name": "sync",
+      "job": "prepare",
+      "step": "sync",
+      "budget_seconds": 60
+    },
+    {
+      "name": "inventory",
+      "job": "prepare",
+      "step": "inventory",
+      "budget_seconds": 60
+    },
+    {
+      "name": "trash",
+      "job": "prepare",
+      "step": "trash",
+      "budget_seconds": 60
+    },
+    {
+      "name": "plan",
+      "job": "prepare",
+      "step": "plan",
+      "budget_seconds": 30
+    },
+    {
+      "name": "logout",
+      "job": "cleanup",
+      "step": "logout",
+      "budget_seconds": 60
+    },
+    {
+      "name": "remove-cache",
+      "job": "cleanup",
+      "step": "remove-cache",
+      "budget_seconds": 30
+    },
+    {
+      "name": "result",
+      "job": "sync",
+      "step": "result",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Confirm the sync",
+      "job": "sync",
+      "step": "Confirm the sync",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": "swamp/proof/vault/sync_parity.py"
+}

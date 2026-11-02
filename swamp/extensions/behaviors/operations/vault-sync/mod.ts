@@ -154,19 +154,17 @@ export function resultSync(raw: unknown, writes: unknown[]) {
 }
 
 type Context = {
-    extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 export const behavior = {
     type: "@nckrtl/vault-sync-plan",
     version: "2026.11.02.1",
     resources: {
-        assets: {
-            description: "Shipped CLI action paths and public intent",
+        inputs: {
+            description: "Public CLI intent",
             lifetime: "infinite",
             garbageCollection: 10,
             schema: z.object({
-                scripts: z.record(z.string(), z.string()),
                 intent_json: z.string(),
             }),
         },
@@ -178,59 +176,22 @@ export const behavior = {
         },
         result: {
             description: "Public terminal ledger JSON",
-            schema: z.object({ stdout: z.string() }),
+            schema: z.object({ stdout: z.string(), successful: z.boolean() }),
             lifetime: "infinite",
             garbageCollection: 10,
         },
     },
     methods: {
-        setup_assets: {
-            description: "Resolve setup scripts and serialize its public intent",
+        prepare: {
+            description: "Serialize frozen public CLI intent",
             arguments: z.object({ intent: z.record(z.string(), z.unknown()) }),
             execute: async (
                 args: { intent: Record<string, unknown> },
                 ctx: Context,
             ) => {
-                const assets = {
-                    scripts: {
-                        setup: ctx.extensionFile("scripts/setup.py"),
-                        cleanup: ctx.extensionFile("scripts/setup_cleanup.py"),
-                    },
-                    intent_json: JSON.stringify(args.intent),
-                };
-                await ctx.writeResource("assets", "assets", assets);
-                return assets;
-            },
-        },
-        assets: {
-            description: "Resolve CLI scripts without execution",
-            arguments: z.object({ intent: Intent }),
-            execute: async (
-                args: { intent: z.infer<typeof Intent> },
-                ctx: Context,
-            ) => {
-                const assets = {
-                    scripts: Object.fromEntries(
-                        [
-                            "configure",
-                            "login",
-                            "unlock",
-                            "sync",
-                            "inventory",
-                            "delete",
-                            "write",
-                            "logout",
-                        ].map((
-                            name,
-                        ) => [
-                            name,
-                            ctx.extensionFile("scripts/" + name + ".py"),
-                        ]),
-                    ),
-                    intent_json: JSON.stringify(args.intent),
-                };
-                await ctx.writeResource("assets", "assets", assets);
-                return assets;
+                const inputs = { intent_json: JSON.stringify(args.intent) };
+                await ctx.writeResource("inputs", "inputs", inputs);
+                return inputs;
             },
         },
         plan: {
@@ -272,6 +233,7 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 const result = {
+                    successful: args.successful && args.plan !== null,
                     stdout: JSON.stringify(
                         args.successful && args.plan
                             ? resultSync(

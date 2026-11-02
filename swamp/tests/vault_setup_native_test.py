@@ -130,9 +130,10 @@ class VaultSetupNative(NativeTestCase):
         self.assertEqual(
             list(steps),
             [
-                "Resolve CLI assets",
+                "Prepare public data",
                 "Verify the account",
                 "Clear the session",
+                "Remove CLI session",
                 "Confirm the setup",
             ],
         )

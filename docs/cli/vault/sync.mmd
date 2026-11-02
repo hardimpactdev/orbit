@@ -41,29 +41,22 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
-  SW->>VW: Log in and unlock<br/>bw login · unlock · sync
-  %%> How:
-  %%> - the official Bitwarden CLI on 209, in a scratch home, trusting only the Orbit root CA
-  %%> - secrets come from `vault.get`, in the environment of each command
-  SW->>VW: Read the collection<br/>bw list items · trash
-  %%> What it does:
-  %%> - reads the collection's items and the trash, and finds Orbit's items by their `orbit.source` field
-  Note over SW: Plan the changes<br/>create · rewrite · adopt · delete
-  %%> What it does:
-  %%> - creates missing items, rewrites changed ones, adopts an item for a wanted source the ledger lacks
-  %%> - deletes a recorded item whose source is gone, only when its ID and source match the ledger
-  %%> Leaves:
-  %%> - items without `orbit.source`, and copies the ledger does not name
-  SW->>VW: Apply the changes<br/>bw delete · bw create · bw edit
-  %%> What it does:
-  %%> - deletes each gone item permanently, then creates or rewrites each planned item as a Secure Note with the Database item fields, one `forEach` item each
-  %%> Refuses:
-  %%> - an item that also belongs to another visible collection: `vault.item_shared`
-  %%> Why one step:
-  %%> - one collection, one plan, one failure handling
-  SW->>VW: Log out<br/>bw logout · remove scratch home
-  %%> What it does:
-  %%> - logs out and deletes the scratch home, on success and on failure
+  %% Worker-side actions use the pinned official CLI directly. No scripts are shipped or copied.
+  Note over SW: Prepare public data
+  Note over SW: workspace
+  SW->>VW: configure
+  SW->>VW: login
+  SW->>VW: unlock
+  SW->>VW: sync
+  SW->>VW: inventory
+  SW->>VW: trash
+  Note over SW: plan
+  SW->>VW: delete
+  SW->>VW: write
+  SW->>VW: logout
+  Note over SW: remove-cache
+  Note over SW: result
+  Note over SW: Confirm the sync
   alt every change made
     VW-->>SW: items match
     %%> Returns:

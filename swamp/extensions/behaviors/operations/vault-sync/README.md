@@ -1,9 +1,22 @@
 # Vaultwarden CLI integration
 
-Official `@swamp/cfgmgmt` behaviors manage Node resources. Official vault extensions resolve secrets from supported stores. Neither covers Vaultwarden account verification, encrypted collection items, or the Bitwarden CLI's login and session lifecycle. The shipped Python files cover that gap by invoking the pinned official Bitwarden CLI; they add no HTTP or cryptography client. They run on a Swamp role worker and are never copied to a target Node.
+Setup and sync run the pinned official Bitwarden CLI directly on Swamp workers.
+No script assets are shipped or copied to Nodes. The public planning behavior
+only serializes frozen intent and shapes reconciliation metadata.
 
-Setup checks supplied credentials on every new request. It cannot skip verification using an earlier successful setup: an API key or collection grant may have been revoked. Native resume retains completed steps. Its cleanup guard avoids reading missing asset outputs, and its `completed` dependency removes the disposable session after success or failure. Fixed behavior names are separate for assets, verification, and cleanup, so cleanup never waits on the verification behavior's lock.
+Native command steps bound each CLI action. Bash enables pipefail so a failed
+CLI cannot become a successful filter. Credentials enter through vault-backed
+environment values; shell builtins export only the needed CLI credential. Cipher
+payloads reach the CLI on stdin. Raw inventory and write responses are filtered
+with jq before native stdout, retaining only public IDs and ledger metadata.
+CLI diagnostics are discarded because they may contain credentials.
 
-The Gateway supplies setup's public refusal-to-exit-code map in the immutable intent. Verification fails with its own exit code and writes no failure JSON to stdout. On pinned e459 failed command steps retain no outputs; the family projector maps the native failure's exit code back to the public refusal code. The native assert checks a successful verification and cleanup without another login.
+Setup verifies every new request, including its harmless write probe. A native
+resume keeps completed verification. Its cleanup runs after verification succeeds
+or fails, and a separate completed dependency always removes the private cache.
+Session files use umask 077. No second login is used for the end check.
 
-Setup keeps `Resolve CLI assets` before verification. This resolves paths with Swamp's `extensionFile` API and serializes public intent; it reads no script contents or credentials. Pinned `command/shell` has no extension asset input, and remote workers have no repository checkout. The chart names this required metadata step explicitly. No custom runner or wrapper is added. An asset input on the native shell behavior could remove the step later.
+The Gateway maps setup's public refusal exit codes and records the terminal
+result. Sync keeps native per-item write receipts for summary resume, records
+only a complete ledger, and ends with a native assert. Empty change sets still
+log out, remove the cache and return the unchanged ledger.

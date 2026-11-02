@@ -14,6 +14,8 @@ The native sync extension ships its official Bitwarden CLI action scripts throug
 
 The Gateway can publish the database credentials it holds into one collection of a [Vaultwarden](https://github.com/dani-garcia/vaultwarden) organization. Each credential becomes one **Database item**. The Vault app and Conn read those items, so people get current credentials without asking Orbit. Orbit stays the source of truth: it creates, rewrites, and permanently deletes the items. [`vault`](/cli/vault) lists the commands.
 
+Setup and sync invoke the pinned Bitwarden CLI directly on Swamp workers. Passwords enter through the environment or stdin, and session files are private. Sync filters CLI responses with `jq` before Swamp records outputs. Only public cipher IDs, revisions and fingerprints reach the publishing ledger. A failed CLI command fails its step; cleanup still removes the private cache.
+
 Vaultwarden publishing is the `vault` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/vault`. While the switch is off, its API operations and MCP tools refuse with `extension.disabled`, the CLI hides its commands, and the sync does not run. The stored setup and the record of published items stay. New installs start with the switch off. Upgrades preserve its stored value.
 
 ## Set up
@@ -29,7 +31,7 @@ Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup
 
 Then run [`vault:setup`](/cli/vault/setup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
 
-The setup run resolves its worker-cached CLI assets, verifies the account, clears its disposable session, and checks the result. Cleanup runs after verification succeeds or fails. A new setup checks the supplied credentials again; a native resume keeps completed verification. The final check does not log in again.
+The setup run prepares the public intent, invokes the official CLI to verify the account, clears its disposable session, and checks the result. It ships no scripts. Cleanup runs after verification succeeds or fails. A new setup checks the supplied credentials again; a native resume keeps completed verification. The final check does not log in again.
 
 No response or Activity entry returns the API key or the master password. The MCP `vault-setup` tool takes them as arguments, so they reach the agent's transcript. Run setup with the CLI, which reads them from files, when that matters.
 

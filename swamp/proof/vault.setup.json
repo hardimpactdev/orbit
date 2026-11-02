@@ -4,9 +4,24 @@
   "topology": "minimal",
   "budget_seconds": 180,
   "queue_timeout_seconds": 30,
-  "expect": {"status": "succeeded"},
-  "before_gateway": [["python3", "-I", "swamp/tests/fixtures/vaultwarden_proof_setup.py"]],
-  "prepare": [{"method": "POST", "path": "extensions/vault/enable", "body": {}, "operation": false}],
+  "expect": {
+    "status": "succeeded"
+  },
+  "before_gateway": [
+    [
+      "python3",
+      "-I",
+      "swamp/tests/fixtures/vaultwarden_proof_setup.py"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "extensions/vault/enable",
+      "body": {},
+      "operation": false
+    }
+  ],
   "request": {
     "method": "PUT",
     "path": "vault",
@@ -20,10 +35,37 @@
     }
   },
   "phases": [
-    {"name": "Resolve CLI assets", "job": "setup", "step": "Resolve CLI assets", "budget_seconds": 30},
-    {"name": "Verify the account", "job": "setup", "step": "Verify the account", "budget_seconds": 180},
-    {"name": "Clear the session", "job": "setup", "step": "Clear the session", "budget_seconds": 30},
-    {"name": "Confirm the setup", "job": "setup", "step": "Confirm the setup", "budget_seconds": 30}
+    {
+      "name": "Prepare public data",
+      "job": "setup",
+      "step": "Prepare public data",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Verify the account",
+      "job": "setup",
+      "step": "Verify the account",
+      "budget_seconds": 180
+    },
+    {
+      "name": "Clear the session",
+      "job": "setup",
+      "step": "Clear the session",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Remove CLI session",
+      "job": "setup",
+      "step": "Remove CLI session",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Confirm the setup",
+      "job": "setup",
+      "step": "Confirm the setup",
+      "budget_seconds": 30
+    }
   ],
-  "parity": "swamp/proof/vault/parity.py"
+  "parity": "swamp/proof/vault/parity.py",
+  "clean": true
 }

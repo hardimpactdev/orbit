@@ -1,7 +1,6 @@
 id: 8f61a312-2b19-4ef7-92d5-39dff3d42380
 name: operation-vault-sync
-description: Complete public intent, vault environment, one cipher action per native
-  shell step.
+description: Complete public intent, vault environment, one cipher action per native shell step.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -13,10 +12,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - vault.sync
+    kind: {type: string, enum: [vault.sync]}
     intent:
       type: object
       properties:
@@ -101,183 +97,244 @@ inputs:
 jobs:
 - name: prepare
   steps:
-  - name: assets
-    labels: {role: swamp}
+  - name: Prepare public data
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      methodName: assets
+      methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
-      behaviorName: '${{ "vault-sync-assets" }}'
+      behaviorName: vault-sync-inputs
   - name: workspace
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
+        run: |
+          timeout 30 bash -euo pipefail <<'BW_COMMAND'
           umask 077
-
           mktemp -d -t orbit-vault-sync.XXXXXX
-
-          '
-      behaviorName: '${{ "vault-sync-workspace" }}'
+          BW_COMMAND
+      behaviorName: ${{ "vault-sync-workspace" }}
     dependsOn:
-    - step: assets
+    - step: Prepare public data
       condition:
         type: succeeded
+    writes: true
   - name: configure
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.configure }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw config server "$ORBIT_VAULT_URL" >/dev/null 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
-      behaviorName: '${{ "vault-sync-configure" }}'
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-configure" }}
     dependsOn:
     - step: workspace
       condition:
         type: succeeded
+    writes: true
   - name: login
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.login }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BW_CLIENTSECRET=$(jq -ern 'env.ORBIT_VAULT_CONFIGURATION | fromjson | .client_secret' 2>/dev/null)
+          export BW_CLIENTSECRET
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw login --apikey >/dev/null 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
-      behaviorName: '${{ "vault-sync-login" }}'
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-login" }}
     dependsOn:
     - step: configure
       condition:
         type: succeeded
+    writes: true
   - name: unlock
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.unlock }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BW_PASSWORD=$(jq -ern 'env.ORBIT_VAULT_CONFIGURATION | fromjson | .master_password' 2>/dev/null)
+          export BW_PASSWORD
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw unlock --passwordenv BW_PASSWORD --raw >"$BITWARDENCLI_APPDATA_DIR/session" 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
-      behaviorName: '${{ "vault-sync-unlock" }}'
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-unlock" }}
     dependsOn:
     - step: login
       condition:
         type: succeeded
+    writes: true
   - name: sync
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.sync }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BW_SESSION=$(cat "$BITWARDENCLI_APPDATA_DIR/session"); export BW_SESSION
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw sync >/dev/null 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
-      behaviorName: '${{ "vault-sync-sync" }}'
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-sync" }}
     dependsOn:
     - step: unlock
       condition:
         type: succeeded
+    writes: true
   - name: inventory
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.inventory }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BW_SESSION=$(cat "$BITWARDENCLI_APPDATA_DIR/session"); export BW_SESSION
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw list items --organizationid "$ORBIT_VAULT_ORGANIZATION" --collectionid "$ORBIT_VAULT_COLLECTION" 2>/dev/null |
+           jq -ce '(env.ORBIT_VAULT_INTENT | fromjson | (.wanted + .ledger) | map(.source)) as $known | map((first((.fields // [])[] | select(.name == "orbit.source") | .value) // null) as $source | {id, source: (if $known | index($source) then $source else null end), organization_id: .organizationId, collection_ids: (.collectionIds // []), revision: .revisionDate, deleted: (.deletedDate != null)})' 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
-      behaviorName: '${{ "vault-sync-inventory" }}'
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-inventory" }}
     dependsOn:
     - step: sync
       condition:
         type: succeeded
   - name: trash
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.inventory }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BW_SESSION=$(cat "$BITWARDENCLI_APPDATA_DIR/session"); export BW_SESSION
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw list items --organizationid "$ORBIT_VAULT_ORGANIZATION" --collectionid "$ORBIT_VAULT_COLLECTION" --trash 2>/dev/null |
+           jq -ce '(env.ORBIT_VAULT_INTENT | fromjson | (.wanted + .ledger) | map(.source)) as $known | map((first((.fields // [])[] | select(.name == "orbit.source") | .value) // null) as $source | {id, source: (if $known | index($source) then $source else null end), organization_id: .organizationId, collection_ids: (.collectionIds // []), revision: .revisionDate, deleted: (.deletedDate != null)})' 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
           ORBIT_VAULT_TRASH: 'true'
-      behaviorName: '${{ "vault-sync-trash" }}'
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-trash" }}
     dependsOn:
     - step: inventory
       condition:
         type: succeeded
   - name: plan
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -286,7 +343,7 @@ jobs:
         intent: ${{ inputs.intent }}
         inventory: ${{ steps.inventory.outputs.stdout }}
         trash: ${{ steps.trash.outputs.stdout }}
-      behaviorName: '${{ "vault-sync-plan" }}'
+      behaviorName: ${{ "vault-sync-plan" }}
     dependsOn:
     - step: trash
       condition:
@@ -298,30 +355,42 @@ jobs:
       type: succeeded
   steps:
   - name: delete
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.delete }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BW_SESSION=$(cat "$BITWARDENCLI_APPDATA_DIR/session"); export BW_SESSION
+          ID=$(jq -ern 'env.ORBIT_VAULT_ITEM | fromjson | .id' 2>/dev/null)
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw delete item "$ID" --permanent >/dev/null 2>/dev/null
+          printf '{"deleted":true}\n'
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
           ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
-      behaviorName: '${{ "vault-sync-delete-" + string(self._index) }}'
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-delete-" + string(self._index) }}
     forEach:
       item: item
       in: ${{ steps.plan.outputs.deletes }}
     concurrency: 1
+    writes: true
 - name: writes
   dependsOn:
   - job: deletions
@@ -329,30 +398,43 @@ jobs:
       type: succeeded
   steps:
   - name: write
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.write }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          BW_SESSION=$(cat "$BITWARDENCLI_APPDATA_DIR/session"); export BW_SESSION
+          ID=$(jq -nr 'env.ORBIT_VAULT_ITEM | fromjson | .cipher_id // empty' 2>/dev/null)
+          if [ -n "$ID" ]; then set -- edit item "$ID"; else set -- create item; fi
+          jq -enr '(env.ORBIT_VAULT_ITEM | fromjson) as $item | (env.ORBIT_VAULT_CONFIGURATION | fromjson) as $config | (env.ORBIT_VAULT_INTENT | fromjson) as $intent | first($config.wanted[] | select(.source == $item.source and .fingerprint == $item.fingerprint)) | .cipher | {type:2, organizationId:$intent.organization_id, collectionIds:[$intent.collection_id], folderId:null, name, notes, secureNote:{type:0}, favorite:false, reprompt:0, fields:[.fields[] | {name,value,type:(if .hidden then 1 else 0 end)}]} | @base64' 2>/dev/null |
+           (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw "$@" 2>/dev/null) |
+           jq -ce '(env.ORBIT_VAULT_ITEM | fromjson) as $item | {source:$item.source,cipher_id:.id,revision:(.revisionDate // ""),fingerprint:$item.fingerprint}' 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
           ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
-      behaviorName: '${{ "vault-sync-write-" + string(self._index) }}'
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-write-" + string(self._index) }}
     forEach:
       item: item
       in: ${{ steps.plan.outputs.writes }}
     concurrency: 1
+    writes: true
 - name: cleanup
   dependsOn:
   - job: writes
@@ -360,48 +442,54 @@ jobs:
       type: always
   steps:
   - name: logout
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.logout }}"
-
-          '
+        run: |
+          timeout 60 bash -euo pipefail <<'BW_COMMAND'
+          umask 077
+          if [ -f "$BITWARDENCLI_APPDATA_DIR/session" ]; then BW_SESSION=$(cat "$BITWARDENCLI_APPDATA_DIR/session"); export BW_SESSION; fi
+          unset ORBIT_VAULT_CONFIGURATION
+          npx --yes --package=@bitwarden/cli@2026.6.0 bw logout >/dev/null 2>/dev/null
+          BW_COMMAND
         env:
-          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
-            inputs.execution_secrets.configuration.key) }}
-      behaviorName: '${{ "vault-sync-logout" }}'
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
+            }}
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+          ORBIT_VAULT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_VAULT_COLLECTION: ${{ inputs.intent.collection_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-sync-logout" }}
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
+    writes: true
   - name: remove-cache
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          rm -rf -- "$ORBIT_VAULT_DIRECTORY"
-
-          '
+        run: timeout 30 rm -rf -- "$ORBIT_VAULT_DIRECTORY"
         env:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-      behaviorName: '${{ "vault-sync-remove-cache" }}'
+      behaviorName: ${{ "vault-sync-remove-cache" }}
     dependsOn:
     - step: logout
       condition:
         type: always
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
+    writes: true
 - name: sync
   dependsOn:
   - job: cleanup
@@ -409,16 +497,30 @@ jobs:
       type: always
   steps:
   - name: result
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
       methodName: result
       inputs:
-        plan: '${{ "plan" in steps && steps.plan.status == "succeeded" ? steps.plan.outputs
-          : null }}'
-        writes: ${{ steps.filter(name, name.startsWith("write-") && steps[name].status
-          == "succeeded" && "outputs" in steps[name] && "stdout" in steps[name].outputs).map(name, steps[name].outputs.stdout) }}
-        successful: ${{ "plan" in steps && steps.plan.status == "succeeded" && steps.all(name,
-          steps[name].status != "failed" && steps[name].status != "cancelled") }}
-      behaviorName: '${{ "vault-sync-result" }}'
+        plan: '${{ "plan" in steps && steps.plan.status == "succeeded" ? steps.plan.outputs : null }}'
+        writes: ${{ steps.filter(name, name.startsWith("write-") && steps[name].status == "succeeded"
+          && "outputs" in steps[name] && "stdout" in steps[name].outputs).map(name, steps[name].outputs.stdout)
+          }}
+        successful: ${{ "plan" in steps && steps.plan.status == "succeeded" && steps.all(name, steps[name].status
+          != "failed" && steps[name].status != "cancelled") }}
+      behaviorName: ${{ "vault-sync-result" }}
+  - name: Confirm the sync
+    labels:
+      role: swamp
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: steps.result.outputs.successful
+      message: Vault synchronization failed.
+      severity: high
+queueTimeout: 30

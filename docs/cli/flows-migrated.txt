@@ -32,3 +32,4 @@ tool.install
 tool.update
 tool.remove
 database_server.close
+vault.sync

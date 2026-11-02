@@ -40,12 +40,9 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
-  Note over SW: Resolve CLI assets
+  Note over SW: Prepare public data
   %%> What it does:
-  %%> - resolves worker-local CLI asset paths with Swamp's extensionFile API and serializes the public intent
-  %%> Why separate:
-  %%> - pinned command/shell accepts a command and environment, but has no extension asset input; workers have no repository checkout
-  %%> - reads no script contents or credentials and makes no Gateway or Node call
+  %%> - serializes the frozen public intent for the native CLI environment; resolves no script assets
   SW->>VW: Verify the account<br/>login · unlock · collection
   %%> What it does:
   %%> - configures the official Bitwarden CLI in a private scratch directory, logs in, unlocks, and reads the collection
@@ -60,6 +57,9 @@ sequenceDiagram
   %%> What it does:
   %%> - native completed dependencies run cleanup after verification succeeds or fails
   %%> - logout is best effort; the scratch directory and session key are removed
+  Note over SW: Remove CLI session
+  %%> What it does:
+  %%> - deletes the private CLI cache after cleanup succeeds or fails
   Note over SW: Confirm the setup<br/>native assert
   %%> What it does:
   %%> - checks the verification result with Swamp's native assert; no second login or write
