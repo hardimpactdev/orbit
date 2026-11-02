@@ -31,7 +31,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
@@ -220,15 +219,13 @@ describe('task response fixtures', function (): void {
             'tasks/tasks-status/merges', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 
-    it('records group updates, a refused update, cancel, and complete', function (): void {
+    it('records group updates, a refused update, and complete', function (): void {
         $group = task_fixture_group($this->project);
 
         record_fixture($this->patchJson("/api/v1/task-groups/{$group->id}", ['title' => 'Add the tasks command family'])->assertOk(), 'tasks/tasks-update/updated', UpdateTaskGroupRequest::class, 'PATCH /api/v1/task-groups/{group}');
 
         $group->update(['status' => TaskGroupStatus::Todo]);
         record_fixture($this->patchJson("/api/v1/task-groups/{$group->id}", ['title' => 'Too late'])->assertConflict(), 'tasks/tasks-update/not-in-backlog', UpdateTaskGroupRequest::class, 'PATCH /api/v1/task-groups/{group}');
-
-        record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/cancel")->assertOk(), 'tasks/tasks-cancel/cancelled', CancelTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/cancel');
 
         $settling = task_fixture_group($this->project);
         $settling->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/612']);

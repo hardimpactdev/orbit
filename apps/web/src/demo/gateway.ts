@@ -1123,7 +1123,6 @@ export function createDemoGateway() {
                     return ok(schedule);
                 },
             ],
-            ["POST", /^\/api\/v1\/doctor$/, () => ok(byRoute.get("POST /api/v1/doctor#"))],
             [
                 "DELETE",
                 /^\/api\/v1\/processes\/(\d+)$/,
