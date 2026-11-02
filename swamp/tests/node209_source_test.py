@@ -35,8 +35,7 @@ class Node209SourceTest(unittest.TestCase):
                 # Serialized by concurrency 1: each host's sweep may wait out the 600 s run budget of the one before it.
                 self.assertEqual(definition['queueTimeout'], 600)
                 self.assertEqual(definition['concurrency'], 1)
-            elif definition['name'] in ('task-vm-sweep-incus', 'task-vm-sweep-cloud',
-                                      'task-vm-sweep-incus-cleanup', 'task-vm-sweep-cloud-cleanup'):
+            elif definition['name'] in ('task-vm-sweep-incus', 'task-vm-sweep-cloud'):
                 # Measured sweep budget; docs/swamp/porting.md F8 permits per-kind queue bounds.
                 self.assertEqual(definition['queueTimeout'], 60)
             elif definition['name'] == 'operation-task-vm-dispatch':

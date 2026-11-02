@@ -1,315 +1,233 @@
 import { z } from "npm:zod@4.4.3";
-import { IncusOwnership, selectIncusOrphans } from "./policy.ts";
+import {
+    cloudPlan,
+    cloudRemaining,
+    imagePrefix,
+    IncusOwnership,
+    incusRemaining,
+    incusRows,
+    incusStrays,
+    instancePrefix,
+    Name,
+    selectIncusOrphans,
+    volumePrefix,
+} from "./policy.ts";
 
-const Name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$/);
-const Candidate = z.object({
-    name: Name,
-    uuid: z.uuid(),
-    kind: z.enum(["server", "template"]),
-    label: z.string(),
-    value: z.string(),
-    input_json: z.string(),
-});
-const Resource = z.object({ name: Name, kind: z.enum(["instance", "volume"]) });
-const CloudInventory = z.object({
-    servers: z.array(
-        z.object({
-            uuid: z.uuid(),
-            title: z.string(),
-            labels: z.object({
-                label: z.array(
-                    z.object({ key: z.string(), value: z.string() }),
-                ),
-            }),
-        }).passthrough(),
-    ).max(4096),
-    templates: z.array(
-        z.object({ uuid: z.uuid(), title: z.string(), access: z.string() }),
-    ).max(4096),
-});
 type Context = {
     logger?: { warn(message: string, facts: Record<string, unknown>): void };
-    extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
-type Intent = {
-    provider: string;
-    scope: { live_names: string[]; max_task_vm_id: number };
-    image_cutoff: number;
-    running_stamps: string[];
-};
-
-export function cloudPlan(intent: Intent, stdout: string) {
-    const rows = CloudInventory.parse(JSON.parse(stdout));
-    const stale = (stamp: string) => {
-        if (
-            !/^[0-9]{14}$/.test(stamp) || intent.running_stamps.includes(stamp)
-        ) return false;
-        const date = new Date(
-            `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}T${
-                stamp.slice(8, 10)
-            }:${stamp.slice(10, 12)}:${stamp.slice(12, 14)}Z`,
-        );
-        return Number.isFinite(date.getTime()) &&
-            date.toISOString().replace(/[-:TZ]/g, "").slice(0, 14) === stamp &&
-            date.getTime() / 1000 < intent.image_cutoff;
-    };
-    const servers: z.infer<typeof Candidate>[] = [];
-    const observed: string[] = [];
-    const seen = new Set<string>();
-    for (const row of rows.servers) {
-        if (seen.has(row.uuid)) continue;
-        seen.add(row.uuid);
-        for (const label of ["orbit-task-vm", "orbit-task-image"]) {
-            const matches = row.labels.label.filter((v) => v.key === label);
-            if (matches.length > 1) {
-                throw new Error("task_vm.host_command_failed");
-            }
-            const value = matches[0]?.value;
-            if (value === undefined) continue;
-            if (label === "orbit-task-vm") {
-                if (
-                    !/^[1-9][0-9]*$/.test(value) || row.title !== `tvm-${value}`
-                ) continue;
-                observed.push(row.title);
-                if (
-                    Number(value) > intent.scope.max_task_vm_id ||
-                    intent.scope.live_names.includes(row.title)
-                ) continue;
-            } else if (
-                ![`tvm-image-${value}`, `tvm-image-${value}-smoke`].includes(
-                    row.title,
-                ) || !stale(value)
-            ) continue;
-            const item = {
-                name: row.title,
-                uuid: row.uuid,
-                kind: "server" as const,
-                label,
-                value,
-            };
-            servers.push({ ...item, input_json: JSON.stringify(item) });
-        }
-    }
-    const templates = rows.templates.flatMap((row) => {
-        const match = /^orbit-task-base-([0-9]{14})-unverified$/.exec(
-            row.title,
-        );
-        if (row.access !== "private" || !match || !stale(match[1])) return [];
-        const item = {
-            name: row.title,
-            uuid: row.uuid,
-            kind: "template" as const,
-            label: "",
-            value: match[1],
-        };
-        return [{ ...item, input_json: JSON.stringify(item) }];
-    });
-    return { servers, templates, observed_names: [...new Set(observed)] };
-}
-const Intent = z.object({
-    provider: z.enum(["incus", "upcloud"]),
+const Names = z.array(Name).max(4096);
+const Server = z.object({ name: Name, uuid: z.uuid(), state: z.string() });
+const Template = z.object({ name: Name, uuid: z.uuid() });
+const IncusIntent = z.object({
+    ci_runner: z.boolean(),
+    stray_vm_ids: z.array(z.number().int().positive()).max(4096),
+    scope: IncusOwnership,
+}).passthrough();
+const CloudIntent = z.object({
     scope: z.object({
-        live_names: z.array(Name),
+        live_names: Names,
         max_task_vm_id: z.number().int().nonnegative(),
     }).passthrough(),
     image_cutoff: z.number().int(),
     running_stamps: z.array(z.string()),
 }).passthrough();
+const Terminal = z.object({ result_json: z.string(), ready: z.boolean() });
+
+/** The public receipt; a deleted resource that is still listed fails the step. */
+async function terminal(
+    ctx: Context,
+    observed: string[],
+    deleted: string[],
+    remaining: unknown[],
+) {
+    if (remaining.length > 0) throw new Error("task_vm.host_command_failed");
+    return {
+        dataHandles: [
+            await ctx.writeResource("terminal", "terminal", {
+                ready: true,
+                result_json: JSON.stringify({
+                    ready: true,
+                    observed_names: observed,
+                    deleted_names: [...new Set(deleted)],
+                }),
+            }),
+        ],
+    };
+}
+
 export const behavior = {
     type: "@nckrtl/task-vm-sweep-input",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     resources: {
-        assets: {
+        incus_plan: {
             lifetime: "infinite",
             garbageCollection: 10,
             schema: z.object({
-                script_body: z.string(),
-                cloud_inventory: z.string(),
-                cloud_remove: z.string(),
+                instances: Names,
+                volumes: Names,
+                observed_names: Names,
             }),
         },
-        plan: {
+        cloud_plan: {
             lifetime: "infinite",
             garbageCollection: 10,
             schema: z.object({
-                instances: z.array(Resource),
-                volumes: z.array(Resource),
-                servers: z.array(Candidate),
-                templates: z.array(Candidate),
-                observed_names: z.array(Name),
+                servers: z.array(Server),
+                stops: z.array(Server),
+                templates: z.array(Template),
+                observed_names: Names,
             }),
         },
         terminal: {
             lifetime: "infinite",
             garbageCollection: 10,
-            schema: z.object({ result_json: z.string(), ready: z.boolean() }),
+            schema: Terminal,
         },
     },
     methods: {
-        assets: {
+        incus_plan: {
             description:
-                "Resolve shipped sweep scripts and bind only public Incus intent",
+                "Select only orphan Incus resources in the admitted ownership scope and log strays",
             arguments: z.object({
-                scope: z.record(z.string(), z.unknown()),
-                resource: Resource.nullable().default(null),
+                intent: IncusIntent,
+                instances: z.string(),
+                volumes: z.string(),
+                images: z.string(),
             }),
             async execute(
                 args: {
-                    scope: Record<string, unknown>;
-                    resource: z.infer<typeof Resource> | null;
+                    intent: z.infer<typeof IncusIntent>;
+                    instances: string;
+                    volumes: string;
+                    images: string;
                 },
                 ctx: Context,
             ) {
-                const input = args.resource
-                    ? { ...IncusOwnership.parse(args.scope), ...args.resource }
-                    : args.scope;
-                const path = ctx.extensionFile(
-                    args.resource
-                        ? "scripts/incus_remove.py"
-                        : "scripts/incus_inventory.py",
+                const intent = IncusIntent.parse(args.intent);
+                const instances = incusRows(args.instances, instancePrefix);
+                const volumes = incusRows(
+                    args.volumes,
+                    volumePrefix(intent.scope.pool),
                 );
-                const script = (await Deno.readTextFile(path)).replace(
-                    "json.load(sys.stdin)",
-                    `json.loads(${JSON.stringify(JSON.stringify(input))})`,
+                const fingerprints = incusRows(args.images, imagePrefix).map((
+                    row,
+                ) => row.name);
+                const strays = incusStrays(
+                    intent.scope,
+                    intent.ci_runner,
+                    instances,
+                    volumes,
+                    fingerprints,
                 );
+                for (const row of strays.instances) {
+                    ctx.logger?.warn(
+                        "An Incus instance is outside Orbit ownership",
+                        row,
+                    );
+                }
+                for (const row of strays.volumes) {
+                    ctx.logger?.warn(
+                        "An Incus volume is outside Orbit ownership",
+                        row,
+                    );
+                }
+                for (const id of intent.stray_vm_ids) {
+                    ctx.logger?.warn("A task VM has no open group", {
+                        task_vm_id: id,
+                    });
+                }
                 return {
                     dataHandles: [
-                        await ctx.writeResource("assets", "assets", {
-                            script_body: script,
-                            cloud_inventory: ctx.extensionFile(
-                                "scripts/cloud_inventory.py",
+                        await ctx.writeResource(
+                            "incus_plan",
+                            "incus_plan",
+                            selectIncusOrphans(
+                                intent.scope,
+                                instances,
+                                volumes,
                             ),
-                            cloud_remove: ctx.extensionFile(
-                                "scripts/cloud_remove.py",
-                            ),
-                        }),
+                        ),
                     ],
                 };
             },
         },
-        plan: {
+        incus_result: {
             description:
-                "Select only orphan resources in the immutable admitted ownership scope",
+                "Check the final project inventory and shape the public sweep JSON",
             arguments: z.object({
-                intent: Intent,
+                scope: IncusOwnership,
+                instances: Names,
+                volumes: Names,
                 stdout: z.string(),
-                report: z.boolean().default(false),
             }),
             async execute(
                 args: {
-                    intent: z.infer<typeof Intent>;
+                    scope: z.infer<typeof IncusOwnership>;
+                    instances: string[];
+                    volumes: string[];
                     stdout: string;
-                    report?: boolean;
                 },
                 ctx: Context,
             ) {
-                let plan;
-                if (args.intent.provider === "incus") {
-                    const inventory = z.object({
-                        instances: z.array(z.unknown()),
-                        volumes: z.array(z.unknown()),
-                    }).parse(JSON.parse(args.stdout));
-                    if (args.report) {
-                        const publicInventory = z.object({
-                            inventory: z.object({
-                                instances: z.array(
-                                    z.object({ project: Name, name: Name }),
-                                ).max(4096),
-                                volumes: z.array(
-                                    z.object({
-                                        project: Name,
-                                        pool: Name,
-                                        name: Name,
-                                    }),
-                                ).max(4096),
-                                images: z.array(z.string()),
-                            }),
-                        }).parse(JSON.parse(args.stdout)).inventory;
-                        const scope = IncusOwnership.parse(args.intent.scope);
-                        const excluded = (project: string, name: string) =>
-                            args.intent.ci_runner && project === "orbit-ci" ||
-                            scope.operator_owned.includes(
-                                project + "/" + name,
-                            ) || scope.operator_owned.includes(project + "/*");
-                        publicInventory.instances.forEach((row) => {
-                            const build =
-                                /^tvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?$/
-                                    .exec(row.name);
-                            if (
-                                !excluded(row.project, row.name) &&
-                                !(row.project === scope.project &&
-                                    (/^tvm-[0-9]+$/.test(row.name) ||
-                                        build &&
-                                            scope.protected_build_ids.includes(
-                                                Number(build[1]),
-                                            )))
-                            ) {
-                                ctx.logger?.warn(
-                                    "An Incus instance is outside Orbit ownership",
-                                    row,
-                                );
-                            }
-                        });
-                        for (const row of publicInventory.volumes) {
-                            const seed =
-                                /^orbit-topology-seed-([a-f0-9]{12})(?:-new)?$/
-                                    .exec(row.name);
-                            if (
-                                !excluded(row.project, row.name) &&
-                                !(row.project === scope.project &&
-                                    row.pool === scope.pool &&
-                                    (/^tvm-[0-9]+-topology-seed$/.test(
-                                        row.name,
-                                    ) ||
-                                        seed &&
-                                            publicInventory.images.some((fp) =>
-                                                fp.startsWith(seed[1])
-                                            )))
-                            ) {
-                                ctx.logger?.warn(
-                                    "An Incus volume is outside Orbit ownership",
-                                    row,
-                                );
-                            }
-                        }
-                        for (
-                            const id of z.array(z.number().int().positive())
-                                .parse(args.intent.stray_vm_ids)
-                        ) {
-                            ctx.logger?.warn("A task VM has no open group", {
-                                task_vm_id: id,
-                            });
-                        }
-                    }
-                    const selected = selectIncusOrphans(
-                        args.intent.scope,
-                        JSON.stringify(inventory.instances),
-                        JSON.stringify(inventory.volumes),
-                    );
-                    plan = {
-                        ...selected,
-                        instances: selected.instances.map((name) => ({
-                            name,
-                            kind: "instance",
-                        })),
-                        volumes: selected.volumes.map((name) => ({
-                            name,
-                            kind: "volume",
-                        })),
-                        servers: [],
-                        templates: [],
-                    };
-                } else {plan = {
-                        ...cloudPlan(args.intent, args.stdout),
-                        instances: [],
-                        volumes: [],
-                    };}
+                const end = incusRemaining(
+                    args.scope,
+                    args.instances,
+                    args.stdout,
+                );
+                return await terminal(ctx, end.observed_names, [
+                    ...args.instances,
+                    ...args.volumes,
+                ], end.remaining);
+            },
+        },
+        cloud_plan: {
+            description:
+                "Select only admitted orphan UpCloud servers and stale unverified templates",
+            arguments: z.object({ intent: CloudIntent, stdout: z.string() }),
+            async execute(
+                args: { intent: z.infer<typeof CloudIntent>; stdout: string },
+                ctx: Context,
+            ) {
                 return {
                     dataHandles: [
-                        await ctx.writeResource("plan", "plan", plan),
+                        await ctx.writeResource(
+                            "cloud_plan",
+                            "cloud_plan",
+                            cloudPlan(
+                                CloudIntent.parse(args.intent),
+                                args.stdout,
+                            ),
+                        ),
                     ],
                 };
+            },
+        },
+        cloud_result: {
+            description:
+                "Check the final UpCloud inventory and shape the public sweep JSON",
+            arguments: z.object({
+                servers: z.array(Server),
+                templates: z.array(Template),
+                stdout: z.string(),
+            }),
+            async execute(
+                args: {
+                    servers: z.infer<typeof Server>[];
+                    templates: z.infer<typeof Template>[];
+                    stdout: string;
+                },
+                ctx: Context,
+            ) {
+                const deleted = [...args.servers, ...args.templates];
+                const end = cloudRemaining(deleted, args.stdout);
+                return await terminal(
+                    ctx,
+                    end.observed_names,
+                    deleted.map((row) => row.name),
+                    end.remaining,
+                );
             },
         },
         result: {
@@ -332,8 +250,8 @@ export const behavior = {
                 const receipt = child.status === "succeeded"
                     ? z.object({
                         ready: z.literal(true),
-                        observed_names: z.array(Name).max(4096),
-                        deleted_names: z.array(Name).max(4096),
+                        observed_names: Names,
+                        deleted_names: Names,
                     }).parse(
                         JSON.parse(
                             z.object({
@@ -353,33 +271,6 @@ export const behavior = {
                         await ctx.writeResource("terminal", "terminal", {
                             ready: receipt.ready,
                             result_json: JSON.stringify(receipt),
-                        }),
-                    ],
-                };
-            },
-        },
-        terminal: {
-            description:
-                "Shape a successful final provider observation into public sweep JSON",
-            arguments: z.object({
-                observed_names: z.array(Name),
-                deleted_names: z.array(Name),
-            }),
-            async execute(
-                args: { observed_names: string[]; deleted_names: string[] },
-                ctx: Context,
-            ) {
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("terminal", "terminal", {
-                            ready: true,
-                            result_json: JSON.stringify({
-                                ready: true,
-                                observed_names: [
-                                    ...new Set(args.observed_names),
-                                ],
-                                deleted_names: [...new Set(args.deleted_names)],
-                            }),
                         }),
                     ],
                 };

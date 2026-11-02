@@ -700,15 +700,15 @@ The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs wh
 
 Swamp runs one host sweep at a time (`concurrency: 1`), so background sweeps never fill Node209's worker ahead of user work. A waiting sweep may queue for up to 600 seconds.
 
-Provider children isolate SSH and vault inputs. Native cleanup children iterate a completed plan, then the root publishes one result. A provider or SSH failure never supplies a missing-VM observation. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection. 
+Provider children isolate SSH and vault inputs. Each child reads the inventory, plans in TypeScript on Node209, removes the plan with one `forEach` step per resource kind, and reads the inventory again as its end check; the root publishes one result. No step ships a script: each Incus command is one official `@swamp/ssh` `exec` argument list with `sudo`, and each UpCloud request is one inline `curl` on Node209. A provider or SSH failure never supplies a missing-VM observation. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection. 
 
 Each sweep workflow has a 60-second worker queue timeout. Its execution budget is 300 seconds, allowing for the existing 180-second Incus deletion timeout; the shared start path does not yet pass that budget to Swamp.
 
-The native run checks that the host's Incus project exists with `incus project show`. It then compares the instance names with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
+The native run reads the images of the host's Incus project with `incus query /1.0/images?project=<project>`, which fails for a project that does not exist. Incus lists the instances of a missing project as empty, so this read makes a missing project fail the host, and the job changes nothing there. The run then compares the instance names with the task VM rows:
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
 - A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
-- An **orphaned volume** is a storage volume `tvm-<number>-topology-seed` in the project whose task VM has no row on that host that is not `destroyed`. The job deletes it after the orphaned VMs.
+- An **orphaned volume** is a custom volume `tvm-<number>-topology-seed` in the project's pool whose VM is an orphan that is absent or deleted in the same run. The job deletes it after the orphaned VMs.
 
 The sweep fails a missing VM only when two distinct host Operations in a row miss it. Replaying one native root or its projected result never counts as a second miss. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
 
@@ -742,7 +742,7 @@ A **stray volume** is an Incus custom volume in any project and pool of the host
 - the [topology seed](#build-the-base-image) `orbit-topology-seed-<12 hex>`, or a seed under construction `orbit-topology-seed-<12 hex>-new`, of an image that the host's project keeps, in its project and pool;
 - an entry of the host's `operator_owned` list.
 
-The report lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. It reads the images of the host's project only to recognize their topology seeds. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`, and the sweep fails that host.
+The report lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. The sweep reads only the custom volumes of the host's configured pool, so it logs stray volumes of that pool; Doctor reports every pool. It reads the images of the host's project only to recognize their topology seeds. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`, and the sweep fails that host.
 
 A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group has ended, for more than one hour. The hour counts from the later change of the row and its group. Normally the [destroy of ended VMs](#destroy-a-task-vm) removes such a VM within minutes, so a stray record means that destroy is stuck.
 
@@ -1460,6 +1460,8 @@ Recipe observation uses the same native evaluator as Incus, including the 1440-s
 ### Sweep UpCloud
 
 While the token file is set, also with the switch or task VMs off, the [host sweep](#sweep-task-vm-hosts) lists the servers with the `orbit-task-vm` label. So no server that Orbit created keeps costing money. The sweep deletes each server named `tvm-<label value>` without a row that is not `destroyed`. A `ready` or `parked` UpCloud row whose server is gone on two sweeps in a row becomes `failed`, and its group asks for assistance. It also deletes build servers and unverified templates older than two hours, which a killed build leaves, except those of a build that is still marked as running.
+
+The sweep stops a started server with a hard stop, then deletes it with its storage. UpCloud refuses to delete a server that is still stopping, so that sweep fails and the next sweep deletes the server.
 
 ### Configure UpCloud
 

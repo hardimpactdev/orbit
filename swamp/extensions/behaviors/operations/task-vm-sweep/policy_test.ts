@@ -1,5 +1,13 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
-import { selectIncusOrphans } from "./policy.ts";
+import {
+    imagePrefix,
+    incusRemaining,
+    incusRows,
+    incusStrays,
+    instancePrefix,
+    selectIncusOrphans,
+    volumePrefix,
+} from "./policy.ts";
 
 const scope = {
     project: "tasks",
@@ -12,29 +20,76 @@ const scope = {
     retired_build_ids: [17],
     protected_build_ids: [18, 19],
 };
-const inventory = (names: string[]) =>
-    JSON.stringify(names.map((name) => ({ name })));
+const rows = (names: string[], project = "tasks") =>
+    names.map((name) => ({ project, name }));
+
+Deno.test("incus query URLs decode project and name; default has no project", () => {
+    assertEquals(
+        incusRows(
+            JSON.stringify([
+                "/1.0/instances/tvm-6?project=tasks",
+                "/1.0/instances/web",
+            ]),
+            instancePrefix,
+        ),
+        [{ project: "tasks", name: "tvm-6" }, {
+            project: "default",
+            name: "web",
+        }],
+    );
+    assertEquals(
+        incusRows(
+            '["/1.0/storage-pools/tasks/volumes/custom/tvm-6-topology-seed?project=tasks"]',
+            volumePrefix("tasks"),
+        ),
+        [{ project: "tasks", name: "tvm-6-topology-seed" }],
+    );
+});
+
+Deno.test("incus query URLs refuse another prefix or a path name", () => {
+    assertThrows(() =>
+        incusRows(
+            '["/1.0/storage-pools/other/volumes/custom/a"]',
+            volumePrefix("tasks"),
+        )
+    );
+    assertThrows(() =>
+        incusRows('["/1.0/instances/..%2Ftvm-6?project=tasks"]', instancePrefix)
+    );
+    assertThrows(() => incusRows("{}", instancePrefix));
+});
 
 Deno.test("sweep preserves live, operator-owned and post-admission VMs", () => {
     const plan = selectIncusOrphans(
         scope,
-        inventory(["tvm-6", "tvm-7", "tvm-8", "tvm-11", "operator-service"]),
-        "[]",
+        rows(["tvm-6", "tvm-7", "tvm-8", "tvm-11", "operator-service"]),
+        [],
     );
     assertEquals(plan.instances, ["tvm-6"]);
+});
+
+Deno.test("sweep changes only the host's project", () => {
+    const plan = selectIncusOrphans(
+        scope,
+        [...rows(["tvm-6"], "other"), ...rows(["tvm-5"])],
+        rows(["tvm-6-topology-seed"], "other"),
+    );
+    assertEquals(plan.instances, ["tvm-5"]);
+    assertEquals(plan.observed_names, ["tvm-5"]);
+    assertEquals(plan.volumes, []);
 });
 
 Deno.test("sweep protects running and retained builders and future build IDs", () => {
     const plan = selectIncusOrphans(
         scope,
-        inventory([
+        rows([
             "tvm-image-16",
             "tvm-image-17-attempt-2-smoke",
             "tvm-image-18",
             "tvm-image-19-smoke",
             "tvm-image-21",
         ]),
-        "[]",
+        [],
     );
     assertEquals(plan.instances, [
         "tvm-image-16",
@@ -42,37 +97,83 @@ Deno.test("sweep protects running and retained builders and future build IDs", (
     ]);
 });
 
-Deno.test("sweep only selects orphan topology volumes after provider VM absence", () => {
-    const volumes = JSON.stringify([
+Deno.test("sweep selects a topology volume whose VM is absent or removed first", () => {
+    const volumes = rows([
         "tvm-6-topology-seed",
         "tvm-7-topology-seed",
         "tvm-8-topology-seed",
+        "tvm-9-topology-seed",
         "tvm-11-topology-seed",
         "orbit-topology-seed-aaaaaaaaaaaa",
-    ].map((name) => ({ name, type: "custom" })));
+    ]);
+    // tvm-6 is removed in this run; operator-owned tvm-8 stays, so its seed stays.
     assertEquals(
-        selectIncusOrphans(scope, inventory(["tvm-6"]), volumes).volumes,
-        ["tvm-8-topology-seed"],
-    );
-    assertEquals(
-        selectIncusOrphans(scope, "[]", volumes).volumes,
-        ["tvm-6-topology-seed", "tvm-8-topology-seed"],
+        selectIncusOrphans(scope, rows(["tvm-6", "tvm-8"]), volumes).volumes,
+        ["tvm-6-topology-seed", "tvm-9-topology-seed"],
     );
 });
 
 Deno.test("sweep preserves every resource in an operator-owned project", () => {
     const plan = selectIncusOrphans(
         { ...scope, operator_owned: ["tasks/*"] },
-        inventory(["tvm-6", "tvm-image-16"]),
-        JSON.stringify([{ name: "tvm-6-topology-seed", type: "custom" }]),
+        rows(["tvm-6", "tvm-image-16"]),
+        rows(["tvm-6-topology-seed"]),
     );
     assertEquals(plan.instances, []);
     assertEquals(plan.volumes, []);
 });
 
-Deno.test("sweep refuses malformed inventory before returning any deletion plan", () => {
-    assertThrows(() =>
-        selectIncusOrphans(scope, '[{"name":"../tvm-6"}]', "[]")
+Deno.test("strays are foreign instances and sweep-pool volumes, never task VMs or kept seeds", () => {
+    const fingerprints = incusRows(
+        '["/1.0/images/aaaaaaaaaaaa0123"]',
+        imagePrefix,
+    ).map((row) => row.name);
+    const strays = incusStrays(
+        scope,
+        true,
+        [
+            ...rows(["tvm-6", "tvm-image-18", "tvm-image-16", "web"]),
+            ...rows(["runner"], "orbit-ci"),
+            ...rows(["tvm-8", "service"], "default"),
+        ],
+        rows([
+            "tvm-6-topology-seed",
+            "orbit-topology-seed-aaaaaaaaaaaa",
+            "orbit-topology-seed-bbbbbbbbbbbb",
+        ]),
+        fingerprints,
     );
-    assertThrows(() => selectIncusOrphans(scope, inventory(["tvm-6"]), "{}"));
+    assertEquals(strays.instances, [
+        { project: "tasks", name: "tvm-image-16" },
+        { project: "tasks", name: "web" },
+        { project: "default", name: "tvm-8" },
+        { project: "default", name: "service" },
+    ]);
+    assertEquals(strays.volumes, [{
+        project: "tasks",
+        name: "orbit-topology-seed-bbbbbbbbbbbb",
+        pool: "tasks",
+    }]);
+    assertEquals(
+        incusStrays(scope, false, rows(["runner"], "orbit-ci"), [], [])
+            .instances,
+        rows(["runner"], "orbit-ci"),
+    );
+});
+
+Deno.test("the end check lists deleted instances that are still present", () => {
+    const stdout = JSON.stringify([
+        "/1.0/instances/tvm-7?project=tasks",
+        "/1.0/instances/tvm-6?project=tasks",
+    ]);
+    assertEquals(incusRemaining(scope, ["tvm-6", "tvm-image-16"], stdout), {
+        observed_names: ["tvm-7", "tvm-6"],
+        remaining: ["tvm-6"],
+    });
+});
+
+Deno.test("sweep refuses malformed scope before returning any deletion plan", () => {
+    assertThrows(() =>
+        selectIncusOrphans({ ...scope, project: "../tasks" }, [], [])
+    );
 });
