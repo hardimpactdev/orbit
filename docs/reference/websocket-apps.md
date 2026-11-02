@@ -34,7 +34,7 @@ Create an app for each Project that publishes realtime events.
 orbit websocket:app:create hauzer
 ```
 
-The name is a lowercase slug of at most 63 characters. `gateway` and a taken name are refused with `validation.failed`. The Gateway saves a new registry revision, then notifies each Reverb process. Each process pulls the full snapshot and adds the app without restarting. A starting process must fetch a fresh snapshot before accepting connections.
+The name is a lowercase slug of at most 63 characters. `gateway` and a taken name are refused with `validation.failed`. The Gateway saves a new registry revision. Each Reverb process pulls the full snapshot on its own 30-second reconciliation and adds the app without restarting. A starting process must fetch a fresh snapshot before accepting connections.
 
 `websocket:app:list` lists the apps by name. `websocket:app:show <name>` shows one app. Both return `id`, `name`, `app_id`, `key`, and `instance_ids`, the Instances that hold the app. Neither returns the secret.
 
