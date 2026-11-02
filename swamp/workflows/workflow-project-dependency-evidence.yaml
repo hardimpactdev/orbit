@@ -70,7 +70,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-pr-" + run.id + "-" + string(self._index) }}
+      behaviorName: ${{ "project-pr-" + string(self._index) }}
       methodName: execute
       inputs:
         run: 'gh pr view "$ORBIT_PR_URL" --json number,url,headRefOid,state
@@ -95,7 +95,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: ${{ "project-evidence-" + string(inputs.operation_id) }}
+      behaviorName: project-evidence
       methodName: evidence
       inputs:
         project: ${{ inputs.project }}

@@ -70,7 +70,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: ${{ "project-input-" + string(inputs.operation_id) }}
+      behaviorName: project-input
       methodName: read
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -116,7 +116,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-observation-result-" + run.id }}
+      behaviorName: project-observation-result
       methodName: execute
       inputs:
         run: printf "%s\n" "$ORBIT_RESULT"

@@ -34,7 +34,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-dev-command'
-      behaviorName: ${{ "instance-steps-assets-" + run.id }}
+      behaviorName: instance-steps-assets
       methodName: create_assets
       inputs: {intent: {steps: '${{ inputs.intent.steps }}'}}
   - name: 'Check the checkout'
@@ -43,10 +43,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-steps-" + run.id }}
+      behaviorName: ${{ "instance-steps-ssh-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: &ssh
-        name: ${{ "instance-steps-" + run.id }}
+        name: ${{ "instance-steps-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -68,7 +68,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-steps-" + run.id }}
+      behaviorName: ${{ "instance-steps-ssh-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -88,7 +88,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-steps-result-" + run.id }}
+      behaviorName: instance-steps-result
       methodName: execute
       inputs:
         run: |

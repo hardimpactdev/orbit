@@ -58,7 +58,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-environment-assets'
-      behaviorName: ${{ "instance-environment-assets-" + run.id }}
+      behaviorName: instance-environment-assets
       methodName: read
       inputs: {environment: '${{ inputs.intent.environment }}', runtime: '${{ inputs.intent.runtime }}'}
   - name: 'Check for foreign keys'
@@ -67,10 +67,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-" + run.id }}
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: &ssh
-        name: ${{ "instance-environment-" + run.id }}
+        name: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -93,7 +93,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-" + run.id }}
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -111,7 +111,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-" + run.id }}
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -128,7 +128,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-" + run.id }}
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -147,7 +147,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-environment-result-" + run.id }}
+      behaviorName: instance-environment-result
       methodName: execute
       inputs:
         run: |

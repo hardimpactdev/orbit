@@ -70,7 +70,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: ${{ "project-input-" + string(inputs.operation_id) }}
+      behaviorName: project-input
       methodName: read
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -99,7 +99,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-checkout-" + run.id }}
+      behaviorName: project-checkout
       methodName: execute
       inputs:
         run: 'git clone --quiet --depth=1 --branch "$ORBIT_BRANCH" -- "$ORBIT_URL" "$ORBIT_SOURCE" && git -C "$ORBIT_SOURCE" rev-parse HEAD
@@ -159,7 +159,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-head-now-" + run.id }}
+      behaviorName: project-head-now
       methodName: execute
       inputs:
         run: 'git ls-remote --exit-code -- "$ORBIT_URL" "$ORBIT_REF"
@@ -220,7 +220,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-detect-result-" + string(inputs.operation_id) }}
+      behaviorName: project-detect-result
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"
@@ -237,7 +237,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-scan-outcome-" + run.id }}
+      behaviorName: project-scan-outcome
       methodName: execute
       inputs:
         run: test "$ORBIT_SCAN_SUCCEEDED" = true
@@ -258,7 +258,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-detect-cleanup-" + string(inputs.operation_id) }}
+      behaviorName: project-detect-cleanup
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_SOURCE"
