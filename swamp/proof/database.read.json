@@ -1,0 +1,58 @@
+{
+  "kind": "database.read",
+  "workflow": "operation-database-read",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "database-servers",
+      "body": {
+        "slug": "proof-rdsrv-${proof.run}",
+        "node_id": "${node.target}",
+        "driver": "mysql",
+        "port": 33196
+      },
+      "bind": "server"
+    },
+    {
+      "method": "POST",
+      "path": "database-connections",
+      "body": {
+        "slug": "proof-rd-${proof.run}",
+        "server": "proof-rdsrv-${proof.run}"
+      },
+      "bind": "connection"
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "database-connections/proof-rd-${proof.run}/query",
+    "body": {
+      "sql": "SELECT 1 AS one, NULL AS nothing, 'x,y' AS text"
+    }
+  },
+  "phases": [
+    {
+      "name": "Run the read",
+      "job": "read",
+      "step": "Run the read",
+      "budget_seconds": 40
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/read_parity.py",
+    "{\"columns\": [\"one\", \"nothing\", \"text\"], \"rows\": [{\"one\": \"1\", \"nothing\": null, \"text\": \"x,y\"}], \"row_count\": 1, \"truncated\": false}"
+  ]
+}

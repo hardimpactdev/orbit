@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: coordinator 2026-11-02. Every effect runs in Swamp; a read takes the same path as a write. The step on 209 connects to the Database server over WireGuard with the credential from the vault; no SSH hop back to the Gateway Node. SQLite is Node work over @swamp/ssh (R4).
+  %% Target design: coordinator 2026-11-02. Every effect runs in Swamp; a read takes the same path as a write. Decided 2026-11-02 (orchestrator): a read on a Database server runs as docker exec in its container (Q-DBAUTH); an external connection reads from 209 with the swamp role's clients; SQLite runs sqlite3 on its Node (R4). One @swamp/ssh step; the Gateway picks its host. No shipped script; the Gateway checks the statement and shapes the rows.
   %% status: draft
   %% command: database:query
   %% kind: database.read
@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - its leading verb doesn't write, or the Gateway refuses with `database.write_required`
   %%> - for sqlite: the connection has a Node, or the Gateway refuses with `database.sqlite_node_required`
   %%> Where the credential lives:
-  %%> - the Gateway stores the connection's password encrypted, and keeps its execution copy in the Swamp vault under the connection's key, `database-connection-shop` (R3)
+  %%> - the Gateway stores the connection's password encrypted; at start it copies the password line and the statement into the Swamp vault as one value, `database-read-intent-5170` (R3)
   %%> - SQLite has no credential
   %%> Result:
   %%> - task #5170 recorded with the full intent; no lock, because a read changes nothing
@@ -38,35 +38,28 @@ sequenceDiagram
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
-  %%> - the mode, the statement, the driver, and the server's WireGuard address and port
-  %%> - the vault key name of the credential, never the value
-  %%> - for sqlite: the file path, its owner, and Node 12's address and SSH host keys
+  %%> - the client argv the Gateway built for the driver and mode, and the read host's address and SSH host keys
+  %%> - the vault key name of the password and statement, never the value
   GW-->>CLI: 202 Accepted<br/>task #5170
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI waits with progress, as for other tasks; a read is a short run, usually a few seconds
-  alt mysql or pgsql
-    SW->>N: Run the read<br/>SQL client over WireGuard
-    %%> Who can reach the server:
-    %%> - a Database server binds only Node 12's WireGuard and LAN addresses; 209 is a WireGuard peer, so the step reaches the port directly
-    %%> How:
-    %%> - the step on 209 reads the credential with `vault.get` and opens the connection's own login, never the server's root login
-    %%> - runs the statement inside a READ ONLY transaction, so the server refuses a write the verb check missed
-    %%> - a 30 s statement timeout, and at most 500 rows are read
-    %%> Not included:
-    %%> - no SSH hop: the old run went from 209 back to the Gateway Node to run the query there
-  else sqlite
-    SW->>N: Read the file<br/>@swamp/ssh · sqlite3 -readonly
-    %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
-    %%> What it does:
-    %%> - opens the file read-only as the file's owner, runs the statement and returns at most 500 rows
-  end
+  SW->>N: Run the read<br/>@swamp/ssh · one client
+  %%> How:
+  %%> - Swamp reaches the host over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
+  %%> - stdin is one vault value: the password as the first line, then the statement (Q-DBAUTH); SQLite has no password line
+  %%> Where it runs:
+  %%> - on a Database server: one `docker exec -i` into its container on Node 12; the client in the image logs in as the connection's own user, never root
+  %%> - on a registered external database: the `mysql` or `psql` client on 209, which the `swamp` role installs; 209 reaches the host directly
+  %%> - on SQLite: `sqlite3 -readonly -safe` on the file's Node, as the file's owner; it cannot write, attach or run shell commands
+  %%> What it does:
+  %%> - MySQL and PostgreSQL run the statement inside a READ ONLY transaction
+  %%> - a 30 s limit; MySQL prints XML, PostgreSQL and SQLite print CSV; the output stops at 64 KiB
   alt the read succeeds
     N-->>SW: rows
     %%> Returns:
-    %%> - up to 500 rows; more sets `truncated`
+    %%> - the client output; the Gateway keeps up to 500 rows, and more sets `truncated`
     SW-->>GW: Run succeeded<br/>terminal event + rows
     %%> How the Gateway learns it:
     %%> - the rows come back as the run's terminal result; its shared run reader sees it; Swamp never calls the Gateway

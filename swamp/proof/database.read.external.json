@@ -1,0 +1,61 @@
+{
+  "kind": "database.read",
+  "workflow": "operation-database-read",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker rm -f proof-read-ext >/dev/null 2>&1 || true"
+    ]
+  ],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "docker rm -f proof-read-ext >/dev/null 2>&1; docker run -d --name proof-read-ext --network host -e POSTGRES_PASSWORD=\"proof-ext-pw-$1\" -e PGPORT=35432 postgres:18 >/dev/null && for i in $(seq 1 60); do docker exec proof-read-ext pg_isready -h 127.0.0.1 -p 35432 >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1",
+      "sh",
+      "${proof.run}"
+    ]
+  ],
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "command -v psql >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client >/dev/null"
+    ],
+    [
+      "sh",
+      "-c",
+      "cd apps/gateway && runuser -u orbit -- php -r \"$1\" \"$2\" \"$3\" 2>&1",
+      "sh",
+      "require 'vendor/autoload.php'; $app = require 'bootstrap/app.php'; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();$n = App\\Models\\Node::query()->findOrFail((int) $argv[1]);App\\Models\\DatabaseConnection::query()->create(['slug' => 'proof-ext-'.$argv[2], 'driver' => 'pgsql', 'host' => $n->wireguard_ip, 'port' => 35432, 'database' => 'postgres', 'username' => 'postgres', 'password' => 'proof-ext-pw-'.$argv[2]]);",
+      "${node.target}",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "database-connections/proof-ext-${proof.run}/query",
+    "body": {
+      "sql": "SELECT 1 AS one, NULL AS nothing, 'x,y' AS text"
+    }
+  },
+  "phases": [
+    {
+      "name": "Run the read",
+      "job": "read",
+      "step": "Run the read",
+      "budget_seconds": 40
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/read_parity.py",
+    "{\"columns\": [\"one\", \"nothing\", \"text\"], \"rows\": [{\"one\": \"1\", \"nothing\": null, \"text\": \"x,y\"}], \"row_count\": 1, \"truncated\": false}"
+  ]
+}

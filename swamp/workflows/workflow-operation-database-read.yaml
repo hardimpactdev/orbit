@@ -1,340 +1,63 @@
 id: 40402584-b11e-468f-b58e-0d7328a8e62c
 name: operation-database-read
 queueTimeout: 30
-description: Read bounded queries and metadata using vault-backed scripts over official SSH from209.
-writes: true
-vaults:
-- orbit-control-inputs
+description: database:query and the catalog reads from 209, one client over official SSH; the Gateway builds its argv and shapes its output.
+vaults: [orbit-control-inputs]
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database.read
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: database.read}
+    # argv: docker exec into a Database server's container, the client on 209 for an external database, or sqlite3 as
+    # the file's owner. ssh_execution is the host it runs on.
     intent:
       type: object
       properties:
-        connection_id:
-          type: integer
-          minimum: 1
-        driver:
-          type: string
-          enum:
-          - mysql
-          - pgsql
-          - sqlite
-        mode:
-          type: string
-          enum:
-          - query
-          - tables
-          - schema
-          - describe
-        table:
-          type: string
-        owner:
-          type: string
-        path:
-          type: string
-        ssh:
-          type: object
-          properties:
-            host:
-              type: string
-            user:
-              type: string
-            host_keys:
-              type: array
-              items:
-                type: string
-              minItems: 1
-          required:
-          - host
-          - user
-          - host_keys
-          additionalProperties: false
-      required:
-      - connection_id
-      - driver
-      - mode
-      - table
-      - ssh
+        argv: {type: array, items: {type: string}, minItems: 1}
+        ssh_execution: {type: object}
+      required: [argv, ssh_execution]
       additionalProperties: false
+    # Names only: read is one whole value, the password line (none for SQLite) and the statements.
     execution_secrets:
       type: object
       properties:
-        database_read:
+        read:
           type: object
           properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^database-read-intent-[1-9][0-9]*$
-          required:
-          - vault
-          - key
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^database-read-intent-[1-9][0-9]*$'}
+          required: [vault, key]
           additionalProperties: false
-      required:
-      - database_read
+      required: [read]
       additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: read
   labels: {role: swamp}
   steps:
-  - name: assets
+    # A read changes nothing: READ ONLY on MySQL and PostgreSQL, -readonly -safe on SQLite. The output stops at 64 KiB.
+  - name: 'Run the read'
     labels: {role: swamp}
-    writes: false
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-read-command-assets'
-      behaviorName: '${{ "database-read-assets" }}'
-      methodName: read
-      inputs:
-        intent: ${{ inputs.intent }}
-  - name: directory
-    labels: {role: swamp}
-    writes: false
-    allowFailure: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs: &id002
-        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh.user }}
-          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
-        hosts:
-        - name: server
-          address: ${{ inputs.intent.ssh.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      behaviorName: ${{ "database-read-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/mkdir
-        - -p
-        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) }}
-        okExitCodes:
-        - 0
-        - 1
-  - name: copy
-    labels: {role: swamp}
-    writes: false
-    allowFailure: true
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
-    - step: directory
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs: *id002
-      methodName: copy
-      inputs:
-        hosts: name:server
-        src: ${{ steps.assets.outputs.directory + "/." }}
-        dst: ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) }}
-        direction: to
-        recursive: true
-  - name: prepared
-    labels: {role: swamp}
-    writes: false
-    dependsOn:
-    - step: copy
-      condition:
-        type: always
-    task:
-      type: assert
-      expr: steps.directory.outputs.exitCode == 0 && steps.copy.status == "succeeded"
-      severity: high
-      message: Database read command files unavailable.
-  - name: sql
-    labels: {role: swamp}
-    writes: false
-    allowFailure: true
-    dependsOn:
-    - step: prepared
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs:
-        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
+        name: ${{ "database-read-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
-          user: ${{ inputs.intent.ssh.user }}
-          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         hosts:
-        - name: server
-          address: ${{ inputs.intent.ssh.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh.host_keys }}
-      methodName: exec
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
-        hosts: name:server
-        timeoutSec: 30
-        argv:
-        - /usr/bin/php
-        - -d
-        - display_errors=0
-        - -d
-        - log_errors=0
-        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) + "/read_pdo.php" }}
-        - ${{ steps.assets.outputs.intent_json }}
-        okExitCodes:
-        - 0
-        - 1
-        stdin: ${{ vault.get(inputs.execution_secrets.database_read.vault, inputs.execution_secrets.database_read.key)
-          }}
-    guard: ${{ inputs.intent.driver == "sqlite" }}
-  - name: sqlite
-    labels: {role: swamp}
-    writes: false
-    allowFailure: true
-    dependsOn:
-    - step: prepared
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs:
-        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh.user }}
-          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
-        hosts:
-        - name: server
-          address: ${{ inputs.intent.ssh.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh.host_keys }}
-      methodName: exec
-      inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/sudo
-        - -n
-        - -u
-        - '${{ has(inputs.intent.owner) ? inputs.intent.owner : "" }}'
-        - --
-        - /usr/bin/python3
-        - -I
-        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) + "/read_sqlite.py" }}
-        - ${{ steps.assets.outputs.intent_json }}
-        okExitCodes:
-        - 0
-        - 1
-        stdin: ${{ vault.get(inputs.execution_secrets.database_read.vault, inputs.execution_secrets.database_read.key)
-          }}
-    guard: ${{ inputs.intent.driver != "sqlite" }}
-  - name: result
-    labels: {role: swamp}
-    dependsOn:
-    - step: assets
-      condition:
-        type: always
-    - step: directory
-      condition:
-        type: always
-    - step: copy
-      condition:
-        type: always
-    - step: prepared
-      condition:
-        type: always
-    - step: sql
-      condition:
-        type: always
-    - step: sqlite
-      condition:
-        type: always
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-read-command-assets'
-      behaviorName: '${{ "database-read-assets" }}'
-      methodName: result
-      inputs:
-        stdout: '${{ inputs.intent.driver == "sqlite" ? (has(steps.sqlite.outputs) && has(steps.sqlite.outputs.stdout)
-          ? steps.sqlite.outputs.stdout : "") : (has(steps.sql.outputs) && has(steps.sql.outputs.stdout) ? steps.sql.outputs.stdout
-          : "") }}'
-        exit_code: '${{ inputs.intent.driver == "sqlite" ? (has(steps.sqlite.outputs) && has(steps.sqlite.outputs.exitCode)
-          ? steps.sqlite.outputs.exitCode : -1) : (has(steps.sql.outputs) && has(steps.sql.outputs.exitCode) ? steps.sql.outputs.exitCode
-          : -1) }}'
-  - name: cleanup
-    labels: {role: swamp}
-    guard: ${{ steps.result.outputs.exitCode != 0 }}
-    allowFailure: true
-    writes: true
-    dependsOn:
-    - step: result
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-      globalArgs:
-        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh.user }}
-          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
-        hosts:
-        - name: server
-          address: ${{ inputs.intent.ssh.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh.host_keys }}
-      methodName: exec
-      inputs:
-        hosts: name:server
-        argv:
-        - /usr/bin/rm
-        - -rf
-        - --
-        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) }}
-        okExitCodes:
-        - 0
-        - 1
-  - name: accept_result
-    labels: {role: swamp}
-    dependsOn:
-    - step: result
-      condition:
-        type: succeeded
-    - step: cleanup
-      condition:
-        type: always
-    writes: false
-    task:
-      type: assert
-      expr: steps.result.outputs.exitCode == 0
-      severity: high
-      message: Database read did not complete.
+        hosts: name:target
+        argv: ${{ inputs.intent.argv }}
+        stdin: ${{ vault.get(inputs.execution_secrets.read.vault, inputs.execution_secrets.read.key) }}
+        timeoutSec: 40

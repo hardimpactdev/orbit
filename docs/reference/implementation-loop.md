@@ -102,7 +102,7 @@ Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks an
 
 Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. The validation job also runs that pinned binary's `serve check-config` against disposable grant files rendered by the release's own renderer from every `swamp/config/*grants*.json` input. It requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. This checks complete CEL conditions and regex safety without starting serve or changing live grants.
 
-Operation Deno tests run in parallel shards with four workers per job: four general shards, one per database effect directory (read and write), and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
+Operation Deno tests run in parallel shards with four workers per job: four general shards, one for database write effects, and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
 
 Two checks guard the flow charts. Generated contracts requires a chart or a `docs/cli/flows-pending.txt` line for every kind. Docs build runs `bin/check-flows`. Changing `swamp/workflows/` also selects Docs, and changing a chart or `docs/cli/flows-pending.txt` also selects Generated contracts. So both checks see every change they depend on.
 

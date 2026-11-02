@@ -38,9 +38,11 @@ beforeEach(function (): void {
 });
 
 it('selects a production home only on the registered Node and at a path boundary', function (string $path, bool $sameNode, bool $sudo): void {
+    $keys = ['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND'];
+    $this->node->update($keys);
     $worker = Node::query()->create([
         'name' => 'production-sqlite', 'status' => 'active', 'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.82', 'wireguard_ip' => '10.44.0.82', 'user' => 'orbit',
+        'public_ssh_host' => '192.0.2.82', 'wireguard_ip' => '10.44.0.82', 'user' => 'orbit', ...$keys,
     ]);
     $worker->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create([
@@ -62,7 +64,7 @@ it('selects a production home only on the registered Node and at a path boundary
     app()->instance(WebSocketClient::class, $socket);
     $response = $this->getJson('/api/v1/database-connections/production-file/tables')->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect(app(DatabaseReadProjection::class)->input($operation)['intent']['owner'])->toBe($sudo ? 'orbit-app-82' : 'orbit');
+    expect(app(DatabaseReadProjection::class)->input($operation)['intent']['argv'][3])->toBe($sudo ? 'orbit-app-82' : 'orbit');
 })->with([
     'production home' => ['/home/orbit-app-82/shared/database.sqlite', true, true],
     'same path on another Node' => ['/home/orbit-app-82/shared/database.sqlite', false, false],

@@ -1,0 +1,53 @@
+{
+  "kind": "database.read",
+  "workflow": "operation-database-read",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "rm -f /home/orbit/proof-read.sqlite"
+    ]
+  ],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "command -v sqlite3 >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends sqlite3 >/dev/null; rm -f /home/orbit/proof-read.sqlite && runuser -u orbit -- python3 -c \"import sqlite3; d = sqlite3.connect('/home/orbit/proof-read.sqlite'); d.execute('CREATE TABLE proof (id INTEGER PRIMARY KEY, value TEXT)'); d.commit()\""
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "database-connections",
+      "body": {
+        "slug": "proof-sq-${proof.run}",
+        "driver": "sqlite",
+        "node_id": "${node.target}",
+        "path": "/home/orbit/proof-read.sqlite"
+      },
+      "bind": "connection"
+    }
+  ],
+  "request": {
+    "method": "GET",
+    "path": "database-connections/proof-sq-${proof.run}/schema"
+  },
+  "phases": [
+    {
+      "name": "Run the read",
+      "job": "read",
+      "step": "Run the read",
+      "budget_seconds": 40
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/read_parity.py",
+    "{\"tables\": [{\"name\": \"proof\", \"columns\": [{\"name\": \"id\", \"type\": \"INTEGER\", \"nullable\": true, \"default\": null, \"primary\": true}, {\"name\": \"value\", \"type\": \"TEXT\", \"nullable\": true, \"default\": null, \"primary\": false}]}]}"
+  ]
+}

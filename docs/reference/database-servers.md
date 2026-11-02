@@ -259,9 +259,7 @@ Application migrations create and alter logical publications and select their ta
 
 ## How Orbit runs admin commands
 
-Swamp runs fixed `mysql`, `psql`, and `mysqldump` clients inside the admitted Database server container with local `sudo docker container exec`. The shared Deno SQL action frames the admin password and SQL on standard input. A fixed container program reads the password frame and sets only the client’s `MYSQL_PWD` or `PGPASSWORD`. Neither secret appears in host environment variables, command arguments, Docker exec metadata, files or native output. MySQL copies stream directly from dump to load inside the container. Readiness, client deadlines and output bounds belong to Swamp. The observer agent executes no database actions.
-
-For Valkey writes, Swamp invokes the fixed `database.valkey` program on the server Node. The Gateway resolves its credentials after authorization. The program connects to the recorded private address, checks every reply, and returns only fixed result fields and refusal codes. A user's password goes to Valkey only as a SHA-256 hash. A separate named command writes the ACL file during creation or [repair](#repair-a-valkey-server). It receives the file on standard input and writes it through a short-lived container that mounts the volume. The file holds only password hashes.
+Swamp runs each batch as one `docker exec -i` into the server container over official SSH from Node 209. The client in the image reads the login's password from the first stdin line, and the statements follow. PostgreSQL admin batches use local trust in the container instead of a password line. No password appears in command arguments, host environment variables, Docker exec metadata or files. A [read](/reference/database-connections#inspect-a-registered-connection) of a connection on the server runs the same way, as the connection's own user inside a `READ ONLY` transaction. The observer agent runs no database actions.
 
 ## Remove a database
 

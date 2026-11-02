@@ -89,21 +89,24 @@ An update to the configured cache for AI router returns `operation.kind_unavaila
 
 Query, tables, schema, and describe accept only a registered slug. The request never supplies its own host, path, user, or password. Every inspection returns HTTP 202 with one `database.read` Operation. The CLI follows that Operation and displays its native result. `--json` returns the terminal Operation with the inspection under `result`.
 
-A query takes `sql`, at most 16,384 characters, and `write`. A stacked statement returns `database.sql_multiple_statements`. Without `write: true`, statements classified as writes return `database.write_required`. MySQL and PostgreSQL reads run inside a read-only transaction on the Gateway Node's Swamp worker. SQLite opens the existing file read-only, enables query-only mode, and denies mutation, attachment, and extension functions through its authorizer. A read cannot create a missing SQLite file.
+A query takes `sql`, at most 16,384 characters, and `write`. A stacked statement returns `database.sql_multiple_statements`. Without `write: true`, statements classified as writes return `database.write_required`. MySQL and PostgreSQL reads run inside a `READ ONLY` transaction. SQLite runs `sqlite3 -readonly -safe`, which refuses writes, attachments, file functions, and shell commands. A read cannot create a missing SQLite file.
 
-Network reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE statement and a fixed set of pure functions. They refuse comments, backslash escapes, dollar quoting, file export clauses, transaction controls and other function calls. Use explicit write permission for statements outside this read subset.
+MySQL and PostgreSQL reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE statement and a fixed set of pure functions. They refuse comments, backslash escapes, dollar quoting, file export clauses, transaction controls and other function calls with `database.query_refused` (422) before any run. MySQL DDL commits a read-only transaction itself, so this check is the guard. Use explicit write permission for statements outside this read subset.
 
-`write: true` starts a `database.write` Operation whose result holds the affected `row_count` and `truncated`, without result rows. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when rows or bytes exceed the native output bound. For a read, `row_count` counts returned rows. The private callback removes the stored password and credential-shaped text before saving any result resource.
+`write: true` starts a `database.write` Operation whose result holds the affected `row_count` and `truncated`, without result rows. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when rows or bytes exceed the output bound. Values are text, and SQL NULL is `null`. A query without rows on MySQL returns no `columns`. For a read, `row_count` counts returned rows. The Gateway removes the stored password and credential-shaped text before it saves the result.
 
-| Driver | Where it runs |
+One `@swamp/ssh` step from Node 209 runs one client. The client reads the password from the first stdin line and the statement after it, never from argv or a file. Its output stops at 64 KiB, and it has 30 seconds.
+
+| Connection | Where it runs |
 | --- | --- |
-| `mysql`, `pgsql` | A fixed PDO program on the exact Gateway Node worker, with SQL and credentials on protected stdin. |
-| `sqlite` | A fixed Python SQLite program on the linked Node worker, as the admitted file owner. |
+| `mysql`, `pgsql` on a [Database server](/reference/database-servers) | `docker exec -i` into the server's container on its Node. The client in the image logs in as the connection's user. |
+| `mysql`, `pgsql` registered without a server | The `mysql` or `psql` client on Node 209, which the `swamp` role installs. |
+| `sqlite` | `sqlite3` on the linked Node, as the file's owner. The app roles install it. |
 | `redis` | Not supported. Admission returns `database.driver_unsupported` (422). |
 
-The SQLite Node must be active and have a WireGuard address. A record without a Node returns `database.sqlite_node_required`. SQLite inspection uses the owning production Instance user, or the production Instance user whose home contains the registered path on that Node. Development inspection uses the Node user. Swamp selects that identity before opening the file and does not change file or home permissions. No inspection calls an agent action or runs PDO in the Gateway request.
+The SQLite Node must be active and have a WireGuard address. A record without a Node returns `database.sqlite_node_required`. SQLite inspection uses the owning production Instance user, or the production Instance user whose home contains the registered path on that Node. Development inspection uses the Node user. The read runs as that user through `sudo` and does not change file or home permissions. No inspection calls an agent action or connects from the Gateway request.
 
-Unknown tables fail the Operation with `database.table_missing`. Inaccessible SQLite files fail with `database.sqlite_unreadable`. Other execution failures use `database.query_failed`. Failure results omit SQL, credentials, and native diagnostics. Table and schema metadata also use the native output bound.
+Unknown tables fail the Operation with `database.table_missing`. Every other execution failure, such as an SQL error, a timeout or an unreadable SQLite file, uses `database.query_failed`. Failure results omit SQL, credentials, and native diagnostics. Table and schema metadata also use the native output bound.
 
 ## Create a database on a server
 
@@ -195,7 +198,7 @@ A test run with `RefreshDatabase` empties the database it uses. A separate test 
 
 ### One result shape for every SQL driver
 
-Swamp runs fixed PDO programs for MySQL and PostgreSQL on the Gateway Node worker. SQLite uses a fixed native program on the file’s Node under its admitted owner. Both return the same bounded result shape. The Gateway records owner selection and write authorization at admission; Swamp owns execution and result redaction.
+Each driver's own client prints the rows: XML for MySQL, which marks NULL, and CSV for PostgreSQL and SQLite, with a per-read marker for NULL. The Gateway shapes all three into the same bounded result and redacts it. It checks the statement and selects the owner at admission; Swamp runs the one client.
 
 ### Secrets stay off the command line
 
