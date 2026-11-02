@@ -13,14 +13,6 @@ const Modules = {
         "create_valkey",
         "database_create",
     ],
-    database_destroy: [
-        "server_common",
-        "create_common",
-        "destroy",
-        "destroy_sql",
-        "destroy_valkey",
-        "database_destroy",
-    ],
 };
 type Context = {
     extensionFile(name: string): string;
@@ -66,7 +58,7 @@ export const behavior = {
                 "Read one shipped database phase module and its library once for official SSH argv, with the public intent as JSON",
             arguments: z.object({
                 intent: z.record(z.string(), z.unknown()),
-                module: z.enum(["database_create", "database_destroy"])
+                module: z.enum(["database_create"])
                     .default("database_create"),
             }).strict(),
             execute: async (

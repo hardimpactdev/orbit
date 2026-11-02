@@ -50,7 +50,9 @@ Flow-tighten rule 14 removes the step that reports a result. A kind without one 
 
 The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
 
-A successful run must show the named step succeeded; otherwise the result is unavailable. Unlike `'outputs' => false`, which gives an empty result, `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it. A declaration sets one of the two, not both. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work the same way in both modes. A declaration without `native` keeps the result-step contract above, so existing kinds are unchanged; new ports drop the result step and declare `native`.
+A successful run must show the named step succeeded; otherwise the result is unavailable. Unlike `'outputs' => false`, which gives an empty result, `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it. A declaration sets one of the two, not both.
+
+A projector reads one step's status with `NativeRunResult::stepStatus($result, '<step name>')`, which gives null for an absent step. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work the same way in both modes. A declaration without `native` keeps the result-step contract above, so existing kinds are unchanged; new ports drop the result step and declare `native`.
 
 ### Scheduled observations
 

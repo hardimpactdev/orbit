@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/{scripts/{database_create,database_destroy,shipped}.py,database_{create,destroy}_test.py}},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
+  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/{scripts/{database_create,shipped}.py,database_create_test.py}},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
 ---
 
 # Database servers
@@ -260,7 +260,7 @@ For Valkey writes, Swamp invokes the fixed `database.valkey` program on the serv
 
 `database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
-Standalone removal runs `operation-database-destroy` on Node 209 in the [chart's](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.destroy.mmd) two Node steps over official SSH: drop the databases and users, then check they are gone. The drop step reads the admin password from the server's own vault key on standard input, finds MySQL test databases under the recorded prefix, checks blockers for the whole set, and then drops. On Valkey it runs `ACL DELUSER` for each user and `ACL SAVE`. The Gateway removes records through the shared terminal projector.
+Standalone removal runs `operation-database-destroy` on Node 209 over official SSH, one `docker exec -i` per action with the statement the Gateway rendered at admission on standard input ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.destroy.mmd)). It finds MySQL test databases under the recorded prefix, checks blockers for the whole set, drops, and checks the names are gone. On Valkey it runs `ACL DELUSER` for each user and `ACL SAVE`. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's vault key `database-server-<id>-client-env` and an always-run step removes; PostgreSQL uses local trust inside the container. The Gateway removes records through the shared terminal projector.
 
 The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and refuses a server Node without a stored SSH host key. System database names and prefixes are refused before SQL. Standalone removal runs no ownership probe and no connection fence (flow-tighten rule 22): a client that connects between the blocker check and the drop is cut off.
 

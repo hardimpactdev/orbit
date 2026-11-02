@@ -24,7 +24,8 @@ The steps are:
 
 - `Create the apps folder` runs the official `@swamp/cfgmgmt/directory` behavior. It creates missing folders and gives the apps folder the managed user and group with mode `0755`.
 - `Check owner and mode` reads the folder with one `stat`.
-- `Prove the apps folder` is Swamp's native `assert`: the `stat` output must match the intent. The Gateway reads this end check from Swamp's run data.
+- `Prove the apps folder` is Swamp's native `assert`: the `stat` output must match the intent.
+- The Gateway reads that end check from Swamp's run data. It stores the settings only after the check succeeded.
 
 The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in any of these steps reports `node.settings_root_failed`; the failure detail holds the reason.
 
