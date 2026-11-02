@@ -14,6 +14,21 @@ A chart sits beside its command page, with the same name: `route/create.mmd` bes
 
 To find a kind's chart, run `grep -rl '%% kind: route.create' docs/cli`.
 
+## Edit, render and preview
+
+**Edit.** A chart is the `.mmd` file next to its page: `docs/cli/<family>/<command>.mdx` and `<command>.mmd`. Change the chart first, then the code. The page places it under `## How it works` with `<div className="flow-at" data-chart="<family>/<command>"></div>`.
+
+**Render.** No image is built. `bin/docs-flows` bundles the placed charts into `docs/flows-data.js`. `docs/flow.js` draws each chart in the browser from its Mermaid text, as SVG with a step panel: click a step or use the arrow keys.
+
+**Preview locally.**
+
+1. Run `composer docs-build` in `apps/docs`. It writes `docs/docs.json`; `bin/docs-flows` writes `docs/flows-data.js`.
+2. Run `npx mint dev` in `docs/`, then open `/cli/<family>/<command>`.
+
+**Check.** Run `bin/check-flows`; CI runs it too.
+
+**Publish.** After a green CI run on `main`, `.github/workflows/docs-site.yml` rebuilds the `docs-site` branch. Mintlify deploys that branch to https://orbit.nckrtl.com/docs within about a minute.
+
 ## Design rules
 
 These rules come from the October and November 2026 decisions and from Nick's chart reviews. Every chart follows them.
