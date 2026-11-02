@@ -8,7 +8,6 @@ use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Infrastructure\AgentView\WebSocketClient;

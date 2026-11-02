@@ -22,7 +22,7 @@ use Throwable;
 final class SwampScheduledResults
 {
     /** Checkpoint marker of a root run of one Schedule's own workflow. */
-    private const Fire = 'schedule:';
+    private const string Fire = 'schedule:';
 
     private ?string $feedRequest = null;
 

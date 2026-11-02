@@ -26,7 +26,7 @@ use SensitiveParameter;
  */
 final readonly class NativeSchedules
 {
-    public const Vault = 'orbit-control-inputs';
+    public const string Vault = 'orbit-control-inputs';
 
     public function __construct(private SwampScheduleWorkflows $workflows, private ScheduleTargetResolver $targets,
         private StartOperationAction $operations, private RecordEventBroadcaster $broadcaster) {}

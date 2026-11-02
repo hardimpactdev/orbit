@@ -102,7 +102,7 @@ final readonly class ProjectEnvironmentTemplateRefresh
                 return;
             }
             ProjectEnvironmentTemplate::query()->updateOrCreate(['project_id' => $project->id], [
-                'entries' => self::merge($current === null ? [] : $current->entries, $example),
+                'entries' => self::merge($current->entries ?? [], $example),
                 'source_path' => $path, 'source_commit' => $head, 'source_blob' => $blob, 'checked_head' => $head,
             ]);
         });

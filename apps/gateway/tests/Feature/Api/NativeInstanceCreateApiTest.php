@@ -2,15 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -63,7 +67,7 @@ it('records one native root with source environment and setup steps before any N
 });
 
 it('budgets the run as 60 seconds of create work, the admitted setup timeouts and 30 seconds for Processes', function (): void {
-    App\Models\ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'position' => 0,
+    ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'position' => 0,
         'name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 300]);
     $this->withHeader('Idempotency-Key', 'native-create-budget');
     $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
@@ -124,7 +128,7 @@ it('creates the development Processes after setup and records them from the term
     $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
 
     $operation = Operation::query()->sole();
-    $process = App\Models\Process::query()->sole();
+    $process = Process::query()->sole();
     $start = collect($this->socket->sent)->firstWhere('payload.workflowIdOrName', 'operation-instance-create');
     $inputs = $start['payload']['inputs'];
     expect($process->name)->toBe('dev-server')->and($process->desired_state->value)->toBe('running')
@@ -134,7 +138,7 @@ it('creates the development Processes after setup and records them from the term
         ->and($inputs['intent']['processes'][0]['intent']['installation']['unit'])->toContain('http.server');
 
     $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
-    app(App\Domain\Instances\DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
         'status' => $status, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'error_code' => $status === 'failed' ? 'instance.create_processes_failed' : null,
         'result' => ['instance_id' => $operation->target_id, 'ready' => $status === 'succeeded', 'commit' => str_repeat('a', 40),
@@ -148,7 +152,7 @@ it('records no environment or Process for an already active Instance, which runs
     $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
     $instance = Instance::query()->sole();
     $instance->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'starting_commit' => str_repeat('a', 40)]);
-    App\Models\InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->delete();
+    InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->delete();
     $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
         'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
     Operation::query()->update(['status' => 'succeeded']);
@@ -159,8 +163,8 @@ it('records no environment or Process for an already active Instance, which runs
     $operation = Operation::query()->latest('id')->first();
     expect($operation->input['direct_provisioning']['already_active'])->toBeTrue()
         ->and($operation->input['members'])->toBe([])->and($operation->input['environment_keys'])->toBe([])
-        ->and(App\Models\Process::query()->count())->toBe(0)
-        ->and(App\Models\InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->count())->toBe(0);
+        ->and(Process::query()->count())->toBe(0)
+        ->and(InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->count())->toBe(0);
 });
 
 it('refuses create before reservation for a Project whose source profile is unsupported', function (): void {

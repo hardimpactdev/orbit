@@ -6,8 +6,8 @@ namespace Tests;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Projects\ProjectSourceReader;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -22,10 +22,10 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Config;
+use Tests\Support\FakeProjectSourceReader;
 use Tests\Support\HostPathGuardedProcessRunner;
 use Tests\Support\LocalTaskGitAgent;
 use Tests\Support\TestDatabaseGuard;
-use Tests\Support\FakeProjectSourceReader;
 
 abstract class TestCase extends BaseTestCase
 {

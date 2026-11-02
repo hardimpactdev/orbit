@@ -3,12 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleControlProjection;
 use App\Domain\Schedules\ScheduleOperationAdmission;
-use App\Domain\Schedules\ScheduleOperationCompletion;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;

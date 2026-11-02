@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\SourceControl\GitProjectSourceReader;
 use App\Models\Node;
@@ -75,7 +77,7 @@ it('reads committed files from the branch head without blobs it does not need', 
     $git('add', '.');
     $git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'fixture');
     try {
-        $files = new GitProjectSourceReader(app(ProcessRunner::class), app(App\Domain\GitHub\RepositoryReadAccess::class))
+        $files = new GitProjectSourceReader(app(ProcessRunner::class), app(RepositoryReadAccess::class))
             ->read('file://'.$origin, ProjectSourceAccess::GitHubApp, 'main', ['.env.example', 'composer.json', 'artisan']);
     } finally {
         File::deleteDirectory($origin);
@@ -102,7 +104,7 @@ it('reads the changed source before an update commits, so a failed read changes 
     {
         public function read(string $repositoryUrl, ProjectSourceAccess $access, string $branch, array $paths): array
         {
-            throw new App\Domain\Shared\ResourceOperationException('project.source_unavailable', 'unreadable', 502);
+            throw new ResourceOperationException('project.source_unavailable', 'unreadable', 502);
         }
     });
     $this->patchJson("/api/v1/projects/{$project->id}", ['default_branch' => 'next'])->assertStatus(502);
