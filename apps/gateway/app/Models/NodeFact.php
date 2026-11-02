@@ -22,8 +22,10 @@ use Illuminate\Support\Carbon;
  */
 final class NodeFact extends Model
 {
+    #[\Override]
     public $timestamps = false;
 
+    #[\Override]
     protected $guarded = [];
 
     /** @return BelongsTo<Node, $this> */
