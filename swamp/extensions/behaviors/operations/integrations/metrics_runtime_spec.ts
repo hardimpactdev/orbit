@@ -22,7 +22,13 @@ export const labels = (s: MetricsService, v = false) => ({
   [`com.orbit.metrics.${v ? "volume" : "service"}`]: s,
 });
 
-export type Spec = { service: MetricsService; args: string[]; hash: string };
+export type Spec = {
+  service: MetricsService;
+  args: string[];
+  hash: string;
+  volumes: string[];
+  environment: string[];
+};
 export const metricsRuntimeSpec = async (
   service: MetricsService,
   assignment: number,
@@ -58,26 +64,22 @@ export const metricsRuntimeSpec = async (
       service === "prometheus" ? "/prometheus" : "/var/lib/grafana"
     }`,
   );
-  for (
-    const mount of service === "prometheus"
+  const bindMounts = service === "prometheus"
       ? [metricsPaths[0] + ":/etc/prometheus/prometheus.yml:ro"]
       : [
         metricsPaths[1] + ":/etc/grafana/grafana.ini:ro",
         "/etc/orbit/metrics/grafana/provisioning:/etc/grafana/provisioning:ro",
         "/etc/orbit/metrics/grafana/dashboards:/var/lib/grafana/dashboards:ro",
         metricsPaths[7] + ":/run/orbit/grafana-admin-password:ro",
-      ]
-  ) args.push("--volume", mount);
-  if (service === "grafana") {
-    for (
-      const env of [
+      ];
+  for (const mount of bindMounts) args.push("--volume", mount);
+  const environment = service === "grafana" ? [
         "GF_SECURITY_ADMIN_USER=admin",
         "GF_SECURITY_ADMIN_PASSWORD__FILE=/run/orbit/grafana-admin-password",
         `GF_SERVER_HTTP_ADDR=${address}`,
         "GF_SERVER_HTTP_PORT=3000",
-      ]
-    ) args.push("--env", env);
-  }
+      ] : [];
+  for (const env of environment) args.push("--env", env);
   const health = service === "prometheus"
     ? "http://127.0.0.1:9090/-/ready"
     : `http://${address}:3000/api/health`;
@@ -118,6 +120,11 @@ export const metricsRuntimeSpec = async (
   return {
     service,
     hash,
+    volumes: [
+      volume(service) + (service === "prometheus" ? ":/prometheus" : ":/var/lib/grafana"),
+      ...bindMounts,
+    ],
+    environment,
     args: [
       ...args,
       "--label",

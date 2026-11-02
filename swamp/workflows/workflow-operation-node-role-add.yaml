@@ -600,7 +600,8 @@ jobs:
       in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-converge-metrics-inspect-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running}, inputs: {}}
+          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running, volumes: '${{ self.service.check.volumes
+          }}', environment: '${{ self.service.check.environment }}', restart: '${{ self.service.check.restart }}', ports: '${{ self.service.check.ports }}'}, inputs: {}}
     dataOutputOverrides:
     - specName: state
       vaultName: orbit-control-inputs
@@ -673,7 +674,8 @@ jobs:
       in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-metrics-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running}, inputs: {}}
+          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running, volumes: '${{ self.service.check.volumes
+          }}', environment: '${{ self.service.check.environment }}', restart: '${{ self.service.check.restart }}', ports: '${{ self.service.check.ports }}'}, inputs: {}}
     dataOutputOverrides:
     - specName: state
       vaultName: orbit-control-inputs

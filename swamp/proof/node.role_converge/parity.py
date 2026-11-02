@@ -1,23 +1,24 @@
-"""node.role_converge for a sole database role, from 209 with cfgmgmt and SSH argv: the role is proven, the agent
-runs the pinned binary with the recorded key, the prerequisites are installed and the CLI profile is written."""
+"""Convergence repairs role drift and keeps matching service identities stable."""
 import json
-import os
 import subprocess
 import sys
+from pathlib import Path
 
-operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
-def node(*argv):
-    return subprocess.run(['incus', 'exec', 'metrics', '--', *argv], capture_output=True, text=True, check=False).stdout.strip()
-
-
-def check(condition, message):
-    if not condition:
-        sys.exit(f'parity: {message}')
+target, role = sys.argv[1:]
+subprocess.run(['python3', 'swamp/proof/node.role_add/parity.py', target, role], check=True, timeout=120)
+before = json.loads(Path('/home/orbit/.orbit/swamp-proof/role-converge-' + role + '-before.json').read_text())
 
 
-result = operation.get('result') or {}
-check(operation['status'] == 'succeeded', f'the Operation is {operation["status"]} ({operation.get("error_code")})')
-check(result.get('role_proven') is True, f'the role is proven: {result}')
-check(node('systemctl', 'is-active', 'orbit-agent') == 'active', 'orbit-agent is active')
-check(node('sh', '-c', 'test -f /root/.orbit/config.json && echo ok') == 'ok' or result.get('cli', {}).get('outcome') == 'skipped', 'the CLI profile is written')
-print('parity: node.role_converge converged')
+def run(*argv):
+    return subprocess.run(['incus', 'exec', target, '--', *argv], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+
+
+for service, pid in before.get('services', {}).items():
+    if run('systemctl', 'show', service, '-p', 'MainPID', '--value') != pid:
+        sys.exit('parity: matching ' + service + ' restarted during convergence')
+for name, identity in before.get('containers', {}).items():
+    if run('docker', 'inspect', '--format', '{{.Id}} {{.State.StartedAt}}', name) != identity:
+        sys.exit('parity: matching ' + name + ' was replaced during convergence')
+if role == 'app-dev' and run('stat', '-c', '%a', '/home/orbit/apps') != '755':
+    sys.exit('parity: application storage mode drift was not repaired')
+print('parity: node.role_converge ' + role + ', runtime identity preserved')

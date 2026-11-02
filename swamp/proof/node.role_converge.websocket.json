@@ -1,0 +1,109 @@
+{
+  "kind": "node.role_converge.websocket",
+  "workflow": "operation-node-role-add",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.gateway}",
+      "websocket"
+    ],
+    [
+      "systemctl",
+      "stop",
+      "orbit-websocket.service"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.metrics}",
+      "websocket"
+    ],
+    [
+      "incus",
+      "file",
+      "push",
+      "/home/orbit/.orbit/ca/root.pem",
+      "metrics/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+    ],
+    [
+      "ufw",
+      "allow",
+      "in",
+      "on",
+      "oeproof",
+      "proto",
+      "tcp",
+      "from",
+      "10.231.0.11",
+      "to",
+      "10.231.0.1",
+      "port",
+      "443",
+      "comment",
+      "proof-reverb-gateway"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {
+      "role": "websocket",
+      "converge_existing": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Check the role",
+      "job": "role",
+      "step": "Check the role",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_converge/parity.py",
+    "metrics",
+    "websocket"
+  ],
+  "before_node": {
+    "metrics": [
+      [
+        "sh",
+        "-c",
+        "sed -i '/gateway\\.orbit/d' /etc/hosts; printf '10.231.0.1 gateway.orbit\\n' >> /etc/hosts; update-ca-certificates"
+      ]
+    ]
+  },
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.metrics}/roles",
+      "body": {
+        "role": "websocket"
+      }
+    }
+  ],
+  "after_prepare": [
+    [
+      "python3",
+      "swamp/proof/node.role_converge/capture.py",
+      "metrics",
+      "websocket"
+    ]
+  ]
+}

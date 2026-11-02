@@ -18,6 +18,12 @@ const Service = z.object({
   unit: z.string(),
   volume_args: z.array(z.string()),
   argv: z.array(z.string()),
+  check: z.object({
+    volumes: z.array(z.string()),
+    environment: z.array(z.string()),
+    restart: z.literal("unless-stopped"),
+    ports: z.array(z.string()),
+  }).strict(),
 });
 const Plan = z.object({
   services: z.array(Service),
@@ -68,6 +74,12 @@ export const behavior = {
           return {
             name: name(s),
             image: image(s),
+            check: {
+              volumes: spec.volumes,
+              environment: spec.environment,
+              restart: "unless-stopped" as const,
+              ports: [],
+            },
             argv: ["timeout", "60", "/usr/bin/docker", ...spec.args],
             volume_args: [
               "/usr/bin/docker",

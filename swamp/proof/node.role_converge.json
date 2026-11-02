@@ -1,25 +1,33 @@
 {
   "kind": "node.role_converge",
-  "workflow": "operation-node-role-converge-209",
+  "workflow": "operation-node-role-add",
   "topology": "minimal",
-  "budget_seconds": 900,
+  "clean": false,
+  "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
-  "before_gateway": [
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.peer}/roles",
+      "body": {
+        "role": "app-dev",
+        "converge_existing": true
+      }
+    }
+  ],
+  "after_prepare": [
     [
-      "runuser",
-      "-u",
-      "orbit",
-      "--",
-      "php",
-      "swamp/proof/node.role_converge/prepare.php",
-      "${node.metrics}"
+      "python3",
+      "swamp/proof/node.role_converge/capture.py",
+      "peer",
+      "app-dev"
     ]
   ],
   "request": {
     "method": "POST",
-    "path": "nodes/${node.metrics}/roles",
+    "path": "nodes/${node.peer}/roles",
     "body": {
-      "role": "database",
+      "role": "app-dev",
       "converge_existing": true
     }
   },
@@ -28,13 +36,15 @@
   },
   "phases": [
     {
-      "name": "Converge the role",
-      "job": "dispatch",
-      "step": "native-0",
-      "budget_seconds": 900
+      "name": "Check the role",
+      "job": "role",
+      "step": "Check the role",
+      "budget_seconds": 20
     }
   ],
   "parity": [
-    "swamp/proof/node.role_converge/parity.py"
+    "swamp/proof/node.role_converge/parity.py",
+    "peer",
+    "app-dev"
   ]
 }

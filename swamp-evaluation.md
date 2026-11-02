@@ -60,6 +60,7 @@ The removal family uses official cfgmgmt and direct SSH argv, with no shipped sc
 | Write private files | File apply and check retain only content hashes and metadata. Numeric owners compare against stat's account names, so Grafana needs a named account at UID/GID 472. Could file resolve numeric owners for its compliance check? |
 | Publish the config | File stages a candidate, SSH validates and copies over the live inode, then sends SIGHUP. Could file preserve the inode for single-file Docker bind mounts? |
 | Check the role | Official checks record non-compliance without failing. A native assertion enforces their statuses. Could an optional fail-on-drift mode remove that extra step? |
+| Inspect Metrics containers | The official check compares images, port mappings, mount paths, declared environment and restart policy. Its network argument is not compared, and command, labels, health and log options have no compliance fields. Could check cover these launch options too? |
 | Start Incus; Check Incus | Incus enables its socket and reports the daemon unit as `indirect`. Separate systemd resources check the enabled socket and running daemon. Could systemd represent activation through another unit? |
 
 ## Fleet resource conversion candidates

@@ -4,6 +4,7 @@ sequenceDiagram
   %% status: migrated
   %% command: node:role:add
   %% kind: node.role_converge
+  %% Metrics compliance uses the canonical mount, public environment, port and restart settings; missing official launch-option checks are noted in swamp-evaluation.md.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -54,11 +55,11 @@ sequenceDiagram
   %% Official child workflows retain their own resource checks.
   SW->>N: Read the OS release<br/>SSH argv
   SW->>SW: Require supported Ubuntu<br/>native assert
-  opt Docker is required
-  SW->>N: Inspect Docker CE<br/>cfgmgmt apt
-  end
   opt role plan needs this action
   SW->>N: Install Caddy<br/>native child workflow
+  end
+  opt Docker is required
+  SW->>N: Inspect Docker CE<br/>cfgmgmt apt check
   end
   SW->>N: Refresh package lists<br/>cfgmgmt apt
   SW->>N: Install prerequisites<br/>SSH argv

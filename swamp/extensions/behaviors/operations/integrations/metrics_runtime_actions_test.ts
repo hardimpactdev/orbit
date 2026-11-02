@@ -519,6 +519,14 @@ Deno.test("native role plan retains the Nodes runtime labels, file marker and he
     },
   });
   const plan = behavior.resources.plan.schema.parse(output);
+  const prometheusCheck = plan.services.find((service) => service.name === "orbit-metrics-prometheus")!.check;
+  const grafanaCheck = plan.services.find((service) => service.name === "orbit-metrics-grafana")!.check;
+  assertEquals(prometheusCheck.restart, "unless-stopped");
+  assertEquals(prometheusCheck.ports, []);
+  assert(prometheusCheck.volumes.includes("orbit-metrics-prometheus-data:/prometheus"));
+  assert(grafanaCheck.environment.includes("GF_SERVER_HTTP_ADDR=10.44.0.17"));
+  assert(grafanaCheck.environment.includes("GF_SECURITY_ADMIN_PASSWORD__FILE=/run/orbit/grafana-admin-password"));
+  assert(!JSON.stringify(plan.services.map((service) => service.check)).includes("PRIVATE_RUNTIME_SENTINEL"));
   for (const service of plan.services) {
     await host.run("/usr/bin/docker", service.volume_args.slice(1));
     const line = service.unit.split("\n").find((l) =>
