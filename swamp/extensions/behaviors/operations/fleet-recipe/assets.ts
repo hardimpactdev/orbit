@@ -52,13 +52,6 @@ const Action = z.enum([
     "health",
     "verify",
     "delivery",
-    "php-runtime",
-    "php-pools",
-    "listener",
-    "dns-health",
-    "dns-validate",
-    "dns-restore",
-    "tmpfiles",
 ]);
 const Read = z.object({
     action: Action,
@@ -272,69 +265,21 @@ export const behavior = {
             arguments: Read,
             execute: async (raw: z.infer<typeof Read>, ctx: Context) => {
                 const a = Read.parse(raw);
-                const footprint = [
-                        "listener",
-                        "tmpfiles",
-                        "dns-health",
-                        "dns-validate",
-                        "dns-restore",
-                    ].includes(a.action),
-                    php = ["php-runtime", "php-pools"].includes(a.action);
-                const file = footprint
-                    ? "footprint.py"
-                    : php
-                    ? "php_runtime.py"
-                    : "recipe.py";
-                const command = ({
-                    listener: "node.install-private-dns-listener",
-                    "dns-health": "node.private-dns-health",
-                    "dns-validate": "node.private-dns-validate",
-                    "dns-restore": "node.private-dns-restore",
-                    tmpfiles: "node.publish-tmpfiles",
-                    "php-runtime": "php.configure-runtime",
-                    "php-pools": "php.converge-shared-pools",
-                } as Record<string, string>)[a.action] ?? a.action;
                 let source = await Deno.readTextFile(
-                    ctx.extensionFile("scripts/" + file),
+                    ctx.extensionFile("scripts/recipe.py"),
                 );
-                let input = a.input;
-                if (a.action === "php-pools") {
-                    const pools = z.object({
-                        configurations: z.record(z.string(), z.string()),
-                        home: z.string(),
-                        group: z.string(),
-                    }).parse(input);
-                    input = {
-                        configurations: Object.fromEntries(
-                            Object.entries(pools.configurations).map((
-                                [v, text],
-                            ) => [
-                                v,
-                                text.replaceAll(
-                                    "__orbit_converge_group__",
-                                    pools.group,
-                                ).replaceAll(
-                                    "/__orbit_converge_home__",
-                                    pools.home,
-                                ),
-                            ]),
-                        ),
-                    };
-                }
                 const expression = "json.loads(" +
-                    JSON.stringify(JSON.stringify(input)) + ")";
-                source = file === "recipe.py"
-                    ? source.replace(
-                        "json.loads(os.environ['ORBIT_RECIPE_INPUT']) if 'ORBIT_RECIPE_INPUT' in os.environ else json.load(sys.stdin)",
-                        expression,
-                    )
-                    : source.replace("json.load(sys.stdin)", expression);
+                    JSON.stringify(JSON.stringify(a.input)) + ")";
+                source = source.replace(
+                    "json.loads(os.environ['ORBIT_RECIPE_INPUT']) if 'ORBIT_RECIPE_INPUT' in os.environ else json.load(sys.stdin)",
+                    expression,
+                );
                 const check = a.automatic && !a.daytime
                     ? 'from datetime import datetime\nfrom zoneinfo import ZoneInfo\nif not 3 <= datetime.now(ZoneInfo("Europe/Amsterdam")).hour < 6:\n    print(\'{"error_code":"fleet.window_closed"}\')\n    sys.exit(1)\n'
                     : "";
                 const result = {
                     script_body: 'import sys\nsys.argv=["recipe",' +
-                        JSON.stringify(command) + "]\n" + check + source,
+                        JSON.stringify(a.action) + "]\n" + check + source,
                 };
                 await ctx.writeResource("assets", "assets", result);
                 return result;

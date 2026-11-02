@@ -1,11 +1,9 @@
-import { cleanRouteResidue } from "../routes/residue-local.ts";
 import { z } from "npm:zod@4.4.3";
 import { installObserver } from "./observer_install_system.ts";
 import { footprintLocalActions } from "./footprint_local_actions.ts";
 import { localSystemCommand, type SystemTransport } from "./system_command.ts";
 import { Agent, Path, Sha, type Snapshot } from "./converge_direct_contract.ts";
 import { convergeNodeNetwork } from "./network_direct.ts";
-import { DnsProgram } from "./converge_dns_program.ts";
 import type { LocalDependencies } from "./converge_footprint.ts";
 
 /** Bounded fixed local programs; stdin carries data and stderr is never persisted. */
@@ -131,84 +129,12 @@ export function installAgent(
     return installObserver(input.url, snapshot.agent_sha256, invoke, signal);
 }
 
-export async function publishDns(
-    input: Record<string, unknown>,
-    signal?: AbortSignal,
-    invoke: SystemTransport = localSystemCommand,
-) {
-    const payload = z.object({
-        records: z.string().max(4194304),
-        catalog: z.string().max(4194304),
-    }).strict().parse(input);
-    signal?.throwIfAborted();
-    const reply = await output(
-        "/usr/bin/sudo",
-        ["-n", "--", "/usr/bin/python3", "-c", DnsProgram],
-        payload,
-        65000,
-        invoke,
-        signal,
-    );
-    if (!reply.success) {
-        throw new Error("Private DNS publication outcome is uncertain");
-    }
-    return z.record(z.string(), z.unknown()).parse(
-        JSON.parse(reply.stdout),
-    );
-}
-
-async function cleanResidue(
-    snapshot: Snapshot,
-    signal?: AbortSignal,
-    scripts?: { php: string; footprint: string },
-) {
-    const program = async (
-        source: string,
-        value: Record<string, unknown>,
-        signal?: AbortSignal,
-    ) => {
-        const result = await localSystemCommand({
-            command: "/usr/bin/sudo",
-            args: ["-n", "--", "/usr/bin/python3", "-I", "-c", source],
-            stdin: JSON.stringify(value),
-            timeoutMs: 300000,
-        }, signal);
-        if (!result.success) {
-            throw new Error("Route residue command has no confirmed outcome");
-        }
-        try {
-            return z.record(z.string(), z.unknown()).parse(
-                JSON.parse(result.stdout),
-            );
-        } catch {
-            throw new Error(
-                "Route residue command returned no bounded outcome",
-            );
-        }
-    };
-    return await cleanRouteResidue(
-        snapshot.payloads["route-residue"],
-        snapshot,
-        {
-            action: footprintLocalActions(localSystemCommand, scripts),
-            account: localAccount,
-            program,
-            dns: publishDns,
-        },
-        signal,
-    );
-}
-
-export function convergeDependencies(
-    scripts?: { php: string; footprint: string },
-): LocalDependencies {
+export function convergeDependencies(): LocalDependencies {
     return {
         system: localSystemCommand,
-        action: footprintLocalActions(localSystemCommand, scripts),
+        action: footprintLocalActions(localSystemCommand),
         install: installAgent,
         account: localAccount,
-        dns: publishDns,
-        residue: (snapshot, signal) => cleanResidue(snapshot, signal, scripts),
         network: convergeNodeNetwork,
     };
 }

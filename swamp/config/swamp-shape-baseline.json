@@ -702,20 +702,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
-      "rule": "inline-script",
-      "count": 182,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/converge_footprint.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -730,26 +716,7 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/converge_local.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/getent",
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/footprint_local_actions.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/footprint_system.ts",
       "rule": "multi-action",
       "count": 2,
       "evidence": [

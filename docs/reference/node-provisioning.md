@@ -2,7 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{extensions/behaviors/operations/{node-removal-command/**,task-vm-lifecycle/destroy.ts,node/{role_removal_workflow,footprint_workflows}.ts},workflows/workflow-{operation-node-remove,operation-node-role-remove-direct,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue}.yaml}
+  - swamp/{extensions/behaviors/operations/{node-removal-command/**,task-vm-lifecycle/destroy.ts,node/{role_removal_workflow,footprint_workflows,role_footprint_workflow}.ts},workflows/workflow-{operation-node-remove,operation-node-role-remove-direct,operation-node-role-add-direct,operation-node-role-relocate-direct,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue}.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeRemovalInput,NativeNodeRoleRemovalInput,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
@@ -517,6 +517,7 @@ The [executor health alert](/reference/operations#executor-health) reports a que
 | `node.footprint_caddy_failed` | 502 | The Caddyfile could not be published |
 | `node.footprint_caddy_package_failed` | 502 | The Caddy package step failed, for example because the download does not match the pin. The message names the cause |
 | `node.footprint_tmpfiles_failed` | 502 | The tmpfiles rule could not be written. The message names the cause |
+| `node.footprint_failed` | 502 | A native footprint job of a role add or relocate failed: private DNS, PHP-FPM or the tmpfiles rule. `failed_artifact` names the job |
 
 ## Role compatibility
 
