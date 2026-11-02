@@ -56,7 +56,7 @@ The Schedule UUID is its public identity. It is also the only value that names t
 | `status` | `provisioning`, `active`, `failed`, or `removing`. `failed_step` and `error_code` name a failure. |
 | `last_run_at`, `last_run_status` | The end of the latest fire or manual run, and `success` or `error`. Both are null before the first run. |
 
-The calendar has 5 fields, or 6 with seconds first, or is a shorthand such as `@hourly`. It fires in serve's time zone (UTC), because a trigger carries no time zone. A [Node timer](#node-timers) Schedule keeps a systemd calendar.
+The calendar has 5 fields, or 6 with seconds first, or is a shorthand such as `@hourly`. It fires in serve's time zone (UTC), because a trigger carries no time zone: serve drops a `timezone` key and refuses a `CRON_TZ=` or `TZ=` prefix, and the Gateway answers that refusal with `schedule.calendar_invalid` (422). A [Node timer](#node-timers) Schedule keeps a systemd calendar.
 
 A Schedule has no edit operation. An identical create returns the existing Schedule and keeps its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict` (409). To change a Schedule, destroy it and create it again.
 
@@ -99,7 +99,7 @@ A Schedule does not follow its target. While a Schedule exists, the Gateway refu
 
 Create writes the command to the vault key `schedule-command-<uuid>` in `orbit-control-inputs`, then creates `schedule-<uuid>` with `workflow.create` and writes its content with `workflow.edit`. The workflow has one step, `Run the Schedule`, that calls `task-command-run` as a nested workflow. Its inputs are fixed: the Schedule UUID, the command hash, the user, group, home, shell, working directory, login mode and timeout, the Node's SSH address and host keys, and the vault key name. The command itself never enters the workflow, its inputs or its output. Its tags name the Schedule, its Node and its target, so the Gateway can record a fire after the Schedule is gone.
 
-Serve stores the workflow in its `workflows/` directory beside the checked-in workflows. A release load checks out the next commit and keeps it. The Gateway's record stays the source: an identical create writes the workflow and its trigger again. Changed SSH host keys reach the workflow only through destroy and create.
+Serve stores the workflow as an untracked file in its `workflows/` directory beside the checked-in workflows. A release load checks out the next commit and keeps it, and so do a serve reload and a restart; a fresh clone or `git clean` would drop it. The Gateway's record stays the source: an identical create writes the workflow and its trigger again. Changed SSH host keys reach the workflow only through destroy and create.
 
 The trigger is the workflow's trigger override on serve, set with `workflow.trigger.set` and removed with `workflow.trigger.remove`. The Gateway's credential needs run, read and write on `workflow:schedule-*`.
 

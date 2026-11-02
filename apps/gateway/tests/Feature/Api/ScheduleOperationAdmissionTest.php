@@ -255,3 +255,12 @@ it('creates and runs a Schedule from its Placement without reading the account o
     expect($intent)->toEqualCanonicalizing(['id' => $schedule->id, 'command_hash' => hash('sha256', $this->payload['command']), 'user' => 'orbit',
         'login_shell' => true, 'timeout_seconds' => 3600, 'working_directory' => '']);
 });
+
+it('answers a calendar serve refuses with schedule.calendar_invalid and keeps the Schedule failed', function (): void {
+    $this->socket->reply = fn (array $request): ?array => $request['type'] === 'workflow.trigger.set'
+        ? [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'workflow_trigger_set_failed', 'message' => 'An internal error occurred']]]
+        : NativeScheduleReplies::for($request);
+    $this->postJson('/api/v1/schedules', [...$this->payload, 'calendar' => 'TZ=Europe/Amsterdam 0 4 * * *'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'schedule.calendar_invalid');
+    expect(Schedule::query()->sole()->status->value)->toBe('failed')->and(Operation::query()->count())->toBe(0);
+});

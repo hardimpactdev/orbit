@@ -75,7 +75,7 @@ final readonly class SwampScheduleWorkflows
                             return [];
                         }
                         // Serve validates the workflow, including its cron trigger, before it saves it.
-                        if (in_array($error['code'] ?? null, ['validation_failed', 'invalid_request', 'workflow_edit_failed', 'invalid_schedule'], true)) {
+                        if (in_array($error['code'] ?? null, ['workflow_trigger_set_failed', 'workflow_edit_failed'], true)) {
                             throw new ResourceOperationException('schedule.calendar_invalid', 'Swamp refused the Schedule calendar.', 422);
                         }
                         throw $this->unavailable();
