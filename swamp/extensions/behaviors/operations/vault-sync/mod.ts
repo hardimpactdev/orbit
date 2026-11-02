@@ -159,7 +159,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/vault-sync-plan",
-    version: "2026.10.31.2",
+    version: "2026.11.02.1",
     resources: {
         assets: {
             description: "Shipped CLI action paths and public intent",
@@ -184,6 +184,24 @@ export const behavior = {
         },
     },
     methods: {
+        setup_assets: {
+            description: "Resolve setup scripts and serialize its public intent",
+            arguments: z.object({ intent: z.record(z.string(), z.unknown()) }),
+            execute: async (
+                args: { intent: Record<string, unknown> },
+                ctx: Context,
+            ) => {
+                const assets = {
+                    scripts: {
+                        setup: ctx.extensionFile("scripts/setup.py"),
+                        cleanup: ctx.extensionFile("scripts/setup_cleanup.py"),
+                    },
+                    intent_json: JSON.stringify(args.intent),
+                };
+                await ctx.writeResource("assets", "assets", assets);
+                return assets;
+            },
+        },
         assets: {
             description: "Resolve CLI scripts without execution",
             arguments: z.object({ intent: Intent }),

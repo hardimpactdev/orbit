@@ -155,7 +155,7 @@ final readonly class SwampCommandStep
         }
         $result = $this->terminalOutput($run, $selector);
         $status = $run['status'];
-        if (in_array($status, ['failed', 'interrupted'], true) && $result === []) {
+        if (in_array($status, ['failed', 'interrupted'], true) && ($result === [] || ($result['outcome'] ?? null) === 'succeeded')) {
             $result = ['error_code' => 'operation.native_failed'];
         }
 

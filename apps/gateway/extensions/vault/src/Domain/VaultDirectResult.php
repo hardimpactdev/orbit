@@ -16,7 +16,7 @@ final readonly class VaultDirectResult implements DirectOperationResultHook
 {
     public function input(Operation $operation): array
     {
-        return $operation->kind === 'vault.sync' ? Arr::only($operation->input, ['intent', 'execution_secrets']) : ['action' => substr($operation->kind, 6)];
+        return $operation->kind !== 'vault.teardown' ? Arr::only($operation->input, ['intent', 'execution_secrets']) : ['action' => 'teardown'];
     }
 
     public function validate(Operation $operation, array $result, OperationStatus $status): array

@@ -1,4 +1,4 @@
-"""Real official CLI protocol test against disposable Vaultwarden 1.37.
+"""Real official CLI protocol test against disposable Vaultwarden 1.37.5.
 
 Set ORBIT_TEST_VAULTWARDEN_URL and ORBIT_TEST_VAULTWARDEN_CA to its TLS origin
 and public CA file. Creates an account and organization; never use production.
