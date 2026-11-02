@@ -65,9 +65,7 @@ final readonly class StartInstanceRollbackAction
     /** @return list<array{process_id:int,runtime:string,name:string}> */
     private function restart(Instance $instance): array
     {
-        return array_map(static function (array $process): array {
-            return ['process_id' => ValidatedData::integer($process['process_id']), 'runtime' => ValidatedData::string($process['runtime']),
-                'name' => ValidatedData::string($process['name'])];
-        }, $this->definitions->restartSnapshot($instance)['restart']);
+        return array_map(static fn (array $process): array => ['process_id' => ValidatedData::integer($process['process_id']), 'runtime' => ValidatedData::string($process['runtime']),
+            'name' => ValidatedData::string($process['name'])], $this->definitions->restartSnapshot($instance)['restart']);
     }
 }
