@@ -25,7 +25,7 @@ sequenceDiagram
   %%> - no other setup, sync or teardown runs, else `vault.sync_busy`
   %%> - with items published, the organization and collection stay the same, else `vault.items_published`
   %%> What it does:
-  %%> - stores the setup intent encrypted, then pushes the client secret and master password to the Swamp vault as `vault-setup-5167` after commit (R3)
+  %%> - stores the setup intent encrypted, then pushes the client secret and master password to the Swamp vault under a setup key after commit (R3)
   %%> Result:
   %%> - task #5167 recorded; the current setup, if any, stays in force
   GW->>SW: Start run, full intent<br/>operation-vault-setup
@@ -38,21 +38,28 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
-  SW->>VW: Log in<br/>bw login --apikey
+  Note over SW: Read the scripts
+  %%> What it does:
+  %%> - resolves the shipped Bitwarden CLI scripts and the public intent; no Gateway call
+  SW->>VW: Verify the account<br/>login · unlock · collection
+  %%> What it does:
+  %%> - configures the official Bitwarden CLI in a private scratch directory, logs in, unlocks, and reads the collection
+  %%> - resolves the organization and collection by name or ID and checks write access
+  %%> - refuses a changed collection while published items exist
   %%> How:
-  %%> - the official Bitwarden CLI on 209, in a scratch home, trusting only the Orbit root CA
-  %%> - the client secret comes from `vault.get`, in the environment of this one command
-  SW->>VW: Unlock the account<br/>bw unlock · master password
+  %%> - all work runs on a worker labelled role=swamp; only the Orbit root CA extends TLS trust
+  %%> - credentials arrive from vault.get in the command environment; session keys stay in the scratch directory
+  %%> Returns:
+  %%> - only the account email, organization and collection IDs and names, and configured status
+  Note over SW: Clear the session<br/>logout · remove scratch directory
   %%> What it does:
-  %%> - unlocks the account with the master password from `vault.get`; the session key stays in the run's scratch home
-  SW->>VW: Check the collection<br/>resolve IDs · test write
+  %%> - native completed dependencies run cleanup after verification succeeds or fails
+  %%> - logout is best effort; the scratch directory and session key are removed
+  Note over SW: Confirm the setup<br/>native assert
   %%> What it does:
-  %%> - resolves the organization and collection names to IDs, and checks the account can write to the collection
-  %%> Why:
-  %%> - the setup only counts when a sync could really publish there
-  SW->>VW: Log out<br/>bw logout · remove scratch home
-  %%> What it does:
-  %%> - logs out and deletes the scratch home, on success and on failure
+  %%> - checks the verification result with Swamp's native assert; no second login or write
+  %%> Retry:
+  %%> - native resume keeps completed verification; a new setup verifies credentials again in a fresh scratch directory
   alt the account can write
     VW-->>SW: collection writable
     %%> Returns:
