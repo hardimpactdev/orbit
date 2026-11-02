@@ -134,4 +134,8 @@ Report at most 80 words per kind:
 
 Name a step's behavior after its target, never its run. Use `<step-family>-<node_id>` or the step's SSH address, for example `route-ssh-publish-<node_id>`, and a fixed name when the step has one target, for example `gateway-swamp-load`. Never share one name such as `ssh-<node_id>` across step families: one behavior has one lock, and differing global arguments rewrite its definition.
 
-Swamp reuses a definition when a name repeats, so steps against one target run one at a time and different targets still run in parallel. A name made from `run.id` or `operation_id` is allowed only when the workflow deletes the behavior at the end. Each name that a run makes stays behind as an auto-definition, and serve scans them all on each lookup by id ([Lab #4280](https://swamp-club.com/lab/4280)). The Swamp shape job runs `bin/lint-behavior-names.ts`, which rejects a workflow that has more per-run names than at the comparison base.
+Swamp reuses a definition when a name repeats, so steps against one target run one at a time and different targets still run in parallel. A name made from `run.id` or `operation_id` is allowed only when the workflow deletes the behavior at the end. Each name that a run makes stays behind as an auto-definition, and serve scans them all on each lookup by id ([Lab #4280](https://swamp-club.com/lab/4280)).
+
+Swamp accepts only names that match `^[a-z0-9][a-z0-9_-]*$`, and refuses others when the step runs. A dynamic part that can hold a dot, such as an SSH address or a scope, goes inside `(<name>).split(".").join("-")`, so `10.44.0.2` becomes `10-44-0-2`. The run id, the index and integer ids need no wrapping.
+
+The Swamp shape job runs `bin/lint-behavior-names.ts`. It rejects a workflow that has more per-run names than at the comparison base, and any name that Swamp would refuse.

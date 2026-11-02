@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { perRunNames } from "./lint-behavior-names.ts";
+import { invalidName, perRunNames } from "./lint-behavior-names.ts";
 
 const workflow = (steps: unknown[]) => ({ jobs: [{ name: "main", steps }] });
 const step = (name: string, behaviorName: string) => ({
@@ -47,4 +47,31 @@ Deno.test("a per-run behavior the workflow deletes is allowed", () => {
         ])),
         [],
     );
+});
+
+Deno.test("a name Swamp would refuse at run time fails here", () => {
+    for (
+        const name of [
+            '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}',
+            '${{ "db-" + inputs.scope }}',
+            '${{ "Route-" + string(inputs.node_id) }}',
+            '${{ "route.ssh-" + string(inputs.node_id) }}',
+            "release-node-${{ self.node.host }}",
+            "Bad_Name",
+        ]
+    ) assertEquals(typeof invalidName(name), "string", name);
+});
+
+Deno.test("dotless, integer and passed-in names are valid", () => {
+    for (
+        const name of [
+            '${{ ("horizon-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}',
+            '${{ "db-" + string(inputs.node_id) + "-" + string(self._index) }}',
+            '${{ "metrics-" + string(steps.capture.outputs.plan != null ? steps.capture.outputs.plan.metrics_node_id : inputs.node_id) }}',
+            '${{ "doctor-read-" + run.id }}',
+            "${{ inputs.ssh.name }}",
+            "fleet-release-node-${{ self.node.node_id }}",
+            "gateway-swamp-load",
+        ]
+    ) assertEquals(invalidName(name), null, name);
 });
