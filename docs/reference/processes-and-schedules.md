@@ -32,7 +32,7 @@ Gateway release Horizon handoff also runs entirely on Node 209. The Gateway capt
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
-When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Update, start and restart return HTTP 200 with Process data. Create, stop and destroy return HTTP 202 and start Swamp directly on every Node.
+When a Process runs on the configured Swamp Services Node or on a Node that runs an executor worker, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Update, start and restart return HTTP 200 with Process data. Create, stop and destroy return HTTP 202 and start Swamp directly on every Node.
 
 Placement uses the configured Node identities; renaming a Process cannot bypass it. Unconverted Swamp admission and final dispatch still refuse with `process.executor_dependency` (HTTP 409), protecting against a queued effect or an internal caller that skips the synchronous path. Processes on other Nodes keep HTTP 202 Operations.
 

@@ -59,7 +59,7 @@ final readonly class UpdateDatabaseConnectionAction
             $validateIndex = $server instanceof DatabaseServer && $server->driver === DatabaseDriver::Redis && $proposed->isDirty('database') && $proposed->database !== null;
             $nodeId = $server instanceof DatabaseServer ? $server->node_id : app(NodeAccessAuthorizer::class)->activeGatewayId();
             if ($nodeId === null) {
-                throw new ResourceOperationException('database.node_unavailable', 'A worker Node is required for this update.', 422);
+                throw new ResourceOperationException('database.node_unavailable', 'This update needs the Database server Node or an active Gateway Node.', 422);
             }
             $node = Node::query()->findOrFail($nodeId);
             $ssh = ['host' => $node->wireguard_ip, 'user' => $node->user,
