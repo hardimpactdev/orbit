@@ -178,7 +178,7 @@ export const turnDataResources = {
     snapshot: {
         lifetime: "infinite",
         garbageCollection: 10,
-        schema: z.object({ stdout: z.string() }),
+        schema: z.object({ stdout: z.string(), head: Sha, tree: Sha }),
     },
     turnResult: {
         lifetime: "infinite",
@@ -215,6 +215,8 @@ export const turnDataMethods = {
         ) => ({
             dataHandles: [
                 await ctx.writeResource("snapshot", "snapshot", {
+                    head: Sha.parse(args.head.trim()),
+                    tree: Sha.parse(args.tree.trim()),
                     stdout: JSON.stringify(
                         Snapshot.parse({
                             head: args.head.trim(),

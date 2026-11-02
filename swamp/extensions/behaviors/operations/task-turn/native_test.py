@@ -30,6 +30,8 @@ class TurnHandler(PiHandler):
             outcome = (
                 "approved" if self.server.role == "reviewer" else "ready_for_review"
             )
+            if self.server.omit_receipt:
+                return super().do_POST()
             subprocess.run(
                 [
                     str(self.server.workspace / ".git/orbit/turn"),
@@ -81,6 +83,7 @@ class NativeTurn(harness.NativeTestCase):
         self.server.workspace, self.server.role = self.workspace, "implementer"
         self.server.calls, self.server.disconnect = [], False
         self.server.agent_text = "agent changed"
+        self.server.omit_receipt = False
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -97,7 +100,13 @@ class NativeTurn(harness.NativeTestCase):
         scp.write_text(
             "#!"
             + sys.executable
-            + '\nimport shutil,sys\nfrom pathlib import Path\nsrc=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(":",1)[1])\nshutil.copytree(src,dst/src.name,dirs_exist_ok=True)\n'
+            + "\n"
+            + """import shutil,sys
+from pathlib import Path
+src=Path(sys.argv[-2].split(':',1)[-1]);dst=Path(sys.argv[-1].split(':',1)[-1])
+if src.is_dir():shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
+else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
+"""
         )
         scp.chmod(0o755)
         self.native_env["PATH"] = str(tools) + ":" + os.environ["PATH"]
@@ -159,17 +168,19 @@ class NativeTurn(harness.NativeTestCase):
             self.assertEqual(job.pop("labels"), {"role": "swamp"})
             for step in job["steps"]:
                 self.assertEqual(step.pop("labels"), {"role": "swamp"})
-                args = step["task"].get("inputs", {}).get("argv")
-                if args:
-                    step["task"]["inputs"]["argv"] = [
-                        v.replace("/tmp/orbit-task-turn-", str(self.repo / "remote-"))
-                        for v in args
-                    ]
-                inputs = step["task"].get("inputs", {})
-                if "dst" in inputs:
-                    inputs["dst"] = inputs["dst"].replace(
-                        "/tmp/orbit-task-turn-", str(self.repo / "remote-")
-                    )
+
+        def paths(value):
+            if isinstance(value, dict):
+                return {key: paths(v) for key, v in value.items()}
+            if isinstance(value, list):
+                return [paths(v) for v in value]
+            if isinstance(value, str):
+                return value.replace(
+                    "/tmp/orbit-task-turn-local-", str(self.repo / "local-")
+                ).replace("/tmp/orbit-task-turn-", str(self.repo / "remote-"))
+            return value
+
+        self.flow = paths(self.flow)
         self.write_workflow()
 
     def git(self, *args):
@@ -264,6 +275,24 @@ class NativeTurn(harness.NativeTestCase):
         )
         self.assertEqual(self.server.calls, [])
 
+    def test_missing_receipt_remains_a_completed_turn_without_a_receipt(self):
+        self.server.omit_receipt = True
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        self.assertIsNone(self.result(run)["receipt"])
+
+    def test_failed_receipt_copy_fails_without_sending_another_pi_message(self):
+        step = next(
+            s for s in self.flow["jobs"][0]["steps"] if s["name"] == "receipt_copy"
+        )
+        step["task"]["inputs"]["src"] = str(self.workspace / "missing")
+        self.write_workflow()
+        run = self.run_workflow(success=False)
+        self.assertEqual(self.result(run)["state"], "failed")
+        self.assertEqual(
+            sum(path.endswith("/messages") for path, _ in self.server.calls), 1
+        )
+
     def test_failed_review_difference_keeps_failed_result_and_restores_candidate(self):
         self.server.role = "reviewer"
         self.inputs["intent"].update(role="reviewer", candidate=self.head)
@@ -272,7 +301,7 @@ class NativeTurn(harness.NativeTestCase):
             for step in self.flow["jobs"][0]["steps"]
             if step["name"] == "difference"
         )
-        difference["task"]["inputs"]["argv"] = ["false"]
+        difference["task"]["inputs"]["run"] = "false"
         self.write_workflow()
         run = self.run_workflow(success=False)
         self.assertEqual(run["status"], "failed")

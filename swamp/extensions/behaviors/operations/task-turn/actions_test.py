@@ -97,17 +97,17 @@ class TurnActions(unittest.TestCase):
         ).strip()
 
     def run_step(self, name, *, ok=True, **extra):
-        remote = name in {
-            "receipt_prepare",
-            "receipt_read",
-            "difference",
-        }
-        script = name
-        args = [sys.executable, "-B", str(SCRIPTS / (script + ".py"))]
-        if remote and "ORBIT_BEFORE" in extra:
-            args.append(extra.pop("ORBIT_BEFORE"))
-        if "ORBIT_AFTER" in extra:
-            args.append(extra.pop("ORBIT_AFTER"))
+        remote = name == "receipt_prepare"
+        args = [sys.executable, "-B", str(SCRIPTS / (name + ".py"))]
+        if name == "receipt_read":
+            args.append(str(self.repo / ".git/orbit/receipt.json"))
+        if name == "difference":
+            args.extend(
+                [
+                    str(self.repo / ".git/orbit/counts"),
+                    str(self.repo / ".git/orbit/patch"),
+                ]
+            )
         result = subprocess.run(
             args,
             input=json.dumps(self.value) if remote else None,
@@ -220,9 +220,13 @@ class TurnActions(unittest.TestCase):
         self.value["role"] = "consult"
         self.git("add", "--all")
         after = {"head": self.head, "tree": self.git("write-tree")}
-        diff = self.run_step(
-            "difference", ORBIT_BEFORE=json.dumps(before), ORBIT_AFTER=json.dumps(after)
+        (self.repo / ".git/orbit/counts").write_text(
+            self.git("diff", "--numstat", "-z", before["tree"], after["tree"], "--")
         )
+        (self.repo / ".git/orbit/patch").write_text(
+            self.git("diff", before["tree"], after["tree"], "--")
+        )
+        diff = self.run_step("difference")
         self.assertNotIn(credential, json.dumps(diff))
         self.assertIn("[REDACTED]", diff["diff"])
 
