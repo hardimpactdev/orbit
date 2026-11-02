@@ -132,7 +132,7 @@
     {
       "name": "Drop owned databases",
       "job": "destroy",
-      "step": "Drop owned databases",
+      "step": "Drop owned databases-0",
       "budget_seconds": 60
     },
     {
