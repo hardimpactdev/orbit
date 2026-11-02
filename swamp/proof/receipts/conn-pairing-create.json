@@ -12,7 +12,9 @@
     "host_node_id": 13,
     "seed": "b52d9c01d06875e8c37dffc5ed4e9b80cab6d4b35fe709d8a17f0d356571d030",
     "provisioned_at": "2026-11-02T19:50:53Z",
-    "cancel_operation_id": 8268
+    "cancel_operation_id": 8268,
+    "destroyed": true,
+    "destroyed_at": "2026-11-02T20:08:43Z"
   },
   "script_files_deleted": 0,
   "script_gap": null,
