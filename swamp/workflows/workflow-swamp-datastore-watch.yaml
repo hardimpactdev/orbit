@@ -19,7 +19,8 @@ jobs:
           behaviorName: swamp-datastore-watch
           methodName: execute
           inputs:
-            # Read-only: file counts per datastore directory, auto-definitions per type, and serve CPU over a 5 s sample.
+            # Read-only: file counts per datastore directory, auto-definitions per type (grant records are type swamp/grant),
+            # and serve CPU over a 5 s sample.
             run: |
               set -eu
               data=/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp
@@ -30,5 +31,5 @@ jobs:
               pid=$(systemctl show -p MainPID --value orbit-swamp-serve.service)
               cpu=$(top -b -n 2 -d 5 -p "$pid" | awk -v pid="$pid" '$1 == pid { cpu = $9 } END { print cpu + 0 }')
               jq -cn --argjson types "$types" --argjson outputs "$(files outputs)" --argjson runs "$(files workflow-runs)" \
-                --argjson data "$(files data)" --argjson grants "$(files grants)" --argjson cpu "$cpu" \
+                --argjson data "$(files data)" --argjson grants "$(files auto-definitions/swamp/grant)" --argjson cpu "$cpu" \
                 '{auto_definitions: $types, outputs: $outputs, workflow_runs: $runs, data: $data, grants: $grants, serve_cpu_percent: $cpu}'

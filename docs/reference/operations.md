@@ -37,8 +37,9 @@ The Gateway reads the terminal `measure` output through the shared scheduled-res
 
 | Key | Raised when |
 | --- | --- |
-| `datastore\|auto_definitions\|<type>` | One auto-definition type holds more than 2,000 files |
+| `datastore\|auto_definitions\|<type>` | One auto-definition type other than `swamp/grant` holds more than 2,000 files |
 | `datastore\|outputs` | `outputs` holds more than 50,000 files |
+| `datastore\|grants` | Serve holds more than 500 grant records, the auto-definitions of type `swamp/grant` |
 | `serve\|cpu` | Serve used more than 50% CPU over the sample |
 | `watch\|failed` | A watch run did not succeed, so the datastore is unwatched |
 

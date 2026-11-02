@@ -29,6 +29,9 @@ final readonly class SwampDatastoreWatch implements ScheduledResultProjection
 
     public const int Outputs = 50000;
 
+    /** Grant records are auto-definitions of type swamp/grant, with their own bound. */
+    public const int Grants = 500;
+
     public const int ServeCpuPercent = 50;
 
     public function __construct(private ProblemCollector $problems) {}
@@ -65,7 +68,7 @@ final readonly class SwampDatastoreWatch implements ScheduledResultProjection
     {
         $findings = [];
         foreach (array_slice(is_array($result['auto_definitions'] ?? null) ? $result['auto_definitions'] : [], 0, 256, true) as $type => $count) {
-            if (is_string($type) && preg_match('/^[@a-z0-9_.\/-]{1,128}$/', $type) === 1 && is_int($count) && $count > self::AutoDefinitionsPerType) {
+            if (is_string($type) && $type !== 'swamp/grant' && preg_match('/^[@a-z0-9_.\/-]{1,128}$/', $type) === 1 && is_int($count) && $count > self::AutoDefinitionsPerType) {
                 $findings['datastore|auto_definitions|'.$type] = $this->finding($runId, "Swamp serve holds {$count} auto-definitions of type {$type}",
                     "Swamp serve on Node 209 holds {$count} auto-definitions of type {$type}, above the bound of ".self::AutoDefinitionsPerType
                     .'. A workflow probably names a behavior per run; serve scans the whole directory on each lookup by id.', ".swamp/auto-definitions/{$type}", $count, self::AutoDefinitionsPerType);
@@ -75,6 +78,12 @@ final readonly class SwampDatastoreWatch implements ScheduledResultProjection
         if (is_int($outputs) && $outputs > self::Outputs) {
             $findings['datastore|outputs'] = $this->finding($runId, "Swamp serve holds {$outputs} outputs",
                 "Swamp serve on Node 209 holds {$outputs} output records, above the bound of ".self::Outputs.'.', '.swamp/outputs', $outputs, self::Outputs);
+        }
+        $grants = $result['grants'] ?? null;
+        if (is_int($grants) && $grants > self::Grants) {
+            $findings['datastore|grants'] = $this->finding($runId, "Swamp serve holds {$grants} grant records",
+                "Swamp serve on Node 209 holds {$grants} grant records, above the bound of ".self::Grants
+                .'. Something creates grants per workflow or per run; serve loads every record into its policy snapshot.', '.swamp/auto-definitions/swamp/grant', $grants, self::Grants);
         }
         $cpu = $result['serve_cpu_percent'] ?? null;
         if ((is_int($cpu) || is_float($cpu)) && $cpu > self::ServeCpuPercent) {
