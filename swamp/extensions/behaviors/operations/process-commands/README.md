@@ -34,3 +34,7 @@ EnvironmentFile delivery needs no script: SSH runs `install -D -m 0600 /dev/stdi
 | `process_common.py`, `unit_files.py`, `docker_files.py` | obsolete script support removed |
 
 The Analytics update caller no longer copies Process scripts. Its health request uses a bounded SSH curl command.
+
+## Native verification
+
+With the repository's pinned Swamp runtime installed, run `SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s swamp/extensions/behaviors/operations/process-commands -p process_native_test.py -v`. The suite pulls the pinned official extensions into each disposable root. It covers all six kinds, reruns, failure, transitional systemd state, Docker argv and environment privacy, runtime changes, mounts and Vite readiness. Native tests follow the Python test layout in the porting reference; the Deno shard has no native Swamp binary and runs the typed behavior tests.
