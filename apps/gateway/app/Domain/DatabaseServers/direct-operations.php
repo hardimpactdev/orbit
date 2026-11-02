@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\DatabaseServers\DatabaseCleanupProjection;
-use App\Domain\DatabaseServers\DatabaseCloneProjection;
 use App\Domain\DatabaseServers\DatabaseConnectionUpdateProjection;
 use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
@@ -12,7 +10,6 @@ use App\Domain\DatabaseServers\DatabaseReadProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\DatabaseServers\DatabaseServerDestroyProjection;
-use App\Domain\DatabaseServers\DatabaseSqliteProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
 use App\Domain\DatabaseServers\DatabaseWriteProjection;
 
@@ -58,28 +55,12 @@ return ['database.update' => [
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'closure', 'step' => 'result'],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-server-close-intent-[1-9][0-9]*$']],
-], 'database.sqlite_cleanup' => [
-    'workflow' => 'operation-database-cleanup',
-    'projection' => DatabaseCleanupProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'sqlite', 'step' => 'result'],
 ], 'database_user.create' => [
     'workflow' => 'operation-database-user-create',
     'projection' => DatabaseUserProjection::class,
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'user', 'step' => 'Apply login and grants', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-user-create-(apply|check)-[1-9][0-9]*$']],
-], 'database.sqlite_seed' => [
-    'workflow' => 'operation-database-sqlite-seed',
-    'projection' => DatabaseSqliteProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'sqlite', 'step' => 'result'],
-], 'database.clone' => [
-    'workflow' => 'operation-database-clone',
-    'projection' => DatabaseCloneProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-clone-intent-[1-9][0-9]*$']],
 ], 'database.destroy' => [
     'workflow' => 'operation-database-destroy',
     'projection' => DatabaseDestroyProjection::class,

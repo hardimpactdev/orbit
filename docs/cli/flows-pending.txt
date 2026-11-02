@@ -1,7 +1,4 @@
 conn.gateway_sessions_revoke
-database.clone
-database.sqlite_cleanup
-database.sqlite_seed
 database_server.close
 fleet.cli_converge
 node.bootstrap_host

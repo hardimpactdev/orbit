@@ -2,20 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseServers\CreateDatabaseServerAction;
 use App\Actions\DatabaseServers\DestroyDatabaseServerAction;
 use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseServer;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
-use App\Models\Project;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -106,18 +102,6 @@ it('refuses a second removal while its first native run is unfinished', function
     expect(fn () => app(DestroyDatabaseServerAction::class)->execute($this->server))
         ->toThrow(ResourceOperationException::class, 'unfinished removal intent');
     expect(Operation::query()->where('kind', 'database_server.destroy')->count())->toBe(1);
-});
-
-it('refuses a stale active server model before an Instance reservation after removal admission', function (): void {
-    $stale = clone $this->server;
-    $stale->status = LifecycleStatus::Active;
-    $stale->driver = DatabaseDriver::Mysql;
-    $project = Project::query()->create(['name' => 'Proof', 'slug' => 'proof-reservation', 'repository_url' => 'https://example.test/proof.git', 'default_branch' => 'main']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'proof', 'environment' => 'development',
-        'checkout_path' => '/srv/proof', 'source_is_laravel' => true, 'provisioning_step' => 'active', 'status' => 'active']);
-    expect(fn () => app(CreateServerDatabaseAction::class)->reserve($stale, 'proof-reservation', 'proof_reservation', $instance, null))
-        ->toThrow(ResourceOperationException::class, 'not active');
-    $this->assertDatabaseCount('database_connections', 0);
 });
 
 it('maps the failed step of the native result to the server error code', function (string $step, string $code): void {

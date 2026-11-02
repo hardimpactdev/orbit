@@ -16,10 +16,6 @@ class DatabaseCommands(NativeTestCase):
 
     def prepare_commands(self, names):
         shutil.copytree(ROOT / 'extensions/behaviors/operations/database-server-commands', self.repo / 'extensions/behaviors/operations/database-server-commands', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-        target = self.repo / 'extensions/behaviors/operations/database'
-        target.mkdir()
-        for module in ('create_input.ts', 'destroy_input.ts'):
-            shutil.copy(ROOT / 'extensions/behaviors/operations/database' / module, target)
         source = ROOT / '.swamp/pulled-extensions/@swamp/ssh'
         dest = self.repo / '.swamp/pulled-extensions/@swamp/ssh'
         dest.parent.mkdir(parents=True)

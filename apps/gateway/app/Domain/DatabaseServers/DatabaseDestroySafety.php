@@ -51,11 +51,9 @@ final readonly class DatabaseDestroySafety
 
     public function assertAcceptsRemoval(DatabaseServer $server): void
     {
-        if (Operation::query()->whereIn('kind', ['database.create', 'database_user.create', 'database.clone'])
+        if (Operation::query()->whereIn('kind', ['database.create', 'database_user.create'])
             ->where('target_type', 'database_server')->where('target_id', $server->id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->exists()
-            || Operation::query()->where('kind', 'database.clone')->where('input->server_id', $server->id)
-                ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             throw new ResourceOperationException('database.server_in_use', 'Database creation is unfinished on this server.', 409);
         }
     }

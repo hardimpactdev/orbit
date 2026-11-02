@@ -110,9 +110,7 @@ When the Project has an Instance named `default` with a database attached under 
 
 On the same Node, Orbit holds SQLite's write lock while it takes a reflink of the SQLite database file and its `-wal` file. It first checks that the filesystem can clone the file, so no writer waits when it cannot. Orbit copies a snapshot made with SQLite's backup API instead in three cases: the filesystem has no block cloning, a writer holds the lock for two seconds, or the source is on another Node.
 
-The Gateway validates the source and reserves the target connection. It starts one native `database.clone` run. Swamp reads the admitted placements, checks the source, prepares the target, and copies the database through official SSH from Node 209. MySQL ownership and name checks run in Swamp before reset. Each copy attempt resets only its admitted, proven targets before importing, so an uncertain attempt never keeps a partial copy.
-
-For a cross-Node SQLite copy, Swamp exports a private source snapshot and transfers it through private scratch space on Node 209 using official SSH. The target checks its exact size, SQLite header, and SHA-256, and installs it at the same relative path. The snapshot is limited to 1 TiB. Path walks refuse symlinks and escapes. Snapshot bytes never pass through the Gateway. Independent source and target cleanup steps run after started work, including failure and cancellation. Resuming a failed child takes a new snapshot; resuming terminal projection after a completed child does not copy again.
+Native `instance:create` does not run this copy yet. A create that needs one returns `operation.kind_unavailable` (503) and changes nothing. The [`instance:clone` chart](/cli/instance/clone) makes the copy a step of the Instance run.
 
 Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`. The Gateway records Swamp's result and the attachment.
 

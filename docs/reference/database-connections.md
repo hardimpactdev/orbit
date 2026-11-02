@@ -32,19 +32,9 @@ Both database actions refuse a server Node without a stored SSH host key (`swamp
 
 ## Instance database steps
 
-Lifecycle composes Database actions as placed jobs in its own native DAG. Grouped removal records one aggregate database intent for the admitted Instance set, with one entry per SQL server. Each server Node receives only its own passwords through the fixed private-material binding. It does not admit Database child Operations or wait in the Gateway. Managed MySQL clone resets and copies in one replayable native step. Swamp verifies the target's recorded owner and grants before reset. SQLite clone, seed and abandon use safe immutable source and target descriptors and exact Node placement.
+Instance runs compose Database actions as steps of their own workflow. Grouped removal records one aggregate database intent for the admitted Instance set, with one entry per SQL server. Each server Node receives only its own passwords. Successful projections attach a created connection or remove the admitted connection records; they do not re-run SQL or inspect a Node.
 
-A SQLite source writes a private snapshot into a native file artifact. The target reads that exact version and verifies the size and digest before installation. Database bytes stay out of JSON resources and public history. Native retention owns the file. The current remote native reader buffers a snapshot in worker memory, so this path does not claim bounded memory for large files. Cleanup runs as native dependencies.
-
-Clone steps refresh admitted cancellation before effects. Cancellation after export still cleans its source snapshot. Final projection waits for cleanup and uses the saved copy outcome; missing native outcomes record failure without attaching the target. Abandon derives only the owning recorded development-transfer attempt.
-
-Successful projections make bounded record changes: attach a created or cloned connection, mark its clone complete, or remove the admitted connection records. They do not re-run SQL, inspect a Node, check receipts or validate native execution.
-
-## Native database clones
-
-Standalone `database.clone` captures its non-secret source, target and SSH identities at admission. One209 workflow uses official SSH for each action. MySQL creation runs the clone-only `database-clone-create` child with one password-only execution copy, until `instance.clone` replaces standalone clone; a replayable copy action checks the source and target ownership again before resetting the admitted targets and importing. SQLite keeps the local reflink path and consistent-backup alternative. Cross-Node snapshots travel through official SSH copy via a private209 scratch directory, with size and digest verification before installation.
-
-The native child completes source, incoming-file and209 scratch cleanup before returning its public result. A failed child is retried as a whole by root resume; a successful child is skipped when only terminal projection resumes. Missing outcomes fail without attaching the target. The Gateway stores credentials and projects the final connection and attachment; steps make no Gateway calls. Instance-parent clone and transfer composition remains in its existing parent workflow.
+Orbit has no native database copy yet. A development create that needs a [database clone](/domains/applications#database-clone), and a production clone or transfer with a SQLite source, return `operation.kind_unavailable` (503) before any change.
 
 ## Drivers and fields
 
@@ -137,21 +127,13 @@ A managed Valkey connection's driver, Node, address, port, username, and passwor
 
 ## Owned databases
 
-An Instance owns a database that Orbit created for it: by `database:create --server --instance`, by [`instance:create --database-server`](/domains/applications#database-on-a-server), or by the [clone](/domains/applications#database-clone) that `instance:create` runs. The record keeps the owner in `owner_instance_id`. A clone that cannot run returns `instance.database_clone_unsupported`, and a copy that fails returns `instance.database_clone_failed`. [Database clone](/domains/applications#database-clone) describes both.
-
-A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-seed) also registers an owned connection named `<project>-<instance>` on the target Node. Its path is `<production_home>/database.sqlite`. Orbit attaches it under `DB` and synchronizes the production `.env` before the clone completes. An interrupted clone reuses the connection and attachment when it resumes; the candidate's `DB_*` values do not copy.
+An Instance owns a database that Orbit created for it: by `database:create --server --instance`, by [`instance:create --database-server`](/domains/applications#database-on-a-server). The record keeps the owner in `owner_instance_id`.
 
 [`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Admission records each database's Node and its stored SSH host pin, so a retry reaches the same host. Orbit never drops a database that it only registered.
 
-### SQLite snapshots
-
-Standalone SQLite seed, seed abandonment and cleanup run as native workflows on Node 209 through official SSH. The Gateway supplies public source and target descriptors plus captured SSH identities and pins; these kinds need no vault execution copy.
-
-Seed uses separate snapshot, target preparation, transfer and installation steps. The target checks the exact size, SQLite integrity and digest before installation. Independent cleanup removes source and transfer scratch after started work. Failed or cancelled seed work also clears its target scratch without deleting an installed database. Seed abandonment removes only its recorded attempt. Terminal projection resumes without another completed effect. Native tests cover file ownership, replay, refusal and cleanup; Gateway tests cover input capture and bounded record changes.
-
 ## Test databases
 
-An owned database created or copied for development has a test database of the same kind, named in `test_database`. A production clone's SQLite snapshot connection has no test database.
+An owned database created for development has a test database of the same kind, named in `test_database`.
 
 | Driver | Test database |
 | --- | --- |
@@ -219,11 +201,7 @@ Swamp runs fixed PDO programs for MySQL and PostgreSQL on the Gateway Node worke
 
 SQL and credentials travel through the run-bound private-material callback and protected standard input. They do not appear in command arguments, native output or public Operation history. Each job runs only on its admitted Node worker.
 
-## Direct SQLite cleanup
-
-SQLite snapshot cleanup uses `operation-database-cleanup` on Node 209. Official SSH runs the shipped cleanup script on the admitted Node, using its captured user and host pins. The Gateway supplies the recorded cleanup descriptor as workflow input and projects the bounded terminal result.
-
-Clone cleanup removes only its owned private snapshot directory. Seed cleanup uses the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity. These actions read no secret and need no Swamp worker on the target Node.
+## Direct runs
 
 ### Direct SQL writes
 

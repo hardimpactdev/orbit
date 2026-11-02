@@ -6,16 +6,12 @@ namespace App\Actions\DatabaseConnections;
 
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
-use App\Data\DatabaseConnections\DatabaseConnectionData;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\DatabaseUserPrivileges;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
-use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
@@ -49,7 +45,6 @@ final readonly class CreateServerDatabaseAction
     public function __construct(
         private MysqlNames $names,
         private DatabaseUserPrivileges $privileges,
-        private RecordEventBroadcaster $broadcaster,
         private PostgresTestDatabases $postgresTests,
         private RecordDatabaseOperationAction $operations,
         private RetryDatabaseCreateAction $retries,
@@ -139,116 +134,6 @@ final readonly class CreateServerDatabaseAction
                     'payload' => ['password' => $connection->password, 'salt' => base64_encode(random_bytes(16))]], 'protected' => ['payload'], 'redactions' => [$connection->password]]],
                 ['created_connection' => $connection->id, 'attach_instance' => $instance?->id]), $data);
         });
-    }
-
-    /**
-     * Record an Instance's database before it exists on the server, with the names and the
-     * credentials it will get. A retry reads them back, so the copy keeps one user and password.
-     *
-     * @param  array<string, mixed>  $attributes
-     */
-    public function reserve(DatabaseServer $server, string $slug, string $database, Instance $instance, ?string $createdBy, array $attributes = []): DatabaseConnection
-    {
-        return DB::transaction(fn (): DatabaseConnection => $this->reserveRecorded($server, $slug, $database, $instance, $createdBy, $attributes));
-    }
-
-    /** @param array<string,mixed> $attributes */
-    private function reserveRecorded(
-        DatabaseServer $server,
-        string $slug,
-        string $database,
-        Instance $instance,
-        ?string $createdBy,
-        array $attributes = [],
-    ): DatabaseConnection {
-        $server = DatabaseServer::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
-        $this->assertActive($server);
-        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
-        $this->assertHoldsDatabases($server);
-        if ($server->driver === DatabaseDriver::Pgsql) {
-            throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
-        }
-
-        $existing = DatabaseConnection::query()->where('slug', $slug)->first();
-        if ($existing !== null) {
-            if ($existing->owner_instance_id === $instance->id && $existing->database_server_id === $server->id
-                && $existing->database === $database && $existing->clone_step !== null && $existing->clone_step !== DatabaseCloneStep::Complete) {
-                $this->assertRecordedNamesFree($server, $database, $existing->test_database,
-                    ['username' => $existing->username ?? '', 'password' => $existing->password ?? '', 'new' => false], null, $existing->id);
-
-                return $existing;
-            }
-            throw $this->slugConflict($slug);
-        }
-
-        $testDatabase = $this->names->testDatabase($database);
-        $credentials = $this->credentials($server, $database, $instance);
-
-        $this->assertRecordedNamesFree($server, $database, $testDatabase, $credentials);
-
-        try {
-            $connection = DB::transaction(function () use (
-                $slug,
-                $server,
-                $instance,
-                $database,
-                $testDatabase,
-                $credentials,
-                $createdBy,
-                $attributes,
-            ): DatabaseConnection {
-                $connection = DatabaseConnection::query()->create([
-                    ...$attributes,
-                    'slug' => $slug,
-                    'driver' => $server->driver->value,
-                    'node_id' => $server->node_id,
-                    'database_server_id' => $server->id,
-                    'owner_instance_id' => $instance->id,
-                    'host' => $server->node->wireguard_ip,
-                    'port' => $server->port,
-                    'database' => $database,
-                    'test_database' => $testDatabase,
-                    'path' => null,
-                    'username' => $credentials['username'],
-                    'password' => $credentials['password'],
-                ]);
-
-                DatabaseUser::query()->create([
-                    'database_connection_id' => $connection->id,
-                    'username' => $credentials['username'],
-                    'privileges' => $this->privileges->text($server->driver, $database, prefix: $testDatabase),
-                    'created_by' => $createdBy,
-                ]);
-
-                return $connection;
-            });
-        } catch (UniqueConstraintViolationException) {
-            throw $this->slugConflict($slug);
-        }
-
-        $this->broadcaster->broadcast(
-            RecordEventType::DatabaseCreated,
-            $connection->id,
-            DatabaseConnectionData::fromModel($connection)->toArray(),
-        );
-
-        return $connection;
-    }
-
-    /**
-     * The active MySQL Database server with this slug, checked before a caller changes anything. A
-     * Valkey server holds no Instance databases.
-     */
-    public function activeServer(string $slug): DatabaseServer
-    {
-        $server = $this->server($slug);
-        $this->assertActive($server);
-        $this->assertHoldsDatabases($server);
-        if ($server->driver !== DatabaseDriver::Mysql) {
-            throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
-        }
-
-        return $server;
     }
 
     private function server(string $slug): DatabaseServer
