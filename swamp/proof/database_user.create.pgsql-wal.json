@@ -1,0 +1,60 @@
+{
+  "kind": "database_user.create",
+  "workflow": "operation-database-user-create",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "failed",
+    "run_status": "succeeded"
+  },
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "database-servers",
+      "body": {
+        "slug": "proof-usrwal-${proof.run}",
+        "node_id": "${node.target}",
+        "driver": "pgsql",
+        "port": 35434
+      },
+      "bind": "server"
+    },
+    {
+      "method": "POST",
+      "path": "database-connections",
+      "body": {
+        "slug": "proof-usrwalc-${proof.run}",
+        "server": "proof-usrwal-${proof.run}"
+      },
+      "bind": "connection"
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "database-connections/proof-usrwalc-${proof.run}/users",
+    "body": {
+      "username": "proof_repl",
+      "password": "proof-repl-pw-1",
+      "replication": true
+    }
+  },
+  "phases": [
+    {
+      "name": "Check logical WAL",
+      "job": "user",
+      "step": "Check logical WAL",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/user_wal_parity.py"
+  ]
+}

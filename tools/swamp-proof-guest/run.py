@@ -212,7 +212,9 @@ def main():
     receipt['phases'] = phases
     receipt['parity'] = parity_check(fixture, up, run_id, outputs, operation)
     expected = fixture['expect']['status']
-    receipt['proof_pass'] = (operation.get('status') == expected and str(history.get('status', '')).lower() == expected
+    # A refusal the Gateway reads from a step's output fails the Operation while the run itself succeeds.
+    run_expected = fixture['expect'].get('run_status', expected)
+    receipt['proof_pass'] = (operation.get('status') == expected and str(history.get('status', '')).lower() == run_expected
                              and receipt['parity']['exit'] == 0 and all(phase['passed'] for phase in phases)
                              and receipt['total_seconds'] is not None and receipt['total_seconds'] <= fixture['budget_seconds'])
     return receipt

@@ -253,7 +253,9 @@ The user has `LOGIN REPLICATION`, database `CONNECT`, public-schema `USAGE`, and
 
 Repeating the command sets the password and replaces privileges and owner defaults. Omit `--replication` on a later call to remove the replication attribute. The same name-conflict rules apply: Orbit refuses any connection owner on the server, or an existing PostgreSQL role outside this connection. Orbit does not adopt hand-created replication roles. Use an unused name when moving an existing client to managed credentials.
 
-User create returns an Operation. Its run sends one batch with one `docker exec -i`: the WAL and name checks, the login, then the grants. The user then logs in over TCP with its own password. Each login reads its password from the first stdin line of a vault value, never from argv or a file. Completion records the credentials and grants. List responses include the recorded `replication` boolean.
+User create returns an Operation. With `--replication`, its run first reads the live WAL level with one `docker exec -i`; another level skips the rest. The run then sends one batch with one `docker exec -i`: the name check, the login, then the grants.
+
+The user then logs in over TCP with its own password and reads back its attributes and grants. MySQL compares `SHOW GRANTS`; PostgreSQL compares the replication attribute, database `CONNECT`, public-schema `USAGE` and the owner's default table privileges for the user. Each login reads its password from the first stdin line of a vault value, never from argv or a file. Completion records the credentials and grants. List responses include the recorded `replication` boolean.
 
 Application migrations create and alter logical publications and select their tables. Orbit does not create publications or replication slots.
 
@@ -316,7 +318,7 @@ The server commands return these codes.
 | `database.server_remove_failed` | 502 | Docker could not stop or remove a server container. |
 | `database.server_remove_incomplete` | 502 | A container of the server's Process is still present after removal. |
 | `database.owner_login_failed` | 502 | The new owner could not log in after creation. |
-| `database.user_login_failed` | 502 | The new user could not log in with its own password after `database:user:create`. |
+| `database.user_login_failed` | 502 | After `database:user:create`, the new user could not log in with its own password, or its login did not show the requested attributes and grants. |
 | `database.create_outcome_unknown` | 502 | The create run ended without a readable result; run the command again. |
 | `database.server_create_failed` | 502 | The create run ended without reaching the admin login check. |
 | `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process; nothing changed. |

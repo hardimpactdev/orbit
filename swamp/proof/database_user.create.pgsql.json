@@ -1,0 +1,65 @@
+{
+  "kind": "database_user.create",
+  "workflow": "operation-database-user-create",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "database-servers",
+      "body": {
+        "slug": "proof-usrpg-${proof.run}",
+        "node_id": "${node.target}",
+        "driver": "pgsql",
+        "port": 35433
+      },
+      "bind": "server"
+    },
+    {
+      "method": "POST",
+      "path": "database-connections",
+      "body": {
+        "slug": "proof-usrpgc-${proof.run}",
+        "server": "proof-usrpg-${proof.run}"
+      },
+      "bind": "connection"
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "database-connections/proof-usrpgc-${proof.run}/users",
+    "body": {
+      "username": "proof_reader",
+      "password": "proof-reader-pw-1",
+      "read_only": true
+    }
+  },
+  "phases": [
+    {
+      "name": "Apply login and grants",
+      "job": "user",
+      "step": "Apply login and grants",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Check the user",
+      "job": "user",
+      "step": "Check the user",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/user_pg_parity.py"
+  ]
+}

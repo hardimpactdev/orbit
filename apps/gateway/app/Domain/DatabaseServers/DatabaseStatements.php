@@ -165,11 +165,13 @@ final readonly class DatabaseStatements
     }
 
     /**
-     * The statements of `database:user:create`: `apply` (the WAL and name checks, the login and exact grants in one
-     * batch, with the password, so it travels Gateway → vault → stdin) and the user's own login check (Q-DBAUTH).
+     * The statements of `database:user:create`: `wal` (the live WAL level, read before a PostgreSQL replication login),
+     * `apply` (the name check, the login and exact grants in one batch, with the password, so it travels Gateway →
+     * vault → stdin) and `check`, which the user runs with its own login (Q-DBAUTH) to read back its login, attributes
+     * and grants, as {@see userCheckLines()} lists.
      *
      * @param  array{driver: string, username: string, database: string, owner_username: string, read_only: bool, replication: bool, known_user: bool}  $input
-     * @return array{apply: string, check: string}
+     * @return array{wal: string, apply: string, check: string}
      */
     public function user(array $input, #[\SensitiveParameter] string $password, string $salt): array
     {
@@ -185,22 +187,21 @@ final readonly class DatabaseStatements
             $grant = '`'.str_replace('_', '\\_', $database).'`.*';
             $privilege = $input['read_only'] ? 'SELECT' : 'ALL PRIVILEGES';
 
-            return ['apply' => "CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$secret};\nALTER USER {$account} IDENTIFIED BY {$secret};\n"
+            return ['wal' => "SELECT 1;\n", 'apply' => "CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$secret};\nALTER USER {$account} IDENTIFIED BY {$secret};\n"
                 ."GRANT SELECT ON {$grant} TO {$account};\nREVOKE ALL PRIVILEGES ON {$grant} FROM {$account};\nGRANT {$privilege} ON {$grant} TO {$account};\n",
-                'check' => "SELECT CURRENT_USER();\n"];
+                'check' => "SELECT CURRENT_USER();\nSHOW GRANTS;\n"];
         }
         $verifier = self::scram($password, $salt);
-        // A role this connection does not know, with another password, belongs to someone else.
         // A role this connection does not know, with another password, belongs to someone else: the batch prints the
         // refusal for the Gateway and stops before any change.
         $foreign = "SELECT FROM pg_authid WHERE rolname='{$user}' AND rolpassword IS DISTINCT FROM '{$verifier}'";
         $guard = $input['known_user'] ? '' : "SELECT 'database.name_conflict' WHERE EXISTS ({$foreign});\nDO \$orbit\$ BEGIN IF EXISTS ({$foreign}) THEN RAISE EXCEPTION 'database.name_conflict'; END IF; END \$orbit\$;\n";
-        // A replication login needs live wal_level=logical; Orbit never changes server configuration.
-        $wal = "current_setting('wal_level') <> 'logical'";
-        $guard = ($input['replication'] ? "SELECT 'database.wal_level_not_logical' WHERE {$wal};\nDO \$orbit\$ BEGIN IF {$wal} THEN RAISE EXCEPTION 'database.wal_level_not_logical'; END IF; END \$orbit\$;\n" : '').$guard;
         $attributes = 'LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE '.($input['replication'] ? 'REPLICATION' : 'NOREPLICATION')." PASSWORD '{$verifier}'";
         $tables = $input['read_only'] ? 'SELECT' : 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER';
         $sequences = $input['read_only'] ? 'SELECT' : 'USAGE, SELECT, UPDATE';
+        // The owner's default table privileges hold the user's entry, as PostgreSQL prints an aclitem.
+        $quote = static fn (string $name): string => preg_match('/\A[a-z_][a-z0-9_]*\z/D', $name) === 1 ? $name : "\"{$name}\"";
+        $entry = $quote($user).'='.($input['read_only'] ? 'r' : 'arwdDxt').'/'.$quote($owner);
 
         return ['apply' => $guard."DO \$orbit\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{$user}') THEN CREATE ROLE \"{$user}\" {$attributes}; ELSE ALTER ROLE \"{$user}\" {$attributes}; END IF; END \$orbit\$;\n"
                 ."BEGIN;\nREVOKE ALL ON DATABASE \"{$database}\" FROM \"{$user}\";\nGRANT CONNECT ON DATABASE \"{$database}\" TO \"{$user}\";\nCOMMIT;\n\\connect {$database}\n"
@@ -211,7 +212,32 @@ final readonly class DatabaseStatements
                 ."GRANT {$tables} ON ALL TABLES IN SCHEMA public TO \"{$user}\";\nGRANT {$sequences} ON ALL SEQUENCES IN SCHEMA public TO \"{$user}\";\n"
                 ."ALTER DEFAULT PRIVILEGES FOR ROLE \"{$owner}\" IN SCHEMA public GRANT {$tables} ON TABLES TO \"{$user}\";\n"
                 ."ALTER DEFAULT PRIVILEGES FOR ROLE \"{$owner}\" IN SCHEMA public GRANT {$sequences} ON SEQUENCES TO \"{$user}\";\nCOMMIT;\n",
-            'check' => "SELECT current_user;\n"];
+            // A replication login needs live wal_level=logical; Orbit never changes server configuration.
+            'wal' => "SHOW wal_level;\n",
+            'check' => "SELECT current_user;\nSELECT rolreplication FROM pg_roles WHERE rolname = current_user;\n"
+                ."SELECT has_database_privilege(current_database(), 'CONNECT') AND has_schema_privilege('public', 'USAGE');\n"
+                ."SELECT '{$entry}' = ANY (SELECT unnest(d.defaclacl)::text FROM pg_default_acl d JOIN pg_roles o ON o.oid = d.defaclrole "
+                ."JOIN pg_namespace n ON n.oid = d.defaclnamespace WHERE o.rolname = '{$owner}' AND n.nspname = 'public' AND d.defaclobjtype = 'r');\n"];
+    }
+
+    /**
+     * The lines the user's own check prints when its login, attributes and grants are exactly the requested ones.
+     *
+     * @param  array{driver: string, username: string, database: string, read_only: bool, replication: bool}  $input
+     * @return list<string>
+     */
+    public static function userCheckLines(array $input): array
+    {
+        $user = $input['username'];
+        if ($input['driver'] === DatabaseDriver::Mysql->value) {
+            $privilege = $input['read_only'] ? 'SELECT' : 'ALL PRIVILEGES';
+            $grant = '`'.str_replace('_', '\\_', $input['database']).'`.*';
+
+            // mysql --batch doubles each backslash in its output, such as the escaped underscore of the grant.
+            return ["{$user}@%", "GRANT USAGE ON *.* TO `{$user}`@`%`", str_replace('\\', '\\\\', "GRANT {$privilege} ON {$grant} TO `{$user}`@`%`")];
+        }
+
+        return [$user, $input['replication'] ? 't' : 'f', 't', 't'];
     }
 
     /** PostgreSQL's SCRAM-SHA-256 verifier, so the plaintext password never reaches the server's SQL log. */

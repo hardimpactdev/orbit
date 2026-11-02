@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
+use App\Domain\DatabaseServers\DatabaseStatements;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
@@ -37,7 +40,8 @@ beforeEach(function (): void {
         ['upsert_user' => ['database_connection_id' => $this->connection->id, 'username' => 'reader', 'password' => 'private-login-sentinel', 'privileges' => 'SELECT', 'replication' => true, 'created_by' => 'operator']]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->finished = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z',
-        'result' => ['steps' => ['Apply login and grants' => ['status' => 'succeeded', 'stdout' => '', 'exit_code' => 0], 'Check the user' => ['status' => 'succeeded', 'stdout' => "reader\n", 'exit_code' => 0]]]];
+        'result' => ['steps' => ['Check logical WAL' => ['status' => 'succeeded', 'stdout' => "logical\n", 'exit_code' => 0],
+            'Apply login and grants' => ['status' => 'succeeded', 'stdout' => '', 'exit_code' => 0], 'Check the user' => ['status' => 'succeeded', 'stdout' => "reader\nt\nt\nt\n", 'exit_code' => 0]]]];
 });
 
 it('directly starts SQL user intent without old execution declarations or secret values', function (): void {
@@ -53,31 +57,55 @@ it('directly starts SQL user intent without old execution declarations or secret
 it('copies one whole vault value per batch, each behind its login password line', function (): void {
     $puts = collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.value', 'payload.key');
     $intentId = $this->operation->input['intent_id'];
+    expect($puts['database-user-create-wal-'.$intentId])->toBe("private-root-sentinel\nSHOW wal_level;\n");
     expect($puts['database-user-create-apply-'.$intentId])->toStartWith("private-root-sentinel\n")
-        ->toContain("RAISE EXCEPTION 'database.wal_level_not_logical'")->toContain('CREATE ROLE "reader" LOGIN')
+        ->not->toContain('wal_level')->toContain('CREATE ROLE "reader" LOGIN')
         ->toContain('GRANT CONNECT ON DATABASE "proof" TO "reader"')->not->toContain('private-login-sentinel');
-    expect($puts['database-user-create-check-'.$intentId])->toBe("private-login-sentinel\nSELECT current_user;\n");
+    expect($puts['database-user-create-check-'.$intentId])->toStartWith("private-login-sentinel\nSELECT current_user;\n")
+        ->toContain('SELECT rolreplication FROM pg_roles')->toContain("SELECT 'reader=r/owner' = ANY");
     $start = collect($this->socket->sent)->firstWhere('type', 'workflow.run');
     expect($start['payload']['inputs']['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.9');
-    expect(array_keys($start['payload']['inputs']['execution_secrets']))->toBe(['apply', 'check']);
+    expect(array_keys($start['payload']['inputs']['execution_secrets']))->toBe(['wal', 'apply', 'check']);
     expect(json_encode($start))->not->toContain('private-root-sentinel', 'private-login-sentinel');
     $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
     expect(fn () => app(DatabaseIntentSource::class)->resolve($this->operation, $intentId, '', 'password'))->toThrow(ResourceOperationException::class);
     expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('private-root-sentinel', 'private-login-sentinel');
 });
 
-it('maps the native result to the user error code', function (string $stdout, int $exit, string $check, string $code): void {
+it('maps the native result to the user error code', function (string $wal, string $stdout, int $exit, string $check, string $code): void {
     $this->postJson($this->path.'/result', [...$this->finished, 'result' => ['steps' => [
+        'Check logical WAL' => ['status' => 'succeeded', 'stdout' => $wal, 'exit_code' => 0],
         'Apply login and grants' => ['status' => 'succeeded', 'stdout' => $stdout, 'exit_code' => $exit],
         'Check the user' => ['status' => 'succeeded', 'stdout' => $check, 'exit_code' => 0]]]])->assertOk();
     expect([$this->operation->fresh()->status->value, $this->operation->fresh()->error_code])->toBe(['failed', $code]);
     $this->assertDatabaseCount('database_users', 0);
 })->with([
-    'wal level' => ["database.wal_level_not_logical\n", 3, '', 'database.wal_level_not_logical'],
-    'foreign role' => ["database.name_conflict\n", 3, '', 'database.name_conflict'],
-    'batch failed' => ['', 3, '', 'database.server_admin_failed'],
-    'user cannot log in' => ['', 0, '', 'database.user_login_failed'],
+    'wal level' => ["replica\n", '', 0, '', 'database.wal_level_not_logical'],
+    'foreign role' => ["logical\n", "database.name_conflict\n", 3, '', 'database.name_conflict'],
+    'batch failed' => ["logical\n", '', 3, '', 'database.server_admin_failed'],
+    'user cannot log in' => ["logical\n", '', 0, '', 'database.user_login_failed'],
+    'replication attribute missing' => ["logical\n", '', 0, "reader\nf\nt\nt\n", 'database.user_login_failed'],
+    'other default grants' => ["logical\n", '', 0, "reader\nt\nt\nf\n", 'database.user_login_failed'],
 ]);
+
+it('reads a refused WAL level as the end check when the later steps skip', function (): void {
+    config(['swamp.read_token' => 'fake.token', 'swamp.ca_path' => '/public/ca.pem']);
+    $inputs = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs'];
+    $history = ['id' => $this->runId, 'workflowName' => 'operation-database-user-create', 'status' => 'succeeded', 'inputs' => $inputs,
+        'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
+        'jobs' => [['name' => 'user', 'steps' => [['name' => 'Check logical WAL', 'status' => 'succeeded', 'outputs' => ['stdout' => "replica\n", 'exitCode' => 0]],
+            ['name' => 'Apply login and grants', 'status' => 'skipped', 'outputs' => []], ['name' => 'Check the user', 'status' => 'skipped', 'outputs' => []]]]]];
+    $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
+    $selector = app(DirectOperation::class)->definition('database_user.create')['terminal_result'];
+    $projected = app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
+    expect([$projected->status, $projected->error_code])->toBe([OperationStatus::Failed, 'database.wal_level_not_logical']);
+    $this->assertDatabaseCount('database_users', 0);
+});
+
+it('expects exactly the requested MySQL grant, with the batch-escaped database name', function (): void {
+    expect(DatabaseStatements::userCheckLines(['driver' => 'mysql', 'username' => 'reporting', 'database' => 'shop_eu', 'read_only' => false, 'replication' => false]))
+        ->toBe(['reporting@%', 'GRANT USAGE ON *.* TO `reporting`@`%`', 'GRANT ALL PRIVILEGES ON `shop\\\\_eu`.* TO `reporting`@`%`']);
+});
 
 it('projects the encrypted recorded user once and refuses later private reads', function (): void {
     $this->assertDatabaseCount('database_users', 0);

@@ -10,15 +10,15 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: database_user.create}
     intent: {type: object}
-    # Names only: apply (the admin password line and the batch) and check (the user's password line and its check),
-    # each one whole value.
+    # Names only: wal (the admin password line and the WAL read), apply (the admin password line and the batch) and
+    # check (the user's password line and its check), each one whole value.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^database-user-create-(apply|check)-[1-9][0-9]*$'}
+          key: {type: string, pattern: '^database-user-create-(wal|apply|check)-[1-9][0-9]*$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -27,11 +27,10 @@ jobs:
 - name: user
   labels: {role: swamp}
   steps:
-    # One batch: the checks, the login, then the exact grants. A non-logical WAL level for a replication login or a
-    # foreign PostgreSQL role stops it before any change and prints its code for the Gateway.
-  - name: 'Apply login and grants'
+    # A PostgreSQL replication login needs live wal_level=logical; the level is read before any change.
+  - name: 'Check logical WAL'
     labels: {role: swamp}
-    writes: true
+    guard: '${{ !(inputs.intent.driver == "pgsql" && inputs.intent.replication) }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -51,11 +50,30 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.admin_client }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.wal.vault, inputs.execution_secrets.wal.key) }}
+        timeoutSec: 70
+    # One batch: the name check, the login, then the exact grants. A foreign PostgreSQL role stops it before any
+    # change and prints its code for the Gateway.
+  - name: 'Apply login and grants'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Check logical WAL', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: '${{ inputs.intent.driver == "pgsql" && inputs.intent.replication && !steps["Check logical WAL"].outputs.stdout.startsWith("logical") }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-user-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
         argv: '${{ ["timeout", "120"] + inputs.intent.admin_client }}'
         stdin: ${{ vault.get(inputs.execution_secrets.apply.vault, inputs.execution_secrets.apply.key) }}
         okExitCodes: [0, 1, 3]
         timeoutSec: 130
-    # The user logs in over TCP with its own password; only then is it recorded.
+    # The user logs in over TCP with its own password and reads back its attributes and grants; only then is it recorded.
   - name: 'Check the user'
     labels: {role: swamp}
     dependsOn: [{step: 'Apply login and grants', condition: {type: succeeded}}]

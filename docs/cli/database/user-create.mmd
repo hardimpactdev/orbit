@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md#add-a-user.
-  %% Tightened: flow-tighten 2026-11-02, rules 6, 22 (login and grants in one SQL batch on stdin; no copied scripts or cleanup).
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 22 (WAL read before any change; login and grants in one SQL batch on stdin; the user reads back its grants; no copied scripts or cleanup).
   %% status: draft
   %% command: database:user:create
   %% kind: database_user.create
@@ -37,7 +37,8 @@ sequenceDiagram
   %%> - the password stored encrypted; nothing has happened on the Node yet
   GW->>SW: Store the batches<br/>database-user-create-apply-5123
   %%> What it does:
-  %%> - puts two whole values into the Swamp vault on Node 209 (R3)
+  %%> - puts three whole values into the Swamp vault on Node 209 (R3)
+  %%> - `database-user-create-wal-5123`: the admin password line, then `SHOW wal_level`
   %%> - `database-user-create-apply-5123`: the admin password line, then the batch with the user's password (a SCRAM verifier on PostgreSQL)
   %%> - `database-user-create-check-5123`: the user's password line, then the check
   GW->>SW: Start run, full intent<br/>operation-database-user-create
@@ -52,28 +53,41 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  opt --replication on PostgreSQL
+    SW->>N: Check logical WAL<br/>docker exec -i · SHOW
+    %%> How:
+    %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the `swamp` role's SSH identity; nothing is copied to the Node
+    %%> - one `docker exec -i … psql`; the first stdin line is the admin password, then `SHOW wal_level`
+    %%> What it does:
+    %%> - reads the live WAL level before any change
+    %%> Refuses:
+    %%> - another level than `logical`: the next steps skip, and the Gateway fails the task with `database.wal_level_not_logical`; nothing changes
+    %%> Not included:
+    %%> - Orbit never changes the server configuration
+  end
   SW->>N: Apply login and grants<br/>docker exec -i · SQL on stdin
   %%> How:
   %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the `swamp` role's SSH identity; nothing is copied to the Node
   %%> - one `docker exec -i`; inside the container the first stdin line is the admin password, read into the client's password variable, then the batch; never in argv or a file
   %%> What it does:
-  %%> - with `--replication` on PostgreSQL: first checks that the live server has `wal_level=logical`
   %%> - creates the login, or sets the password of a user Orbit recorded before
   %%> - PostgreSQL: adds or removes the replication attribute
   %%> - replaces the user's privileges with exactly the requested ones, in the same batch
   %%> Refuses:
-  %%> - another WAL level (`database.wal_level_not_logical`) or an existing PostgreSQL role outside this connection (`database.name_conflict`); the batch stops before any change and prints the code for the Gateway
+  %%> - an existing PostgreSQL role outside this connection (`database.name_conflict`); the batch stops before any change and prints the code for the Gateway
   %%> - MySQL: escapes underscores, so the grant covers only `shop`
   %%> - PostgreSQL replication: also owner defaults for future public tables
   %%> Not included:
   %%> - Orbit never changes the server configuration or creates publications
-  SW->>N: Check the user<br/>docker exec -i · as the user
+  SW->>N: Check the user<br/>docker exec -i · login, grants
   %%> What it does:
-  %%> - the user logs in over TCP with its own password, from the first stdin line, and reads its own name
+  %%> - the user logs in over TCP with its own password, from the first stdin line, and reads back its name, attributes and grants
+  %%> - MySQL: `SHOW GRANTS` lists exactly the requested grant on its database
+  %%> - PostgreSQL: the replication attribute, connect and schema use, and the owner's default table privileges for the user
   %%> Why:
-  %%> - the user only counts as created when it can log in; the Gateway reads the answer in the native result
+  %%> - the user only counts as created when the server shows it; the Gateway compares the answer in the native result
   alt every step passes
-    N-->>SW: reporting matches
+    N-->>SW: login and grants match
     %%> Returns:
     %%> - the check passed
     SW-->>GW: Run succeeded<br/>terminal event
@@ -87,7 +101,7 @@ sequenceDiagram
   else a step fails
     N--xSW: conflict or exit ≠ 0
     %%> When:
-    %%> - a name conflict, the wrong WAL level, failed SQL, or a lost SSH connection
+    %%> - the wrong WAL level, a name conflict, failed SQL, other grants, or a lost SSH connection
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code

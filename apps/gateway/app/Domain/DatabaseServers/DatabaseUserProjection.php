@@ -44,14 +44,15 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
             'owner_username' => $input['owner_username'], 'read_only' => $input['read_only'], 'replication' => $input['replication'],
             'known_user' => $input['known_user']], $password, ValidatedData::string($payload['salt'] ?? null));
         $secrets = [];
-        foreach (['apply', 'check'] as $batch) {
+        foreach (['wal', 'apply', 'check'] as $batch) {
             $secrets[$batch] = ['vault' => 'orbit-control-inputs', 'key' => "database-user-create-{$batch}-{$intent->id}"];
         }
         if (! $operation->status->terminal()) {
-            // Each login reads its password from the first stdin line: the admin's for the server work, the user's own for
-            // the check (Q-DBAUTH). The apply batch carries the user's password too.
+            // Each login reads its password from the first stdin line: the admin's for the WAL read and the server work,
+            // the user's own for the check (Q-DBAUTH). The apply batch carries the user's password too.
             $root = DatabaseServer::query()->findOrFail($operation->target_id)->root_password;
             $copy = app(SwampCommandStep::class);
+            $secrets['wal'] = $copy->executionCopy('orbit-control-inputs', $secrets['wal']['key'], "{$root}\n{$statements['wal']}");
             $secrets['apply'] = $copy->executionCopy('orbit-control-inputs', $secrets['apply']['key'], "{$root}\n{$statements['apply']}");
             $secrets['check'] = $copy->executionCopy('orbit-control-inputs', $secrets['check']['key'], "{$password}\n{$statements['check']}");
         }
@@ -87,8 +88,9 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
     }
 
     /**
-     * The native result decides: a WAL level other than logical or a foreign role (the batch's markers), a failed
-     * batch, or a user that cannot log in with its own password fails the run with its code.
+     * The native result decides: a WAL level other than logical before a replication login, a foreign role (the
+     * batch's marker), a failed batch, or a user whose own login does not show the requested attributes and grants
+     * fails the run with its code.
      *
      * @param  array<string, mixed>  $data
      * @return array{0: array<string, mixed>, 1: array<string, string>}
@@ -106,15 +108,16 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
                 array_values(array_filter(array_map(trim(...), explode("\n", ValidatedData::nullableString($entry['stdout'] ?? null) ?? ''))))];
         };
         $input = $this->intent($operation)->payload['commands']['database-apply']['input'];
+        [, $walLines] = $read('Check logical WAL');
         [$applyExit, $applyLines] = $read('Apply login and grants');
         [$checkExit, $checkLines] = $read('Check the user');
-        $user = ValidatedData::string($input['username'] ?? null);
-        $expected = $input['driver'] === 'mysql' ? $user.'@%' : $user;
+        $expected = DatabaseStatements::userCheckLines(['driver' => ValidatedData::string($input['driver'] ?? null), 'username' => ValidatedData::string($input['username'] ?? null),
+            'database' => ValidatedData::string($input['database'] ?? null), 'read_only' => ($input['read_only'] ?? null) === true, 'replication' => ($input['replication'] ?? null) === true]);
         [$step, $code] = match (true) {
-            in_array('database.wal_level_not_logical', $applyLines, true) => ['Apply login and grants', 'database.wal_level_not_logical'],
+            $input['driver'] === 'pgsql' && $input['replication'] && ($walLines[0] ?? null) !== 'logical' => ['Check logical WAL', 'database.wal_level_not_logical'],
             in_array('database.name_conflict', $applyLines, true) => ['Apply login and grants', 'database.name_conflict'],
             $applyExit !== 0 => ['Apply login and grants', 'database.server_admin_failed'],
-            $checkExit !== 0 || ($checkLines[0] ?? null) !== $expected => ['Check the user', 'database.user_login_failed'],
+            $checkExit !== 0 || $checkLines !== $expected => ['Check the user', 'database.user_login_failed'],
             default => [null, null],
         };
         if ($code === null) {
