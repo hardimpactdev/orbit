@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4. docs/reference/conn.md#native-pairing-revocation.
+  %% Tightened: flow-tighten 2026-11-02, rule 16 (the session list only picks the targets, so it folds into the revoke step).
   %% status: draft
   %% command: none · Conn API (conn-pairing-revoke)
   %% kind: conn.pairing_revoke
@@ -40,16 +41,13 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller waits on the task and shows its progress
-  SW->>T3: List client sessions<br/>GET /api/auth/clients
+  SW->>T3: Revoke the sessions<br/>GET clients · POST …/revoke
   %%> How:
   %%> - HTTPS from 209, with the admin session from `vault.get`
   %%> What it does:
-  %%> - reads every client session on env-beast and selects those with the captured labels
+  %%> - lists the client sessions on env-beast, selects those with the captured labels, and revokes each; a session already gone counts as revoked
   %%> Refuses:
-  %%> - a failed or invalid read stops the run before any revoke; it never counts as an empty list
-  SW->>T3: Revoke the sessions<br/>POST /api/auth/clients/revoke
-  %%> What it does:
-  %%> - revokes each selected session, one per step; a session already gone counts as revoked
+  %%> - a failed or invalid list stops the step before any revoke; it never counts as an empty list
   %%> Keeps:
   %%> - the Gateway's own current session and every other label
   SW->>T3: Revoke unused links<br/>POST pairing-links/revoke
