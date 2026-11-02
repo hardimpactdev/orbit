@@ -11,5 +11,6 @@
   "queue_timeout_seconds": 30,
   "swamp_run_id": "24920f79-966b-4e2f-98dd-e9b7aff8dc0d",
   "scripts_deleted": 0,
-  "limits": "No watched PRs: proves opt-in, internal Schedule admission, native execution and terminal projection. Native fixtures cover successful and failed PR reads; no production data or scale."
+  "limits": "No watched PRs: proves opt-in, internal Schedule admission, native execution and terminal projection. Native fixtures cover successful and failed PR reads; no production data or scale.",
+  "publication_status": "Pending: initial proof preceded the main opt-in rebase; re-prove the rebased source when recipe a3c2522cbc88 images are ready."
 }

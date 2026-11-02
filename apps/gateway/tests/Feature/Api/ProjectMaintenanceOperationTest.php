@@ -324,4 +324,3 @@ it('keeps a disabled Project unchanged when an earlier observation finishes', fu
     expect($group->fresh()->watched_pr_state)->toBe('open')
         ->and($operation->fresh()->result['admission_blocked'])->toBe('project_settings_changed');
 });
-
