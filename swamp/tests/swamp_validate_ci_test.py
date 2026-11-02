@@ -22,6 +22,17 @@ class ValidateCI(unittest.TestCase):
         self.assertIn("github.event_name == 'pull_request'", validate)
         self.assertIn("github.ref == 'refs/heads/main'", validate)
 
+    def test_native_grant_validation_and_regressions_are_required(self):
+        source = (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text()
+        validate = source.split('  validate:', 1)[1].split('  tests:', 1)[0]
+        self.assertIn('python3 bin/check-grant-patterns.py --cache', validate)
+        self.assertIn('python3 tests/grant_patterns_native_test.py', validate)
+        self.assertNotIn('check-grant-patterns.ts', source)
+        self.assertNotIn('continue-on-error', validate)
+        self.assertIn('grant-validation.json', validate)
+        required = (ROOT.parent / '.github/workflows/ci.yml').read_text().split('  required:', 1)[1]
+        self.assertIn('web, swamp,', required)
+
     def test_native_environment_is_explicit_and_configuration_is_isolated(self):
         spec = importlib.util.spec_from_file_location('validate', ROOT / 'bin/validate-swamp-workflows.py')
         module = importlib.util.module_from_spec(spec)

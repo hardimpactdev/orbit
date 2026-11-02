@@ -110,10 +110,11 @@ def release_restart(commit):
                       'issue': 'https://swamp-club.com/lab/4282'}})
 
 
-if len(sys.argv) == 3 and sys.argv[1] == 'release-restart':
-    release_restart(sys.argv[2])
-if len(sys.argv) == 3 and sys.argv[1] == 'grants':
-    publish(os.path.join(sys.argv[2], GRANTS_FILE), grants(sys.argv[2]), 0o640, os.getgid(), os.getuid())
-    publish(os.path.join(sys.argv[2], SERVE_GRANTS_FILE), serve_grants(sys.argv[2]), 0o640, os.getgid(), os.getuid())
-    sys.exit(0)
-sys.exit(1)
+if __name__ == '__main__':
+    if len(sys.argv) == 3 and sys.argv[1] == 'release-restart':
+        release_restart(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == 'grants':
+        publish(os.path.join(sys.argv[2], GRANTS_FILE), grants(sys.argv[2]), 0o640, os.getgid(), os.getuid())
+        publish(os.path.join(sys.argv[2], SERVE_GRANTS_FILE), serve_grants(sys.argv[2]), 0o640, os.getgid(), os.getuid())
+        sys.exit(0)
+    sys.exit(1)

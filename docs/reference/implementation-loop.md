@@ -4,7 +4,7 @@ description: "How a change reaches main: review evidence, merge, CI, local check
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
   - bin/{review-check,project-vocabulary,bug-repro,task-group-check,pr-head-check,deploy-verify,test,ci-cache-ref,check-pest-shards,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
-  - tools/{check-processes,rector-cache}.php
+  - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows}.py,tools/{check-processes,rector-cache}.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
@@ -100,13 +100,15 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp).
 
-Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. Operation Deno tests run in parallel shards with four workers per job: four general shards, one per database effect directory (local SQL, read and write), and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
+Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. The validation job also runs that pinned binary's `serve check-config` against disposable grant files rendered by the release's own renderer from every `swamp/config/*grants*.json` input. It requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. This checks complete CEL conditions and regex safety without starting serve or changing live grants.
+
+Operation Deno tests run in parallel shards with four workers per job: four general shards, one per database effect directory (local SQL, read and write), and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
 
 Two checks guard the flow charts. Generated contracts requires a chart or a `docs/cli/flows-pending.txt` line for every kind. Docs build runs `bin/check-flows`. Changing `swamp/workflows/` also selects Docs, and changing a chart or `docs/cli/flows-pending.txt` also selects Generated contracts. So both checks see every change they depend on.
 
 `Gateway release inputs` records whether the whole push includes Orbit inputs; both the Gateway and CLI publisher read that check instead of recomputing the last commit. The initial import ratchets against its retained Swamp source commit, recorded in `swamp/import-source.json`; once the comparison base contains `swamp/`, every run uses its actual Orbit base.
 
-Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Only the validation job receives its two approved secret inputs, on pull requests and pushes to main. Shape and Operation test jobs receive no secret environment. CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
+Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Only the validation job, which checks workflows and rendered grants, receives its two approved secret inputs, on pull requests and pushes to main. Shape and Operation test jobs receive no secret environment. CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
 Build jobs, including Swamp validation, shape and test shards, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 

@@ -45,7 +45,7 @@ Use the official swamp skill to create or edit the workflow. Apply the Orbit [wo
 ## Check and review
 
 - Follow the official workflow validation guide on the pinned runtime. Run native and parity tests, changed behavior tests, script lint and Gateway Pest admission/projection tests. Use the [test layout](../../../docs/swamp/porting.md#test-layout). Native test roots pull official extensions at the inventory-pinned version; never assume a local pulled cache exists. Fixture package installs refresh APT indexes first (vault.setup proof). Real-Docker tests clean up with `docker rm --force --volumes` (#2358).
-- Run the shape gate, `bin/lint-behavior-names.ts` and placement lint. Their CI lives at root `.github/workflows/swamp-shape.yml`, never under `swamp/.github` (#2372).
+- Run the shape gate, `bin/lint-behavior-names.ts`, placement lint and `bin/check-grant-patterns.py --cache <runtime-cache>` in `swamp/`. Grant patterns must pass pinned `swamp serve check-config` on release-rendered grants; a standalone regex helper misses full CEL validation and can leave serve unable to start. Their CI lives at root `.github/workflows/swamp-shape.yml`, never under `swamp/.github` (#2372).
 - Report measured p95, sample, run budget and `queueTimeout`. Report Orbit net lines, then `swamp/` growth split into behaviors, workflows, scripts, tests and fixtures, with a reason for each (F15). Prefer receipts and parity tests over duplicate mocked fixtures.
 - Attach a receipt and [proof file](../../../swamp/proof/README.md) for workflow, behavior, script or Gateway execution-contract changes (#2266, #2273, #2304). Deletion-only, docs and test changes need no receipt. An outage exception names the omitted receipt and the live check after load (#2332).
 

@@ -13,6 +13,7 @@ from pathlib import Path
 def native_env(config, inherited):
     env = {"PATH": inherited.get("PATH", os.defpath), "HOME": config,
            "XDG_CONFIG_HOME": config, "XDG_CACHE_HOME": config, "SWAMP_CONFIG_DIR": config,
+           "SWAMP_HOME": config, "SWAMP_NO_INBOX_NOTICE": "1",
            "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"}
     for name in ("SWAMP_API_KEY", "SWAMP_SIGNIN_TOKEN"):
         if inherited.get(name):
@@ -20,24 +21,23 @@ def native_env(config, inherited):
     return env
 
 
-def main():
-    parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("--cache", type=Path, required=True)
-    parser.add_argument("--report", type=Path, required=True)
-    args = parser.parse_args()
-    args.report.unlink(missing_ok=True)
-    source = Path("extensions/behaviors/node-worker/config.ts").read_text()
+def pinned_runtime(cache, root):
+    """Return the checksum-verified canonical binary and version, shared by native CI checks."""
+    source = (root / "extensions/behaviors/node-worker/config.ts").read_text()
     pin = re.search(r'export const Swamp = \{\s*version: "([\w.-]+)",\s*sha256: "([a-f0-9]{64})",\s*bytes: (\d+)', source)
     if not pin:
         raise SystemExit("Missing canonical runtime pin")
     version, digest, length = pin.groups()
-    if f"swampVersion: {version}" not in Path(".swamp.yaml").read_text():
+    if f"swampVersion: {version}" not in (root / ".swamp.yaml").read_text():
         raise SystemExit("Runtime and worker pins differ")
-    args.cache.mkdir(parents=True, exist_ok=True)
-    binary = args.cache / f"swamp-{version}"
+    cache.mkdir(parents=True, exist_ok=True)
+    binary = cache / f"swamp-{version}"
 
     def valid(path):
-        return path.exists() and path.stat().st_size == int(length) and hashlib.file_digest(path.open("rb"), "sha256").hexdigest() == digest
+        if not path.exists() or path.stat().st_size != int(length):
+            return False
+        with path.open("rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest() == digest
 
     if not valid(binary):
         candidate = binary.with_suffix(".download")
@@ -52,6 +52,16 @@ def main():
             candidate.replace(binary)
         finally:
             candidate.unlink(missing_ok=True)
+    return binary.resolve(), version
+
+
+def main():
+    parser = argparse.ArgumentParser(__doc__)
+    parser.add_argument("--cache", type=Path, required=True)
+    parser.add_argument("--report", type=Path, required=True)
+    args = parser.parse_args()
+    args.report.unlink(missing_ok=True)
+    binary, version = pinned_runtime(args.cache, Path.cwd())
     # Validation must never use the developer/runner account or its credential files.
     with tempfile.TemporaryDirectory(prefix="swamp-validate-isolated-") as config:
         env = native_env(config, os.environ)

@@ -78,11 +78,6 @@ jobs:
       - name: Check frozen agent command references
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: '"$GITHUB_WORKSPACE/bin/check-frozen-agent-commands" --root "$GITHUB_WORKSPACE"'
-      - name: Validate declared grants with pinned native regex safety
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        run: |
-          deno test --allow-read --allow-net=raw.githubusercontent.com bin/check-grant-patterns_test.ts
-          deno run --allow-read --allow-net=raw.githubusercontent.com bin/check-grant-patterns.ts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         with:
@@ -119,6 +114,14 @@ jobs:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
+      - name: Validate release grants with pinned serve check-config
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        env:
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+        run: |
+          python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
+          SWAMP_RUNTIME_CACHE="$HOME/.cache/orbit-shape-runtime" python3 tests/grant_patterns_native_test.py
       - name: Check placement on every step
         if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         run: deno run --allow-read bin/lint-workflow-placement.ts
@@ -126,7 +129,9 @@ jobs:
         if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         with:
           name: swamp-workflow-validation
-          path: ${{ runner.temp }}/workflow-validation.json
+          path: |
+            ${{ runner.temp }}/workflow-validation.json
+            ${{ runner.temp }}/grant-validation.json
 
   tests:
     name: Swamp Deno tests

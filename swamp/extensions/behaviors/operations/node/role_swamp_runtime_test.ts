@@ -330,7 +330,7 @@ Deno.test("the release restarts serve only for a shipped file serve did not star
         await manifest("b", []);
         const removed = await commit();
         const program = SWAMP_WORKERS_PROGRAM.split(
-            "if len(sys.argv) == 3 and sys.argv[1] == 'release-restart':",
+            "if __name__ == '__main__':",
         )[0];
         const result = await new Deno.Command("python3", {
             args: [

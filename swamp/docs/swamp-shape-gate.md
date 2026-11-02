@@ -49,7 +49,9 @@ Version 2 also checks each kind's public `execution_copies` declarations against
 Update the declaration and expected policy together. The check also runs when
 only this manifest changes; other Swamp-only changes keep their existing scope.
 
-The shape CI job also checks every declared vault key pattern with the regex safety and syntax check from the pinned Swamp source. It verifies the upstream file's checksum and requires its revision to match the worker runtime pin. A runtime pin change requires updating this source reference. The check reads public source and policy only; it needs no Swamp account or live access. Expand optional quantified groups into equivalent flat alternatives when Swamp rejects them, and keep the Gateway declaration identical to the manifest.
+The validation CI job runs `python3 bin/check-grant-patterns.py --cache <runtime-cache>` with the checksum-verified Swamp binary. It renders every `config/*grants*.json` input through the release renderer into a disposable repository, then runs native `serve check-config`. It requires `passed`, `wouldStart` and the complete grant-file count. Missing credentials or a native refusal fail Required checks. No server starts and no live grants change.
+
+This checks full CEL conditions, not an extracted regex helper. Pinned Swamp parses them with `@marcbachmann/cel-js` 7.6.1 and checks patterns with Deno/V8's JavaScript `RegExp` and its backtracking-safety guard. Native regressions cover an optional quantified group, invalid syntax, invalid CEL, omitted inputs and missing credentials. Expand rejected quantified groups into equivalent flat alternatives, and keep Gateway declarations identical to the manifest.
 
 This manifest is intended source policy, seeded from owner-approved public grant
 metadata and reconciled against current declarations. It is not evidence that a
