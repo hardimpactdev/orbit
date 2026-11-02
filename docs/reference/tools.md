@@ -31,20 +31,20 @@ A signed apt source stages its key, reads it with one `gpg --with-colons --show-
 
 | Workflow | Steps |
 | --- | --- |
-| Install, update | `assets`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `decide`, `Install the package` or `Upgrade the package`, `Check the package`, `Decode package state`, `Assert package state` |
-| Remove | `assets`, parallel manager and package reads, `Plan the removal`, `decide`, `Remove the package`, `Check it is gone`, optional source and preference removal, `Decode package state`, `Assert package state` |
+| Install, update | `Prepare package commands`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `Choose package action`, `Apply the package`, apt check or manager query, `Decode package state`, `Assert package state` |
+| Remove | `Prepare package commands`, parallel manager and package reads, `Plan the removal`, `Choose package action`, `Remove the package`, apt check or manager query, optional source and preference removal, `Decode package state`, `Assert package state` |
 | Adopt | `assets`, `query`, `repository`, `result`, `assert`: unchanged until the [observer pass](/swamp/observer-gap) replaces it |
 
 ### Install and update steps
 
-Node steps carry the labels of the reviewed flow charts ([ADR 0246](/decisions/0246-show-task-progress-through-one-resumable-read)); lowercase steps are typed work on 209.
+Steps carry the exact labels of the reviewed flow charts ([ADR 0246](/decisions/0246-show-task-progress-through-one-resumable-read)). Notes on the Swamp lane identify typed work on 209.
 
 - `Set up the Tool Manager` installs the manager at its pinned version on a Linux first use. A ready manager skips it.
-- `Add the signed apt source` and `Update the apt source` run only with `--repository`. The key is checked by its fingerprint.
+- `Write the apt source` runs only with `--repository`, after worker-side download, fingerprint inspection and a native assertion. Binary key publication, text files and scoped apt refresh remain separate steps.
 - `Read installed package` reads current package state; `Check the candidate` reads the manager's normal candidate. Both are individual commands.
-- `decide` applies the refusals and the constraint before any write. A missing candidate fails the install.
+- `Choose package action` applies the refusals and the constraint before the package write. A missing candidate fails the install.
 - On an update, the same version is `unchanged` and a version outside the constraint is `blocked_by_constraint`. Neither writes.
-- `Install the package` or `Upgrade the package` writes the candidate. `Check the package` reads its installed state; official apt and Homebrew checks serve as the end check.
+- `Apply the package` writes the candidate for every manager. `Check apt package` uses the official apt check; `Check the package` queries other managers. `Decode package state` shapes the observation, and `Assert package state` enforces it.
 
 The Gateway writes the records:
 
@@ -60,10 +60,10 @@ Package output and credentials stay out of public results. The Gateway projects 
 Removal runs these steps in order. It stops at the first step that fails, except the best-effort last step.
 
 1. `Plan the removal` reads the package and what removing it would also remove. Apt reads `apt-get --simulate remove`. Brew reads the installed formulae that still use the package. Composer and Vite+ global packages need no plan.
-2. `decide` refuses a plan that removes any other package, a Composer non-root, or an unsafe cask.
+2. `Choose package action` refuses a plan that removes any other package, a Composer non-root, or an unsafe cask.
 3. `Remove the package` removes exactly that package: dpkg as root, every other manager as the managed account.
-4. `Check it is gone` must find the package absent.
-5. `Remove the apt source` drops the source and key of a signed repository's last Tool. `Remove repository pins` removes its preference file. Both steps are best-effort.
+4. `Check apt absence` or `Check it is gone` must observe absence.
+5. `Remove the apt source` uses official `apt_repository` to drop both the source and key of a signed repository's last Tool. `Remove repository pins` removes its preference file. Both steps are best-effort.
 
 When the apt source cannot be removed, the removal still succeeds and the Tool is deleted. The apt repository record stays, and the next install from that source reuses it.
 
@@ -117,7 +117,7 @@ On macOS, `vp` is the enrolled account's existing Vite+ global store. The scope 
 
 The read-only `tool.inspect-vp-scope` agent command resolves the enrolled account's Vite+ binary with native account and filesystem APIs. It returns the selected path or a typed absent, conflicting, or unreadable result. Scope discovery runs no shell, installs nothing, and changes no launchers.
 
-Vite+ package writes use shipped query and mutation scripts through official SSH. They resolve the account scope and run fixed Vite+ arguments from its home directory. Typed native checks apply package constraints and ownership. The Gateway stores Tool records. Mutations run as the enrolled account and never return raw manager output.
+Vite+ package writes use bounded argv through official SSH from the admitted account scope. Typed native checks apply package constraints and ownership. The Gateway stores Tool records. Mutations run as the enrolled account and never return raw manager output.
 
 A missing scope is scan state `absent`. A scope with the wrong owner, a non-official Homebrew origin, or a dirty Linux Homebrew tree is scan state `conflicting`. On macOS, two Vite+ stores with `bin/vp`, or one store with the wrong owner or shape, is `conflicting`. On Linux, the chosen Vite+ store is `conflicting` when it is a symlink, not a directory, owned by someone else, or its present `bin/vp` is not executable or is owned by someone else. A second Linux store is not a conflict. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
 
@@ -498,7 +498,7 @@ Use the Tool removal result and native Tool scan to inspect installation state. 
 
 Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, adopt and remove run on Node209 through official SSH with the admitted target pins and existing209 identity.
 
-Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; [one phase script per Node phase](#native-execution) does the reads and writes. A typed check applies package ownership, eligibility and version constraints.
+Official cfgmgmt resources manage repository files and check apt package state. Package mutations use one bounded SSH argv because the pinned resources cannot express apt's no-removal policy or Homebrew's prefix, environment and bottle options. Typed checks apply package ownership, eligibility and version constraints; the native assertion enforces the observed end state.
 
 The old standalone Tools runner and its workflows are deleted. Active Node and Instance materialization callers retain only their shared manager prerequisite lower. After an uncertain package reply, run the same command again: the write phase reads the package before and after its write, and an install of a package that is now present records it unchanged.
 
