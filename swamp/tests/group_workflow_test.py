@@ -47,6 +47,31 @@ class GroupWorkflowTest(unittest.TestCase):
             self.assertEqual(sum(d["admitted"] for d in decisions), 1)
             self.assertEqual(sorted(d["projectId"] for d in decisions), [4, 5])
 
+    def test_group_start_activates_the_factory_work_item(self):
+        with tempfile.TemporaryDirectory(prefix="orbit-group-start-") as temp:
+            root = Path(temp)
+            shutil.copytree(REPO / "workflows", root / "workflows")
+            (root / "models/@swamp/software-factory").mkdir(parents=True)
+            shutil.copyfile(REPO / "models/@swamp/software-factory/orbit-groups.yaml",
+                            root / "models/@swamp/software-factory/orbit-groups.yaml")
+            shutil.copyfile(REPO / ".swamp.yaml", root / ".swamp.yaml")
+            # Run the copied step locally; serve places it on Node 209.
+            start = root / "workflows/workflow-group-start.yaml"
+            start.write_text(start.read_text().replace('        labels: { pool: migration, node: "209" }\n', ""))
+            env = dict(os.environ, SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
+            for name in ["SWAMP_SERVER_TOKEN", "SWAMP_SERVER_TOKEN_FILE", "SWAMP_SERVE_URL", "SWAMP_SERVER_URL"]:
+                env.pop(name, None)
+            run = subprocess.run(["swamp", "workflow", "run", "group-start", "--input", "workItem=tg-2314", "--json"],
+                                 cwd=root, env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(run.returncode, 0, run.stderr[-2500:] + run.stdout[-2500:])
+            query = subprocess.run(["swamp", "data", "query", 'modelName == "orbit-groups" && name.startsWith("state-")',
+                                    "--select", "attributes", "--json"],
+                                   cwd=root, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(query.returncode, 0, query.stderr[-2500:])
+            rows = json.loads(query.stdout)
+            rows = rows["results"] if isinstance(rows, dict) else rows
+            self.assertEqual([(r["workItem"], r["status"]) for r in rows], [("tg-2314", "active")])
+
     def test_empty_fanout(self):
         with tempfile.TemporaryDirectory(prefix="orbit-group-empty-") as temp:
             root = Path(temp)

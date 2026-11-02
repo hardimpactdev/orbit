@@ -1,0 +1,25 @@
+id: 39d6e292-f81d-437f-9225-5f959b261432
+name: group-start
+description: >-
+  Start one Orbit task group (tg-<group id>) in the orbit-groups factory. Serve runs
+  remote-only, so a bare CLI method run has no placement; this is the placed start.
+  groups-driver discovers the active work item on its next tick.
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    workItem: { type: string, pattern: '^tg-[1-9][0-9]*$' }
+  required: [workItem]
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: group
+    steps:
+      - name: start
+        labels: { pool: migration, node: "209" }
+        task:
+          type: model_method
+          modelIdOrName: orbit-groups
+          methodName: start
+          inputs:
+            workItem: '${{ inputs.workItem }}'
