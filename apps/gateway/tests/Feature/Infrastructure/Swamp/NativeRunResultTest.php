@@ -17,6 +17,16 @@ function nativeRunResultTerminal(array $run, array $selector): array
     return (new ReflectionMethod(SwampCommandStep::class, 'terminalOutput'))->invoke(app(SwampCommandStep::class), $run, $selector);
 }
 
+it('retains an exact typed failure code without copying exception text', function (): void {
+    $result = app(NativeRunResult::class)->fromRun(nativeRunResultFixture('failed', [
+        ['name' => 'Bind identity', 'status' => 'failed', 'error' => 'node.architecture_unsupported'],
+        ['name' => 'Private failure', 'status' => 'failed', 'error' => 'command failed: private-secret'],
+    ]));
+    expect($result['steps']['Bind identity']['error_code'])->toBe('node.architecture_unsupported')
+        ->and($result['steps']['Private failure'])->toBe(['status' => 'failed'])
+        ->and(json_encode($result))->not->toContain('private-secret');
+});
+
 it('keeps every fan-out status and failure after the output capture limit', function (): void {
     $steps = array_map(static fn (int $index): array => ['name' => 'Delete the items-'.$index, 'status' => 'succeeded', 'outputs' => ['stdout' => 'deleted', 'exitCode' => 0]], range(0, 299));
     $steps[] = ['name' => 'Delete the items-300', 'status' => 'failed'];

@@ -6,20 +6,17 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\ProvisionNodeData;
-use App\Domain\Nodes\NodeEnrollmentPlan;
+use App\Domain\Nodes\NativeNodeEnrollmentInput;
 use App\Domain\Nodes\NodeEnrollmentPolicy;
-use App\Domain\Nodes\NodeEnrollmentRoutes;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\ProcessSwampSafety;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
-use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -34,8 +31,7 @@ final readonly class AdmitNodeEnrollmentOperationAction
 
     public function __construct(private StartOperationAction $operations, private OperationKinds $kinds, private OperationIdempotency $idempotency,
         private OperationStore $store, private NodeProvisioningLock $lock, private NodeEnrollmentPolicy $policy,
-        private NodeEnrollmentRoutes $routes, private NodeEnrollmentPlan $plan, private AgentDelivery $delivery,
-        private NodeBootstrapCommandFactory $bootstrap, private NodeRoleFirewallInput $firewall) {}
+        private NativeNodeEnrollmentInput $native) {}
 
     public function execute(ProvisionNodeData $data, ?string $requestId = null): Operation
     {
@@ -65,40 +61,31 @@ final readonly class AdmitNodeEnrollmentOperationAction
             $prior['status'] = $node->status->value;
         }
         $candidate = $spec['candidate'];
-        $changes = $this->routes->capture($node, ValidatedData::nullableString($candidate['tld']),
-            $candidate['cluster_id'] === null ? null : ValidatedData::integer($candidate['cluster_id']));
+        if ($node->exists && $node->instances()->exists()) {
+            throw new ResourceOperationException('node.has_instances', 'A Node with Instances cannot be enrolled again.', 409);
+        }
         if (! $existed) {
             $node->fill([...$candidate, 'status' => LifecycleStatus::Provisioning]);
             $node->save();
         }
-        $render = clone $node;
-        $render->fill($candidate);
-        $input = ['name' => $node->name, 'mode' => $spec['mode'], 'requested_architecture' => $spec['requested_architecture'],
-            'managed_user' => $spec['managed_user'], 'enrollment_address' => $candidate['wireguard_ip'],
-            'bootstrap_host' => $candidate['public_ssh_host'], 'bootstrap_port' => $candidate['public_ssh_port'],
-            'bootstrap_user' => $spec['bootstrap_user'], 'bootstrap_fingerprint' => $spec['fingerprint'],
-            'bootstrap_identity' => ['$secret' => 'node.bootstrap_ssh_identity', 'id' => $node->id],
-            'agent_pins' => array_map(static fn (array $artifact): string => $artifact['sha256'], $this->delivery->artifacts()),
-            'roleless_operator' => $spec['roleless_operator'], 'skip_bootstrap' => false,
-            'bootstrap_command' => $spec['mode'] === 'linux' ? $this->bootstrap->input($render, $spec['managed_user'], $spec['roleless_operator']) : [],
-            'bootstrap_firewall' => $spec['mode'] === 'linux' && ! $node->roles()->exists() ? $this->firewall->publicSsh($render, true) : null];
-        $intent = ['id' => $node->id, 'existed' => $existed, 'prior_state' => $prior, 'candidate' => $candidate,
-            'route_changes' => $changes, 'roles' => array_map(static fn ($role): string => $role->value, $data->roles),
-            'settings_provided' => $data->settingsProvided, 'settings' => $data->settings?->toArray()];
-        $steps = $this->plan->build($node, $input, $intent);
-        $intents = [];
-        foreach ($steps as $step) {
-            if ($step['type'] === 'child') {
-                $intents[] = array_intersect_key($step, array_flip(['key', 'kind', 'node_id', 'input']));
-            }
-        }
-        $intents[] = ['key' => 'add-restore', 'kind' => 'node.enrollment_restore', 'node_id' => $node->id, 'input' => []];
         $operation = $this->operations->execute('node.add', 'node', $node->id, $node->id,
-            [...$input, '_node_plan' => $steps, '_node_result' => ['id' => $node->id, 'name' => $node->name, 'enrolled' => true],
-                '_node_failure_result' => ['id' => $node->id, 'name' => $node->name, 'enrolled' => false]], 'operator', $requestId);
+            ['name' => $node->name], 'operator', $requestId);
         if ($operation->wasRecentlyCreated) {
-            $this->store->change($operation, ['state' => [...($operation->state ?? []), 'enrollment_intent' => $intent, 'child_intents' => $intents]]);
-
+            $native = $this->native->capture($node, $operation, $spec, $data);
+            $leaves = [];
+            foreach ($native['role_snapshots'] as $snapshot) {
+                $certificates = ValidatedData::object($snapshot['certificates']);
+                foreach (RouteExecutionProof::objects($certificates['leaves']) as $leaf) {
+                    $leaves[] = $leaf;
+                }
+            }
+            $this->store->change($operation, ['input' => [...$operation->input,
+                'intent' => $native['intent'], 'execution_secrets' => $native['execution_secrets'],
+                'participant_node_ids' => $native['participant_node_ids'],
+                '_node_enrollment' => ['existed' => $existed, 'prior_state' => $prior, 'candidate' => $candidate,
+                    'role_snapshots' => $native['role_snapshots'], 'certificates' => $leaves,
+                    'agent_secret_hash' => $native['agent_secret_hash'],
+                    'settings_provided' => $data->settingsProvided, 'settings' => $data->settings?->toArray()]]]);
         }
 
         return $operation;

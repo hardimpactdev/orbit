@@ -20,6 +20,8 @@ The Gateway reuses its bounded TLS WebSocket transport to read [Swamp run output
 
 The **observer** is a long-running service. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live. The Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
 
+Native `node.add` fetches the pinned Linux binary and writes the observer configuration, public CA and mode-0600 secret through official cfgmgmt resources. The unit exposes the validated application root read-only. Admission renders that scope without contacting the Node. The Gateway records the secret verifier after the native Node check passes.
+
 **Command mode** runs one named Node action, such as `agent.install`, and exits. The Gateway starts it over SSH, or as a local process on its own Node. See [Commands](#commands).
 
 Fixed **service entry points** run under their own Linux systemd units. `service schedules-run <uuid>` reads the protected Schedule command file and executes its project command as the service user. `service schedules-complete <uuid>` runs as root, reads only the pinned CA, and reports completion. It runs no project code and reads no agent secret. [Schedules](/reference/schedules#host-artifacts) owns their units and execution context.
@@ -58,7 +60,7 @@ Persistent Node workers are installed by `agent.configure` from the admitted Nod
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.
 
-A macOS Node uses the command binary as its enrolled account. Enrollment installs it through `agent.install`, then calls `node.inspect-macos-enrollment` to read the native architecture and verify the existing WireGuard address. The command reads kernel identity and interface addresses without a shell or network change. macOS has no observer, agent secret, or LaunchAgent.
+A macOS Node has no observer, agent secret or LaunchAgent. Native enrollment reads its platform and existing tunnel address through pinned SSH. It installs no agent binary. Tool operations keep the enrolled account and its existing package-manager scopes.
 
 ## What it observes
 

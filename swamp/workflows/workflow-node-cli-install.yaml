@@ -2,7 +2,7 @@ id: 440d10ad-68c2-4f59-a3ae-0ce705a84e47
 name: node-cli-install
 description: Publish the admitted Orbit CLI and public profile through official resources, preserving newer releases.
 vaults: []
-queueTimeout: 60
+queueTimeout: 30
 inputs:
   type: object
   properties:

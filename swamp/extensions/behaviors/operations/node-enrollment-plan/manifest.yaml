@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/node-enrollment-plan'
+version: 2026.11.02.1
+visibility: private
+license: MIT
+description: Bind observed public host identity into frozen Node enrollment resources.
+behaviors:
+  - operations/node-enrollment-plan/plan.ts

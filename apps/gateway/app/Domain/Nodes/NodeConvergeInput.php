@@ -143,7 +143,7 @@ final readonly class NodeConvergeInput
      * @param  array<string,mixed>  $part
      * @return array<string,mixed>
      */
-    private function privateDns(Node $node, array $part): array
+    public function privateDns(Node $node, array $part): array
     {
         $listener = ValidatedData::object($part['listener']);
         $publication = ValidatedData::object($part['publication']);

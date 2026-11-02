@@ -14,6 +14,7 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, enum: [node.role_add, node.role_converge]}
+    parent_run_id: {type: string}
     intent:
       type: object
     execution_secrets:
@@ -1091,7 +1092,7 @@ jobs:
       item: leaf
       in: ${{ inputs.intent.certificates.leaves }}
     task: {type: workflow, workflowIdOrName: node-role-certificate-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind
-          }}', parent_run_id: '${{ run.id }}', leaf: '${{ self.leaf }}', ssh: {name: '${{ "role-add-certificate-"+string(self.leaf.node_id)+"-"+self.leaf.scope }}', transport: {kind: ssh,
+          }}', parent_run_id: '${{ has(inputs.parent_run_id) && inputs.parent_run_id != "" ? inputs.parent_run_id : run.id }}', leaf: '${{ self.leaf }}', ssh: {name: '${{ "role-add-certificate-"+string(self.leaf.node_id)+"-"+self.leaf.scope }}', transport: {kind: ssh,
             user: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.user }}', port: '${{ inputs.intent.certificates.connections.filter(c,c.node_id
               == self.leaf.node_id)[0].ssh.target.port }}', identityFile: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.identity_file }}'},
           hosts: [{name: target, address: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.certificates.connections.filter(c,c.node_id

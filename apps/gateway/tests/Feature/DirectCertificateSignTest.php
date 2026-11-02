@@ -392,3 +392,22 @@ it('refuses signing authority from a retired standalone certificate Operation', 
 
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
 });
+
+it('signs only the enrolled Node own admitted leaf while that Node is provisioning', function (): void {
+    $this->node->update(['status' => LifecycleStatus::Provisioning]);
+    $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'target_id' => $this->node->id,
+        'input' => ['_node_enrollment' => ['certificates' => [$this->leaf]]]]);
+    $this->postJson($this->path, $this->body)->assertOk();
+    expect($this->node->fresh()->status)->toBe(LifecycleStatus::Provisioning);
+});
+
+it('does not extend enrollment signing to another provisioning Node', function (): void {
+    $other = Node::query()->create(['name' => 'other-pending', 'public_ssh_host' => '192.0.2.18',
+        'wireguard_ip' => '10.44.0.18', 'status' => LifecycleStatus::Provisioning]);
+    $leaf = [...$this->leaf, 'node_id' => $other->id];
+    $this->operation->update(['kind' => 'node.add', 'target_type' => 'node', 'target_id' => $this->node->id,
+        'input' => ['_node_enrollment' => ['certificates' => [$leaf]]]]);
+    $body = $this->body;
+    $body['requests'][0]['node_id'] = $other->id;
+    $this->postJson($this->path, $body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
+});

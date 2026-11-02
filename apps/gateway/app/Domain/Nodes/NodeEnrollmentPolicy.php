@@ -20,7 +20,7 @@ use App\Models\Node;
 final readonly class NodeEnrollmentPolicy
 {
     public function __construct(private WireGuardAddressAllocator $addresses, private ActiveTldScopeGuard $tlds,
-        private ConfiguredStoragePathValidator $storage, private ManagedUserAccountResolver $accounts,
+        private ConfiguredStoragePathValidator $storage,
         private AssignRoleAction $assign, private RoleRegistry $roles) {}
 
     /** @return array{mode:string,candidate:array<string,mixed>,bootstrap_user:string,managed_user:string,fingerprint:string,requested_architecture:?string,roleless_operator:bool} */
@@ -48,7 +48,8 @@ final readonly class NodeEnrollmentPolicy
         if ($data->settingsProvided) {
             $this->storage->validateGrammar($data->settings);
             if ($node->exists) {
-                $this->storage->validateEffective($data->settings, $node, $this->accounts->resolve($node));
+                $this->storage->validateEffective($data->settings, $node,
+                    new ManagedUserAccount($managed, $managed, $managed === 'root' ? '/root' : '/home/'.$managed));
             }
         }
         $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);

@@ -92,6 +92,7 @@ final readonly class SignDirectCertificatesAction
             'analytics.enable', 'analytics.disable' => ['tracking.certificates'],
             'metrics.enable' => ['certificates.leaves'],
             'node.role_add', 'node.role_converge' => ['_role.certificates.leaves'],
+            'node.add' => $restoring ? [] : ['_node_enrollment.certificates'],
             'node.role_relocate' => ['intent.certificates.leaves'],
             'node.role_remove' => ['_role_remove.certificates.leaves'],
             'node.remove' => $restoring ? ['_removal.restore_certificates'] : [],
@@ -109,7 +110,9 @@ final readonly class SignDirectCertificatesAction
                 if (! is_array($row) || ! is_int($row['node_id'] ?? null) || ! is_string($row['scope'] ?? null)
                     || ! is_string($row['domain'] ?? null) || ! RouteDomain::isValid($row['domain'])
                     || ! is_string($row['root_hash'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $row['root_hash']) !== 1
-                    || ! Node::query()->whereKey($row['node_id'])->where('status', 'active')->exists()) {
+                    || ! Node::query()->whereKey($row['node_id'])->whereIn('status',
+                        $operation->kind === 'node.add' && $row['node_id'] === $operation->target_id
+                            ? ['active', 'provisioning'] : ['active'])->exists()) {
                     continue;
                 }
                 $leaf = ['node_id' => $row['node_id'], 'scope' => $row['scope'], 'domain' => $row['domain'], 'root_hash' => $row['root_hash']];

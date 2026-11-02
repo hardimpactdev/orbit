@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NativeNodeEnrollmentProjection;
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeNetworkProjection;
@@ -14,7 +15,18 @@ use App\Domain\Nodes\NodeSshAccessProjection;
 use App\Domain\Nodes\NodeWireGuardHubProjection;
 use App\Domain\Nodes\WorkerKnownHostsProjection;
 
-return ['node.worker_known_hosts' => [
+return ['node.add' => [
+    'workflow' => 'operation-node-add',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'node', 'step' => 'Check the Node', 'native' => true],
+    'projection' => NativeNodeEnrollmentProjection::class,
+    'execution_copies' => [
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-[1-9][0-9]*$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^agent-secret-node-[1-9][0-9]*$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-operation-[1-9][0-9]*-[a-z-]+$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
+    ],
+], 'node.worker_known_hosts' => [
     'workflow' => 'operation-node-worker-known-hosts',
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'known_hosts', 'step' => 'Write known hosts', 'native' => true],

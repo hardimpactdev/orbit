@@ -37,10 +37,10 @@ sequenceDiagram
   %%> - a new Node has a host and a host key fingerprint (`node.ssh_host_fingerprint_required`)
   %%> - Linux accepts only `x86_64`; `app-dev` needs a TLD, unless its Cluster has one
   %%> - macOS names one existing account in `--user` and `--orbit-user`, an existing WireGuard address, and no role
-  %%> - no other add, converge or removal runs for this Node; the Gateway holds one lock per Node and one for the hub
+  %%> - admission records one immutable resource plan; completed Node work stays on a failed run
   %%> Builds:
   %%> - the WireGuard address `10.6.0.42` and the hub peer entry
-  %%> - the bootstrap script, base packages, apt Tool Manager setup and public SSH rule
+  %%> - base packages, managed account, native sudo rule and public SSH rule
   %%> - the Orbit SSH block, the pinned `orbit-agent` release and the Node agent configuration
   %%> - the role steps for each requested role
   %%> Result:
@@ -57,13 +57,13 @@ sequenceDiagram
   %%> Never:
   %%> - a fixed key name for every Node, or a key value in the run inputs
   %%> Result:
-  %%> - the run reads both keys from the vault; no step calls the Gateway back
+  %%> - the run reads both keys from the vault; certificate signing uses the existing Gateway signer
   GW->>SW: Start run, full intent<br/>operation-node-add
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - the host, port, bootstrap user, managed user and approved fingerprint
-  %%> - the bootstrap script, packages, pins, Node agent configuration and role steps
+  %%> - packages, pins, Node agent configuration and frozen role resources
   %%> - the hub's address and SSH host keys, and the new peer entry
   %%> - secrets only as vault key names
   GW-->>CLI: 202 Accepted<br/>task #6201
@@ -71,100 +71,86 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Probe host key and arch<br/>@swamp/ssh · pinned fingerprint
-  %%> How:
-  %%> - Swamp reaches 203.0.113.7 over `@swamp/ssh` from 209 with the bootstrap identity from the vault
-  %%> - refuses to run a command when the host key differs from the approved fingerprint (`node.ssh_host_key_mismatch`)
-  %%> What it does:
-  %%> - reads the platform and architecture with `uname -sm`; `amd64` counts as `x86_64`
-  %%> - a Linux machine that is not `x86_64` fails with `node.architecture_unsupported`
-  %%> Returns:
-  %%> - the host key, platform and architecture as step outputs
-  alt Linux Node
-    SW->>N: Bootstrap the host<br/>@swamp/cfgmgmt apt · user
-    %%> Runs as:
-    %%> - the bootstrap user: `root` directly for a new Node, the managed user through passwordless sudo for an existing one
-    %%> What it does:
-    %%> - installs the base packages; a Node without roles keeps its own DNS
-    %%> - creates the managed user `orbit` when it is missing and checks passwordless sudo before it publishes the rule
-    %%> - sets up the apt Tool Manager with the shared Tool Manager setup step
-    %%> - adds the UFW rule `orbit:public-ssh-recovery` and enables UFW
-    %%> How:
-    %%> - official `@swamp/cfgmgmt` behaviors (apt, file) and one tracked script over `@swamp/ssh`
-    %%> Replaces:
-    %%> - the `tool.manager_converge` child; the setup is a step here
-    SW->>N: Install the Node agent<br/>@swamp/cfgmgmt/fetch · sha256
-    %%> What it does:
-    %%> - downloads the pinned `orbit-agent` release and checks its SHA-256
-    %%> - a matching installed binary skips the download
-    %%> - publishes the Orbit CLI on an eligible Node, best effort
-    %%> How:
-    %%> - official `@swamp/cfgmgmt` behaviors (fetch, file) over SSH from 209
-    %%> Not included:
-    %%> - starts nothing; the agent starts after enrollment
-    SW->>N: Set up WireGuard<br/>@swamp/cfgmgmt file · systemd
-    %%> What it does:
-    %%> - creates the WireGuard key on Node 12; an existing key stays
-    %%> - writes `/etc/wireguard/orbit.conf` for `10.6.0.42` with its DNS policy, and starts `wg-quick@orbit`
-    %%> - adds the UFW rule `orbit:wireguard-members`; public SSH stays open
-    %%> Returns:
-    %%> - the public key as a step output; the private key never leaves the Node
-    SW->>HUB: Add the peer<br/>file 0600 · wg syncconf
-    %%> How:
-    %%> - Swamp reaches the `vpn` Node over `@swamp/ssh` from 209; there is no worker on Node 1
-    %%> What it does:
-    %%> - adds Node 12's peer with the public key from the step before
-    %%> - writes the whole hub config the Gateway rendered with `@swamp/cfgmgmt/file`, 0600, then loads it with `wg syncconf`; no restart, no backup copy
-    %%> - live-syncs the running hub with `wg syncconf`; other peers keep their tunnels
-    SW->>N: Enroll the Node agent<br/>@swamp/cfgmgmt file · systemd
-    %%> What it does:
-    %%> - writes `config.toml`, `ca.pem` and the secret from `vault.get agent-secret-node-12` (0600) with `@swamp/cfgmgmt/file`, and the `orbit-agent.service` unit with `@swamp/cfgmgmt/systemd`
-    %%> - starts the Node agent; it reports to the Gateway over WireGuard
-    %%> Observer only:
-    %%> - the Node agent observes and reports; it runs no actions
-    %%> How:
-    %%> - official `@swamp/cfgmgmt/file` and `@swamp/cfgmgmt/systemd` behaviors over SSH from 209
-    SW->>N: Write the Orbit keys<br/>@swamp/cfgmgmt/authorized_key
-    %%> What it does:
-    %%> - writes the `swamp` role's public key and the recorded operator keys for the managed user, one `authorized_key` per key
-    %%> - the same step as `node:ssh-access:converge`; keys Orbit never recorded stay as they are
-    %%> Why:
-    %%> - every later command reaches Node 12 as the managed user with the `swamp` role identity, not the bootstrap identity
-    opt roles requested
-      SW->>N: Converge each role<br/>shared role converge steps
-      %%> What it does:
-      %%> - runs the shared role steps for each requested role over WireGuard, `vpn` first when it is requested
-      %%> - the first active role closes public SSH
-      %%> Same as:
-      %%> - `node:role:add`; there is no child task per role
-    end
-    SW->>HUB: Publish private DNS<br/>beast records · reload dnsmasq
-    %%> What it does:
-    %%> - adds Node 12's private names to the DNS catalog on the `vpn` Node
-    %%> Why a record:
-    %%> - `beast.orbit` names one Node's WireGuard address; no TLD answer covers it
-    %%> - reloads the DNS listener only when the records changed; the last good copy comes back when the new one fails its check
-    %%> Cluster:
-    %%> - a Node in a Cluster also gets the Router's LAN rules, through the shared firewall step
-  else macOS Node
-    SW->>N: Inspect the Mac<br/>sw_vers · uname -m · tunnel addr
-    %%> Runs as:
-    %%> - the existing account; no user, sudo rule, package, firewall or DNS change
-    %%> What it does:
-    %%> - reads the platform, the architecture and the WireGuard address with plain read commands
-    %%> - checks them against the request; a difference fails with `node.platform_mismatch` or `node.architecture_mismatch`
-    %%> Not included:
-    %%> - no Node agent, apt, roles, hub change or Orbit SSH block; the Mac already has its tunnel
-    %%> Replaces:
-    %%> - the `node.macos_inspect` child
+  %% Every Swamp lane label is an actual step in operation-node-add.
+  SW->>N: Read the host key<br/>SSH argv
+  SW->>SW: Require approved host key<br/>native assert
+  SW->>N: Read the platform<br/>SSH argv
+  opt Linux Node
+  SW->>N: Read the bootstrap account<br/>SSH argv
   end
-  SW->>N: Check the Node<br/>ssh over WireGuard · agent · arch
-  %%> What it does:
-  %%> - logs in over WireGuard (`10.6.0.42`) as the managed user, with the `swamp` role identity only
-  %%> - checks the architecture again, and on Linux that `orbit-agent` is active and runs the pinned binary
-  %%> - checks the WireGuard handshake with the hub
-  %%> Why:
-  %%> - Node 12 only counts as active when Swamp reaches it the way every later command does
+  SW->>SW: Bind the Node identity<br/>public resource binding
+  opt Linux Node
+  SW->>N: Read bootstrap keys<br/>SSH argv
+  SW->>N: Authorize the control key<br/>SSH argv
+  SW->>SW: Remove an old host pin<br/>control Node SSH argv
+  SW->>SW: Pin the bootstrap host<br/>control Node SSH argv
+  SW->>N: Refresh base packages<br/>cfgmgmt apt
+  SW->>N: Install base packages<br/>cfgmgmt apt
+  SW->>N: Create the managed account<br/>cfgmgmt user
+  SW->>N: Stage the sudo rule<br/>cfgmgmt file
+  SW->>N: Validate the sudo rule<br/>SSH argv
+  SW->>N: Publish the sudo rule<br/>cfgmgmt file
+  SW->>N: Write the Orbit keys<br/>cfgmgmt authorized_key
+  SW->>N: Open public recovery SSH<br/>SSH argv
+  SW->>N: Enable the firewall<br/>SSH argv
+  SW->>N: Install the Node agent<br/>cfgmgmt fetch
+  SW->>N: Create WireGuard folder<br/>cfgmgmt directory
+  SW->>N: Prepare the WireGuard key<br/>cfgmgmt exec
+  SW->>N: Read WireGuard public key<br/>cfgmgmt debug_exec
+  SW->>SW: Require unique tunnel key<br/>native assert
+  SW->>N: Write the tunnel files<br/>cfgmgmt file
+  SW->>N: Enable hub forwarding<br/>cfgmgmt sysctl
+  SW->>N: Start the tunnel<br/>cfgmgmt systemd
+  SW->>N: Set the tunnel address<br/>SSH argv
+  SW->>N: Remove the retired address<br/>cfgmgmt exec
+  SW->>N: Load the tunnel key<br/>SSH argv
+  SW->>N: Apply the tunnel peers<br/>SSH argv
+  SW->>N: Trust WireGuard members<br/>SSH argv
+  end
+  opt Linux peer joins the VPN hub
+  SW->>HUB: Create the hub folders<br/>cfgmgmt directory
+  SW->>HUB: Write hub configuration<br/>cfgmgmt file
+  SW->>HUB: Apply the hub peers<br/>SSH argv
+  end
+  opt Linux Node
+  SW->>N: Create observer folders<br/>cfgmgmt directory
+  SW->>N: Write observer config<br/>cfgmgmt file
+  SW->>N: Write the observer secret<br/>cfgmgmt file
+  SW->>N: Start the Node agent<br/>cfgmgmt systemd
+  end
+  SW->>N: Verify managed SSH<br/>SSH argv
+  opt Linux Node
+  SW->>N: Verify passwordless sudo<br/>SSH argv
+  SW->>N: Publish the Orbit CLI<br/>native child workflow
+  end
+  opt roles need convergence
+  SW->>N: Converge each role<br/>native child workflow
+  end
+  opt new VPN hub needs its DNS listener
+  SW->>N: Configure DNS backend<br/>cfgmgmt file
+  SW->>N: Install DNS listener<br/>native child workflow
+  end
+  opt private DNS records need publication
+  SW->>N: Publish private DNS<br/>native child workflow
+  end
+  opt macOS Node
+  SW->>N: Inspect the Mac tunnel<br/>SSH argv
+  end
+  opt Linux Node
+  SW->>N: Check the Node agent<br/>cfgmgmt systemd
+  SW->>N: Check the agent binary<br/>cfgmgmt fetch
+  SW->>N: Check the observer secret<br/>cfgmgmt file
+  SW->>N: Read tunnel handshakes<br/>SSH argv
+  end
+  SW->>SW: Check the Node<br/>native assert
+  opt Linux Node, run completed or failed
+  SW->>N: Remove staged sudo rule<br/>cfgmgmt file, best effort
+  end
+  %%> Secrets:
+  %%> - bootstrap SSH and the observer secret use existing execution vault copies
+  %%> - WireGuard private keys remain in Node key files; only public keys enter outputs
+  %%> Root boundary:
+  %%> - roles are frozen child-workflow inputs in this run, with no child Operations
   alt every step passes
     N-->>SW: arch · host key · WG key
     %%> Returns:
@@ -194,7 +180,6 @@ sequenceDiagram
     %%> On the Node:
     %%> - finished steps stay; there is no rollback
     %%> - the hub peer stays; it is harmless and a rerun reuses it
-    %%> - a failed hub swap puts its backup back, so other peers keep working
     %%> Retry:
     %%> - run the same `node:add` again after fixing the cause; every step skips work that is already done
   end

@@ -25,7 +25,7 @@ final readonly class NativeNodeRoleRuntimeInput
     /** @param array<string,mixed> $snapshot
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
-    public function capture(Node $node, NodeRole $assignment, array $snapshot, Operation $operation): array
+    public function capture(Node $node, NodeRole $assignment, array $snapshot, Operation $operation, bool $converge = false): array
     {
         $runtime = ['directories' => [], 'files' => [], 'secret_files' => [], 'units' => [], 'probes' => [], 'groups' => [], 'users' => [],
             'websocket' => null, 'metrics' => null, 'analytics' => null, 'gateway_dns' => null,
@@ -84,7 +84,7 @@ final readonly class NativeNodeRoleRuntimeInput
                 ['url' => 'http://'.$node->wireguard_ip.':3000/api/health', 'require_success' => true]];
         } else {
             $spec = ValidatedData::object($snapshot['runtime']);
-            if ($operation->kind === 'node.role_converge') {
+            if ($converge || $operation->kind === 'node.role_converge') {
                 $clickhouse = Node::query()->findOrFail(ValidatedData::integer(ValidatedData::object($spec['clickhouse'])['node_id']));
                 $runtime['analytics'] = ['process_id' => ValidatedData::object($spec['installation'])['process_id'],
                     'intent' => [], 'initialize' => [], 'clickhouse_node_id' => $clickhouse->id,

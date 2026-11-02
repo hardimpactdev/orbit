@@ -2,8 +2,8 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local,release_native_fixture}.ts,node-removal-command/**,task-vm-lifecycle/destroy.ts,node/{role_removal_workflow,footprint_workflows,role_direct,converge_footprint,converge_local,footprint_local_actions}.ts},workflows/workflow-{operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
-  - apps/gateway/app/{Domain/Nodes/{NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction}.php}}
+  - swamp/{extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local,release_native_fixture}.ts,node-enrollment-plan/**,node-removal-command/**,task-vm-lifecycle/destroy.ts,node/{role_removal_workflow,footprint_workflows,role_direct,converge_footprint,converge_local,footprint_local_actions}.ts},workflows/workflow-{operation-node-add,operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
+  - apps/gateway/app/{Domain/Nodes/{NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NativeNodeEnrollmentInput,NativeNodeEnrollmentProjection,NodeEnrollmentPolicy,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction,AdmitNodeEnrollmentOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,app/{Actions/Fleet/{AdmitNodeRecipeAction,PlanNodeRecipeAction}.php,Domain/Fleet/RecipeDirect*.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
@@ -61,21 +61,24 @@ Standalone `node.macos_inspect` runs on 209 with the admitted SSH host keys and 
 
 ## Add a Node
 
-A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.
+A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. An `app-dev` Node needs a TLD or an active Cluster TLD. A Node with Instances cannot be enrolled again, including for a TLD change.
 
-For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps in order:
+Admission records a provisioning Node and freezes its public resource plan. Bootstrap identity and the new observer secret enter the execution vault; the workflow receives only their key names. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
 
-| Step | Work |
+| Stage | Native work |
 | --- | --- |
-| 1 | Check the host key against the fingerprint. |
-| 2 | Validate and record the candidate architecture. Install the pinned agent through the bootstrap login, then run `node.bootstrap` for base packages and managed SSH access. |
-| 3 | Connect as the managed user and verify the architecture with `agent.status`. |
-| 4 | Publish the Node's WireGuard peer and pin SSH over the tunnel. |
-| 5 | Install the `apt` [Tool Manager](/reference/tools#tool-managers) and converge each requested role. |
-| 6 | Update Router LAN access and private DNS for the Node's Cluster. |
-| 7 | Mark the Node `active`. |
-| 8 | Store and prepare the [storage settings](/reference/node-settings). |
-| 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
+| Trust | Collect the public SSH key, assert its approved fingerprint, read the platform and bootstrap account, then bind that identity into the frozen resources. |
+| Baseline | Authorize the control key, replace stale known-host pins, install packages, create the managed account, validate its sudo rule and authorize management SSH. |
+| Network | Preserve or generate a Node-held WireGuard key, write the rendered tunnel and hub files, set the interface address, apply peers with `wg syncconf` and preserve public recovery SSH. |
+| Observer | Fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
+| Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort and private DNS after role checks. Exporters require explicit enablement. |
+| End check | Verify managed SSH and sudo, check the observer resources and prove the tunnel. The native `Check the Node` assertion determines completion. |
+
+Official cfgmgmt resources own file, package, account and service changes. A single command uses SSH argv. No script is copied to a Node. A completed run removes the staged sudo candidate as best effort. A failure retains completed work; reruns use native resource checks and guards.
+
+The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. Certificate signing stays at the existing Gateway signer boundary.
+
+A [task VM](/reference/compute-drivers#task-vms) skips this step. |
 | 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
 
 For a `node.network_converge` child of `node.add`, the Swamp network transport records the verified bootstrap host key for the Node’s WireGuard address before checking private SSH. This replaces a stale pin when an address is reused, while fingerprint mismatches refuse before either pin changes. The scanner derives the fingerprint from the returned public key bytes. A successful `node.network_rollback` removes the WireGuard pin and preserves other host entries. The private `agent.status` check is read-only and resumable after a lost response; peer publication keeps its original keyed receipt.
@@ -93,7 +96,7 @@ Task checkout operations require systemd 250 or newer, cgroup v2, and the manage
 
 The native Node workflow composes the [Orbit CLI publication](#orbit-cli) step on eligible Nodes. Gateway provisioning and role code perform no CLI installation.
 
-The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
+The internal Gateway console command `orbit:node-provision` retains the synchronous bootstrap for the first Gateway and task-VM setup. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
 
 Gateway bootstrap installs the pinned agent before preparing its host identity. `gateway.prepare-identity` creates the managed SSH and WireGuard keys under the Gateway's Orbit home, preserving existing private keys on repeat. `gateway.converge-self-access` authorizes the managed public key for the executing account and returns the host public key and fingerprint. Both commands run as the Gateway account. Invalid paths, foreign ownership, and inconsistent existing keys refuse before publication. The Gateway retains its CA authority and known-host records as control-plane data.
 
@@ -275,31 +278,11 @@ The macOS path creates no account and applies no Ubuntu bootstrap, apt packages,
 
 ### Enrollment steps
 
-The Gateway does not record a new Node until enrollment succeeds or a remote check fails. A refusal before SSH creates no row. It runs these steps and does not run Ubuntu steps 2 to 10.
-
-| Step | Name | Work |
-| --- | --- | --- |
-| 1 | `ssh-host-key` | Resolve the host and compare its key with the approved fingerprint. Do not pin the key yet. |
-| 2 | `account` | SSH as the existing account. Create no user and change no sudoers file. |
-| 3 | `machine-architecture` | Use the fixed staging probe to select the macOS agent artifact. Refuse a different platform before staging. |
-| 4 | `agent` | Stage the pinned binary in a unique absolute temporary path and run `agent.install` as the enrolled account. |
-| 5 | `identity` | Call `node.inspect-macos-enrollment` to verify the native platform, architecture, and WireGuard address. Do not write the registry yet. |
-| 6 | `ssh-pin` | Write the approved host key to the Gateway known_hosts file for the public host and the WireGuard address. |
-| 7 | `active` | Store the host key, fingerprint, observed identity, and `active` status. Skip apt, roles, firewall, DNS, exporters, and the observer service. |
-
-`uname -s` must be Darwin. A Linux host requested as macOS fails with `node.platform_mismatch` before any account, package, DNS, or firewall change.
+Admission records a new Mac as provisioning and leaves its observed identity unset. The native run checks the approved host key, reads `uname -sm` over pinned SSH, and binds the observed identity. It then verifies managed SSH at the recorded WireGuard address and checks that `ifconfig` shows that address. `Check the Node` is the native terminal assertion. No binary, account, package, tunnel, DNS or firewall change runs on this branch.
 
 ### Enrollment recovery
 
-A failed native check can leave the pinned command binary installed on the Mac. It changes no account, package manager, tunnel, DNS, or firewall state. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap. The Gateway writes known_hosts before the registry pin. A known_hosts entry with no registry pin is harmless, and the retry completes it. The registry never stores an active pin without those entries.
-
-| Failure | New Node | Existing peer |
-| --- | --- | --- |
-| Before SSH | No row. | Unchanged. |
-| Remote check before `ssh-pin` | `failed` at that step. No host key is stored. | Unchanged. |
-| `ssh-pin` | `failed` at `ssh-pin`. No host key is stored in the registry. | Unchanged. |
-
-An already managed Node that fails stays as it was. Storage settings, Metrics reconcile, and the Node agent do not run, so a macOS failure never stops on steps 8 to 10.
+A failed Mac run changes no host resources. A newly admitted Node remains marked failed; an existing peer keeps its earlier identity and status. After fixing the failed check, repeat `node:add` with the same approved fingerprint and account. A successful terminal projection records the observed identity and active status.
 
 ### Unsupported operations
 
@@ -390,21 +373,9 @@ The enrollment steps are the same as for any Node. When the first active role cl
 
 ## Converge an existing Node
 
-`node:add` for a recorded Node converges the machine again. It refuses a Node that owns Instances with `node.has_instances`. One exception: it changes only the TLD of a Node with an active `app-dev` role.
+`node:add` for a recorded Node applies the same native resource graph. It refuses every Node with Instances with `node.has_instances`. Existing role assignments use native role convergence; new assignments use native role addition. The observer and CLI remain owned by the parent enrollment run.
 
-What a failure leaves depends on the step. A macOS Node uses [enrollment recovery](#enrollment-recovery) instead of this table.
-
-| Failed step | New Node | Node that was `active` |
-| --- | --- | --- |
-| Steps 1 to 6 | `failed` at that step | `active` again, with its earlier record and network state restored |
-| 8, storage settings | `active`, with no settings stored | `active`, with the earlier settings kept |
-| 9, Node exporter or cAdvisor reconcile failure | `active`, with Metrics degraded | `active`, with Metrics degraded |
-| 9, Metrics runtime on the Metrics Node fails | `active`, with Metrics degraded | `active`, with Metrics degraded |
-| 10, Node agent | `failed` at `agent` | `active` again |
-
-A storage-settings failure returns its `node.settings_*` code, and the request skips steps 9 and 10. Only an unexpected error in step 8 marks the Node `failed` at `node-storage-root`.
-
-Step 9 runs whenever a Metrics role exists, except for a task VM, which never hosts an exporter. A task VM also holds back the reconcile that each role converge runs. A Metrics reconcile failure does not fail provisioning or demote an active Node, including the `gateway` Node. The Node stays `active`; Metrics reports the failure as degraded. This applies to exporter, cAdvisor, runtime, and unexpected failures, both when `node:add` provisions a Node and when it converges an existing Node. See [Metrics role](/reference/metrics#exporter-selection) for how exporter state and degradation are reported.
+A failure keeps an existing Node's earlier recorded identity, settings and status. It retains completed Node changes and completed role convergence. Newly created assignments that did not finish remain failed for a rerun. There is no restoration chain. A new Node becomes active only after `Check the Node` passes.
 
 ## PHP packages for production children
 

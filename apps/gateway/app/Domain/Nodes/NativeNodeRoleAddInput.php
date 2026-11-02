@@ -20,6 +20,7 @@ use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
+use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
@@ -34,7 +35,7 @@ final readonly class NativeNodeRoleAddInput
      * @param  list<array<string,mixed>>  $before
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>,participant_node_ids:list<int>}
      */
-    public function capture(Node $node, NodeRole $assignment, array $snapshot, array $before, Operation $operation): array
+    public function capture(Node $node, NodeRole $assignment, array $snapshot, array $before, Operation $operation, bool $converge = false): array
     {
         if ($assignment->node_id !== $node->id || ! $assignment->exists) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Role resources require their admitted assignment.', 422);
@@ -65,11 +66,7 @@ final readonly class NativeNodeRoleAddInput
             $recipe = new RecipeLoader()->load();
             $build = PhpBuildInstaller::input($recipe, array_map(static fn (array $configuration): string => ValidatedData::string($configuration['version']), $php), $role === RoleName::AppDev,
                 extras: 'keep', fpm: 'all', opentelemetry: true);
-            foreach (ValidatedData::object($build['versions']) as $version) {
-                foreach (RouteExecutionProof::objects(ValidatedData::object($version)['packages']) as $package) {
-                    $phpPackages[] = [...$package, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
-                }
-            }
+            $phpPackages = $this->phpPackages($build);
             $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
             $bunPin = $recipe->tools['bun']->forArchitecture('amd64');
             $bunArtifact = $bunPin->artifacts['amd64'];
@@ -80,6 +77,12 @@ final readonly class NativeNodeRoleAddInput
             foreach (['/var/cache/orbit/role-bun', '/opt/orbit/bun', '/opt/orbit/bun/bin', '/opt/orbit/bun/releases', $bunRoot] as $path) {
                 $directories[] = ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
             }
+        }
+        if ($role === RoleName::Vpn) {
+            $build = PhpBuildInstaller::input(new RecipeLoader()->load(), [NodePrivateDnsListenerFootprint::PhpVersion], false,
+                extras: 'keep', fpm: 'none', opentelemetry: false);
+            $phpPackages = $this->phpPackages($build);
+            $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
         }
         if ($role === RoleName::AppDev) {
             $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(
@@ -111,7 +114,7 @@ final readonly class NativeNodeRoleAddInput
             'after' => ['caddy' => $publication['caddy'], 'php' => $publication['php'], 'dns' => $publication['dns']],
         ], $publications);
 
-        $runtime = app(NativeNodeRoleRuntimeInput::class)->capture($node, $assignment, $snapshot, $operation);
+        $runtime = app(NativeNodeRoleRuntimeInput::class)->capture($node, $assignment, $snapshot, $operation, $converge);
         $desired = clone $node;
         $desired->setRelation('roles', $node->roles->map(static fn (NodeRole $member): NodeRole => $member->id === $assignment->id
             ? (clone $member)->forceFill(['status' => LifecycleStatus::Active]) : $member));
@@ -168,5 +171,20 @@ final readonly class NativeNodeRoleAddInput
             'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $role)];
 
         return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [209, $node->id]];
+    }
+
+    /** @param array<string,mixed> $build
+     * @return list<array<string,mixed>>
+     */
+    private function phpPackages(array $build): array
+    {
+        $packages = [];
+        foreach (ValidatedData::object($build['versions']) as $version) {
+            foreach (RouteExecutionProof::objects(ValidatedData::object($version)['packages']) as $package) {
+                $packages[] = [...$package, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
+            }
+        }
+
+        return $packages;
     }
 }

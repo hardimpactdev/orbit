@@ -29,7 +29,7 @@ final readonly class NativeRunResult
 
     /**
      * @param  array<string,mixed>  $run
-     * @return array{steps:array<string,array{status:string,stdout?:string,exit_code?:int}>,summary:array{status:string,succeeded:int,failed:int,skipped:int,failed_steps:list<string>}}
+     * @return array{steps:array<string,array{status:string,stdout?:string,exit_code?:int,error_code?:string}>,summary:array{status:string,succeeded:int,failed:int,skipped:int,failed_steps:list<string>}}
      */
     public function fromRun(array $run): array
     {
@@ -42,6 +42,10 @@ final readonly class NativeRunResult
                     continue;
                 }
                 $entry = ['status' => $step['status']];
+                if (is_string($step['error'] ?? null) && strlen($step['error']) <= 128
+                    && preg_match('/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\z/D', $step['error']) === 1) {
+                    $entry['error_code'] = $step['error'];
+                }
                 $outputs = is_array($step['outputs'] ?? null) ? $step['outputs'] : [];
                 if (count($steps) < self::MaximumOutputSteps && is_string($outputs['stdout'] ?? null)) {
                     $entry['stdout'] = substr($outputs['stdout'], 0, self::MaximumStdoutBytes);

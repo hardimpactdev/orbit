@@ -13,6 +13,8 @@ use App\Models\Node;
 /** Renders the listener release and units. Route publication owns records and catalog data. */
 final readonly class NodePrivateDnsListenerFootprint
 {
+    public const string PhpVersion = '8.5';
+
     public function __construct(private PrivateDnsListenerUnitRenderer $units) {}
 
     /** @return array{release_id: string, files: list<array{path: string, contents: string, sha256: string}>, service: string, socket: string} */
@@ -29,7 +31,7 @@ final readonly class NodePrivateDnsListenerFootprint
         $id = $release->id();
 
         return ['release_id' => $id, 'files' => $files,
-            'service' => $this->units->render('/usr/bin/php8.5', '/var/lib/orbit/private-dns/releases/'.$id, $node->wireguard_ip,
+            'service' => $this->units->render('/usr/bin/php'.self::PhpVersion, '/var/lib/orbit/private-dns/releases/'.$id, $node->wireguard_ip,
                 53, '/var/lib/orbit/private-dns/catalog.json', VpnDnsmasqBackendListen::Address.':53'),
             'socket' => $this->units->renderSocket($node->wireguard_ip, 53)];
     }

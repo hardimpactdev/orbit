@@ -70,6 +70,8 @@ A successful run must show the named step succeeded; otherwise the result is una
 
 A projector reads one step's status with `NativeRunResult::stepStatus($result, '<step name>')`, which gives null for an absent step. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work with `native` too. A declaration without `native` reads the selected action's public JSON. New ports select the action that produces their values or declare `native` for the end check; neither adds a report step.
 
+An exact typed step error such as `node.architecture_unsupported` survives as `error_code` in the native step entry. Only a complete dotted code, bounded to 128 characters, qualifies. Exception text and command diagnostics are excluded. A family projector can preserve that code without a reporting step or another history read.
+
 ### Scheduled observations
 
 A family can declare `scheduled_result` with a fixed native workflow name and UUID, a fixed `terminal_result` job/step, and a fixed list key in that output. The original admission workflow can end while the Operation remains running. Its original `swamp_run_id` stays unchanged. The family validates its immutable check and candidate identity and decides whether an explicit pending observation remains running or ends the Operation.
