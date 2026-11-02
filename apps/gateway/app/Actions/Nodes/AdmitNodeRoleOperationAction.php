@@ -24,12 +24,10 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -113,17 +111,8 @@ final readonly class AdmitNodeRoleOperationAction
             $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
             $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
             $nativeInput = $native ? app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot) : null;
-            $executionSecrets = [];
-            if ($nativeInput !== null) {
-                $private = ['observer' => new OperationSecretValue($node->agent_secret_hash)];
-                foreach ($private as $name => $value) {
-                    $executionSecrets[$name] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-                        'node-role-'.$operation->id.'-'.$name,
-                        ValidatedData::string($value->value));
-                }
-            }
             $this->store->change($operation, ['input' => [...$operation->input, '_role' => $snapshot,
-                ...($nativeInput === null ? [] : ['native_role' => $nativeInput['intent'], 'execution_secrets' => $executionSecrets]),
+                ...($nativeInput === null ? [] : ['native_role' => $nativeInput['intent'], 'execution_secrets' => []]),
                 'participant_node_ids' => array_values(array_unique([$node->id,
                     ...($nativeInput['participant_node_ids'] ?? []),
                     ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
