@@ -1010,8 +1010,8 @@ jobs:
         - find
         - /opt
         - .
-        - -maxdepth
-        - '4'
+        - -type
+        - f
         - (
         - -path
         - /opt/orbit/vite-plus/bin/vp
@@ -1022,14 +1022,49 @@ jobs:
         - -path
         - ./.local/share/vite-plus/bin/vp
         - )
-        - -type
-        - f
         - -exec
         - realpath
         - -s
         - --
         - '{}'
         - +
+        - -o
+        - (
+        - -path
+        - .
+        - -o
+        - -path
+        - /opt
+        - -o
+        - -path
+        - /opt/orbit
+        - -o
+        - -path
+        - /opt/orbit/vite-plus
+        - -o
+        - -path
+        - /opt/orbit/vite-plus/bin
+        - -o
+        - -path
+        - ./.vite-plus
+        - -o
+        - -path
+        - ./.vite-plus/bin
+        - -o
+        - -path
+        - ./.local
+        - -o
+        - -path
+        - ./.local/share
+        - -o
+        - -path
+        - ./.local/share/vite-plus
+        - -o
+        - -path
+        - ./.local/share/vite-plus/bin
+        - )
+        - -o
+        - -prune
   - name: clone-vp-links
     labels:
       role: swamp

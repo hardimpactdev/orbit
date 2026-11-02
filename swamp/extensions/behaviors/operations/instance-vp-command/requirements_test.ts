@@ -113,3 +113,14 @@ Deno.test("selection material treats empty reads as absent and prefers the machi
     const bare = material({ ...raw, store: "" });
     assertEquals([bare.store, bare.manager_required], ["/home/app/.local/share/vite-plus", true]);
 });
+
+Deno.test("the store probe prunes every directory off the candidate paths", () => {
+    const capture = vpPreparationJobs("vp", "inputs.intent", "before")[0].steps as Record<string, any>[];
+    const argv = capture.find((row) => row.name === "vp-store")!.task.inputs.argv as string[];
+    assertEquals(argv.slice(0, 3), ["find", "/opt", "."]);
+    assertEquals(argv.at(-1), "-prune");
+    assertEquals(argv.includes("-maxdepth"), false);
+    for (const path of ["/opt", "/opt/orbit", "/opt/orbit/vite-plus/bin", ".", "./.local/share/vite-plus/bin"]) {
+        assertEquals(argv.includes(path), true);
+    }
+});

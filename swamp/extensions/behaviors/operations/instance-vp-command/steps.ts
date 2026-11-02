@@ -23,13 +23,20 @@ export function vpCaptureSteps(
         a.sshAction("read-" + key, "exec", { argv: e(manifestRead(intent + ".application", file)) });
     }
     a.sshAction("home", "exec", { argv: ["realpath", "-s", "--", "."] });
+    // Descend only along the three candidate store paths and prune everything else, so find never
+    // reads another directory, such as a root-only one under /opt, and exits 0 when it finds none.
+    const stores = ["/opt/orbit/vite-plus/bin/vp", "./.vite-plus/bin/vp", "./.local/share/vite-plus/bin/vp"];
+    const ancestors = [...new Set(stores.flatMap((path) => {
+        const parts = path.split("/");
+        return parts.slice(1, -1).map((_, index) => parts.slice(0, index + 2).join("/") || "/");
+    }))].filter((path) => path !== "/");
+    const any = (paths: string[]) => paths.flatMap((path, index) => [...(index ? ["-o"] : []), "-path", path]);
     a.sshAction("store", "exec", {
         argv: [
-            "find", "/opt", ".", "-maxdepth", "4", "(",
-            "-path", "/opt/orbit/vite-plus/bin/vp", "-o",
-            "-path", "./.vite-plus/bin/vp", "-o",
-            "-path", "./.local/share/vite-plus/bin/vp", ")",
-            "-type", "f", "-exec", "realpath", "-s", "--", "{}", "+",
+            "find", "/opt", ".",
+            "-type", "f", "(", ...any(stores), ")", "-exec", "realpath", "-s", "--", "{}", "+",
+            "-o", "(", ...any([".", ...ancestors]), ")",
+            "-o", "-prune",
         ],
     });
     a.metadata(
