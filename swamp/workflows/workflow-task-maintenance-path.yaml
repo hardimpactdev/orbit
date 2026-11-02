@@ -55,7 +55,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -90,7 +90,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: plan
       inputs:
         place: ${{ inputs.place }}
@@ -129,7 +129,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: age
       inputs:
         place: ${{ inputs.place }}
@@ -307,7 +307,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -342,7 +342,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: verify
       inputs:
         place: ${{ inputs.place }}
@@ -386,7 +386,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: age
       inputs:
         place: ${{ inputs.place }}
@@ -398,7 +398,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: restore
       inputs:
         place: ${{ inputs.place }}
@@ -512,7 +512,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -527,7 +527,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: '${{ "maintenance-input" }}'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: synchronized
       inputs:
         place: ${{ inputs.place }}

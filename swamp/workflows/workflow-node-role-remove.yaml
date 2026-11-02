@@ -242,5 +242,5 @@ jobs:
     steps:
       - name: result
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "result" }}', methodName: roleResult, inputs: {node_id: '${{ inputs.intent.node_id }}', assignment_id: '${{ inputs.intent.assignment_id }}', role: '${{ inputs.intent.role }}', offline: '${{ inputs.offline }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "result-node-removal-command" }}', methodName: roleResult, inputs: {node_id: '${{ inputs.intent.node_id }}', assignment_id: '${{ inputs.intent.assignment_id }}', role: '${{ inputs.intent.role }}', offline: '${{ inputs.offline }}'}}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
