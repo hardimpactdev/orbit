@@ -28,6 +28,12 @@ if status == 'failed':
     check(isinstance(result.get('manager_version'), str), 'the manager is recorded ready, so the Gateway marks the Tool failed')
 elif kind == 'tool.remove':
     check(not installed and result.get('outcome') == 'applied', 'the removed package is absent')
+    if operation['input'].get('remove_repository'):
+        check(result.get('repository_removed') is True, 'the last Tool reports its source removed')
+        name = 'orbit-' + operation['input']['repository']['name']
+        for path in ['/etc/apt/sources.list.d/' + name + '.sources', '/etc/apt/keyrings/' + name + '.gpg', '/etc/apt/preferences.d/' + name + '.pref']:
+            check(subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'test', '!', '-e', path]).returncode == 0, 'managed repository file is absent: ' + path)
+
 else:
     check(installed and result.get('installed_version') == version, 'the recorded version is the dpkg version')
     expected = {'tool.install': 'applied', 'tool.update': 'unchanged', 'tool.adopt': 'applied'}[kind]
