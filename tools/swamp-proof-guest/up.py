@@ -295,6 +295,8 @@ def gateway(nodes):
     }
     environment = GATEWAY / '.env'
     private(environment, '\n'.join(f'{key}={value}' for key, value in settings.items()) + '\n')
+    # The Gateway's PHP user keeps its operation locks under ORBIT_HOME, as on a real Gateway, such as the Cluster Router lock.
+    run(['install', '-d', '-m', '0700', '-o', ACCOUNT, '-g', ACCOUNT, str(HOME / '.orbit/locks')])
     run(['php', 'artisan', 'key:generate', '--force'], user=ACCOUNT, cwd=GATEWAY)
     run(['chown', 'orbit:orbit', str(database)])
     run(['php', 'artisan', 'migrate', '--force'], user=ACCOUNT, cwd=GATEWAY, timeout=600)
