@@ -26,7 +26,8 @@ return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-destroy',
     'projection' => TaskVmDestroyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'destroy', 'step' => 'result'],
+    // No result step: the projector reads the run's step statuses and builds the cleanup receipt from the captured intent.
+    'terminal_result' => ['job' => 'destroy', 'step' => 'Destroy the task VM', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
 ], 'task_vm.provision' => [
     'workflow' => 'operation-task-vm-provision',

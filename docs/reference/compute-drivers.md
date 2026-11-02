@@ -506,11 +506,16 @@ A step that fails keeps the Instance and records the error on the row. The group
 Explicit completion, cancellation and workspace removal queue `DestroyTaskVm`. Swamp owns retries and cleanup scheduling. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
-2. It deletes the VM, then the VM's [clone of the topology seed](#incus-provider). Incus keeps custom volumes after VM deletion. A VM or a volume that is gone counts as deleted.
+2. It deletes the VM with `incus delete --force`, then the VM's [clone of the topology seed](#incus-provider). Each delete is one pinned `@swamp/ssh` `exec` argument list on the host.
 3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
-4. It sets the row to `destroyed`.
+4. It reads the project's instances and the pool's custom volumes again. A native `assert` checks that neither lists the VM or its seed clone.
+5. It sets the row to `destroyed`.
+
+Incus keeps custom volumes after VM deletion, so the seed clone has its own delete. A VM or a volume that is gone counts as deleted. On UpCloud, the run reads the server, stops it, and deletes it with its storage instead of steps 2 and 4.
 
 Orbit deleted the VM itself, so the Node removal does not probe the Node's address first. It also runs no Metrics pass, because a task VM Node never hosts a Metrics exporter.
+
+The run prints no result. On success, the Gateway builds the cleanup receipt from the intent it captured at admission. A failed run projects `task_vm.destroy_failed`. Tasks cancel and a failed provision run the same `task-vm-destroy` child workflow.
 
 The removal of other Instances moves a checkout within one filesystem only. [Instance removal](/reference/instance-removal) refuses a checkout on a mounted volume with `cross-device:`.
 

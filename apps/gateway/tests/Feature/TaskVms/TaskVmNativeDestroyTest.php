@@ -78,14 +78,16 @@ it('admits one full-input destroy root without requiring a guest pin or guest wo
 it('clears Node records and credentials only after complete native success', function (string $status): void {
     $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
     $operation->update(['state' => ['swamp_run_id' => '3d8cf201-24cd-4ba5-b0ce-885530dcd327']]);
-    $result = ['task_vm_id' => $this->vm->id, 'guest_node_id' => $this->vm->node_id, 'destroyed' => true,
-        'cleanup_complete' => true, 'removal' => ['node_id' => $this->vm->node_id, 'removed' => true, 'offline' => true]];
+    $guest = $this->vm->node_id;
+    // The native run has no result step: its step statuses are the evidence.
     app(TaskVmDestroyProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
         'started_at' => '2026-11-01T05:00:00.000Z', 'finished_at' => '2026-11-01T05:00:01.000Z',
-        'error_code' => $status === 'succeeded' ? null : 'operation.native_failed', 'result' => $status === 'succeeded' ? $result : []]);
+        'error_code' => $status === 'succeeded' ? null : 'operation.native_failed', 'result' => $status === 'succeeded' ? ['steps' => []] : []]);
     expect($operation->fresh()->status)->toBe(OperationStatus::from($status));
     if ($status === 'succeeded') {
-        expect(Node::query()->find($this->vm->node_id))->toBeNull()
+        expect($operation->fresh()->result)->toMatchArray(['task_vm_id' => $this->vm->id, 'guest_node_id' => $guest, 'destroyed' => true, 'cleanup_complete' => true])
+            ->and($operation->fresh()->result['removal'])->toMatchArray(['node_id' => $guest, 'removed' => true, 'offline' => true, 'roles_shed' => ['app-dev']])
+            ->and(Node::query()->find($this->vm->node_id))->toBeNull()
             ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed)
             ->and($this->vm->fresh()->pi_token)->toBeNull()
             ->and($this->vm->fresh()->destroyed_at)->not->toBeNull();
@@ -96,15 +98,6 @@ it('clears Node records and credentials only after complete native success', fun
             ->and($this->vm->fresh()->destroyed_at)->toBeNull();
     }
 })->with(['succeeded', 'failed', 'cancelled']);
-
-it('refuses provider absence alone as a complete destroy result', function (): void {
-    $operation = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
-    $operation->update(['state' => ['swamp_run_id' => '3d8cf201-24cd-4ba5-b0ce-885530dcd327']]);
-    expect(fn () => app(TaskVmDestroyProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'],
-        'status' => 'succeeded', 'started_at' => '2026-11-01T05:00:00.000Z', 'finished_at' => now()->toISOString(), 'error_code' => null,
-        'result' => ['task_vm_id' => $this->vm->id, 'provider' => ['absent' => true]]]))->toThrow(ResourceOperationException::class);
-    expect($this->vm->fresh()->destroyed_at)->toBeNull()->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
-});
 
 it('refuses identity drift and a missing UpCloud control Node before effects', function (string $change): void {
     if ($change === 'upcloud') {
@@ -214,12 +207,12 @@ it('records full child cleanup inside an active Tasks parent without a second Op
     $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
     $parent = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $this->vm->group_id,
         'node_id' => $this->host->id, 'status' => OperationStatus::Running, 'input' => ['vm' => $captured], 'triggered_by' => 'fixture']);
-    $result = destroyCompleteResult($this->vm);
-    DB::transaction(function () use ($workspace, $captured, $result): void {
+    $guest = $this->vm->node_id;
+    DB::transaction(function () use ($workspace, $captured): void {
         $workspace->delete();
-        app(TaskVmDestroyProjection::class)->record($this->vm, $captured, $result);
+        app(TaskVmDestroyProjection::class)->record($this->vm, $captured);
     });
-    expect(Instance::query()->find($workspace->id))->toBeNull()->and(Node::query()->find($result['guest_node_id']))->toBeNull()
+    expect(Instance::query()->find($workspace->id))->toBeNull()->and(Node::query()->find($guest))->toBeNull()
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed)->and($this->vm->fresh()->pi_token)->toBeNull()
         ->and($this->vm->fresh()->destroyed_at)->not->toBeNull()->and(Operation::query()->count())->toBe(1)
         ->and($parent->fresh()->kind)->toBe('tasks.cancel');
@@ -228,33 +221,28 @@ it('records full child cleanup inside an active Tasks parent without a second Op
 it('refuses parent recording while its workspace records remain', function (): void {
     $workspace = destroyOwnedWorkspace($this->vm);
     $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
-    expect(fn () => app(TaskVmDestroyProjection::class)->record($this->vm, $captured, destroyCompleteResult($this->vm)))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(TaskVmDestroyProjection::class)->record($this->vm, $captured))->toThrow(ResourceOperationException::class);
     expect($workspace->fresh())->not->toBeNull()->and($this->vm->fresh()->pi_token)->toBe('retained-pi')
         ->and($this->vm->fresh()->destroyed_at)->toBeNull();
 });
 
-it('rolls workspace deletion back on changed identity or incomplete child cleanup', function (string $change): void {
+it('rolls workspace deletion back on changed identity or a new resource', function (string $change): void {
     $workspace = destroyOwnedWorkspace($this->vm);
     $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
-    $result = destroyCompleteResult($this->vm);
     if ($change === 'identity') {
         $this->vm->update(['provider_id' => 'another-machine']);
-    } elseif ($change === 'incomplete') {
-        $result['cleanup_complete'] = false;
-    } elseif ($change === 'wrong-node') {
-        $result['removal']['node_id']++;
     } elseif ($change === 'snapshot') {
         $captured['node_removal']['node_id'] = $this->host->id;
     } else {
         DatabaseServer::query()->create(['node_id' => $this->vm->node_id, 'slug' => 'new-resource', 'driver' => 'mysql', 'tag' => '8.4', 'root_password' => 'fixture', 'status' => 'active', 'port' => 3306]);
     }
-    expect(fn () => DB::transaction(function () use ($workspace, $captured, $result): void {
+    expect(fn () => DB::transaction(function () use ($workspace, $captured): void {
         $workspace->delete();
-        app(TaskVmDestroyProjection::class)->record($this->vm, $captured, $result);
+        app(TaskVmDestroyProjection::class)->record($this->vm, $captured);
     }))->toThrow(ResourceOperationException::class);
     expect(Instance::query()->find($workspace->id))->not->toBeNull()->and(Node::query()->find($this->vm->node_id))->not->toBeNull()
         ->and($this->vm->fresh()->pi_token)->toBe('retained-pi')->and($this->vm->fresh()->destroyed_at)->toBeNull();
-})->with(['identity', 'incomplete', 'wrong-node', 'snapshot', 'new-resource']);
+})->with(['identity', 'snapshot', 'new-resource']);
 
 it('does not bypass Route guards for the exact owned workspace', function (): void {
     $workspace = destroyOwnedWorkspace($this->vm);
@@ -387,10 +375,10 @@ it('projects the complete Tasks ending parent without deleting records at admiss
         ->and($operation->kind)->toBe('tasks.cancel')->and(Operation::query()->count())->toBe(1);
     $vm = destroyCompleteResult($this->vm);
     $data = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
-        'result' => ['group_id' => $group->id, 'instance_id' => $workspace->id, 'cleanup_complete' => true, 'vm' => [...$vm, 'cleanup_complete' => false]]];
+        'result' => ['group_id' => $group->id, 'instance_id' => $workspace->id, 'cleanup_complete' => false, 'vm' => $vm]];
     expect(fn () => app(TaskCancelProjection::class)->apply($operation, $data))->toThrow(ResourceOperationException::class);
     expect($workspace->fresh())->not->toBeNull()->and($group->fresh()->taskable_id)->toBe($workspace->id);
-    $data['result']['vm'] = $vm;
+    $data['result']['cleanup_complete'] = true;
     app(TaskCancelProjection::class)->apply($operation->fresh(), $data);
     expect(Instance::query()->find($workspace->id))->toBeNull()->and($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($group->fresh()->taskable_id)->toBeNull()->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed);
@@ -524,11 +512,12 @@ it('fails the guest Node of incomplete cleanup and lets a later admission claim 
         ->and($node->fresh()->error_code)->toBe($code ?? 'node.remove_failed')
         ->and($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed)
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroying)
-        ->and($this->vm->fresh()->error_code)->toBe($code ?? 'task_vm.destroy_failed');
+        ->and($this->vm->fresh()->error_code)->toBe('task_vm.destroy_failed')
+        ->and($operation->fresh()->error_code)->toBe($code);
     expect($operation->fresh()->status)->toBe($status === 'cancelled' ? OperationStatus::Cancelled : OperationStatus::Failed);
     $again = app(StartTaskVmDestroyAction::class)->execute($this->vm->id);
     expect($again->id)->not->toBe($operation->id)->and($node->fresh()->status)->toBe(LifecycleStatus::Removing);
-})->with([['failed', 'operation.native_failed'], ['cancelled', null], ['interrupted', 'operation.native_failed']]);
+})->with([['failed', 'task_vm.destroy_failed'], ['cancelled', null], ['interrupted', 'task_vm.destroy_failed']]);
 
 it('holds destroy admission after expiry until exact native terminal settlement', function (string $terminal): void {
     $this->freezeSecond();

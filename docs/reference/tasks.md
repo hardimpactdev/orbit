@@ -188,7 +188,7 @@ The MCP tool `tasks-worker` takes the enrollment token as an argument, so it rea
 
 To stop a waiting provision, use `tasks:cancel`. Cancellation first requests cancellation of an existing native group Operation and refuses while that Operation remains active. A fresh keyed request then admits one `tasks.cancel` Operation.
 
-Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. Each teardown command runs like a setup command: one official `@swamp/ssh exec` argument list in the checkout. Its output stays out of native history; the teardown run keeps a redacted tail of at most 4 KiB per command.
+Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. The child prints no result: once the run succeeds, the Gateway records the VM cleanup from the intent it captured at admission. Each teardown command runs like a setup command: one official `@swamp/ssh exec` argument list in the checkout. Its output stays out of native history; the teardown run keeps a redacted tail of at most 4 KiB per command.
 
 A stopped VM skips guest teardown. The exact group, Project and VM must own the workspace. At most one Route may target it; that Route must belong to the same Project and target only that workspace. Shared or foreign Routes refuse cancellation. Route withdrawal must succeed before VM deletion.
 

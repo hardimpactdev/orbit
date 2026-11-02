@@ -66,7 +66,7 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
                 }
                 if (($operation->input['task_vm_id'] ?? null) !== null) {
                     $vm = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']));
-                    app(TaskVmDestroyProjection::class)->record($vm, $operation->input, ValidatedData::object($result['vm']));
+                    app(TaskVmDestroyProjection::class)->record($vm, $operation->input);
                 }
                 $group->taskable()->dissociate();
                 $group->fill(['status' => $operation->kind === 'tasks.maintenance_finish' || $group->status === TaskGroupStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null])->save();

@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/task-vm-lifecycle"
-version: 2026.11.02.2
+version: 2026.11.02.3
 visibility: private
 license: MIT
 description: Public lifecycle intent, UpCloud request shaping and provider result decoding; official SSH and 209 curl steps own effects.

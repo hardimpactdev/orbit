@@ -1,7 +1,8 @@
 id: a5dc9328-9812-4f24-9055-d874830f9bb7
 name: task-vm-destroy
-description: Revoke same-VM model access, delete the provider VM, then complete canonical Node cleanup
-  on209.
+description: Revoke the VM's model key, delete the VM and its seed volume from 209 over pinned SSH (UpCloud through provider-power), remove its guest Node, and assert the host no longer lists either.
+# Shared by task_vm.destroy, tasks.cancel and a failed task_vm.provision: a typed boundary, not an ordering aid.
+queueTimeout: 60
 vaults:
 - orbit-control-inputs
 inputs:
@@ -41,55 +42,11 @@ inputs:
   - execution_secrets
   additionalProperties: false
 jobs:
-- name: destroy
-  labels: {role: swamp}
+- name: revoke
   steps:
-  - name: plan
+  - name: Revoke the model key
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: '${{ "vm-destroy-input" }}'
-      methodName: plan
-      inputs:
-        intent: ${{ inputs.intent }}
-  - name: inspect
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-provider-power
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        intent: ${{ inputs.intent.provider_input }}
-        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
-          : {} }}'
-        action: inspect
-    dependsOn:
-    - step: plan
-      condition:
-        type: succeeded
-  - name: stop
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-provider-power
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        intent: ${{ inputs.intent.provider_input }}
-        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
-          : {} }}'
-        action: stop
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-    guard: ${{ !steps.inspect.outputs.result.running }}
-  - name: model
-    labels: {role: swamp}
+    guard: ${{ !inputs.intent.model_key_required }}
     task:
       type: workflow
       workflowIdOrName: task-vm-model-revoke
@@ -98,152 +55,115 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.model_intent }}
-        execution_secrets: '${{ steps.plan.outputs.model_required ? {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor}
-          : {} }}'
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-    - step: stop
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ !steps.plan.outputs.model_required }}
-  - name: revoked
+        execution_secrets: '${{ inputs.intent.model_key_required ? {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor} : {} }}'
+- name: delete
+  dependsOn:
+  - job: revoke
+    condition: {type: succeeded}
+  steps:
+  # Incus: one forced delete per resource; an absent VM or volume exits 1 and counts as done, the end check proves it.
+  - name: Delete the VM
     labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.provider != "incus" }}
     task:
       type: behavior
-      behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: '${{ "vm-destroy-input" }}'
-      methodName: revocation
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-destroy-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-destroy-" + string(inputs.node_id) }}
+        transport: &transport
+          kind: ssh
+          user: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.user : "" }}'
+          port: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.port : 22 }}'
+          identityFile: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.identity_file : "" }}'
+        hosts: &hosts
+        - name: target
+          address: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "" }}'
+          transport:
+            hostKeys: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host_keys : [] }}'
       inputs:
-        intent: ${{ inputs.intent }}
-        stdout: '${{ steps.plan.outputs.model_required ? steps.model.outputs.result.stdout : "" }}'
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-    - step: stop
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: model
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: delete
+        hosts: name:target
+        sudo: true
+        okExitCodes: [0, 1]
+        argv: [timeout, '180', incus, delete, --force, --project, '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.vm.project : "" }}', --, '${{ inputs.intent.provider_input.name }}']
+  - name: Delete the seed volume
     labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.provider != "incus" }}
+    dependsOn:
+    - step: Delete the VM
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-destroy-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-destroy-" + string(inputs.node_id) }}
+        transport: *transport
+        hosts: *hosts
+      inputs:
+        hosts: name:target
+        sudo: true
+        okExitCodes: [0, 1]
+        argv: [timeout, '180', incus, storage, volume, delete, --project, '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.vm.project : "" }}', --, '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.vm.pool : "" }}', '${{ inputs.intent.provider_input.name + "-topology-seed" }}']
+  # UpCloud: the provider-power child reads the server, stops a running one and deletes it with its storage; its read-back proves it gone.
+  - name: Read the server
+    labels: {role: swamp}
+    guard: ${{ inputs.intent.provider != "upcloud" }}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
-      inputs:
+      inputs: &cloud_power
         operation_id: ${{ inputs.operation_id }}
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.provider_input }}
-        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
-          : {} }}'
-        action: delete
-    dependsOn:
-    - step: revoked
-      condition:
-        type: succeeded
-  - name: seed-before
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud} : {} }}'
+        action: inspect
+  - name: Stop the server
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: &id001
-        name: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.user
-            : "orbit" }}'
-          port: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.port
-            : 22 }}'
-          identityFile: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.identity_file
-            : "/unused-upcloud" }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host
-            : "127.0.0.1" }}'
-          transport:
-            hostKeys: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host_keys
-              : ["unused-upcloud"] }}'
-      inputs:
-        hosts: name:target
-        argv: ${{ steps.plan.outputs.seed_observe_argv }}
-        timeoutSec: 180
+    writes: true
+    guard: ${{ inputs.intent.provider != "upcloud" || !steps["Read the server"].outputs.result.running }}
     dependsOn:
-    - step: delete
-      condition:
-        type: succeeded
-    guard: ${{ steps.plan.outputs.provider != "incus" }}
-  - name: seed
+    - step: Read the server
+      condition: {type: succeeded}
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        <<: *cloud_power
+        action: stop
+  - name: Delete the server
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: '${{ "vm-destroy-input" }}'
-      methodName: seed
-      inputs:
-        intent: ${{ inputs.intent }}
-        stdout: ${{ steps["seed-before"].outputs.stdout }}
+    writes: true
+    guard: ${{ inputs.intent.provider != "upcloud" }}
     dependsOn:
-    - step: seed-before
-      condition:
-        type: succeeded
-    guard: ${{ steps.plan.outputs.provider != "incus" }}
-  - name: seed-delete
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: ${{ steps.plan.outputs.seed_delete_argv }}
-        timeoutSec: 180
-    dependsOn:
-    - step: seed
-      condition:
-        type: succeeded
-    guard: ${{ steps.plan.outputs.provider != "incus" || !steps.seed.outputs.present }}
-  - name: seed-after
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv: ${{ steps.plan.outputs.seed_observe_argv }}
-        timeoutSec: 180
-    dependsOn:
-    - step: seed
-      condition:
-        type: succeeded
-    - step: seed-delete
+    - step: Read the server
+      condition: {type: succeeded}
+    - step: Stop the server
       condition:
         type: or
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ steps.plan.outputs.provider != "incus" }}
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        <<: *cloud_power
+        action: delete
+- name: cleanup
+  dependsOn:
+  - job: delete
+    condition: {type: succeeded}
+  steps:
   - name: Forget the guest host key
     labels: {role: swamp}
+    writes: true
+    guard: ${{ !has(inputs.intent.wireguard_ip) || inputs.intent.wireguard_ip == null }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -257,13 +177,10 @@ jobs:
           ssh-keygen -R "$ORBIT_ADDRESS" -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1 || true
         env:
           ORBIT_ADDRESS: '${{ has(inputs.intent.wireguard_ip) && inputs.intent.wireguard_ip != null ? inputs.intent.wireguard_ip : "" }}'
-    dependsOn:
-    - step: delete
-      condition:
-        type: succeeded
-    guard: ${{ !has(inputs.intent.wireguard_ip) || inputs.intent.wireguard_ip == null }}
-  - name: cleanup
+  - name: Remove the guest Node
     labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.guest_node_id == null }}
     task:
       type: workflow
       workflowIdOrName: operation-node-remove
@@ -273,43 +190,43 @@ jobs:
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.removal }}
         execution_secrets: {}
-    dependsOn:
-    - step: delete
-      condition:
-        type: succeeded
-    - step: seed-after
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ !steps.plan.outputs.node_present }}
-  - name: result
+- name: check
+  dependsOn:
+  - job: cleanup
+    condition: {type: succeeded}
+  steps:
+  - name: Read the host again
     labels: {role: swamp}
+    guard: ${{ inputs.intent.provider != "incus" }}
+    forEach:
+      item: read
+      in: '${{ ["instances", "volumes"] }}'
     task:
       type: behavior
-      behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: '${{ "vm-destroy-input" }}'
-      methodName: terminal
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-destroy-read-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-destroy-read-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport: *transport
+        hosts: *hosts
       inputs:
-        intent: ${{ inputs.intent }}
-        provider: ${{ steps.delete.outputs.result }}
-        removal_complete: '${{ !steps.plan.outputs.node_present || steps.cleanup.status == "succeeded" }}'
-        seed_stdout: '${{ inputs.intent.provider == "incus" ? steps["seed-after"].outputs.stdout : ""
-          }}'
+        hosts: name:target
+        sudo: true
+        argv:
+        - timeout
+        - '60'
+        - incus
+        - query
+        - '${{ inputs.intent.provider != "incus" ? "" : self.read == "instances" ? "/1.0/instances?project=" + inputs.intent.provider_input.vm.project : "/1.0/storage-pools/" + inputs.intent.provider_input.vm.pool + "/volumes/custom?project=" + inputs.intent.provider_input.vm.project }}'
+  - name: Check the VM is gone
+    labels: {role: swamp}
     dependsOn:
-    - step: delete
-      condition:
-        type: succeeded
-    - step: cleanup
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: seed-after
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+    - step: Read the host again
+      condition: {type: succeeded}
+    task:
+      type: assert
+      # `incus query` lists `/1.0/.../<name>?project=<p>`; task VM names hold no character it encodes.
+      expr: '!steps["Read the host again-instances"].outputs.stdout.contains("/" + inputs.intent.provider_input.name + "?") && !steps["Read the host again-instances"].outputs.stdout.contains("/" + inputs.intent.provider_input.name + "\"") && !steps["Read the host again-volumes"].outputs.stdout.contains("/" + inputs.intent.provider_input.name + "-topology-seed?") && !steps["Read the host again-volumes"].outputs.stdout.contains("/" + inputs.intent.provider_input.name + "-topology-seed\"")'
+      severity: high
+      message: task_vm.destroy_failed

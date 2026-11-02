@@ -109,9 +109,13 @@ class UpCloudCompositionNative(unittest.TestCase):
                                         if key not in ('bootstrap', 'pi_token')}}
         run = json.loads(self.vm.cli('workflow', 'run', 'task-vm-destroy', '--input', json.dumps(inputs)).stdout)
         history = json.loads(self.vm.cli('workflow', 'history', 'get', run['id']).stdout)
-        receipt = json.loads(history['jobs'][0]['steps'][-1]['outputs']['result_json'])
-        self.assertTrue(receipt['destroyed'])
-        self.assertTrue(receipt['cleanup_complete'])
+        # No receipt step: the run's step statuses are the result, and only the UpCloud branch ran.
+        self.assertEqual(run['status'], 'succeeded')
+        steps = {step['name']: step['status'] for job in history['jobs'] for step in job['steps']}
+        for name in ('Revoke the model key', 'Read the server', 'Stop the server', 'Delete the server'):
+            self.assertEqual(steps[name], 'succeeded', name)
+        for name in ('Delete the VM', 'Delete the seed volume', 'Remove the guest Node', 'Read the host again', 'Check the VM is gone'):
+            self.assertEqual(steps.get(name, 'skipped'), 'skipped', name)
         self.assertFalse(self.cloud.exists)
         self.assertFalse(self.vm.events.exists())
         self.assertTrue(any('/stop' in path for method, path in self.cloud.calls if method == 'POST'))

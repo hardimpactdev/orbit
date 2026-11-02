@@ -1,6 +1,7 @@
 id: 3d11d920-5ae2-4a1f-8d47-19bddfe0ccbe
 name: operation-task-vm-destroy
-description: Owning TaskVM destroy root; Gateway records only the complete terminal result.
+description: Destroy one task VM through the shared task-vm-destroy child; the Gateway reads the run's step statuses.
+queueTimeout: 60
 vaults:
 - orbit-control-inputs
 inputs:
@@ -12,10 +13,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - task_vm.destroy
+    kind: {type: string, enum: [task_vm.destroy]}
     intent:
       type: object
     execution_secrets:
@@ -43,9 +41,8 @@ inputs:
   additionalProperties: false
 jobs:
 - name: destroy
-  labels: {role: swamp}
   steps:
-  - name: vm
+  - name: Destroy the task VM
     labels: {role: swamp}
     task:
       type: workflow
@@ -56,20 +53,3 @@ jobs:
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "vm-destroy-result" }}'
-      methodName: execute
-      inputs:
-        run: 'printf ''%s\n'' "$RESULT"
-
-          '
-        env:
-          RESULT: ${{ steps.vm.outputs.result.result_json }}
-    dependsOn:
-    - step: vm
-      condition:
-        type: succeeded
