@@ -1,5 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, rule 5 (merge into node.role_converge: a version pin is a role setting), DECISIONS R1-R4. docs/reference/analytics.md.
+  %% Tightened: flow-tighten 2026-11-02, rule 22 (env file via cfgmgmt file, docker run argv, cfgmgmt docker_container, curl check).
+  %% Decided: Nick 2026-11-02, a Docker Process runs as one plain docker run through @swamp/ssh exec; its check is the docker_container check.
   %% status: draft
   %% command: analytics:update
   %% kind: analytics.update
@@ -50,21 +52,24 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Prepare the database<br/>createdb · migrate (new image)
+    SW->>N: Prepare the database<br/>docker run --rm · --env-file
     %%> How:
-    %%> - over SSH from 209 with `@swamp/ssh`, reading the environment with `vault.get`
+    %%> - over SSH from 209 with `@swamp/ssh`; the environment comes from `vault.get` into a root-only 0600 env file written with `@swamp/cfgmgmt/file`
+    %%> - one `docker run --rm --env-file` argv each for `createdb` and `migrate`; nothing is copied to the Node
     %%> What it does:
     %%> - runs the new image's `createdb` and `migrate` as one-off containers; the running Process keeps serving
     %%> If it fails:
     %%> - the old container keeps running unchanged
-    SW->>N: Replace the Process<br/>same shape as process.update
+    SW->>N: Replace the Process<br/>@swamp/ssh exec · docker run
     %%> What it does:
-    %%> - removes the old `plausible` container and creates it from the new image, with the same environment and mounts
+    %%> - one `docker rm -f plausible` argv, then one plain `docker run -d --name plausible --env-file … <image> <cmd>` argv from the new image, with the same environment and mounts
+    %%> - the same `docker run` as every Docker Process (`process:create`)
     %%> Why it is safe:
     %%> - Plausible keeps no data in its container
-    SW->>N: Check Plausible is healthy<br/>owned spec · HTTP answers
+    SW->>N: Check Plausible is healthy<br/>@swamp/ssh exec · curl -fsS
     %%> What it does:
-    %%> - checks the container runs the new image and Plausible answers over HTTP
+    %%> - the `docker_container` check: the container runs the new image
+    %%> - one `curl -fsS --max-time 3` to Plausible's health URL
     alt the check passes
       N-->>SW: Plausible ready
       %%> Returns:

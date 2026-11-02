@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R2-R4, same shape as cluster.router_set. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
+  %% Tightened: flow-tighten 2026-11-02, rules 1, 22 (no empty DNS note step; cfgmgmt file for the sites).
   %% status: draft
   %% command: cluster:router:unset
   %% kind: cluster.router_unset
@@ -42,12 +43,11 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  Note over SW: No DNS change<br/>Cluster serves no names
-  %%> Why:
-  %%> - an inactive Cluster, or one without a TLD and Routes, gets no Router answers from private DNS
-  SW->>N: Withdraw the Router sites<br/>validate · caddy reload
+  SW->>N: Withdraw the Router sites<br/>@swamp/cfgmgmt/file · reload
   %%> How:
-  %%> - over SSH from 209 with `@swamp/ssh`
+  %%> - over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt/file`; `caddy validate`, then a reload
+  %%> No DNS change:
+  %%> - an inactive Cluster, or one without a TLD and Routes, gets no Router answers from private DNS
   %%> What it does:
   %%> - removes the Router sites and their certificates, validates the rest, and reloads Caddy; no restart
   %%> - Caddy and the packages stay, as for every role removal that keeps shared packages
