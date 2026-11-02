@@ -24,6 +24,14 @@ it('applies every part from its own step', function (): void {
             ['name' => 'tmpfiles', 'status' => 'applied'], ['name' => 'php-runtime', 'status' => 'applied']], 'footprint_proven' => true]);
 });
 
+it('applies the ai-router part with the agent, since it only versions the collector Node by the agent pin', function (): void {
+    [, $applied] = convergeFootprint(['agent', 'ai-router'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'succeeded']);
+    [, $failed] = convergeFootprint(['agent', 'ai-router'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'failed']);
+
+    expect($applied)->toBe(['artifacts' => [['name' => 'agent', 'status' => 'applied'], ['name' => 'ai-router', 'status' => 'applied']], 'footprint_proven' => true])
+        ->and($failed['footprint_proven'])->toBeFalse();
+});
+
 it('keeps a failed part at its old digest and records the parts that applied', function (): void {
     [, $result] = convergeFootprint(['agent', 'caddy', 'tmpfiles', 'php-runtime'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'succeeded',
         'Publish Caddy sites' => 'failed', 'Write the tmpfiles rule' => 'succeeded',

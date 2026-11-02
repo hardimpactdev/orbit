@@ -66,6 +66,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
         }
         $proven = [
             'agent' => $status('Restart the Node agent') === 'succeeded' && $status('Check the footprint') === 'succeeded',
+            'ai-router' => $status('Restart the Node agent') === 'succeeded' && $status('Check the footprint') === 'succeeded',
             'peer-dns' => $status('Apply private DNS policy') === 'succeeded',
             'caddy-package' => $status('Install Caddy') === 'succeeded',
             'caddy' => $status('Publish Caddy sites') === 'succeeded',

@@ -244,12 +244,17 @@ final readonly class NodeConvergeInput
 
                 continue;
             }
-            if (! in_array($name, ['agent', 'caddy-package', 'caddy', 'peer-dns', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
+            if (! in_array($name, ['agent', 'ai-router', 'caddy-package', 'caddy', 'peer-dns', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
                 $refusal = 'operation.kind_unavailable';
 
                 continue;
             }
             if (! $required) {
+                continue;
+            }
+            // The ai-router part only versions the collector Node by its agent pin; the extension's own converge runs the
+            // collector, so the part needs no step and is applied with the agent.
+            if ($name === 'ai-router') {
                 continue;
             }
             if ($name === 'peer-dns') {
