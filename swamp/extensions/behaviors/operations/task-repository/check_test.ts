@@ -1,11 +1,15 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
 import {
     candidateResult,
     checkRuns,
     ciResult,
+    diffRows,
     finish,
     localResult,
     minted,
+    observed,
+    prepare,
     setupResult,
 } from "./check.ts";
 const commit = "a".repeat(40), start = "2026-10-31T22:00:00Z";
@@ -17,7 +21,7 @@ const input = {
     check_id: 5,
     checkout_path: "/srv/check",
     ssr_port: null,
-    phase: "handoff",
+    phase: "handoff" as "baseline" | "handoff",
     command: null,
     setup: [],
     deliverables: [],
@@ -87,13 +91,41 @@ Deno.test("missing CI and credential lifetime end through later scheduled observ
     assertEquals(expired.pending, false);
     assertEquals(expired.status, "failed");
 });
-Deno.test("a committed candidate must keep the checked tree", () => {
+Deno.test("a committed candidate must keep the checked tree and parent", () => {
+    const tree = "b".repeat(40), head = "c".repeat(40);
+    const local = { outcome: "passed", tree, head };
+    const read = (lines: string[], exitCode = 0) => ({
+        exitCode,
+        stdout: lines.join("\n") + "\n",
+    });
     assertEquals(
-        candidateResult({ outcome: "passed", tree: "b".repeat(40) }, {
+        candidateResult(input, local, read([commit, tree, head])).commit,
+        commit,
+    );
+    for (
+        const lines of [[commit, "d".repeat(40), head], [
             commit,
-            tree: "c".repeat(40),
-        }).outcome,
-        "changed",
+            tree,
+            "d".repeat(40),
+        ]]
+    ) {
+        assertEquals(
+            candidateResult(input, local, read(lines)).outcome,
+            "changed",
+        );
+    }
+    assertEquals(
+        candidateResult(input, local, read([], 128)).error_code,
+        "tasks.repository_execution_unknown",
+    );
+    // A commit that never ran cannot pass as a candidate.
+    assertEquals(
+        candidateResult(input, local, {}).error_code,
+        "tasks.repository_execution_unknown",
+    );
+    assertEquals(
+        candidateResult({ ...input, phase: "baseline" }, local, {}),
+        local,
     );
 });
 
@@ -119,42 +151,308 @@ Deno.test("missing setup output is a failed preparation", () => {
     assertEquals(setup.exit_code, 255);
 });
 
+const ran = (exitCode: number, stdout = "", stderr = "") => ({
+    status: "succeeded",
+    outputs: { exitCode, stdout, stderr },
+});
+const snapshots = (tree = commit) => ({
+    original: ran(0, commit + "\n"),
+    "snapshot-before-tree": ran(0, tree + "\n"),
+    "snapshot-before-head": ran(0, commit + "\n"),
+    "snapshot-after-tree": ran(0, tree + "\n"),
+    "snapshot-after-head": ran(0, commit + "\n"),
+});
+const valid = { valid: true, error_code: "" };
+const commandDeliverable = {
+    id: "project-check",
+    type: "command" as const,
+    path: "",
+    change: "any",
+    command: "touch never",
+    directory: ".",
+    fails_on_base: false,
+    paths: [],
+};
+
 Deno.test("a failed Project check retains failed evidence when command deliverables are skipped", () => {
-    const observation = (value: unknown) => ({
-        status: "succeeded",
-        outputs: { stdout: JSON.stringify(value) },
-    });
-    const value = localResult({
-        ...input,
-        phase: "handoff",
-        command: "exit 23",
-        deliverables: [{
-            id: "project-check",
-            type: "command",
-            path: "",
-            change: "any",
-            command: "touch never",
-            directory: ".",
-            fails_on_base: false,
-            paths: [],
-        }],
-    }, {
-        original: observation({ head: commit }),
-        before: observation({ head: commit, tree: commit }),
-        after: observation({ head: commit, tree: commit }),
-        project: observation({ exit_code: 23, output: "project check failed" }),
-        "deliverable-0": { status: "skipped" },
-        diff: observation({ diff: [] }),
-        changed: observation({ diff: [] }),
-    });
+    const value = localResult(
+        {
+            ...input,
+            phase: "handoff",
+            command: "exit 23",
+            deliverables: [commandDeliverable],
+        },
+        valid,
+        {
+            ...snapshots(),
+            project: ran(23, "project check ", "failed"),
+            "deliverable-0": { status: "skipped" },
+            diff: ran(0, ""),
+            changed: ran(0, ""),
+        },
+    );
     if (!("outcome" in value)) {
         throw new Error("Expected public local check evidence");
     }
     assertEquals(value.outcome, "failed");
     assertEquals(value.exit_code, 23);
+    assertEquals(value.output, "project check failed");
     assertEquals(value.evidence?.commands, {});
     assertEquals(value.deliverables[0].outcome, "failed");
     assertEquals(value.commit, null);
+});
+
+Deno.test("command output is a redacted tail of stdout then stderr", () => {
+    const value = localResult({ ...input, command: "true" }, valid, {
+        ...snapshots(),
+        project: ran(0, "API_KEY=synthetic-private-value\n", "done\n"),
+    });
+    if (!("output" in value)) throw new Error("Expected local evidence");
+    assertEquals(value.output, "API_KEY=[REDACTED]\ndone\n");
+});
+
+Deno.test("the checked diff and changed paths come from NUL-separated diff-tree rows", () => {
+    assertEquals(diffRows(ran(0, "A\0added\0M\0a b\tc\0").outputs), [
+        { status: "A", path: "added" },
+        { status: "M", path: "a b\tc" },
+    ]);
+    assertEquals(diffRows({}), null);
+    const value = localResult(
+        { ...input, deliverables: [{ ...commandDeliverable, type: "file" }] },
+        valid,
+        {
+            ...snapshots(),
+            project: ran(0),
+            diff: ran(0, "M\0code\0"),
+            changed: ran(0, "A\0new\0"),
+        },
+    );
+    if (!("changed_paths" in value)) throw new Error("Expected evidence");
+    assertEquals(value.changed_paths, ["new"]);
+    assertEquals(value.evidence?.diff, [{ status: "M", path: "code" }]);
+});
+
+Deno.test("start-commit preparation failures refuse the check", () => {
+    const base = { ...commandDeliverable, fails_on_base: true, paths: ["t"] };
+    const intent = { ...input, deliverables: [base] };
+    assertEquals(
+        localResult(intent, valid, {
+            ...snapshots(),
+            "base_archive-0": { status: "failed" },
+        }).error_code,
+        "tasks.repository_execution_unknown",
+    );
+    for (const name of ["base_overlay-0", "base_directory-0"]) {
+        assertEquals(
+            localResult(intent, valid, { ...snapshots(), [name]: ran(1) })
+                .error_code,
+            "tasks.deliverable_invalid",
+        );
+    }
+    assertEquals(
+        localResult(intent, {
+            valid: false,
+            error_code: "tasks.deliverable_invalid",
+        }, {}),
+        { error_code: "tasks.deliverable_invalid", check_id: 5 },
+    );
+});
+
+Deno.test("a fails_on_base command records its start-commit run", () => {
+    const base = { ...commandDeliverable, fails_on_base: true, paths: ["t"] };
+    const value = localResult(
+        { ...input, command: "true", deliverables: [base] },
+        valid,
+        {
+            ...snapshots(),
+            project: ran(0),
+            "base_overlay-0": ran(0),
+            "base_directory-0": ran(0),
+            "base-0": ran(1, "", "fails on base"),
+            "deliverable-0": ran(0),
+            diff: ran(0, ""),
+            changed: ran(0, ""),
+        },
+    );
+    if (!("evidence" in value)) throw new Error("Expected evidence");
+    assertEquals(value.evidence?.commands["project-check"], {
+        exit_code: 0,
+        output: "",
+        base_started: true,
+        base_exit_code: 1,
+        base_output: "fails on base",
+    });
+    assertEquals(value.outcome, "passed");
+});
+
+const intent = {
+    ...input,
+    ssr_port: 5173,
+    setup: [
+        { name: "caches", command: "@orbit/ci-caches", timeout_seconds: 30 },
+    ],
+    command: "composer test",
+    deliverables: [
+        { ...commandDeliverable, directory: "apps/web" },
+        {
+            ...commandDeliverable,
+            id: "base",
+            fails_on_base: true,
+            paths: ["tests/a.php", "tests/b.php"],
+        },
+    ],
+    ssh_execution: { target: { user: "orbit" } },
+};
+const environment = [
+    "COMPOSER_NO_INTERACTION=1",
+    "ORBIT_CHECK_PROCESSES=1",
+    "COMPOSER_CACHE_DIR=/home/orbit/.cache/composer",
+    "ORBIT_SEED_PATH=",
+    "ORBIT_SEED_COMMIT=",
+    "INERTIA_SSR_PORT=5173",
+    "INERTIA_SSR_URL=http://127.0.0.1:5173",
+];
+const argv = (directory: string, command: string) => [
+    "env",
+    "-C",
+    directory,
+    ...environment,
+    "/bin/bash",
+    "-lc",
+    command,
+];
+
+Deno.test("every check command is one SSH exec argv in its directory", () => {
+    const steps = prepare(intent, 3, "/tmp/run");
+    assertEquals(steps.valid, true);
+    // The Gateway-owned setup step expands to the shared provision program.
+    assertEquals(steps.setup, [argv("/srv/check", ciCacheImportProgram)]);
+    assertEquals(steps.project, argv("/srv/check", "composer test"));
+    assertEquals(steps.deliverables, [
+        argv("/srv/check/apps/web", "touch never"),
+        argv("/srv/check", "touch never"),
+    ]);
+    assertEquals(steps.bases[1], {
+        archive: [
+            "git",
+            "-C",
+            "/srv/check",
+            "archive",
+            "--format=tar",
+            "--prefix=base-1/",
+            "--output=/tmp/run/base-1.tar",
+            commit,
+        ],
+        extract: ["tar", "-x", "-f", "/tmp/run/base-1.tar", "-C", "/tmp/run"],
+        dependencies: [
+            "env",
+            "-C",
+            "/srv/check",
+            "find",
+            ".",
+            "-name",
+            ".git",
+            "-prune",
+            "-o",
+            "(",
+            "-name",
+            "vendor",
+            "-o",
+            "-name",
+            "node_modules",
+            ")",
+            "-type",
+            "d",
+            "-prune",
+            "-exec",
+            "cp",
+            "-a",
+            "--parents",
+            "-t",
+            "/tmp/run/base-1",
+            "{}",
+            "+",
+        ],
+        overlay: [
+            "env",
+            "-C",
+            "/srv/check",
+            "cp",
+            "-p",
+            "--parents",
+            "-t",
+            "/tmp/run/base-1",
+            "--",
+            "tests/a.php",
+            "tests/b.php",
+        ],
+        directory: ["test", "-d", "/tmp/run/base-1"],
+        run: argv("/tmp/run/base-1", "touch never"),
+    });
+    assertEquals(steps.bases[0].overlay, ["true"]);
+});
+
+Deno.test("deliverable paths are checked on 209 before any command", () => {
+    for (
+        const deliverable of [
+            { ...commandDeliverable, directory: "../outside" },
+            { ...commandDeliverable, directory: "/srv" },
+            { ...commandDeliverable, paths: ["../code"] },
+            { ...commandDeliverable, paths: ["/etc/passwd"] },
+            { ...commandDeliverable, paths: ["tests/./a.php"] },
+            { ...commandDeliverable, paths: ["tests//a.php"] },
+        ]
+    ) {
+        const steps = prepare(
+            { ...intent, deliverables: [deliverable] },
+            3,
+            "/tmp/run",
+        );
+        assertEquals(
+            [steps.valid, steps.error_code],
+            [false, "tasks.deliverable_invalid"],
+        );
+    }
+    // A start-commit run needs a commit to archive.
+    assertEquals(
+        prepare(
+            {
+                ...intent,
+                base: "",
+                deliverables: [{ ...commandDeliverable, fails_on_base: true }],
+            },
+            3,
+            "/tmp/run",
+        ).valid,
+        false,
+    );
+    assertThrows(() => prepare(intent, 4, "/tmp/run"));
+});
+
+Deno.test("terminal CI names the candidate only while the workspace still holds it", () => {
+    const value = {
+        pending: false,
+        status: "succeeded",
+        result: { outcome: "passed", commit, tree: "b".repeat(40) },
+    };
+    const snapshot = (head: string, tree: string) => ({
+        "snapshot-7-tree": ran(0, tree + "\n"),
+        "snapshot-7-head": ran(0, head + "\n"),
+    });
+    assertEquals(
+        observed(value, snapshot(commit, "b".repeat(40)), "7"),
+        value,
+    );
+    assertEquals(
+        observed(value, snapshot(commit, "c".repeat(40)), "7").result,
+        { ...value.result, outcome: "changed" },
+    );
+    const missing = observed(value, {}, "7");
+    assertEquals(missing.status, "failed");
+    assertEquals(
+        (missing.result as Record<string, unknown>).error_code,
+        "tasks.check_execution_unknown",
+    );
 });
 
 const shell = (exitCode: number, stdout = "", stderr = "") => ({
@@ -235,7 +533,6 @@ Deno.test("handoff admission maps the mint, push and import outputs to one publi
             execution_references_json: JSON.stringify(references),
         },
         local,
-        after: JSON.stringify({ head: commit, tree: "b".repeat(40) }),
         steps: steps(push),
     });
     const ok = finish(args(shell(0)));

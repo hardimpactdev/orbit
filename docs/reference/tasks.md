@@ -204,9 +204,17 @@ Plain Task VMs have no Swamp worker. Native provision supplies the Pi runtime an
 
 A workspace is required (`409 tasks.no_workspace`). A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
 
-Separate native steps validate the paths, snapshot the workspace, run baseline setup in order, run the Project check, collect file and command deliverables and snapshot the checked tree. A command marked `fails_on_base` runs in a separate step on an archive of its start commit, with installed dependencies and only the declared test paths overlaid. Commands receive no GitHub or Gateway credentials. Their public output is redacted and bounded. A changed checked tree returns `changed`; failed commands or unmet deliverables return `failed`. A failed Project check keeps its output and leaves skipped command deliverables unmet; it creates no candidate.
+Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. TypeScript on Node 209 builds each argv from the intent and shapes every output. It refuses a deliverable directory that is absolute or has a `..` segment, an overlay path that is not a canonical repository-relative file, and a `fails_on_base` command without a base commit, as `tasks.deliverable_invalid`, before any command runs.
 
-A passing handoff creates its candidate commit in the VM. A Git reference transaction records the candidate under `refs/orbit/check-operations/{operation}` with HEAD. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
+The steps record the start HEAD (`original`), run baseline setup in order (`setup-0`, `setup-1`, …), snapshot the workspace (`snapshot-before-*`), run the Project check (`project`), read the subtask diff from its base with `git diff-tree -r --no-renames --name-status -z` (`diff`), run each command deliverable (`deliverable-0`, …), and snapshot the checked tree again (`snapshot-after-*`, `changed`). A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against the run's own index file, and `git rev-parse HEAD`; the real index is untouched.
+
+Each command runs as `env -C <directory> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_PROCESSES=1 COMPOSER_CACHE_DIR=… [INERTIA_SSR_PORT=… INERTIA_SSR_URL=…] /bin/bash -lc <command>` in the SSH account's environment. A setup step named `@orbit/ci-caches` expands to the same shared program that provision runs. Commands receive no GitHub or Gateway credentials. Their stdout and stderr stay in native history on Node 209; the result keeps a redacted tail of at most 16 KiB.
+
+A command marked `fails_on_base` also runs on its start commit, in separate steps: `git archive` of the base commit, `tar -x` into the run's scratch directory, `find … -exec cp -a --parents` of the installed `vendor` and `node_modules` directories, `cp --parents` of only the declared test paths, and `test -d` of its directory. A missing overlay file or directory refuses the check as `tasks.deliverable_invalid`; any other failed step refuses it as `tasks.repository_execution_unknown`.
+
+A changed checked tree returns `changed`; failed commands or unmet deliverables return `failed`. A failed Project check keeps its output and leaves skipped command deliverables unmet; it creates no candidate.
+
+A passing handoff creates its candidate commit in the VM with `git add --all` and one `git commit` as `Orbit <orbit@users.noreply.github.com>`, with hooks off and the admitted message. TypeScript on Node 209 reads `HEAD`, its tree and its parent back: they must be the checked tree on the checked HEAD, or the check is `changed` and records no candidate. `git update-ref` then records the candidate under `refs/orbit/check-operations/{operation}`. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
 
 For Projects with a handoff check name, separate export, copy, import and push steps publish that exact candidate without force to `task-{group}-handoff`, as [publish](#publish-an-external-group) does. After the candidate is ready, a placed mint step posts to the existing scoped Gateway token primitive with `curl`.
 
@@ -216,9 +224,9 @@ The VM and repository commands receive none. The push token is revoked after use
 
 The check run ends after local execution and CI admission. A native `trigger.schedule` runs about once a minute and performs one bounded status observation per pending check: one `gh api` read of the latest check runs for the exact SHA, at most 100, without paging. TypeScript on 209 keeps only the public run fields.
 
-The observation never waits or retries inside a step. Pending CI remains ineligible for reviewer and publication admission. A pending observation keeps the original Operation running. The family applies recorded cancellation intent on the next delivered valid observation; this does not claim that GitHub or the completed original native run was cancelled. Native pending records settle on a terminal result or 55 minutes after the push.
+Each observation of a settled result also snapshots the workspace with the same four argv steps (`snapshot-<operation>-index`, `-add`, `-tree`, `-head`); when HEAD or the tree differs from the candidate, the result is `changed`. The observation never waits or retries inside a step. Pending CI remains ineligible for reviewer and publication admission. A pending observation keeps the original Operation running. The family applies recorded cancellation intent on the next delivered valid observation; this does not claim that GitHub or the completed original native run was cancelled. Native pending records settle on a terminal result or 55 minutes after the push.
 
-If SSH preparation or asset delivery fails, native dependencies skip the checks and result steps that need the missing validation and setup outputs. The run keeps its original failure, and the shared terminal reader settles the Operation. Cleanup remains separate native work; no empty output is substituted for a missing predecessor.
+If SSH preparation fails, native dependencies skip the checks and result steps that need the missing validation and setup outputs. The run keeps its original failure, and the shared terminal reader settles the Operation. Cleanup remains separate native work; no empty output is substituted for a missing predecessor.
 
 The scheduled result identifies the admitted repository, check name and exact SHA; passed CI or a code failure records terminal check evidence through the shared projection. Unreadable or misconfigured CI records an infrastructure failure. Cancellation preserves the pushed candidate and does not cancel GitHub workflows. No webhook or new GitHub access is required.
 
@@ -1028,7 +1036,7 @@ Use the comment API, CLI or MCP to post a resolution. This changes assistance on
 
 ## Project check
 
-A `tasks.check` operation runs the Project's configured check. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The detached process records bounded, redacted output and its process identity, so operation recovery does not start a second check.
+A `tasks.check` operation runs the Project's configured check. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.
 
 ### Check output
 
@@ -1389,13 +1397,13 @@ A task and its subtasks share a lifecycle and most of their fields, so both are 
 
 ### Deliverables are checked, not read
 
-Orbit cannot check prose, so a subtask names typed items. The check script runs each command itself. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `file` path accepts a glob, including `{a,b}` or `{php}` alternation. A command's `paths` list is exact files, because a glob could match a file made to satisfy the base run.
+Orbit cannot check prose, so a subtask names typed items. The check runs each command itself. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `file` path accepts a glob, including `{a,b}` or `{php}` alternation. A command's `paths` list is exact files, because a glob could match a file made to satisfy the base run.
 
 ### A command must fail on the start commit
 
 A command that only passes on the fixed code does not prove it covers the bug. So a base run uses the start commit and adds only the files named in `paths`. It also copies installed `vendor` and `node_modules` directories so a Composer or JavaScript command can run, and it copies nothing else. A missing Python or Rust dependency tree is not proof that the bug existed on the start commit.
 
-The base tree is an extracted archive inside `$(git rev-parse --git-path orbit)/bases/`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. Exit 126 or 127 is not that proof: the command did not run.
+The base tree is an extracted archive in the run's scratch directory on the VM, `/tmp/orbit-task-check-<run>/base-<n>`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. The run removes the directory at its end. Exit 126 or 127 is not that proof: the command did not run.
 
 ### Assistance is recorded in Activity
 

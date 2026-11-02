@@ -107,8 +107,11 @@ function run(steps: Steps, name: string) {
     return Run.parse(outputs.success ? outputs.data : {});
 }
 
-/** `git write-tree` and `git rev-parse HEAD` of one snapshot. */
-export function snapshot(steps: Steps, phase: "before" | "after"): Snapshot {
+/**
+ * `git write-tree` and `git rev-parse HEAD` of one snapshot, from its
+ * `snapshot-<phase>-tree` and `snapshot-<phase>-head` steps.
+ */
+export function snapshot(steps: Steps, phase: string): Snapshot {
     const value = (name: string) => {
         const item = run(steps, `snapshot-${phase}-${name}`);
         const oid = (item.stdout ?? "").trim();
@@ -209,6 +212,14 @@ function tailBytes(value: string, limit: number): string {
     return decoder.decode(bytes.subarray(start));
 }
 
+/** stdout followed by stderr, as a redacted tail of at most 16 KiB. */
+export function programOutput(
+    execution: { stdout?: string; stderr?: string },
+): string {
+    const raw = (execution.stdout ?? "") + (execution.stderr ?? "");
+    return tailBytes(redactText(tailBytes(raw, OUTPUT_WINDOW)), OUTPUT_BYTES);
+}
+
 /** tasks.script: a redacted 16 KiB tail of stdout and stderr, and the snapshot change. */
 export function scriptResult(args: { gate: unknown; steps: Steps }) {
     const checked = ObjectValue.parse(args.gate);
@@ -223,10 +234,7 @@ export function scriptResult(args: { gate: unknown; steps: Steps }) {
     return {
         outcome: execution.exitCode === 0 ? "passed" : "failed",
         exit_code: execution.exitCode,
-        output: tailBytes(
-            redactText(tailBytes(raw, OUTPUT_WINDOW)),
-            OUTPUT_BYTES,
-        ),
+        output: programOutput(execution),
         output_truncated: encoder.encode(raw).length > OUTPUT_BYTES,
         changed: before.head !== after.head || before.tree !== after.tree,
         ...after,
@@ -399,7 +407,7 @@ export async function analysisResult(args: {
 /** Public data for the tasks.script and tasks.analyze steps; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-repository-program",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         public: {
             description: "Public program argv and evidence",

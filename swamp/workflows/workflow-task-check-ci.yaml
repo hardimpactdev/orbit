@@ -3,20 +3,13 @@ name: task-check-ci
 description: One bounded Checks observation per pending handoff at each native schedule tick.
 trigger:
   schedule: 0 * * * * *
+queueTimeout: 30
 vaults:
 - orbit-control-inputs
 jobs:
 - name: checks
   labels: {role: swamp}
   steps:
-  - name: assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-ci-data" }}'
-      methodName: assets
-      inputs: {}
   - name: read-${{ self.check.attributes.inputs.operation_id }}
     labels: {role: swamp}
     task:
@@ -40,10 +33,6 @@ jobs:
       item: check
       in: ${{ data.query('modelType == "@nckrtl/task-check-data" && specName == "pending" && tags.task_check == "pending" && attributes.pending == true')
         }}
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
   - name: ci-${{ self.check.attributes.inputs.operation_id }}
     labels: {role: swamp}
     task:
@@ -94,27 +83,7 @@ jobs:
         - type: skipped
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
-  - name: copy_assets-${{ self.check.attributes.inputs.operation_id }}
-    labels: {role: swamp}
-    forEach: *id001
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *id002
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.directory }}
-        dst: ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/" }}
-        direction: to
-        recursive: true
-    dependsOn:
-    - step: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
-      condition: *id003
-    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
-      != "succeeded" }}
-  - name: snapshot-${{ self.check.attributes.inputs.operation_id }}
+  - name: snapshot-${{ self.check.attributes.inputs.operation_id }}-index
     labels: {role: swamp}
     forEach: *id001
     task:
@@ -126,12 +95,87 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/scripts/snapshot.py" }}
-        stdin: ${{ self.check.attributes.inputs_json }}
+        - env
+        - ${{ "GIT_INDEX_FILE=" + "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/index" }}
+        - git
+        - -C
+        - ${{ self.check.attributes.inputs.intent.checkout_path }}
+        - read-tree
+        - HEAD
     dependsOn:
-    - step: copy_assets-${{ self.check.attributes.inputs.operation_id }}
+    - step: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
+      condition: *id003
+    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
+      != "succeeded" }}
+    allowFailure: true
+  - name: snapshot-${{ self.check.attributes.inputs.operation_id }}-add
+    labels: {role: swamp}
+    forEach: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=" + "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/index" }}
+        - git
+        - -C
+        - ${{ self.check.attributes.inputs.intent.checkout_path }}
+        - add
+        - --all
+    dependsOn:
+    - step: snapshot-${{ self.check.attributes.inputs.operation_id }}-index
+      condition: *id003
+    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
+      != "succeeded" }}
+    allowFailure: true
+  - name: snapshot-${{ self.check.attributes.inputs.operation_id }}-tree
+    labels: {role: swamp}
+    forEach: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=" + "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/index" }}
+        - git
+        - -C
+        - ${{ self.check.attributes.inputs.intent.checkout_path }}
+        - write-tree
+    dependsOn:
+    - step: snapshot-${{ self.check.attributes.inputs.operation_id }}-add
+      condition: *id003
+    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
+      != "succeeded" }}
+    allowFailure: true
+  - name: snapshot-${{ self.check.attributes.inputs.operation_id }}-head
+    labels: {role: swamp}
+    forEach: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ self.check.attributes.inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+    dependsOn:
+    - step: snapshot-${{ self.check.attributes.inputs.operation_id }}-tree
       condition: *id003
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
@@ -146,11 +190,10 @@ jobs:
       methodName: observed
       inputs:
         value: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs }}
-        snapshot: '${{ "snapshot-" + string(self.check.attributes.inputs.operation_id) in steps && "outputs" in steps["snapshot-" + string(self.check.attributes.inputs.operation_id)]
-          && "stdout" in steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs ? steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs.stdout
-          : "{}" }}'
+        operation_id: ${{ self.check.attributes.inputs.operation_id }}
+        steps: ${{ steps }}
     dependsOn:
-    - step: snapshot-${{ self.check.attributes.inputs.operation_id }}
+    - step: snapshot-${{ self.check.attributes.inputs.operation_id }}-head
       condition:
         type: always
   - name: cleanup_remote-${{ self.check.attributes.inputs.operation_id }}
@@ -224,9 +267,6 @@ jobs:
       inputs:
         steps: ${{ steps }}
     dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
     - step: settle-${{ self.check.attributes.inputs.operation_id }}
       condition:
         type: always

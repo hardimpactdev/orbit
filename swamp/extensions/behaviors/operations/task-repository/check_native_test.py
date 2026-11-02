@@ -1,10 +1,9 @@
-"""Execute the shipped check DAG with official SSH and harmless local host tools."""
+"""Execute the check DAG with official SSH exec argv and harmless local host tools."""
 
 import json
 import shutil
 import sys
 import unittest
-from pathlib import Path
 
 import yaml
 from native_test import ROOT, NativeRepository
@@ -86,9 +85,6 @@ class NativeCheck(NativeRepository):
         )
         run = self.decode(result)
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-        Path("/fast/apps/lane25-scratch/check-native-last.json").write_text(
-            json.dumps(history, indent=2)
-        )
         selected = next(x for x in history["jobs"][0]["steps"] if x["name"] == "result")
         return history, json.loads(
             selected["outputs"]["stdout"]
@@ -122,16 +118,17 @@ class NativeCheck(NativeRepository):
         steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
         self.assertEqual(steps[failed_step]["status"], "failed")
         for name in (
+            "original",
             "setup_result",
-            "before",
+            "snapshot-before-index",
             "project",
-            "base_ready-0",
-            "base_ready-1",
+            "base_archive-0",
+            "base_archive-1",
             "base-0",
             "base-1",
             "deliverable-0",
             "deliverable-1",
-            "after",
+            "snapshot-after-index",
             "local",
             "mint_github",
             "push",
@@ -152,14 +149,6 @@ class NativeCheck(NativeRepository):
         )
         self.assert_preparation_failure("prepare_remote")
 
-    def test_asset_copy_failure_skips_checks_without_reading_missing_outputs(self):
-        (self.repo / "tools/scp").write_text(
-            "#!"
-            + sys.executable
-            + '\nimport sys\nsys.stderr.write("fixture asset copy unavailable\\n")\nraise SystemExit(31)\n'
-        )
-        self.assert_preparation_failure("copy_assets")
-
     def test_baseline_setup_is_ordered_before_the_checked_snapshot(self):
         self.inputs["intent"]["setup"] = [
             {"name": "first", "command": "printf new > code", "timeout_seconds": 30},
@@ -169,10 +158,19 @@ class NativeCheck(NativeRepository):
                 "timeout_seconds": 30,
             },
         ]
+        index = (self.workspace / ".git/index").read_bytes()
         history, result = self.execute_check()
         self.assertEqual(result["outcome"], "passed")
         self.assertIsNone(result["commit"])
         self.assertEqual(history["status"], "succeeded")
+        # Setup ran before the checked snapshot, which used its own index file.
+        self.assertEqual(result["head_before"], self.git("rev-parse", "HEAD"))
+        self.assertEqual(result["subtask_start_commit"], self.git("rev-parse", "HEAD"))
+        self.assertEqual(result["changed_paths"], [])
+        self.assertEqual((self.workspace / ".git/index").read_bytes(), index)
+        self.assertEqual(result["tree_before"], result["tree"])
+        # The run directory with the snapshot index is removed.
+        self.assertFalse(list(self.repo.glob("check-*")))
 
     def test_setup_failure_skips_later_setup_and_project(self):
         self.inputs["intent"]["setup"] = [
@@ -205,6 +203,31 @@ class NativeCheck(NativeRepository):
         _, result = self.execute_check(success=False)
         self.assertEqual(result["error_code"], "tasks.deliverable_invalid")
         self.assertFalse((self.workspace / "should-not-run").exists())
+
+    def test_missing_overlay_or_base_directory_refuses_without_a_base_run(self):
+        for paths, directory in ((["tests/missing.sh"], "."), ([], "new")):
+            with self.subTest(paths=paths, directory=directory):
+                (self.workspace / "new").mkdir(exist_ok=True)
+                (self.workspace / "new/keep").write_text("")
+                self.inputs["intent"].update(
+                    phase="handoff",
+                    deliverables=[
+                        {
+                            "id": "bad",
+                            "type": "command",
+                            "command": "touch base-ran",
+                            "directory": directory,
+                            "paths": paths,
+                            "fails_on_base": True,
+                        }
+                    ],
+                )
+                before = self.git("rev-parse", "HEAD")
+                history, result = self.execute_check(success=False)
+                steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+                self.assertEqual(result["error_code"], "tasks.deliverable_invalid")
+                self.assertEqual(steps["base-0"]["status"], "skipped")
+                self.assertEqual(self.git("rev-parse", "HEAD"), before)
 
     def test_missing_base_cannot_count_as_a_reproduced_failure(self):
         self.inputs["intent"].update(
@@ -260,7 +283,13 @@ class NativeCheck(NativeRepository):
 
     def test_handoff_file_and_base_command_evidence_precede_commit(self):
         self.workspace.joinpath("code").write_text("new\n")
-        self.workspace.joinpath("test.sh").write_text("test $(cat code) = new\n")
+        # An installed, ignored dependency directory reaches the start-commit tree.
+        self.workspace.joinpath(".gitignore").write_text("vendor/\n")
+        self.workspace.joinpath("vendor").mkdir()
+        self.workspace.joinpath("vendor/expect.sh").write_text("expected=new\n")
+        self.workspace.joinpath("test.sh").write_text(
+            '. vendor/expect.sh\ntest "$(cat code)" = "$expected"\n'
+        )
         self.inputs["intent"].update(
             phase="handoff",
             deliverables=[
@@ -286,10 +315,35 @@ class NativeCheck(NativeRepository):
                 },
             ],
         )
+        start = self.git("rev-parse", "HEAD")
         _, result = self.execute_check()
         self.assertEqual(result["outcome"], "passed")
         self.assertEqual(result["commit"], self.git("rev-parse", "HEAD"))
         self.assertEqual(result["evidence"]["commands"]["test"]["base_exit_code"], 1)
+        self.assertEqual(
+            sorted(result["evidence"]["diff"], key=lambda row: row["path"]),
+            [
+                {"status": "A", "path": ".gitignore"},
+                {"status": "M", "path": "code"},
+                {"status": "A", "path": "test.sh"},
+            ],
+        )
+        # The candidate commits the checked tree on the checked head, as Orbit,
+        # and the check operation's ref names it.
+        self.assertEqual(self.git("rev-parse", "HEAD^"), start)
+        self.assertEqual(self.git("rev-parse", "HEAD^{tree}"), result["tree"])
+        self.assertEqual(
+            self.git("log", "-1", "--format=%an <%ae>|%cn <%ce>|%B"),
+            "Orbit <orbit@users.noreply.github.com>|"
+            "Orbit <orbit@users.noreply.github.com>|Check",
+        )
+        self.assertEqual(
+            self.git("rev-parse", "refs/orbit/check-operations/91001"),
+            result["commit"],
+        )
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        # The start-commit tree held only the start commit plus the overlay.
+        self.assertFalse(list(self.repo.glob("check-*")))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 id: 21853e24-9096-4770-90e9-31c385c71e51
 name: operation-task-check
-description: Native local check and CI admission; scheduled reads own later hosted CI observations.
+description: Native local check and CI admission as official SSH exec argv in the owned task VM workspace; scheduled reads own later hosted CI observations.
+queueTimeout: 30
 vaults:
 - orbit-control-inputs
 inputs:
@@ -60,7 +61,7 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         node_id: ${{ inputs.node_id }}
-        operation_id: ${{ inputs.operation_id }}
+        root: ${{ "/tmp/orbit-task-check-" + run.id }}
   - name: prepare_remote
     labels: {role: swamp}
     task:
@@ -68,13 +69,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - mkdir
-        - -p
-        - ${{ "/tmp/orbit-task-check-" + run.id }}
-      globalArgs: &id001
+      globalArgs: &ssh_args
         name: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
@@ -86,58 +81,14 @@ jobs:
           address: ${{ inputs.intent.ssh_execution.target.host }}
           transport:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
-  - name: copy_assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      inputs:
-        hosts: name:target
-        src: ${{ steps.prepare.outputs.directory }}
-        dst: ${{ "/tmp/orbit-task-check-" + run.id + "/" }}
-        recursive: true
-        direction: to
-      globalArgs: *id001
-    dependsOn:
-    - step: prepare_remote
-      condition:
-        type: succeeded
-  - name: validate
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_validate.py" }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-task-check-" + run.id }}
     dependsOn:
-    - step: copy_assets
-      condition:
-        type: succeeded
-  - name: validation
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-validation" }}'
-      methodName: decode
-      inputs:
-        value: '${{ has(steps.validate) && has(steps.validate.outputs) && has(steps.validate.outputs.stdout) ? steps.validate.outputs.stdout : "{}" }}'
-    dependsOn:
-    - step: validate
+    - step: prepare
       condition:
         type: succeeded
   - name: original
@@ -147,19 +98,20 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
     dependsOn:
-    - step: validation
+    - step: prepare_remote
       condition:
         type: succeeded
-    guard: ${{ !has(steps.validation.outputs.valid) || !steps.validation.outputs.valid }}
+    guard: ${{ !steps.prepare.outputs.valid }}
   - name: setup-${{ self._index }}
     labels: {role: swamp}
     task:
@@ -167,27 +119,22 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_command.py" }}
-        - ${{ self.setup.input_json }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
         okExitCodes: any
         timeoutSec: ${{ self.setup.timeout_seconds }}
-      globalArgs: *id001
+        argv: ${{ steps.prepare.outputs.setup[self._index] }}
+    forEach:
+      item: setup
+      in: ${{ inputs.intent.setup }}
+    concurrency: 1
     dependsOn:
     - step: original
       condition:
         type: succeeded
-    forEach:
-      item: setup
-      in: ${{ inputs.intent.setup_steps }}
-    concurrency: 1
-    guard: ${{ self._index > 0 && (!("setup-" + string(self._index - 1) in steps) || !("outputs" in steps["setup-" + string(self._index - 1)]) || steps["setup-"
-      + string(self._index - 1)].outputs.exitCode != 0) }}
+    guard: ${{ self._index > 0 && (!("setup-" + string(self._index - 1) in steps) || !("outputs" in steps["setup-" + string(self._index - 1)]) || steps["setup-" + string(self._index - 1)].outputs.exitCode != 0) }}
+    writes: true
   - name: setup_result
     labels: {role: swamp}
     task:
@@ -197,10 +144,10 @@ jobs:
       methodName: setup
       inputs:
         intent: ${{ inputs.intent }}
+        prepared: ${{ steps.prepare.outputs }}
         steps: ${{ steps }}
-        validation: ${{ steps.validation.outputs }}
     dependsOn:
-    - step: validation
+    - step: prepare_remote
       condition:
         type: succeeded
     - step: setup-${{ self._index }}
@@ -209,23 +156,103 @@ jobs:
     - step: original
       condition:
         type: always
-  - name: before
+  - name: snapshot-before-index
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - read-tree
+        - HEAD
     dependsOn:
     - step: setup_result
+      condition:
+        type: succeeded
+  - name: snapshot-before-add
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - add
+        - --all
+    dependsOn:
+    - step: snapshot-before-index
+      condition:
+        type: succeeded
+  - name: snapshot-before-tree
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - write-tree
+    dependsOn:
+    - step: snapshot-before-add
+      condition:
+        type: succeeded
+  - name: snapshot-before-head
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+    dependsOn:
+    - step: snapshot-before-tree
+      condition:
+        type: succeeded
+  - name: before
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: '${{ "task-check-before" }}'
+      methodName: snapshot
+      inputs:
+        phase: before
+        steps: ${{ steps }}
+    dependsOn:
+    - step: snapshot-before-head
       condition:
         type: succeeded
   - name: project
@@ -235,22 +262,18 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_command.py" }}
-        - ${{ inputs.intent.project_command_json }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
         okExitCodes: any
         timeoutSec: 3600
-      globalArgs: *id001
+        argv: ${{ steps.prepare.outputs.project }}
     dependsOn:
     - step: before
       condition:
         type: succeeded
     guard: ${{ !steps.setup_result.outputs.passed || inputs.intent.command == null }}
+    writes: true
   - name: diff
     labels: {role: swamp}
     task:
@@ -258,15 +281,20 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_diff.py" }}
-        - '${{ has(steps.before) && has(steps.before.outputs) && has(steps.before.outputs.stdout) ? steps.before.outputs.stdout : "{}" }}'
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - diff-tree
+        - -r
+        - --no-renames
+        - --name-status
+        - -z
+        - ${{ inputs.intent.base }}
+        - ${{ steps.before.outputs.tree }}
     dependsOn:
     - step: project
       condition:
@@ -274,74 +302,24 @@ jobs:
     - step: before
       condition:
         type: succeeded
-  - name: base_prepare-${{ self._index }}
+    guard: ${{ inputs.intent.base == "" }}
+  - name: base_archive-${{ self._index }}
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_base_prepare.py" }}
-        - ${{ self.deliverable.input_json }}
-        - ${{ string(self._index) }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
-    dependsOn:
-    - step: diff
-      condition:
-        type: succeeded
-    forEach: &id002
+        argv: ${{ steps.prepare.outputs.bases[self._index].archive }}
+    forEach:
       item: deliverable
       in: ${{ inputs.intent.command_deliverables }}
     concurrency: 1
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
-      != 0) }}
-  - name: base_ready-${{ self._index }}
-    labels: {role: swamp}
-    forEach: *id002
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ "task-check-base-ready-" + string(self._index) }}'
-      methodName: decode
-      inputs:
-        value: '${{ "base_prepare-" + string(self._index) in steps && "outputs" in steps["base_prepare-" + string(self._index)] && "stdout" in steps["base_prepare-"
-          + string(self._index)].outputs ? steps["base_prepare-" + string(self._index)].outputs.stdout : "{}" }}'
     dependsOn:
-    - step: base_prepare-${{ self._index }}
-      condition:
-        type: always
-    - step: setup_result
-      condition:
-        type: succeeded
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
-      != 0) }}
-  - name: base-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_command.py" }}
-        - ${{ self.deliverable.input_json }}
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/base-" + string(self._index) }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-        okExitCodes: any
-        timeoutSec: 600
-      globalArgs: *id001
-    dependsOn:
-    - step: base_ready-${{ self._index }}
+    - step: diff
       condition:
         type: or
         conditions:
@@ -350,11 +328,130 @@ jobs:
     - step: setup_result
       condition:
         type: succeeded
-    forEach: *id002
+    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
+  - name: base_extract-${{ self._index }}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.prepare.outputs.bases[self._index].extract }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
     concurrency: 1
-    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
-      != 0) || !("base_ready-" + string(self._index) in steps) || !("outputs" in steps["base_ready-" + string(self._index)]) || !("checkout_path" in steps["base_ready-"
-      + string(self._index)].outputs) }}
+    dependsOn:
+    - step: base_archive-${{ self._index }}
+      condition:
+        type: succeeded
+    - step: setup_result
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
+    writes: true
+  - name: base_dependencies-${{ self._index }}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv: ${{ steps.prepare.outputs.bases[self._index].dependencies }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_extract-${{ self._index }}
+      condition:
+        type: succeeded
+    - step: setup_result
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
+    writes: true
+  - name: base_overlay-${{ self._index }}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv: ${{ steps.prepare.outputs.bases[self._index].overlay }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_dependencies-${{ self._index }}
+      condition:
+        type: succeeded
+    - step: setup_result
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
+    writes: true
+  - name: base_directory-${{ self._index }}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv: ${{ steps.prepare.outputs.bases[self._index].directory }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_overlay-${{ self._index }}
+      condition:
+        type: succeeded
+    - step: setup_result
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) || !("base_overlay-" + string(self._index) in steps) || !("outputs" in steps["base_overlay-" + string(self._index)]) || steps["base_overlay-" + string(self._index)].outputs.exitCode != 0 }}
+  - name: base-${{ self._index }}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 600
+        argv: ${{ steps.prepare.outputs.bases[self._index].run }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
+    dependsOn:
+    - step: base_directory-${{ self._index }}
+      condition:
+        type: succeeded
+    - step: setup_result
+      condition:
+        type: succeeded
+    guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) || !("base_directory-" + string(self._index) in steps) || !("outputs" in steps["base_directory-" + string(self._index)]) || steps["base_directory-" + string(self._index)].outputs.exitCode != 0 }}
+    writes: true
   - name: deliverable-${{ self._index }}
     labels: {role: swamp}
     task:
@@ -362,17 +459,16 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_command.py" }}
-        - ${{ self.deliverable.input_json }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
         okExitCodes: any
         timeoutSec: 3600
-      globalArgs: *id001
+        argv: ${{ steps.prepare.outputs.deliverables[self._index] }}
+    forEach:
+      item: deliverable
+      in: ${{ inputs.intent.command_deliverables }}
+    concurrency: 1
     dependsOn:
     - step: base-${{ self._index }}
       condition:
@@ -380,24 +476,26 @@ jobs:
     - step: setup_result
       condition:
         type: succeeded
-    forEach: *id002
-    concurrency: 1
     guard: ${{ !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
-  - name: after
+    writes: true
+  - name: snapshot-after-index
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - read-tree
+        - HEAD
     dependsOn:
     - step: deliverable-${{ self._index }}
       condition:
@@ -408,6 +506,83 @@ jobs:
     - step: setup_result
       condition:
         type: succeeded
+  - name: snapshot-after-add
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - add
+        - --all
+    dependsOn:
+    - step: snapshot-after-index
+      condition:
+        type: succeeded
+  - name: snapshot-after-tree
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-check-" + run.id + "/index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - write-tree
+    dependsOn:
+    - step: snapshot-after-add
+      condition:
+        type: succeeded
+  - name: snapshot-after-head
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+    dependsOn:
+    - step: snapshot-after-tree
+      condition:
+        type: succeeded
+  - name: after
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: '${{ "task-check-after" }}'
+      methodName: snapshot
+      inputs:
+        phase: after
+        steps: ${{ steps }}
+    dependsOn:
+    - step: snapshot-after-head
+      condition:
+        type: succeeded
   - name: changed
     labels: {role: swamp}
     task:
@@ -415,16 +590,20 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_diff.py" }}
-        - '${{ has(steps.before) && has(steps.before.outputs) && has(steps.before.outputs.stdout) ? steps.before.outputs.stdout : "{}" }}'
-        - '${{ has(steps.after) && has(steps.after.outputs) && has(steps.after.outputs.stdout) ? steps.after.outputs.stdout : "{}" }}'
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - diff-tree
+        - -r
+        - --no-renames
+        - --name-status
+        - -z
+        - ${{ steps.before.outputs.tree }}
+        - ${{ steps.after.outputs.tree }}
     dependsOn:
     - step: after
       condition:
@@ -438,11 +617,34 @@ jobs:
       methodName: local
       inputs:
         intent: ${{ inputs.intent }}
+        prepared: ${{ steps.prepare.outputs }}
         steps: ${{ steps }}
     dependsOn:
     - step: changed
       condition:
         type: succeeded
+  - name: commit_add
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - add
+        - --all
+    dependsOn:
+    - step: local
+      condition:
+        type: succeeded
+    guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
+    writes: true
   - name: commit
     labels: {role: swamp}
     task:
@@ -450,17 +652,55 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        stdin: ${{ inputs.intent.message }}
+        argv:
+        - env
+        - GIT_AUTHOR_NAME=Orbit
+        - GIT_AUTHOR_EMAIL=orbit@users.noreply.github.com
+        - GIT_COMMITTER_NAME=Orbit
+        - GIT_COMMITTER_EMAIL=orbit@users.noreply.github.com
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - commit.gpgSign=false
+        - commit
+        - --allow-empty
+        - --allow-empty-message
+        - --cleanup=verbatim
+        - --quiet
+        - --file=-
+    dependsOn:
+    - step: commit_add
+      condition:
+        type: succeeded
+    guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
+    writes: true
+  - name: commit_read
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/check_commit.py" }}
-        - ${{ steps.local.outputs.result_json }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+        - HEAD^{tree}
+        - HEAD^
     dependsOn:
-    - step: local
+    - step: commit
       condition:
         type: succeeded
     guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
@@ -474,14 +714,37 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         local: ${{ steps.local.outputs.result }}
-        commit: '${{ has(steps.commit) && has(steps.commit.outputs) && has(steps.commit.outputs.stdout) ? steps.commit.outputs.stdout : "{}" }}'
+        steps: ${{ steps }}
     dependsOn:
-    - step: commit
+    - step: commit_read
       condition:
         type: always
     - step: local
       condition:
         type: succeeded
+  - name: commit_ref
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - update-ref
+        - ${{ "refs/orbit/check-operations/" + string(inputs.operation_id) }}
+        - ${{ steps.candidate.outputs.result.commit }}
+    dependsOn:
+    - step: candidate
+      condition:
+        type: succeeded
+    guard: ${{ has(steps.candidate.outputs.result.error_code) || steps.candidate.outputs.result.commit == null }}
+    writes: true
   - name: export
     labels: {role: swamp}
     task:
@@ -499,9 +762,9 @@ jobs:
         - create
         - ${{ "/tmp/orbit-task-check-" + run.id + "/candidate.bundle" }}
         - HEAD
-      globalArgs: *id001
+      globalArgs: *ssh_args
     dependsOn:
-    - step: candidate
+    - step: commit_ref
       condition:
         type: succeeded
     guard: ${{ has(steps.candidate.outputs.result.error_code) || inputs.intent.check_name == null || steps.candidate.outputs.result.outcome != "passed"
@@ -536,7 +799,7 @@ jobs:
         src: ${{ "/tmp/orbit-task-check-" + run.id + "/candidate.bundle" }}
         dst: ${{ "/tmp/orbit-task-check-" + run.id + "-control/candidate.bundle" }}
         direction: from
-      globalArgs: *id001
+      globalArgs: *ssh_args
     dependsOn:
     - step: prepare_local
       condition:
@@ -677,25 +940,6 @@ jobs:
         type: succeeded
     guard: ${{ !steps.finish.outputs.minted }}
     allowFailure: true
-  - name: pushed_snapshot
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-check-" + run.id + "/scripts/snapshot.py" }}
-        stdin: ${{ steps.prepare.outputs.input_json }}
-      globalArgs: *id001
-    dependsOn:
-    - step: push
-      condition:
-        type: succeeded
   - name: finish
     labels: {role: swamp}
     task:
@@ -706,16 +950,11 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         local: ${{ steps.candidate.outputs.result }}
-        after: '${{ has(steps.pushed_snapshot) && has(steps.pushed_snapshot.outputs) && has(steps.pushed_snapshot.outputs.stdout) ? steps.pushed_snapshot.outputs.stdout
-          : "{}" }}'
         steps: ${{ steps }}
     dependsOn:
     - step: candidate
       condition:
         type: succeeded
-    - step: pushed_snapshot
-      condition:
-        type: always
     - step: push
       condition:
         type: always
@@ -817,7 +1056,7 @@ jobs:
         - -rf
         - --
         - ${{ "/tmp/orbit-task-check-" + run.id }}
-      globalArgs: *id001
+      globalArgs: *ssh_args
     dependsOn:
     - step: outcome
       condition:

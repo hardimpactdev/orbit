@@ -1,0 +1,126 @@
+{
+  "kind": "tasks.check",
+  "workflow": "operation-task-check",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "rm -rf /srv/proof-task-* /tmp/orbit-task-check-*"
+    ]
+  ],
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"extensions\": [\"tasks\"], \"projects\": [{\"id\": 90, \"name\": \"Proof task\", \"slug\": \"proof-task\", \"type\": \"node-package\", \"root\": \".\", \"repository_url\": \"https://github.com/hardimpactdev/proof-task.git\", \"default_branch\": \"main\", \"source_access\": \"github_app\", \"task_check\": \"test -f setup.txt\"}], \"task_groups\": [{\"id\": 900, \"project_id\": 90, \"title\": \"Proof task\", \"brief\": \"Proof\", \"status\": \"running\", \"orchestration\": \"external\", \"taskable\": {\"instance\": 9000}, \"subtasks\": [{\"id\": 901, \"position\": 1, \"title\": \"Proof\", \"brief\": \"Proof\", \"status\": \"running\", \"subtask_start_commit\": \"189e114ecd09ea98d9b30da48f03c93383decf66\", \"deliverables\": [{\"id\": \"code\", \"type\": \"file\", \"description\": \"The code changes.\", \"path\": \"code\", \"change\": \"modified\"}]}]}], \"instances\": [{\"id\": 9000, \"project_id\": 90, \"node_id\": ${node.target}, \"name\": \"task-proof\", \"checkout_path\": \"/srv/proof-task-${proof.run}\", \"task_workspace_owner_id\": 900, \"branch_override\": \"task-proof\", \"source_layout\": \"checkout\", \"status\": \"active\", \"branch\": \"task-proof\"}], \"task_vms\": [{\"group_id\": 900, \"node_id\": ${node.target}, \"provider\": \"incus\", \"size\": \"normal\", \"name\": \"tvm-proof\", \"state\": \"ready\", \"wireguard_ip\": \"10.250.0.90\"}]}"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects/90/setup-steps",
+      "body": {
+        "name": "proof-setup",
+        "command": "printf new > setup.txt",
+        "timeout_seconds": 30
+      },
+      "operation": false
+    }
+  ],
+  "before_target": [
+    [
+      "install",
+      "-d",
+      "-o",
+      "orbit",
+      "-g",
+      "orbit",
+      "/srv/proof-task-${proof.run}"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "sh",
+      "-c",
+      "set -e\ncd /srv/proof-task-$1\nprintf 'old\\n' > code\ngit init -q -b task-proof\ngit add code\nGIT_AUTHOR_DATE=2026-11-02T00:00:00Z GIT_COMMITTER_DATE=2026-11-02T00:00:00Z git -c user.name=Proof -c user.email=proof@example.test -c commit.gpgsign=false commit -qm proof\n",
+      "sh",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "task-groups/900/check",
+    "body": {
+      "subtask": 901,
+      "phase": "baseline"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "prepare",
+      "job": "check",
+      "step": "prepare",
+      "budget_seconds": 10
+    },
+    {
+      "name": "original",
+      "job": "check",
+      "step": "original",
+      "budget_seconds": 15
+    },
+    {
+      "name": "setup-0",
+      "job": "check",
+      "step": "setup-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "snapshot-before-add",
+      "job": "check",
+      "step": "snapshot-before-add",
+      "budget_seconds": 15
+    },
+    {
+      "name": "project",
+      "job": "check",
+      "step": "project",
+      "budget_seconds": 30
+    },
+    {
+      "name": "diff",
+      "job": "check",
+      "step": "diff",
+      "budget_seconds": 15
+    },
+    {
+      "name": "snapshot-after-add",
+      "job": "check",
+      "step": "snapshot-after-add",
+      "budget_seconds": 15
+    },
+    {
+      "name": "local",
+      "job": "check",
+      "step": "local",
+      "budget_seconds": 10
+    },
+    {
+      "name": "result",
+      "job": "check",
+      "step": "result",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/tasks.check/parity.py"
+}

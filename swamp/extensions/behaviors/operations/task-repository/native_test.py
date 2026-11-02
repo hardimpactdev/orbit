@@ -60,14 +60,6 @@ class NativeRepository(harness.NativeTestCase):
             + '\nimport shlex,subprocess,sys\nargs=sys.argv[1:]\nif "-M" in args or "-O" in args:raise SystemExit(0)\nargv=shlex.split(args[-1])\nr=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)\nsys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr)\nraise SystemExit(r.returncode)\n'
         )
         ssh.chmod(0o755)
-        # The check DAG in check_native_test.py still copies its scripts.
-        scp = tools / "scp"
-        scp.write_text(
-            "#!"
-            + sys.executable
-            + '\nimport shutil,sys\nfrom pathlib import Path\nsrc=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(":",1)[1])\nshutil.copytree(src,dst/src.name,dirs_exist_ok=True)\n'
-        )
-        scp.chmod(0o755)
         self.native_env["PATH"] = str(tools) + ":" + os.environ["PATH"]
         self.inputs = {
             "operation_id": 91001,

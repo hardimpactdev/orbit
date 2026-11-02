@@ -25,7 +25,6 @@ task_vm.resume
 task_vm.sweep_host
 task_vm.upcloud_image_build
 tasks.analyze
-tasks.check
 tasks.maintenance
 tasks.maintenance_finish
 tasks.park
