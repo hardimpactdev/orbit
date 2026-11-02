@@ -85,6 +85,7 @@ class NativePublicationFixture(harness.NativeTestCase):
             "_lib/repository_analysis.ts",
             "_lib/public_output.ts",
             "operations/instance-deploy/app_step_runtime.ts",
+            "operations/instance-deploy/project_environment.ts",
         ):
             path = self.repo / "extensions/behaviors" / name
             path.parent.mkdir(parents=True, exist_ok=True)

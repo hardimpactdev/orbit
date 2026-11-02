@@ -522,17 +522,17 @@ raise SystemExit(r.returncode)
         self.assertEqual(result["error_code"], "tasks.provision_failed")
         self.assertEqual(result["failed_step"], "clone")
 
-    def test_official_extension_loader_resolves_shared_environment_text_import(self):
+    def test_official_extension_loader_resolves_shared_environment_import(self):
         runtime = (
             self.repo
             / "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts"
         )
         runtime.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(
-            ROOT
-            / "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
-            runtime,
-        )
+        for name in ("app_step_runtime.ts", "project_environment.ts"):
+            shutil.copy(
+                ROOT / "extensions/behaviors/operations/instance-deploy" / name,
+                runtime.parent,
+            )
         (self.repo / "extensions/behaviors/environment-import.ts").write_text(
             'import { z } from "npm:zod@4.4.3";\nimport { appStepRuntime } from "./operations/instance-deploy/app_step_runtime.ts";\nexport const behavior = { type:"@nckrtl/test-environment-import",version:"2026.11.01.1",\nresources:{public:{schema:z.object({valid:z.boolean()}),lifetime:"infinite",garbageCollection:1}},\nmethods:{read:{description:"Check shipped shared source import",arguments:z.object({}),execute:async (_args,ctx)=>({dataHandles:[await ctx.writeResource("public","output",{valid:appStepRuntime.includes("def parse_project_environment")})]})}}};'
         )

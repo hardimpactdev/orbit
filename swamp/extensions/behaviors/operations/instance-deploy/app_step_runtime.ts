@@ -1,4 +1,4 @@
-import projectEnvironmentRuntime from "./scripts/project_environment.py" with { type: "text" };
+import { projectEnvironmentProgram } from "./project_environment.ts";
 
 /** Shared cache-baseline policy for Instance setup and Task baseline checks. */
 export const ciCacheImportProgram = String
@@ -29,9 +29,9 @@ fi
 
 /** Trusted workflow code executed once as the app user, never as a service or broker. */
 export const appStepRuntime = String.raw`
-${projectEnvironmentRuntime}
 import ctypes,fcntl,hashlib,json,os,pwd,re,selectors,signal,subprocess,sys,time
 from pathlib import Path
+${projectEnvironmentProgram}
 LIMIT=2048
 cancelled=False
 def cancel(*_):
