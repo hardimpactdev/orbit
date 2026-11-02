@@ -158,7 +158,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/vault-sync-plan",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         inputs: {
             description: "Public CLI intent",

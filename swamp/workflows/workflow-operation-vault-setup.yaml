@@ -142,7 +142,7 @@ jobs:
            (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw create item >"$ORBIT_VAULT_DIRECTORY/probe.json" 2>/dev/null) || exit 13
           jq -cne --slurpfile status "$ORBIT_VAULT_DIRECTORY/status.json" --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" --slurpfile col "$ORBIT_VAULT_DIRECTORY/collection.json" '{outcome:"succeeded",data:{backend:"configured",email:$status[0].userEmail,organization_id:$org[0].id,organization_name:$org[0].name,collection_id:$col[0].id,collection_name:$col[0].name}} as $r | (env.ORBIT_VAULT_CONFIGURATION | fromjson | [.client_secret,.master_password]) as $excluded | if all($r.data[]; . as $v | ($v | type == "string") and ($v | utf8bytelength <= 1024) and all($excluded[]; . == "" or (. as $s | $v | contains($s) | not))) then $r else empty end' 2>/dev/null || exit 15
           BW_COMMAND
-        env: &id001
+        env:
           ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ "/tmp/orbit-vault-setup-" + run.id }}
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
@@ -178,7 +178,9 @@ jobs:
           fi
           if [ -d "$ORBIT_VAULT_DIRECTORY" ]; then npx --yes --package=@bitwarden/cli@2026.6.0 bw logout >/dev/null 2>/dev/null || true; fi
           BW_COMMAND
-        env: *id001
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ "/tmp/orbit-vault-setup-" + run.id }}
         timeout: 30000
   - name: Remove CLI session
     labels:

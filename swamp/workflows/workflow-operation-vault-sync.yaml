@@ -143,8 +143,6 @@ jobs:
         env:
           ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
-            }}
           BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
           BW_NOINTERACTION: 'true'
           BW_CLIENTID: ${{ inputs.intent.client_id }}
@@ -247,8 +245,6 @@ jobs:
         env:
           ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
-            }}
           BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
           BW_NOINTERACTION: 'true'
           BW_CLIENTID: ${{ inputs.intent.client_id }}
@@ -282,8 +278,6 @@ jobs:
         env:
           ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
-            }}
           BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
           BW_NOINTERACTION: 'true'
           BW_CLIENTID: ${{ inputs.intent.client_id }}
@@ -316,8 +310,6 @@ jobs:
         env:
           ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
-            }}
           ORBIT_VAULT_TRASH: 'true'
           BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
           BW_NOINTERACTION: 'true'
@@ -374,8 +366,6 @@ jobs:
         env:
           ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
-            }}
           ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
           BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
           BW_NOINTERACTION: 'true'
@@ -459,8 +449,6 @@ jobs:
         env:
           ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
-            }}
           BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
           BW_NOINTERACTION: 'true'
           BW_CLIENTID: ${{ inputs.intent.client_id }}
