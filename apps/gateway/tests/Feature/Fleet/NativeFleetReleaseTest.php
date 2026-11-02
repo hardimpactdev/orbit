@@ -81,6 +81,17 @@ it('records only admitted results and keeps later Nodes pending after a halt', f
         ->and($rollout->nodes()->where('node_id', $this->prod->id)->sole()->outcome->value)->toBe('pending');
 });
 
+it('settles a run that failed before visiting any Node and keeps the rollout open', function (): void {
+    $id = $this->postJson('/api/v1/fleet/rollout')->assertAccepted()->json('data.id');
+    $operation = Operation::findOrFail($id);
+    app(FleetReleaseProjection::class)->apply($operation, ['run_id' => $this->run, 'status' => 'failed', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'error_code' => 'operation.native_failed', 'result' => []]);
+    $rollout = FleetRollout::findOrFail($operation->input['rollout_id']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($rollout->status->value)->toBe('running')->and($rollout->halted_node_id)->toBeNull()
+        ->and($rollout->nodes()->pluck('outcome')->map->value->unique()->all())->toBe(['pending']);
+});
+
 it('admits a Node whatever CLI it runs; the native child replaces an unrecognized one', function (): void {
     NodeFootprint::query()->create(['node_id' => $this->dev->id, 'artifacts' => [], 'digest' => 'prior', 'cli_state' => 'foreign']);
     expect(app(FleetRolloutMembership::class)->exclusion($this->dev->refresh()))->toBeNull();

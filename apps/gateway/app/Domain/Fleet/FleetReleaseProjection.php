@@ -34,7 +34,9 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
         }
         $nodes = array_map(ValidatedData::object(...), $nodes);
 
-        if (OperationStatus::from(ValidatedData::string($data['status']))->terminal() && ($data['status'] !== 'cancelled' || $result !== [])) {
+        // A run that ended before it visited any Node, such as a failed prepare, reports no Node list. It still settles.
+        $unvisited = in_array($data['status'], ['failed', 'cancelled'], true) && $nodes === [];
+        if (OperationStatus::from(ValidatedData::string($data['status']))->terminal() && ! $unvisited) {
             $valid = Validator::make($result, [
                 'nodes' => ['required', 'array', 'max:1000'],
                 'nodes.*.node_id' => ['required', 'integer', 'distinct'],
@@ -85,7 +87,8 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
                 }
                 DB::afterCommit(fn () => app(NodeUpdateBroadcaster::class)->node($node->id));
             }
-            if (is_int($operation->input['rollout_id'] ?? null)) {
+            // No Node was visited, so the rollout and its Node rows stay as they are; the next admission retries.
+            if (is_int($operation->input['rollout_id'] ?? null) && $nodes !== []) {
                 FleetRollout::query()->whereKey($operation->input['rollout_id'])->update([
                     'status' => $result['rollout_status'] ?? ($projected->status === OperationStatus::Failed ? FleetRolloutStatus::Halted->value : FleetRolloutStatus::Completed->value),
                     'halted_node_id' => $result['halted_node_id'] ?? null,
