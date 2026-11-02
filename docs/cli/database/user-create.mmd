@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md#add-a-user.
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 22 (login and grants in one SQL batch on stdin; no copied scripts or cleanup).
   %% status: draft
   %% command: database:user:create
   %% kind: database_user.create
@@ -51,15 +52,11 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5123
-  %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
-  %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
-  %%> What it does:
-  %%> - copies the shipped scripts into `/tmp/orbit-database-user-create-5123`
-  %%> - each later step reads both passwords with `vault.get` and passes them on standard input, never in argv
   opt --replication on PostgreSQL
-    SW->>N: Check logical WAL<br/>SHOW wal_level
+    SW->>N: Check logical WAL<br/>docker exec -i · SHOW
+    %%> How:
+    %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the `swamp` role's SSH identity; nothing is copied to the Node
+    %%> - one `docker exec -i … psql` with `SHOW wal_level` on stdin
     %%> What it does:
     %%> - checks that the live server has `wal_level=logical`, before any change
     %%> Refuses:
@@ -67,29 +64,23 @@ sequenceDiagram
     %%> Not included:
     %%> - Orbit never changes the server configuration or creates publications
   end
-  SW->>N: Create or update login<br/>CREATE or ALTER USER reporting
+  SW->>N: Apply login and grants<br/>docker exec -i · SQL on stdin
+  %%> How:
+  %%> - one `docker exec -i` with the statement batch on stdin; the user password from `vault.get` sits inside the SQL, never in argv
+  %%> - admin login: the 0600 option file for MySQL, local trust for PostgreSQL
   %%> What it does:
   %%> - creates the login, or sets the password of a user Orbit recorded before
   %%> - PostgreSQL: adds or removes the replication attribute
+  %%> - replaces the user's privileges with exactly the requested ones, in the same batch
   %%> Refuses:
-  %%> - an existing PostgreSQL role outside this connection (`database.name_conflict`)
-  SW->>N: Replace the grants<br/>exact grants on database shop
-  %%> What it does:
-  %%> - replaces the user's privileges with exactly the requested ones
+  %%> - an existing PostgreSQL role outside this connection (`database.name_conflict`); the create statement refuses by itself
   %%> - MySQL: escapes underscores, so the grant covers only `shop`
   %%> - PostgreSQL replication: also owner defaults for future public tables
-  SW->>N: Check the user<br/>login and grants match
+  SW->>N: Check the user<br/>docker exec -i · login, grants
   %%> What it does:
   %%> - reads the live role or user back and checks its login, attributes and grants
   %%> Why:
   %%> - the user only counts as created when the server shows it
-  SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5123
-  %%> When:
-  %%> - always, after the steps above, whether they passed or failed
-  %%> What it does:
-  %%> - removes `/tmp/orbit-database-user-create-5123`, so no scripts stay on Node 12
-  %%> If it fails:
-  %%> - the task result does not change; the directory holds no secrets
   alt every step passes
     N-->>SW: reporting matches
     %%> Returns:
