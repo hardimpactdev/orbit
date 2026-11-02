@@ -28,10 +28,12 @@ export async function toolSetupPlan(raw: unknown, home: string) {
     const fetch = (
         name: string,
         pin: { url: string; algorithm: string; digest: string },
+        packageIndex: number | null = null,
     ) => {
         const path = cache + "/" + name;
         fetches.push({
             path,
+            package_index: packageIndex,
             url: pin.url,
             owner: "root",
             mode: "0644",
@@ -40,7 +42,11 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                 : null,
         });
         if (pin.algorithm === "sha512") {
-            sha512.push({ path, stdin: pin.digest + "  " + path + "\n" });
+            sha512.push({
+                path,
+                package_index: packageIndex,
+                stdin: pin.digest + "  " + path + "\n",
+            });
         }
         return path;
     };
@@ -68,10 +74,10 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             "-o",
             "APT::Get::List-Cleanup=false",
         ];
-        aptArgs = apt.packages.map((pkg) =>
+        aptArgs = apt.packages.map((pkg, index) =>
             pkg.artifact === null
                 ? pkg.name + "=" + pkg.version
-                : fetch(pkg.name + ".deb", pkg.artifact)
+                : fetch(pkg.name + ".deb", pkg.artifact, index)
         );
     }
     if (setup.manager === "composer") {
@@ -291,6 +297,21 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             ],
         });
     }
+    const aptInstallPrefix: string[] = apt === null ? [] : [
+        "timeout",
+        "900",
+        "env",
+        "DEBIAN_FRONTEND=noninteractive",
+        "apt-get",
+        "-o",
+        "DPkg::Lock::Timeout=300",
+        ...aptOptions,
+        "install",
+        "--yes",
+        "--no-install-recommends",
+        "--no-remove",
+        "--",
+    ];
     return {
         setup,
         home,
@@ -317,29 +338,21 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             ...aptOptions,
             "update",
         ],
-        apt_install: apt === null ? [] : [
-            "timeout",
-            "900",
-            "env",
-            "DEBIAN_FRONTEND=noninteractive",
-            "apt-get",
-            "-o",
-            "DPkg::Lock::Timeout=300",
-            ...aptOptions,
-            "install",
-            "--yes",
-            "--no-install-recommends",
-            "--no-remove",
-            "--",
-            ...aptArgs,
-        ],
+        apt_install: apt === null ? [] : [...aptInstallPrefix, ...aptArgs],
+        apt_install_prefix: aptInstallPrefix,
+        apt_arguments: (apt?.packages ?? []).map((pkg, index) => ({
+            index,
+            argv: pkg.artifact === null
+                ? pkg.name + "=" + pkg.version
+                : cache + "/" + pkg.name + ".deb",
+        })),
         apt_packages: apt?.packages ?? [],
-        apt_artifacts: (apt?.packages ?? []).filter((pkg) =>
-            pkg.artifact !== null
-        ).map((pkg) => ({
+        apt_artifacts: (apt?.packages ?? []).map((pkg, index) => ({
+            package_index: index,
+            artifact: pkg.artifact,
             name: pkg.name,
             version: pkg.version,
             path: cache + "/" + pkg.name + ".deb",
-        })),
+        })).filter((pkg) => pkg.artifact !== null),
     };
 }

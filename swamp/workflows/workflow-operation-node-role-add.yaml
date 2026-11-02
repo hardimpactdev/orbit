@@ -1122,10 +1122,11 @@ jobs:
     forEach:
       item: metrics
       in: '${{ inputs.intent.prometheus == null ? [] : inputs.intent.prometheus.checks }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-exporter-health-"+string(self.metrics.node_id)+"-"+string(self.metrics.index) }}', methodName: exec,
-      globalArgs: {name: '${{ "role-add-exporter-health-"+string(self.metrics.node_id)+"-"+string(self.metrics.index) }}', transport: {kind: ssh, user: '${{ self.metrics.ssh.target.user
-            }}', port: '${{ self.metrics.ssh.target.port }}', identityFile: '${{ self.metrics.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.metrics.ssh.target.host
-              }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","curl","--max-time","5","--retry","59","--retry-delay","1","--retry-connrefused","--fail","--silent","--show-error","--output","/dev/null",self.metrics.url]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-add-exporter-health-"+string(self.metrics.node_id)+"-"+string(self.metrics.index)).split(".").join("-")
+        }}', methodName: exec, globalArgs: {name: '${{ ("role-add-exporter-health-"+string(self.metrics.node_id)+"-"+string(self.metrics.index)).split(".").join("-") }}', transport: {
+          kind: ssh, user: '${{ self.metrics.ssh.target.user }}', port: '${{ self.metrics.ssh.target.port }}', identityFile: '${{ self.metrics.ssh.identity_file }}'}, hosts: [{name: target,
+            address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{
+          ["timeout","60","curl","--max-time","5","--retry","59","--retry-delay","1","--retry-connrefused","--fail","--silent","--show-error","--output","/dev/null",self.metrics.url]
           }}', timeoutSec: 905}}
   dependsOn:
   - {job: phase_58, condition: {type: succeeded}}

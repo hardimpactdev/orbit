@@ -115,6 +115,7 @@ it('records only the role-owned footprint from a successful native end check', f
     expect($this->node->roles()->sole()->status->value)->toBe('active');
     $artifacts = NodeFootprint::query()->where('node_id', $this->node->id)->sole()->artifacts;
     expect($artifacts)->toBe($operation->input['native_role']['artifact_digests'])
+        ->toHaveKeys(['caddy-package', 'php-runtime', 'tmpfiles'])
         ->not->toHaveKeys(['agent', 'cli', 'caddy']);
 });
 

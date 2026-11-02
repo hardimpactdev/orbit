@@ -126,6 +126,20 @@ print('install ok installed '+p.read_text())
         self.assertFalse(self.calls.exists())
         self.assertFalse(self.scope.exists())
 
+    def test_convergence_keeps_matching_packages_and_repairs_the_manager_scope(self):
+        self.state.write_text('2.9.5-1')
+        self.input['converge'] = True
+        self.input['intent']['setup']['apt']['packages'].append({
+            'name': 'git', 'version': '2.9.5-1', 'artifact': {
+                'url': 'https://example.invalid/already-installed.deb',
+                'algorithm': 'sha256', 'digest': 'a' * 64,
+            },
+        })
+        self.run_setup()
+        self.assertFalse(self.calls.exists(), 'matching pins need no APT refresh or install')
+        self.assertEqual(json.loads((self.scope / 'composer.json').read_text()), {'require': {}})
+        self.assertTrue((self.scope / 'vendor/bin').is_dir())
+
 
 if __name__ == '__main__':
     import unittest

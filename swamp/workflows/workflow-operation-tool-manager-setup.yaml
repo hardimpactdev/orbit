@@ -55,9 +55,16 @@ jobs:
         labels: {role: swamp}
         guard: '${{ !((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") }}'
         task: {type: behavior, behaviorType: '@nckrtl/node-tool-setup-assets', behaviorName: '${{ "tm-public-plan-"+string(inputs.node_id) }}', methodName: plan, inputs: {setup: '${{ inputs.intent.setup }}', home: '${{ steps["Read the account home"].outputs.stdout.trim().split(":")[5] }}'}}
+  - name: current_apt
+    dependsOn: [{job: phase_2, condition: {type: succeeded}}]
+    steps:
+      - name: Read pinned APT state
+        labels: {role: swamp}
+        forEach: {item: package, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") && inputs.intent.setup.apt != null ? steps["Plan pinned manager"].outputs.apt_packages : [] }}'}
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "tm-current-apt-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, packages: '${{ [self.package.name] }}', version: '${{ self.package.version }}', ensure: present}, inputs: {}}
   - name: phase_3
     dependsOn:
-      - job: phase_2
+      - job: current_apt
         condition: {type: succeeded}
     steps:
       - name: Install prerequisites
@@ -93,12 +100,12 @@ jobs:
       - name: Fetch SHA256 artifacts
         labels: {role: swamp}
         writes: true
-        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha256_fetches : [] }}'}
+        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha256_fetches.filter(r,r.package_index == null || steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant") : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "tm-fetch-sha256-artifacts-"+string(inputs.node_id) + "-" + string(self._index) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, url: '${{ self.resource.url }}', path: '${{ self.resource.path }}', checksum: '${{ self.resource.checksum }}', mode: '0644', owner: root}, inputs: {}}
       - name: Fetch SHA512 artifacts
         labels: {role: swamp}
         writes: true
-        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha512_fetches : [] }}'}
+        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha512_fetches.filter(r,r.package_index == null || steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant") : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "tm-fetch-sha512-artifacts-"+string(inputs.node_id) + "-" + string(self._index) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, url: '${{ self.resource.url }}', path: '${{ self.resource.path }}', mode: '0644', owner: root}, inputs: {}}
   - name: phase_7
     dependsOn:
@@ -107,7 +114,7 @@ jobs:
     steps:
       - name: Verify SHA512 artifacts
         labels: {role: swamp}
-        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha512 : [] }}'}
+        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.sha512.filter(r,r.package_index == null || steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant") : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tm-verify-sha512-artifacts-"+string(inputs.node_id) + "-" + string(self._index) }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [sha512sum, '--check', '--status'], timeoutSec: 905, stdin: '${{ self.resource.stdin }}'}}
   - name: phase_8
     dependsOn:
@@ -116,7 +123,7 @@ jobs:
     steps:
       - name: Read DEB identities
         labels: {role: swamp}
-        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.apt_artifacts : [] }}'}
+        forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.apt_artifacts.filter(r,steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant") : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tm-read-deb-identities-"+string(inputs.node_id) + "-" + string(self._index) }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [dpkg-deb, '--field', '${{ self.resource.path }}', Package, Version], timeoutSec: 905}}
   - name: phase_9
     dependsOn:
@@ -125,7 +132,7 @@ jobs:
     steps:
       - name: Require pinned DEBs
         labels: {role: swamp}
-        task: {type: assert, expr: 'steps.filter(k,k.startsWith("Read DEB identities-")).all(k,steps[k].outputs.stdout.trim() == "Package: " + steps["Plan pinned manager"].outputs.apt_artifacts[int(k.split("-")[1])].name + "\nVersion: " + steps["Plan pinned manager"].outputs.apt_artifacts[int(k.split("-")[1])].version)', message: The pinned Tool Manager must be ready., severity: high}
+        task: {type: assert, expr: 'steps.filter(k,k.startsWith("Read DEB identities-")).all(k,steps[k].outputs.stdout.trim() == "Package: " + steps["Plan pinned manager"].outputs.apt_artifacts.filter(r,steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant")[int(k.split("-")[1])].name + "\nVersion: " + steps["Plan pinned manager"].outputs.apt_artifacts.filter(r,steps["Read pinned APT state-"+string(r.package_index)].outputs.status != "compliant")[int(k.split("-")[1])].version)', message: The pinned Tool Manager must be ready., severity: high}
   - name: phase_10
     dependsOn:
       - job: phase_9
@@ -134,7 +141,7 @@ jobs:
       - name: Refresh pinned APT indexes
         labels: {role: swamp}
         writes: true
-        guard: '${{ !((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") || inputs.intent.setup.apt == null }}'
+        guard: '${{ !((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") || inputs.intent.setup.apt == null || !(steps.filter(k,k.startsWith("Read pinned APT state-")).exists(k,steps[k].outputs.status != "compliant")) }}'
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tm-refresh-pinned-apt-indexes-"+string(inputs.node_id) }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: '${{ steps["Plan pinned manager"].outputs.apt_update }}', timeoutSec: 905}}
   - name: phase_11
     dependsOn:
@@ -144,8 +151,8 @@ jobs:
       - name: Install pinned APT set
         labels: {role: swamp}
         writes: true
-        guard: '${{ !((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") || inputs.intent.setup.apt == null }}'
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tm-install-pinned-apt-set-"+string(inputs.node_id) }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: '${{ steps["Plan pinned manager"].outputs.apt_install }}', timeoutSec: 905}}
+        guard: '${{ !((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") || inputs.intent.setup.apt == null || !(steps.filter(k,k.startsWith("Read pinned APT state-")).exists(k,steps[k].outputs.status != "compliant")) }}'
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tm-install-pinned-apt-set-"+string(inputs.node_id) }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: '${{ steps["Plan pinned manager"].outputs.apt_install_prefix + steps["Plan pinned manager"].outputs.apt_arguments.filter(a,steps["Read pinned APT state-"+string(a.index)].outputs.status != "compliant").map(a,a.argv) }}', timeoutSec: 905}}
   - name: phase_12
     dependsOn:
       - job: phase_11

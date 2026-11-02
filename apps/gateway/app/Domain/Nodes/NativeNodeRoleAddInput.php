@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Data\Nodes\NodeSettingsData;
+use App\Domain\Fleet\NodeFootprint as DesiredNodeFootprint;
 use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteRenderContext;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
@@ -46,7 +48,6 @@ final readonly class NativeNodeRoleAddInput
             $services[] = 'incus.socket';
         }
 
-        $footprint = ValidatedData::object($snapshot['footprint']);
         $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;
         $php = in_array($role, [RoleName::AppDev, RoleName::AppProd], true)
             ? app(PhpRuntimeFootprintArtifact::class)->inputs($node) : [];
@@ -111,13 +112,15 @@ final readonly class NativeNodeRoleAddInput
         ], $publications);
 
         $runtime = app(NativeNodeRoleRuntimeInput::class)->capture($node, $assignment, $snapshot, $operation);
+        $desired = clone $node;
+        $desired->setRelation('roles', $node->roles->map(static fn (NodeRole $member): NodeRole => $member->id === $assignment->id
+            ? (clone $member)->forceFill(['status' => LifecycleStatus::Active]) : $member));
         $artifactDigests = [];
-        foreach (RouteExecutionProof::objects($footprint['artifacts']) as $artifact) {
-            $name = ValidatedData::string($artifact['name']);
+        foreach (app(DesiredNodeFootprint::class)->expected($desired)->artifacts as $name => $digest) {
             if (($name === 'caddy-package' && $caddy)
                 || ($name === 'php-runtime' && $php !== [])
                 || ($name === 'tmpfiles' && $role === RoleName::AppDev)) {
-                $artifactDigests[$name] = ValidatedData::string($artifact['digest']);
+                $artifactDigests[$name] = $digest;
             }
         }
         $exporters = [];
