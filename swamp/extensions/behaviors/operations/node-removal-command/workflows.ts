@@ -224,7 +224,24 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
         `inputs.intent.${field}.filter(a,!inputs.offline || inputs.intent.ssh == null || a.ssh.target.host != inputs.intent.ssh.target.host)`;
     const pubs =
         "inputs.intent.publications.filter(p,!inputs.offline || p.node_id != inputs.intent.node_id)";
+    const guests = ssh(
+        "Read CI guests",
+        items("ci_host"),
+        ["timeout", "60", "incus", "list", "--project", "orbit-ci", "--format=json"],
+        { okExitCodes: [0, 1], timeoutSec: 70 },
+    );
+    delete guests.writes;
     const phases = [
+        [guests],
+        [assert(
+            "Require drained CI",
+            'steps.filter(k,k.startsWith("Read CI guests-")).all(k,(steps[k].outputs.exitCode == 0 && steps[k].outputs.stdout in ["[]","[]\\n"]) || (steps[k].outputs.exitCode == 1 && steps[k].outputs.stderr.contains("Project not found")))',
+        )],
+        [ssh(
+            "Keep public SSH access",
+            `inputs.kind == "node.role_remove" ? ${items("public_ssh")} : []`,
+            ex('["timeout","60"] + self.action.input.argv'),
+        )],
         [child(
             "Withdraw PHP publication",
             "operation-route-php-delta",
@@ -480,17 +497,27 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
             ].join(" && "),
         )],
     ];
+    const inputs = structuredClone(schema) as Fields;
+    // Task VM teardown shares this boundary and retains its parent Operation kind.
+    inputs.properties.kind.enum = [
+        "node.remove", "task_vm.destroy", "task_vm.provision", "tasks.provision",
+        "tasks.cancel", "tasks.maintenance_finish",
+    ];
     return workflow(
         "operation-node-remove",
         "450e57df-e174-4ad6-bba5-306c2581d919",
         phases,
+        inputs,
     );
 }
 export function standaloneRoleRemovalWorkflow(): ReturnType<typeof workflow> {
+    const inputs = structuredClone(roleRemovalWorkflow().inputs) as Fields;
+    inputs.properties.kind.enum = ["node.role_remove"];
     return {
         ...roleRemovalWorkflow(),
         id: "837c361c-493f-416a-b660-9bd77426d9e3",
         name: "operation-node-role-remove-direct",
+        inputs,
     };
 }
 export function generatedRemovalWorkflows() {
@@ -505,7 +532,12 @@ export function generatedRemovalWorkflows() {
         ),
         text:
             "# deno-fmt-ignore-file\n# Generated from node-removal-command/workflows.ts\n" +
-            stringify(value, { flowLevel: 5, lineWidth: -1 }),
+            stringify(value, { flowLevel: 5, lineWidth: -1 }).replace(
+                /    kind:\n      type: string\n      enum:\n((?:        - [\w.]+\n)+)/,
+                (_match, kinds: string) =>
+                    "    kind: {type: string, enum: [" +
+                    kinds.trim().split("\n").map((kind) => kind.trim().slice(2)).join(", ") + "]}\n",
+            ),
     }));
 }
 if (import.meta.main) {

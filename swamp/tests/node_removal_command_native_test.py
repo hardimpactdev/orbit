@@ -55,6 +55,10 @@ if a[0]=='show':
 if sys.argv[1:]==['passwd','fixture']:print('fixture:x:1000:1000::'+os.environ['HOST']+'/home:/bin/sh')
 else:sys.exit(2)
 ''',
+            'incus': '''import os,sys
+if os.environ.get('CI_MISSING')=='1':print('Error: Project not found',file=sys.stderr);sys.exit(1)
+print(os.environ.get('CI_GUESTS','[]'))
+''',
             'chown': 'pass\n', 'chgrp': 'pass\n',
             'ufw': '''import os,sys
 with open(os.environ['AUDIT'],'a') as f:f.write('ufw '+ ' '.join(sys.argv[1:])+'\\n')
@@ -96,7 +100,8 @@ if 'delete' in sys.argv:print('Could not delete non-existent rule');sys.exit(1)
                        'metrics_files': [], 'metrics_reload': [], 'retained_on_node': [], 'preserved_on_node': ['User data and host-side WireGuard']}
 
     def run_root(self, name, intent, success=True, **extra):
-        inputs = {'operation_id': 9001, 'node_id': 701, 'kind': 'node.remove', 'intent': intent, 'execution_secrets': {}, **extra}
+        kind = 'node.role_remove' if name == 'operation-node-role-remove-direct' else 'node.remove'
+        inputs = {'operation_id': 9001, 'node_id': 701, 'kind': kind, 'intent': intent, 'execution_secrets': {}, **extra}
         result = json.loads(self.cli('workflow', 'run', name, '--input', json.dumps(inputs), success=success).stdout)
         history = json.loads(self.cli('workflow', 'history', 'get', result['id']).stdout)
         return result, history
@@ -130,6 +135,27 @@ if 'delete' in sys.argv:print('Could not delete non-existent rule');sys.exit(1)
         self.run_root('node-role-remove', self.role, offline=False)
 
         self.assertFalse(self.file.exists())
+        self.assertTrue(self.data.exists())
+
+    def test_busy_ci_project_refuses_before_runtime_or_path_removal(self):
+        self.role['ci_host'] = [{'ssh': self.ssh, 'input': {}}]
+        self.native_env['CI_GUESTS'] = '[{"name":"runner"}]'
+
+        self.run_root('node-role-remove', self.role, success=False, offline=False)
+
+        self.assertTrue(self.file.exists())
+        self.assertTrue(self.config.exists())
+        self.assertFalse(self.audit.exists())
+
+    def test_missing_ci_project_is_drained_and_last_role_keeps_public_ssh(self):
+        self.role['ci_host'] = [{'ssh': self.ssh, 'input': {}}]
+        self.role['public_ssh'] = [{'ssh': self.ssh, 'input': {'argv': ['ufw', 'allow', '22']}}]
+        self.native_env['CI_MISSING'] = '1'
+
+        self.run_root('operation-node-role-remove-direct', self.role, offline=False)
+
+        self.assertFalse(self.file.exists())
+        self.assertIn('ufw allow 22', self.audit.read_text())
         self.assertTrue(self.data.exists())
 
     def test_failed_stop_keeps_following_files_and_reports_failure(self):

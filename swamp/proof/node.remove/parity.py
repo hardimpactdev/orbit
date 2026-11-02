@@ -7,7 +7,7 @@ import sys
 operation = json.loads(os.environ['PROOF_OPERATION'])
 mode = sys.argv[1]
 # peer is intentionally roleless in minimal; this fixture gives it only the role under test.
-node = os.environ['PROOF_TARGET'] if mode == 'role' else 'peer'
+node = os.environ['PROOF_TARGET'] if mode == 'role' else 'metrics' if mode == 'ci' else 'peer'
 
 
 def run(*argv):
@@ -26,6 +26,9 @@ if mode == 'role':
     check(run('systemctl', 'is-active', '--quiet', 'orbit-websocket.service').returncode in (3, 4), 'the role is stopped')
     check(run('test', '-e', '/etc/caddy/orbit-websocket-cert-current').returncode == 1, 'the role certificate is absent')
     check('proof-unrelated' in run('ufw', 'status').stdout, 'the unrelated firewall rule remains')
+elif mode == 'ci':
+    check(run('incus', 'project', 'show', 'orbit-ci').returncode == 0, 'the drained CI project is retained')
+    check('orbit:public-ssh-recovery' in run('ufw', 'status').stdout, 'last-role removal keeps public SSH access')
 elif mode == 'online':
     check(operation['result'].get('removed') is True and operation['result'].get('offline') is False, 'online removal is projected')
     check(run('test', '-e', '/usr/local/bin/orbit-agent').returncode == 1, 'observer binary is absent')
