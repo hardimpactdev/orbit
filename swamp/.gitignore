@@ -19,3 +19,5 @@
 # Retained native scratch worktree model, not a source definition.
 /models/@swamp/git/git-wt-bump-apps-e2e.yaml
 __pycache__/
+# The swamp role renders the Gateway's grants here from config/gateway-workflow-grants.json.
+/grants/

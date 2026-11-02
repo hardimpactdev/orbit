@@ -31,7 +31,7 @@ jobs:
           inputs:
             env:
               RELEASE_SHA: '${{ inputs.intent.sha }}'
-            # Fast-forward the serve checkout, let serve reload it, and compare the served workflows with the commit.
+            # Fast-forward the serve checkout, render the swamp role's grants, let serve reload both, and compare the served workflows with the commit.
             run: |
               set -eu
               export HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp
@@ -42,9 +42,12 @@ jobs:
               git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
               git checkout --quiet --detach "$RELEASE_SHA"
               test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+              python3 -I swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py grants swamp
               timeout 120 /home/orbit/.local/bin/swamp serve reload --server ws://127.0.0.1:9418 \
                 --token-file /home/orbit/.config/swamp/serve-driver-token --json \
                 | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null
+              timeout 90 /home/orbit/.local/bin/swamp access reload --server ws://127.0.0.1:9418 \
+                --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -e '.success == true' >/dev/null
               disk=$(timeout 60 /home/orbit/.local/bin/swamp workflow list --repo-dir swamp --json | jq -ec '[.results[] | [.id, .name]] | sort')
               live=$(timeout 60 /home/orbit/.local/bin/swamp workflow list --server ws://127.0.0.1:9418 \
                 --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -ec '[.results[] | [.id, .name]] | sort')

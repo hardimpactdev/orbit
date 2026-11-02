@@ -614,7 +614,7 @@ Those changes require the native Route workflow. Agent recovery returns
 Task workspace removal waits for native publication when approved work has not
 been pushed.
 
-The required CI registry check reads `swamp/config/gateway-workflow-grants.json` for `user:orbit-gateway`. It requires one `run` and `read` grant on every workflow (`*`), and an exact `write` grant only for a declared schedule input producer. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. This public manifest describes expected policy, not installed permissions. CI never applies grants or reads credentials.
+The required CI registry check reads `swamp/config/gateway-workflow-grants.json` for `user:orbit-gateway`. It requires one `run` and `read` grant on every workflow (`*`), and an exact `write` grant only for a declared schedule input producer. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. CI never applies grants or reads credentials. The swamp role applies this manifest to serve: its convergence and every release Swamp load render it into serve's grants directory and run `swamp access reload` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)).
 
 See the [Swamp shape gate](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape-gate.md#gateway-workflow-grant-intent).
 

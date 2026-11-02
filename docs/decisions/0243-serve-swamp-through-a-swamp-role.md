@@ -31,6 +31,12 @@ The role also runs Swamp's workers on its Node. Its runtime installs one systemd
 
 Steps that run on the swamp Node select its workers by label, `labels: {role: swamp}`, not by the token name `orbit-node-209`. Steps for one effect Node select `labels: {node: "<id>"}`; every Node worker carries its `node` label. Any number of workers can carry a label, so a worker drains and restarts while another takes its steps, and no step names a token.
 
+### Serve and grants
+
+The role also owns serve. Its runtime installs `orbit-swamp-serve.service`, which runs serve on loopback port 9418 with at most 4 scheduled runs in flight; with 1, overlapping Schedules starve. The runtime never restarts a running serve. It starts serve only when nothing serves the port, so a changed unit waits for an operator restart in a quiet window. Serve runs every lane's work and the release, so an unplanned restart breaks both.
+
+The Gateway's grants come from the repository. `swamp/config/gateway-workflow-grants.json` lists them for `user:orbit-gateway`. The runtime renders them into serve's native grants directory, `swamp/grants/orbit-gateway.yaml` in the serve checkout, and runs `swamp access reload`. Serve then creates new grants, revokes removed ones and keeps the rest, with no restart. The release Swamp load step renders and reloads them after each checkout, so a commit that changes the manifest changes the live grants in the same release. Nobody applies a Gateway grant by hand.
+
 ## Rejected alternatives
 
 - A Caddy site source or proxy Process only for Swamp: it duplicates the Route path and its certificate and DNS handling.

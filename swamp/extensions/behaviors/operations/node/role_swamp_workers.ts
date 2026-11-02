@@ -10,13 +10,14 @@ const Workers = z.array(Worker).min(1).max(4).refine(
   (workers) => new Set(workers).size === workers.length,
 );
 
-/** The swamp role's workers: two drainable units on the swamp Node that reach serve on loopback. */
+/** The swamp role's runtime: serve and two drainable workers that reach it on loopback. */
 export const SwampWorkers = Identity.extend({
   role: z.literal("swamp"),
   assignment_id: z.number().int().positive(),
   user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
   workers: Workers,
   concurrency: z.number().int().min(1).max(64),
+  scheduled_runs: z.number().int().min(1).max(64),
 }).strict();
 export const SwampWorkersRemoval = Identity.extend({
   role: z.literal("swamp"),
@@ -44,7 +45,7 @@ async function invoke(
     command: "/usr/bin/sudo",
     args: ["-n", "--", "/usr/bin/python3", "-I", "-c", program],
     stdin: JSON.stringify({ operation, data }),
-    timeoutMs: 60000,
+    timeoutMs: 120000,
   }, signal);
   if (!result.success) throw new Error("Swamp worker outcome is uncertain");
   return Result.parse(JSON.parse(result.stdout));

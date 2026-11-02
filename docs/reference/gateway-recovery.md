@@ -110,8 +110,10 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow runs one `command/shell` step on 209:
 
 1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
-2. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
-3. it compares the workflows serve lists with the workflows on disk.
+2. it renders the swamp role's Gateway grants from `swamp/config/gateway-workflow-grants.json` into `swamp/grants/orbit-gateway.yaml`;
+3. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+4. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
+5. it compares the workflows serve lists with the workflows on disk.
 
 The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume. The step never restarts serve or a worker.
 

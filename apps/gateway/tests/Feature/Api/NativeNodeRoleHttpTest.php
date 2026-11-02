@@ -50,7 +50,7 @@ it('admits the swamp role as a Caddy role of its own Node and keeps it a singlet
         ->and($snapshot['prerequisites']['packages'])->toContain('caddy')
         ->and($snapshot['metrics_fleet'])->toBeNull()
         ->and($snapshot['runtime'])->toBe(['role' => 'swamp', 'node_id' => $this->node->id, 'assignment_id' => $snapshot['assignment_id'],
-            'agent_sha256' => $snapshot['agent_sha256'], 'user' => $this->node->user, 'workers' => ['a', 'b'], 'concurrency' => 8]);
+            'agent_sha256' => $snapshot['agent_sha256'], 'user' => $this->node->user, 'workers' => ['a', 'b'], 'concurrency' => 8, 'scheduled_runs' => 4]);
     expect(app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $this->node->id)->value)->toBeNull();
 
     $other = FleetFixtures::node('role-http-other');

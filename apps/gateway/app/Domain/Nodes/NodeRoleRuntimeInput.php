@@ -35,6 +35,9 @@ final readonly class NodeRoleRuntimeInput
     /** Dispatch slots per swamp worker, about twice the swamp Node's cores. */
     public const int SwampWorkerConcurrency = 8;
 
+    /** Scheduled runs serve keeps in flight; one starves overlapping Schedules. */
+    public const int SwampScheduledRuns = 4;
+
     public function __construct(private AgentDelivery $agents, private ProcessTargetResolver $targets,
         private DockerProcessRenderer $docker, private RecordProcessIntentAction $processes, private ProcessSpecification $specifications,
         private AnalyticsRoleSettingsRepository $analytics, private AnalyticsStorageProcessGuard $storage,
@@ -80,7 +83,8 @@ final readonly class NodeRoleRuntimeInput
         if ($assignment->role === RoleName::Swamp) {
             return ['role' => $assignment->role->value, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
                 'agent_sha256' => $this->agents->pin($node), 'user' => $node->user,
-                'workers' => self::SwampWorkers, 'concurrency' => self::SwampWorkerConcurrency];
+                'workers' => self::SwampWorkers, 'concurrency' => self::SwampWorkerConcurrency,
+                'scheduled_runs' => self::SwampScheduledRuns];
         }
         if (! in_array($assignment->role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
             return null;
