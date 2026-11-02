@@ -9,7 +9,7 @@ bin/swamp-proof receipt            # path of the latest receipt
 bin/swamp-proof down               # cancel the task group; the VM is destroyed
 ```
 
-Always finish with `down`. Proof VMs do not outlive the proof. `--session NAME` (default `minimal`) gives each user of the tool its own VM and session file.
+Always finish with `down`. Proof VMs do not outlive the proof. `down` retries a failed cancel once under a new idempotency key, because the Gateway replays a key's original Operation. It then trusts only the Gateway's group record: cancelled, with the VM destroyed. `--session NAME` (default `minimal`) gives each user of the tool its own VM and session file.
 
 ## Topology `minimal`
 

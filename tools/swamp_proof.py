@@ -217,13 +217,39 @@ def run(state, kind):
     return destination, receipt
 
 
+def cancel(gateway, state):
+    """Cancel the proof group, retrying a failed cancel once.
+
+    The Gateway replays an idempotency key's original Operation, so a retry of a failed cancel needs a new key.
+    A cancel that is still running, or whose reply was lost, is followed under its own key.
+    """
+    vm = state['vm']
+    retried = False
+    while True:
+        operation = gateway.request('GET', f'operations/{vm["cancel_operation_id"]}') if vm.get('cancel_operation_id') else None
+        if operation is not None and operation['status'] in TERMINAL and operation['status'] != 'succeeded':
+            if retried:
+                raise ProofError(f'tasks.cancel operation {operation["id"]} ended {operation["status"]}: {operation.get("error_code")}')
+            retried = True
+            vm['cancel_attempt'] = vm.get('cancel_attempt', 1) + 1
+            operation = None
+        if operation is None:
+            suffix = '' if vm.get('cancel_attempt', 1) == 1 else f'-{vm["cancel_attempt"]}'
+            operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {}, f'swamp-proof:{state["nonce"]}:cancel{suffix}')
+            vm['cancel_operation_id'] = operation['id']
+            save(SESSION, state)
+        try:
+            return gateway.wait(operation, 'tasks.cancel', vm['group_id'])
+        except ProofError:
+            # Only a terminal failure earns the one retry; a cancel still running after the wait stops here.
+            if retried or gateway.request('GET', f'operations/{operation["id"]}')['status'] not in TERMINAL:
+                raise
+
+
 def down(gateway, state):
     vm = state['vm']
     if vm.get('group_id') and not vm.get('destroyed'):
-        operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {}, f'swamp-proof:{state["nonce"]}:cancel')
-        vm['cancel_operation_id'] = operation['id']
-        save(SESSION, state)
-        gateway.wait(operation, 'tasks.cancel', vm['group_id'])
+        cancel(gateway, state)
         group = gateway.request('GET', f'task-groups/{vm["group_id"]}')
         if group['status'] != 'cancelled' or ('task_vm_id' in vm and group.get('vm_power') != 'destroyed'):
             raise ProofError(f'Cancellation did not destroy proof group {vm["group_id"]}.')
