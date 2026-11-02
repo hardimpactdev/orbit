@@ -1,12 +1,7 @@
-analytics.disable
-analytics.update
-cluster.router_set
-cluster.router_unset
 conn.gateway_sessions_revoke
 database.clone
 database.destroy_owned
 database.sqlite_cleanup
-database.sqlite_export
 database.sqlite_seed
 database_server.close
 fleet.cli_converge
@@ -21,14 +16,12 @@ node.bootstrap_install
 node.bootstrap_probe
 node.bootstrap_verify
 node.macos_inspect
-node.network_converge
 node.prepare_php_packages
 node.remove
 node.role_add
 node.role_converge
 node.role_relocate
 node.role_remove
-node.wireguard_hub_converge
 node.worker_known_hosts
 observation.maintain
 process.install_instance_definitions
@@ -56,6 +49,3 @@ tasks.maintenance_finish
 tasks.park
 tasks.script
 tasks.turn
-websocket.app_create
-websocket.app_destroy
-websocket.app_rotate
