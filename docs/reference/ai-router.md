@@ -67,6 +67,8 @@ Setup with another `--node` sets up only the new Node and leaves the old Node's 
 
 ## Follow the cache connection
 
+The Gateway runs no scheduled collector converge. Its Caddy publication used the agent's `caddy.publish`, which [#1901](https://github.com/hardimpactdev/orbit/pull/1901) removed, so the per-minute tick failed every time. Setup and a Database connection update converge the collector. A release leaves it as it is until the AI router's publication runs in Swamp.
+
 The collector depends on the configured Database connection, not a permanent copy of its credentials. Changing that connection's host, port, username, or password reconverges the dependent Process environment. The Gateway rebuilds the collector's Redis environment from the current connection and updates the same Process in place. A running collector restarts to use the new values; a stopped collector stays stopped. Its Process ID, configured cache connection, management key, read token, and control token stay the same. No manual teardown or second setup is needed for a connection update.
 
 The environment is a name-to-value map, including for this Gateway-owned systemd Process. The connection-derived keys are `AI_ROUTER_CACHE_HOST`, `AI_ROUTER_CACHE_PORT`, `AI_ROUTER_CACHE_USERNAME`, and `AI_ROUTER_CACHE_PASSWORD`; the port is a string value too. Rebuilding these keys preserves the collector's other required environment values. Responses, Activity, errors, and logs do not reveal credentials. [Processes and schedules](/reference/processes-and-schedules#environment-contract) owns the shared representation and redaction contract.

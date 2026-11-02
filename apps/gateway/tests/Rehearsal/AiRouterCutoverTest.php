@@ -28,7 +28,7 @@ use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
@@ -168,10 +168,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
         // Drive the actual registered release tick through the Gateway queue and native command subprocess.
         config(['orbit.gateway_queue.connection' => 'cache', 'queue.connections.gateway' => ['driver' => 'redis', 'connection' => 'gateway', 'queue' => 'tasks', 'retry_after' => 1800]]);
         GatewayQueueRedis::configure();
-        $schedule = app(Schedule::class);
-        $event = collect($schedule->events())->sole(fn ($event): bool => $event->description === 'orbit:ai-router-converge');
-        expect($event->isDue(app()))->toBeTrue()->and($event->filtersPass(app()))->toBeTrue();
-        $event->run(app());
+        Artisan::queue('orbit:ai-router-converge')->onConnection('gateway')->onQueue('tasks');
         $worker = new ChildProcess([PHP_BINARY, base_path('artisan'), 'queue:work', 'gateway', '--queue=tasks', '--once', '--timeout=120'], base_path(), [
             'APP_ENV' => 'local', 'CACHE_STORE' => 'file', 'APP_KEY' => config('app.key'), 'DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => $database,
             'ORBIT_HOME' => $home, 'ORBIT_GATEWAY_QUEUE_CONNECTION' => 'cache', 'ORBIT_GATEWAY_QUEUE_DRIVER' => 'redis',
