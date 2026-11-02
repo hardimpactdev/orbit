@@ -1,0 +1,46 @@
+{
+  "kind": "vault.teardown",
+  "topology": "minimal@10",
+  "execution_commit": "dba6cc48150066255fd7bb46812fb8b9c7e38ccd",
+  "runtime_files_identical_after_rebase": true,
+  "vm": {
+    "group_id": 2671,
+    "provision_operation_id": 8126,
+    "task_vm_id": 330,
+    "node_id": 358,
+    "name": "tvm-330",
+    "host_node_id": 13,
+    "seed": "b52d9c01d06875e8c37dffc5ed4e9b80cab6d4b35fe709d8a17f0d356571d030",
+    "provisioned_at": "2026-11-02T18:12:47Z",
+    "cancel_operation_id": 8164,
+    "destroyed": true,
+    "destroyed_at": "2026-11-02T18:43:48Z"
+  },
+  "script_files_deleted": 0,
+  "embedded_programs_deleted": 1,
+  "legacy_client_files_deleted": 6,
+  "script_gap": null,
+  "receipts": [
+    {
+      "case": "vault.teardown",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/vault.teardown/20261102T183625Z-minimal.json",
+      "seconds": 40.88,
+      "sample": 1,
+      "p95_seconds": 40.88,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "c0b3b236-5f4a-472e-8ffc-219bfc2afea8"
+    },
+    {
+      "case": "vault.teardown-keep-items",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/vault.teardown-keep-items/20261102T184050Z-minimal.json",
+      "seconds": 0.1,
+      "sample": 1,
+      "p95_seconds": 0.1,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": null
+    }
+  ],
+  "limits": "One published item in a disposable TLS Vaultwarden, proof CA, real Gateway/Swamp/CLI; no production credentials or scale."
+}
