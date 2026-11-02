@@ -78,6 +78,12 @@ export function hubPeerAction(raw: unknown) {
         restoring,
         before: restoring ? desired : intent.before,
         after: restoring ? intent.before : desired,
+        // Lets the hub replace a stale peer of a deleted Node at the context address.
+        fleet: intent.inventory.map(({ node_id, address, public_key }) => ({
+            node_id,
+            address,
+            public_key,
+        })),
     };
 }
 const Inventory = z.object({
