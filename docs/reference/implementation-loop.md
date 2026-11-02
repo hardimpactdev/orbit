@@ -90,7 +90,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/tree/main/docs/flows) |
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
-| Project check | Run the [candidate gate](#the-candidate-gate), `bin/review-check`, on every commit in three shards; the same gate is the Orbit task check |
+| Project check | Run the [candidate gate](#the-candidate-gate), `bin/review-check`, in three shards; not yet in `Required checks` until its Gateway and CLI lanes pass on `main` |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow, run the Operation Deno tests and enforce the Swamp-shape gate |
