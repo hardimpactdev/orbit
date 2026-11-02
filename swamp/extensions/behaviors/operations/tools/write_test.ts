@@ -40,8 +40,9 @@ Deno.test("a Composer dependency already in the inventory is still an installabl
 Deno.test("the shared manager setup reads only the manager, with no package", async () => {
   const ctx = { extensionFile: (p: string) => new URL(p, import.meta.url).pathname, writeResource: () => Promise.resolve(null) };
   const deploy = { node_id: 9, user: "orbit", manager: "vp", platform: "linux", architecture: "x86_64", setup: null };
-  const bundle = JSON.parse((await behavior.methods.manager_assets.execute({ input: ManagerInput.parse(deploy) }, ctx)).bundle);
-  assertEquals([bundle.input.manager, bundle.input.package, bundle.repository], ["vp", "", null]);
+  const assets = await behavior.methods.manager_assets.execute({ input: ManagerInput.parse(deploy) }, ctx);
+  assertEquals(assets.version, ["/usr/bin/env", "LC_ALL=C", "/usr/local/bin/vp", "--version"]);
+  assertEquals(assets.packages, []);
   assertEquals(WriteInput.safeParse({ ...base, kind: "tool.manager_converge" }).success, false);
 });
 Deno.test("manager writes carry public arguments and no script source", async () => {

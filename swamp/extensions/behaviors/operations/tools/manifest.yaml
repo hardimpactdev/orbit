@@ -18,4 +18,3 @@ additionalFiles:
 - queries/brew.py
 - queries/brew_cask.py
 - apt_repository.py
-- phase.py

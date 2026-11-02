@@ -5,38 +5,34 @@ vaults: []
 queueTimeout: 60
 inputs:
   type: object
-  # report: print the facts instead of failing, so tool.install keeps a conflicting scope's own code.
-  properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, intent: {type: object}, ssh: {type: object}, report: {type: boolean}}
-  required: [operation_id, node_id, intent, ssh]
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    ssh:
+      type: object
+    report:
+      type: boolean
+  required:
+  - operation_id
+  - node_id
+  - intent
+  - ssh
   additionalProperties: false
 jobs:
 - name: setup
   steps:
-  - name: assets
-    labels: {role: swamp}
-    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tm-assets" }}', methodName: manager_assets, inputs: {input: '${{ inputs.intent }}'}}
-  - name: setup_assets
-    labels: {role: swamp}
-    guard: '${{ !("setup" in inputs.intent) || inputs.intent.setup == null }}'
-    task: {type: behavior, behaviorType: '@nckrtl/node-tool-setup-assets', behaviorName: '${{ "tm-setup-assets" }}', methodName: read, inputs: {setup: '${{ inputs.intent.setup }}'}}
-  # Read the manager; on a Linux first use install it at its pinned version, then read it again.
-  - name: Set up the Tool Manager
-    labels: {role: swamp}
-    dependsOn: [{step: assets, condition: {type: succeeded}}, {step: setup_assets, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tm-setup-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {name: '${{ ("tm-setup-" + string(inputs.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true, hostKeys: '${{ inputs.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 905
-        argv: [timeout, '900', python3, -I, -c, '${{ steps.assets.outputs.driver }}', setup]
-        # The bundle, then the installers; the Vite+ installer exceeds one exec argument.
-        stdin: '${{ steps.assets.outputs.bundle + ("setup_assets" in steps && steps.setup_assets.status == "succeeded" ? "\x1e" + steps.setup_assets.outputs.manager_body + "\x1e" + (steps.setup_assets.outputs.apt_body == null ? "" : steps.setup_assets.outputs.apt_body) : "") }}'
-  - name: ready
-    labels: {role: swamp}
-    dependsOn: [{step: Set up the Tool Manager, condition: {type: succeeded}}]
-    task: {type: assert, expr: '("report" in inputs && inputs.report) || steps["Set up the Tool Manager"].outputs.exitCode == 0', severity: high, message: The Tool Manager is not ready.}
+  - {"name":"Prepare manager commands","labels":{"role":"swamp"},"task":{"type":"behavior","behaviorType":"@nckrtl/tool-write-command","behaviorName":"${{ \"tm-argv-\" + string(inputs.node_id) }}","methodName":"manager_assets","inputs":{"input":"${{ inputs.intent }}"}}}
+  - {"name":"Read manager version","labels":{"role":"swamp"},"dependsOn":[{"step":"Prepare manager commands","condition":{"type":"succeeded"}}],"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":"${{ \"tm-command-\" + string(inputs.node_id) }}","methodName":"exec","globalArgs":{"name":"${{ \"tm-command-\" + string(inputs.node_id) }}","transport":{"kind":"ssh","user":"${{ inputs.ssh.target.user }}","port":"${{ inputs.ssh.target.port }}","identityFile":"${{ inputs.ssh.identity_file }}","hostKeys":"${{ inputs.ssh.target.host_keys }}","identitiesOnly":true},"hosts":[{"name":"target","address":"${{ inputs.ssh.target.host }}"}]},"inputs":{"hosts":"name:target","sudo":false,"argv":"${{ [\"timeout\", \"60\"] + steps[\"Prepare manager commands\"].outputs.version }}","timeoutSec":905,"okExitCodes":"any"}}}
+  - {"name":"Read the pinned installer","labels":{"role":"swamp"},"dependsOn":[{"step":"Read manager version","condition":{"type":"succeeded"}}],"guard":"${{ steps[\"Read manager version\"].outputs.exitCode != 127 || !(\"setup\" in inputs.intent) || inputs.intent.setup == null || inputs.intent.platform != \"linux\" }}","task":{"type":"behavior","behaviorType":"@nckrtl/node-tool-setup-assets","behaviorName":"${{ \"tm-pinned-installer-\" + string(inputs.node_id) }}","methodName":"read","inputs":{"setup":"${{ inputs.intent.setup }}"}}}
+  - {"name":"Refresh prerequisites","labels":{"role":"swamp"},"writes":true,"dependsOn":[{"step":"Read the pinned installer","condition":{"type":"completed"}}],"guard":"${{ steps[\"Read manager version\"].outputs.exitCode != 127 || !(\"setup\" in inputs.intent) || inputs.intent.setup == null || inputs.intent.platform != \"linux\" || size(steps[\"Prepare manager commands\"].outputs.packages) == 0 }}","task":{"type":"behavior","behaviorType":"@swamp/cfgmgmt/apt","behaviorName":"${{ \"tm-prerequisites-\" + string(inputs.node_id) }}","methodName":"refresh","globalArgs":{"nodeHost":"${{ inputs.ssh.target.host }}","nodeUser":"${{ inputs.ssh.target.user }}","nodePort":"${{ inputs.ssh.target.port }}","nodeIdentityFile":"${{ inputs.ssh.identity_file }}","become":true,"packages":"${{ steps[\"Prepare manager commands\"].outputs.packages }}","ensure":"present"},"inputs":{}}}
+  - {"name":"Install prerequisites","labels":{"role":"swamp"},"writes":true,"dependsOn":[{"step":"Refresh prerequisites","condition":{"type":"or","conditions":[{"type":"succeeded"},{"type":"skipped"}]}}],"guard":"${{ steps[\"Read manager version\"].outputs.exitCode != 127 || !(\"setup\" in inputs.intent) || inputs.intent.setup == null || inputs.intent.platform != \"linux\" || size(steps[\"Prepare manager commands\"].outputs.packages) == 0 }}","task":{"type":"behavior","behaviorType":"@swamp/cfgmgmt/apt","behaviorName":"${{ \"tm-prerequisites-\" + string(inputs.node_id) }}","methodName":"apply","globalArgs":{"nodeHost":"${{ inputs.ssh.target.host }}","nodeUser":"${{ inputs.ssh.target.user }}","nodePort":"${{ inputs.ssh.target.port }}","nodeIdentityFile":"${{ inputs.ssh.identity_file }}","become":true,"packages":"${{ steps[\"Prepare manager commands\"].outputs.packages }}","ensure":"present"},"inputs":{}}}
+  - {"name":"Install pinned prerequisites","labels":{"role":"swamp"},"dependsOn":[{"step":"Install prerequisites","condition":{"type":"or","conditions":[{"type":"succeeded"},{"type":"skipped"}]}},{"step":"Read the pinned installer","condition":{"type":"or","conditions":[{"type":"succeeded"},{"type":"skipped"}]}}],"writes":true,"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":"${{ \"tm-command-\" + string(inputs.node_id) }}","methodName":"exec","globalArgs":{"name":"${{ \"tm-command-\" + string(inputs.node_id) }}","transport":{"kind":"ssh","user":"${{ inputs.ssh.target.user }}","port":"${{ inputs.ssh.target.port }}","identityFile":"${{ inputs.ssh.identity_file }}","hostKeys":"${{ inputs.ssh.target.host_keys }}","identitiesOnly":true},"hosts":[{"name":"target","address":"${{ inputs.ssh.target.host }}"}]},"inputs":{"hosts":"name:target","sudo":true,"argv":["timeout","900","/usr/bin/python3","-I","-c","${{ steps[\"Read the pinned installer\"].outputs.apt_body }}"],"timeoutSec":905}},"guard":"${{ steps[\"Read manager version\"].outputs.exitCode != 127 || !(\"setup\" in inputs.intent) || inputs.intent.setup == null || inputs.intent.platform != \"linux\" || steps[\"Read the pinned installer\"].outputs.apt_body == null || steps.exists(k, steps[k].status in [\"failed\", \"cancelled\"]) }}"}
+  - {"name":"Install the pinned manager","labels":{"role":"swamp"},"dependsOn":[{"step":"Install pinned prerequisites","condition":{"type":"or","conditions":[{"type":"succeeded"},{"type":"skipped"}]}},{"step":"Read the pinned installer","condition":{"type":"or","conditions":[{"type":"succeeded"},{"type":"skipped"}]}}],"writes":true,"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":"${{ \"tm-command-\" + string(inputs.node_id) }}","methodName":"exec","globalArgs":{"name":"${{ \"tm-command-\" + string(inputs.node_id) }}","transport":{"kind":"ssh","user":"${{ inputs.ssh.target.user }}","port":"${{ inputs.ssh.target.port }}","identityFile":"${{ inputs.ssh.identity_file }}","hostKeys":"${{ inputs.ssh.target.host_keys }}","identitiesOnly":true},"hosts":[{"name":"target","address":"${{ inputs.ssh.target.host }}"}]},"inputs":{"hosts":"name:target","sudo":true,"argv":["timeout","900","/usr/bin/python3","-I","-c","${{ steps[\"Read the pinned installer\"].outputs.manager_body }}"],"timeoutSec":905}},"guard":"${{ steps[\"Read manager version\"].outputs.exitCode != 127 || !(\"setup\" in inputs.intent) || inputs.intent.setup == null || inputs.intent.platform != \"linux\" || steps.exists(k, steps[k].status in [\"failed\", \"cancelled\"]) }}"}
+  - {"name":"Check the Tool Manager","labels":{"role":"swamp"},"dependsOn":[{"step":"Install the pinned manager","condition":{"type":"or","conditions":[{"type":"succeeded"},{"type":"skipped"}]}}],"task":{"type":"behavior","behaviorType":"@swamp/ssh","behaviorName":"${{ \"tm-command-\" + string(inputs.node_id) }}","methodName":"exec","globalArgs":{"name":"${{ \"tm-command-\" + string(inputs.node_id) }}","transport":{"kind":"ssh","user":"${{ inputs.ssh.target.user }}","port":"${{ inputs.ssh.target.port }}","identityFile":"${{ inputs.ssh.identity_file }}","hostKeys":"${{ inputs.ssh.target.host_keys }}","identitiesOnly":true},"hosts":[{"name":"target","address":"${{ inputs.ssh.target.host }}"}]},"inputs":{"hosts":"name:target","sudo":false,"argv":"${{ [\"timeout\", \"60\"] + steps[\"Prepare manager commands\"].outputs.version }}","timeoutSec":905,"okExitCodes":"any"}},"guard":"${{ !(\"Install the pinned manager\" in steps) || steps[\"Install the pinned manager\"].status != \"succeeded\" }}"}
+  - {"name":"Assert manager readiness","labels":{"role":"swamp"},"dependsOn":[{"step":"Read manager version","condition":{"type":"completed"}},{"step":"Read the pinned installer","condition":{"type":"completed"}},{"step":"Refresh prerequisites","condition":{"type":"completed"}},{"step":"Install prerequisites","condition":{"type":"completed"}},{"step":"Install pinned prerequisites","condition":{"type":"completed"}},{"step":"Install the pinned manager","condition":{"type":"completed"}},{"step":"Check the Tool Manager","condition":{"type":"completed"}}],"task":{"type":"assert","expr":"(\"report\" in inputs && inputs.report) || steps[\"Read manager version\"].outputs.exitCode == 0 || (\"Check the Tool Manager\" in steps && steps[\"Check the Tool Manager\"].status == \"succeeded\" && steps[\"Check the Tool Manager\"].outputs.exitCode == 0)","severity":"high","message":"The Tool Manager must answer its native version command."}}

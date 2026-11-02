@@ -1,12 +1,12 @@
 import { z } from "npm:zod@4.4.3";
 import * as native from "./native.ts";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
-import { AdoptInput, type Context, Facts, ManagerFields, phaseAssets, platformSupports } from "./adopt.ts";
+import { AdoptInput, type Context, Facts, ManagerFields, platformSupports } from "./adopt.ts";
 import { allows, normalizeVersion, safeVersion, Step, ToolRefusal, verifyInstalled } from "./contract.ts";
 import { homebrewBlock, homebrewCandidateVersion } from "./adopt_homebrew.ts";
 export const WriteInput = AdoptInput.safeExtend({ kind: z.enum(["tool.install", "tool.update"]), setup: Setup.nullable().default(null) });
 /** The shared Tool Manager setup reads only the manager, for a Tool install or the development deploy. */
-export const ManagerInput = ManagerFields.extend({ setup: Setup.nullable().default(null) }).refine(platformSupports);
+export const ManagerInput = ManagerFields.extend({ architecture: z.string().default("x86_64"), setup: Setup.nullable().default(null) }).refine(platformSupports);
 type Input = z.infer<typeof WriteInput>;
 type Phase = Record<string, unknown> | null;
 type StepValue = z.infer<typeof Step> | null;
@@ -69,9 +69,10 @@ export const behavior = {
   methods: {
     assets: { description: "Shape public command argv for the admitted manager", arguments: z.object({ input: WriteInput }),
       execute: async (args: { input: Input }, ctx: Context) => { const value = native.commands(args.input); await ctx.writeResource("assets", "assets", value); return value; } },
-    manager_assets: { description: "Read the phase driver and the manager query for the shared Tool Manager setup", arguments: z.object({ input: ManagerInput }),
+    manager_assets: { description: "Shape one manager version command and its public prerequisites", arguments: z.object({ input: ManagerInput }),
       execute: async (args: { input: z.infer<typeof ManagerInput> }, ctx: Context) => {
-        const value = await phaseAssets("tool.install", { ...args.input, package: "", repository: null, repository_packages: [], remove_repository: false }, ctx, {});
+        const value = { version: native.commands({ ...args.input, package: "", repository: null, repository_packages: [], remove_repository: false }).version,
+          packages: args.input.setup?.packages ?? [] };
         await ctx.writeResource("assets", "assets", value); return value;
       } },
     decide: { description: "Check native manager observations and the normal candidate before any write", arguments: z.object({ input: WriteInput, version: Step.nullable(), query: Step.nullable(), os: Step.nullable(), check: Step.nullable() }),

@@ -27,7 +27,7 @@ Install, update, remove, and adopt return HTTP 202 with an [Operation](/referenc
 
 Every step runs on control Node 209. Install, update and removal use official cfgmgmt resources and one bounded SSH argv per manager command. Official package checks supply the installed version or absence. Typed worker steps apply constraints and decode package observations. The Gateway reads the native run and fixed public captures; no result-reporting step runs. Package phases send no Python source to the Node.
 
-A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. Adoption retains its shared scripts. The separate manager setup keeps the pinned bootstrap installers.
+A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. Adoption retains its shared scripts. The shared manager setup uses one version argv for readiness and official apt prerequisites; it retains the canonical pinned bootstrap installers.
 
 | Workflow | Steps |
 | --- | --- |

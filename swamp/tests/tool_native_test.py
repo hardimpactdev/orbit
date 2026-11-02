@@ -56,7 +56,7 @@ CONFIG = '''import { z } from "npm:zod@4.4.3";
 export const behavior = {
  type:"@fixture/config", version:"2026.11.02.1", globalArguments:z.record(z.string(),z.unknown()),
  resources:{state:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},
- methods:Object.fromEntries(["check","apply"].map(method=>[method,{description:"Transport fixture",arguments:z.object({}),execute:async(_,ctx)=>{
+ methods:Object.fromEntries(["check","apply","refresh"].map(method=>[method,{description:"Transport fixture",arguments:z.object({}),execute:async(_,ctx)=>{
  const g=ctx.globalArgs, s=JSON.parse(Deno.readTextFileSync(STATE));
  Deno.writeTextFileSync(AUDIT,JSON.stringify(["cfgmgmt",g.path ?? "package"])+"\\n",{append:true});
  const installed=Boolean(s.installed), compliant=g.ensure==="absent" ? !installed : installed;
@@ -69,7 +69,7 @@ class ToolNative(NativeTestCase):
     native_timeout = 120
 
     def setUp(self):
-        super().setUp()
+        NativeTestCase.setUp(self)
         self.copy_behaviors('operations/tools', 'operations/node-bootstrap')
         self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
         self.state, self.audit = self.repo / 'state.json', self.repo / 'audit.jsonl'
@@ -176,3 +176,45 @@ class ToolNative(NativeTestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class ToolManagerNative(NativeTestCase):
+    setUp = ToolNative.setUp
+    def run_manager(self, missing=False, fail=False):
+        self.state.write_text(json.dumps({'installed': None, 'candidate': '2.0', 'manager_missing': missing, 'fail_setup': fail}))
+        workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-tool-manager-setup.yaml').read_text())
+        for step in workflow['jobs'][0]['steps']:
+            step.pop('labels', None)
+            task = step['task']
+            if task.get('behaviorType') == '@swamp/ssh':
+                task['globalArgs']['sshBinary'] = str(self.repo / 'manager-ssh')
+            elif task.get('behaviorType', '').startswith('@swamp/cfgmgmt/'):
+                task['behaviorType'] = '@fixture/config'
+        command = self.repo / 'manager-ssh'
+        code = TRANSPORT.replace("if any(part.endswith('/bin/brew') for part in argv):", "if '--version' in argv and state.get('manager_missing'):\n    code=127\nelif '/usr/bin/python3' in argv:\n    code=1 if state.get('fail_setup') else 0\n    if code==0: state['manager_missing']=False; changed=True\nelif any(part.endswith('/bin/brew') for part in argv):")
+        command.write_text('#!' + sys.executable + '\n' + code.replace('STATE', repr(str(self.state))).replace('AUDIT', repr(str(self.audit))))
+        command.chmod(0o700)
+        (self.repo / 'workflows/workflow-operation-tool-manager-setup.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
+        inputs = {'operation_id': 1, 'node_id': 9, 'ssh': SSH, 'intent': {'manager': 'brew', 'user': 'orbit', 'platform': 'linux', 'architecture': 'x86_64',
+                  'setup': {'manager': 'homebrew', 'input': {'user': 'orbit', 'revision': 'a'*40, 'version': '4.0.0'}, 'apt': None, 'packages': []}}}
+        self.cli('workflow', 'validate', workflow['name'])
+        run = json.loads(self.cli('workflow', 'run', workflow['name'], '--stdin', input=json.dumps(inputs), success=not fail).stdout)
+        return json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
+
+    def test_ready_manager_runs_only_one_native_version_command(self):
+        self.assertEqual(self.run_manager()['status'], 'succeeded')
+        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--version', calls[0])
+
+    def test_first_use_runs_the_pinned_installer_then_checks_readiness(self):
+        self.assertEqual(self.run_manager(missing=True)['status'], 'succeeded')
+        self.assertFalse(json.loads(self.state.read_text())['manager_missing'])
+        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertEqual(len(calls), 3)
+        self.assertIn('/usr/bin/python3', calls[1])
+        self.assertIn('--version', calls[2])
+
+    def test_failed_pinned_install_fails_without_a_readiness_retry(self):
+        self.assertEqual(self.run_manager(missing=True, fail=True)['status'], 'failed')
+        self.assertTrue(json.loads(self.state.read_text())['manager_missing'])

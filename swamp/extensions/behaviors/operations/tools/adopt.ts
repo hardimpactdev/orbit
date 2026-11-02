@@ -45,7 +45,7 @@ export async function phaseAssets(kind: z.infer<typeof Kind>, input: BundleInput
         remove_repository: input.remove_repository, root: input.manager === "apt", setup_packages: input.setup?.packages ?? [],
         repository_body: await read("apt_repository.py"), ...bound,
     };
-    return { driver: await read("phase.py"), bundle: JSON.stringify(bundle) };
+    return { bundle: JSON.stringify(bundle) };
 }
 /** The adopt phase printed `{facts, repository?}`, or null when it did not finish. */
 export function adoptionResult(input: z.infer<typeof AdoptInput>, phase: Record<string, unknown> | null) {
