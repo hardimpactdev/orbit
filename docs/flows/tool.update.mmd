@@ -54,6 +54,7 @@ sequenceDiagram
     %%> - downloads the signing key and checks its fingerprint
     %%> - replaces the apt source with the new definition
   end
+  Note over SW: assets<br/>public command arguments
   SW->>N: Read manager version<br/>one manager command
   SW->>N: Read installed package<br/>one package query
   opt macOS Homebrew
@@ -78,6 +79,7 @@ sequenceDiagram
   opt apt
     SW->>N: Check apt package<br/>official package check
   end
+  Note over SW: decide<br/>candidate and constraint
   opt Homebrew formula
     SW->>N: Check Homebrew formula<br/>official package check
   end

@@ -578,8 +578,8 @@ Removal keeps the repository while another Tool references it. The final removal
 | `tool.repository_invalid` | Invalid definition or repository input for another manager |
 | `tool.repository_conflict` | The name already has a different definition, or an update changes its name |
 | `tool.repository_key_mismatch` | The downloaded or adopted key does not match the pinned primary fingerprint |
-| `tool.repository_unavailable` | A suite's InRelease cannot be fetched or apt cannot refresh its signed index |
-| `tool.repository_failed` | The managed source or keyring cannot be written or removed |
+| `tool.repository_unavailable` | Adoption cannot read the signed index |
+| `tool.repository_failed` | An official repository step cannot fetch, write, or refresh the managed source or keyring |
 | `tool.repository_adoption_mismatch` | Adoption found a different source or keyring |
 
 ### Repository trust and package identity

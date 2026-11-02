@@ -50,6 +50,7 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
+    Note over SW: assets<br/>public command arguments
     SW->>N: Read manager version<br/>one manager command
     SW->>N: Read installed package<br/>one package query
     opt macOS Homebrew
@@ -65,6 +66,7 @@ sequenceDiagram
     %%> - `brew`: refuses when another formula still depends on it
     %%> - `brew-cask`: checks the cask is safe to uninstall
     %%> - `composer`, `vp`: no plan needed; global packages have no system dependents
+    Note over SW: decide<br/>removal safety
     opt Homebrew formula
       SW->>N: Remove Homebrew formula<br/>native resource
     end
