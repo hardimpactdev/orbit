@@ -38,9 +38,14 @@ files, private receipt/diff text, reviewer cleanup after a failed diff, complete
 message-send reuse on resume, and interrupted Pi streams. Gateway admission and
 projection tests pass.
 
-The minimal@7 attempt did not reach staging: production `tasks.provision`
-operation 7793 failed at the VM step because SSH to `10.44.0.134:22` timed out.
-Group 2525 / `tvm-270` was destroyed by cancellation 7795 at
-2026-11-02T12:50:45Z. There is no task-turn proof receipt. These changes remain
-unpublished until an affected-kind proof passes; this failure is a provisioning
-fault, not a result from the edited turn workflow.
+The first minimal@7 attempt failed before staging: production provision operation
+7793 timed out connecting to the new VM. The VM was destroyed normally.
+
+The restaged shared minimal@8 proof passes at `a4e77c1627`: Gateway operation 3,
+native run `65faf379-c831-4952-9b74-730135552b09`, 53.49 seconds against a
+180-second budget and `queueTimeout: 60`. Receipt:
+`~/swamp-execution/evidence/proof/tasks.turn/20261102T131318Z-minimal.json`.
+The real Gateway, vault, SSH and Git path uses a synthetic Pi server and a local
+test checkout; no model, production repository or production data is used.
+This proves the partial conversion. The image-owned receipt-tool gap above still
+prevents a rule 22 completion claim.
