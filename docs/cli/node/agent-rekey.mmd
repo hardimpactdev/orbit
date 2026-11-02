@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R2-R4, agent-observer-swamp-acts; the new key is made on the Node and never leaves it. docs/reference/node-agent.md#agent-secret.
+  %% Target design: ADR 0244 task, DECISIONS R2-R4, agent-observer-swamp-acts; the Gateway makes the key and passes it to the Node through one vault copy (Q-SECRET). docs/reference/node-agent.md#agent-secret.
   %% status: draft
   %% command: orbit:node-agent-rekey
   %% kind: node.agent_rekey
@@ -29,52 +29,55 @@ sequenceDiagram
   %%> Requirements:
   %%> - Node 12 is an active, managed Linux Node with stored SSH host keys
   %%> - no converge or rekey runs for Node 12; both use the same lock per Node
+  %%> What it does:
+  %%> - makes 32 random bytes as 64 hex characters, the new key
+  %%> - writes the key to one vault copy, `node-agent-rekey-12-1`
   %%> Result:
-  %%> - task #5134 recorded with the full intent; no key or verifier in it
+  %%> - task #5134 recorded with the full intent and the new key's SHA-256 verifier; never the key
   %%> - the old verifier stays valid; nothing has happened on the Node yet
   GW->>SW: Start run, full intent<br/>operation-node-agent-rekey
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
-  %%> - the key path `/etc/orbit/agent/secret`
+  %%> - the key path `/etc/orbit/agent/secret` and the new verifier
+  %%> - the vault copy's name, not its value
   GW-->>OP: 202 Accepted<br/>task #5134
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - follow the task with `orbit operation:show`
-  Note over SW: Read the scripts<br/>@nckrtl/node-scripts read
+  SW->>N: Write the new agent key<br/>@swamp/cfgmgmt/file · vault copy
   %%> What it does:
-  %%> - reads the shipped `agent_key.py` script on 209
-  SW->>N: Make a new agent key<br/>on the Node · keep the old one
-  %%> What it does:
-  %%> - creates 32 random bytes on Node 12 and writes them as 64 hex characters to `/etc/orbit/agent/secret`, `root:root`, mode `0600`
-  %%> - keeps the old key as `secret.previous`, for a restore if a later step fails
-  %%> - prints only the SHA-256 verifier of the new key
+  %%> - writes the vault copy to `/etc/orbit/agent/secret`, `root:root`, mode `0600`
   %%> Never:
-  %%> - the key leaves Node 12, enters the task, a log or the vault
+  %%> - the key enters the task, a log or the step's data
   %%> How:
-  %%> - the shipped script through `@swamp/ssh` from 209, with sudo
-  SW->>N: Restart the Node agent<br/>@swamp/ssh exec · systemctl
+  %%> - `@swamp/cfgmgmt/file` from 209, with sudo
+  SW->>N: Restart the Node agent<br/>@swamp/cfgmgmt/systemd restart
   %%> What it does:
   %%> - restarts `orbit-agent.service`
   %%> Why a restart:
   %%> - the agent reads its key only when it starts; a reload can't change it
   %%> Until the Gateway records the verifier:
   %%> - the Gateway refuses reports signed with the new key; the agent retries every few seconds
-  SW->>N: Check the Node agent<br/>active · key matches verifier
+  SW->>N: Check the Node agent<br/>exec · systemctl is-active
   %%> What it does:
-  %%> - checks that `orbit-agent` is active again
-  %%> - checks that the key file's SHA-256 equals the returned verifier
-  %%> - when both pass, removes `secret.previous`; if that removal fails, the file is harmless (`root:root`, mode `0600`) and the next rekey replaces it
+  %%> - fails unless `orbit-agent` is active again
+  SW->>N: Check the new key<br/>@swamp/ssh exec · sha256sum
+  %%> What it does:
+  %%> - reads the SHA-256 of `/etc/orbit/agent/secret`
+  Note over SW: Prove the new key<br/>assert · hash equals verifier
+  %%> What it does:
+  %%> - asserts that the key file's SHA-256 equals the recorded verifier
+  %%> - this is the terminal result
   alt the agent runs with the new key
-    N-->>SW: verifier, SHA-256 only
-    %%> Returns:
-    %%> - the new key's verifier
-    SW-->>GW: Run succeeded<br/>terminal event · verifier
+    SW-->>GW: Run succeeded<br/>terminal event · assert passed
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Store the new verifier<br/>old key void · task succeeded
+    %%> What it does:
+    %%> - stores the verifier from the intent and deletes the vault copy
     %%> Result:
     %%> - Node 12's recorded verifier is the new one; the old key no longer works
     %%> - the Node agent's next report is accepted again
@@ -82,16 +85,15 @@ sequenceDiagram
   else a step fails
     N--xSW: exit ≠ 0
     %%> When:
-    %%> - the key can't be written, or the agent doesn't come back up
-    SW->>N: Restore the old key<br/>secret.previous · restart
-    %%> What it does:
-    %%> - puts the old key back and restarts the agent, so it matches the verifier the Gateway still has
-    %%> Why a rollback here:
-    %%> - otherwise the Node agent stays locked out until a rerun
+    %%> - the key can't be written, the agent doesn't come back up, or the hash differs
+    %%> No rollback:
+    %%> - the Node may hold the new key while the Gateway keeps the old verifier; the agent stays locked out until a rerun
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
     Note over GW: Keep the old verifier<br/>task failed · rerun is safe
+    %%> What it does:
+    %%> - deletes the vault copy
     %%> Result:
     %%> - Node 12's verifier stays unchanged
     %%> - task #5134 fails
