@@ -30,6 +30,7 @@ final readonly class StartNodeConvergeAction
         }
         $snapshot['verifier_hash'] = $node->agent_secret_hash;
         $snapshot['roles'] = app(NodeConvergeInput::class)->roles($node, ValidatedData::object($snapshot['payloads']));
+        $snapshot['footprint_check'] = NodeConvergeInput::footprintCheck($snapshot);
 
         return $this->operations->execute('node.converge', 'node', $node->id, $node->id,
             ['_converge' => $snapshot], 'operator', $requestId, lockKey: 'node-converge:node:'.$node->id);

@@ -211,8 +211,7 @@ jobs:
         node_id: '${{ inputs.node_id }}'
         kind: '${{ inputs.kind }}'
         intent: '${{ {"ssh": inputs.intent.ssh, "user": inputs.intent.roles.user, "home": inputs.intent.roles.home, "agent_sha256": inputs.intent.agent_sha256, "residue": inputs.intent.roles.residue} }}'
-    # The agent is active on the pinned binary and its files hold their content.
-    # The end check: the pinned binary and the key the Gateway recorded.
+    # The one end check: the pinned binary, the recorded key and the agent files hold the Gateway's hashes.
   - name: 'Check the footprint'
     labels: {role: swamp}
     dependsOn:
@@ -227,10 +226,6 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '30', /usr/bin/sha256sum, /usr/local/bin/orbit-agent, /etc/orbit/agent/secret]
+        argv: [timeout, '30', /usr/bin/sha256sum, --check, --strict, '-']
+        stdin: '${{ inputs.intent.footprint_check }}'
         timeoutSec: 40
-  - name: 'Prove the footprint'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Check the footprint', condition: {type: succeeded}}]
-    task: {type: assert, severity: high, message: The agent does not run the pinned binary with the recorded key.,
-      expr: 'steps["Check the footprint"].outputs.stdout in [inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" + inputs.intent.verifier_hash + "  /etc/orbit/agent/secret", inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" + inputs.intent.verifier_hash + "  /etc/orbit/agent/secret\n"]'}

@@ -65,7 +65,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             $role['caddy'] = ['name' => 'caddy', 'status' => 'skipped', 'reason' => 'caddy_render_refused'];
         }
         $proven = [
-            'agent' => $status('Restart the Node agent') === 'succeeded' && $status('Check the footprint') !== 'failed' && $status('Prove the footprint') !== 'failed',
+            'agent' => $status('Restart the Node agent') === 'succeeded' && $status('Check the footprint') === 'succeeded',
             'peer-dns' => $status('Apply private DNS policy') === 'succeeded',
             'caddy-package' => $status('Install Caddy') === 'succeeded',
             'caddy' => $status('Publish Caddy sites') === 'succeeded',

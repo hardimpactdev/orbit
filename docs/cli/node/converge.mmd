@@ -125,17 +125,14 @@ sequenceDiagram
     %%> Not included:
     %%> - adding or removing a role, and Metrics exporters; those have their own commands
   end
-  SW->>N: Check the footprint<br/>@swamp/ssh exec · sha256sum
+  SW->>N: Check the footprint<br/>exec · sha256sum --check
   %%> What it does:
-  %%> - reads the SHA-256 of the agent binary and of its key file in one command
+  %%> - one `sha256sum --check` against the Gateway's hashes: the pinned binary, the recorded key and the agent's `config.toml` and `ca.pem`
+  %%> - a missing or mismatched key or file fails this step; `orbit:node-agent-rekey` issues a new key
   %%> Why:
-  %%> - a part only counts as applied when the Node shows it
-  SW->>SW: Prove the footprint<br/>assert · pin and verifier
-  %%> What it does:
-  %%> - Swamp's native `assert`: the binary is the pin and the key matches the recorded verifier
-  %%> - a missing or mismatched key fails here; `orbit:node-agent-rekey` issues a new one
+  %%> - a part only counts as applied when the Node shows it; this is the one end check, so there is no separate assert
   %%> Returns:
-  %%> - the end check; the Gateway reads every step's outcome from Swamp's run data
+  %%> - the Gateway reads every step's outcome from Swamp's run data
   alt every part is applied
     N-->>SW: digest per part
     %%> Returns:

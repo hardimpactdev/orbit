@@ -17,7 +17,7 @@ function convergeFootprint(array $names, array $steps, string $status = 'succeed
 it('applies every part from its own step', function (): void {
     [$data, $result] = convergeFootprint(['agent', 'peer-dns', 'tmpfiles', 'php-runtime'], ['Restart the Node agent' => 'succeeded', 'Apply private DNS policy' => 'succeeded',
         'Write the tmpfiles rule' => 'succeeded', 'Configure PHP-FPM-8.4' => 'succeeded', 'Configure PHP-FPM-8.5' => 'succeeded',
-        'Check the footprint' => 'succeeded', 'Prove the footprint' => 'succeeded'], roles: ['php_versions' => ['8.4', '8.5']]);
+        'Check the footprint' => 'succeeded'], roles: ['php_versions' => ['8.4', '8.5']]);
 
     expect($data['status'])->toBe('succeeded')
         ->and($result)->toBe(['artifacts' => [['name' => 'agent', 'status' => 'applied'], ['name' => 'peer-dns', 'status' => 'applied'],
@@ -26,7 +26,7 @@ it('applies every part from its own step', function (): void {
 
 it('keeps a failed part at its old digest and records the parts that applied', function (): void {
     [, $result] = convergeFootprint(['agent', 'caddy', 'tmpfiles', 'php-runtime'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'succeeded',
-        'Prove the footprint' => 'succeeded', 'Publish Caddy sites' => 'failed', 'Write the tmpfiles rule' => 'succeeded',
+        'Publish Caddy sites' => 'failed', 'Write the tmpfiles rule' => 'succeeded',
         'Configure PHP-FPM-8.4' => 'succeeded', 'Configure PHP-FPM-8.5' => 'failed'], 'failed', roles: ['php_versions' => ['8.4', '8.5']]);
 
     expect($result)->toBe(['artifacts' => [['name' => 'agent', 'status' => 'applied'], ['name' => 'tmpfiles', 'status' => 'applied']],
@@ -34,7 +34,7 @@ it('keeps a failed part at its old digest and records the parts that applied', f
 });
 
 it('reports failed Route residue as skipped without failing the task', function (): void {
-    [$data, $result] = convergeFootprint(['agent', 'route-residue'], ['Restart the Node agent' => 'succeeded', 'Prove the footprint' => 'succeeded',
+    [$data, $result] = convergeFootprint(['agent', 'route-residue'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'succeeded',
         'Clear Route residue' => 'failed']);
 
     expect($data['status'])->toBe('succeeded')
@@ -42,13 +42,13 @@ it('reports failed Route residue as skipped without failing the task', function 
 });
 
 it('records nothing for the agent when its key does not match the recorded verifier', function (): void {
-    [, $result] = convergeFootprint(['agent'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'succeeded', 'Prove the footprint' => 'failed'], 'failed');
+    [, $result] = convergeFootprint(['agent'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'failed'], 'failed');
 
     expect($result['failed_artifact'])->toBe('agent')->and($result['artifacts'])->toBe([]);
 });
 
 it('skips a Caddyfile the Gateway could not render, and fails a first visit for it', function (bool $firstVisit): void {
-    [$data, $result] = convergeFootprint(['agent', 'caddy'], ['Restart the Node agent' => 'succeeded', 'Prove the footprint' => 'succeeded', 'Publish Caddy sites' => 'skipped'],
+    [$data, $result] = convergeFootprint(['agent', 'caddy'], ['Restart the Node agent' => 'succeeded', 'Check the footprint' => 'succeeded', 'Publish Caddy sites' => 'skipped'],
         payloads: ['caddy' => ['error_code' => 'caddy.render_failed', 'stage' => 'render']], roles: ['caddy' => null], firstVisit: $firstVisit);
 
     expect($result['artifacts'][1])->toBe(['name' => 'caddy', 'status' => 'skipped', 'reason' => 'caddy_render_refused'])

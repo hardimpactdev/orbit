@@ -57,7 +57,9 @@ it('admits a full converge without a target worker, private material or Node cal
         ->and(app(DirectOperation::class)->definition('node.converge'))->not->toHaveKeys(['private_material', 'secret_outputs'])
         ->and($inputs['intent'])->not->toHaveKey('payloads')
         ->and($inputs['intent']['roles'])->toMatchArray(['user' => $this->node->user, 'home' => '/home/'.$this->node->user])
-        ->and($inputs['intent']['roles']['php_versions'])->toBe(array_keys((array) $inputs['intent']['roles']['php']));
+        ->and($inputs['intent']['roles']['php_versions'])->toBe(array_keys((array) $inputs['intent']['roles']['php']))
+        ->and($inputs['intent']['footprint_check'])->toStartWith($inputs['intent']['agent_sha256'].'  /usr/local/bin/orbit-agent'."\n".str_repeat('a', 64).'  /etc/orbit/agent/secret'."\n")
+        ->and(substr_count($inputs['intent']['footprint_check'], "\n"))->toBe(2 + count($inputs['intent']['agent']['files']));
 });
 
 it('shapes the role parts for their cfgmgmt steps: the pinned Caddy package and a private DNS release under its folder', function (): void {

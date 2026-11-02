@@ -116,6 +116,25 @@ final readonly class NodeConvergeInput
     }
 
     /**
+     * The hashes `Check the footprint` holds the Node to, as `sha256sum --check` reads them: the pinned binary, the
+     * recorded key and each agent file.
+     *
+     * @param  array<string,mixed>  $snapshot
+     */
+    public static function footprintCheck(array $snapshot): string
+    {
+        $agent = ValidatedData::object($snapshot['agent']);
+        $lines = [ValidatedData::string($snapshot['agent_sha256']).'  /usr/local/bin/orbit-agent',
+            ValidatedData::string($snapshot['verifier_hash']).'  /etc/orbit/agent/secret'];
+        foreach (is_array($agent['files'] ?? null) ? $agent['files'] : [] as $file) {
+            $file = ValidatedData::object($file);
+            $lines[] = hash('sha256', ValidatedData::string($file['content'])).'  '.ValidatedData::string($file['path']);
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
      * The listener release as folders and files under its release folder, and the address its socket answers on.
      *
      * @param  array<string,mixed>  $part
