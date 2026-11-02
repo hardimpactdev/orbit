@@ -1,6 +1,6 @@
 # Process lifecycle
 
-The six Process commands use official cfgmgmt behaviors and SSH argv from Node 209. Every SSH mutation declares `writes: true`. Behaviors have stable names by Node and Process, so unrelated Processes do not wait on the same 60 s instance lock. Checks use cfgmgmt data and a native assert. The Gateway projects the successful assertion without a result-printing step. A failed run keeps its effects; rerun the command to converge.
+The six Process commands use official cfgmgmt behaviors and SSH argv from Node 209. Every SSH mutation declares `writes: true`. Behaviors have stable names by Node and Process, so unrelated Processes do not wait on the same 60 s instance lock. Checks use cfgmgmt data and a native assert. The Gateway projects the successful assertion without a result-printing step. A failed run keeps its effects; rerun the command to converge. Start and restart project the accepted running state, even when admission captured a stopped desired state.
 
 The public rendering method substitutes the observed account home in a systemd unit. It does no Node work. One argv command checks all admitted mount paths. No step creates a script directory or copies a script to a Node. Runtime ownership checks, checkpoints and rollback chains are removed by rule 22.
 

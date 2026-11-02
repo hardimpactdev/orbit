@@ -38,9 +38,9 @@
   },
   "phases": [
     {
-      "name": "Apply the unit state",
+      "name": "Set boot policy",
       "job": "runtime",
-      "step": "Apply the unit state",
+      "step": "Set boot policy",
       "budget_seconds": 20
     }
   ],

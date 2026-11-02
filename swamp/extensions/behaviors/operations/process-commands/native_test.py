@@ -500,3 +500,34 @@ p.write_text(json.dumps(s))
         ss.write_text('#!/bin/sh\nprintf "LISTEN 0 4096 127.0.0.1:5173\\n"\n')
         self.run_kind("create")
         self.assertTrue(marker.exists())
+
+    def test_update_retires_the_previous_runtime_before_installing_its_replacement(
+        self,
+    ):
+        self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
+        self.save(retired_present=True)
+        docker = self.repo / "tools/docker"
+        docker.write_text(
+            "#!"
+            + sys.executable
+            + "\n"
+            + """import json,sys
+from pathlib import Path
+p=Path(STATE);s=json.loads(p.read_text());args=sys.argv[1:]
+if args[0]=='inspect':
+ if not s['retired_present']:sys.exit(1)
+ print(json.dumps([{'State':{'Status':'running'},'Config':{'Image':'fixture'}}]))
+elif args[:2]==['rm','-f']:s['retired_present']=False
+else:raise SystemExit(1)
+p.write_text(json.dumps(s))
+""".replace("STATE", repr(str(self.state)))
+        )
+        docker.chmod(0o700)
+        self.inputs["intent"]["installation"]["retired"] = {
+            "runtime": "docker",
+            "name": "orbit-process-17-worker",
+        }
+        self.run_kind("update")
+        self.assertFalse(json.loads(self.state.read_text())["retired_present"])
+        self.assertTrue(self.unit.exists())
+        self.assertEqual(self.current()["active"], "active")

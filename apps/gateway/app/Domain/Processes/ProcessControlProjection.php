@@ -56,6 +56,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
             'process.stop', 'process.destroy' => 'stopped',
             'process.start', 'process.restart' => 'running',
             'process.create', 'process.update' => ValidatedData::string($operation->input['desired']),
+            default => throw new \LogicException('A Process lifecycle kind is required.'),
         };
         $state = $status === OperationStatus::Succeeded && $operation->kind !== 'process.destroy'
             ? ($operation->input['runtime'] === 'systemd'
