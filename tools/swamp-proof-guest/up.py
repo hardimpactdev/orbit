@@ -133,7 +133,7 @@ def prepare(node, network):
     run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'ufw allow 22/tcp comment proof-ssh && ufw --force enable'])
     if 'app-dev' in node.get('roles', []):
         # The web runtime app-dev role convergence leaves: an Orbit-managed Caddyfile, the hibernation log
-        # directory its sites name, and active PHP-FPM masters for the shared pools (version 6, for Route kinds).
+        # directory its sites name, and active PHP-FPM masters for the shared pools (version 7, for Route kinds).
         run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'set -e; printf "%s\\n" "# Managed by Orbit: Node Caddy build" "{" '
              '"    auto_https disable_certs" "    order abort first" "    metrics {" "        per_host" "    }" "}" > /etc/caddy/Caddyfile; '
              'chown root:caddy /etc/caddy/Caddyfile; chmod 0640 /etc/caddy/Caddyfile; '
@@ -296,7 +296,7 @@ def gateway(nodes):
 
 
 def serve_gateway():
-    """gateway.orbit over HTTPS on Node 209's address, with the Orbit root in system trust (version 6).
+    """gateway.orbit over HTTPS on Node 209's address, with the Orbit root in system trust (version 7).
 
     A step that signs a CSR calls the Gateway from 209; FastCGI keeps the caller's address, so peer identity holds.
     """
