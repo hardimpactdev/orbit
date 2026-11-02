@@ -32,9 +32,9 @@
   },
   "phases": [
     {
-      "name": "Apply the unit state",
+      "name": "Control the container",
       "job": "runtime",
-      "step": "Apply the unit state",
+      "step": "Control the container",
       "budget_seconds": 20
     },
     {
