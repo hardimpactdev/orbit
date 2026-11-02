@@ -179,7 +179,7 @@ def up(gateway, name='minimal', agent_delivery=None):
         binary = Path(agent_delivery) / 'orbit-agent-linux-x86_64'
         if not binary.is_file():
             raise ProofError(f'{binary} is missing; pass a build-delivery directory.')
-        guest.call(['sh', '-c', 'install -d -o orbit -g orbit /home/orbit/swamp-proof/agent-delivery && cat > /home/orbit/swamp-proof/agent-delivery/orbit-agent'],
+        guest.call(['sh', '-c', 'install -d -o orbit -g orbit /home/orbit/swamp-proof/agent-delivery && cat > /home/orbit/swamp-proof/agent-delivery/orbit-agent-linux-x86_64'],
                    input=binary.read_bytes(), timeout=300)
     bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
     return state

@@ -32,7 +32,6 @@ URL = f'wss://swamp.orbit:{PORT}'
 IDENTITY = HOME / '.orbit/ssh/proof_worker_ed25519'
 BOOTSTRAP = HOME / '.orbit/ssh/id_ed25519'
 timings = []
-WEBSOCKET_PORT = 8790
 
 
 def run(argv, *, input=None, timeout=300, user=None, cwd=None, env=None):
@@ -293,6 +292,8 @@ def gateway(nodes):
         'ORBIT_SWAMP_RUN_TOKEN': (STATE / 'credentials/gateway').read_text().strip(),
         'ORBIT_SWAMP_READ_TOKEN': (STATE / 'credentials/reader').read_text().strip(),
         'ORBIT_HOME': str(HOME / '.orbit'),
+        # The Gateway site and Metrics publication render this checkout, as a release's checkout link (version 12).
+        'ORBIT_GATEWAY_CHECKOUT': str(GATEWAY),
     }
     environment = GATEWAY / '.env'
     private(environment, '\n'.join(f'{key}={value}' for key, value in settings.items()) + '\n')
@@ -303,29 +304,50 @@ def gateway(nodes):
     run(['php', 'artisan', 'key:generate', '--force'], user=ACCOUNT, cwd=GATEWAY)
     run(['chown', 'orbit:orbit', str(database)])
     run(['php', 'artisan', 'migrate', '--force'], user=ACCOUNT, cwd=GATEWAY, timeout=600)
-    serve_gateway()
-    facts = {'gateway': TOPOLOGY['network']['gateway'], 'gateway_host_key': Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[1],
-             'operator': TOPOLOGY['operator']['address'], 'targets': nodes}
-    return json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'seed'], input=json.dumps(facts), user=ACCOUNT, cwd=GATEWAY))
+    network = TOPOLOGY['network']
+    facts = {'gateway': network['gateway'], 'gateway_host_key': Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[1],
+             'operator': TOPOLOGY['operator']['address'], 'targets': nodes,
+             'subnet': str(ipaddress.ip_network(f'{network["gateway"]}/{network["prefix"]}', strict=False))}
+    seeded = json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'seed'], input=json.dumps(facts), user=ACCOUNT, cwd=GATEWAY))
+    # Steps on 209 reach this VM's own address over SSH like any Node, so the worker key logs in here too (version 12).
+    public = ' '.join(IDENTITY.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-worker'
+    run(['sh', '-c', 'install -d -m 0700 -o orbit -g orbit /home/orbit/.ssh; f=/home/orbit/.ssh/authorized_keys; touch "$f"; '
+         'chown orbit:orbit "$f"; chmod 0600 "$f"; grep -qxF "$1" "$f" || printf "%s\\n" "$1" >> "$f"', 'sh', public])
+    serve_gateway(seeded['nodes']['gateway'])
+    return seeded
 
 
-def serve_gateway():
-    """gateway.orbit over HTTPS on Node 209's address, with the Orbit root in system trust (version 7).
+def leaf(directory, name, hosts):
+    """A certificate from the proof root at the path the role's certificate step writes, as root:caddy 0640."""
+    ca = HOME / '.orbit/ca'
+    directory.mkdir(exist_ok=True, mode=0o750)
+    run(['openssl', 'req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', f'/CN={hosts[0]}', '-keyout', str(directory / f'{name}.key'),
+         '-out', str(directory / f'{name}.csr')])
+    (directory / f'{name}.ext').write_text('basicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName='
+                                          + ','.join(('IP:' if host[0].isdigit() else 'DNS:') + host for host in hosts) + '\n')
+    run(['openssl', 'x509', '-req', '-in', str(directory / f'{name}.csr'), '-CA', str(ca / 'root.pem'), '-CAkey', str(ca / 'root.key'),
+         '-CAcreateserial', '-days', '2', '-extfile', str(directory / f'{name}.ext'), '-out', str(directory / f'{name}.pem')])
+    run(['install', '-m', '0640', str(ca / 'root.pem'), str(directory / 'root-ca.pem')])
+    for extra in ('csr', 'ext'):
+        (directory / f'{name}.{extra}').unlink()
+    run(['chown', '-R', 'root:caddy', str(directory)])
+    run(['chmod', '0640', str(directory / f'{name}.key'), str(directory / f'{name}.pem')])
 
-    A step that signs a CSR calls the Gateway from 209; FastCGI keeps the caller's address, so peer identity holds.
+
+def serve_gateway(node_id):
+    """The Gateway on Node 209 as production runs it (version 12).
+
+    The gateway and websocket role certificates sit where their certificate steps write them, PHP-FPM serves the
+    orbit-gateway socket, and Caddy runs the Node's complete Caddyfile from the Gateway's own Caddy build renderer,
+    with its admin endpoint on localhost, so a later Caddy build or certificate reload on this Node works as on a real
+    Gateway. A step that signs a CSR calls the Gateway from 209; FastCGI keeps the caller's address, so peer identity holds.
     """
     ca = HOME / '.orbit/ca'
     run(['install', '-m', '0644', str(ca / 'root.pem'), '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'])
     run(['update-ca-certificates'])
-    tls = Path('/etc/caddy/proof-gateway-tls')
-    tls.mkdir(exist_ok=True, mode=0o750)
-    run(['openssl', 'req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=gateway.orbit', '-keyout', str(tls / 'key.pem'), '-out', str(tls / 'leaf.csr')])
-    (tls / 'leaf.ext').write_text('basicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:gateway.orbit,DNS:reverb.orbit\n')
-    run(['openssl', 'x509', '-req', '-in', str(tls / 'leaf.csr'), '-CA', str(ca / 'root.pem'), '-CAkey', str(ca / 'root.key'),
-         '-CAcreateserial', '-days', '2', '-extfile', str(tls / 'leaf.ext'), '-out', str(tls / 'cert.pem')])
-    run(['chown', '-R', 'root:caddy', str(tls)])
-    run(['chmod', '0640', str(tls / 'key.pem')])
     address = TOPOLOGY['network']['gateway']
+    leaf(Path('/etc/caddy/orbit-cert-current'), 'gateway', ['gateway.orbit', address])
+    leaf(Path('/etc/caddy/orbit-websocket-cert-current'), 'reverb', ['reverb.orbit'])
     # Without this line gateway.orbit resolves through fleet private DNS to the production Gateway; a signing
     # step would then call production. up fails unless the name resolves to this VM.
     hosts = Path('/etc/hosts')
@@ -334,21 +356,33 @@ def serve_gateway():
     resolved = run(['getent', 'hosts', 'gateway.orbit']).split()
     if not resolved or resolved[0] != address:
         raise RuntimeError(f'gateway.orbit resolves to {resolved[:1]}, not this topology Gateway {address}')
-    Path('/etc/php/8.5/fpm/pool.d/proof-gateway.conf').write_text(
-        '[proof-gateway]\nuser = orbit\ngroup = orbit\nlisten = /run/php/proof-gateway.sock\nlisten.owner = caddy\n'
+    Path('/etc/php/8.5/fpm/pool.d/proof-gateway.conf').unlink(missing_ok=True)
+    Path('/etc/php/8.5/fpm/pool.d/orbit-gateway.conf').write_text(
+        f'[orbit-gateway]\nuser = {ACCOUNT}\ngroup = {ACCOUNT}\nlisten = /run/php/orbit-gateway.sock\nlisten.owner = caddy\n'
         'listen.group = caddy\npm = ondemand\npm.max_children = 4\nclear_env = no\n')
-    Path('/etc/caddy/Caddyfile').write_text(
-        f'{{\n    auto_https off\n    admin off\n}}\nhttps://gateway.orbit {{\n    bind {address}\n'
-        f'    tls {tls}/cert.pem {tls}/key.pem\n    rewrite * /index.php?{{query}}\n'
-        f'    reverse_proxy unix//run/php/proof-gateway.sock {{\n        transport fastcgi {{\n            root {GATEWAY}/public\n'
-        f'            split .php\n        }}\n    }}\n}}\n'
-        # Reverb of the websocket role on this Node, as its Caddy site serves it (version 11).
-        f'https://reverb.orbit {{\n    bind {address}\n    tls {tls}/cert.pem {tls}/key.pem\n'
-        f'    reverse_proxy 127.0.0.1:{WEBSOCKET_PORT}\n}}\n')
     # The fleet's member trust: Nodes reach gateway.orbit and reverb.orbit over the private network (version 11).
     run(['ufw', 'allow', 'in', 'on', TOPOLOGY['network']['name'], 'to', address, 'port', '443', 'proto', 'tcp', 'comment', 'orbit-proof gateway'])
+    # Caddy resolves the Gateway web root itself (resolve_root_symlink), so it needs traverse rights down to it.
+    path = HOME
+    for part in GATEWAY.relative_to(HOME).parts:
+        run(['setfacl', '-m', 'u:caddy:x', str(path)])
+        path = path / part
+    run(['setfacl', '-m', 'u:caddy:x', str(GATEWAY)])
+    run(['setfacl', '-m', 'u:caddy:rx', str(GATEWAY / 'public')])
     run(['systemctl', 'enable', 'php8.5-fpm', 'caddy'])
-    run(['systemctl', 'restart', 'php8.5-fpm', 'caddy'])
+    run(['systemctl', 'restart', 'php8.5-fpm'])
+    publish_caddy(node_id)
+
+
+def publish_caddy(node_id):
+    """Write and load the Node's Caddyfile as its Caddy build renders it; a render with problems stops up."""
+    rendered = json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'caddyfile'], user=ACCOUNT, cwd=GATEWAY,
+                              input=json.dumps({'node': node_id})).strip().splitlines()[-1])
+    if rendered['problems']:
+        raise RuntimeError('the Gateway Caddyfile has problems: ' + '; '.join(rendered['problems']))
+    Path('/etc/caddy/Caddyfile').write_text(rendered['content'])
+    run(['caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
+    run(['systemctl', 'restart', 'caddy'])
 
 
 def request(path, body, seconds=600):
@@ -388,6 +422,7 @@ def realtime(ids):
         run(['systemctl', 'daemon-reload'])
         run(['systemctl', 'enable', 'orbit-websocket'])
         run(['systemctl', 'restart', 'orbit-websocket'])
+        publish_caddy(ids['gateway'])
     unit = Path('/etc/systemd/system/orbit-proof-agent-view.service')
     unit.write_text('[Unit]\nDescription=Orbit proof agent-view subscriber\nAfter=network.target\n\n[Service]\nType=simple\n'
                     f'User={ACCOUNT}\nGroup={ACCOUNT}\nWorkingDirectory={GATEWAY}\nExecStart=/usr/bin/php {GATEWAY}/artisan orbit:agent-view\n'

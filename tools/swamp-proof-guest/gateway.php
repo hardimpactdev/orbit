@@ -11,11 +11,12 @@ declare(strict_types=1);
  *            subscriber in production, is not part of the minimal topology.
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
+ *   caddyfile stdin {node}: the Node's complete Caddyfile from the Gateway's own Caddy build renderer.
  *   fixture  stdin {roles: {node_id: [role]}, replace_roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
  *            instances: [attributes], task_vms: [attributes], operations: [attributes],
  *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}],
- *            instance_updates: [{id, attributes}], node_updates: [{id, attributes}], websocket?: node_id}: the records a kind fixture
+ *            instance_updates: [{id, attributes}], node_updates: [{id, attributes}], websocket?: node_id, analytics_tracking: [{instance_id, domain, timezone?}]}: the records a kind fixture
  *            needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet, a Project under the fixed
  *            id its Swamp configuration names, an extension, or a task group's owned workspace (the group and its
  *            subtasks, its Instance, its task VM and its provision Operation) for kinds that run in it.
@@ -24,8 +25,17 @@ declare(strict_types=1);
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RouteStatus;
+use App\Domain\Settings\SettingRepository;
+use App\Domain\Settings\SettingScope;
+use App\Domain\Settings\SettingScopeType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
@@ -87,6 +97,8 @@ if ($argv[1] === 'seed') {
         $target->forceFill(['agent_secret_hash' => $input['targets'][$index]['agent_secret_hash'], 'wireguard_public_key' => null])->saveQuietly();
     }
     app(GatewayServingHost::class)->remember($gateway);
+    // The private network is this topology's, so Caddy listeners and peer checks use it (version 12).
+    app(VpnSettings::class)->configure(subnet: $input['subnet']);
     $operator->accessibleNodes()->attach([$gateway->id, ...array_map(static fn (Node $target): int => $target->id, $targets)]);
     app(WorkerKnownHostsPublisher::class)->publish();
     $nodes = ['gateway' => $gateway->id, 'operator' => $operator->id];
@@ -94,6 +106,13 @@ if ($argv[1] === 'seed') {
         $nodes[$target->name] = $target->id;
     }
     echo json_encode(['nodes' => $nodes]), PHP_EOL;
+    exit(0);
+}
+
+// The Node's complete Caddyfile as its Caddy build renders it, so up.py serves what every later build serves (version 12).
+if ($argv[1] === 'caddyfile') {
+    $caddyfile = app(NodeCaddyfileRenderer::class)->render(Node::query()->findOrFail((int) $input['node']));
+    echo json_encode(['content' => $caddyfile->content, 'problems' => $caddyfile->problems]), PHP_EOL;
     exit(0);
 }
 
@@ -175,6 +194,19 @@ if ($argv[1] === 'fixture') {
         Node::query()->findOrFail((int) $spec['router_node_id'])->roles()
             ->updateOrCreate(['role' => 'router'], ['status' => 'active', 'cluster_id' => $cluster->id]);
     }
+    // Analytics tracking Routes of an Instance as a finished analytics.enable leaves them: an active Route of kind
+    // analytics_tracking beside the Instance's authoritative Route, and the Plausible site binding (version 12).
+    // The analytics upstream is an active `analytics` role, which `roles` records.
+    foreach ($input['analytics_tracking'] ?? [] as $spec) {
+        $instance = Instance::query()->findOrFail((int) $spec['instance_id']);
+        $owner = $instance->authoritativeRoute() ?? throw new RuntimeException('proof.analytics_owner_missing');
+        $route = Route::query()->create(['kind' => RouteKind::AnalyticsTracking, 'domain' => $spec['domain'],
+            'node_id' => $owner->node_id, 'cluster_id' => $owner->cluster_id, 'publication' => $owner->publication,
+            'provenance' => RouteProvenance::Explicit, 'status' => RouteStatus::Active]);
+        $route->analyticsTracking()->create(['instance_id' => $instance->id]);
+        app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'analytics.site.'.$instance->id,
+            json_encode(['domain' => $owner->domain, 'previous_domain' => null, 'timezone' => $spec['timezone'] ?? 'Europe/Amsterdam', 'goals' => []], JSON_THROW_ON_ERROR));
+    }
     // The websocket role on one Node, as its convergence leaves it: the role, the server credentials and the
     // site marked serving. The Reverb .env goes to up.py, which runs the pinned server (version 11).
     if (isset($input['websocket'])) {
@@ -182,6 +214,8 @@ if ($argv[1] === 'fixture') {
         $node->roles()->firstOrCreate(['role' => 'websocket'], ['status' => 'active']);
         $credentials = app(NativeWebSocketCredentialManager::class)->ensure($node);
         app(WebSocketDnsTarget::class)->markServing($node->id);
+        // up.py places the Reverb certificate where the role's certificate step puts it (version 12).
+        app(CaddySiteCertificates::class)->record($node->id, WebSocketCaddySiteSource::CertificateSlug);
         echo json_encode(['websocket' => ['environment' => app(WebSocketEnvironmentRenderer::class)->render($credentials, (int) config('orbit.websocket.port')),
             'unit' => app(WebSocketServiceUnitRenderer::class)->render('/opt/orbit/websocket', 'orbit', 'orbit', (int) config('orbit.websocket.port')),
             'repository' => config('orbit.websocket.repository'), 'ref' => config('orbit.websocket.ref'), 'port' => (int) config('orbit.websocket.port')]]), PHP_EOL;
