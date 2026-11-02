@@ -197,6 +197,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:teardown-step:update' => ServingNode::ProjectOwning,
         'instance:transfer' => ServingNode::InstanceTransfer,
         'instance:update' => ServingNode::InstanceOwning,
+        'instance:auto-deploy:enable' => ServingNode::InstanceOwning,
+        'instance:auto-deploy:disable' => ServingNode::InstanceOwning,
         'instance:websocket:add' => ServingNode::EnvironmentInstanceOwning,
         'instance:websocket:remove' => ServingNode::EnvironmentInstanceOwning,
         'metrics:credentials' => ServingNode::Gateway,

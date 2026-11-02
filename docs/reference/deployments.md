@@ -317,7 +317,7 @@ A default deploys its default branch's head. Its deployed commit is its `seed_co
 Swamp decides when a production Instance deploys after you turn automatic deployment on:
 
 ```bash
-orbit instance:update <instance> --auto-deploy=true
+orbit instance:auto-deploy:enable <instance>
 ```
 
 The tick starts from the commit of the Instance's newest succeeded deployment or rollback. Until a first deployment succeeds, it reports `not_deployed`; deploy the Instance by hand once. It reads the head of the deployment branch: the `--branch` that `instance:update` set, or the Instance's branch.
@@ -343,7 +343,7 @@ A pending check that passes is normally selected on the next tick, within one mi
 
 The green-commit walk reads the head's own check run too, so one walk answers both questions. The tick walks again only when the head changed, while the head's check has not finished, or on the first tick at least 5 minutes after it failed. A `no_green_commit` answer stays until the head, the deployed commit, or the blocked commits change.
 
-Without a `merge_check`, the tick deploys every new head. `instance:update` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:update --auto-deploy=true` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
+Without a `merge_check`, the tick deploys every new head. `instance:auto-deploy:enable` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:auto-deploy:enable` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
 
 #### Failures of automatic deployments
 
@@ -394,13 +394,13 @@ The source listing contains at most 100 reachable commits, and the walk returns 
 
 The commits and checks reads require the Project's GitHub App access. They return `instance.auto_deploy_gate_unreadable` for another source provider and `instance.auto_deploy_gate_unavailable` when the upstream read fails. They expose evidence, not a green-commit decision. Swamp applies the policy and checks that the walk's head matches its fresh head. A moved branch does not silently change a selected commit.
 
-Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, only permanent smoke blocks are returned and the history version is null; these reads make no policy-history query. The smoke failure contract also records a permanent block before recovery; those blocks remain visible even when automatic deployment is disabled. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
+Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:auto-deploy:enable`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, only permanent smoke blocks are returned and the history version is null; these reads make no policy-history query. The smoke failure contract also records a permanent block before recovery; those blocks remain visible even when automatic deployment is disabled. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
 
 A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
 
 ### Clear an unresolved admission hold
 
-Pause new decisions with `orbit instance:update <instance> --auto-deploy=false`. Read the exact receipt using the original Swamp caller, Instance, commit, and request key. Never resend the automatic POST to discover its outcome.
+Pause new decisions with `orbit instance:auto-deploy:disable <instance>`. Read the exact receipt using the original Swamp caller, Instance, commit, and request key. Never resend the automatic POST to discover its outcome.
 
 Use `POST /api/v1/instances/{instance}/deploy/automatic/resolve` (MCP `instance-deploy-automatic-resolve`) with `request_key` and `commit`. By default it resolves the authenticated Node's key. A Node with Gateway access may pass `caller_node_id` to resolve for the original caller. The CLI is `orbit instance:deploy:automatic:resolve <instance> <request_key> <commit> --caller-node=<original-node-id>`; omit the flag for your own key. Activity records the acting Node and the original caller. Admission and resolution serialize under the same Instance database lock.
 

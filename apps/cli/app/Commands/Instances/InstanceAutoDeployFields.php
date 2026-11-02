@@ -25,7 +25,7 @@ final class InstanceAutoDeployFields
         }
 
         if ($auto->pause !== null) {
-            $fields['Auto deploy paused'] = "{$auto->pause['reason']} (deployment {$auto->pause['deployment_id']}); run instance:update {$instance->id} --auto-deploy=true to resume";
+            $fields['Auto deploy paused'] = "{$auto->pause['reason']} (deployment {$auto->pause['deployment_id']}); run instance:auto-deploy:enable {$instance->id} to resume";
         }
 
         if ($auto->errorCode !== null) {

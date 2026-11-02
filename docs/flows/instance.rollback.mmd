@@ -93,7 +93,7 @@ sequenceDiagram
     %%> Result:
     %%> - deployment 89 succeeds with the release and its commit
     %%> - the commit it moved away from is blocked for automatic deploys
-    %%> - automatic deployment stays paused until `instance:update 42 --auto-deploy=true`
+    %%> - automatic deployment stays paused until `instance:auto-deploy:enable 42`
     %%> - task #5151 succeeds
   else a step fails
     N--xSW: exit ≠ 0 or timeout

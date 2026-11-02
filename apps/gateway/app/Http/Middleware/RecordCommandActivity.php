@@ -744,7 +744,7 @@ final readonly class RecordCommandActivity
     private function instanceUpdateInput(Request $request): array
     {
         try {
-            $input = $this->jsonInspector->inspect($request->getContent(), ['branch', 'shared_paths', 'auto_deploy']);
+            $input = $this->jsonInspector->inspect($request->getContent(), ['branch', 'shared_paths']);
         } catch (UnexpectedValueException) {
             return [];
         }

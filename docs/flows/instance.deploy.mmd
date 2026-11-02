@@ -152,7 +152,7 @@ sequenceDiagram
   %%> What it is:
   %%> - the same deploy run, started by a native Swamp schedule instead of the CLI
   %%> When:
-  %%> - only while `instance:update 42 --auto-deploy=true` is set and Instance 42 is not paused
+  %%> - only while `instance:auto-deploy:enable 42` is set and Instance 42 is not paused
   opt auto-deploy on and unpaused
     GW->>SW: Publish the schedule<br/>native trigger · every minute
     %%> What it does:

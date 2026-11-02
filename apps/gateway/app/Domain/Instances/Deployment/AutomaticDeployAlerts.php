@@ -102,7 +102,7 @@ final readonly class AutomaticDeployAlerts
         }
 
         return $this->raise(ReleaseAlertKind::InstanceDeployPaused, $instance, $pause->commit, $pause, sprintf(
-            '%s %d of Instance %d paused automatic deployment. Run `orbit instance:update %d --auto-deploy=true` to resume.',
+            '%s %d of Instance %d paused automatic deployment. Run `orbit instance:auto-deploy:enable %d` to resume.',
             $pause->kind === InstanceDeployment::Rollback ? 'Rollback' : 'Manual deployment',
             $pause->id,
             $instance->id,

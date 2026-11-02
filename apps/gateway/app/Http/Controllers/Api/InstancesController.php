@@ -84,9 +84,22 @@ final class InstancesController extends Controller
         UpdateInstanceAction $action,
     ): JsonResponse {
         return response()->json([
-            'data' => InstanceData::fromModel($action->execute($instance, $request->branch(), $request->sharedPaths(), array_key_exists('shared_paths', $request->validated()), $request->autoDeploy()))->toArray(),
+            'data' => InstanceData::fromModel($action->execute($instance, $request->branch(), $request->sharedPaths(), array_key_exists('shared_paths', $request->validated())))->toArray(),
             'meta' => $this->meta($request),
         ]);
+    }
+
+    /** Automatic deployment keeps deploying by itself, so it is an enable pair, not an update flag. Enable also resumes a pause. */
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    public function enableAutoDeploy(Request $request, Instance $instance, UpdateInstanceAction $action): JsonResponse
+    {
+        return response()->json(['data' => InstanceData::fromModel($action->execute($instance, null, autoDeploy: true))->toArray(), 'meta' => $this->meta($request)]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    public function disableAutoDeploy(Request $request, Instance $instance, UpdateInstanceAction $action): JsonResponse
+    {
+        return response()->json(['data' => InstanceData::fromModel($action->execute($instance, null, autoDeploy: false))->toArray(), 'meta' => $this->meta($request)]);
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]

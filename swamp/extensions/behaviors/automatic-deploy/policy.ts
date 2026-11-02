@@ -430,7 +430,7 @@ export async function tick(
           pause,
           `${
             pause.kind === "rollback" ? "Rollback" : "Manual deployment"
-          } ${pause.id} of Instance ${instance} paused automatic deployment. Run \`orbit instance:update ${instance} --auto-deploy=true\` to resume.`,
+          } ${pause.id} of Instance ${instance} paused automatic deployment. Run \`orbit instance:auto-deploy:enable ${instance}\` to resume.`,
         );
       }
       state.gate = null;

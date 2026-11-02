@@ -337,6 +337,8 @@ describe('repository guidance bootstrap', function (): void {
         $enableRequests = [
             'Orbit\\Sdk\\Requests\\Clusters\\ActivateClusterRequest',
             'Orbit\\Sdk\\Requests\\Clusters\\DeactivateClusterRequest',
+            'Orbit\\Sdk\\Requests\\Instances\\EnableInstanceAutoDeployRequest',
+            'Orbit\\Sdk\\Requests\\Instances\\DisableInstanceAutoDeployRequest',
         ];
         $lifecycleRequests = [
             RenameInstanceRequest::class,
@@ -613,7 +615,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Project runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.',
+                '- Instance: list, show, create, register, rename, clone, transfer, remove, update, auto-deploy enable and disable, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')

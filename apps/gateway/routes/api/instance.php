@@ -60,6 +60,8 @@ Route::middleware([
     Route::get('instances', [InstancesController::class, 'index'])->name('instance:list');
     Route::get('instances/{instance}', [InstancesController::class, 'show'])->name('instance:show');
     Route::patch('instances/{instance}', [InstancesController::class, 'update'])->name('instance:update');
+    Route::post('instances/{instance}/auto-deploy/enable', [InstancesController::class, 'enableAutoDeploy'])->name('instance:auto-deploy:enable');
+    Route::post('instances/{instance}/auto-deploy/disable', [InstancesController::class, 'disableAutoDeploy'])->name('instance:auto-deploy:disable');
     Route::post('instances/{instance}/rename', [InstancesController::class, 'rename'])->name('instance:rename');
     Route::post('instances', [InstancesController::class, 'store'])->name('instance:create');
     Route::post('instances/register', [InstancesController::class, 'register'])->name('instance:register');
