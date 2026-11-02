@@ -74,8 +74,9 @@ sequenceDiagram
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
   %%> What it does:
   %%> - clones the repository on 209 and copies it as a Git bundle, on branch `task-42` from the default branch
-  %%> - reads the checkout with one `@swamp/ssh exec` argv each: `identity` (HEAD and branch), `analysis_base` (merge base with the default branch), `inspect` (`stat` of `composer.json` and the entry point) and `composer` (its text)
-  %%> - `profile` on 209 refuses a checkout on another commit, classifies the source and keeps the start commit's merge base as the fixed analysis base
+  %%> - reads the checkout with one `@swamp/ssh exec` argv each: `identity` (HEAD and branch), `analysis_base` (merge base with the default branch) and `inspect` (`stat` of `composer.json` and the entry point)
+  %%> - `composer` downloads a regular `composer.json` with one `@swamp/ssh copy` into the private worker directory, so its text never reaches native history
+  %%> - `profile` on 209 refuses a checkout on another commit, classifies the source and keeps the start commit's merge base as the fixed analysis base; it reads and deletes the downloaded `composer.json` and keeps only its PHP version and Laravel flag
   %%> - runs the Project setup steps in order as `setup-0`, `setup-1`, …: each is one `@swamp/ssh exec` argv, `env -C <checkout> … /bin/bash -lc <command>`, with its own timeout
   %%> - each setup command writes its output to a file on the VM, never to the SSH session; `setup_copy` downloads the files into a private worker directory and `setup_output` keeps a redacted 4 KiB tail of each and deletes the files
   %%> - no step copies a script to the VM

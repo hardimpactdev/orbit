@@ -464,6 +464,50 @@ raise SystemExit(r.returncode)
         self.assertEqual(result["source"]["php_version"], "8.5")
         self.assertTrue(result["source"]["laravel"])
 
+    def test_composer_json_reaches_the_worker_by_copy_and_only_its_facts_reach_history(self):
+        # The repository's composer.json holds a credential built at run time.
+        # The source and checkout hold it by design; nothing else may: native
+        # history, data, logs and the worker's run directory.
+        secret = fixture.runtime("ghp_", "C" * 36)
+        (self.workspace / "composer.json").write_text(
+            json.dumps(
+                {
+                    "require": {"php": "^8.5", "laravel/framework": "^13.0"},
+                    "extra": {"token": secret},
+                }
+            )
+        )
+        (self.workspace / "artisan").write_text("#!/usr/bin/env php\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Laravel with a credential")
+        self.inputs["intent"]["workspace"].update(
+            project_type="laravel-app",
+            skip_profile=False,
+            start_commit=self.git("rev-parse", "HEAD"),
+        )
+        history, steps = self.execute_provision()
+        self.assertEqual(history["status"], "succeeded")
+        source = steps["source"]["outputs"]
+        self.assertEqual(
+            source["profile"]["source"],
+            {
+                "branch": "task-30",
+                "commit": self.inputs["intent"]["workspace"]["start_commit"],
+                "php_version": "8.5",
+                "laravel": True,
+            },
+        )
+        logs = self.cli("workflow", "history", "logs", history["id"])
+        self.assertNotIn(secret, json.dumps(history) + logs.stdout + logs.stderr)
+        needle = secret.encode()
+        for path in self.repo.rglob("*"):
+            relative = path.relative_to(self.repo)
+            if relative.parts[0] in ("workspace", "guest"):
+                continue
+            if path.is_file() and not path.is_symlink():
+                self.assertNotIn(needle, path.read_bytes(), str(relative))
+        self.assertFalse(list(self.repo.glob("control/*")))
+
     def test_source_acquisition_failure_still_returns_vm_readiness_in_root_result(self):
         self.inputs["intent"]["workspace"]["repository"] = str(
             self.repo / "missing-repository"

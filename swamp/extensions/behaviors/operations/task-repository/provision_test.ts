@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import { teardownArgv } from "./assets.ts";
 import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
 import {
@@ -130,6 +130,13 @@ Deno.test("source result requires every ordered setup step before exposing the i
     error_code: "tasks.provision_failed",
     failed_step: "setup-0",
   });
+  // A guard skips the composer copy without a regular composer.json; a failed copy fails.
+  steps.composer.status = "failed";
+  assertEquals(sourceResult(input, steps), {
+    error_code: "tasks.provision_failed",
+    failed_step: "composer",
+  });
+  delete steps.composer;
   steps["setup-0"] = { status: "succeeded", outputs: {} };
   assertEquals(sourceResult(input, steps), {
     source,
@@ -221,13 +228,13 @@ Deno.test("profile refuses a checkout that is not on the admitted start commit",
     identity: commit + "\ntask-30\n",
     analysis_base: commit + "\n",
     files: "",
-    composer: "",
+    composer: "/nonexistent/composer.json",
   });
   await behavior.methods.profile.execute({
     intent: admitted,
     ...read("c".repeat(40)),
   }, ctx);
-  assertThrows(
+  await assertRejects(
     () =>
       behavior.methods.profile.execute({
         intent: admitted,
@@ -236,6 +243,52 @@ Deno.test("profile refuses a checkout that is not on the admitted start commit",
     Error,
     "instance.source_identity_changed",
   );
+});
+
+Deno.test("profile reads and deletes the downloaded composer.json and keeps only its facts", async () => {
+  const { behavior } = await import("./provision.ts");
+  const directory = await Deno.makeTempDir();
+  const path = directory + "/composer.json";
+  const secret = ["ghp_", "C".repeat(36)].join("");
+  await Deno.writeTextFile(
+    path,
+    JSON.stringify({
+      require: { php: "^8.5", "laravel/framework": "^13" },
+      extra: { token: secret },
+    }),
+  );
+  const written: unknown[] = [];
+  await behavior.methods.profile.execute({
+    intent: Intent.parse({
+      ...intent,
+      workspace: {
+        ...intent.workspace,
+        project_type: "laravel-app",
+        skip_profile: false,
+      },
+    }),
+    identity: "c".repeat(40) + "\ntask-30\n",
+    analysis_base: "",
+    files: "composer.json|regular file|90\nartisan|regular file|20\n",
+    composer: path,
+  }, {
+    extensionFile: () => "unused",
+    writeResource: (_spec, _name, value) => {
+      written.push(value);
+      return Promise.resolve({});
+    },
+  });
+  assertEquals(written, [{
+    source: {
+      branch: "task-30",
+      commit: "c".repeat(40),
+      php_version: "8.5",
+      laravel: true,
+    },
+    analysis_base: null,
+  }]);
+  await assertRejects(() => Deno.stat(path), Deno.errors.NotFound);
+  await Deno.remove(directory);
 });
 
 Deno.test("each setup and teardown command runs as one SSH exec argv in the checkout with empty seeds, its output in a file", () => {
@@ -305,11 +358,15 @@ Deno.test("the checkout reads become the identity, analysis pin and source profi
   }).workspace;
   const head = "c".repeat(40);
   const composer = '{"require":{"php":"^8.4","laravel/framework":"^13"}}';
-  const read = (files: string, base = "b".repeat(40) + "\n") => ({
+  const read = (
+    files: string,
+    base = "b".repeat(40) + "\n",
+    bytes: Uint8Array | null = new TextEncoder().encode(composer),
+  ) => ({
     identity: head + "\ntask-30\n",
     base,
     files,
-    composer,
+    composer: bytes,
   });
   const laravel = observe(
     workspace,
@@ -323,6 +380,16 @@ Deno.test("the checkout reads become the identity, analysis pin and source profi
     composer: btoa(composer),
     entry_point: "regular",
   });
+  // inspect saw a regular composer.json, so a missing download is a failure.
+  assertThrows(
+    () =>
+      observe(
+        workspace,
+        read("composer.json|regular file|52\n", undefined, null),
+      ),
+    Error,
+    "tasks.provision_failed",
+  );
   // Git found no merge base: the pin is unavailable, never the current HEAD.
   assertEquals(observe(workspace, read("", "")).analysis_base, null);
   assertEquals(observe(workspace, read("")).profile.kind, "none");

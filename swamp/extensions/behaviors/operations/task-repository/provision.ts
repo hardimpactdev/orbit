@@ -7,6 +7,7 @@ import { WorkspaceInput } from "../task-vm-workspace/input.ts";
 import {
   capturedArgv,
   type PublicTail,
+  readCapture,
   readPublicTail,
 } from "../../_lib/public_output.ts";
 import { lifecycleArgv } from "./lifecycle.ts";
@@ -157,11 +158,16 @@ export async function setupOutput(
  * `identity` is `git rev-parse HEAD --abbrev-ref HEAD`, `base` the merge base
  * (empty when Git found none), `files` the `stat -c %n|%F|%s` lines of
  * composer.json and the entry point (absent files have no line), and
- * `composer` the composer.json text.
+ * `composer` the downloaded composer.json bytes, or null when no copy ran.
  */
 export function observe(
   workspace: z.infer<typeof Workspace>,
-  read: { identity: string; base: string; files: string; composer: string },
+  read: {
+    identity: string;
+    base: string;
+    files: string;
+    composer: Uint8Array | null;
+  },
 ) {
   const [commit = "", branch = ""] = read.identity.trim().split("\n");
   const base = read.base.trim();
@@ -189,7 +195,9 @@ export function observe(
   } else if (!composer.regular || composer.size > COMPOSER_BYTES) {
     profile = { ...profile, kind: "unsafe" };
   } else {
-    const bytes = new TextEncoder().encode(read.composer);
+    // inspect saw a regular composer.json, so its copy must have run.
+    if (read.composer === null) throw new Error("tasks.provision_failed");
+    const bytes = read.composer;
     profile = {
       kind: "composer",
       composer: btoa(
@@ -222,6 +230,9 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
   if (typeof profile.error_code === "string") {
     return { error_code: profile.error_code, failed_step: "profile" };
   }
+  // A guard skips `composer` when inspect found no regular composer.json; a
+  // skipped step has no entry in `steps`.
+  const optional = new Set(["composer"]);
   for (
     const name of [
       "prepare",
@@ -247,7 +258,8 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
         ? !["clone_private", "clone_public"].some((key) =>
           nativeOutputs(steps, key).step.status === "succeeded"
         )
-        : nativeOutputs(steps, name).step.status !== "succeeded")
+        : nativeOutputs(steps, name).step.status !== "succeeded" &&
+          !(optional.has(name) && !(name in steps)))
     ) {
       return { error_code: "tasks.provision_failed", failed_step: name };
     }
@@ -312,7 +324,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.02.4",
+  version: "2026.11.02.5",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -379,15 +391,15 @@ export const behavior = {
     },
     profile: {
       description:
-        "Classify source with canonical Instance profile policy and retain its initial analysis pin",
+        "Classify source with canonical Instance profile policy and retain its initial analysis pin; read and delete the downloaded composer.json, keeping only its facts",
       arguments: z.object({
         intent: Intent,
         identity: z.string(),
         analysis_base: z.string(),
         files: z.string(),
-        composer: z.string(),
+        composer: Path,
       }),
-      execute: (
+      execute: async (
         args: {
           intent: z.infer<typeof Intent>;
           identity: string;
@@ -398,11 +410,13 @@ export const behavior = {
         ctx: Context,
       ) => {
         const workspace = Intent.parse(args.intent).workspace;
+        // The file never reaches history; only the parsed facts below do.
+        const composer = await readCapture(args.composer, COMPOSER_BYTES);
         const observation = observe(workspace, {
           identity: args.identity,
           base: args.analysis_base,
           files: args.files,
-          composer: args.composer,
+          composer: composer?.bytes ?? null,
         });
         if (
           observation.branch !== workspace.branch ||
