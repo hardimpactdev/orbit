@@ -93,7 +93,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Project check | Run the [candidate gate](#the-candidate-gate), `bin/review-check`, in three shards; not yet in `Required checks` until its Gateway and CLI lanes pass on `main` |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
-| Swamp | Validate every workflow, run the Operation Deno tests and enforce the Swamp-shape gate |
+| Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new [per-run behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/README.md#behavior-names) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
